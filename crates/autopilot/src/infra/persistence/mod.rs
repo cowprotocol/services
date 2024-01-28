@@ -1,10 +1,10 @@
 use {
     crate::{boundary, database::Postgres, domain},
-    anyhow::Context,
+    anyhow::{anyhow, Context},
     chrono::Utc,
     database::{byte_array::ByteArray, events::insert_settlement},
     itertools::Itertools,
-    shared::event_handling::EventStoring,
+    number::conversions::u256_to_big_decimal,
     std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
@@ -152,9 +152,20 @@ impl Persistence {
 
     /// Returns the latest block number for which settlement events have been
     /// saved.
-    pub async fn latest_settlements_events_block(&self) -> Result<u64, Error> {
-        let store: &dyn EventStoring<contracts::gpv2_settlement::Event> = self.postgres.as_ref();
-        store.last_event_block().await.map_err(Error::DbError)
+    pub async fn latest_settlement_event_block(&self) -> Result<u64, Error> {
+        let mut con = self
+            .postgres
+            .pool
+            .acquire()
+            .await
+            .map_err(|e| Error::DbError(anyhow!("error acquiring connection {}", e)))?;
+        let block_number = database::events::last_block(&mut con)
+            .await
+            .map_err(Error::Sql)?;
+        block_number
+            .try_into()
+            .context("block number is negative")
+            .map_err(Error::DataConsistency)
     }
 
     /// Saves the given settlement events to the DB.
@@ -175,16 +186,139 @@ impl Persistence {
                     transaction_hash: ByteArray(event.tx_hash.0),
                 },
             )
-            .await?;
+            .await
+            .map_err(Error::Sql)?;
         }
         Ok(())
+    }
+
+    /// Saves the given pre-signature events to the DB.
+    pub async fn store_presignature_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        events: Vec<domain::events::settlement::PreSignature>,
+    ) -> Result<(), Error> {
+        for event in events {
+            database::events::insert_presignature(
+                &mut tx.inner,
+                &database::events::EventIndex {
+                    block_number: event.block_number as i64,
+                    log_index: event.log_index as i64,
+                },
+                &database::events::PreSignature {
+                    owner: ByteArray(event.owner.0),
+                    order_uid: ByteArray(event.uid.0),
+                    signed: event.signed,
+                },
+            )
+            .await
+            .map_err(Error::Sql)?;
+        }
+        Ok(())
+    }
+
+    /// Saves the given trade events to the DB.
+    pub async fn store_trade_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        events: Vec<domain::events::settlement::Trade>,
+    ) -> Result<(), Error> {
+        for event in events {
+            database::events::insert_trade(
+                &mut tx.inner,
+                &database::events::EventIndex {
+                    block_number: event.block_number as i64,
+                    log_index: event.log_index as i64,
+                },
+                &database::events::Trade {
+                    order_uid: ByteArray(event.uid.0),
+                    sell_amount_including_fee: u256_to_big_decimal(
+                        &event.sell_amount_including_fee,
+                    ),
+                    buy_amount: u256_to_big_decimal(&event.buy_amount),
+                    fee_amount: u256_to_big_decimal(&event.fee_amount),
+                },
+            )
+            .await
+            .map_err(Error::Sql)?;
+        }
+        Ok(())
+    }
+
+    /// Saves the given on-chain cancellation events to the DB.
+    pub async fn store_cancellation_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        events: Vec<domain::events::settlement::Cancellation>,
+    ) -> Result<(), Error> {
+        for event in events {
+            database::events::insert_invalidation(
+                &mut tx.inner,
+                &database::events::EventIndex {
+                    block_number: event.block_number as i64,
+                    log_index: event.log_index as i64,
+                },
+                &database::events::Invalidation {
+                    order_uid: ByteArray(event.uid.0),
+                },
+            )
+            .await
+            .map_err(Error::Sql)?;
+        }
+        Ok(())
+    }
+
+    /// Deletes all settlement events from the given block number onwards.
+    pub async fn delete_settlement_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        from_block: u64,
+    ) -> Result<(), Error> {
+        database::events::delete_settlements(&mut tx.inner, from_block)
+            .await
+            .map_err(Error::Sql)
+    }
+
+    /// Deletes all pre-signature events from the given block number onwards.
+    pub async fn delete_presignature_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        from_block: u64,
+    ) -> Result<(), Error> {
+        database::events::delete_presignatures(&mut tx.inner, from_block)
+            .await
+            .map_err(Error::Sql)
+    }
+
+    /// Deletes all trade events from the given block number onwards.
+    pub async fn delete_trade_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        from_block: u64,
+    ) -> Result<(), Error> {
+        database::events::delete_trades(&mut tx.inner, from_block)
+            .await
+            .map_err(Error::Sql)
+    }
+
+    /// Deletes all cancellation events from the given block number onwards.
+    pub async fn delete_cancellation_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        from_block: u64,
+    ) -> Result<(), Error> {
+        database::events::delete_invalidations(&mut tx.inner, from_block)
+            .await
+            .map_err(Error::Sql)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to read or write data from database")]
-    DbError(#[from] anyhow::Error),
+    DbError(anyhow::Error),
     #[error("Error preparing SQL query")]
-    Sql(#[from] sqlx::Error),
+    Sql(sqlx::Error),
+    #[error("Data consistency error")]
+    DataConsistency(anyhow::Error),
 }

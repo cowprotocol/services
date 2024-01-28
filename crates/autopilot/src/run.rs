@@ -448,11 +448,14 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+    let persistence = Arc::new(
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await,
+    );
     let event_updater = Arc::new(EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
-        boundary::events::settlement::Indexer::new(db.clone()),
+        boundary::events::settlement::Indexer::new(domain::Events::new(persistence.clone())),
         block_retriever.clone(),
         skip_event_sync_start,
     ));

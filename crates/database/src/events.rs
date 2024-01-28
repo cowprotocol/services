@@ -54,30 +54,65 @@ pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
 
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
-    delete_from_block_number: i64,
+    delete_from_block_number: u64,
+) -> Result<(), sqlx::Error> {
+    delete_trades(ex, delete_from_block_number).await?;
+    delete_settlements(ex, delete_from_block_number).await?;
+    delete_settlement_observations(ex, delete_from_block_number).await?;
+    delete_invalidations(ex, delete_from_block_number).await?;
+    delete_presignatures(ex, delete_from_block_number).await?;
+    Ok(())
+}
+
+pub async fn delete_invalidations(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: u64,
 ) -> Result<(), sqlx::Error> {
     const QUERY_INVALIDATION: &str = "DELETE FROM invalidations WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_INVALIDATION).bind(delete_from_block_number))
-        .await?;
+    ex.execute(sqlx::query(QUERY_INVALIDATION).bind(delete_from_block_number as i64))
+        .await
+        .map(|_| ())
+}
 
+pub async fn delete_trades(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: u64,
+) -> Result<(), sqlx::Error> {
     const QUERY_TRADE: &str = "DELETE FROM trades WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_TRADE).bind(delete_from_block_number))
-        .await?;
+    ex.execute(sqlx::query(QUERY_TRADE).bind(delete_from_block_number as i64))
+        .await
+        .map(|_| ())
+}
 
+pub async fn delete_settlements(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: u64,
+) -> Result<(), sqlx::Error> {
     const QUERY_SETTLEMENTS: &str = "DELETE FROM settlements WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number))
-        .await?;
+    ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number as i64))
+        .await
+        .map(|_| ())
+}
 
+pub async fn delete_settlement_observations(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: u64,
+) -> Result<(), sqlx::Error> {
     const QUERY_OBSERVATIONS: &str =
         "DELETE FROM settlement_observations WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
-        .await?;
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number as i64))
+        .await
+        .map(|_| ())
+}
 
+pub async fn delete_presignatures(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: u64,
+) -> Result<(), sqlx::Error> {
     const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number))
-        .await?;
-
-    Ok(())
+    ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number as i64))
+        .await
+        .map(|_| ())
 }
 
 pub async fn append(
@@ -99,7 +134,7 @@ pub async fn append(
     Ok(())
 }
 
-async fn insert_invalidation(
+pub async fn insert_invalidation(
     ex: &mut PgConnection,
     index: &EventIndex,
     event: &Invalidation,
@@ -157,7 +192,7 @@ pub async fn insert_settlement(
     Ok(())
 }
 
-async fn insert_presignature(
+pub async fn insert_presignature(
     ex: &mut PgConnection,
     index: &EventIndex,
     event: &PreSignature,

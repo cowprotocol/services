@@ -38,7 +38,7 @@ use {
 
 pub struct RunLoop {
     pub eth: infra::Ethereum,
-    pub persistence: infra::Persistence,
+    pub persistence: Arc<infra::Persistence>,
     pub drivers: Vec<infra::Driver>,
 
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,

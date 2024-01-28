@@ -11,6 +11,7 @@ pub use {
         AuctionId,
         AuctionWithId,
     },
+    events::Events,
     fee::ProtocolFee,
     quote::Quote,
 };

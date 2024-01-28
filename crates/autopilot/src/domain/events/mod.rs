@@ -2,13 +2,18 @@ use {
     crate::{
         boundary,
         domain::{self, eth},
-        infra::{self, persistence},
+        infra::{
+            self,
+            persistence::{self, transaction::Transaction},
+        },
     },
     anyhow::Context,
+    ethrpc::current_block::RangeInclusive,
+    std::sync::Arc,
 };
 
-struct Events {
-    persistence: infra::Persistence,
+pub struct Events {
+    persistence: Arc<infra::Persistence>,
 }
 
 /// Error type for the events module.
@@ -64,9 +69,13 @@ pub mod settlement {
 }
 
 impl Events {
+    pub fn new(persistence: Arc<infra::Persistence>) -> Self {
+        Self { persistence }
+    }
+
     pub async fn latest_block(&self) -> Result<u64, Error> {
         self.persistence
-            .latest_settlements_events_block()
+            .latest_settlement_event_block()
             .await
             .map_err(Error::Persistence)
     }
@@ -75,9 +84,49 @@ impl Events {
         &self,
         events: Vec<boundary::Event<boundary::events::GPv2Contract>>,
     ) -> Result<(), Error> {
-        let mut trades = Vec::new();
-        let mut invalidations = Vec::new();
+        let mut tx = self.persistence.begin().await?;
+        self.insert(&mut tx, events).await?;
+        tx.commit().await.map_err(Error::Persistence)
+    }
+
+    pub async fn replace(
+        &self,
+        events: Vec<boundary::Event<boundary::events::GPv2Contract>>,
+        range: RangeInclusive<u64>,
+    ) -> Result<(), Error> {
+        let mut tx = self.persistence.begin().await?;
+        self.delete(&mut tx, range).await?;
+        self.insert(&mut tx, events).await?;
+        tx.commit().await.map_err(Error::Persistence)
+    }
+
+    async fn delete(&self, tx: &mut Transaction, range: RangeInclusive<u64>) -> Result<(), Error> {
+        self.persistence
+            .delete_settlement_events(tx, *range.start())
+            .await
+            .map_err(Error::Persistence)?;
+        self.persistence
+            .delete_trade_events(tx, *range.start())
+            .await
+            .map_err(Error::Persistence)?;
+        self.persistence
+            .delete_cancellation_events(tx, *range.start())
+            .await
+            .map_err(Error::Persistence)?;
+        self.persistence
+            .delete_presignature_events(tx, *range.start())
+            .await
+            .map_err(Error::Persistence)
+    }
+
+    async fn insert(
+        &self,
+        tx: &mut Transaction,
+        events: Vec<boundary::Event<boundary::events::GPv2Contract>>,
+    ) -> Result<(), Error> {
         let mut settlements = Vec::new();
+        let mut trades = Vec::new();
+        let mut cancellations = Vec::new();
         let mut presignatures = Vec::new();
 
         for event in events {
@@ -108,7 +157,7 @@ impl Events {
                     });
                 }
                 boundary::events::GPv2Contract::OrderInvalidated(event) => {
-                    invalidations.push(settlement::Cancellation {
+                    cancellations.push(settlement::Cancellation {
                         block_number: metadata.block_number,
                         log_index: metadata.log_index,
                         uid: uid(&event.order_uid.0)?,
@@ -126,12 +175,23 @@ impl Events {
                 boundary::events::GPv2Contract::Interaction(_) => {}
             }
         }
-        let mut tx = self.persistence.begin().await?;
+
         self.persistence
-            .store_settlement_events(&mut tx, settlements)
+            .store_settlement_events(tx, settlements)
             .await
             .map_err(Error::Persistence)?;
-        tx.commit().await.map_err(Error::Persistence)
+        self.persistence
+            .store_trade_events(tx, trades)
+            .await
+            .map_err(Error::Persistence)?;
+        self.persistence
+            .store_cancellation_events(tx, cancellations)
+            .await
+            .map_err(Error::Persistence)?;
+        self.persistence
+            .store_presignature_events(tx, presignatures)
+            .await
+            .map_err(Error::Persistence)
     }
 }
 
