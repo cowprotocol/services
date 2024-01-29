@@ -1,10 +1,12 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
+    model::order::{OrderCreation, OrderKind, OrderUid},
     shared::{
         api::{box_filter, error, finalize_router, ApiReply},
         price_estimation::native::NativePriceEstimating,
     },
     std::sync::Arc,
+    utoipa::OpenApi,
     warp::{Filter, Rejection, Reply},
 };
 
@@ -105,3 +107,10 @@ pub fn handle_all_routes(
 
     finalize_router(routes, "orderbook::api::request_summary")
 }
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(post_order::post_order),
+    components(schemas(OrderUid, OrderCreation, OrderKind))
+)]
+pub struct ApiDoc;

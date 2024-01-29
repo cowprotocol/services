@@ -26,6 +26,7 @@ use {
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, EnumVariantNames},
+    utoipa::ToSchema,
     web3::signing::{self, Key, SecretKeyRef},
 };
 
@@ -359,33 +360,91 @@ impl OrderData {
 
 /// An order as provided to the POST order endpoint.
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+  "sellToken": "0x6810e776880c02933d47db1b9fc05908e5386b96",
+  "buyToken": "0x6810e776880c02933d47db1b9fc05908e5386b96",
+  "receiver": "0x6810e776880c02933d47db1b9fc05908e5386b96",
+  "sellAmount": "1234567890",
+  "buyAmount": "1234567890",
+  "validTo": 0,
+  "feeAmount": "1234567890",
+  "kind": "buy",
+  "partiallyFillable": true,
+  "sellTokenBalance": "erc20",
+  "buyTokenBalance": "erc20",
+  "signingScheme": "eip712",
+  "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "from": "0x6810e776880c02933d47db1b9fc05908e5386b96",
+  "quoteId": 0,
+  "appData": "{\"version\":\"0.9.0\",\"metadata\":{}}",
+  "appDataHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+}))]
 pub struct OrderCreation {
     // These fields are the same as in `OrderData`.
+    /// Address of token sold.
+    #[schema(value_type = String)]
     pub sell_token: H160,
+    /// Address of token bought.
+    #[schema(value_type = String)]
     pub buy_token: H160,
+    /// An optional address to receive the proceeds of the trade instead of the
+    /// `owner` (i.e. the order signer).
     #[serde(default)]
+    #[schema(value_type = Option<String>)]
     pub receiver: Option<H160>,
+    /// Amount of `sellToken` to be sold in atoms.
     #[serde_as(as = "HexOrDecimalU256")]
+    #[schema(value_type = String)]
     pub sell_amount: U256,
+    /// Amount of `buyToken` to be sold in atoms.
     #[serde_as(as = "HexOrDecimalU256")]
+    #[schema(value_type = String)]
     pub buy_amount: U256,
+    /// Unix timestamp (`uint32`) until which the order is valid.
+    #[schema(example = 0)]
     pub valid_to: u32,
+    /// feeRatio * sellAmount + minimal_fee in atoms.
     #[serde_as(as = "HexOrDecimalU256")]
+    #[schema(value_type = String)]
     pub fee_amount: U256,
+    #[schema(example = OrderKind::Buy)]
     pub kind: OrderKind,
+    /// Is the order fill-or-kill or partially fillable?
+    #[schema(example = true)]
     pub partially_fillable: bool,
     #[serde(default)]
+    #[schema(value_type = String, example = "erc20")]
     pub sell_token_balance: SellTokenSource,
     #[serde(default)]
+    #[schema(value_type = String, example = "erc20")]
     pub buy_token_balance: BuyTokenDestination,
-
+    /// If set, the backend enforces that this address matches what is decoded
+    /// as the *signer* of the signature. This helps catch errors with
+    /// invalid signature encodings as the backend might otherwise silently
+    /// work with an unexpected address that for example does not have
+    /// any balance.
+    #[schema(value_type = Option<String>)]
     pub from: Option<H160>,
+    /// If set, the backend enforces that this address matches what is decoded
+    /// as the *signer* of the signature. This helps catch errors with
+    /// invalid signature encodings as the backend might otherwise silently
+    /// work with an unexpected address that for example does not have
+    /// any balance.
     #[serde(flatten)]
+    #[schema(value_type = String)]
     pub signature: Signature,
+    /// Orders can optionally include a quote ID. This way the order can be
+    /// linked to a quote and enable providing more metadata when analysing
+    /// order slippage.
+    #[schema(value_type = i64, example = 0)]
     pub quote_id: Option<QuoteId>,
+    /// The string encoding of a JSON object representing some `appData`. The
+    /// format of the JSON expected in the `appData` field is defined
+    /// [here](https://github.com/cowprotocol/app-data).
     #[serde(flatten)]
+    #[schema(value_type = String)]
     pub app_data: OrderCreationAppData,
 }
 
@@ -471,7 +530,7 @@ impl OrderCreation {
 }
 
 // Note that the order of the variants is important for deserialization.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(untagged)]
 pub enum OrderCreationAppData {
     /// Hash is inferred from full app data and validated against expectation.
@@ -786,7 +845,7 @@ pub struct OrderMetadata {
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord, ToSchema)]
 pub struct OrderUid(pub [u8; 56]);
 
 impl OrderUid {
@@ -897,6 +956,8 @@ impl<'de> Deserialize<'de> for OrderUid {
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
+#[derive(ToSchema)]
+/// The kind is either a buy or sell order.
 pub enum OrderKind {
     #[default]
     Buy,
@@ -971,7 +1032,9 @@ impl OrderKind {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfillment
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[derive(
+    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString, ToSchema,
+)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
@@ -1015,7 +1078,9 @@ impl SellTokenSource {
 
 /// Destination for which the buyAmount should be transferred to order's
 /// receiver to upon fulfillment
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[derive(
+    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString, ToSchema,
+)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {

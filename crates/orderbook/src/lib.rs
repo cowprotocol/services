@@ -1,4 +1,5 @@
 pub mod api;
+pub use api::ApiDoc;
 pub mod app_data;
 pub mod arguments;
 pub mod database;

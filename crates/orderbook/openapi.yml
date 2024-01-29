@@ -1339,7 +1339,7 @@ components:
           description: Absolute validity.
           properties:
             validTo:
-              description: Unix timestamp (`uint32`) until which the order is valid.
+              description: 
               type: integer
         - type: object
           description: Relative validity

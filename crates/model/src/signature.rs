@@ -7,6 +7,7 @@ use {
         convert::TryInto as _,
         fmt::{self, Debug, Formatter},
     },
+    utoipa::ToSchema,
     web3::{
         signing::{self, Key, SecretKeyRef},
         types::Recovery,
@@ -40,6 +41,7 @@ impl From<QuoteSigningScheme> for SigningScheme {
 /// order hash.
 #[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]
 #[serde(into = "JsonSignature", try_from = "JsonSignature")]
+#[derive(ToSchema)]
 pub enum Signature {
     /// The order struct is signed according to EIP-712.
     ///

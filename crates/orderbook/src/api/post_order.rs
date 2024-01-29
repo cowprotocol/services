@@ -263,6 +263,19 @@ pub fn create_order_response(
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/create_order",
+    request_body = OrderCreation,
+    responses(
+        (status = 200, description = "Order has been accepted.", body = OrderUid),
+        (status = 400, description = "Error during order validation."),
+        (status = 403, description = "Forbidden, your account is deny-listed."),
+        (status = 404, description = "No route was found quoting the order."),
+        (status = 429, description = "Too many order placements."),
+        (status = 500, description = "Error adding an order."),
+    ),
+)]
 pub fn post_order(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {

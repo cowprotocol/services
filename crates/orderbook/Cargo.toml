@@ -15,6 +15,10 @@ doctest = false
 name = "orderbook"
 path = "src/main.rs"
 
+[[bin]]
+name = "openapi"
+path = "src/openapi.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 app-data-hash = { path = "../app-data-hash" }
@@ -51,6 +55,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
+utoipa = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true }
 
