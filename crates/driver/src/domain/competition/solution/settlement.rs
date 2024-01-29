@@ -367,33 +367,14 @@ pub struct Gas {
     /// computed by adding a buffer to the gas estimate to allow for small
     /// variations in the actual gas that gets used.
     pub limit: eth::Gas,
-    /// The maximum fee per unit of gas for a given settlement.
-    pub price: eth::FeePerGas,
+    /// The gas price (EIP1559) for a settlement transaction.
+    pub price: eth::GasPrice,
 }
 
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
     pub fn new(estimate: eth::Gas, price: eth::GasPrice) -> Self {
-        // Compute an upper bound for `max_fee_per_gas` for the given
-        // settlement. We multiply a fixed factor of the current base fee per
-        // gas, which is chosen to be the maximum possible increase to the base
-        // fee per gas over 12 blocks, also including the "tip".
-        //
-        // This is computed as an approximation of:
-        // MAX_FEE_FACTOR = MAX_INCREASE_PER_BLOCK ** (DEADLINE_IN_BLOCKS +
-        // SOLVING_TIME) = 1.125 ** (10 + 2) = 1.125 ** 12
-        //
-        // The value of `MAX_GAS_INCREASE_PER_BLOCK` comes from EIP-1559, which
-        // dictates that the block base fee can increase by a maximum of 12.5%
-        // from one block to another.
-        const MAX_FEE_FACTOR: f64 = 4.2;
-        let price = eth::U256::from_f64_lossy(
-            eth::U256::to_f64_lossy(price.base.into()) * MAX_FEE_FACTOR
-                + eth::U256::to_f64_lossy(price.tip.into()),
-        )
-        .into();
-
         // Specify a different gas limit than the estimated gas when executing a
         // settlement transaction. This allows the transaction to be resilient
         // to small variations in actual gas usage.
@@ -415,6 +396,27 @@ impl Gas {
     /// The balance required to ensure settlement execution with the given gas
     /// parameters.
     pub fn required_balance(&self) -> eth::Ether {
-        self.limit * self.price
+        self.limit * self.fee_per_gas()
+    }
+
+    /// Compute an upper bound for `max_fee_per_gas` for the given settlement.
+    fn fee_per_gas(&self) -> eth::FeePerGas {
+        // We multiply a fixed factor of the current base fee per
+        // gas, which is chosen to be the maximum possible increase to the base
+        // fee per gas over 12 blocks, also including the "tip".
+        //
+        // This is computed as an approximation of:
+        // MAX_FEE_FACTOR = MAX_INCREASE_PER_BLOCK ** (DEADLINE_IN_BLOCKS +
+        // SOLVING_TIME) = 1.125 ** (10 + 2) = 1.125 ** 12
+        //
+        // The value of `MAX_GAS_INCREASE_PER_BLOCK` comes from EIP-1559, which
+        // dictates that the block base fee can increase by a maximum of 12.5%
+        // from one block to another.
+        const MAX_FEE_FACTOR: f64 = 4.2;
+        eth::U256::from_f64_lossy(
+            eth::U256::to_f64_lossy(self.price.base.into()) * MAX_FEE_FACTOR
+                + eth::U256::to_f64_lossy(self.price.tip.into()),
+        )
+        .into()
     }
 }

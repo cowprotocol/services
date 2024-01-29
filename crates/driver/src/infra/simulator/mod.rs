@@ -3,7 +3,6 @@ use {
         domain::eth,
         infra::blockchain::{self, Ethereum},
     },
-    ethcontract::errors::ExecutionError,
     observe::future::Measure,
 };
 
@@ -181,22 +180,13 @@ where
         let tx = match &err {
             SimulatorError::Tenderly(tenderly::Error::Http(_)) => None,
             SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx),
-            SimulatorError::Blockchain(blockchain::Error::Method(error))
-                if matches!(error.inner, ExecutionError::Revert(_)) =>
-            {
-                Some(tx)
-            }
-            SimulatorError::Blockchain(blockchain::Error::Method(_)) => None,
-            SimulatorError::Blockchain(blockchain::Error::Web3(inner)) => {
-                let error = ExecutionError::from(inner.clone());
-                if matches!(error, ExecutionError::Revert(_)) {
+            SimulatorError::Blockchain(error) => {
+                if error.is_revert() {
                     Some(tx)
                 } else {
                     None
                 }
             }
-            SimulatorError::Blockchain(blockchain::Error::GasPrice(_)) => None,
-            SimulatorError::Blockchain(blockchain::Error::AccessList(_)) => Some(tx),
             SimulatorError::Enso(enso::Error::Http(_)) => None,
             SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
         };
