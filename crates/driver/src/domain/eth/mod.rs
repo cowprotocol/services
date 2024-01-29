@@ -337,6 +337,15 @@ impl From<H256> for TxId {
     }
 }
 
+pub enum TxStatus {
+    /// The transaction has been included and executed successfully.
+    Executed,
+    /// The transaction has been included but execution failed.
+    Reverted,
+    /// The transaction has not been included yet.
+    Pending,
+}
+
 /// An onchain transaction.
 #[derive(Clone)]
 pub struct Tx {

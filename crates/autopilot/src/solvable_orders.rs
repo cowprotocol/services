@@ -1,5 +1,5 @@
 use {
-    crate::{boundary, database::Postgres, domain},
+    crate::{boundary, domain, infra},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -66,7 +66,7 @@ pub struct Metrics {
 /// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    database: Arc<Postgres>,
+    persistence: infra::Persistence,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -90,7 +90,7 @@ impl SolvableOrdersCache {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_order_validity_period: Duration,
-        database: Postgres,
+        persistence: infra::Persistence,
         banned_users: HashSet<H160>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -104,7 +104,7 @@ impl SolvableOrdersCache {
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
-            database: Arc::new(database),
+            persistence,
             banned_users,
             balance_fetcher,
             bad_token_detector,
@@ -138,11 +138,11 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
+        let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut invalid_order_uids = HashSet::new();
-        let mut filtered_order_events = HashSet::new();
+        let mut invalid_order_uids = Vec::new();
+        let mut filtered_order_events = Vec::new();
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
@@ -216,19 +216,20 @@ impl SolvableOrdersCache {
 
         // spawning a background task since `order_events` table insert operation takes
         // a while and the result is ignored.
-        let db = self.database.clone();
-        tokio::spawn(async move {
-            db.store_non_subsequent_label_order_events(
-                &invalid_order_uids,
-                OrderEventLabel::Invalid,
-            )
-            .await;
-            db.store_non_subsequent_label_order_events(
-                &filtered_order_events,
-                OrderEventLabel::Filtered,
-            )
-            .await;
-        });
+        self.persistence.store_order_events(
+            invalid_order_uids
+                .iter()
+                .map(|id| domain::OrderUid(id.0))
+                .collect(),
+            OrderEventLabel::Invalid,
+        );
+        self.persistence.store_order_events(
+            filtered_order_events
+                .iter()
+                .map(|id| domain::OrderUid(id.0))
+                .collect(),
+            OrderEventLabel::Filtered,
+        );
 
         let auction = domain::Auction {
             block,

@@ -40,6 +40,7 @@ pub mod oneinch;
 pub mod paraswap;
 pub mod sanitized;
 pub mod trade_finder;
+pub mod trade_verifier;
 pub mod zeroex;
 
 #[derive(Clone, Debug)]
@@ -486,6 +487,8 @@ pub struct Estimate {
     pub gas: u64,
     /// Address of the solver that provided the quote.
     pub solver: H160,
+    /// Did we verify the correctness of this estimate's properties?
+    pub verified: bool,
 }
 
 impl Estimate {

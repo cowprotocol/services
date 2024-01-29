@@ -11,7 +11,7 @@ use {
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
 };
 
-type MaxAdditionalTip = f64;
+type MaxAdditionalTip = eth::U256;
 type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
@@ -46,7 +46,7 @@ impl GasPriceEstimator {
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()
-            .map(|mempool| eth::U256::from_f64_lossy(mempool.gas_price_cap))
+            .map(|mempool| mempool.gas_price_cap)
             .min()
             .expect("at least one mempool");
         Ok(Self {
@@ -68,6 +68,7 @@ impl GasPriceEstimator {
                 let estimate = match self.additional_tip {
                     Some((max_additional_tip, additional_tip_percentage)) => {
                         let additional_tip = max_additional_tip
+                            .to_f64_lossy()
                             .min(estimate.max_fee_per_gas * additional_tip_percentage);
                         estimate.max_fee_per_gas += additional_tip;
                         estimate.max_priority_fee_per_gas += additional_tip;

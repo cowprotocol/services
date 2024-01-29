@@ -48,8 +48,6 @@ impl SolverCompetitionStoring for Postgres {
                         row.tx_hash.map(|hash| H256(hash.0)),
                     )
                 }),
-            // TODO: change this query to use the auction_transaction and settlements tables to
-            // find the tx hash.
             Identifier::Transaction(hash) => {
                 database::solver_competition::load_by_tx_hash(&mut ex, &ByteArray(hash.0))
                     .await
