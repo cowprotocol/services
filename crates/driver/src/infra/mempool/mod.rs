@@ -82,4 +82,11 @@ impl Inner {
     pub fn config(&self) -> &Config {
         &self.config
     }
+
+    pub fn may_revert(&self) -> bool {
+        match &self.config.kind {
+            Kind::Public(_) => true,
+            Kind::MEVBlocker { .. } => false,
+        }
+    }
 }
