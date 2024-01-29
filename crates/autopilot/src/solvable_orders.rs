@@ -1,5 +1,5 @@
 use {
-    crate::{boundary, database::Postgres, domain, infra},
+    crate::{domain, infra},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
