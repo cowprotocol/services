@@ -9,11 +9,10 @@ use {
     },
     anyhow::Context,
     ethrpc::current_block::RangeInclusive,
-    std::sync::Arc,
 };
 
 pub struct Events {
-    persistence: Arc<infra::Persistence>,
+    persistence: infra::Persistence,
 }
 
 /// Error type for the events module.
@@ -69,7 +68,7 @@ pub mod settlement {
 }
 
 impl Events {
-    pub fn new(persistence: Arc<infra::Persistence>) -> Self {
+    pub fn new(persistence: infra::Persistence) -> Self {
         Self { persistence }
     }
 
