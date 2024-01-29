@@ -546,10 +546,13 @@ pub async fn run(args: Arguments) {
         service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
 
+    let persistence =
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
+
     let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
-        db.clone(),
+        persistence.clone(),
         args.banned_users.iter().copied().collect(),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
@@ -589,10 +592,8 @@ pub async fn run(args: Arguments) {
         args.order_events_cleanup_interval,
         args.order_events_cleanup_threshold,
     );
-    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
-        order_events_cleaner_config,
-        db.clone(),
-    );
+    let order_events_cleaner =
+        crate::periodic_db_cleanup::OrderEventsCleaner::new(order_events_cleaner_config, db);
 
     tokio::task::spawn(
         order_events_cleaner
@@ -626,8 +627,7 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
-        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db))
-            .await,
+        persistence: persistence.clone(),
         liveness: liveness.clone(),
     };
     run.run_forever().await;

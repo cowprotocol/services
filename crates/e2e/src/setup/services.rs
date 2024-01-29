@@ -31,6 +31,37 @@ pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
+pub struct ServicesBuilder {
+    timeout: Duration,
+}
+
+impl Default for ServicesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ServicesBuilder {
+    pub fn new() -> Self {
+        Self {
+            timeout: Duration::from_secs(10),
+        }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub async fn build(self, contracts: &Contracts) -> Services {
+        Services {
+            contracts,
+            http: Client::builder().timeout(self.timeout).build().unwrap(),
+            db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+        }
+    }
+}
+
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
 pub struct Services<'a> {
@@ -51,6 +82,10 @@ impl<'a> Services<'a> {
         }
     }
 
+    pub fn builder() -> ServicesBuilder {
+        ServicesBuilder::new()
+    }
+
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
             "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
@@ -69,7 +104,7 @@ impl<'a> Services<'a> {
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
                 self.contracts.uniswap_v2_router.address(),
-                H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+                self.contracts.default_pool_code(),
             ),
             format!(
                 "--settlement-contract-address={:?}",

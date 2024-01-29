@@ -1,7 +1,7 @@
 use {
     crate::{
         database::competition::Competition,
-        domain::{self, auction::order::Class},
+        domain::{self, auction::order::Class, OrderUid},
         driver_model::{
             reveal::{self, Request},
             settle,
@@ -149,11 +149,9 @@ impl RunLoop {
                 }
             };
 
-            let events = solution
-                .order_ids()
-                .map(|o| (*o, OrderEventLabel::Considered))
-                .collect::<Vec<_>>();
-            self.persistence.store_order_events(events);
+            let order_uids = solution.order_ids().copied().collect();
+            self.persistence
+                .store_order_events(order_uids, OrderEventLabel::Considered);
 
             let winner = solution.account;
             let winning_score = solution.score.get();
@@ -318,12 +316,9 @@ impl RunLoop {
         );
         let request = &request;
 
-        let events = auction
-            .orders
-            .iter()
-            .map(|o| (o.uid, OrderEventLabel::Ready))
-            .collect_vec();
-        self.persistence.store_order_events(events);
+        let order_uids = auction.orders.iter().map(|o| OrderUid(o.uid.0)).collect();
+        self.persistence
+            .store_order_events(order_uids, OrderEventLabel::Ready);
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -420,11 +415,9 @@ impl RunLoop {
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
     async fn settle(&self, driver: &infra::Driver, solved: &Solution) -> Result<(), SettleError> {
-        let events = solved
-            .order_ids()
-            .map(|uid| (*uid, OrderEventLabel::Executing))
-            .collect_vec();
-        self.persistence.store_order_events(events);
+        let order_ids = solved.order_ids().copied().collect();
+        self.persistence
+            .store_order_events(order_ids, OrderEventLabel::Executing);
 
         let request = settle::Request {
             solution_id: solved.id,
@@ -441,12 +434,9 @@ impl RunLoop {
             orders: solved.orders.keys().copied().collect(),
         };
 
-        let events = solved
-            .orders
-            .keys()
-            .map(|uid| (*uid, OrderEventLabel::Traded))
-            .collect_vec();
-        self.persistence.store_order_events(events);
+        let order_uids = solved.orders.keys().copied().collect();
+        self.persistence
+            .store_order_events(order_uids, OrderEventLabel::Traded);
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
