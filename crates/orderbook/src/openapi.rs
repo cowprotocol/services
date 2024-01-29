@@ -49,9 +49,7 @@ fn main() {
         .version("0.0.1");
 
     let builder: OpenApiBuilder = orderbook::api::ApiDoc::openapi().into();
-    let doc = builder.servers(Some(servers))
-        .info(info)
-        .build();
+    let doc = builder.servers(Some(servers)).info(info).build();
 
     println!("{}", doc.to_pretty_json().unwrap());
 }
