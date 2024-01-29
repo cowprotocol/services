@@ -448,9 +448,9 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-    let persistence = Arc::new(
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await,
-    );
+    let persistence =
+        infra::persistence::Persistence::new(args.s3.clone().into().unwrap(), Arc::new(db.clone()))
+            .await;
     let event_updater = Arc::new(EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
@@ -551,9 +551,6 @@ pub async fn run(args: Arguments) {
     tokio::task::spawn(
         service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
-
-    let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
 
     let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(

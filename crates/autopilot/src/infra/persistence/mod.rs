@@ -172,7 +172,7 @@ impl Persistence {
     pub async fn store_settlement_events(
         &self,
         tx: &mut transaction::Transaction,
-        events: Vec<domain::events::settlement::Settlement>,
+        events: Vec<domain::events::contracts::settlement::Settlement>,
     ) -> Result<(), Error> {
         for event in events {
             insert_settlement(
@@ -196,7 +196,7 @@ impl Persistence {
     pub async fn store_presignature_events(
         &self,
         tx: &mut transaction::Transaction,
-        events: Vec<domain::events::settlement::PreSignature>,
+        events: Vec<domain::events::contracts::settlement::PreSignature>,
     ) -> Result<(), Error> {
         for event in events {
             database::events::insert_presignature(
@@ -221,7 +221,7 @@ impl Persistence {
     pub async fn store_trade_events(
         &self,
         tx: &mut transaction::Transaction,
-        events: Vec<domain::events::settlement::Trade>,
+        events: Vec<domain::events::contracts::settlement::Trade>,
     ) -> Result<(), Error> {
         for event in events {
             database::events::insert_trade(
@@ -249,7 +249,7 @@ impl Persistence {
     pub async fn store_cancellation_events(
         &self,
         tx: &mut transaction::Transaction,
-        events: Vec<domain::events::settlement::Cancellation>,
+        events: Vec<domain::events::contracts::settlement::Cancellation>,
     ) -> Result<(), Error> {
         for event in events {
             database::events::insert_invalidation(

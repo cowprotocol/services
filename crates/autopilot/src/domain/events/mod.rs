@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{self, eth},
+        domain::{self},
         infra::{
             self,
             persistence::{self, transaction::Transaction},
@@ -10,6 +10,8 @@ use {
     anyhow::Context,
     ethrpc::current_block::RangeInclusive,
 };
+
+pub mod contracts;
 
 pub struct Events {
     persistence: infra::Persistence,
@@ -22,49 +24,6 @@ pub enum Error {
     Persistence(#[from] persistence::Error),
     #[error("unexpected event data: {0:?}")]
     Encoding(anyhow::Error),
-}
-
-pub mod settlement {
-    use super::*;
-
-    /// An order was fully or partially traded.
-    pub struct Trade {
-        pub block_number: u64,
-        /// The index of the event in the block.
-        pub log_index: usize,
-        pub uid: domain::OrderUid,
-        pub sell_amount_including_fee: eth::U256,
-        pub buy_amount: eth::U256,
-        pub fee_amount: eth::U256,
-    }
-
-    /// An order was cancelled on-chain.
-    pub struct Cancellation {
-        pub block_number: u64,
-        /// The index of the event in the block.
-        pub log_index: usize,
-        pub uid: domain::OrderUid,
-    }
-
-    /// A settlement was executed on-chain.
-    pub struct Settlement {
-        pub block_number: u64,
-        /// The index of the event in the block.
-        pub log_index: usize,
-        pub tx_hash: eth::H256,
-        pub solver: eth::Address,
-    }
-
-    /// An order was signed on-chain or signature for an on-chain signed order
-    /// has been revoked.
-    pub struct PreSignature {
-        pub block_number: u64,
-        /// The index of the event in the block.
-        pub log_index: usize,
-        pub uid: domain::OrderUid,
-        pub owner: eth::Address,
-        pub signed: bool,
-    }
 }
 
 impl Events {
@@ -138,7 +97,7 @@ impl Events {
             };
             match event.data {
                 boundary::events::GPv2Contract::Settlement(event) => {
-                    settlements.push(settlement::Settlement {
+                    settlements.push(contracts::settlement::Settlement {
                         block_number: metadata.block_number,
                         log_index: metadata.log_index,
                         tx_hash: metadata.transaction_hash,
@@ -146,7 +105,7 @@ impl Events {
                     });
                 }
                 boundary::events::GPv2Contract::Trade(event) => {
-                    trades.push(settlement::Trade {
+                    trades.push(contracts::settlement::Trade {
                         block_number: metadata.block_number,
                         log_index: metadata.log_index,
                         uid: uid(&event.order_uid.0)?,
@@ -156,14 +115,14 @@ impl Events {
                     });
                 }
                 boundary::events::GPv2Contract::OrderInvalidated(event) => {
-                    cancellations.push(settlement::Cancellation {
+                    cancellations.push(contracts::settlement::Cancellation {
                         block_number: metadata.block_number,
                         log_index: metadata.log_index,
                         uid: uid(&event.order_uid.0)?,
                     });
                 }
                 boundary::events::GPv2Contract::PreSignature(event) => {
-                    presignatures.push(settlement::PreSignature {
+                    presignatures.push(contracts::settlement::PreSignature {
                         block_number: metadata.block_number,
                         log_index: metadata.log_index,
                         uid: uid(&event.order_uid.0)?,
@@ -194,7 +153,7 @@ impl Events {
     }
 }
 
-pub fn uid(bytes: &[u8]) -> Result<domain::OrderUid, Error> {
+fn uid(bytes: &[u8]) -> Result<domain::OrderUid, Error> {
     Ok(domain::OrderUid(
         bytes
             .try_into()
