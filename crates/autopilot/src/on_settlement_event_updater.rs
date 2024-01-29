@@ -126,7 +126,9 @@ impl OnSettlementEventUpdater {
         let (auction_id, auction_data) =
             match Self::recover_auction_id_from_calldata(&mut ex, &transaction).await? {
                 AuctionIdRecoveryStatus::InvalidCalldata => {
-                    return Ok(false);
+                    // To not get stuck on indexing the same transaction over and over again, we
+                    // insert the default auction ID (0)
+                    (Default::default(), None)
                 }
                 AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
                 AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
