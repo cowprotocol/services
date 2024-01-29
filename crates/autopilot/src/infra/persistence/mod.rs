@@ -152,7 +152,7 @@ impl Persistence {
 
     /// Returns the latest block number for which settlement events have been
     /// saved.
-    pub async fn latest_settlement_event_block(&self) -> Result<u64, Error> {
+    pub async fn latest_gpv2_contract_event_block(&self) -> Result<u64, Error> {
         let mut con = self
             .postgres
             .pool

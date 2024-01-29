@@ -33,7 +33,7 @@ impl Events {
 
     pub async fn latest_block(&self) -> Result<u64, Error> {
         self.persistence
-            .latest_settlement_event_block()
+            .latest_gpv2_contract_event_block()
             .await
             .map_err(Error::Persistence)
     }
@@ -53,26 +53,26 @@ impl Events {
         range: RangeInclusive<u64>,
     ) -> Result<(), Error> {
         let mut tx = self.persistence.begin().await?;
-        self.delete(&mut tx, range).await?;
+        self.delete(&mut tx, *range.start()).await?;
         self.insert(&mut tx, events).await?;
         tx.commit().await.map_err(Error::Persistence)
     }
 
-    async fn delete(&self, tx: &mut Transaction, range: RangeInclusive<u64>) -> Result<(), Error> {
+    async fn delete(&self, tx: &mut Transaction, from_block: u64) -> Result<(), Error> {
         self.persistence
-            .delete_settlement_events(tx, *range.start())
+            .delete_settlement_events(tx, from_block)
             .await
             .map_err(Error::Persistence)?;
         self.persistence
-            .delete_trade_events(tx, *range.start())
+            .delete_trade_events(tx, from_block)
             .await
             .map_err(Error::Persistence)?;
         self.persistence
-            .delete_cancellation_events(tx, *range.start())
+            .delete_cancellation_events(tx, from_block)
             .await
             .map_err(Error::Persistence)?;
         self.persistence
-            .delete_presignature_events(tx, *range.start())
+            .delete_presignature_events(tx, from_block)
             .await
             .map_err(Error::Persistence)
     }
