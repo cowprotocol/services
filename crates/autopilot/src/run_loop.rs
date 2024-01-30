@@ -33,7 +33,6 @@ use {
         time::{Duration, Instant},
     },
     tracing::Instrument,
-    web3::types::TransactionReceipt,
 };
 
 pub struct RunLoop {
@@ -446,19 +445,16 @@ impl RunLoop {
     /// to fill an order a second time.
     async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
         let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
-        let tx_receipt = self.eth.transaction_receipt(prev_settlement).await;
+        let tx_receipt = self.eth.transaction_receipt(prev_settlement.into()).await;
 
         let prev_settlement_block = match tx_receipt {
-            Ok(Some(TransactionReceipt {
-                block_number: Some(number),
-                ..
-            })) => number.0[0],
+            Ok(Some(receipt)) => receipt.block(),
             // Could not find the block of the previous settlement, let's be
             // conservative and assume all orders are still in-flight.
-            _ => u64::MAX,
+            _ => u64::MAX.into(),
         };
 
-        if auction.latest_settlement_block < prev_settlement_block {
+        if auction.latest_settlement_block < prev_settlement_block.0 {
             // Auction was built before the in-flight orders were processed.
             let in_flight_orders = self.in_flight_orders.lock().unwrap();
             auction

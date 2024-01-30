@@ -17,7 +17,7 @@ impl From<Address> for H160 {
 }
 
 /// A transaction ID, AKA transaction hash.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct TxId(pub H256);
 
 impl From<H256> for TxId {

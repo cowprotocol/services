@@ -13,7 +13,8 @@ pub use {encoded::Encoded, event::Event, transaction::Transaction};
 /// contract `settle` function.
 pub struct Settlement {
     encoded: Encoded,
-    transaction: Transaction,
+    transaction: transaction::Transaction,
+    receipt: transaction::Receipt,
 }
 
 impl Settlement {
@@ -22,16 +23,29 @@ impl Settlement {
             .transaction(tx)
             .await?
             .ok_or(Error::TransactionNotFound)?;
+        let receipt = eth
+            .transaction_receipt(tx)
+            .await?
+            .ok_or(Error::TransactionNotFound)?;
         let domain_separator = eth.contracts().settlement_domain_separator();
         let encoded = Encoded::new(transaction.input(), domain_separator)?;
         Ok(Self {
             encoded,
             transaction,
+            receipt,
         })
     }
 
     pub fn auction_id(&self) -> AuctionId {
         self.encoded.auction_id()
+    }
+
+    pub fn transaction(&self) -> &transaction::Transaction {
+        &self.transaction
+    }
+
+    pub fn transaction_receipt(&self) -> &transaction::Receipt {
+        &self.receipt
     }
 }
 

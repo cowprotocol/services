@@ -3,7 +3,7 @@ use {
     crate::boundary,
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
-    primitive_types::{H256, U256},
+    primitive_types::U256,
     std::{sync::Arc, time::Duration},
     thiserror::Error,
 };
@@ -139,13 +139,15 @@ impl Ethereum {
 
     pub async fn transaction_receipt(
         &self,
-        hash: H256,
-    ) -> Result<Option<web3::types::TransactionReceipt>, Error> {
-        self.web3
+        hash: eth::TxId,
+    ) -> Result<Option<domain::settlement::transaction::Receipt>, Error> {
+        Ok(self
+            .web3
             .eth()
-            .transaction_receipt(hash)
+            .transaction_receipt(hash.0.into())
             .await
-            .map_err(Into::into)
+            .map_err(Error::from)?
+            .map(Into::into))
     }
 }
 
