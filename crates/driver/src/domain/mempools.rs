@@ -7,6 +7,7 @@ use {
     ethrpc::current_block::into_stream,
     futures::{future::select_ok, FutureExt, StreamExt},
     thiserror::Error,
+    tracing::Instrument,
 };
 
 /// Factor by how much a transaction fee needs to be increased to override a
@@ -45,8 +46,13 @@ impl Mempools {
                         infra::Mempool::Boundary(mempool) => {
                             mempool.execute(solver, settlement.clone()).await
                         }
-                        infra::Mempool::Native(mempool) => {
-                            self.submit(mempool, solver, settlement).await
+                        infra::Mempool::Native(inner) => {
+                            self.submit(inner, solver, settlement)
+                                .instrument(tracing::info_span!(
+                                    "mempool",
+                                    kind = inner.to_string()
+                                ))
+                                .await
                         }
                     };
                     observe::mempool_executed(&mempool, settlement, &result);
@@ -80,6 +86,15 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
     ) -> Result<eth::TxId, Error> {
+        // Don't submit risky transactions if revert protection is
+        // enabled and the settlement may revert in this mempool.
+        if settlement.boundary.revertable()
+            && matches!(self.revert_protection(), RevertProtection::Enabled)
+            && mempool.may_revert()
+        {
+            return Err(Error::Disabled);
+        }
+
         let tx = eth::Tx {
             // boundary.tx() does not populate the access list
             access_list: settlement.access_list.clone(),
@@ -180,6 +195,8 @@ pub enum Error {
     SimulationRevert,
     #[error("Settlement did not get included in time")]
     Expired,
+    #[error("Strategy disabled for this tx")]
+    Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
 }
