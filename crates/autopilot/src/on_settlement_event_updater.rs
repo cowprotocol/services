@@ -42,7 +42,7 @@ use {
     anyhow::{Context, Result},
     futures::StreamExt,
     primitive_types::H256,
-    shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
+    shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
     web3::types::Transaction,
 };
@@ -66,7 +66,7 @@ impl OnSettlementEventUpdater {
         let mut current_block = self.eth.current_block().borrow().to_owned();
         let mut block_stream = ethrpc::current_block::into_stream(self.eth.current_block().clone());
         loop {
-            match self.update(current_block.number).await {
+            match self.update().await {
                 Ok(true) => {
                     tracing::debug!(
                         block = current_block.number,
@@ -92,27 +92,20 @@ impl OnSettlementEventUpdater {
     /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
-    async fn update(&self, current_block: u64) -> Result<bool> {
-        let reorg_safe_block: i64 = current_block
-            .checked_sub(MAX_REORG_BLOCK_COUNT)
-            .context("no reorg safe block")?
-            .try_into()
-            .context("convert block")?;
-
+    async fn update(&self) -> Result<bool> {
         let mut ex = self
             .db
             .pool
             .begin()
             .await
             .context("acquire DB connection")?;
-        let event =
-            match database::settlements::get_settlement_without_auction(&mut ex, reorg_safe_block)
-                .await
-                .context("get_settlement_event_without_tx_info")?
-            {
-                Some(event) => event,
-                None => return Ok(false),
-            };
+        let event = match database::settlements::get_settlement_without_auction(&mut ex)
+            .await
+            .context("get_settlement_event_without_tx_info")?
+        {
+            Some(event) => event,
+            None => return Ok(false),
+        };
 
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
