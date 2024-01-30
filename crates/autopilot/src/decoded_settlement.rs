@@ -271,78 +271,80 @@ impl DecodedSettlement {
     pub fn all_fees(
         &self,
         external_prices: &ExternalPrices,
-        order_fees: &[(OrderUid, Option<U256>)],
+        domain_separator: &DomainSeparator,
     ) -> Vec<Fees> {
         self.trades
             .iter()
-            .zip(order_fees.iter())
-            .map(|(trade, (order, order_fee))| {
-                self.fee(external_prices, *order, *order_fee, trade)
-                    .unwrap_or_else(|| {
-                        tracing::warn!("possible incomplete fee calculation");
-                        // we should have an order execution for every trade
-                        Fees {
-                            order: *order,
-                            sell: U256::zero(),
-                            native: U256::zero(),
-                        }
-                    })
+            .map(|trade| {
+                let order = trade.uid(domain_separator, &self.tokens).unwrap();
+                self.fee(trade, order, external_prices).unwrap_or_else(|| {
+                    tracing::warn!("possible incomplete fee calculation");
+                    // we should have an order execution for every trade
+                    Fees {
+                        order,
+                        kind: FeeKind::User,
+                        sell: U256::zero(),
+                        native: U256::zero(),
+                    }
+                })
             })
             .collect()
     }
 
     fn fee(
         &self,
-        external_prices: &ExternalPrices,
-        order: OrderUid,
-        order_fee: Option<U256>,
         trade: &DecodedTrade,
+        order: OrderUid,
+        external_prices: &ExternalPrices,
     ) -> Option<Fees> {
         let sell_index = trade.sell_token_index.as_u64() as usize;
         let buy_index = trade.buy_token_index.as_u64() as usize;
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let fee = match order_fee {
-            Some(fee) => fee,
-            None => {
-                // get executed(adjusted) prices
-                let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
-                let adjusted_buy_price = self.clearing_prices.get(buy_index).cloned()?;
+        let (kind, fee) = if !trade.fee_amount.is_zero() {
+            // this is an order with user fee
+            (FeeKind::User, trade.fee_amount)
+        } else {
+            // this is an order with solver determined fee
 
-                // get uniform prices
-                let sell_index = self.tokens.iter().position(|token| token == sell_token)?;
-                let buy_index = self.tokens.iter().position(|token| token == buy_token)?;
-                let uniform_sell_price = self.clearing_prices.get(sell_index).cloned()?;
-                let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
+            // get executed(adjusted) prices
+            let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
+            let adjusted_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
-                // the logic is opposite to the code in function `custom_price_for_limit_order`
-                match trade.flags.order_kind() {
-                    OrderKind::Buy => {
-                        let required_sell_amount = trade
-                            .executed_amount
-                            .checked_mul(adjusted_buy_price)?
-                            .checked_div(adjusted_sell_price)?;
-                        let required_sell_amount_with_ucp = trade
-                            .executed_amount
-                            .checked_mul(uniform_buy_price)?
-                            .checked_div(uniform_sell_price)?;
-                        required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
-                    }
-                    OrderKind::Sell => {
-                        let received_buy_amount = trade
-                            .executed_amount
-                            .checked_mul(adjusted_sell_price)?
-                            .checked_div(adjusted_buy_price)?;
-                        let sell_amount_needed_with_ucp = received_buy_amount
-                            .checked_mul(uniform_buy_price)?
-                            .checked_div(uniform_sell_price)?;
-                        trade
-                            .executed_amount
-                            .checked_sub(sell_amount_needed_with_ucp)?
-                    }
+            // get uniform prices
+            let sell_index = self.tokens.iter().position(|token| token == sell_token)?;
+            let buy_index = self.tokens.iter().position(|token| token == buy_token)?;
+            let uniform_sell_price = self.clearing_prices.get(sell_index).cloned()?;
+            let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
+
+            // the logic is opposite to the code in function `custom_price_for_limit_order`
+            let fee = match trade.flags.order_kind() {
+                OrderKind::Buy => {
+                    let required_sell_amount = trade
+                        .executed_amount
+                        .checked_mul(adjusted_buy_price)?
+                        .checked_div(adjusted_sell_price)?;
+                    let required_sell_amount_with_ucp = trade
+                        .executed_amount
+                        .checked_mul(uniform_buy_price)?
+                        .checked_div(uniform_sell_price)?;
+                    required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
                 }
-            }
+                OrderKind::Sell => {
+                    let received_buy_amount = trade
+                        .executed_amount
+                        .checked_mul(adjusted_sell_price)?
+                        .checked_div(adjusted_buy_price)?;
+                    let sell_amount_needed_with_ucp = received_buy_amount
+                        .checked_mul(uniform_buy_price)?
+                        .checked_div(uniform_sell_price)?;
+                    trade
+                        .executed_amount
+                        .checked_sub(sell_amount_needed_with_ucp)?
+                }
+            };
+            (FeeKind::Surplus, fee)
         };
 
         // converts the fee which is denominated in `sell_token` to the native token.
@@ -353,6 +355,7 @@ impl DecodedSettlement {
 
         Some(Fees {
             order,
+            kind,
             sell: fee,
             native: big_rational_to_u256(&native).ok()?,
         })
@@ -365,10 +368,28 @@ impl DecodedSettlement {
 pub struct Fees {
     /// The UID of the order associated with these fees.
     pub order: OrderUid,
+    /// The type of fee that was executed.
+    pub kind: FeeKind,
     /// The executed fees in the sell token.
     pub sell: U256,
     /// The executed fees in the native token.
     pub native: U256,
+}
+
+impl Fees {
+    /// Get the surplus fee for this order.
+    pub fn executed_surplus_fee(&self) -> Option<U256> {
+        match self.kind {
+            FeeKind::User => None,
+            FeeKind::Surplus => Some(self.sell),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum FeeKind {
+    User,
+    Surplus,
 }
 
 fn surplus(
