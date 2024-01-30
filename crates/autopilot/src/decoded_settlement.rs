@@ -2,7 +2,6 @@
 //! GPv2Settlement::settle function.
 
 use {
-    crate::boundary,
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
@@ -50,19 +49,6 @@ pub struct DecodedSettlement {
     /// as a form of on-chain meta data. This gets used to associated a
     /// settlement with an auction.
     pub metadata: Option<Bytes<[u8; Self::META_DATA_LEN]>>,
-}
-
-impl DecodedSettlement {
-    /// Returns the list of order uids that are associated with each trade.
-    pub fn order_uids(
-        &self,
-        domain_separator: &boundary::DomainSeparator,
-    ) -> Result<Vec<OrderUid>> {
-        self.trades
-            .iter()
-            .map(|trade| trade.uid(domain_separator, &self.tokens))
-            .collect()
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
