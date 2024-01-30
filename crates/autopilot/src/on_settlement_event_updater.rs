@@ -36,7 +36,6 @@ use {
             on_settlement_event_updater::{AuctionData, SettlementUpdate},
             Postgres,
         },
-        decoded_settlement::DecodedSettlement,
         domain,
         infra,
     },
@@ -45,7 +44,6 @@ use {
     primitive_types::H256,
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
-    web3::types::Transaction,
 };
 
 pub struct OnSettlementEventUpdater {
@@ -53,14 +51,14 @@ pub struct OnSettlementEventUpdater {
     pub db: Postgres,
 }
 
-enum AuctionIdRecoveryStatus {
-    /// The auction id was recovered and the auction data should be added.
-    AddAuctionData(i64, DecodedSettlement),
-    /// The auction id was recovered but the auction data should not be added.
-    DoNotAddAuctionData(i64),
-    /// The auction id was not recovered.
-    InvalidCalldata,
-}
+// enum AuctionIdRecoveryStatus {
+//     /// The auction id was recovered and the auction data should be added.
+//     AddAuctionData(i64, DecodedSettlement),
+//     /// The auction id was recovered but the auction data should not be added.
+//     DoNotAddAuctionData(i64),
+//     /// The auction id was not recovered.
+//     InvalidCalldata,
+// }
 
 impl OnSettlementEventUpdater {
     pub async fn run_forever(self) -> ! {
@@ -214,67 +212,67 @@ impl OnSettlementEventUpdater {
         })
     }
 
-    /// With solver driver colocation solvers are supposed to append the
-    /// `auction_id` to the settlement calldata. This function tries to
-    /// recover that `auction_id`. It also indicates whether the auction
-    /// should be indexed with its metadata. (ie. if it comes from this
-    /// environment and not from a different instance of the autopilot, e.g.
-    /// running in barn/prod). This function only returns an error
-    /// if retrying the operation makes sense.
-    async fn recover_auction_id_from_calldata(
-        ex: &mut PgConnection,
-        tx: &Transaction,
-    ) -> Result<AuctionIdRecoveryStatus> {
-        let tx_from = tx.from.context("tx is missing sender")?;
-        let settlement = match DecodedSettlement::new(&tx.input.0) {
-            Ok(settlement) => settlement,
-            Err(err) => {
-                tracing::warn!(
-                    ?tx,
-                    ?err,
-                    "could not decode settlement tx, unclear which auction it belongs to"
-                );
-                return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
-            }
-        };
-        let auction_id = match settlement.metadata {
-            Some(bytes) => i64::from_be_bytes(bytes.0),
-            None => {
-                tracing::warn!(?tx, "could not recover the auction_id from the calldata");
-                return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
-            }
-        };
+    // /// With solver driver colocation solvers are supposed to append the
+    // /// `auction_id` to the settlement calldata. This function tries to
+    // /// recover that `auction_id`. It also indicates whether the auction
+    // /// should be indexed with its metadata. (ie. if it comes from this
+    // /// environment and not from a different instance of the autopilot, e.g.
+    // /// running in barn/prod). This function only returns an error
+    // /// if retrying the operation makes sense.
+    // async fn recover_auction_id_from_calldata(
+    //     ex: &mut PgConnection,
+    //     tx: &Transaction,
+    // ) -> Result<AuctionIdRecoveryStatus> {
+    //     let tx_from = tx.from.context("tx is missing sender")?;
+    //     let settlement = match DecodedSettlement::new(&tx.input.0) {
+    //         Ok(settlement) => settlement,
+    //         Err(err) => {
+    //             tracing::warn!(
+    //                 ?tx,
+    //                 ?err,
+    //                 "could not decode settlement tx, unclear which auction it belongs to"
+    //             );
+    //             return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
+    //         }
+    //     };
+    //     let auction_id = match settlement.metadata {
+    //         Some(bytes) => i64::from_be_bytes(bytes.0),
+    //         None => {
+    //             tracing::warn!(?tx, "could not recover the auction_id from the calldata");
+    //             return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
+    //         }
+    //     };
 
-        let score = database::settlement_scores::fetch(ex, auction_id).await?;
-        let data_already_recorded =
-            database::settlements::already_processed(ex, auction_id).await?;
-        match (score, data_already_recorded) {
-            (None, _) => {
-                tracing::debug!(
-                    auction_id,
-                    "calldata claims to settle auction that has no competition"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(score), _) if score.winner.0 != tx_from.0 => {
-                tracing::warn!(
-                    auction_id,
-                    ?tx_from,
-                    winner = ?score.winner,
-                    "solution submitted by solver other than the winner"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), true) => {
-                tracing::warn!(
-                    auction_id,
-                    "settlement data already recorded for this auction"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), false) => Ok(AuctionIdRecoveryStatus::AddAuctionData(
-                auction_id, settlement,
-            )),
-        }
-    }
+    //     let score = database::settlement_scores::fetch(ex, auction_id).await?;
+    //     let data_already_recorded =
+    //         database::settlements::already_processed(ex, auction_id).await?;
+    //     match (score, data_already_recorded) {
+    //         (None, _) => {
+    //             tracing::debug!(
+    //                 auction_id,
+    //                 "calldata claims to settle auction that has no competition"
+    //             );
+    //             Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
+    //         }
+    //         (Some(score), _) if score.winner.0 != tx_from.0 => {
+    //             tracing::warn!(
+    //                 auction_id,
+    //                 ?tx_from,
+    //                 winner = ?score.winner,
+    //                 "solution submitted by solver other than the winner"
+    //             );
+    //             Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
+    //         }
+    //         (Some(_), true) => {
+    //             tracing::warn!(
+    //                 auction_id,
+    //                 "settlement data already recorded for this auction"
+    //             );
+    //             Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
+    //         }
+    //         (Some(_), false) => Ok(AuctionIdRecoveryStatus::AddAuctionData(
+    //             auction_id, settlement,
+    //         )),
+    //     }
+    // }
 }
