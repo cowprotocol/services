@@ -72,7 +72,7 @@ pub async fn delete(
     ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number))
         .await?;
 
-    // Observations and order executions are not events but data deducted from the
+    // Observations and order executions are not events but data derived from the
     // onchain data. The reason we delete them here is that we want to keep the
     // database state consistent.
 
