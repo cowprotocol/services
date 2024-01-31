@@ -3,6 +3,7 @@ use {
     crate::{
         domain::{
             competition::order,
+            eth,
             time::{self},
         },
         infra::{self, blockchain::contracts::Addresses, Ethereum},
@@ -203,7 +204,7 @@ impl Solver {
                 rpc.web3(),
                 &[infra::mempool::Config {
                     additional_tip_percentage: Default::default(),
-                    gas_price_cap: f64::MAX,
+                    gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
                     max_confirm_time: Default::default(),
                     retry_interval: Default::default(),

@@ -70,9 +70,9 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                         )
                         .unwrap(),
                     ),
-                    infra::mempool::SubmissionLogic::Native => Mempool::Native(
+                    infra::mempool::SubmissionLogic::Native => Mempool::Native(Box::new(
                         crate::infra::mempool::Inner::new(mempool.to_owned(), web3.clone()),
-                    ),
+                    )),
                 })
                 .collect(),
             eth.clone(),

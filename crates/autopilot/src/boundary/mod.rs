@@ -1,3 +1,4 @@
+use {crate::domain, ethrpc::Web3, std::collections::HashMap, url::Url};
 pub use {
     crate::{
         database::{
@@ -25,7 +26,6 @@ pub use {
     },
     shared::order_validation::{is_order_outside_market_price, Amounts},
 };
-use {ethrpc::Web3, url::Url};
 
 pub mod order;
 
@@ -42,4 +42,10 @@ pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {
             http_timeout: std::time::Duration::from_secs(10),
         });
     shared::ethrpc::web3(&ethrpc_args, &http_factory, ethrpc, "base")
+}
+
+pub struct SolvableOrders {
+    pub orders: Vec<model::order::Order>,
+    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
+    pub latest_settlement_block: u64,
 }

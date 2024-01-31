@@ -1,28 +1,16 @@
 use {
     super::Postgres,
-    crate::{
-        domain::{self},
-        infra::persistence::dto,
-    },
+    crate::{boundary, infra::persistence::dto},
     anyhow::{Context, Result},
-    futures::{StreamExt, TryStreamExt},
-    model::order::Order,
-    std::{collections::HashMap, ops::DerefMut},
-};
-
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
-    pub latest_settlement_block: u64,
-}
-use {
     chrono::{DateTime, Utc},
-    model::quote::QuoteId,
+    futures::{StreamExt, TryStreamExt},
+    model::{order::Order, quote::QuoteId},
     shared::{
         db_order_conversions::full_order_into_model_order,
         event_storing_helpers::{create_db_search_parameters, create_quote_row},
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
+    std::ops::DerefMut,
 };
 
 #[async_trait::async_trait]
@@ -72,7 +60,7 @@ impl QuoteStoring for Postgres {
 }
 
 impl Postgres {
-    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders> {
+    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<boundary::SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["solvable_orders"])
@@ -97,7 +85,7 @@ impl Postgres {
         let quotes = self
             .read_quotes(orders.iter().map(|order| &order.metadata.uid))
             .await?;
-        Ok(SolvableOrders {
+        Ok(boundary::SolvableOrders {
             orders,
             quotes,
             latest_settlement_block,
