@@ -38,6 +38,7 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
+        token_list::AutoUpdatingTokenList,
         trade_finding,
         zeroex_api::DefaultZeroExApi,
     },
@@ -90,6 +91,7 @@ pub struct Components {
     pub uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub gas_price: Arc<dyn GasPriceEstimating>,
+    pub trusted_tokens: Arc<AutoUpdatingTokenList>,
 }
 
 /// The source of the price estimator.
@@ -158,6 +160,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 Ok(Arc::new(TradeVerifier::new(
                     simulator,
                     code_fetcher,
+                    components.trusted_tokens.clone(),
                     network.settlement,
                     network.native_token,
                 )))

@@ -54,6 +54,7 @@ use {
             PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::{task, task::JoinHandle},
@@ -343,6 +344,16 @@ pub async fn run(args: Arguments) {
         None
     };
 
+    let trusted_tokens_config = TokenListConfiguration {
+        url: args.shared.trusted_tokens_url.clone(),
+        update_interval: args.shared.trusted_tokens_update_interval,
+        chain_id,
+        client: http_factory.create(),
+        hardcoded: args.shared.trusted_tokens.clone().unwrap_or_default(),
+    };
+    let trusted_tokens =
+        Arc::new(AutoUpdatingTokenList::from_configuration(trusted_tokens_config).await);
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -369,6 +380,7 @@ pub async fn run(args: Arguments) {
             uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
             gas_price: gas_price_estimator.clone(),
+            trusted_tokens,
         },
     )
     .expect("failed to initialize price estimator factory");

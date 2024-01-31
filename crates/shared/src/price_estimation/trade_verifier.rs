@@ -5,6 +5,7 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
+        token_list::AutoUpdatingTokenList,
         trade_finding::{Interaction, Trade},
     },
     anyhow::{Context, Result},
@@ -64,6 +65,7 @@ impl From<VerifiedEstimate> for Estimate {
 pub struct TradeVerifier {
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
+    trusted_tokens: Arc<AutoUpdatingTokenList>,
     settlement: H160,
     native_token: H160,
 }
@@ -75,12 +77,14 @@ impl TradeVerifier {
     pub fn new(
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
+        trusted_tokens: Arc<AutoUpdatingTokenList>,
         settlement: H160,
         native_token: H160,
     ) -> Self {
         Self {
             simulator,
             code_fetcher,
+            trusted_tokens,
             settlement,
             native_token,
         }
@@ -228,7 +232,7 @@ impl TradeVerifying for TradeVerifier {
             OrderKind::Buy => query.in_amount.get(),
         };
 
-        let sell_token_trusted = true;
+        let sell_token_trusted = self.trusted_tokens.contains(&query.sell_token);
         if !sell_token_trusted || regular.buy_token_buffer < buy_amount {
             // Internalized buffer trade is forbidden or will fail.
             return Ok(regular);

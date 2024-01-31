@@ -387,6 +387,16 @@ pub async fn run(args: Arguments) {
     };
     let block_retriever = args.shared.current_block.retriever(web3.clone());
 
+    let trusted_tokens_config = TokenListConfiguration {
+        url: args.shared.trusted_tokens_url.clone(),
+        update_interval: args.shared.trusted_tokens_update_interval,
+        chain_id,
+        client: http_factory.create(),
+        hardcoded: args.shared.trusted_tokens.clone().unwrap_or_default(),
+    };
+    let trusted_tokens =
+        Arc::new(AutoUpdatingTokenList::from_configuration(trusted_tokens_config).await);
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -415,6 +425,7 @@ pub async fn run(args: Arguments) {
             uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
             gas_price: gas_price_estimator.clone(),
+            trusted_tokens: trusted_tokens.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -601,17 +612,6 @@ pub async fn run(args: Arguments) {
             .instrument(tracing::info_span!("order_events_cleaner")),
     );
 
-    let market_makable_token_list_configuration = TokenListConfiguration {
-        url: args.trusted_tokens_url,
-        update_interval: args.trusted_tokens_update_interval,
-        chain_id,
-        client: http_factory.create(),
-        hardcoded: args.trusted_tokens.unwrap_or_default(),
-    };
-    // updated in background task
-    let market_makable_token_list =
-        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
-
     let run = RunLoop {
         eth,
         solvable_orders_cache,
@@ -620,7 +620,7 @@ pub async fn run(args: Arguments) {
             .into_iter()
             .map(|driver| infra::Driver::new(driver.url, driver.name))
             .collect(),
-        market_makable_token_list,
+        trusted_tokens,
         submission_deadline: args.submission_deadline as u64,
         additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
         score_cap: args.score_cap,
@@ -670,11 +670,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         }
 
         AutoUpdatingTokenList::from_configuration(TokenListConfiguration {
-            url: args.trusted_tokens_url,
-            update_interval: args.trusted_tokens_update_interval,
+            url: args.shared.trusted_tokens_url,
+            update_interval: args.shared.trusted_tokens_update_interval,
             chain_id,
             client: http_factory.create(),
-            hardcoded: args.trusted_tokens.unwrap_or_default(),
+            hardcoded: args.shared.trusted_tokens.unwrap_or_default(),
         })
         .await
     };

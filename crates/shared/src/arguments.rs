@@ -328,6 +328,25 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
+
+    /// The URL of a list of tokens our settlement contract is willing to
+    /// internalize.
+    #[clap(long, env)]
+    pub trusted_tokens_url: Option<Url>,
+
+    /// Hardcoded list of trusted tokens to use in addition to
+    /// `trusted_tokens_url`.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub trusted_tokens: Option<Vec<H160>>,
+
+    /// Time interval after which the trusted tokens list needs to be updated.
+    #[clap(
+        long,
+        env,
+        default_value = "1h",
+        value_parser = humantime::parse_duration,
+    )]
+    pub trusted_tokens_update_interval: Duration,
 }
 
 /// The kind of EVM code simulator to use.
@@ -462,6 +481,9 @@ impl Display for Arguments {
             paraswap_api_url,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
+            trusted_tokens_url,
+            trusted_tokens,
+            trusted_tokens_update_interval,
         } = self;
 
         write!(f, "{}", ethrpc)?;
@@ -546,6 +568,13 @@ impl Display for Arguments {
             f,
             "max_pools_to_initialize_cache: {}",
             max_pools_to_initialize_cache
+        )?;
+        display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
+        writeln!(f, "trusted_tokens: {:?}", trusted_tokens)?;
+        writeln!(
+            f,
+            "trusted_tokens_update_interval: {:?}",
+            trusted_tokens_update_interval
         )?;
 
         Ok(())
