@@ -44,12 +44,12 @@ fn main() {
     ];
 
     let info = InfoBuilder::new()
-        .description(Some("Orderbook API"))
+        .title("Orderbook API")
         .contact(None)
         .version("0.0.1");
 
     let builder: OpenApiBuilder = orderbook::api::ApiDoc::openapi().into();
     let doc = builder.servers(Some(servers)).info(info).build();
 
-    println!("{}", doc.to_pretty_json().unwrap());
+    println!("{}", doc.to_yaml().unwrap());
 }

@@ -953,10 +953,9 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString, ToSchema)]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
-#[derive(ToSchema)]
 /// The kind is either a buy or sell order.
 pub enum OrderKind {
     #[default]
