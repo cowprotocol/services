@@ -184,7 +184,7 @@ async fn create_config_file(
            weth = "{}"
 
            [submission]
-           gas-price-cap = 1000000000000
+           gas-price-cap = "1000000000000"
 
            [[submission.mempool]]
            mempool = "public"
