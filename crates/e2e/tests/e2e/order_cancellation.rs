@@ -31,7 +31,7 @@ async fn local_node_order_cancellation() {
 async fn order_cancellation(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [_] = onchain.make_solvers(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -46,8 +46,27 @@ async fn order_cancellation(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(None, vec![]);
-    services.start_api(vec![]).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![colocation::SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
+    services.start_autopilot(
+        None,
+        vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ],
+    );
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let place_order = |salt: u8| {
         let services = &services;

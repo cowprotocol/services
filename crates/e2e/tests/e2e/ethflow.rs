@@ -91,7 +91,7 @@ async fn eth_flow_tx_zero_fee(web3: Web3) {
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
-        &intent.to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
+        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
     )
     .await;
 
@@ -156,7 +156,7 @@ async fn eth_flow_tx(web3: Web3) {
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
-        &intent.to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
+        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
     )
     .await;
 
@@ -214,7 +214,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token: dai.address(),
                 receiver: H160([42; 20]),
             })
-            .to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
+            .to_quote_request(dummy_trader.account().address(), &onchain.contracts().weth),
         )
         .await,
         valid_to,
@@ -244,7 +244,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
                 buy_token,
                 receiver,
             })
-            .to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
+            .to_quote_request(trader.account().address(), &onchain.contracts().weth),
         )
         .await,
         valid_to,
@@ -678,9 +678,9 @@ pub struct EthFlowTradeIntent {
 
 impl EthFlowTradeIntent {
     // How a user trade intent is converted into a quote request by the frontend
-    pub fn to_quote_request(&self, ethflow: &CoWSwapEthFlow, weth: &WETH9) -> OrderQuoteRequest {
+    pub fn to_quote_request(&self, from: H160, weth: &WETH9) -> OrderQuoteRequest {
         OrderQuoteRequest {
-            from: ethflow.address(),
+            from,
             // Even if the user sells ETH, we request a quote for WETH
             sell_token: weth.address(),
             buy_token: self.buy_token,
