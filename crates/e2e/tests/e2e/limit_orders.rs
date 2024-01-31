@@ -418,6 +418,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -432,8 +433,21 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![colocation::SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
     services
-        .start_api(vec!["--max-limit-orders-per-user=1".into()])
+        .start_api(vec![
+            "--max-limit-orders-per-user=1".into(),
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
         .await;
 
     let order = OrderCreation {
