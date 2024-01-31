@@ -243,7 +243,7 @@ impl TradeVerifying for TradeVerifier {
             return Ok(regular);
         };
         tracing::debug!(
-            orginal_gas = regular.gas,
+            original_gas = regular.gas,
             optimized_gas = internalized.gas,
             "reduced quote gas cost with internal buffer trading"
         );
