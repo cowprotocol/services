@@ -238,7 +238,7 @@ impl TradeVerifying for TradeVerifier {
         let Ok(internalized) = self.verify_inner(query, verification, &trade, true).await else {
             return Ok(regular);
         };
-        tracing::error!(
+        tracing::debug!(
             orginal_gas = regular.gas,
             optimized_gas = internalized.gas,
             "reduced quote gas cost with internal buffer trading"
