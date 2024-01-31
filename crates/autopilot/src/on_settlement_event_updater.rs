@@ -196,11 +196,11 @@ impl OnSettlementEventUpdater {
         let (fee, order_executions) = {
             let domain_separator = self.eth.contracts().settlement_domain_separator();
             let all_fees = settlement.all_fees(&external_prices, domain_separator);
-            // total unsubsidized fee used for CIP20 rewards
+            // total fee used for CIP20 rewards
             let fee = all_fees
                 .iter()
                 .fold(0.into(), |acc, fees| acc + fees.native);
-            // executed fees for each order execution
+            // executed surplus fees for each order execution
             let order_executions = all_fees
                 .into_iter()
                 .map(|fee| (fee.order, fee.executed_surplus_fee().unwrap_or(0.into())))
