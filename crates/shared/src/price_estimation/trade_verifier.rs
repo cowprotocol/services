@@ -44,6 +44,7 @@ pub struct VerifiedEstimate {
     pub out_amount: U256,
     pub gas: u64,
     pub solver: H160,
+    pub buy_token_buffer: U256,
 }
 
 impl From<VerifiedEstimate> for Estimate {
@@ -84,19 +85,27 @@ impl TradeVerifier {
             native_token,
         }
     }
-}
 
-#[async_trait::async_trait]
-impl TradeVerifying for TradeVerifier {
-    async fn verify(
+    async fn verify_inner(
         &self,
         query: &PriceQuery,
         verification: &Verification,
-        trade: Trade,
+        trade: &Trade,
+        internalize: bool,
     ) -> Result<VerifiedEstimate> {
         let solver = dummy_contract!(Solver, trade.solver);
 
-        let settlement = encode_settlement(query, verification, &trade, self.native_token);
+        let interactions = match internalize {
+            true => &[],
+            false => trade.interactions.as_slice(),
+        };
+        let settlement = encode_settlement(
+            query,
+            verification,
+            trade.out_amount,
+            interactions,
+            self.native_token,
+        );
         let settlement =
             add_balance_queries(settlement, query, verification, self.settlement, &solver);
 
@@ -116,6 +125,14 @@ impl TradeVerifying for TradeVerifier {
             OrderKind::Buy => trade.out_amount,
         };
 
+        let buy_token = if query.buy_token == BUY_ETH_ADDRESS {
+            // When user wants to buy ETH check the WETH buffer to know if we have enough
+            // to unwrap in case we try to internalize the trade.
+            self.native_token
+        } else {
+            query.buy_token
+        };
+
         let simulation = solver
             .methods()
             .swap(
@@ -126,6 +143,7 @@ impl TradeVerifying for TradeVerifier {
                 self.native_token,
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
+                buy_token,
             )
             .tx;
 
@@ -179,6 +197,7 @@ impl TradeVerifying for TradeVerifier {
                 .context("could not compute out_amount")?,
             gas: summary.gas_used.as_u64(),
             solver: trade.solver,
+            buy_token_buffer: summary.buy_token_buffer,
         };
         tracing::debug!(
             ?query,
@@ -186,9 +205,45 @@ impl TradeVerifying for TradeVerifier {
             promised_gas = trade.gas_estimate,
             promised_out_amount =? trade.out_amount,
             ?verified,
+            internalized = internalize,
             "verified quote"
         );
         Ok(verified)
+    }
+}
+
+#[async_trait::async_trait]
+impl TradeVerifying for TradeVerifier {
+    async fn verify(
+        &self,
+        query: &PriceQuery,
+        verification: &Verification,
+        trade: Trade,
+    ) -> Result<VerifiedEstimate> {
+        let regular = self
+            .verify_inner(query, verification, &trade, false)
+            .await?;
+        let buy_amount = match query.kind {
+            OrderKind::Sell => regular.out_amount,
+            OrderKind::Buy => query.in_amount.get(),
+        };
+
+        let sell_token_trusted = true;
+        if !sell_token_trusted || regular.buy_token_buffer < buy_amount {
+            // Internalized buffer trade is forbidden or will fail.
+            return Ok(regular);
+        }
+
+        // Compute quote based on internal buffer trading.
+        let Ok(internalized) = self.verify_inner(query, verification, &trade, true).await else {
+            return Ok(regular);
+        };
+        tracing::error!(
+            orginal_gas = regular.gas,
+            optimized_gas = internalized.gas,
+            "reduced quote gas cost with internal buffer trading"
+        );
+        Ok(internalized)
     }
 }
 
@@ -199,17 +254,18 @@ fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> 
 fn encode_settlement(
     query: &PriceQuery,
     verification: &Verification,
-    trade: &Trade,
+    expected_out_amount: U256,
+    interactions: &[Interaction],
     native_token: H160,
 ) -> EncodedSettlement {
-    let mut trade_interactions = encode_interactions(&trade.interactions);
+    let mut trade_interactions = encode_interactions(interactions);
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
         // does not have to emit unwraps to pay out `ETH` in a trade.
         // However, for the simulation to be successful this has to happen so we do it
         // ourselves here.
         let buy_amount = match query.kind {
-            OrderKind::Sell => trade.out_amount,
+            OrderKind::Sell => expected_out_amount,
             OrderKind::Buy => query.in_amount.get(),
         };
         let weth = dummy_contract!(WETH9, native_token);
@@ -220,8 +276,8 @@ fn encode_settlement(
 
     let tokens = vec![query.sell_token, query.buy_token];
     let clearing_prices = match query.kind {
-        OrderKind::Sell => vec![trade.out_amount, query.in_amount.get()],
-        OrderKind::Buy => vec![query.in_amount.get(), trade.out_amount],
+        OrderKind::Sell => vec![expected_out_amount, query.in_amount.get()],
+        OrderKind::Buy => vec![query.in_amount.get(), expected_out_amount],
     };
 
     // Configure the most disadvantageous trade possible (while taking possible
@@ -231,7 +287,7 @@ fn encode_settlement(
     let (sell_amount, buy_amount) = match query.kind {
         OrderKind::Sell => (query.in_amount.get(), 0.into()),
         OrderKind::Buy => (
-            trade.out_amount.max(U256::from(u128::MAX)),
+            expected_out_amount.max(U256::from(u128::MAX)),
             query.in_amount.get(),
         ),
     };
@@ -306,16 +362,22 @@ struct SettleOutput {
     /// Balances queried during the simulation in the order specified during the
     /// simulation set up.
     queried_balances: Vec<U256>,
+    /// The amount of buy_tokens the settlement contract holds before the
+    /// simulation. If it's big enough we can try optimizing the quote
+    /// via internal buffer trading.
+    buy_token_buffer: U256,
 }
 
 impl SettleOutput {
     fn decode(output: &[u8]) -> Result<Self> {
         let function = Solver::raw_contract().abi.function("swap").unwrap();
         let tokens = function.decode_output(output).context("decode")?;
-        let (gas_used, queried_balances) = Tokenize::from_token(Token::Tuple(tokens))?;
+        let (gas_used, queried_balances, buy_token_buffer) =
+            Tokenize::from_token(Token::Tuple(tokens))?;
         Ok(Self {
             gas_used,
             queried_balances,
+            buy_token_buffer,
         })
     }
 
