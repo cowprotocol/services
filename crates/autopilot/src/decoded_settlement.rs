@@ -719,7 +719,8 @@ mod tests {
             86bb7c4900000000000000000000000000000000000000000000000000000000
             0000000000000000000000000000000000000000000000000000000000000000
             00000000007ff044"
-        ).to_vec();
+        )
+        .to_vec();
         let settlement = DecodedSettlement::new(&call_data).unwrap();
 
         //calculate fees
@@ -731,7 +732,7 @@ mod tests {
             (
                 addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 U256::from(1000000000000000000u128),
-            )
+            ),
         ]);
         let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let external_prices =
