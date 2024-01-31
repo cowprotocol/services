@@ -188,6 +188,7 @@ Contains metainformation for trades, required for reward computations that canno
  reward       | double  | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
  surplus\_fee | numeric | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
  solver\_fee  | numeric | nullable | value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).
+ block\_number| bigint  | not null | block in which the order was executed
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)
