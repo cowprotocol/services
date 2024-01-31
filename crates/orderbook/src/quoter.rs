@@ -133,6 +133,7 @@ impl QuoteHandler {
             from: request.from,
             expiration: quote.data.expiration,
             id: quote.id,
+            verified: quote.data.verified,
         };
 
         tracing::debug!(?response, "finished computing quote");

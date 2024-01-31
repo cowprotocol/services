@@ -52,7 +52,14 @@ fn compare_quote_result(
     context: &RankingContext,
 ) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => compare_quote(query, a, b, context),
+        (Ok(a), Ok(b)) => {
+            // prefer verified over unverified quotes
+            match (a.verified, b.verified) {
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+                _ => compare_quote(query, a, b, context),
+            }
+        }
         (Ok(_), Err(_)) => Ordering::Greater,
         (Err(_), Ok(_)) => Ordering::Less,
         (Err(a), Err(b)) => compare_error(a, b),
@@ -301,5 +308,24 @@ mod tests {
         )
         .await;
         assert_eq!(best, price(1, 1_000_000));
+    }
+
+    #[tokio::test]
+    async fn prefer_verified_over_unverified() {
+        // Both out_amount and gas are worse but we still prefer this quote
+        // because we at least verified that it's actually accurate.
+        let preferred_quote = Ok(Estimate {
+            out_amount: 900_000.into(),
+            gas: 2_000,
+            verified: true,
+            ..Default::default()
+        });
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![price(1_000_000, 1_000), preferred_quote.clone()],
+        )
+        .await;
+        assert_eq!(best, preferred_quote);
     }
 }
