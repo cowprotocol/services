@@ -1443,7 +1443,7 @@ components:
       required:
         - quote
         - expiration
-        - priceQuality
+        - verified
     SolverCompetitionResponse:
       description: |
         The settlements submitted by every solver for a specific auction.
