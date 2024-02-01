@@ -1,7 +1,7 @@
 //! A 0x-based trade finder.
 
 use {
-    super::{Interaction, Quote, Trade, TradeError, TradeFinding},
+    super::{Interaction, InteractionWithMeta, Quote, Trade, TradeError, TradeFinding},
     crate::{
         price_estimation::{gas, Query},
         request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
@@ -90,10 +90,14 @@ impl Inner {
             },
             gas::SETTLEMENT_OVERHEAD + swap.price.estimated_gas,
             Some(swap.price.allowance_target),
-            Interaction {
-                target: swap.to,
-                value: swap.value,
-                data: swap.data,
+            InteractionWithMeta {
+                interaction: Interaction {
+                    target: swap.to,
+                    value: swap.value,
+                    data: swap.data,
+                },
+                internalize: false,
+                input_tokens: vec![query.sell_token],
             },
             self.solver,
         ))
@@ -195,30 +199,42 @@ mod tests {
         assert_eq!(
             trade.interactions,
             vec![
-                Interaction {
-                    target: weth,
-                    value: 0.into(),
-                    data: hex!(
-                        "095ea7b3
-                         000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff
-                         0000000000000000000000000000000000000000000000000000000000000000"
-                    )
-                    .to_vec(),
+                InteractionWithMeta {
+                    interaction: Interaction {
+                        target: weth,
+                        value: 0.into(),
+                        data: hex!(
+                            "095ea7b3
+                             000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff
+                             0000000000000000000000000000000000000000000000000000000000000000"
+                        )
+                        .to_vec(),
+                    },
+                    internalize: false,
+                    input_tokens: vec![],
                 },
-                Interaction {
-                    target: weth,
-                    value: 0.into(),
-                    data: hex!(
-                        "095ea7b3
-                         000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff
-                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                    )
-                    .to_vec(),
+                InteractionWithMeta {
+                    interaction: Interaction {
+                        target: weth,
+                        value: 0.into(),
+                        data: hex!(
+                            "095ea7b3
+                             000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff
+                             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                        )
+                        .to_vec(),
+                    },
+                    internalize: false,
+                    input_tokens: vec![],
                 },
-                Interaction {
-                    target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    value: 42.into(),
-                    data: vec![1, 2, 3, 4],
+                InteractionWithMeta {
+                    interaction: Interaction {
+                        target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        value: 42.into(),
+                        data: vec![1, 2, 3, 4],
+                    },
+                    internalize: false,
+                    input_tokens: vec![weth],
                 }
             ]
         );
@@ -272,7 +288,7 @@ mod tests {
         assert_eq!(trade.out_amount, 8986186353137488u64.into());
         assert!(trade.gas_estimate > 111000);
         assert_eq!(trade.interactions.len(), 3);
-        assert_eq!(trade.interactions[2].data, [5, 6, 7, 8]);
+        assert_eq!(trade.interactions[2].interaction.data, [5, 6, 7, 8]);
     }
 
     #[tokio::test]
@@ -319,7 +335,7 @@ mod tests {
         println!("1.0 ETH buys {gno} GNO");
         println!("gas:  {}", trade.gas_estimate);
         for interaction in trade.interactions {
-            println!("data: 0x{}", hex::encode(interaction.data));
+            println!("data: 0x{}", hex::encode(interaction.interaction.data));
         }
     }
 }

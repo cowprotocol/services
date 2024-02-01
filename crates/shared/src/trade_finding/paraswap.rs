@@ -13,7 +13,7 @@ use {
         price_estimation::gas,
         request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
         token_info::{TokenInfo, TokenInfoFetching},
-        trade_finding::{Interaction, Trade},
+        trade_finding::{Interaction, InteractionWithMeta, Trade},
     },
     anyhow::{Context, Result},
     futures::FutureExt as _,
@@ -154,10 +154,14 @@ impl Inner {
             quote.data.out_amount,
             quote.data.gas_estimate,
             Some(quote.price.token_transfer_proxy),
-            Interaction {
-                target: tx.to,
-                value: tx.value,
-                data: tx.data,
+            InteractionWithMeta {
+                interaction: Interaction {
+                    target: tx.to,
+                    value: tx.value,
+                    data: tx.data,
+                },
+                internalize: false,
+                input_tokens: vec![query.sell_token],
             },
             self.solver,
         ))

@@ -4,7 +4,8 @@ use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
         request_sharing::RequestSharing,
-        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
+        token_list::AutoUpdatingTokenList,
+        trade_finding::{Interaction, InteractionWithMeta, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::anyhow,
     ethrpc::current_block::CurrentBlockStream,
@@ -27,15 +28,24 @@ pub struct ExternalTradeFinder {
 
     /// Stream to retrieve latest block information for block-dependent queries.
     block_stream: CurrentBlockStream,
+
+    /// Tokens that may be used for internal buffer trades.
+    trusted_tokens: AutoUpdatingTokenList,
 }
 
 impl ExternalTradeFinder {
-    pub fn new(driver: Url, client: Client, block_stream: CurrentBlockStream) -> Self {
+    pub fn new(
+        driver: Url,
+        client: Client,
+        block_stream: CurrentBlockStream,
+        trusted_tokens: AutoUpdatingTokenList,
+    ) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
             client,
             block_stream,
+            trusted_tokens,
         }
     }
 
@@ -49,6 +59,7 @@ impl ExternalTradeFinder {
             amount: query.in_amount.get(),
             kind: query.kind,
             deadline,
+            trusted_tokens: self.trusted_tokens.all().into_iter().collect(),
         };
 
         let mut request = self
@@ -116,10 +127,14 @@ impl From<dto::Quote> for Trade {
             interactions: quote
                 .interactions
                 .into_iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
-                    data: interaction.call_data,
+                .map(|interaction| InteractionWithMeta {
+                    interaction: Interaction {
+                        target: interaction.target,
+                        value: interaction.value,
+                        data: interaction.call_data,
+                    },
+                    internalize: interaction.internalize,
+                    input_tokens: interaction.input_tokens,
                 })
                 .collect(),
             solver: quote.solver,
@@ -173,6 +188,7 @@ mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
+        pub trusted_tokens: Vec<H160>,
     }
 
     #[serde_as]
@@ -194,6 +210,8 @@ mod dto {
         pub value: U256,
         #[serde_as(as = "BytesHex")]
         pub call_data: Vec<u8>,
+        pub internalize: bool,
+        pub input_tokens: Vec<H160>,
     }
 
     #[serde_as]

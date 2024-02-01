@@ -24,8 +24,17 @@ pub struct Quote {
     /// The amount that can be bought if this was a sell order, or sold if this
     /// was a buy order.
     pub amount: eth::U256,
-    pub interactions: Vec<eth::Interaction>,
+    pub interactions: Vec<Interaction>,
     pub solver: eth::Address,
+}
+
+#[derive(Debug)]
+pub struct Interaction {
+    pub target: eth::Address,
+    pub value: eth::Ether,
+    pub call_data: util::Bytes<Vec<u8>>,
+    pub internalize: bool,
+    pub inputs: Vec<eth::TokenAddress>,
 }
 
 impl Quote {

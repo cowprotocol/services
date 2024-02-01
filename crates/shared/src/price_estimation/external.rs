@@ -6,7 +6,7 @@ use {
         PriceEstimating,
         Query,
     },
-    crate::trade_finding::external::ExternalTradeFinder,
+    crate::{token_list::AutoUpdatingTokenList, trade_finding::external::ExternalTradeFinder},
     ethrpc::current_block::CurrentBlockStream,
     rate_limit::RateLimiter,
     reqwest::{Client, Url},
@@ -21,12 +21,14 @@ impl ExternalPriceEstimator {
         client: Client,
         rate_limiter: Arc<RateLimiter>,
         block_stream: CurrentBlockStream,
+        trusted_tokens: AutoUpdatingTokenList,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(ExternalTradeFinder::new(
                 driver.clone(),
                 client,
                 block_stream,
+                trusted_tokens,
             )),
             rate_limiter,
             driver.to_string(),

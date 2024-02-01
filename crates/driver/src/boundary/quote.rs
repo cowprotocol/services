@@ -1,12 +1,11 @@
 use {
     crate::{
         boundary,
-        domain::{competition::solution, eth},
+        domain::{competition::solution, eth, quote},
         infra::blockchain::Ethereum,
     },
-    shared::{external_prices::ExternalPrices, http_solver::model::InternalizationStrategy},
+    shared::external_prices::ExternalPrices,
     solver::{interactions::Erc20ApproveInteraction, liquidity::slippage::SlippageCalculator},
-    std::sync::Arc,
 };
 
 const DEFAULT_QUOTE_SLIPPAGE_BPS: u32 = 100; // 1%
@@ -14,15 +13,17 @@ const DEFAULT_QUOTE_SLIPPAGE_BPS: u32 = 100; // 1%
 pub fn encode_interactions(
     eth: &Ethereum,
     interactions: &[solution::Interaction],
-) -> Result<Vec<eth::Interaction>, boundary::Error> {
+) -> Result<Vec<quote::Interaction>, boundary::Error> {
     let slippage_calculator = SlippageCalculator::from_bps(DEFAULT_QUOTE_SLIPPAGE_BPS, None);
     let external_prices = ExternalPrices::new(eth.contracts().weth().address(), Default::default())
         .expect("empty external prices is valid");
     let slippage_context = slippage_calculator.context(&external_prices);
 
-    let mut settlement = solver::settlement::Settlement::new(Default::default());
+    let mut encoded_interactions = vec![];
 
     for interaction in interactions {
+        let internalize = interaction.internalize();
+
         let allowances = interaction.allowances();
         for allowance in allowances {
             // When encoding approvals for quotes, reset the allowance instead
@@ -34,41 +35,38 @@ pub fn encode_interactions(
             // the approvals if needed, but this would only result in small gas
             // optimizations which is mostly inconsequential for quotes and not
             // worth the performance hit.
-            settlement
-                .encoder
-                .append_to_execution_plan(Arc::new(Erc20ApproveInteraction {
+            for amount in [eth::U256::zero(), eth::U256::MAX] {
+                let approval = Erc20ApproveInteraction {
                     token: eth.contract_at(allowance.0.token.into()),
                     spender: allowance.0.spender.into(),
-                    amount: eth::U256::zero(),
-                }));
-            settlement
-                .encoder
-                .append_to_execution_plan(Arc::new(Erc20ApproveInteraction {
-                    token: eth.contract_at(allowance.0.token.into()),
-                    spender: allowance.0.spender.into(),
-                    amount: eth::U256::max_value(),
-                }));
+                    amount,
+                };
+                let (target, value, call_data) = approval.as_encoded();
+                encoded_interactions.push(quote::Interaction {
+                    target: eth::Address(target),
+                    value: eth::Ether(value),
+                    call_data: crate::util::Bytes(call_data.0),
+                    internalize,
+                    inputs: vec![],
+                });
+            }
         }
 
+        let inputs = interaction.inputs().into_iter().map(|i| i.token).collect();
         let boundary_interaction = boundary::settlement::to_boundary_interaction(
             &slippage_context,
             eth.contracts().settlement().address().into(),
             interaction,
         )?;
-        settlement
-            .encoder
-            .append_to_execution_plan_internalizable(Arc::new(boundary_interaction), false);
+
+        encoded_interactions.push(quote::Interaction {
+            target: eth::Address(boundary_interaction.target),
+            value: eth::Ether(boundary_interaction.value),
+            call_data: crate::util::Bytes(boundary_interaction.call_data),
+            internalize,
+            inputs,
+        });
     }
 
-    let encoded_settlement = settlement.encode(InternalizationStrategy::EncodeAllInteractions);
-    Ok(encoded_settlement
-        .interactions
-        .into_iter()
-        .flatten()
-        .map(|(target, value, call_data)| eth::Interaction {
-            target: target.into(),
-            value: value.into(),
-            call_data: call_data.0.into(),
-        })
-        .collect())
+    Ok(encoded_interactions)
 }

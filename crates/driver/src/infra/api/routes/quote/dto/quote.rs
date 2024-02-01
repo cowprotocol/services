@@ -18,6 +18,8 @@ impl Quote {
                     target: interaction.target.into(),
                     value: interaction.value.into(),
                     call_data: interaction.call_data.clone().into(),
+                    internalize: interaction.internalize,
+                    input_tokens: interaction.inputs.iter().map(|t| t.0 .0).collect(),
                 })
                 .collect(),
             solver: quote.solver.0,
@@ -44,4 +46,6 @@ struct Interaction {
     value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
+    internalize: bool,
+    input_tokens: Vec<eth::H160>,
 }

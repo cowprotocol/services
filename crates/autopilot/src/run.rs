@@ -394,8 +394,7 @@ pub async fn run(args: Arguments) {
         client: http_factory.create(),
         hardcoded: args.shared.trusted_tokens.clone().unwrap_or_default(),
     };
-    let trusted_tokens =
-        Arc::new(AutoUpdatingTokenList::from_configuration(trusted_tokens_config).await);
+    let trusted_tokens = AutoUpdatingTokenList::from_configuration(trusted_tokens_config).await;
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,

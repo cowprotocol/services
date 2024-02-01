@@ -91,7 +91,7 @@ pub struct Components {
     pub uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub gas_price: Arc<dyn GasPriceEstimating>,
-    pub trusted_tokens: Arc<AutoUpdatingTokenList>,
+    pub trusted_tokens: AutoUpdatingTokenList,
 }
 
 /// The source of the price estimator.
@@ -634,6 +634,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
             factory.network.block_stream.clone(),
+            factory.components.trusted_tokens.clone(),
         ))
     }
 

@@ -41,7 +41,7 @@ pub struct RunLoop {
     pub persistence: infra::Persistence,
     pub drivers: Vec<infra::Driver>,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub trusted_tokens: Arc<AutoUpdatingTokenList>,
+    pub trusted_tokens: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,

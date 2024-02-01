@@ -34,11 +34,9 @@ contract Solver {
     /// @param nativeToken - ERC20 version of the chain's token
     /// @param receiver - address receiving the bought tokens
     /// @param settlementCall - the calldata of the `settle()` call
-    /// @param buyToken - the token the user wants to buy
     ///
     /// @return gasUsed - gas used for the `settle()` call
     /// @return queriedBalances - list of balances stored during the simulation
-    /// @return buyTokenBuffer - how many buy tokens the contract holds at the start
     function swap(
         ISettlement settlementContract,
         address payable trader,
@@ -46,15 +44,12 @@ contract Solver {
         uint256 sellAmount,
         address nativeToken,
         address payable receiver,
-        bytes calldata settlementCall,
-        address buyToken
+        bytes calldata settlementCall
     ) external returns (
         uint256 gasUsed,
-        uint256[] memory queriedBalances,
-        uint256 buyTokenBuffer
+        uint256[] memory queriedBalances
     ) {
         require(msg.sender == address(this), "only simulation logic is allowed to call 'swap' function");
-        buyTokenBuffer = IERC20(buyToken).balanceOf(address(this));
         // Prepare the trade in the context of the trader so we are allowed
         // to set approvals and things like that.
         Trader(trader).prepareSwap(settlementContract, sellToken, sellAmount, nativeToken, receiver);

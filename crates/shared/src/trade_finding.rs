@@ -10,7 +10,7 @@ use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
     contracts::{dummy_contract, ERC20},
-    ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
+    ethcontract::{Bytes, H160, U256},
     model::interaction::InteractionData,
     serde::Serialize,
     thiserror::Error,
@@ -46,7 +46,7 @@ pub struct Quote {
 pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
-    pub interactions: Vec<Interaction>,
+    pub interactions: Vec<InteractionWithMeta>,
     pub solver: H160,
 }
 
@@ -58,14 +58,24 @@ impl Trade {
         out_amount: U256,
         gas_estimate: u64,
         approval_target: Option<H160>,
-        swap: Interaction,
+        swap: InteractionWithMeta,
         solver: H160,
     ) -> Self {
         let interactions = match approval_target {
             Some(spender) => {
                 let token = dummy_contract!(ERC20, in_token);
-                let approve =
-                    |amount| Interaction::from_call(token.methods().approve(spender, amount));
+                let approve = |amount| {
+                    let tx = token.methods().approve(spender, amount).tx;
+                    InteractionWithMeta {
+                        interaction: Interaction {
+                            target: tx.to.unwrap(),
+                            value: tx.value.unwrap_or_default(),
+                            data: tx.data.unwrap().0,
+                        },
+                        internalize: swap.internalize,
+                        input_tokens: vec![],
+                    }
+                };
 
                 // For approvals, reset the approval completely. Some tokens
                 // require this such as Tether USD.
@@ -81,14 +91,9 @@ impl Trade {
             solver,
         }
     }
-
-    /// Converts a trade into a set of interactions for settlements.
-    pub fn encode(&self) -> Vec<EncodedInteraction> {
-        self.interactions.iter().map(|i| i.encode()).collect()
-    }
 }
 
-/// Data for a raw GPv2 interaction.
+/// Data for a raw interaction.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Interaction {
     pub target: H160,
@@ -96,31 +101,18 @@ pub struct Interaction {
     pub data: Vec<u8>,
 }
 
-impl Interaction {
-    pub fn from_call<T, R>(method: MethodBuilder<T, R>) -> Interaction
-    where
-        T: Transport,
-        R: Tokenize,
-    {
-        Interaction {
-            target: method.tx.to.unwrap(),
-            value: method.tx.value.unwrap_or_default(),
-            data: method.tx.data.unwrap().0,
-        }
-    }
-
-    pub fn encode(&self) -> EncodedInteraction {
-        (self.target, self.value, Bytes(self.data.clone()))
-    }
+/// [`Interaction`] plus some metadata used to manage internalization of the
+/// interaction.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub struct InteractionWithMeta {
+    pub interaction: Interaction,
+    pub internalize: bool,
+    pub input_tokens: Vec<H160>,
 }
 
-impl From<InteractionData> for Interaction {
-    fn from(interaction: InteractionData) -> Self {
-        Self {
-            target: interaction.target,
-            value: interaction.value,
-            data: interaction.call_data,
-        }
+impl Interaction {
+    pub fn encode(&self) -> EncodedInteraction {
+        (self.target, self.value, Bytes(self.data.clone()))
     }
 }
 
@@ -176,7 +168,15 @@ impl Clone for TradeError {
 }
 
 pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
-    interactions.iter().cloned().map(Into::into).collect()
+    interactions
+        .iter()
+        .cloned()
+        .map(|i| Interaction {
+            target: i.target,
+            value: i.value,
+            data: i.call_data,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -185,77 +185,58 @@ mod tests {
 
     #[test]
     fn trade_for_swap() {
+        let swap_interaction = InteractionWithMeta {
+            interaction: Interaction {
+                target: H160([0xaa; 20]),
+                value: 42.into(),
+                data: vec![1, 2, 3, 4],
+            },
+            internalize: true,
+            input_tokens: vec![H160([0xdd; 20])],
+        };
+
         let trade = Trade::swap(
             H160([0xdd; 20]),
             1.into(),
             2,
             Some(H160([0xee; 20])),
-            Interaction {
-                target: H160([0xaa; 20]),
-                value: 42.into(),
-                data: vec![1, 2, 3, 4],
-            },
+            swap_interaction.clone(),
             H160([1; 20]),
         );
 
         assert_eq!(
             trade.interactions,
             [
-                Interaction {
-                    target: H160([0xdd; 20]),
-                    value: U256::zero(),
-                    data: hex!(
-                        "095ea7b3
-                         000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-                         0000000000000000000000000000000000000000000000000000000000000000"
-                    )
-                    .to_vec(),
+                InteractionWithMeta {
+                    interaction: Interaction {
+                        target: H160([0xdd; 20]),
+                        value: U256::zero(),
+                        data: hex!(
+                            "095ea7b3
+                             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+                             0000000000000000000000000000000000000000000000000000000000000000"
+                        )
+                        .to_vec(),
+                    },
+                    internalize: true,
+                    input_tokens: vec![],
                 },
-                Interaction {
-                    target: H160([0xdd; 20]),
-                    value: U256::zero(),
-                    data: hex!(
-                        "095ea7b3
-                         000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                    )
-                    .to_vec()
+                InteractionWithMeta {
+                    interaction: Interaction {
+                        target: H160([0xdd; 20]),
+                        value: U256::zero(),
+                        data: hex!(
+                            "095ea7b3
+                             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+                             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                        )
+                        .to_vec()
+                    },
+                    internalize: true,
+                    input_tokens: vec![],
                 },
-                Interaction {
-                    target: H160([0xaa; 20]),
-                    value: 42.into(),
-                    data: vec![1, 2, 3, 4],
-                },
+                swap_interaction,
             ]
-        );
-    }
-
-    #[test]
-    fn encode_trade_to_interactions() {
-        let trade = Trade {
-            out_amount: Default::default(),
-            gas_estimate: 0,
-            interactions: vec![
-                Interaction {
-                    target: H160([0xaa; 20]),
-                    value: 42.into(),
-                    data: vec![1, 2, 3, 4],
-                },
-                Interaction {
-                    target: H160([0xbb; 20]),
-                    value: 43.into(),
-                    data: vec![5, 6, 7, 8],
-                },
-            ],
-            solver: H160([1; 20]),
-        };
-
-        assert_eq!(
-            trade.encode(),
-            vec![
-                (H160([0xaa; 20]), U256::from(42), Bytes(vec![1, 2, 3, 4])),
-                (H160([0xbb; 20]), U256::from(43), Bytes(vec![5, 6, 7, 8])),
-            ],
         );
     }
 }
