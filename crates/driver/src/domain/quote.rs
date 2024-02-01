@@ -70,6 +70,7 @@ pub struct Order {
     pub amount: order::TargetAmount,
     pub side: order::Side,
     pub deadline: time::Deadline,
+    pub trusted_tokens: Vec<eth::TokenAddress>,
 }
 
 impl Order {
@@ -113,10 +114,9 @@ impl Order {
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<competition::Auction, Error> {
-        let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
-
-        let buy_token_metadata = tokens.get(&self.buy().token);
-        let sell_token_metadata = tokens.get(&self.sell().token);
+        let mut all_tokens = self.trusted_tokens.clone();
+        all_tokens.extend([self.buy().token, self.sell().token]);
+        let tokens = tokens.get(&all_tokens).await;
 
         competition::Auction::new(
             None,
@@ -142,25 +142,19 @@ impl Order {
                 },
                 protocol_fees: Default::default(),
             }],
-            [
-                auction::Token {
-                    decimals: sell_token_metadata.and_then(|m| m.decimals),
-                    symbol: sell_token_metadata.and_then(|m| m.symbol.clone()),
-                    address: self.tokens.sell,
-                    price: None,
-                    available_balance: sell_token_metadata.map(|m| m.balance.0).unwrap_or_default(),
-                    trusted: false,
+            tokens.into_iter().map(|(address, meta)| auction::Token {
+                decimals: meta.decimals,
+                symbol: meta.symbol,
+                address,
+                price: None,
+                available_balance: meta.balance.0,
+                trusted: if [self.tokens.sell(), self.tokens.buy()].contains(&address) {
+                    // We only fetched meta data for trusted tokens and the traded token.
+                    self.trusted_tokens.contains(&address)
+                } else {
+                    true
                 },
-                auction::Token {
-                    decimals: buy_token_metadata.and_then(|m| m.decimals),
-                    symbol: buy_token_metadata.and_then(|m| m.symbol.clone()),
-                    address: self.tokens.buy,
-                    price: None,
-                    available_balance: buy_token_metadata.map(|m| m.balance.0).unwrap_or_default(),
-                    trusted: false,
-                },
-            ]
-            .into_iter(),
+            }),
             self.deadline,
             eth,
             Default::default(),

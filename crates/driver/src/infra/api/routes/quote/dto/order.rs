@@ -19,6 +19,11 @@ impl Order {
                 Kind::Buy => competition::order::Side::Buy,
             },
             deadline: time::Deadline::new(self.deadline, timeouts),
+            trusted_tokens: self
+                .trusted_tokens
+                .into_iter()
+                .map(|t| eth::TokenAddress(eth::ContractAddress(t)))
+                .collect(),
         })
     }
 }
