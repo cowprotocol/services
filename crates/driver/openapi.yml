@@ -301,16 +301,16 @@ components:
           properties:
             amount:
               $ref: "#/components/schemas/TokenAmount"
-            required: true
+              required: true
             interactions:
               type: array
               items:
                 $ref: "#/components/schemas/InteractionWithMeta"
-            required: true
+              required: true
             solver:
               description: The address of the solver that quoted this order.
               $ref: "#/components/schemas/Address"
-            required: true
+              required: true
         - $ref: "#/components/schemas/Error"
     DateTime:
       description: An ISO 8601 UTC date time string.
