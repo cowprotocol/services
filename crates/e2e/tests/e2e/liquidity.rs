@@ -369,9 +369,9 @@ impl ZeroExDomainSeparator {
             );
         }
         let abi_encode_string = encode(&[
-            Token::Uint((*DOMAIN_TYPE_HASH).into()),
-            Token::Uint((*DOMAIN_NAME).into()),
-            Token::Uint((*DOMAIN_VERSION).into()),
+            Token::FixedBytes((*DOMAIN_TYPE_HASH).into()),
+            Token::FixedBytes((*DOMAIN_NAME).into()),
+            Token::FixedBytes((*DOMAIN_VERSION).into()),
             Token::Uint(chain_id.into()),
             Token::Address(contract_addr),
         ]);
