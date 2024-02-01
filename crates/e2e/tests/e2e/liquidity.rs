@@ -62,7 +62,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    let [trader_a, trader_b, zeroex_maker, zeroex_taker] = onchain.make_accounts(to_wei(1)).await;
+    let [trader_a, trader_b, zeroex_maker] = onchain.make_accounts(to_wei(1)).await;
 
     let token_usdc = ERC20::at(
         &web3,
@@ -145,7 +145,6 @@ async fn zero_ex_liquidity(web3: Web3) {
                 query,
                 order.clone(),
                 zeroex_maker.clone(),
-                zeroex_taker.clone(),
                 zeroex_addr,
                 gpv2_addr,
                 chain_id,
@@ -161,7 +160,7 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint = colocation::start_naive_solver().await;
+    let solver_endpoint = colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver_with_zeroex_liquidity(
         onchain.contracts(),
         vec![SolverEngine {
@@ -224,7 +223,6 @@ fn orders_query_handler(
     query: &OrdersQuery,
     order_creation: OrderCreation,
     zeroex_maker: TestAccount,
-    zeroex_taker: TestAccount,
     zeroex_addr: H160,
     gpv2_addr: H160,
     chain_id: u64,
@@ -233,12 +231,12 @@ fn orders_query_handler(
         let typed_order = Eip712TypedZeroExOrder {
             maker_token: order_creation.sell_token,
             taker_token: order_creation.buy_token,
-            maker_amount: order_creation.sell_amount.as_u128() * 2,
+            maker_amount: order_creation.sell_amount.as_u128() * 3,
             taker_amount: order_creation.buy_amount.as_u128() * 2,
             taker_token_fee_amount: 0,
             maker: zeroex_maker.address(),
-            taker: zeroex_taker.address(),
-            sender: zeroex_maker.address(),
+            taker: gpv2_addr,
+            sender: gpv2_addr,
             fee_recipient: zeroex_addr,
             pool: H256::default(),
             expiry: NaiveDateTime::MAX.timestamp() as u64,
@@ -246,7 +244,7 @@ fn orders_query_handler(
         };
         Ok(vec![typed_order.to_order_record(
             chain_id,
-            gpv2_addr,
+            zeroex_addr,
             zeroex_maker,
         )])
     } else if query.sender
