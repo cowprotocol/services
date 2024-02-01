@@ -727,7 +727,9 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
-            .query(&driver::quote_req(self))
+            .body(serde_json::to_string(&driver::quote_req(self)).unwrap())
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(reqwest::header::ACCEPT, "application/json")
             .send()
             .await
             .unwrap();
@@ -1021,9 +1023,10 @@ impl QuoteOk<'_> {
             .to_owned();
         assert_eq!(interactions.len(), fulfillment.interactions.len());
         for (interaction, expected) in interactions.iter().zip(&fulfillment.interactions) {
-            let target = interaction.get("target").unwrap().as_str().unwrap();
-            let value = interaction.get("value").unwrap().as_str().unwrap();
-            let calldata = interaction.get("callData").unwrap().as_str().unwrap();
+            let raw_interaction = interaction.get("interaction").unwrap().as_object().unwrap();
+            let target = raw_interaction.get("target").unwrap().as_str().unwrap();
+            let value = raw_interaction.get("value").unwrap().as_str().unwrap();
+            let calldata = raw_interaction.get("callData").unwrap().as_str().unwrap();
             assert_eq!(target, format!("0x{}", hex::encode(expected.address)));
             assert_eq!(value, "0");
             assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));

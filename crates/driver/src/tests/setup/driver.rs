@@ -158,6 +158,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
             order::Side::Sell => "sell",
             order::Side::Buy => "buy",
         },
+        "trustedTokens": [],
         "deadline": test.deadline,
     })
 }
