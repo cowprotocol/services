@@ -33,6 +33,8 @@ pub struct Order {
     amount: eth::U256,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
+    // TODO start using this in the fake_auction function.
+    trusted_tokens: Vec<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]

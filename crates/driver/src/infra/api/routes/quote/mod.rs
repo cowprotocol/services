@@ -17,7 +17,7 @@ pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<
 
 async fn route(
     state: axum::extract::State<State>,
-    order: axum::extract::Query<dto::Order>,
+    order: axum::extract::Json<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
     let handle_request = async {
         let order = order.0.into_domain(state.timeouts()).tap_err(|err| {

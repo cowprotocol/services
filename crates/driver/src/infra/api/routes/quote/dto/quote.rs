@@ -14,10 +14,12 @@ impl Quote {
             interactions: quote
                 .interactions
                 .iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target.into(),
-                    value: interaction.value.into(),
-                    call_data: interaction.call_data.clone().into(),
+                .map(|interaction| InteractionWithMeta {
+                    interaction: Interaction {
+                        target: interaction.target.into(),
+                        value: interaction.value.into(),
+                        call_data: interaction.call_data.clone().into(),
+                    },
                     internalize: interaction.internalize,
                     input_tokens: interaction.inputs.iter().map(|t| t.0 .0).collect(),
                 })
@@ -33,7 +35,7 @@ impl Quote {
 pub struct Quote {
     #[serde_as(as = "serialize::U256")]
     amount: eth::U256,
-    interactions: Vec<Interaction>,
+    interactions: Vec<InteractionWithMeta>,
     solver: eth::H160,
 }
 
@@ -46,6 +48,12 @@ struct Interaction {
     value: eth::U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InteractionWithMeta {
+    interaction: Interaction,
     internalize: bool,
     input_tokens: Vec<eth::H160>,
 }

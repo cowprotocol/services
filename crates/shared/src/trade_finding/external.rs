@@ -65,7 +65,7 @@ impl ExternalTradeFinder {
         let mut request = self
             .client
             .get(self.quote_endpoint.clone())
-            .query(&order)
+            .body(serde_json::to_string(&order).unwrap())
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
@@ -129,9 +129,9 @@ impl From<dto::Quote> for Trade {
                 .into_iter()
                 .map(|interaction| InteractionWithMeta {
                     interaction: Interaction {
-                        target: interaction.target,
-                        value: interaction.value,
-                        data: interaction.call_data,
+                        target: interaction.interaction.target,
+                        value: interaction.interaction.value,
+                        data: interaction.interaction.call_data,
                     },
                     internalize: interaction.internalize,
                     input_tokens: interaction.input_tokens,
@@ -197,8 +197,16 @@ mod dto {
     pub struct Quote {
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
-        pub interactions: Vec<Interaction>,
+        pub interactions: Vec<InteractionWithMeta>,
         pub solver: H160,
+    }
+
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct InteractionWithMeta {
+        pub interaction: Interaction,
+        pub internalize: bool,
+        pub input_tokens: Vec<H160>,
     }
 
     #[serde_as]
@@ -210,8 +218,6 @@ mod dto {
         pub value: U256,
         #[serde_as(as = "BytesHex")]
         pub call_data: Vec<u8>,
-        pub internalize: bool,
-        pub input_tokens: Vec<H160>,
     }
 
     #[serde_as]
