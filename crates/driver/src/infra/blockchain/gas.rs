@@ -76,11 +76,11 @@ impl GasPriceEstimator {
                     }
                     None => estimate,
                 };
-                eth::GasPrice {
-                    max: self.max_fee_per_gas.into(),
-                    tip: eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
-                    base: eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
-                }
+                eth::GasPrice::new(
+                    self.max_fee_per_gas.into(),
+                    eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
+                    eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
+                )
             })
             .map_err(Error::GasPrice)
     }
