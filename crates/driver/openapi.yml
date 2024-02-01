@@ -152,17 +152,14 @@ components:
       properties:
         interaction:
           $ref: "#/components/schemas/Interaction"
-          required: true
         internalize:
           description: Should this interaction be omitted due to internal buffer trading?
           type: boolean
-          required: true
         inputTokens:
           description: Tokens that will have their balance reduced when executing the interaction.
           type: array
           items:
             $ref: "#/components/schemas/Address"
-          required: true
     Interaction:
       type: object
       properties:
@@ -301,16 +298,13 @@ components:
           properties:
             amount:
               $ref: "#/components/schemas/TokenAmount"
-              required: true
             interactions:
               type: array
               items:
                 $ref: "#/components/schemas/InteractionWithMeta"
-              required: true
             solver:
               description: The address of the solver that quoted this order.
               $ref: "#/components/schemas/Address"
-              required: true
         - $ref: "#/components/schemas/Error"
     DateTime:
       description: An ISO 8601 UTC date time string.
