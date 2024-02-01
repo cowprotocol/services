@@ -72,7 +72,6 @@ impl GasPriceEstimator {
                             .min(estimate.max_fee_per_gas * additional_tip_percentage);
                         estimate.max_fee_per_gas += additional_tip;
                         estimate.max_priority_fee_per_gas += additional_tip;
-                        estimate = estimate.ceil();
                         estimate
                     }
                     None => estimate,

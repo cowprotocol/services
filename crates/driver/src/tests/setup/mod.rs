@@ -295,6 +295,15 @@ pub struct Pool {
     pub amount_b: eth::U256,
 }
 
+#[derive(Debug)]
+pub enum Mempool {
+    Public,
+    Private {
+        /// Uses ethrpc node if None
+        url: Option<String>,
+    },
+}
+
 /// Create a builder for the setup process.
 pub fn setup() -> Setup {
     Setup {
@@ -308,6 +317,7 @@ pub fn setup() -> Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
         settlement_address: Default::default(),
+        mempools: vec![Mempool::Public],
     }
 }
 
@@ -327,6 +337,8 @@ pub struct Setup {
     enable_simulation: bool,
     /// Ensure the settlement contract is deployed on a specific address?
     settlement_address: Option<eth::H160>,
+    /// Via which mempool the solutions should be submitted
+    mempools: Vec<Mempool>,
 }
 
 /// The validity of a solution.
@@ -556,6 +568,11 @@ impl Setup {
         self
     }
 
+    pub fn mempools(mut self, mempools: Vec<Mempool>) -> Self {
+        self.mempools = mempools;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -625,6 +642,7 @@ impl Setup {
             &driver::Config {
                 config_file,
                 enable_simulation: self.enable_simulation,
+                mempools: self.mempools,
             },
             &solvers_with_address,
             &blockchain,
