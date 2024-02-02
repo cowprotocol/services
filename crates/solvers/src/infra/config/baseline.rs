@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, Risk},
+        domain::{eth, solver::baseline, Risk},
         infra::{config::unwrap_or_log, contracts},
         util::serialize,
     },
@@ -48,7 +48,7 @@ struct Config {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(path: &Path) -> super::Config {
+pub async fn load(path: &Path) -> baseline::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -66,7 +66,7 @@ pub async fn load(path: &Path) -> super::Config {
         ),
     };
 
-    super::Config {
+    baseline::Config {
         weth,
         base_tokens: config
             .base_tokens
