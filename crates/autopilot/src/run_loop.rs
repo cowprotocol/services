@@ -29,9 +29,10 @@ use {
     shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{BTreeMap, HashMap, HashSet},
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::{Duration, Instant},
     },
+    tokio::sync::Mutex,
     tracing::Instrument,
     web3::types::TransactionReceipt,
 };
@@ -48,7 +49,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
 }
 
@@ -429,10 +430,10 @@ impl RunLoop {
             .map_err(SettleError::Failure)?
             .tx_hash;
 
-        *self.in_flight_orders.lock().unwrap() = InFlightOrders {
+        *self.in_flight_orders.lock().await = Some(InFlightOrders {
             tx_hash,
             orders: solved.orders.keys().copied().collect(),
-        };
+        });
 
         let order_uids = solved.orders.keys().copied().collect();
         self.persistence
@@ -445,8 +446,11 @@ impl RunLoop {
     /// Removes orders that are currently being settled to avoid solvers trying
     /// to fill an order a second time.
     async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
-        let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
-        let tx_receipt = self.eth.transaction_receipt(prev_settlement).await;
+        let Some(in_flight) = &*self.in_flight_orders.lock().await else {
+            return auction;
+        };
+
+        let tx_receipt = self.eth.transaction_receipt(in_flight.tx_hash).await;
 
         let prev_settlement_block = match tx_receipt {
             Ok(Some(TransactionReceipt {
@@ -460,11 +464,10 @@ impl RunLoop {
 
         if auction.latest_settlement_block < prev_settlement_block {
             // Auction was built before the in-flight orders were processed.
-            let in_flight_orders = self.in_flight_orders.lock().unwrap();
             auction
                 .orders
-                .retain(|o| !in_flight_orders.orders.contains(&o.uid));
-            tracing::debug!(orders = ?in_flight_orders.orders, "filtered out in-flight orders");
+                .retain(|o| !in_flight.orders.contains(&o.uid));
+            tracing::debug!(orders = ?in_flight.orders, "filtered out in-flight orders");
         }
 
         auction
