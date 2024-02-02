@@ -335,17 +335,17 @@ impl Eip712TypedZeroExOrder {
     fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::ZEROEX_LIMIT_ORDER_TYPEHASH);
-        hash_data[32..52].copy_from_slice(self.maker_token.as_fixed_bytes());
-        hash_data[64..84].copy_from_slice(self.taker_token.as_fixed_bytes());
-        hash_data[96..112].copy_from_slice(&self.maker_amount.to_be_bytes());
-        hash_data[128..144].copy_from_slice(&self.taker_amount.to_be_bytes());
-        hash_data[160..176].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
-        hash_data[192..212].copy_from_slice(self.maker.as_fixed_bytes());
-        hash_data[224..244].copy_from_slice(self.taker.as_fixed_bytes());
-        hash_data[256..276].copy_from_slice(self.sender.as_fixed_bytes());
-        hash_data[288..308].copy_from_slice(self.fee_recipient.as_fixed_bytes());
+        hash_data[44..64].copy_from_slice(self.maker_token.as_fixed_bytes());
+        hash_data[76..96].copy_from_slice(self.taker_token.as_fixed_bytes());
+        hash_data[112..128].copy_from_slice(&self.maker_amount.to_be_bytes());
+        hash_data[144..160].copy_from_slice(&self.taker_amount.to_be_bytes());
+        hash_data[176..192].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
+        hash_data[204..224].copy_from_slice(self.maker.as_fixed_bytes());
+        hash_data[236..256].copy_from_slice(self.taker.as_fixed_bytes());
+        hash_data[268..288].copy_from_slice(self.sender.as_fixed_bytes());
+        hash_data[300..320].copy_from_slice(self.fee_recipient.as_fixed_bytes());
         hash_data[320..352].copy_from_slice(self.pool.as_fixed_bytes());
-        hash_data[352..360].copy_from_slice(&self.expiry.to_be_bytes());
+        hash_data[376..384].copy_from_slice(&self.expiry.to_be_bytes());
         self.salt.to_big_endian(&mut hash_data[384..416]);
         signing::keccak256(&hash_data)
     }
