@@ -1,7 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, BlockId, BlockNumber},
     ethrpc::current_block::CurrentBlockStream,
     std::{fmt, sync::Arc},
     thiserror::Error,
@@ -175,6 +175,19 @@ impl Ethereum {
 
     pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
         self.gas.estimate().await
+    }
+
+    pub async fn gas_limit(&self) -> Result<eth::Gas, Error> {
+        self.web3
+            .eth()
+            .block(BlockId::Number(BlockNumber::Latest))
+            .await?
+            .map(|block| block.gas_limit.into())
+            .ok_or_else(|| {
+                Error::Web3(web3::error::Error::InvalidResponse(
+                    "No latest block".into(),
+                ))
+            })
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
