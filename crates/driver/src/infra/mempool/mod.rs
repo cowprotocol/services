@@ -66,8 +66,8 @@ impl Inner {
             .from(solver.account().clone())
             .to(tx.to.into())
             .gas_price(ethcontract::GasPrice::Eip1559 {
-                max_fee_per_gas: gas.price.max.into(),
-                max_priority_fee_per_gas: gas.price.tip.into(),
+                max_fee_per_gas: gas.price.max().into(),
+                max_priority_fee_per_gas: gas.price.tip().into(),
             })
             .data(tx.input.into())
             .value(tx.value.0)
