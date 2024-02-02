@@ -129,7 +129,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0));
-        tracing::debug!("http solver instance name is {}", instance_name);
 
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
