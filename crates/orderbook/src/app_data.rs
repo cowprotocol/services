@@ -42,18 +42,20 @@ impl Registry {
     /// exactly matching entry already existed.
     pub async fn register(
         &self,
-        hash: AppDataHash,
+        hash: Option<AppDataHash>,
         document: &[u8],
-    ) -> Result<Registered, RegisterError> {
+    ) -> Result<(Registered, AppDataHash), RegisterError> {
         let validated = self
             .validator
             .validate(document)
             .map_err(RegisterError::Invalid)?;
-        if hash != validated.hash {
-            return Err(RegisterError::HashMismatch {
-                expected: hash,
-                computed: validated.hash,
-            });
+        if let Some(hash) = hash {
+            if hash != validated.hash {
+                return Err(RegisterError::HashMismatch {
+                    expected: hash,
+                    computed: validated.hash,
+                });
+            }
         }
 
         match self
@@ -61,8 +63,8 @@ impl Registry {
             .insert_full_app_data(&validated.hash, &validated.document)
             .await
         {
-            Ok(()) => Ok(Registered::New),
-            Err(InsertError::Duplicate) => Ok(Registered::AlreadyExisted),
+            Ok(()) => Ok((Registered::New, validated.hash)),
+            Err(InsertError::Duplicate) => Ok((Registered::AlreadyExisted, validated.hash)),
             Err(InsertError::Mismatch(existing)) => Err(RegisterError::DataMismatch { existing }),
             Err(InsertError::Other(err)) => Err(RegisterError::Other(err)),
         }
