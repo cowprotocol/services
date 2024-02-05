@@ -14,6 +14,6 @@ VALUES
   -- Legit user 0xfcd2f5f382e4b3cd3b67a4e399ada0edf56d0383
   ('\xd19e76e4a302bc4e0018de6210f5fde3c55e3618a23a261fa94e4d19ceeb039d', decode('{}', 'escape')),
   -- Limit order tutorial
-  ('\xf785fae7a7c5abc49f3cd6a61f6df1ff26433392b066ee9ff2240ff1eb7ab6e4', decode('{}', 'escape'));
+  ('\xf785fae7a7c5abc49f3cd6a61f6df1ff26433392b066ee9ff2240ff1eb7ab6e4', decode('{}', 'escape')),
   -- DCA Order (e.g. https://etherscan.io/address/0x224d04a92583936b9dd86c9ee8dd450290eded66#code)
   ('\x9b5c6dfa0fa4be89e17700f05bee8775b281aa6d2dac7dfbf3945e0f9642d777', decode('{}', 'escape'));
