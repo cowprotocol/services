@@ -380,9 +380,10 @@ impl Solution {
         }
     }
 
+    /// Increase the solution gas consumption by at least `units`.
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
-        let additional_bytes = units / 16;
+        let additional_bytes = (units / 16) + 1;
         Self {
             calldata: match self.calldata {
                 Calldata::Valid {
