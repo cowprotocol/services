@@ -1,0 +1,19 @@
+name: PR documentation reminder
+on:
+  push:
+    paths:
+      - 'database/sql/'
+jobs:
+  remind-to-update-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Add comment to PR
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        curl \
+          -X POST \
+          -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+          -d '{"body":"Reminder: Please remember to update the DB readme accordingly."}'
