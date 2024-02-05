@@ -1,7 +1,7 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::{ProtocolAppData, ValidatedAppData},
+        app_data::ValidatedAppData,
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -483,8 +483,10 @@ impl OrderValidating for OrderValidator {
                 let protocol = if let Some(full) = full_app_data_override {
                     validate(full)?.protocol
                 } else {
-                    tracing::warn!(hash = hex::encode(hash.0), "Unknown appData pre-image");
-                    ProtocolAppData::default()
+                    return Err(AppDataValidationError::Invalid(anyhow!(
+                        "Unknown pre-image for app data hash {:?}",
+                        hash,
+                    )));
                 };
 
                 ValidatedAppData {
