@@ -332,7 +332,6 @@ mod tests {
                 "buyAmountAfterFee": "1",
                 "validFor": 1800,
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "partiallyFillable": false,
                 "sellTokenBalance": "erc20",
                 "buyTokenBalance": "erc20",
                 "signingScheme": "eip712",
