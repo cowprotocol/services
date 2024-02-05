@@ -131,8 +131,6 @@ pub struct OrderQuoteRequest {
     #[serde(flatten, deserialize_with = "deserialize_optional_app_data")]
     pub app_data: OrderCreationAppData,
     #[serde(default)]
-    pub partially_fillable: bool,
-    #[serde(default)]
     pub sell_token_balance: SellTokenSource,
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
