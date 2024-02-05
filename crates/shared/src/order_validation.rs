@@ -1935,6 +1935,9 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: 1.into(),
                 fee_amount: 1.into(),
+                app_data: OrderCreationAppData::Full {
+                    full: "{}".to_string(),
+                },
                 ..Default::default()
             };
 

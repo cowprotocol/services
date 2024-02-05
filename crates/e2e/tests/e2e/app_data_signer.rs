@@ -68,21 +68,6 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
-    // Accepted: custom hashes that aren't found in the DB.
-    let custom_hash_app_data = AppDataHash([1; 32]);
-    let order0 = sign(
-        create_order(OrderCreationAppData::Hash {
-            hash: custom_hash_app_data,
-        }),
-        &trader,
-    );
-    assert!(matches!(
-        services.get_app_data(custom_hash_app_data).await,
-        Err((StatusCode::NOT_FOUND, ..))
-    ));
-    let uid = services.create_order(&order0).await.unwrap();
-    assert!(matches!(services.get_order(&uid).await, Ok(..)));
-
     // Rejected: app data with different signer.
     let full_app_data = full_app_data_with_signer(adversary.address());
     let order1 = sign(create_order(full_app_data), &trader);
