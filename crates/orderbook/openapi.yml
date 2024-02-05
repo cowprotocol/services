@@ -1386,8 +1386,9 @@ components:
               anyOf:
                 - $ref: "#/components/schemas/AppDataHash"
             partiallyFillable:
-              description: Is the order fill-or-kill or partially fillable?
+              description: Is the order fill-or-kill or partially fillable? (needs to be false for quotes)
               type: boolean
+              example: false
             sellTokenBalance:
               allOf:
                 - $ref: "#/components/schemas/SellTokenSource"
