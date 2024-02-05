@@ -134,7 +134,7 @@ impl Settlement {
         )
         .await?;
         let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, eth.gas_limit().await?, price);
+        let gas = Gas::new(gas, eth.gas_limit(), price);
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
