@@ -42,7 +42,6 @@ pub struct Settlement {
     pub access_list: eth::AccessList,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
-
     /// See the [`Settlement::solutions`] method.
     solutions: HashMap<solution::Id, Solution>,
 }
@@ -135,7 +134,7 @@ impl Settlement {
         )
         .await?;
         let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, price);
+        let gas = Gas::new(gas, eth.gas_limit(), price);
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
@@ -374,7 +373,7 @@ pub struct Gas {
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
-    pub fn new(estimate: eth::Gas, price: eth::GasPrice) -> Self {
+    pub fn new(estimate: eth::Gas, limit: eth::Gas, price: eth::GasPrice) -> Self {
         // Specify a different gas limit than the estimated gas when executing a
         // settlement transaction. This allows the transaction to be resilient
         // to small variations in actual gas usage.
@@ -382,13 +381,13 @@ impl Gas {
         // the end of execution, so we want to increase gas limit enough so
         // those solutions don't revert with out of gas error.
         const GAS_LIMIT_FACTOR: f64 = 2.0;
-        let limit =
+        let estimate_with_buffer =
             eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
                 .into();
 
         Self {
             estimate,
-            limit,
+            limit: std::cmp::min(limit, estimate_with_buffer),
             price,
         }
     }
