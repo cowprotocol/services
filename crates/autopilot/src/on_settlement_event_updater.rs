@@ -107,12 +107,9 @@ impl OnSettlementEventUpdater {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let transaction = match self.eth.transaction(hash).await? {
-            Some(tx) => tx,
-            None => {
-                tracing::warn!(?hash, "no tx found, reorg happened");
-                return Ok(false);
-            }
+        let Some(transaction) = self.eth.transaction(hash).await? else {
+            tracing::warn!(?hash, "no tx found, reorg happened");
+            return Ok(false);
         };
 
         let (auction_id, auction_data) =
