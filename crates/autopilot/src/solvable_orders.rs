@@ -602,10 +602,10 @@ impl OrderFilterCounter {
             });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for (order, class) in &filtered_orders {
-            self.orders.remove(order).unwrap();
-            tracing::debug!(%order, ?class, %reason, "filtered order")
+        for order_uid in filtered_orders.keys() {
+            self.orders.remove(order_uid).unwrap();
         }
+        tracing::debug!(%reason, orders = ?filtered_orders, "filtered orders");
         filtered_orders.into_keys().collect()
     }
 
