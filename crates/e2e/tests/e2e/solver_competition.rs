@@ -93,8 +93,6 @@ async fn solver_competition(web3: Web3) {
         || async { token_a.balance_of(trader.address()).call().await.unwrap() == U256::zero() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    onchain.mint_blocks_past_reorg_threshold().await;
-
     let indexed_trades = || async {
         onchain.mint_block().await;
         match services.get_trades(&uid).await.unwrap().first() {
