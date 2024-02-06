@@ -1,3 +1,5 @@
+use crate::domain::eth;
+
 #[derive(Clone, Debug)]
 pub enum FeePolicy {
     /// If the order receives more than limit price, take the protocol fee as a
@@ -15,6 +17,14 @@ pub enum FeePolicy {
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
     },
+    /// A price improvement corresponds to a situation where the order is
+    /// executed at a better price than the top quote. The protocol fee in such
+    /// case is calculated from a cut of this price improvement.
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
     /// token for `buy` orders.
@@ -23,4 +33,10 @@ pub enum FeePolicy {
         /// fee.
         factor: f64,
     },
+}
+
+#[derive(Clone, Debug)]
+pub struct Quote {
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
 }

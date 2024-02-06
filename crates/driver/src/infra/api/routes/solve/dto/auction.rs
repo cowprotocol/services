@@ -123,6 +123,18 @@ impl Auction {
                                 factor,
                                 max_volume_factor,
                             },
+                            FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                                quote,
+                            } => competition::order::FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                                quote: competition::order::fees::Quote {
+                                    sell_amount: quote.sell_amount,
+                                    buy_amount: quote.buy_amount,
+                                },
+                            },
                             FeePolicy::Volume { factor } => {
                                 competition::order::FeePolicy::Volume { factor }
                             }
@@ -306,5 +318,18 @@ enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Quote {
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
 }
