@@ -1561,6 +1561,13 @@ components:
           items:
             $ref: "#/components/schemas/CallData"
           description: The call data to be used for the interaction.
+    Quote:
+      type: object
+      properties:
+        sell_amount:
+          type: number
+        buy_amount:
+          type: number
     Surplus:
       description: The protocol fee is taken as a percent of the surplus.
       type: object
@@ -1572,6 +1579,20 @@ components:
       required:
         - factor
         - max_volume_factor
+    PriceImprovement:
+      description: The protocol fee is taken as a percent of the surplus which is based on a quote.
+      type: object
+      properties:
+        factor:
+          type: number
+        max_volume_factor:
+          type: number
+        quote:
+          $ref: "#/components/schemas/Quote"
+      required:
+        - factor
+        - max_volume_factor
+        - quote
     Volume:
       description: The protocol fee is taken as a percent of the order volume.
       type: object
@@ -1584,4 +1605,5 @@ components:
       description: Defines the ways to calculate the protocol fee.
       oneOf:
         - $ref: '#/components/schemas/Surplus'
+        - $ref: '#/components/schemas/PriceImprovement'
         - $ref: '#/components/schemas/Volume'
