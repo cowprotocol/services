@@ -47,3 +47,45 @@ async fn solution_not_available() {
 
     test.settle().await.err().kind("SolutionNotAvailable");
 }
+
+/// Checks that settlements with revert risk are not submitted via public
+/// mempool.
+#[tokio::test]
+#[ignore]
+async fn private_rpc_with_high_risk_solution() {
+    let test = tests::setup()
+        .name("private rpc")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![
+            tests::setup::Mempool::Public,
+            tests::setup::Mempool::Private {
+                url: Some("http://non-existant:8545".to_string()),
+            },
+        ])
+        .done()
+        .await;
+
+    test.solve().await.ok().default_score();
+    // Public cannot be used and private RPC is not available
+    let err = test.settle().await.err();
+    err.kind("FailedToSubmit");
+}
+
+/// Checks that we can settle transactions that have a gas limit higher than
+/// half the block size
+#[tokio::test]
+#[ignore]
+async fn high_gas_limit() {
+    let test = tests::setup()
+        .name("high gas limit")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution().increase_gas(15_000_000))
+        .done()
+        .await;
+
+    test.solve().await.ok();
+    test.settle().await.ok().await;
+}
