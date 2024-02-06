@@ -124,7 +124,10 @@ async fn eth_flow_tx_zero_fee(web3: Web3) {
     // make sure the fee was charged for zero fee limit orders
     let fee_charged = || async {
         onchain.mint_block().await;
-        let order = services.get_order(&ethflow_order.uid(onchain.contracts()).await).await.unwrap();
+        let order = services
+            .get_order(&ethflow_order.uid(onchain.contracts()).await)
+            .await
+            .unwrap();
         match order.metadata.class {
             OrderClass::Limit => order.metadata.executed_surplus_fee > U256::zero(),
             _ => true,
