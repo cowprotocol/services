@@ -107,11 +107,10 @@ impl OnSettlementEventUpdater {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let transaction = self
-            .eth
-            .transaction(hash)
-            .await?
-            .with_context(|| format!("no tx {hash:?}"))?;
+        let Some(transaction) = self.eth.transaction(hash).await? else {
+            tracing::warn!(?hash, "no tx found, reorg happened");
+            return Ok(false);
+        };
 
         let (auction_id, auction_data) =
             match Self::recover_auction_id_from_calldata(&mut ex, &transaction).await? {
@@ -182,30 +181,18 @@ impl OnSettlementEventUpdater {
         );
 
         // surplus and fees calculation
-        let domain_separator = self.eth.contracts().settlement_domain_separator();
-        let order_uids = settlement.order_uids(domain_separator)?;
-        let order_fees = order_uids
-            .clone()
-            .into_iter()
-            .zip(Postgres::order_fees(ex, &order_uids).await?)
-            .collect::<Vec<_>>();
-
         let surplus = settlement.total_surplus(&external_prices);
         let (fee, order_executions) = {
-            let all_fees = settlement.all_fees(&external_prices, &order_fees);
-            // total unsubsidized fee used for CIP20 rewards
+            let domain_separator = self.eth.contracts().settlement_domain_separator();
+            let all_fees = settlement.all_fees(&external_prices, domain_separator);
+            // total fee used for CIP20 rewards
             let fee = all_fees
                 .iter()
                 .fold(0.into(), |acc, fees| acc + fees.native);
-            // executed fees for each order execution
+            // executed surplus fees for each order execution
             let order_executions = all_fees
                 .into_iter()
-                .zip(order_fees.iter())
-                .map(|(fee, (_, order_fee))| match order_fee {
-                    // market orders have no surplus fee
-                    Some(_) => (fee.order, 0.into()),
-                    None => (fee.order, fee.sell),
-                })
+                .map(|fee| (fee.order, fee.executed_surplus_fee().unwrap_or(0.into())))
                 .collect();
             (fee, order_executions)
         };
