@@ -259,6 +259,9 @@ async fn eth_flow_tx_insufficient_fee(web3: Web3) {
         order.metadata.onchain_order_data.unwrap().placement_error,
         Some(OnchainOrderPlacementError::InsufficientFee)
     );
+
+    let auction_is_empty = || async { services.solvable_orders().await == 0 };
+    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 }
 
 async fn eth_flow_indexing_after_refund(web3: Web3) {
