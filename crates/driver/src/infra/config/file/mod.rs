@@ -301,7 +301,7 @@ struct LiquidityConfig {
     #[serde(default)]
     zeroex: Option<ZeroExConfig>,
 
-    /// The base URL used to connect to subgraph clients.
+    /// The URL used to connect to subgraph clients.
     graph_api_base_url: Option<Url>,
 }
 
