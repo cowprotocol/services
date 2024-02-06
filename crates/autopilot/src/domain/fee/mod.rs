@@ -48,13 +48,12 @@ impl ProtocolFee {
                         buy: order.data.buy_amount,
                         fee: order.data.fee_amount,
                     };
-                    let quote_ = boundary::Amounts {
+                    let quote = boundary::Amounts {
                         sell: quote.sell_amount,
                         buy: quote.buy_amount,
                         fee: quote.fee,
                     };
-                    tracing::debug!(?order.metadata.uid, ?self.policy_builder, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
-                    if boundary::is_order_outside_market_price(&order_, &quote_) {
+                    if boundary::is_order_outside_market_price(&order_, &quote) {
                         vec![self.policy_builder.build_with(quote)]
                     } else {
                         vec![]

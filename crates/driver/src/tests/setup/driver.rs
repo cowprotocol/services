@@ -1,5 +1,5 @@
 use {
-    super::{blockchain::Blockchain, Partial, Solver, Test},
+    super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
     crate::{
         domain::competition::order,
         infra::time,
@@ -16,6 +16,7 @@ pub struct Config {
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
+    pub mempools: Vec<Mempool>,
 }
 
 pub struct Driver {
@@ -185,14 +186,38 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
-
-           [[submission.mempool]]
-           mempool = "public"
+           additional-tip-percentage = 0.0
+           logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address())
     )
     .unwrap();
+
+    for mempool in &config.mempools {
+        match mempool {
+            Mempool::Public => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    mempool = "public"
+                    "#,
+                )
+                .unwrap();
+            }
+            Mempool::Private { url } => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    mempool = "mev-blocker"
+                    url = "{}"
+                    "#,
+                    url.clone().unwrap_or(blockchain.web3_url.clone()),
+                )
+                .unwrap();
+            }
+        }
+    }
 
     for (solver, addr) in solvers {
         write!(

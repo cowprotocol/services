@@ -49,20 +49,15 @@ pub struct SettlementEvent {
 
 pub async fn get_settlement_without_auction(
     ex: &mut PgConnection,
-    max_block_number: i64,
 ) -> Result<Option<SettlementEvent>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index, tx_hash
 FROM settlements
 WHERE auction_id IS NULL
-AND block_number <= $1
 ORDER BY block_number ASC
 LIMIT 1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(max_block_number)
-        .fetch_optional(ex)
-        .await
+    sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
 pub async fn already_processed(
@@ -178,7 +173,7 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db, 0)
+        let settlement = get_settlement_without_auction(&mut db)
             .await
             .unwrap()
             .unwrap();
@@ -190,7 +185,7 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db, 0).await.unwrap();
+        let settlement = get_settlement_without_auction(&mut db).await.unwrap();
 
         assert!(settlement.is_none());
     }

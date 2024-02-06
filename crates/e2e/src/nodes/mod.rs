@@ -82,7 +82,7 @@ impl Node {
             }
         });
 
-        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(5), receiver)
+        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(20), receiver)
             .await
             .expect("finding anvil URL timed out")
             .unwrap();

@@ -4,6 +4,7 @@ use {
     ethcontract::{prelude::U256, H160},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -418,6 +419,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -432,8 +434,21 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![colocation::SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
     services
-        .start_api(vec!["--max-limit-orders-per-user=1".into()])
+        .start_api(vec![
+            "--max-limit-orders-per-user=1".into(),
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
         .await;
 
     let order = OrderCreation {
@@ -529,6 +544,22 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+
+    // Warm up co-located driver by quoting the order (otherwise placing an order
+    // may time out)
+    let _ = services
+        .submit_quote(&OrderQuoteRequest {
+            sell_token: token_usdc.address(),
+            buy_token: token_usdt.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei_with_exp(1000, 6).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await;
+
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
