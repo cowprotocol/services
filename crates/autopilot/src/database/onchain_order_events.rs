@@ -602,7 +602,7 @@ fn convert_onchain_order_placement(
         order_data.fee_amount
     };
     let is_outside_market_price = if let Ok(ref quote) = quote {
-        if !order_data.within_market(&quote.sell_amount, &quote.buy_amount) {
+        if !order_data.within_market(&quote.sell_amount, &quote.buy_amount, &quote.fee_amount) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
             metrics.inc_onchain_order_errors("outside_market_price");
             true
@@ -613,21 +613,19 @@ fn convert_onchain_order_placement(
         false
     };
 
-    let liquidity_owner = if liquidity_order_owners.contains(&owner) {
+    // remove liquidity owners as part of the https://github.com/cowprotocol/infrastructure/issues/1032
+    // leaving uncommmented for compiler to catch
+    let _liquidity_owner = if liquidity_order_owners.contains(&owner) {
         tracing::debug!(%order_uid, ?owner, "order being flagged as placed by liquidity order owner");
         true
     } else {
         false
     };
 
-    // TODO(nlordell): It is currently possible to create limit orders from
-    // on-chain events even if they are disabled at the API level. This feels
-    // non-intentional, and we should revisit this before releasing EthFlow
-    // orders.
-    let class = match (is_outside_market_price, liquidity_owner) {
-        (true, true) => OrderClass::Liquidity,
-        (true, false) => OrderClass::Limit,
-        _ => OrderClass::Market,
+    // For market orders, fee is charged from the signed fee amount.
+    let class = match (order_data.fee_amount.is_zero(), is_outside_market_price) {
+        (false, false) => OrderClass::Market,
+        _ => OrderClass::Limit,
     };
 
     let order = database::orders::Order {

@@ -352,8 +352,14 @@ impl OrderData {
     }
 
     /// Checks if the order is a market order.
-    pub fn within_market(&self, quote_sell_amount: &U256, quote_buy_amount: &U256) -> bool {
-        self.sell_amount.full_mul(*quote_buy_amount) >= quote_sell_amount.full_mul(self.buy_amount)
+    pub fn within_market(
+        &self,
+        quote_sell_amount: &U256,
+        quote_buy_amount: &U256,
+        quote_fee_amount: &U256,
+    ) -> bool {
+        (self.sell_amount + self.fee_amount).full_mul(*quote_buy_amount)
+            >= (quote_sell_amount + quote_fee_amount).full_mul(self.buy_amount)
     }
 }
 
