@@ -72,3 +72,20 @@ async fn private_rpc_with_high_risk_solution() {
     let err = test.settle().await.err();
     err.kind("FailedToSubmit");
 }
+
+/// Checks that we can settle transactions that have a gas limit higher than
+/// half the block size
+#[tokio::test]
+#[ignore]
+async fn high_gas_limit() {
+    let test = tests::setup()
+        .name("high gas limit")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution().increase_gas(15_000_000))
+        .done()
+        .await;
+
+    test.solve().await.ok();
+    test.settle().await.ok().await;
+}

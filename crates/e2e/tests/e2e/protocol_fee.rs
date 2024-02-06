@@ -329,7 +329,6 @@ async fn execute_test(
         .await
         .unwrap();
 
-    onchain.mint_blocks_past_reorg_threshold().await;
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();

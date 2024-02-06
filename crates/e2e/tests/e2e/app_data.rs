@@ -60,20 +60,17 @@ async fn app_data(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
-    // Temporarily custom hashes are still accepted.
+    // Unknown hashes are not accepted.
     let order0 = create_order(OrderCreationAppData::Hash {
         hash: AppDataHash([1; 32]),
     });
-    let uid = services.create_order(&order0).await.unwrap();
-    let order0_ = services.get_order(&uid).await.unwrap();
-    assert_eq!(order0_.data.app_data, AppDataHash([1; 32]));
-    assert_eq!(order0_.metadata.full_app_data, None);
-
     let err = services
         .get_app_data(AppDataHash([1; 32]))
         .await
         .unwrap_err();
     assert_eq!(err.0, StatusCode::NOT_FOUND);
+
+    assert!(services.create_order(&order0).await.is_err());
 
     // hash matches
     let app_data = "{}";
