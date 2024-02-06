@@ -4,65 +4,64 @@
 //! we define the way to calculate the protocol fee based on the configuration
 //! parameters.
 
-use crate::{
-    boundary::{self},
-    domain,
+use {
+    crate::{
+        boundary::{self},
+        domain,
+    },
+    primitive_types::U256,
 };
 
 /// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
 pub struct ProtocolFee {
-    policy: Policy,
+    policy_builder: PolicyBuilder,
     fee_policy_skip_market_orders: bool,
 }
 
 impl ProtocolFee {
-    pub fn new(policy: Policy, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(policy: PolicyBuilder, fee_policy_skip_market_orders: bool) -> Self {
         Self {
-            policy,
+            policy_builder: policy,
             fee_policy_skip_market_orders,
         }
     }
 
-    /// Get policies for order.
-    pub fn get(&self, order: &boundary::Order, quote: Option<&domain::Quote>) -> Vec<Policy> {
-        match order.metadata.class {
+    /// Converts an order from the boundary layer to the domain layer, applying
+    /// protocol fees if necessary.
+    pub fn to_order(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+        let protocol_fees = match order.metadata.class {
             boundary::OrderClass::Market => {
                 if self.fee_policy_skip_market_orders {
                     vec![]
                 } else {
-                    vec![self.policy]
+                    vec![self.policy_builder.build_with(quote)]
                 }
             }
             boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return vec![self.policy];
-                }
-
-                // if the quote is missing, we can't determine if the order is outside the
-                // market price so we protect the user and not charge a fee
-                let Some(quote) = quote else {
-                    return vec![];
-                };
-
-                let order_ = boundary::Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
-                };
-                let quote = boundary::Amounts {
-                    sell: quote.sell_amount,
-                    buy: quote.buy_amount,
-                    fee: quote.fee,
-                };
-                if boundary::is_order_outside_market_price(&order_, &quote) {
-                    vec![self.policy]
+                    vec![self.policy_builder.build_with(quote)]
                 } else {
-                    vec![]
+                    let order_ = boundary::Amounts {
+                        sell: order.data.sell_amount,
+                        buy: order.data.buy_amount,
+                        fee: order.data.fee_amount,
+                    };
+                    let quote_ = boundary::Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee,
+                    };
+                    if boundary::is_order_outside_market_price(&order_, &quote_) {
+                        vec![self.policy_builder.build_with(quote)]
+                    } else {
+                        vec![]
+                    }
                 }
             }
-        }
+        };
+        boundary::order::to_domain(order, protocol_fees)
     }
 }
 
@@ -83,6 +82,14 @@ pub enum Policy {
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
     },
+    /// A price improvement corresponds to a situation where the order is
+    /// executed at a better price than the top quote. The protocol fee in such
+    /// case is calculated from a cut of this price improvement.
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
     /// token for `buy` orders.
@@ -91,4 +98,49 @@ pub enum Policy {
         /// fee.
         factor: f64,
     },
+}
+
+#[derive(Debug)]
+pub enum PolicyBuilder {
+    Surplus { factor: f64, max_volume_factor: f64 },
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Volume { factor: f64 },
+}
+
+impl PolicyBuilder {
+    pub fn build_with(&self, quote: &domain::Quote) -> Policy {
+        match self {
+            PolicyBuilder::Surplus {
+                factor,
+                max_volume_factor,
+            } => Policy::Surplus {
+                factor: *factor,
+                max_volume_factor: *max_volume_factor,
+            },
+            PolicyBuilder::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => Policy::PriceImprovement {
+                factor: *factor,
+                max_volume_factor: *max_volume_factor,
+                quote: quote.clone().into(),
+            },
+            PolicyBuilder::Volume { factor } => Policy::Volume { factor: *factor },
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Quote {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(value: domain::Quote) -> Self {
+        Self {
+            sell_amount: value.sell_amount,
+            buy_amount: value.buy_amount,
+        }
+    }
 }
