@@ -7,6 +7,8 @@ use {
 pub mod encoded;
 pub mod event;
 pub mod transaction;
+pub mod observation;
+
 pub use {encoded::Encoded, event::Event, transaction::Transaction};
 
 /// A transaction that settles a settlement. Interacts with the settlement

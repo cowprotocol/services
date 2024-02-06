@@ -1,3 +1,5 @@
+//! Domain types for on-chain transactions that settle settlements.
+
 use crate::{domain::eth, util};
 
 /// An on-chain transaction that settles a settlement.
