@@ -68,13 +68,21 @@ pub async fn delete(
     ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number))
         .await?;
 
+    const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number))
+        .await?;
+
+    // Observations and order executions are not events but data derived from the
+    // onchain data. The reason we delete them here is that we want to keep the
+    // database state consistent.
+
     const QUERY_OBSERVATIONS: &str =
         "DELETE FROM settlement_observations WHERE block_number >= $1;";
     ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
         .await?;
 
-    const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number))
+    const QUERY_ORDER_EXECUTIONS: &str = "DELETE FROM order_execution WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_ORDER_EXECUTIONS).bind(delete_from_block_number))
         .await?;
 
     Ok(())
