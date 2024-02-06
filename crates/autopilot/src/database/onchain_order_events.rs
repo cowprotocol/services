@@ -594,13 +594,6 @@ fn convert_onchain_order_placement(
     liquidity_order_owners: &HashSet<H160>,
     metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
-    let full_fee_amount = if let Ok(ref quote) = quote {
-        quote.data.fee_parameters.unsubsidized()
-    } else {
-        // Since the order will anways have an order_placement_error,
-        // we can set an "arbitrary amount"
-        order_data.fee_amount
-    };
     let is_outside_market_price = if let Ok(ref quote) = quote {
         if !order_data.within_market(&quote.sell_amount, &quote.buy_amount, &quote.fee_amount) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
@@ -647,7 +640,7 @@ fn convert_onchain_order_placement(
         settlement_contract: ByteArray(settlement_contract.0),
         sell_token_balance: sell_token_source_into(order_data.sell_token_balance),
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
-        full_fee_amount: u256_to_big_decimal(&full_fee_amount),
+        full_fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         cancellation_timestamp: None,
         class,
     };
@@ -728,7 +721,6 @@ mod test {
         contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::{Bytes, EventMetadata, H160, U256},
-        maplit::hashset,
         mockall::predicate::{always, eq},
         model::{
             app_data::AppDataHash,
@@ -957,119 +949,7 @@ mod test {
             settlement_contract: ByteArray(settlement_contract.0),
             sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
-            full_fee_amount: u256_to_big_decimal(&U256::zero()),
-            cancellation_timestamp: None,
-        };
-        assert_eq!(onchain_order_placement, expected_onchain_order_placement);
-        assert_eq!(order, expected_order);
-    }
-
-    #[test]
-    fn test_convert_onchain_liquidity_order_placement() {
-        let sell_token = H160::from([1; 20]);
-        let buy_token = H160::from([2; 20]);
-        let receiver = H160::from([3; 20]);
-        let sender = H160::from([4; 20]);
-        let sell_amount = U256::from_dec_str("10").unwrap();
-        let buy_amount = U256::from_dec_str("11").unwrap();
-        let valid_to = 1u32;
-        let app_data = ethcontract::tokens::Bytes([11u8; 32]);
-        let fee_amount = U256::from_dec_str("12").unwrap();
-        let owner = H160::from([5; 20]);
-        let order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
-            valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
-            kind: OrderKind::Sell,
-            partially_fillable: false,
-            sell_token_balance: SellTokenSource::Erc20,
-            buy_token_balance: BuyTokenDestination::Erc20,
-        };
-        let order_placement = ContractOrderPlacement {
-            sender,
-            order: (
-                sell_token,
-                buy_token,
-                receiver,
-                sell_amount,
-                buy_amount,
-                valid_to,
-                app_data,
-                fee_amount,
-                Bytes(OrderKind::SELL),
-                false,
-                Bytes(SellTokenSource::ERC20),
-                Bytes(BuyTokenDestination::ERC20),
-            ),
-            signature: (0u8, Bytes(owner.as_ref().into())),
-            ..Default::default()
-        };
-        let settlement_contract = H160::from([8u8; 20]);
-        let quote = Quote {
-            sell_amount,
-            buy_amount: buy_amount / 2,
-            ..Default::default()
-        };
-        let order_uid = OrderUid([9u8; 56]);
-        let signing_scheme = SigningScheme::Eip1271;
-        let event_timestamp = 234325345;
-        let (onchain_order_placement, order) = convert_onchain_order_placement(
-            &order_placement,
-            event_timestamp,
-            Ok(quote),
-            order_data,
-            signing_scheme,
-            order_uid,
-            owner,
-            settlement_contract,
-            &hashset! {owner},
-            Metrics::get(),
-        );
-        let expected_order_data = OrderData {
-            sell_token,
-            buy_token,
-            receiver: Some(receiver),
-            sell_amount,
-            buy_amount,
-            valid_to,
-            app_data: AppDataHash(app_data.0),
-            fee_amount,
-            kind: OrderKind::Sell,
-            partially_fillable: order_placement.order.9,
-            sell_token_balance: SellTokenSource::Erc20,
-            buy_token_balance: BuyTokenDestination::Erc20,
-        };
-        let expected_onchain_order_placement = OnchainOrderPlacement {
-            order_uid: ByteArray(order_uid.0),
-            sender: ByteArray(order_placement.sender.0),
-            placement_error: None,
-        };
-        let expected_order = database::orders::Order {
-            uid: ByteArray(order_uid.0),
-            owner: ByteArray(owner.0),
-            creation_timestamp: Utc.timestamp_opt(event_timestamp, 0).unwrap(),
-            sell_token: ByteArray(expected_order_data.sell_token.0),
-            buy_token: ByteArray(expected_order_data.buy_token.0),
-            receiver: expected_order_data.receiver.map(|h160| ByteArray(h160.0)),
-            sell_amount: u256_to_big_decimal(&expected_order_data.sell_amount),
-            buy_amount: u256_to_big_decimal(&expected_order_data.buy_amount),
-            valid_to: expected_order_data.valid_to as i64,
-            app_data: ByteArray(expected_order_data.app_data.0),
-            fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
-            kind: order_kind_into(expected_order_data.kind),
-            class: OrderClass::Liquidity,
-            partially_fillable: expected_order_data.partially_fillable,
-            signature: order_placement.signature.1 .0,
-            signing_scheme: signing_scheme_into(SigningScheme::Eip1271),
-            settlement_contract: ByteArray(settlement_contract.0),
-            sell_token_balance: sell_token_source_into(expected_order_data.sell_token_balance),
-            buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
-            full_fee_amount: u256_to_big_decimal(&U256::zero()),
+            full_fee_amount: u256_to_big_decimal(&expected_order_data.fee_amount),
             cancellation_timestamp: None,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
@@ -1086,7 +966,7 @@ mod test {
         let buy_amount = U256::from_dec_str("11").unwrap();
         let valid_to = 1u32;
         let app_data = ethcontract::tokens::Bytes([11u8; 32]);
-        let fee_amount = U256::from_dec_str("12").unwrap();
+        let fee_amount = U256::from_dec_str("0").unwrap();
         let owner = H160::from([5; 20]);
         let order_data = OrderData {
             sell_token,

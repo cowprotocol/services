@@ -121,6 +121,17 @@ async fn eth_flow_tx_zero_fee(web3: Web3) {
 
     test_order_was_settled(&services, &ethflow_order, &web3).await;
 
+    // make sure the fee was charged for zero fee limit orders
+    let fee_charged = || async {
+        onchain.mint_block().await;
+        let order = services.get_order(&ethflow_order.uid(onchain.contracts()).await).await.unwrap();
+        match order.metadata.class {
+            OrderClass::Limit => order.metadata.executed_surplus_fee > U256::zero(),
+            _ => true,
+        }
+    };
+    wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
+
     test_trade_availability_in_api(
         services.client(),
         &ethflow_order,
@@ -471,7 +482,14 @@ async fn test_order_parameters(
         })
     );
 
-    assert_eq!(response.metadata.class, OrderClass::Market);
+    match order.0.fee_amount.is_zero() {
+        true => {
+            assert_eq!(response.metadata.class, OrderClass::Limit);
+        }
+        false => {
+            assert_eq!(response.metadata.class, OrderClass::Market);
+        }
+    }
 
     assert!(order
         .is_valid_cowswap_signature(&response.signature, contracts)
@@ -497,8 +515,14 @@ async fn test_auction_order_parameters(
     assert_eq!(response.owner, contracts.ethflow.address());
     assert_eq!(response.sell_token, contracts.weth.address());
 
-    assert_eq!(response.class, OrderClass::Market);
-
+    match order.0.fee_amount.is_zero() {
+        true => {
+            assert_eq!(response.class, OrderClass::Limit);
+        }
+        false => {
+            assert_eq!(response.class, OrderClass::Market);
+        }
+    }
     assert!(order
         .is_valid_cowswap_signature(&response.signature, contracts)
         .await
