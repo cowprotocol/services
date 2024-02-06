@@ -15,3 +15,5 @@ jobs:
           stale-pr-message: 'This pull request has been marked as stale because it has been inactive a while. Please update this pull request or it will be automatically closed.'
           stale-issue-message: 'This issue has been marked as stale because it has been inactive a while. Please update this issue or it will be automatically closed.'
           stale-pr-label: stale
+          exempt-pr-labels: 'blocked'
+          exempt-issue-labels: 'blocked, help wanted'
