@@ -128,10 +128,7 @@ async fn eth_flow_tx_zero_fee(web3: Web3) {
             .get_order(&ethflow_order.uid(onchain.contracts()).await)
             .await
             .unwrap();
-        match order.metadata.class {
-            OrderClass::Limit => order.metadata.executed_surplus_fee > U256::zero(),
-            _ => panic!("unexpected order class"),
-        }
+        order.metadata.executed_surplus_fee > U256::zero()
     };
     wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
 
