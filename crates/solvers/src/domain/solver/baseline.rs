@@ -16,7 +16,6 @@ use {
             order::{self, UserOrder},
             solution,
         },
-        infra::config,
     },
     ethereum_types::U256,
     std::{cmp, collections::HashSet, sync::Arc},
@@ -27,6 +26,14 @@ pub struct Baseline(Arc<Inner>);
 /// The amount of time we aim the solver to finish before the final deadline is
 /// reached.
 const DEADLINE_SLACK: chrono::Duration = chrono::Duration::milliseconds(500);
+
+pub struct Config {
+    pub weth: eth::WethAddress,
+    pub base_tokens: Vec<eth::TokenAddress>,
+    pub max_hops: usize,
+    pub max_partial_attempts: usize,
+    pub risk: domain::Risk,
+}
 
 struct Inner {
     weth: eth::WethAddress,
@@ -56,7 +63,7 @@ struct Inner {
 
 impl Baseline {
     /// Creates a new baseline solver for the specified configuration.
-    pub fn new(config: config::baseline::Config) -> Self {
+    pub fn new(config: Config) -> Self {
         Self(Arc::new(Inner {
             weth: config.weth,
             base_tokens: config.base_tokens.into_iter().collect(),

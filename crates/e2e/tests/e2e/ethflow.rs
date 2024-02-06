@@ -698,7 +698,6 @@ impl EthFlowTradeIntent {
             },
             buy_token_balance: BuyTokenDestination::Erc20,
             sell_token_balance: SellTokenSource::Erc20,
-            partially_fillable: false,
             price_quality: PriceQuality::Optimal,
         }
     }

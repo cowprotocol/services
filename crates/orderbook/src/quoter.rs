@@ -125,7 +125,7 @@ impl QuoteHandler {
                 },
                 fee_amount: quote.fee_amount,
                 kind: quote.data.kind,
-                partially_fillable: request.partially_fillable,
+                partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
                 buy_token_balance: request.buy_token_balance,
                 signing_scheme: request.signing_scheme.into(),

@@ -27,6 +27,7 @@ pub use {
     shared::order_validation::{is_order_outside_market_price, Amounts},
 };
 
+pub mod events;
 pub mod order;
 
 /// Builds a web3 client that bufferes requests and sends them in a
