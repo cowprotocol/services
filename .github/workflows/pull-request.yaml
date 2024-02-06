@@ -25,6 +25,15 @@ jobs:
           cargo clippy --version
       - run: cargo +nightly fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
+  
+  nitpicker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ethanis/nitpicker@v1
+        with:
+          nitpicks: ".github/nitpicks.yml"
+          token: "${{ secrets.GITHUB_TOKEN }}"
 
   unit-tests:
     timeout-minutes: 60
