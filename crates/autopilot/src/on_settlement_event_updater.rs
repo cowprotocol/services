@@ -1,8 +1,5 @@
 //! This module is responsible for updating the database, for each settlement
 //! event that is emitted by the settlement contract.
-//!
-//! 1. Associating auction ids with transaction hashes.
-// see database/sql/V037__auction_transaction.sql
 //
 // When we put settlement transactions on chain there is no reliable way to
 // know the transaction hash because we can create multiple transactions with
