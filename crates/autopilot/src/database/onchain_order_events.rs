@@ -1,3 +1,5 @@
+use model::order::QuoteAmounts;
+
 pub mod ethflow_events;
 pub mod event_retriever;
 
@@ -584,23 +586,18 @@ fn convert_onchain_order_placement(
     settlement_contract: H160,
     metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
-    let is_outside_market_price = if let Ok(ref quote) = quote {
-        if !order_data.within_market(&quote.sell_amount, &quote.buy_amount, &quote.fee_amount) {
-            tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
-            metrics.inc_onchain_order_errors("outside_market_price");
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
-    // For market orders, fee is charged from the signed fee amount.
-    let class = match (order_data.fee_amount.is_zero(), is_outside_market_price) {
-        (false, false) => OrderClass::Market,
-        _ => OrderClass::Limit,
-    };
+    // eth flow orders are expected to be within the market price so they are
+    // executed fast (we don't want to reserve the user's ETH for too long)
+    if quote.as_ref().is_ok_and(|quote| {
+        !order_data.within_market(QuoteAmounts {
+            sell: quote.sell_amount,
+            buy: quote.buy_amount,
+            fee: quote.fee_amount,
+        })
+    }) {
+        tracing::debug!(%order_uid, ?owner, "order is outside market price");
+        metrics.inc_onchain_order_errors("outside_market_price");
+    }
 
     let order = database::orders::Order {
         uid: ByteArray(order_uid.0),
@@ -623,7 +620,10 @@ fn convert_onchain_order_placement(
         buy_token_balance: buy_token_destination_into(order_data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order_data.fee_amount),
         cancellation_timestamp: None,
-        class,
+        class: match order_data.fee_amount.is_zero() {
+            true => OrderClass::Limit,
+            false => OrderClass::Market,
+        },
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
