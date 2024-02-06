@@ -49,10 +49,7 @@ use {
             onchain_order_placement_error_from,
         },
     },
-    std::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::HashMap, sync::Arc},
     web3::types::U64,
 };
 
@@ -63,7 +60,6 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
-    liquidity_order_owners: HashSet<H160>,
     metrics: &'static Metrics,
 }
 
@@ -79,7 +75,6 @@ where
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
-        liquidity_order_owners: HashSet<H160>,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -88,7 +83,6 @@ where
             custom_onchain_data_parser,
             domain_separator,
             settlement_contract,
-            liquidity_order_owners,
             metrics: Metrics::get(),
         }
     }
@@ -349,7 +343,6 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             events_and_quotes,
             self.domain_separator,
             self.settlement_contract,
-            &self.liquidity_order_owners,
             self.metrics,
         )
         .await;
@@ -451,7 +444,6 @@ async fn parse_general_onchain_order_placement_data<'a>(
     order_placement_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
-    liquidity_order_owners: &'a HashSet<H160>,
     metrics: &'static Metrics,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
@@ -488,7 +480,6 @@ async fn parse_general_onchain_order_placement_data<'a>(
                 order_uid,
                 owner,
                 settlement_contract,
-                liquidity_order_owners,
                 metrics,
             );
             let quote = match quote_result {
@@ -591,7 +582,6 @@ fn convert_onchain_order_placement(
     order_uid: OrderUid,
     owner: H160,
     settlement_contract: H160,
-    liquidity_order_owners: &HashSet<H160>,
     metrics: &'static Metrics,
 ) -> (OnchainOrderPlacement, Order) {
     let is_outside_market_price = if let Ok(ref quote) = quote {
@@ -602,15 +592,6 @@ fn convert_onchain_order_placement(
         } else {
             false
         }
-    } else {
-        false
-    };
-
-    // remove liquidity owners as part of the https://github.com/cowprotocol/infrastructure/issues/1032
-    // leaving uncommmented for compiler to catch
-    let _liquidity_owner = if liquidity_order_owners.contains(&owner) {
-        tracing::debug!(%order_uid, ?owner, "order being flagged as placed by liquidity order owner");
-        true
     } else {
         false
     };
@@ -906,7 +887,6 @@ mod test {
             order_uid,
             owner,
             settlement_contract,
-            &Default::default(),
             Metrics::get(),
         );
         let expected_order_data = OrderData {
@@ -1018,7 +998,6 @@ mod test {
             order_uid,
             owner,
             settlement_contract,
-            &Default::default(),
             Metrics::get(),
         );
         let expected_order_data = OrderData {
@@ -1138,7 +1117,6 @@ mod test {
             ],
             domain_separator,
             settlement_contract,
-            &Default::default(),
             Metrics::get(),
         )
         .await;
@@ -1265,7 +1243,6 @@ mod test {
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
             domain_separator,
             settlement_contract: H160::zero(),
-            liquidity_order_owners: Default::default(),
             metrics: Metrics::get(),
         };
         let result = onchain_order_parser
