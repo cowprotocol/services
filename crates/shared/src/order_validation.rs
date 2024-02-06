@@ -667,6 +667,12 @@ impl OrderValidating for OrderValidator {
             },
         }
 
+        tracing::debug!(
+            ?uid,
+            ?order,
+            ?quote,
+            "checking if order is outside market price"
+        );
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
         // <https://github.com/cowprotocol/services/pull/301>.
