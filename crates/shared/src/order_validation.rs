@@ -1,7 +1,7 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::{ProtocolAppData, ValidatedAppData},
+        app_data::ValidatedAppData,
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -483,8 +483,10 @@ impl OrderValidating for OrderValidator {
                 let protocol = if let Some(full) = full_app_data_override {
                     validate(full)?.protocol
                 } else {
-                    tracing::warn!(hash = hex::encode(hash.0), "Unknown appData pre-image");
-                    ProtocolAppData::default()
+                    return Err(AppDataValidationError::Invalid(anyhow!(
+                        "Unknown pre-image for app data hash {:?}",
+                        hash,
+                    )));
                 };
 
                 ValidatedAppData {
@@ -1263,6 +1265,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         validator
@@ -1388,7 +1393,9 @@ mod tests {
         let creation_ = OrderCreation {
             fee_amount: U256::zero(),
             partially_fillable: true,
-            app_data: OrderCreationAppData::default(),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..creation
         };
         let (order, quote) = validator
@@ -1451,6 +1458,9 @@ mod tests {
             buy_amount: U256::from(1),
             sell_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let res = validator
@@ -1507,6 +1517,9 @@ mod tests {
             sell_amount: U256::from(0),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1563,6 +1576,9 @@ mod tests {
             fee_amount: U256::from(1),
             kind: OrderKind::Sell,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let (order, quote) = validator
@@ -1617,6 +1633,9 @@ mod tests {
             fee_amount: U256::from(1),
             from: Some(Default::default()),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1665,6 +1684,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1716,6 +1738,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1771,6 +1796,9 @@ mod tests {
             sell_amount: U256::MAX,
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1820,6 +1848,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1875,6 +1906,9 @@ mod tests {
             fee_amount: U256::from(1),
             from: Some(H160([1; 20])),
             signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let domain = DomainSeparator::default();
@@ -1933,6 +1967,9 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: 1.into(),
                 fee_amount: 1.into(),
+                app_data: OrderCreationAppData::Full {
+                    full: "{}".to_string(),
+                },
                 ..Default::default()
             };
 
