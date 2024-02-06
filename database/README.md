@@ -248,8 +248,8 @@ Column                    | Type                      | Nullable | Details
  surplus_factor           | double precision          |          | percentage of the surplus for fee calculation; value is between 0 and 1
  max_volume_factor        | double precision          |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
  volume_factor            | double precision          |          | fee percentage of the order volume; value is between 0 and 1
- sell_amount              | numeric                   |          | quote's sell amount
- buy_amount               | numeric                   |          | quote's buy amount
+ quote_sell_amount        | numeric                   |          | quote's sell amount
+ quote_buy_amount         | numeric                   |          | quote's buy amount
 
 Indexes:
 - PRIMARY KEY: composite key(`auction_id`, `order_uid`, `application_order`)
@@ -262,6 +262,7 @@ Indexes:
     Values:
     - `surplus`: The fee is based on the surplus achieved in the trade.
     - `volume`: The fee is based on the volume of the order.
+    - `priceimprovement`: The fee is based on the difference of the order's execution price and the top quote.
 
 ### presignature\_events
 
