@@ -1265,6 +1265,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         validator
@@ -1390,7 +1393,9 @@ mod tests {
         let creation_ = OrderCreation {
             fee_amount: U256::zero(),
             partially_fillable: true,
-            app_data: OrderCreationAppData::default(),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..creation
         };
         let (order, quote) = validator
@@ -1453,6 +1458,9 @@ mod tests {
             buy_amount: U256::from(1),
             sell_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let res = validator
@@ -1509,6 +1517,9 @@ mod tests {
             sell_amount: U256::from(0),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1565,6 +1576,9 @@ mod tests {
             fee_amount: U256::from(1),
             kind: OrderKind::Sell,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let (order, quote) = validator
@@ -1619,6 +1633,9 @@ mod tests {
             fee_amount: U256::from(1),
             from: Some(Default::default()),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1667,6 +1684,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1718,6 +1738,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1773,6 +1796,9 @@ mod tests {
             sell_amount: U256::MAX,
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1822,6 +1848,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1877,6 +1906,9 @@ mod tests {
             fee_amount: U256::from(1),
             from: Some(H160([1; 20])),
             signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let domain = DomainSeparator::default();

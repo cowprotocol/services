@@ -5,11 +5,9 @@ use {
     },
     ethcontract::{prelude::U256, H160},
     model::{
-        app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
-    reqwest::StatusCode,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
