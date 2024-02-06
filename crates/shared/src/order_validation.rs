@@ -238,7 +238,6 @@ pub struct OrderValidator {
     /// when only part of the order data is available
     native_token: WETH9,
     banned_users: HashSet<H160>,
-    liquidity_order_owners: HashSet<H160>,
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -282,7 +281,6 @@ impl PreOrderData {
         owner: H160,
         order: &OrderData,
         signing_scheme: SigningScheme,
-        liquidity_owner: bool,
     ) -> Self {
         Self {
             owner,
@@ -294,10 +292,9 @@ impl PreOrderData {
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
             signing_scheme,
-            class: match (liquidity_owner, order.fee_amount.is_zero()) {
-                (false, false) => OrderClass::Market,
-                (false, true) => OrderClass::Limit,
-                (true, _) => OrderClass::Liquidity,
+            class: match order.fee_amount.is_zero() {
+                true => OrderClass::Limit,
+                false => OrderClass::Market,
             },
         }
     }
@@ -313,7 +310,6 @@ impl OrderValidator {
     pub fn new(
         native_token: WETH9,
         banned_users: HashSet<H160>,
-        liquidity_order_owners: HashSet<H160>,
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -329,7 +325,6 @@ impl OrderValidator {
         Self {
             native_token,
             banned_users,
-            liquidity_order_owners,
             validity_configuration,
             eip1271_skip_creation_validation,
             bad_token_detector,
@@ -557,12 +552,7 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let pre_order = PreOrderData::from_order_creation(
-            owner,
-            &data,
-            signing_scheme,
-            self.liquidity_order_owners.contains(&owner),
-        );
+        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
@@ -1013,7 +1003,6 @@ mod tests {
         let validator = OrderValidator::new(
             native_token,
             banned_users,
-            hashset!(),
             validity_configuration,
             false,
             Arc::new(MockBadTokenDetecting::new()),
@@ -1139,7 +1128,6 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_ok() {
-        let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1161,7 +1149,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(liquidity_order_owner),
             validity_configuration,
             false,
             Arc::new(bad_token_detector),

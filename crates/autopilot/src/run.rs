@@ -57,7 +57,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -458,17 +457,10 @@ pub async fn run(args: Arguments) {
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let liquidity_order_owners: HashSet<_> = args
-        .order_quoting
-        .liquidity_order_owners
-        .iter()
-        .copied()
-        .collect();
     let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: liquidity_order_owners.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let quoter = Arc::new(OrderQuoter::new(
@@ -524,7 +516,6 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
-            liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(

@@ -88,15 +88,6 @@ pub struct OrderQuotingArguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_legacy_solvers: Vec<LegacySolver>,
 
-    /// The configured addresses whose orders should be considered liquidity and
-    /// not regular user orders.
-    ///
-    /// These orders have special semantics such as not being considered in the
-    /// settlements objective function, not receiving any surplus, and being
-    /// allowed to place partially fillable orders.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub liquidity_order_owners: Vec<H160>,
-
     /// The time period an EIP1271-quote request is valid.
     #[clap(
         long,
@@ -389,7 +380,6 @@ impl Display for OrderQuotingArguments {
             price_estimators,
             price_estimation_drivers,
             price_estimation_legacy_solvers,
-            liquidity_order_owners,
             standard_offchain_quote_validity,
         } = self;
 
@@ -413,7 +403,6 @@ impl Display for OrderQuotingArguments {
             "price_estimation_legacy_solvers",
             price_estimation_legacy_solvers,
         )?;
-        writeln!(f, "liquidity_order_owners: {:?}", liquidity_order_owners)?;
         writeln!(
             f,
             "standard_offchain_quote_validity: {:?}",

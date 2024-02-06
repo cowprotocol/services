@@ -71,7 +71,7 @@ impl Default for Subsidy {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait FeeSubsidizing: Send + Sync {
-    async fn subsidy(&self, parameters: SubsidyParameters) -> Result<Subsidy>;
+    async fn subsidy(&self) -> Result<Subsidy>;
 }
 
 /// Combine multiple fee subsidy strategies into one!
@@ -79,13 +79,9 @@ pub struct FeeSubsidies(pub Vec<Arc<dyn FeeSubsidizing>>);
 
 #[async_trait::async_trait]
 impl FeeSubsidizing for FeeSubsidies {
-    async fn subsidy(&self, parameters: SubsidyParameters) -> Result<Subsidy> {
-        let subsidies = future::try_join_all(
-            self.0
-                .iter()
-                .map(|strategy| strategy.subsidy(parameters.clone())),
-        )
-        .await?;
+    async fn subsidy(&self) -> Result<Subsidy> {
+        let subsidies =
+            future::try_join_all(self.0.iter().map(|strategy| strategy.subsidy())).await?;
 
         Ok(subsidies
             .into_iter()
@@ -103,7 +99,7 @@ impl FeeSubsidizing for FeeSubsidies {
 // Convenience to allow static subsidies.
 #[async_trait::async_trait]
 impl FeeSubsidizing for Subsidy {
-    async fn subsidy(&self, _: SubsidyParameters) -> Result<Subsidy> {
+    async fn subsidy(&self) -> Result<Subsidy> {
         Ok(self.clone())
     }
 }

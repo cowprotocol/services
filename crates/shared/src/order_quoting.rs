@@ -7,7 +7,7 @@ use {
     },
     crate::{
         db_order_conversions::order_kind_from,
-        fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
+        fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy},
         order_validation::PreOrderData,
         price_estimation::Verification,
     },
@@ -462,13 +462,7 @@ impl OrderQuoting for OrderQuoter {
         let (data, subsidy) = futures::try_join!(
             self.compute_quote_data(&parameters),
             self.fee_subsidy
-                .subsidy(SubsidyParameters {
-                    from: parameters
-                        .verification
-                        .as_ref()
-                        .map(|v| v.from)
-                        .unwrap_or_default(),
-                })
+                .subsidy()
                 .map_err(From::from),
         )?;
 
@@ -518,14 +512,6 @@ impl OrderQuoting for OrderQuoter {
             OrderKind::Buy => None,
         };
 
-        let subsidy = SubsidyParameters {
-            from: parameters
-                .verification
-                .as_ref()
-                .map(|v| v.from)
-                .unwrap_or_default(),
-        };
-
         let now = self.now.now();
         let additional_cost = parameters.additional_cost();
         let quote = async {
@@ -558,7 +544,7 @@ impl OrderQuoting for OrderQuoter {
         let (quote, subsidy) = futures::try_join!(
             quote,
             self.fee_subsidy
-                .subsidy(subsidy)
+                .subsidy()
                 .map_err(FindQuoteError::from)
         )?;
 
