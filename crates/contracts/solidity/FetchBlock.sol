@@ -16,8 +16,9 @@ contract FetchBlock {
             ? blockhash(blockNumber - 1)
             : bytes32(0);
         uint timestamp = block.timestamp;
+        uint gasLimit = block.gaslimit;
 
-        bytes memory result = abi.encode(blockNumber, blockHash, parentHash, timestamp);
+        bytes memory result = abi.encode(blockNumber, blockHash, parentHash, timestamp, gasLimit);
         assembly {
             return(add(32, result), mload(result))
         }
