@@ -582,7 +582,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             buy_token: quote_request.buy_token,
             receiver: quote_request.receiver.unwrap_or(owner),
             valid_to: quote_request.validity.actual_valid_to(),
-            partially_fillable: quote_request.partially_fillable,
+            partially_fillable: false,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
