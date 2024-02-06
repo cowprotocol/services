@@ -11,7 +11,7 @@
 use {
     super::swap::fixed_point::Bfp,
     crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
-    anyhow::{bail, Result},
+    anyhow::Result,
     ethcontract::{H160, H256},
     reqwest::{Client, Url},
     serde::Deserialize,
@@ -33,18 +33,10 @@ const QUERY_PAGE_SIZE: usize = 10;
 pub struct BalancerSubgraphClient(SubgraphClient);
 
 impl BalancerSubgraphClient {
-    /// Creates a new Balancer subgraph client for the specified chain ID.
-    pub fn for_chain(base_url: &Url, chain_id: u64, client: Client) -> Result<Self> {
-        let subgraph_name = match chain_id {
-            1 => "balancer-v2",
-            5 => "balancer-goerli-v2",
-            100 => "balancer-gnosis-chain-v2",
-            _ => bail!("unsupported chain {}", chain_id),
-        };
+    /// Creates a new Balancer subgraph client with full subgraph URL.
+    pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
         Ok(Self(SubgraphClient::new(
-            base_url,
-            "balancer-labs",
-            subgraph_name,
+            subgraph_url.clone(),
             client,
         )?))
     }
@@ -256,9 +248,9 @@ mod tests {
         std::collections::HashMap,
     };
 
-    pub fn default_for_chain(chain_id: u64, client: Client) -> Result<BalancerSubgraphClient> {
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        BalancerSubgraphClient::for_chain(&base_url, chain_id, client)
+    pub fn default_for_chain(client: Client) -> Result<BalancerSubgraphClient> {
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        BalancerSubgraphClient::from_subgraph_url(&subgraph_url, client)
     }
 
     #[test]
@@ -490,9 +482,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_subgraph_query() {
-        for (network_name, chain_id) in [("Mainnet", 1), ("Goerli", 5)] {
+        for network_name  in ["Mainnet", "Goerli"] {
             println!("### {network_name}");
-            let client = default_for_chain(chain_id, Client::new()).unwrap();
+            let client = default_for_chain(Client::new()).unwrap();
             let result = client.get_registered_pools().await.unwrap();
             println!(
                 "Retrieved {} total pools at block {}",

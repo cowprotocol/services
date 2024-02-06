@@ -735,7 +735,6 @@ mod tests {
             "main".into(),
         );
         let web3 = Web3::new(DynTransport::new(transport));
-        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let version = web3.net().version().await.unwrap();
 
         let pools = Arc::new(
@@ -766,11 +765,10 @@ mod tests {
             current_block_stream(Arc::new(web3.clone()), Duration::from_secs(10))
                 .await
                 .unwrap();
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
-                &base_url,
-                chain_id,
+                &subgraph_url,
                 block_retriever.clone(),
                 token_info.clone(),
                 Default::default(),
@@ -785,8 +783,7 @@ mod tests {
         );
         let uniswap_v3_pool_fetcher = Arc::new(
             UniswapV3PoolFetcher::new(
-                &base_url,
-                chain_id,
+                &subgraph_url,
                 web3.clone(),
                 client.clone(),
                 block_retriever.clone(),

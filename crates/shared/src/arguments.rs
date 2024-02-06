@@ -176,7 +176,7 @@ pub struct Arguments {
 
     /// The base URL used to connect to subgraph clients.
     #[clap(long, env, default_value = "https://api.thegraph.com/subgraphs/name/")]
-    pub graph_api_base_url: Url,
+    pub graph_api_url: Url,
 
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
     /// be used for simulations.
@@ -432,7 +432,7 @@ impl Display for Arguments {
             tenderly,
             logging,
             node_url,
-            graph_api_base_url,
+            graph_api_url: graph_api_base_url,
             chain_id,
             simulation_node_url,
             gas_estimators,

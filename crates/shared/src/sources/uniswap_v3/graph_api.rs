@@ -6,7 +6,7 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         subgraph::{ContainsId, SubgraphClient},
     },
-    anyhow::{bail, Result},
+    anyhow::Result,
     ethcontract::{H160, U256},
     num::BigInt,
     number::serialization::HexOrDecimalU256,
@@ -106,16 +106,10 @@ const TICKS_BY_POOL_IDS_QUERY: &str = r#"
 pub struct UniV3SubgraphClient(SubgraphClient);
 
 impl UniV3SubgraphClient {
-    /// Creates a new Uniswap V3 subgraph client for the specified chain ID.
-    pub fn for_chain(base_url: &Url, chain_id: u64, client: Client) -> Result<Self> {
-        let subgraph_name = match chain_id {
-            1 => "uniswap-v3",
-            _ => bail!("unsupported chain {}", chain_id),
-        };
+    /// Creates a new Uniswap V3 subgraph client from the specified URL.
+    pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
         Ok(Self(SubgraphClient::new(
-            base_url,
-            "uniswap",
-            subgraph_name,
+            subgraph_url.clone(),
             client,
         )?))
     }
@@ -323,13 +317,16 @@ mod tests {
         std::str::FromStr,
     };
 
-    pub fn default_for_chain(chain_id: u64, client: Client) -> Result<UniV3SubgraphClient> {
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        UniV3SubgraphClient::for_chain(&base_url, chain_id, client)
+    pub fn default_for_chain(client: Client) -> Result<UniV3SubgraphClient> {
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        UniV3SubgraphClient::from_subgraph_url(
+           &subgraph_url, 
+           client
+        )
     }
 
     #[test]
-    fn decode_pools_data() {
+    fn decode_pools_data(){
         assert_eq!(
             serde_json::from_value::<Data<PoolData>>(json!({
                 "pools": [
@@ -482,7 +479,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn get_registered_pools_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
+        let client = default_for_chain(Client::new()).unwrap();
         let result = client.get_registered_pools().await.unwrap();
         println!(
             "Retrieved {} total pools at block {}",
@@ -494,7 +491,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn get_pools_by_pool_ids_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
+        let client = default_for_chain(Client::new()).unwrap();
         let registered_pools = client.get_registered_pools().await.unwrap();
         let pool_ids = registered_pools
             .pools
@@ -515,7 +512,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn get_ticks_by_pools_ids_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
+        let client = default_for_chain(Client::new()).unwrap();
         let block_number = client.get_safe_block().await.unwrap();
         let pool_ids = vec![
             H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
@@ -531,7 +528,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn get_pools_with_ticks_by_ids_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
+        let client = default_for_chain(Client::new()).unwrap();
         let block_number = client.get_safe_block().await.unwrap();
         let pool_ids = vec![
             H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),

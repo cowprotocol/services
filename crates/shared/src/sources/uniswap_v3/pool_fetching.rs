@@ -131,12 +131,11 @@ impl PoolsCheckpointHandler {
     /// state/ticks). Then fetches state/ticks for the most deepest pools
     /// (subset of all existing pools)
     pub async fn new(
-        base_url: &Url,
-        chain_id: u64,
+        subgraph_url: &Url,
         client: Client,
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
-        let graph_api = UniV3SubgraphClient::for_chain(base_url, chain_id, client)?;
+        let graph_api = UniV3SubgraphClient::from_subgraph_url(subgraph_url, client)?;
         let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
@@ -266,15 +265,14 @@ pub struct UniswapV3PoolFetcher {
 
 impl UniswapV3PoolFetcher {
     pub async fn new(
-        base_url: &Url,
-        chain_id: u64,
+        subgraph_url: &Url,
         web3: Web3,
         client: Client,
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
     ) -> Result<Self> {
         let checkpoint =
-            PoolsCheckpointHandler::new(base_url, chain_id, client, max_pools_to_initialize)
+            PoolsCheckpointHandler::new(subgraph_url,  client, max_pools_to_initialize)
                 .await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
@@ -726,9 +724,10 @@ mod tests {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let block_retriever = Arc::new(web3.clone());
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        
         let fetcher =
-            UniswapV3PoolFetcher::new(&base_url, 1, web3, Client::new(), block_retriever, 100)
+            UniswapV3PoolFetcher::new( &subgraph_url, web3, Client::new(), block_retriever, 100)
                 .await
                 .unwrap();
 
@@ -748,10 +747,9 @@ mod tests {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let block_retriever = Arc::new(web3.clone());
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
         let fetcher = UniswapV3PoolFetcher::new(
-            &base_url,
-            1,
+            &subgraph_url,
             web3.clone(),
             Client::new(),
             block_retriever,
@@ -781,9 +779,10 @@ mod tests {
             .unwrap();
         pools.sort_by(|a, b| a.address.cmp(&b.address));
 
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        
         // get the same pools using direct call to subgraph
-        let graph_api = UniV3SubgraphClient::for_chain(&base_url, 1, Client::new()).unwrap();
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let graph_api = UniV3SubgraphClient::from_subgraph_url(&subgraph_url, Client::new()).unwrap();
         let pool_ids = pools.iter().map(|pool| pool.address).collect::<Vec<_>>();
 
         // first get at the block in history

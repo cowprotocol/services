@@ -285,8 +285,7 @@ impl BalancerContracts {
 impl BalancerPoolFetcher {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
-        base_url: &Url,
-        chain_id: u64,
+        subgraph_url: &Url,
         block_retriever: Arc<dyn BlockRetrieving>,
         token_infos: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
@@ -296,7 +295,7 @@ impl BalancerPoolFetcher {
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<H256>,
     ) -> Result<Self> {
-        let pool_initializer = BalancerSubgraphClient::for_chain(base_url, chain_id, client)?;
+        let pool_initializer = BalancerSubgraphClient::from_subgraph_url(subgraph_url, client)?;
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(
                 web3,
@@ -520,7 +519,6 @@ mod tests {
     async fn balancer_pool_fetcher_print() {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let contracts =
             BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
                 .await
@@ -539,10 +537,9 @@ mod tests {
             "072f14b85add63488ddad88f855fda4a99d6ac9b000200000000000000000027"
         ))];
         // let deny_list = vec![];
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
         let pool_fetcher = BalancerPoolFetcher::new(
-            &base_url,
-            chain_id,
+            &subgraph_url,
             Arc::new(web3.clone()),
             token_info_fetcher,
             Default::default(),
@@ -599,9 +596,9 @@ mod tests {
             ),
             pool_id_deny_list: Default::default(),
         };
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
         // see what the subgraph says.
-        let client = BalancerSubgraphClient::for_chain(&base_url, chain_id, Client::new()).unwrap();
+        let client = BalancerSubgraphClient::from_subgraph_url(&subgraph_url, Client::new()).unwrap();
         let subgraph_pools = client.get_registered_pools().await.unwrap();
         let subgraph_token_pairs = subgraph_pools_token_pairs(&subgraph_pools.pools).collect();
 

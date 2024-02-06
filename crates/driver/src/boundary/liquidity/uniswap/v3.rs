@@ -136,7 +136,6 @@ async fn init_liquidity(
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
             &config.graph_api_base_url,
-            eth.network().chain.into(),
             web3.clone(),
             boundary::liquidity::http_client(),
             block_retriever,
