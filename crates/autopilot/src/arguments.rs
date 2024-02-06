@@ -423,6 +423,22 @@ impl FromStr for FeePolicyKind {
                     max_volume_factor,
                 })
             }
+            "price-improvement" => {
+                let factor = parts
+                    .next()
+                    .ok_or("missing price-improvement factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid price-improvement factor: {}", e))?;
+                let max_volume_factor = parts
+                    .next()
+                    .ok_or("missing price-improvement max volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid price-improvement max volume factor: {}", e))?;
+                Ok(Self::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                })
+            }
             "volume" => {
                 let factor = parts
                     .next()

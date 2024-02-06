@@ -49,6 +49,30 @@ async fn local_node_volume_fee_buy_order() {
     run_test(volume_fee_buy_order_test).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_price_improvement_fee_sell_order() {
+    run_test(price_improvement_fee_sell_order_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_price_improvement_fee_sell_order_capped() {
+    run_test(price_improvement_fee_sell_order_capped_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_price_improvement_fee_buy_order() {
+    run_test(price_improvement_fee_buy_order_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_price_improvement_fee_buy_order_capped() {
+    run_test(price_improvement_fee_buy_order_capped_test).await;
+}
+
 async fn surplus_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
@@ -187,6 +211,120 @@ async fn surplus_fee_buy_order_capped_test(web3: Web3) {
 
 async fn volume_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
+    // Without protocol fee:
+    // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
+    // with executed_surplus_fee = 167058994203399 GNO
+    //
+    // With protocol fee:
+    // Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
+    // 504208401617866820
+    //
+    // Settlement contract balance after execution = executed_surplus_fee GNO
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Buy,
+        504208401617866820u128.into(),
+        504208401617866820u128.into(),
+    )
+    .await;
+}
+
+async fn price_improvement_fee_sell_order_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 0.3,
+        max_volume_factor: 1.0,
+    };
+    // Without protocol fee:
+    // Expected execution is 10000000000000000000 GNO for
+    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
+    //
+    // With protocol fee:
+    // surplus [DAI] = 9871415430342266811 DAI - 5000000000000000000 DAI =
+    // 4871415430342266811 DAI
+    //
+    // protocol fee = 0.3*surplus = 1461424629102680043 DAI =
+    // 1461424629102680043 DAI / 9871415430342266811 *
+    // (10000000000000000000 - 167058994203399) = 1480436341679873337 GNO
+    //
+    // final execution is 10000000000000000000 GNO for 8409990801239586768 DAI, with
+    // executed_surplus_fee = 1480603400674076736 GNO
+    //
+    // Settlement contract balance after execution = 1480603400674076736 GNO =
+    // 1480603400674076736 GNO * 8409990801239586768 / (10000000000000000000 -
+    // 1480603400674076736) = 1461589542731026166 DAI
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Sell,
+        1480603400674076736u128.into(),
+        1461589542731026166u128.into(),
+    )
+    .await;
+}
+
+async fn price_improvement_fee_sell_order_capped_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 1.0,
+        max_volume_factor: 0.1,
+    };
+    // Without protocol fee:
+    // Expected executed_surplus_fee is 167058994203399
+    //
+    // With protocol fee:
+    // Expected executed_surplus_fee is 167058994203399 +
+    // 0.1*10000000000000000000 = 1000167058994203400
+    //
+    // Final execution is 10000000000000000000 GNO for 8884257395945205588 DAI, with
+    // executed_surplus_fee = 1000167058994203400 GNO
+    //
+    // Settlement contract balance after execution = 1000167058994203400 GNO =
+    // 1000167058994203400 GNO * 8884257395945205588 / (10000000000000000000 -
+    // 1000167058994203400) = 987322948025407485 DAI
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Sell,
+        1000167058994203400u128.into(),
+        987322948025407485u128.into(),
+    )
+    .await;
+}
+
+async fn price_improvement_fee_buy_order_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 0.3,
+        max_volume_factor: 1.0,
+    };
+    // Without protocol fee:
+    // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
+    // with executed_surplus_fee = 167058994203399 GNO
+    //
+    // With protocol fee:
+    // surplus in sell token = 10000000000000000000 - 5040413426236634210 =
+    // 4959586573763365790
+    //
+    // protocol fee in sell token = 0.3*4959586573763365790 = 1487875972129009737
+    //
+    // expected executed_surplus_fee is 167058994203399 + 1487875972129009737 =
+    // 1488043031123213136
+    //
+    // Settlement contract balance after execution = executed_surplus_fee GNO
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Buy,
+        1488043031123213136u128.into(),
+        1488043031123213136u128.into(),
+    )
+    .await;
+}
+
+async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 1.0,
+        max_volume_factor: 0.1,
+    };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
     // with executed_surplus_fee = 167058994203399 GNO
@@ -358,6 +496,9 @@ async fn execute_test(
 enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
 }
@@ -371,6 +512,14 @@ impl std::fmt::Display for FeePolicyKind {
             } => write!(
                 f,
                 "--fee-policy-kind=surplus:{}:{}",
+                factor, max_volume_factor
+            ),
+            FeePolicyKind::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => write!(
+                f,
+                "--fee-policy-kind=price-improvement:{}:{}",
                 factor, max_volume_factor
             ),
             FeePolicyKind::Volume { factor } => {
