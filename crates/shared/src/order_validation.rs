@@ -1182,7 +1182,7 @@ mod tests {
         assert!(validator
             .partial_validate(PreOrderData {
                 class: OrderClass::Limit,
-                owner: liquidity_order_owner,
+                owner: H160::from_low_u64_be(0x42),
                 valid_to: time::now_in_epoch_seconds()
                     + validity_configuration.max_market.as_secs() as u32
                     + 2,
@@ -1194,7 +1194,7 @@ mod tests {
             .partial_validate(PreOrderData {
                 partially_fillable: true,
                 class: OrderClass::Liquidity,
-                owner: liquidity_order_owner,
+                owner: H160::from_low_u64_be(0x42),
                 valid_to: u32::MAX,
                 ..order()
             })
@@ -1231,7 +1231,6 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
@@ -1430,7 +1429,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1489,7 +1487,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1547,7 +1544,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1604,7 +1600,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1655,7 +1650,6 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1709,7 +1703,6 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1768,7 +1761,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1819,7 +1811,6 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1875,7 +1866,6 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1938,7 +1928,6 @@ mod tests {
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
             let validator = OrderValidator::new(
                 dummy_contract!(WETH9, [0xef; 20]),
-                hashset!(),
                 hashset!(),
                 OrderValidPeriodConfiguration::any(),
                 false,

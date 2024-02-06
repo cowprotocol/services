@@ -461,9 +461,7 @@ impl OrderQuoting for OrderQuoter {
     ) -> Result<Quote, CalculateQuoteError> {
         let (data, subsidy) = futures::try_join!(
             self.compute_quote_data(&parameters),
-            self.fee_subsidy
-                .subsidy()
-                .map_err(From::from),
+            self.fee_subsidy.subsidy().map_err(From::from),
         )?;
 
         let mut quote = Quote::new(Default::default(), data)
@@ -543,9 +541,7 @@ impl OrderQuoting for OrderQuoter {
 
         let (quote, subsidy) = futures::try_join!(
             quote,
-            self.fee_subsidy
-                .subsidy()
-                .map_err(FindQuoteError::from)
+            self.fee_subsidy.subsidy().map_err(FindQuoteError::from)
         )?;
 
         let quote = quote.with_subsidy_and_additional_cost(&subsidy, additional_cost);

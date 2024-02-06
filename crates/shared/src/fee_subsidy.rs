@@ -244,7 +244,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            fee_subsidies.subsidy(Default::default()).await.unwrap(),
+            fee_subsidies.subsidy().await.unwrap(),
             Subsidy {
                 discount: 2e16,
                 min_discounted: 1e15,
