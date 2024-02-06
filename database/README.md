@@ -239,15 +239,17 @@ Indexes:
 
 Contains all relevant data of fee policies applied to orders during auctions.
 
-Column                    | Type                         | Nullable | Details
---------------------------|------------------------------|----------|--------
- auction_id               | bigint                       | not null | unique identifier for the auction
- order_uid                | bytea                        | not null | 56 bytes identifier linking to the order in the `orders` table
- application_order        | serial                       | not null | the order in which the fee policies are inserted and applied
- kind                     | [PolicyKind](#policykind)    | not null | type of the fee policy, defined in the PolicyKind enum
- surplus_factor           | double precision             |          | percentage of the surplus for fee calculation; value is between 0 and 1
- max_volume_factor        | double precision             |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
- volume_factor            | double precision             |          | fee percentage of the order volume; value is between 0 and 1
+Column                    | Type                      | Nullable | Details
+--------------------------|---------------------------|----------|--------
+ auction_id               | bigint                    | not null | unique identifier for the auction
+ order_uid                | bytea                     | not null | 56 bytes identifier linking to the order in the `orders` table
+ application_order        | serial                    | not null | the order in which the fee policies are inserted and applied
+ kind                     | [PolicyKind](#policykind) | not null | type of the fee policy, defined in the PolicyKind enum
+ surplus_factor           | double precision          |          | percentage of the surplus for fee calculation; value is between 0 and 1
+ max_volume_factor        | double precision          |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
+ volume_factor            | double precision          |          | fee percentage of the order volume; value is between 0 and 1
+ quote_sell_amount        | numeric                   |          | quote's sell amount
+ quote_buy_amount         | numeric                   |          | quote's buy amount
 
 Indexes:
 - PRIMARY KEY: composite key(`auction_id`, `order_uid`, `application_order`)
@@ -260,6 +262,7 @@ Indexes:
     Values:
     - `surplus`: The fee is based on the surplus achieved in the trade.
     - `volume`: The fee is based on the volume of the order.
+    - `priceimprovement`: The fee is based on the difference of the order's execution price and the top quote.
 
 ### presignature\_events
 

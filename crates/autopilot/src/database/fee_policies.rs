@@ -9,7 +9,7 @@ pub async fn insert_batch(
 ) -> Result<(), sqlx::Error> {
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
-         max_volume_factor, volume_factor) ",
+         max_volume_factor, volume_factor, quote_sell_amount, quote_buy_amount) ",
     );
 
     query_builder.push_values(fee_policies, |mut b, fee_policy| {
@@ -18,7 +18,9 @@ pub async fn insert_batch(
             .push_bind(fee_policy.kind)
             .push_bind(fee_policy.surplus_factor)
             .push_bind(fee_policy.max_volume_factor)
-            .push_bind(fee_policy.volume_factor);
+            .push_bind(fee_policy.volume_factor)
+            .push_bind(fee_policy.quote_sell_amount)
+            .push_bind(fee_policy.quote_buy_amount);
     });
 
     query_builder.build().execute(ex).await.map(|_| ())
@@ -46,7 +48,7 @@ pub async fn fetch(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, database::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, bigdecimal::BigDecimal, database::byte_array::ByteArray, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]
@@ -66,6 +68,8 @@ mod tests {
             surplus_factor: Some(0.1),
             max_volume_factor: Some(1.0),
             volume_factor: None,
+            quote_sell_amount: None,
+            quote_buy_amount: None,
         };
         // surplus fee policy with caps
         let fee_policy_2 = dto::FeePolicy {
@@ -75,6 +79,8 @@ mod tests {
             surplus_factor: Some(0.2),
             max_volume_factor: Some(0.05),
             volume_factor: None,
+            quote_sell_amount: None,
+            quote_buy_amount: None,
         };
         // volume based fee policy
         let fee_policy_3 = dto::FeePolicy {
@@ -84,6 +90,19 @@ mod tests {
             surplus_factor: None,
             max_volume_factor: None,
             volume_factor: Some(0.06),
+            quote_sell_amount: None,
+            quote_buy_amount: None,
+        };
+        // price improvement fee policy
+        let fee_policy_4 = dto::FeePolicy {
+            auction_id,
+            order_uid,
+            kind: dto::fee_policy::FeePolicyKind::PriceImprovement,
+            surplus_factor: Some(0.3),
+            max_volume_factor: Some(0.07),
+            volume_factor: None,
+            quote_sell_amount: Some(BigDecimal::new(100.into(), 1)),
+            quote_buy_amount: Some(BigDecimal::new(200.into(), 1)),
         };
         insert_batch(
             &mut db,
@@ -91,12 +110,16 @@ mod tests {
                 fee_policy_1.clone(),
                 fee_policy_2.clone(),
                 fee_policy_3.clone(),
+                fee_policy_4.clone(),
             ],
         )
         .await
         .unwrap();
 
         let output = fetch(&mut db, 1, order_uid).await.unwrap();
-        assert_eq!(output, vec![fee_policy_1, fee_policy_2, fee_policy_3]);
+        assert_eq!(
+            output,
+            vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4]
+        );
     }
 }
