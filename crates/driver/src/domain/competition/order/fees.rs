@@ -22,7 +22,8 @@ pub enum FeePolicy {
     /// case is calculated from a cut of this price improvement.
     PriceImprovement {
         /// Factor of price improvement the protocol charges as a fee.
-        /// Price improvement is the difference between executed price and the best quote
+        /// Price improvement is the difference between executed price and the
+        /// best quote
         ///
         /// E.g. if a user received 2000USDC for 1ETH while having a best quote
         /// of 1990USDC, their surplus is 10USDC. A factor of 0.1

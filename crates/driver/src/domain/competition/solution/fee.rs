@@ -113,8 +113,9 @@ impl Fulfillment {
             self.fee_from_surplus(reference_sell_amount, reference_buy_amount, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
-        tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
-        Ok(std::cmp::min(fee_from_surplus, fee_from_volume))
+        let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
+        tracing::debug!(uid=?self.order().uid, ?fee_from_surplus, ?fee_from_volume, ?protocol_fee, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+        Ok(protocol_fee)
     }
 
     fn fee_from_surplus(
