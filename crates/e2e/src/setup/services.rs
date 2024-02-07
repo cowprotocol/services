@@ -89,7 +89,7 @@ impl<'a> Services<'a> {
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
             "--price-estimators=None".to_string(),
-            "--native-price-estimators=test_solver".to_string(),
+            "--native-price-estimators=test_quoter".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             "--trade-simulator=Web3".to_string(),
@@ -182,12 +182,12 @@ impl<'a> Services<'a> {
             None,
             vec![
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ],
         );
         self.start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
     }
@@ -228,7 +228,11 @@ impl<'a> Services<'a> {
         );
         self.start_autopilot(
             Some(Duration::from_secs(11)),
-            vec!["--drivers=test_solver|http://localhost:11088/test_solver".to_string()],
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
+                    .to_string(),
+            ],
         );
         self.start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
