@@ -29,7 +29,7 @@ impl ProtocolFee {
 
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
-    pub fn to_order(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+    pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
         let protocol_fees = match order.metadata.class {
             boundary::OrderClass::Market => {
                 if self.fee_policy_skip_market_orders {
