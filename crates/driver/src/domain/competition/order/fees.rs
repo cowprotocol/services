@@ -19,16 +19,17 @@ pub enum FeePolicy {
     },
     /// A price improvement corresponds to a situation where the order is
     /// executed at a better price than the top quote. The protocol fee in such
-    /// case is calculated from a cut of this price improvement.
+    /// case is calculated as a percentage of this price improvement.
     PriceImprovement {
-        /// Factor of price improvement the protocol charges as a fee.
         /// Price improvement is the difference between executed price and the
-        /// best quote
+        /// best quote or limit price, whichever is better for the user.
         ///
         /// E.g. if a user received 2000USDC for 1ETH while having a best quote
-        /// of 1990USDC, their surplus is 10USDC. A factor of 0.1
-        /// requires the solver to pay 1USDC to the protocol for
-        /// settling this order.
+        /// of 1995USDC and limit price of 1990USDC, their surplus is 10USDC
+        /// while the price improvement is 5USDC. A factor of 0.1 requires the
+        /// solver to pay 0.5USDC to the protocol for settling this order. In
+        /// case the best quote was 1990USDC while the limit price was 1995USDC,
+        /// the solver should also pay 0.5USDC to the protocol.
         factor: f64,
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
