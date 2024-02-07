@@ -21,8 +21,17 @@ pub enum FeePolicy {
     /// executed at a better price than the top quote. The protocol fee in such
     /// case is calculated from a cut of this price improvement.
     PriceImprovement {
+        /// Factor of price improvement the protocol charges as a fee.
+        /// Price improvement is the difference between executed price and the best quote
+        ///
+        /// E.g. if a user received 2000USDC for 1ETH while having a best quote
+        /// of 1990USDC, their surplus is 10USDC. A factor of 0.1
+        /// requires the solver to pay 1USDC to the protocol for
+        /// settling this order.
         factor: f64,
+        /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
+        /// The best quote received.
         quote: Quote,
     },
     /// How much of the order's volume should be taken as a protocol fee.
