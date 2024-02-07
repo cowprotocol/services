@@ -442,7 +442,7 @@ components:
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
-          example: 0.1
+          example: 0.01
         factor:
           description: The factor of the user surplus that the protocol will request from the solver after settling the order
           type: number
