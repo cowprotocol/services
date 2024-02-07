@@ -16,51 +16,26 @@ use {
 #[derive(Debug)]
 pub struct ProtocolFee {
     policy_builder: PolicyBuilder,
-    fee_policy_skip_market_orders: bool,
+    skip_market_orders: bool,
 }
 
 impl ProtocolFee {
-    pub fn new(policy: PolicyBuilder, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(policy_builder: PolicyBuilder, skip_market_orders: bool) -> Self {
         Self {
-            policy_builder: policy,
-            fee_policy_skip_market_orders,
+            policy_builder,
+            skip_market_orders,
         }
     }
 
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
     pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
-        let protocol_fees = match order.metadata.class {
-            boundary::OrderClass::Market => {
-                if self.fee_policy_skip_market_orders {
-                    vec![]
-                } else {
-                    vec![self.policy_builder.build_with(quote)]
-                }
-            }
-            boundary::OrderClass::Liquidity => vec![],
-            boundary::OrderClass::Limit => {
-                if !self.fee_policy_skip_market_orders {
-                    vec![self.policy_builder.build_with(quote)]
-                } else {
-                    let order_ = boundary::Amounts {
-                        sell: order.data.sell_amount,
-                        buy: order.data.buy_amount,
-                        fee: order.data.fee_amount,
-                    };
-                    let quote_ = boundary::Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee,
-                    };
-                    if boundary::is_order_outside_market_price(&order_, &quote_) {
-                        vec![self.policy_builder.build_with(quote)]
-                    } else {
-                        vec![]
-                    }
-                }
-            }
-        };
+        let protocol_fees = self
+            .policy_builder
+            .build(quote)
+            .with(&order, quote, self.skip_market_orders)
+            .into_iter()
+            .collect();
         boundary::order::to_domain(order, protocol_fees)
     }
 }
@@ -100,6 +75,47 @@ pub enum Policy {
     },
 }
 
+impl Policy {
+    pub fn with(
+        self,
+        order: &boundary::Order,
+        quote: &domain::Quote,
+        skip_market_orders: bool,
+    ) -> Option<Policy> {
+        match order.metadata.class {
+            boundary::OrderClass::Market => {
+                if skip_market_orders {
+                    None
+                } else {
+                    Some(self)
+                }
+            }
+            boundary::OrderClass::Liquidity => None,
+            boundary::OrderClass::Limit => {
+                if !skip_market_orders {
+                    Some(self)
+                } else {
+                    let order_ = boundary::Amounts {
+                        sell: order.data.sell_amount,
+                        buy: order.data.buy_amount,
+                        fee: order.data.fee_amount,
+                    };
+                    let quote_ = boundary::Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee,
+                    };
+                    if boundary::is_order_outside_market_price(&order_, &quote_) {
+                        Some(self)
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum PolicyBuilder {
     Surplus { factor: f64, max_volume_factor: f64 },
@@ -108,7 +124,7 @@ pub enum PolicyBuilder {
 }
 
 impl PolicyBuilder {
-    pub fn build_with(&self, quote: &domain::Quote) -> Policy {
+    pub fn build(&self, quote: &domain::Quote) -> Policy {
         match self {
             PolicyBuilder::Surplus {
                 factor,
