@@ -37,32 +37,10 @@ impl FeeParameters {
     pub fn fee_with_additional_cost(&self, additional_cost: u64) -> U256 {
         let fee_in_eth = (self.gas_amount + additional_cost as f64) * self.gas_price;
 
-        dtou(fee_in_eth / self.sell_token_price)
-    }
-}
-
-/// Converts an `f64` to a `U256`.
-///
-/// We want the conversion from f64 to U256 to use ceil because:
-/// 1. For final amounts that end up close to 0 atoms we always take a fee so we
-///    are not attackable through low decimal tokens.
-/// 2. When validating fees this consistently picks the same amount.
-fn dtou(d: f64) -> U256 {
-    U256::from_f64_lossy(d.ceil())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Convenience to allow using u32 in tests instead of the struct.
-    impl From<u32> for FeeParameters {
-        fn from(v: u32) -> Self {
-            FeeParameters {
-                gas_amount: v as f64,
-                gas_price: 1.0,
-                sell_token_price: 1.0,
-            }
-        }
+        // We want the conversion from f64 to U256 to use ceil because:
+        // 1. For final amounts that end up close to 0 atoms we always take a fee so we
+        //    are not attackable through low decimal tokens.
+        // 2. When validating fees this consistently picks the same amount.
+        U256::from_f64_lossy((fee_in_eth / self.sell_token_price).ceil())
     }
 }

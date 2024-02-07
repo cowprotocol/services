@@ -282,7 +282,8 @@ pub struct OrderData {
     /// as they should only ever be used to improve the price of a regular order
     /// and should not be settled on their own.
     /// This is 0 for limit orders as their fee gets taken from the surplus.
-    /// This is equal to `OrderMetadata::full_fee_amount`
+    /// This is equal to `OrderMetadata::full_fee_amount` except for old orders
+    /// where the subsidy was applied (at the time when we used the subsidies).
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
     pub kind: OrderKind,

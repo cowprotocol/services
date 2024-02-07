@@ -84,7 +84,7 @@ pub struct Quote {
     /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
     /// scaled down to account for the computed `fee_amount`).
     pub buy_amount: U256,
-    /// The final fee amount for any order created for this quote. The fee is
+    /// The fee amount for any order created for this quote. The fee is
     /// denoted in the sell token.
     pub fee_amount: U256,
 }
@@ -101,8 +101,7 @@ impl Quote {
         }
     }
 
-    /// Applies a subsidy to the quote **with** the
-    /// `QuoteSigningScheme.verification_gas_limit`
+    /// Adjusts the quote fee to include arbitrary additional costs.
     pub fn with_additional_cost(mut self, additional_cost: u64) -> Self {
         // Be careful not to modify `self.data` as this represents the actual
         // quote data that is stored in the database. Instead, update the
