@@ -88,15 +88,6 @@ pub struct OrderQuotingArguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_legacy_solvers: Vec<LegacySolver>,
 
-    /// The configured addresses whose orders should be considered liquidity and
-    /// not regular user orders.
-    ///
-    /// These orders have special semantics such as not being considered in the
-    /// settlements objective function, not receiving any surplus, and being
-    /// allowed to place partially fillable orders.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub liquidity_order_owners: Vec<H160>,
-
     /// The time period an EIP1271-quote request is valid.
     #[clap(
         long,
@@ -124,30 +115,6 @@ pub struct OrderQuotingArguments {
         value_parser = humantime::parse_duration,
     )]
     pub standard_offchain_quote_validity: Duration,
-
-    /// A flat fee discount denominated in the network's native token (i.e.
-    /// Ether for Mainnet).
-    ///
-    /// Note that flat fee discounts are applied BEFORE any multiplicative
-    /// factors from either `--fee-factor` or
-    /// `--partner-additional-fee-factors` configuration.
-    #[clap(long, env, default_value = "0")]
-    pub fee_discount: f64,
-
-    /// The minimum value for the discounted fee in the network's native token
-    /// (i.e. Ether for Mainnet).
-    ///
-    /// Note that this minimum is applied BEFORE any multiplicative factors from
-    /// either `--fee-factor` or `--partner-additional-fee-factors`
-    /// configuration.
-    #[clap(long, env, default_value = "0")]
-    pub min_discounted_fee: f64,
-
-    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9
-    /// means there is a 10% subsidy, 1.1 means users pay 10% in fees than
-    /// what we estimate we pay for gas.
-    #[clap(long, env, default_value = "1", value_parser = parse_unbounded_factor)]
-    pub fee_factor: f64,
 }
 
 logging_args_with_default_filter!(
@@ -383,13 +350,9 @@ impl Display for OrderQuotingArguments {
         let Self {
             eip1271_onchain_quote_validity,
             presign_onchain_quote_validity,
-            fee_discount,
-            min_discounted_fee,
-            fee_factor,
             price_estimators,
             price_estimation_drivers,
             price_estimation_legacy_solvers,
-            liquidity_order_owners,
             standard_offchain_quote_validity,
         } = self;
 
@@ -403,9 +366,6 @@ impl Display for OrderQuotingArguments {
             "presign_onchain_quote_validity_second: {:?}",
             presign_onchain_quote_validity
         )?;
-        writeln!(f, "fee_discount: {}", fee_discount)?;
-        writeln!(f, "min_discounted_fee: {}", min_discounted_fee)?;
-        writeln!(f, "fee_factor: {}", fee_factor)?;
         writeln!(f, "price_estimators: {}", price_estimators)?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         display_list(
@@ -413,7 +373,6 @@ impl Display for OrderQuotingArguments {
             "price_estimation_legacy_solvers",
             price_estimation_legacy_solvers,
         )?;
-        writeln!(f, "liquidity_order_owners: {:?}", liquidity_order_owners)?;
         writeln!(
             f,
             "standard_offchain_quote_validity: {:?}",
@@ -562,12 +521,6 @@ impl Display for LegacySolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}({}, {:?})", self.name, self.url, self.address)
     }
-}
-
-pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
-    let factor = f64::from_str(s)?;
-    ensure!(factor.is_finite() && factor >= 0.);
-    Ok(factor)
 }
 
 pub fn parse_percentage_factor(s: &str) -> Result<f64> {

@@ -13,7 +13,6 @@ pub mod fee_policies;
 pub mod on_settlement_event_updater;
 pub mod onchain_order_events;
 pub mod order_events;
-pub mod orders;
 mod quotes;
 pub mod recent_settlements;
 

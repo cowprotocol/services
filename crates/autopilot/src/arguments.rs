@@ -372,7 +372,8 @@ pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
     /// How much of the order's price improvement should be taken as a protocol
-    /// fee.
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
     PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
@@ -401,17 +402,17 @@ impl FromStr for FeePolicyKind {
                     max_volume_factor,
                 })
             }
-            "price-improvement" => {
+            "priceImprovement" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing price-improvement factor")?
+                    .ok_or("missing price improvement factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid price-improvement factor: {}", e))?;
+                    .map_err(|e| format!("invalid price improvement factor: {}", e))?;
                 let max_volume_factor = parts
                     .next()
-                    .ok_or("missing price-improvement max volume factor")?
+                    .ok_or("missing price improvement max volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid price-improvement max volume factor: {}", e))?;
+                    .map_err(|e| format!("invalid price improvement max volume factor: {}", e))?;
                 Ok(Self::PriceImprovement {
                     factor,
                     max_volume_factor,
