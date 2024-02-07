@@ -4,6 +4,7 @@ use {
     ethcontract::{prelude::U256, H160},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -543,6 +544,22 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+
+    // Warm up co-located driver by quoting the order (otherwise placing an order
+    // may time out)
+    let _ = services
+        .submit_quote(&OrderQuoteRequest {
+            sell_token: token_usdc.address(),
+            buy_token: token_usdt.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei_with_exp(1000, 6).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await;
+
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);

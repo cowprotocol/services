@@ -1,5 +1,8 @@
 use {
-    crate::{domain::Risk, infra::config::unwrap_or_log},
+    crate::{
+        domain::{solver::naive, Risk},
+        infra::config::unwrap_or_log,
+    },
     serde::Deserialize,
     serde_with::serde_as,
     std::path::Path,
@@ -20,13 +23,13 @@ struct Config {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(path: &Path) -> super::Config {
+pub async fn load(path: &Path) -> naive::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     // Not printing detailed error because it could potentially leak secrets.
     let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
-    super::Config {
+    naive::Config {
         risk: Risk {
             gas_amount_factor: config.risk_parameters.0,
             gas_price_factor: config.risk_parameters.1,

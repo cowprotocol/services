@@ -350,9 +350,9 @@ pub struct Setup {
 pub enum Calldata {
     /// Set up the solver to return a solution with valid calldata.
     Valid {
-        /// Include additional meaningless bytes appended to the calldata. This
-        /// is useful for lowering the solution score in a controlled
-        /// way.
+        /// Include additional meaningless non-zero bytes appended to the
+        /// calldata. This is useful for lowering the solution score in
+        /// a controlled way.
         additional_bytes: usize,
     },
     /// Set up the solver to return a solution with bogus calldata.
@@ -373,6 +373,23 @@ impl Solution {
             calldata: match self.calldata {
                 Calldata::Valid { .. } => Calldata::Valid {
                     additional_bytes: 10,
+                },
+                Calldata::Invalid => Calldata::Invalid,
+            },
+            ..self
+        }
+    }
+
+    /// Increase the solution gas consumption by at least `units`.
+    pub fn increase_gas(self, units: usize) -> Self {
+        // non-zero bytes costs 16 gas
+        let additional_bytes = (units / 16) + 1;
+        Self {
+            calldata: match self.calldata {
+                Calldata::Valid {
+                    additional_bytes: existing,
+                } => Calldata::Valid {
+                    additional_bytes: existing + additional_bytes,
                 },
                 Calldata::Invalid => Calldata::Invalid,
             },

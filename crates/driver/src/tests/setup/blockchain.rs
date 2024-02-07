@@ -724,6 +724,8 @@ impl Node {
             .arg("0") // use 0 to let `anvil` use any open port
             .arg("--balance")
             .arg("1000000")
+            .arg("--gas-limit")
+            .arg("30000000")
             .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();

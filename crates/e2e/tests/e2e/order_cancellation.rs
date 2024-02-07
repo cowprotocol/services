@@ -3,12 +3,12 @@ use {
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
-        app_data::AppDataHash,
         order::{
             CancellationPayload,
             OrderCancellation,
             OrderCancellations,
             OrderCreation,
+            OrderCreationAppData,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
@@ -18,6 +18,7 @@ use {
     },
     number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
+    serde_json::json,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
@@ -82,7 +83,9 @@ async fn order_cancellation(web3: Web3) {
                     value: NonZeroU256::try_from(to_wei(1)).unwrap(),
                 },
             },
-            app_data: AppDataHash([salt; 32]).into(),
+            app_data: OrderCreationAppData::Full {
+                full: json!({"salt": salt}).to_string(),
+            },
             ..Default::default()
         };
         async move {
