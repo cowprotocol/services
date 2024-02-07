@@ -34,7 +34,6 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -457,17 +456,10 @@ pub async fn run(args: Arguments) {
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.order_quoting.fee_discount,
-        min_discounted_fee: args.order_quoting.min_discounted_fee,
-        fee_factor: args.order_quoting.fee_factor,
-    }) as Arc<dyn FeeSubsidizing>;
-
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
-        fee_subsidy,
         Arc::new(db.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(

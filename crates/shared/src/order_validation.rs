@@ -599,16 +599,6 @@ impl OrderValidating for OrderValidator {
             OrderClass::Liquidity => None,
         };
 
-        let full_fee_amount = match class {
-            OrderClass::Market | OrderClass::Liquidity => quote
-                .as_ref()
-                .map(|quote| quote.full_fee_amount)
-                // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
-                // subsidies). This only makes a difference for liquidity orders.
-                .unwrap_or(data.fee_amount),
-            OrderClass::Limit => 0.into(), // limit orders have a solver determined fee
-        };
-
         let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
 
         // Fast path to check if transfer is possible with a single node query.
@@ -695,7 +685,7 @@ impl OrderValidating for OrderValidator {
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract,
-                full_fee_amount,
+                full_fee_amount: data.fee_amount,
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
