@@ -352,9 +352,19 @@ impl OrderData {
     }
 
     /// Checks if the order is a market order.
-    pub fn within_market(&self, quote_sell_amount: &U256, quote_buy_amount: &U256) -> bool {
-        self.sell_amount.full_mul(*quote_buy_amount) >= quote_sell_amount.full_mul(self.buy_amount)
+    pub fn within_market(&self, quote: QuoteAmounts) -> bool {
+        (self.sell_amount + self.fee_amount).full_mul(quote.buy)
+            >= (quote.sell + quote.fee).full_mul(self.buy_amount)
     }
+}
+
+/// Defines the quote exchange rate. The quote says it can sell `sell` amount of
+/// sell token and buy `buy` amount of buy token. Additionally, `fee``
+/// denominated in the sell token needs to be payed.
+pub struct QuoteAmounts {
+    pub sell: U256,
+    pub buy: U256,
+    pub fee: U256,
 }
 
 /// An order as provided to the POST order endpoint.

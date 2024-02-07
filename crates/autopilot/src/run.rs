@@ -1,6 +1,7 @@
 use {
     crate::{
         arguments::Arguments,
+        boundary,
         database::{
             ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
@@ -11,7 +12,7 @@ use {
             Postgres,
         },
         domain,
-        event_updater::{EventUpdater, GPv2SettlementContract},
+        event_updater::EventUpdater,
         infra::{self},
         run_loop::RunLoop,
         shadow,
@@ -458,8 +459,10 @@ pub async fn run(args: Arguments) {
         None
     };
     let event_updater = Arc::new(EventUpdater::new(
-        GPv2SettlementContract::new(eth.contracts().settlement().clone()),
-        db.clone(),
+        boundary::events::settlement::GPv2SettlementContract::new(
+            eth.contracts().settlement().clone(),
+        ),
+        boundary::events::settlement::Indexer::new(db.clone()),
         block_retriever.clone(),
         skip_event_sync_start,
     ));
@@ -531,7 +534,6 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
-            liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(

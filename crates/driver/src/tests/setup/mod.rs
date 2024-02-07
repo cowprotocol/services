@@ -234,8 +234,8 @@ impl Default for Order {
 pub struct Solver {
     /// A human readable identifier of the solver
     name: String,
-    /// Should the solver be funded with ETH? True by default.
-    funded: bool,
+    /// How much ETH balance should the solver be funded with? 1 ETH by default.
+    balance: eth::U256,
     /// The private key for this solver.
     private_key: ethcontract::PrivateKey,
     /// The slippage for this solver.
@@ -247,7 +247,7 @@ pub struct Solver {
 pub fn test_solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
-        funded: true,
+        balance: eth::U256::exp10(18),
         private_key: ethcontract::PrivateKey::from_slice(
             hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
                 .unwrap(),
@@ -284,6 +284,10 @@ impl Solver {
             },
             ..self
         }
+    }
+
+    pub fn balance(self, balance: eth::U256) -> Self {
+        Self { balance, ..self }
     }
 }
 
@@ -346,9 +350,9 @@ pub struct Setup {
 pub enum Calldata {
     /// Set up the solver to return a solution with valid calldata.
     Valid {
-        /// Include additional meaningless bytes appended to the calldata. This
-        /// is useful for lowering the solution score in a controlled
-        /// way.
+        /// Include additional meaningless non-zero bytes appended to the
+        /// calldata. This is useful for lowering the solution score in
+        /// a controlled way.
         additional_bytes: usize,
     },
     /// Set up the solver to return a solution with bogus calldata.
@@ -369,6 +373,23 @@ impl Solution {
             calldata: match self.calldata {
                 Calldata::Valid { .. } => Calldata::Valid {
                     additional_bytes: 10,
+                },
+                Calldata::Invalid => Calldata::Invalid,
+            },
+            ..self
+        }
+    }
+
+    /// Increase the solution gas consumption by at least `units`.
+    pub fn increase_gas(self, units: usize) -> Self {
+        // non-zero bytes costs 16 gas
+        let additional_bytes = (units / 16) + 1;
+        Self {
+            calldata: match self.calldata {
+                Calldata::Valid {
+                    additional_bytes: existing,
+                } => Calldata::Valid {
+                    additional_bytes: existing + additional_bytes,
                 },
                 Calldata::Invalid => Calldata::Invalid,
             },
@@ -549,16 +570,8 @@ impl Setup {
         self
     }
 
-    pub fn solver(mut self, solver: Solver) -> Self {
-        self.solvers.push(solver);
-        self
-    }
-
-    /// Don't fund the solver account with any ETH.
-    pub fn defund_solvers(mut self) -> Self {
-        self.solvers
-            .iter_mut()
-            .for_each(|solver| solver.funded = false);
+    pub fn solvers(mut self, solvers: Vec<Solver>) -> Self {
+        self.solvers = solvers;
         self
     }
 
@@ -763,6 +776,10 @@ impl Test {
 
     /// Call the /settle endpoint.
     pub async fn settle(&self) -> Settle {
+        self.settle_with_solver(solver::NAME).await
+    }
+
+    pub async fn settle_with_solver(&self, solver_name: &str) -> Settle {
         let old_balances = self.balances().await;
         let old_block = self
             .blockchain
@@ -776,8 +793,7 @@ impl Test {
             .client
             .post(format!(
                 "http://{}/{}/settle",
-                self.driver.addr,
-                solver::NAME
+                self.driver.addr, solver_name
             ))
             .json(&driver::settle_req())
             .send()

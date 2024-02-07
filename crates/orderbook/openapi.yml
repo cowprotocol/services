@@ -1385,9 +1385,6 @@ components:
                 In case they differ, the call will fail.
               anyOf:
                 - $ref: "#/components/schemas/AppDataHash"
-            partiallyFillable:
-              description: Is the order fill-or-kill or partially fillable?
-              type: boolean
             sellTokenBalance:
               allOf:
                 - $ref: "#/components/schemas/SellTokenSource"
