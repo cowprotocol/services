@@ -133,6 +133,7 @@ impl Auction {
                                 quote: competition::order::fees::Quote {
                                     sell_amount: quote.sell_amount,
                                     buy_amount: quote.buy_amount,
+                                    fee: quote.fee,
                                 },
                             },
                             FeePolicy::Volume { factor } => {
@@ -332,4 +333,5 @@ enum FeePolicy {
 pub struct Quote {
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
+    pub fee: eth::U256,
 }

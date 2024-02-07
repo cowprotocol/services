@@ -50,4 +50,5 @@ pub enum FeePolicy {
 pub struct Quote {
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
+    pub fee: eth::U256,
 }
