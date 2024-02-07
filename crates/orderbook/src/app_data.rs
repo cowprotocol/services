@@ -49,13 +49,11 @@ impl Registry {
             .validator
             .validate(document)
             .map_err(RegisterError::Invalid)?;
-        if let Some(hash) = hash {
-            if hash != validated.hash {
-                return Err(RegisterError::HashMismatch {
-                    expected: hash,
-                    computed: validated.hash,
-                });
-            }
+        if hash.is_some_and(|hash| hash != validated.hash) {
+            return Err(RegisterError::HashMismatch {
+                expected: hash.unwrap(),
+                computed: validated.hash,
+            });
         }
 
         match self
