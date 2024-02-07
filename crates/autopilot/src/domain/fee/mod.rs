@@ -83,13 +83,7 @@ impl Policy {
         skip_market_orders: bool,
     ) -> Option<Policy> {
         match order.metadata.class {
-            boundary::OrderClass::Market => {
-                if skip_market_orders {
-                    None
-                } else {
-                    Some(self)
-                }
-            }
+            boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => {
                 if !skip_market_orders {
@@ -150,6 +144,7 @@ impl PolicyBuilder {
 pub struct Quote {
     pub sell_amount: U256,
     pub buy_amount: U256,
+    pub fee: U256,
 }
 
 impl From<domain::Quote> for Quote {
@@ -157,6 +152,7 @@ impl From<domain::Quote> for Quote {
         Self {
             sell_amount: value.sell_amount,
             buy_amount: value.buy_amount,
+            fee: value.fee,
         }
     }
 }

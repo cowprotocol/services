@@ -283,6 +283,7 @@ pub enum FeePolicy {
 pub struct Quote {
     pub sell_amount: U256,
     pub buy_amount: U256,
+    pub fee: U256,
 }
 
 impl From<domain::fee::Policy> for FeePolicy {
@@ -305,6 +306,7 @@ impl From<domain::fee::Policy> for FeePolicy {
                 quote: Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
+                    fee: quote.fee,
                 },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume { factor },
@@ -332,6 +334,7 @@ impl From<FeePolicy> for domain::fee::Policy {
                 quote: domain::fee::Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
+                    fee: quote.fee,
                 },
             },
             FeePolicy::Volume { factor } => Self::Volume { factor },
