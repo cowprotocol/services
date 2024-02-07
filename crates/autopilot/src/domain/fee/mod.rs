@@ -6,23 +6,25 @@
 
 use {
     crate::{
+        arguments,
         boundary::{self},
         domain,
     },
+    itertools::Itertools,
     primitive_types::U256,
 };
 
 /// Constructs fee policies based on the current configuration.
-#[derive(Debug)]
 pub struct ProtocolFee {
     policy_builder: PolicyBuilder,
     skip_market_orders: bool,
 }
 
 impl ProtocolFee {
-    pub fn new(policy_builder: PolicyBuilder, skip_market_orders: bool) -> Self {
+    pub fn new(policy_args: arguments::FeePolicy) -> Self {
+        let skip_market_orders = policy_args.fee_policy_skip_market_orders;
         Self {
-            policy_builder,
+            policy_builder: policy_args.into(),
             skip_market_orders,
         }
     }
@@ -30,12 +32,14 @@ impl ProtocolFee {
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
     pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
-        let protocol_fees = self
-            .policy_builder
-            .build(quote)
-            .with(&order, quote, self.skip_market_orders)
-            .into_iter()
-            .collect();
+        let protocol_fees = match &self.policy_builder {
+            PolicyBuilder::Surplus(variant) => variant.apply(),
+            PolicyBuilder::PriceImprovement(variant) => variant.apply(quote),
+            PolicyBuilder::Volume(variant) => variant.apply(),
+        }
+        .with(&order, quote, self.skip_market_orders)
+        .into_iter()
+        .collect_vec();
         boundary::order::to_domain(order, protocol_fees)
     }
 }
@@ -110,32 +114,73 @@ impl Policy {
     }
 }
 
-#[derive(Debug)]
-pub enum PolicyBuilder {
-    Surplus { factor: f64, max_volume_factor: f64 },
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
-    Volume { factor: f64 },
+enum PolicyBuilder {
+    Surplus(SurplusPolicy),
+    PriceImprovement(PriceImprovementPolicy),
+    Volume(VolumePolicy),
 }
 
-impl PolicyBuilder {
-    pub fn build(&self, quote: &domain::Quote) -> Policy {
-        match self {
-            PolicyBuilder::Surplus {
+impl From<arguments::FeePolicy> for PolicyBuilder {
+    fn from(policy_arg: arguments::FeePolicy) -> Self {
+        match policy_arg.fee_policy_kind {
+            arguments::FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
-            } => Policy::Surplus {
-                factor: *factor,
-                max_volume_factor: *max_volume_factor,
-            },
-            PolicyBuilder::PriceImprovement {
+            } => PolicyBuilder::Surplus(SurplusPolicy {
                 factor,
                 max_volume_factor,
-            } => Policy::PriceImprovement {
-                factor: *factor,
-                max_volume_factor: *max_volume_factor,
-                quote: quote.clone().into(),
-            },
-            PolicyBuilder::Volume { factor } => Policy::Volume { factor: *factor },
+            }),
+            arguments::FeePolicyKind::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => PolicyBuilder::PriceImprovement(PriceImprovementPolicy {
+                factor,
+                max_volume_factor,
+            }),
+            arguments::FeePolicyKind::Volume { factor } => {
+                PolicyBuilder::Volume(VolumePolicy { factor })
+            }
+        }
+    }
+}
+
+struct SurplusPolicy {
+    factor: f64,
+    max_volume_factor: f64,
+}
+
+struct PriceImprovementPolicy {
+    factor: f64,
+    max_volume_factor: f64,
+}
+
+struct VolumePolicy {
+    factor: f64,
+}
+
+impl SurplusPolicy {
+    pub fn apply(&self) -> Policy {
+        Policy::Surplus {
+            factor: self.factor,
+            max_volume_factor: self.max_volume_factor,
+        }
+    }
+}
+
+impl PriceImprovementPolicy {
+    pub fn apply(&self, quote: &domain::Quote) -> Policy {
+        Policy::PriceImprovement {
+            factor: self.factor,
+            max_volume_factor: self.max_volume_factor,
+            quote: quote.clone().into(),
+        }
+    }
+}
+
+impl VolumePolicy {
+    pub fn apply(&self) -> Policy {
+        Policy::Volume {
+            factor: self.factor,
         }
     }
 }

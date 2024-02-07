@@ -1,5 +1,5 @@
 use {
-    crate::{domain, infra},
+    crate::infra,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -365,28 +365,6 @@ pub struct FeePolicy {
     /// filled.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub fee_policy_skip_market_orders: bool,
-}
-
-impl FeePolicy {
-    pub fn to_policy_builder(&self) -> domain::fee::PolicyBuilder {
-        match self.fee_policy_kind {
-            FeePolicyKind::Surplus {
-                factor,
-                max_volume_factor,
-            } => domain::fee::PolicyBuilder::Surplus {
-                factor,
-                max_volume_factor,
-            },
-            FeePolicyKind::PriceImprovement {
-                factor,
-                max_volume_factor,
-            } => domain::fee::PolicyBuilder::PriceImprovement {
-                factor,
-                max_volume_factor,
-            },
-            FeePolicyKind::Volume { factor } => domain::fee::PolicyBuilder::Volume { factor },
-        }
-    }
 }
 
 #[derive(clap::Parser, Debug, Clone)]
