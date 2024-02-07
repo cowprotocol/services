@@ -43,7 +43,7 @@ impl FeePolicy {
             } => Self {
                 auction_id,
                 order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
-                kind: FeePolicyKind::Surplus,
+                kind: FeePolicyKind::PriceImprovement,
                 surplus_factor: Some(factor),
                 max_volume_factor: Some(max_volume_factor),
                 volume_factor: None,
