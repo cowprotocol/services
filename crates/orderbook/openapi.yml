@@ -431,7 +431,7 @@ paths:
         corresponding `appDataHash` can be linked to the original full `appData`.
       parameters:
         - in: path
-          name: hash
+          name: app_data_hash
           schema:
             $ref: "#/components/schemas/AppDataHash"
           required: true
@@ -450,7 +450,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/AppDataHash"
         201:
-          description: The full `appData` was succesfully registered.
+          description: The full `appData` was successfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        400:
+          description: Error validating full `appData`
+        500:
+          description: Error storing the full `appData`
+  /api/v1/app_data:
+    put:
+      summary: Registers a full `appData` and returns `appDataHash`.
+      description: |
+        Uploads a full `appData` to orderbook and returns the corresponding `appDataHash`.
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataObject"
+      responses:
+        200:
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        201:
+          description: The full `appData` was successfully registered.
           content:
             application/json:
               schema:
