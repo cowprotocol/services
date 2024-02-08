@@ -1,11 +1,10 @@
 use {
-    crate::orderbook::{AddOrderError, Orderbook},
-    anyhow::Result,
-    model::{
-        order::{AppdataFromMismatch, OrderCreation, OrderUid},
-        quote::QuoteId,
-        signature,
+    crate::{
+        api::model::order::{OrderCreation, OrderUid},
+        orderbook::{AddOrderError, Orderbook},
     },
+    anyhow::{anyhow, Result},
+    model::{order::AppdataFromMismatch, quote::QuoteId, signature},
     shared::{
         api::{error, extract_payload, ApiReply, IntoWarpReply},
         order_validation::{
@@ -15,7 +14,11 @@ use {
             ValidationError,
         },
     },
-    std::{convert::Infallible, sync::Arc},
+    std::{collections::BTreeMap, convert::Infallible, sync::Arc},
+    utoipa::{
+        openapi::{RefOr, Response, ResponseBuilder, ResponsesBuilder},
+        IntoResponses,
+    },
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
 
@@ -254,11 +257,39 @@ impl IntoWarpReply for AddOrderError {
     }
 }
 
+impl IntoResponses for AddOrderError {
+    fn responses() -> BTreeMap<String, RefOr<Response>> {
+        ResponsesBuilder::new()
+            .response(
+                "400",
+                ResponseBuilder::new().description("Error during order validation."),
+            )
+            .response(
+                "403",
+                ResponseBuilder::new().description("Forbidden, your account is deny-listed."),
+            )
+            .response(
+                "404",
+                ResponseBuilder::new().description("No route was found quoting the order."),
+            )
+            .response(
+                "429",
+                ResponseBuilder::new().description("Too many order placements."),
+            )
+            .response(
+                "500",
+                ResponseBuilder::new().description("Error adding an order."),
+            )
+            .build()
+            .into()
+    }
+}
+
 pub fn create_order_response(
-    result: Result<(OrderUid, Option<QuoteId>), AddOrderError>,
+    result: Result<(model::order::OrderUid, Option<QuoteId>), AddOrderError>,
 ) -> ApiReply {
     match result {
-        Ok((uid, _)) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
+        Ok((uid, _)) => with_status(warp::reply::json(&OrderUid(uid.0)), StatusCode::CREATED),
         Err(err) => err.into_warp_reply(),
     }
 }
@@ -269,11 +300,7 @@ pub fn create_order_response(
     request_body = OrderCreation,
     responses(
         (status = 201, description = "Order has been accepted.", body = OrderUid),
-        (status = 400, description = "Error during order validation."),
-        (status = 403, description = "Forbidden, your account is deny-listed."),
-        (status = 404, description = "No route was found quoting the order."),
-        (status = 429, description = "Too many order placements."),
-        (status = 500, description = "Error adding an order."),
+        AddOrderError
     ),
 )]
 pub fn post_order(
@@ -282,12 +309,30 @@ pub fn post_order(
     create_order_request().and_then(move |order: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
-            let result = orderbook.add_order(order.clone()).await;
+            let order_internal: model::order::OrderCreation = match order.clone().try_into() {
+                Ok(order_internal) => order_internal,
+                Err(err) => {
+                    tracing::debug!(
+                        ?order,
+                        ?err,
+                        "error converting order api represenation into internal"
+                    );
+
+                    let err = AddOrderError::OrderValidation(ValidationError::Other(anyhow!(
+                        "unable to convert OrderCreation api model to internal model"
+                    )))
+                    .into_warp_reply();
+
+                    return Result::<_, Infallible>::Ok(err);
+                }
+            };
+
+            let result = orderbook.add_order(order_internal.clone()).await;
             match &result {
                 Ok((order_uid, quote_id)) => {
                     tracing::debug!(%order_uid, ?quote_id, "order created")
                 }
-                Err(err) => tracing::debug!(?order, ?err, "error creating order"),
+                Err(err) => tracing::debug!(?order_internal, ?err, "error creating order"),
             }
 
             Result::<_, Infallible>::Ok(create_order_response(result))
@@ -299,7 +344,7 @@ pub fn post_order(
 mod tests {
     use {
         super::*,
-        model::order::{OrderCreation, OrderUid},
+        crate::api::model::order::OrderCreation,
         serde_json::json,
         shared::api::response_body,
         warp::{test::request, Reply},
@@ -320,7 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_order_response_created() {
-        let uid = OrderUid([1u8; 56]);
+        let uid = model::order::OrderUid([1u8; 56]);
         let response = create_order_response(Ok((uid, Some(42)))).into_response();
         assert_eq!(response.status(), StatusCode::CREATED);
         let body = response_body(response).await;

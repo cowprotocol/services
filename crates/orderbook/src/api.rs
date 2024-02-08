@@ -1,6 +1,11 @@
 use {
-    crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
-    model::order::{OrderCreation, OrderKind, OrderUid},
+    crate::{
+        api::model::order::{OrderCreation, OrderKind, OrderUid},
+        app_data,
+        database::Postgres,
+        orderbook::Orderbook,
+        quoter::QuoteHandler,
+    },
     shared::{
         api::{box_filter, error, finalize_router, ApiReply},
         price_estimation::native::NativePriceEstimating,
@@ -21,6 +26,7 @@ mod get_solver_competition;
 mod get_total_surplus;
 mod get_trades;
 mod get_user_orders;
+mod model;
 mod post_order;
 mod post_quote;
 mod put_app_data;
@@ -111,6 +117,6 @@ pub fn handle_all_routes(
 #[derive(OpenApi)]
 #[openapi(
     paths(post_order::post_order),
-    components(schemas(OrderUid, OrderCreation, OrderKind))
+    components(schemas(OrderCreation, OrderKind, OrderUid))
 )]
 pub struct ApiDoc;
