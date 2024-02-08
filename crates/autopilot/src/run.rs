@@ -423,6 +423,7 @@ pub async fn run(args: Arguments) {
             uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
             gas_price: gas_price_estimator.clone(),
+            trusted_tokens: trusted_tokens.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
