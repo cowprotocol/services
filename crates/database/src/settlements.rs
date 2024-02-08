@@ -1,6 +1,6 @@
 use {
-    crate::{events::EventIndex, TransactionHash},
-    sqlx::PgConnection,
+    crate::{events::EventIndex, PgTransaction, TransactionHash},
+    sqlx::{Executor, PgConnection},
     std::ops::Range,
 };
 
@@ -90,6 +90,22 @@ WHERE block_number = $2 AND log_index = $3
         .execute(ex)
         .await
         .map(|_| ())
+}
+
+pub async fn delete(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: i64,
+) -> Result<(), sqlx::Error> {
+    const QUERY_OBSERVATIONS: &str =
+        "DELETE FROM settlement_observations WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
+        .await?;
+
+    const QUERY_ORDER_EXECUTIONS: &str = "DELETE FROM order_execution WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_ORDER_EXECUTIONS).bind(delete_from_block_number))
+        .await?;
+
+    Ok(())
 }
 
 #[cfg(test)]
