@@ -107,9 +107,10 @@ impl TenderlyApi for TenderlyHttpApi {
         let simulation_url = crate::url::join(&self.dashboard, "simulator/$SIMULATION_ID");
         let body = serde_json::to_string(&simulation)?;
         tracing::error!(
-            "resimulate by running: curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" \
-             --json '{body}' {request_url} | jq -r \".simulation.id\" | read SIMULATION_ID; echo \
-             {}",
+            "resimulate by setting TENDERLY_API_KEY environment variable and running:\
+            curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" \
+             --json '{body}' {request_url} | jq -r \".simulation.id\" | read SIMULATION_ID;\
+             echo {}",
             simulation_url.to_string(),
         );
         Ok(())
