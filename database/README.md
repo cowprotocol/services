@@ -318,6 +318,7 @@ During the solver competition solvers promise a solution of a certain quality. I
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
+- settlements\_auction\_id: btree(`auction_id`)
 
 ### settlement\_scores
 
