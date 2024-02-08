@@ -26,6 +26,7 @@ use {
 #[async_trait::async_trait]
 pub trait TenderlyApi: Send + Sync + 'static {
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse>;
+    fn log(&self, simulation: SimulationRequest) -> Result<()>;
     fn simulation_url(&self, id: &str) -> Url;
 }
 
@@ -81,7 +82,6 @@ impl TenderlyApi for TenderlyHttpApi {
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
         let url = crate::url::join(&self.api, "simulate");
         let body = serde_json::to_string(&simulation)?;
-        tracing::trace!(%url, %body, "simulating");
 
         let response = self
             .client
@@ -100,6 +100,19 @@ impl TenderlyApi for TenderlyHttpApi {
 
         ok?;
         Ok(serde_json::from_str(&body)?)
+    }
+
+    fn log(&self, simulation: SimulationRequest) -> Result<()> {
+        let request_url = crate::url::join(&self.api, "simulate");
+        let simulation_url = crate::url::join(&self.dashboard, "simulator/$SIMULATION_ID");
+        let body = serde_json::to_string(&simulation)?;
+        tracing::error!(
+            "resimulate by running: curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" \
+             --json '{body}' {request_url} | jq -r \".simulation.id\" | read SIMULATION_ID; echo \
+             {}",
+            simulation_url.to_string(),
+        );
+        Ok(())
     }
 
     fn simulation_url(&self, id: &str) -> Url {
@@ -130,6 +143,10 @@ impl TenderlyApi for Instrumented {
             .inc();
 
         result
+    }
+
+    fn log(&self, simulation: SimulationRequest) -> Result<()> {
+        self.inner.log(simulation)
     }
 
     fn simulation_url(&self, id: &str) -> Url {

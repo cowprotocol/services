@@ -16,7 +16,7 @@ use {
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::extensions::StateOverride,
+    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride},
     maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
@@ -63,6 +63,7 @@ impl From<VerifiedEstimate> for Estimate {
 pub struct TradeVerifier {
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
+    block_stream: CurrentBlockStream,
     settlement: H160,
     native_token: H160,
 }
@@ -74,12 +75,14 @@ impl TradeVerifier {
     pub fn new(
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
+        block_stream: CurrentBlockStream,
         settlement: H160,
         native_token: H160,
     ) -> Self {
         Self {
             simulator,
             code_fetcher,
+            block_stream,
             settlement,
             native_token,
         }
@@ -139,8 +142,6 @@ impl TradeVerifying for TradeVerifier {
             ..Default::default()
         };
 
-        tracing::trace!(calldata = ?call);
-
         // Set up helper contracts impersonating trader and solver.
         let mut overrides = hashmap! {
             verification.from => StateOverride {
@@ -169,9 +170,10 @@ impl TradeVerifying for TradeVerifier {
             );
         }
 
+        let block = self.block_stream.borrow().number;
         let output = self
             .simulator
-            .simulate(call, overrides)
+            .simulate(call, overrides, Some(block))
             .await
             .context("failed to simulate quote")?;
         let summary =

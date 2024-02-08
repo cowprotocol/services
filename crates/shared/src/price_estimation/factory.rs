@@ -158,6 +158,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 Ok(Arc::new(TradeVerifier::new(
                     simulator,
                     code_fetcher,
+                    network.block_stream.clone(),
                     network.settlement,
                     network.native_token,
                 )))
