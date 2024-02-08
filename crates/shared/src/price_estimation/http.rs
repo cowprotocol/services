@@ -39,7 +39,7 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
-        trade_finding::{Quote, Trade, TradeError, TradeFinding},
+        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::{anyhow, Context, Result},
     ethcontract::{H160, U256},
@@ -273,7 +273,7 @@ impl HttpTradeFinder {
         for amm in settlement.amms.values() {
             cost += self.extract_cost(&amm.cost)? * amm.execution.len();
         }
-        for interaction in settlement.interaction_data {
+        for interaction in &settlement.interaction_data {
             cost += self.extract_cost(&interaction.cost)?;
         }
         let gas_estimate = (cost / gas_price).as_u64().max(TRADE)
@@ -286,7 +286,15 @@ impl HttpTradeFinder {
                 OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
             },
             gas_estimate,
-            interactions: todo!(),
+            interactions: settlement
+                .interaction_data
+                .into_iter()
+                .map(|i| Interaction {
+                    target: i.target,
+                    value: i.value,
+                    data: i.call_data,
+                })
+                .collect(),
             solver: self.solver,
         })
     }
