@@ -718,7 +718,7 @@ mod test {
                 signing_scheme_into,
             },
             ethrpc::create_env_test_transport,
-            fee_subsidy::FeeParameters,
+            fee::FeeParameters,
             order_quoting::{FindQuoteError, MockOrderQuoting, Quote, QuoteData},
         },
         sqlx::PgPool,
@@ -1203,7 +1203,6 @@ mod test {
             sell_amount,
             buy_amount,
             fee_amount,
-            full_fee_amount: 24.into(),
         };
         let cloned_quote = quote.clone();
         order_quoter

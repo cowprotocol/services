@@ -10,6 +10,7 @@ use {
     reqwest::StatusCode,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
+    std::str::FromStr,
     web3::signing::SecretKeyRef,
 };
 
@@ -136,10 +137,11 @@ async fn app_data(web3: Web3) {
     let pre_app_data_hash = AppDataHash(app_data_hash::hash_full_app_data(pre_app_data.as_bytes()));
     let err = services.get_app_data(pre_app_data_hash).await.unwrap_err();
     dbg!(err);
-    services
-        .put_app_data(pre_app_data_hash, pre_app_data)
-        .await
-        .unwrap();
+
+    // not specifying the app data hash will make the backend compute it.
+    let response = services.put_app_data(None, pre_app_data).await.unwrap();
+    dbg!(&response);
+    assert_eq!(AppDataHash::from_str(&response).unwrap(), pre_app_data_hash);
     assert_eq!(
         services.get_app_data(pre_app_data_hash).await.unwrap(),
         pre_app_data
@@ -158,7 +160,7 @@ async fn app_data(web3: Web3) {
 
     // pre-registering is idempotent.
     services
-        .put_app_data(pre_app_data_hash, pre_app_data)
+        .put_app_data(Some(pre_app_data_hash), pre_app_data)
         .await
         .unwrap();
     assert_eq!(
@@ -169,9 +171,9 @@ async fn app_data(web3: Web3) {
     // pre-registering invalid app-data fails.
     let err = services
         .put_app_data(
-            AppDataHash(app_data_hash::hash_full_app_data(
+            Some(AppDataHash(app_data_hash::hash_full_app_data(
                 invalid_app_data.as_bytes(),
-            )),
+            ))),
             invalid_app_data,
         )
         .await
