@@ -90,38 +90,46 @@ impl Fulfillment {
                 max_volume_factor,
                 quote,
             }) => {
-                let quote_sell_amount = quote
-                    .sell_amount
-                    .checked_add(quote.fee)
-                    .ok_or(Error::Overflow)?;
-                let order_sell_amount = self.order().sell.amount.0;
-                let order_buy_amount = self.order().buy.amount.0;
-                let (sell_amount, buy_amount) = match self.order().side {
-                    Side::Sell => (
-                        order_sell_amount,
-                        order_buy_amount.max(
-                            order_sell_amount
-                                .checked_div(quote_sell_amount)
-                                .ok_or(Error::DivisionByZero)?
-                                .checked_mul(quote.buy_amount)
-                                .ok_or(Error::Overflow)?,
-                        ),
-                    ),
-                    Side::Buy => (
-                        order_sell_amount.min(
-                            order_buy_amount
-                                .checked_div(quote.buy_amount)
-                                .ok_or(Error::DivisionByZero)?
-                                .checked_mul(quote_sell_amount)
-                                .ok_or(Error::Overflow)?,
-                        ),
-                        order_buy_amount,
-                    ),
-                };
+                let (sell_amount, buy_amount) = self.adjusted_price_improvement_amounts(quote);
                 self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
             }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
+        }
+    }
+
+    fn adjusted_price_improvement_amounts(
+        &self,
+        quote: &order::fees::Quote,
+    ) -> (eth::U256, eth::U256) {
+        let quote_sell_amount = quote
+            .sell_amount
+            .checked_add(quote.fee)
+            .ok_or(Error::Overflow)?;
+        let order_sell_amount = self.order().sell.amount.0;
+        let order_buy_amount = self.order().buy.amount.0;
+
+        match self.order().side {
+            Side::Sell => {
+                let scaling_factor = order_sell_amount
+                    .checked_div(quote_sell_amount)
+                    .ok_or(Error::DivisionByZero)?;
+                let scaled_buy_amount = scaling_factor
+                    .checked_mul(quote.buy_amount)
+                    .ok_or(Error::Overflow)?;
+                let buy_amount = order_buy_amount.max(scaled_buy_amount);
+                (order_sell_amount, buy_amount)
+            }
+            Side::Buy => {
+                let scaling_factor = order_buy_amount
+                    .checked_div(quote.buy_amount)
+                    .ok_or(Error::DivisionByZero)?;
+                let scaled_sell_amount = scaling_factor
+                    .checked_mul(quote_sell_amount)
+                    .ok_or(Error::Overflow)?;
+                let sell_amount = order_sell_amount.min(scaled_sell_amount);
+                (sell_amount, order_buy_amount)
+            }
         }
     }
 
