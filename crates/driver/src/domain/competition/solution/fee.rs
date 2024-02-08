@@ -251,12 +251,11 @@ fn adjusted_price_improvement_amounts(
             Ok((order_sell_amount, buy_amount))
         }
         Side::Buy => {
-            let scaling_factor = order_buy_amount
+            let scaled_sell_amount = quote_sell_amount
+                .checked_mul(order_buy_amount)
+                .ok_or(Error::Overflow)?
                 .checked_div(quote.buy_amount)
                 .ok_or(Error::DivisionByZero)?;
-            let scaled_sell_amount = scaling_factor
-                .checked_mul(quote_sell_amount)
-                .ok_or(Error::Overflow)?;
             let sell_amount = order_sell_amount.min(scaled_sell_amount);
             Ok((sell_amount, order_buy_amount))
         }
