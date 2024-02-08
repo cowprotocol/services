@@ -308,13 +308,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            sell_amount,
-            order_sell_amount,
+            sell_amount, order_sell_amount,
             "Sell amount should match order sell amount for sell orders."
         );
         assert_eq!(
-            buy_amount,
-            order_buy_amount,
+            buy_amount, order_buy_amount,
             "Buy amount should be scaled based on the quote for sell orders."
         );
     }
@@ -338,13 +336,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            sell_amount,
-            order_sell_amount,
+            sell_amount, order_sell_amount,
             "Sell amount should be scaled based on the quote for buy orders."
         );
         assert_eq!(
-            buy_amount,
-            order_buy_amount,
+            buy_amount, order_buy_amount,
             "Buy amount should match order buy amount for buy orders."
         );
     }
