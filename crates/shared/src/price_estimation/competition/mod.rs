@@ -32,6 +32,8 @@ pub struct CompetitionEstimator<T> {
     stages: Vec<PriceEstimationStage<T>>,
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
+    // TODO drop this flag and always prefer verified when feature is stable
+    prefer_verified_estimates: bool,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
@@ -42,6 +44,17 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             stages,
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
+            prefer_verified_estimates: false,
+        }
+    }
+
+    /// Configures if verified price estimates should be ranked higher than
+    /// unverified ones even if the price is worse.
+    /// Per default verified quotes do not get preferred.
+    pub fn prefer_verified_estimates(self, prefer: bool) -> Self {
+        Self {
+            prefer_verified_estimates: prefer,
+            ..self
         }
     }
 
@@ -526,6 +539,7 @@ mod tests {
             ],
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
+            prefer_verified_estimates: false,
         };
 
         racing.estimate(query).await.unwrap();
