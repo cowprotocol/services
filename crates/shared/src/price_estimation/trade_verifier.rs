@@ -94,6 +94,7 @@ impl TradeVerifying for TradeVerifier {
         verification: &Verification,
         trade: Trade,
     ) -> Result<VerifiedEstimate> {
+        let start = std::time::Instant::now();
         let solver = dummy_contract!(Solver, trade.solver);
 
         let settlement = encode_settlement(query, verification, &trade, self.native_token);
@@ -138,6 +139,8 @@ impl TradeVerifying for TradeVerifier {
             ..Default::default()
         };
 
+        tracing::trace!(calldata = ?call);
+
         // Set up helper contracts impersonating trader and solver.
         let mut overrides = hashmap! {
             verification.from => StateOverride {
@@ -181,12 +184,15 @@ impl TradeVerifying for TradeVerifier {
             solver: trade.solver,
         };
         tracing::debug!(
+            out_diff = ?trade.out_amount.abs_diff(verified.out_amount),
+            gas_diff = ?trade.gas_estimate.abs_diff(verified.gas),
+            time = ?start.elapsed(),
+            promised_out_amount = ?trade.out_amount,
+            promised_gas = trade.gas_estimate,
+            ?verified,
             ?query,
             ?verification,
-            promised_gas = trade.gas_estimate,
-            promised_out_amount =? trade.out_amount,
-            ?verified,
-            "verified quote"
+            "verified quote",
         );
         Ok(verified)
     }
