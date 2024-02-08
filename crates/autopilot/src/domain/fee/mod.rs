@@ -17,15 +17,12 @@ use {
 /// Constructs fee policies based on the current configuration.
 pub struct ProtocolFee {
     policy_builder: PolicyBuilder,
-    skip_market_orders: bool,
 }
 
 impl ProtocolFee {
     pub fn new(policy_args: arguments::FeePolicy) -> Self {
-        let skip_market_orders = policy_args.fee_policy_skip_market_orders;
         Self {
             policy_builder: policy_args.into(),
-            skip_market_orders,
         }
     }
 
@@ -33,11 +30,11 @@ impl ProtocolFee {
     /// protocol fees if necessary.
     pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
         let protocol_fees = match &self.policy_builder {
-            PolicyBuilder::Surplus(variant) => variant.apply(),
+            PolicyBuilder::Surplus(variant) => variant.apply(&order),
             PolicyBuilder::PriceImprovement(variant) => variant.apply(quote),
             PolicyBuilder::Volume(variant) => variant.apply(),
         }
-        .with(&order, quote, self.skip_market_orders)
+        .and_then(|policy| policy.with(&order, quote))
         .into_iter()
         .collect_vec();
         boundary::order::to_domain(order, protocol_fees)
@@ -80,34 +77,25 @@ pub enum Policy {
 }
 
 impl Policy {
-    pub fn with(
-        self,
-        order: &boundary::Order,
-        quote: &domain::Quote,
-        skip_market_orders: bool,
-    ) -> Option<Policy> {
+    pub fn with(self, order: &boundary::Order, quote: &domain::Quote) -> Option<Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => {
-                if !skip_market_orders {
+                let order_ = boundary::Amounts {
+                    sell: order.data.sell_amount,
+                    buy: order.data.buy_amount,
+                    fee: order.data.fee_amount,
+                };
+                let quote_ = boundary::Amounts {
+                    sell: quote.sell_amount,
+                    buy: quote.buy_amount,
+                    fee: quote.fee,
+                };
+                if boundary::is_order_outside_market_price(&order_, &quote_) {
                     Some(self)
                 } else {
-                    let order_ = boundary::Amounts {
-                        sell: order.data.sell_amount,
-                        buy: order.data.buy_amount,
-                        fee: order.data.fee_amount,
-                    };
-                    let quote_ = boundary::Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee,
-                    };
-                    if boundary::is_order_outside_market_price(&order_, &quote_) {
-                        Some(self)
-                    } else {
-                        None
-                    }
+                    None
                 }
             }
         }
@@ -129,6 +117,7 @@ impl From<arguments::FeePolicy> for PolicyBuilder {
             } => PolicyBuilder::Surplus(SurplusPolicy {
                 factor,
                 max_volume_factor,
+                skip_market_orders: policy_arg.fee_policy_skip_market_orders,
             }),
             arguments::FeePolicyKind::PriceImprovement {
                 factor,
@@ -147,6 +136,7 @@ impl From<arguments::FeePolicy> for PolicyBuilder {
 struct SurplusPolicy {
     factor: f64,
     max_volume_factor: f64,
+    skip_market_orders: bool,
 }
 
 struct PriceImprovementPolicy {
@@ -159,29 +149,32 @@ struct VolumePolicy {
 }
 
 impl SurplusPolicy {
-    pub fn apply(&self) -> Policy {
-        Policy::Surplus {
-            factor: self.factor,
-            max_volume_factor: self.max_volume_factor,
+    pub fn apply(&self, order: &boundary::Order) -> Option<Policy> {
+        match order.metadata.class {
+            boundary::OrderClass::Limit if !self.skip_market_orders => Some(Policy::Surplus {
+                factor: self.factor,
+                max_volume_factor: self.max_volume_factor,
+            }),
+            _ => None,
         }
     }
 }
 
 impl PriceImprovementPolicy {
-    pub fn apply(&self, quote: &domain::Quote) -> Policy {
-        Policy::PriceImprovement {
+    pub fn apply(&self, quote: &domain::Quote) -> Option<Policy> {
+        Some(Policy::PriceImprovement {
             factor: self.factor,
             max_volume_factor: self.max_volume_factor,
             quote: quote.clone().into(),
-        }
+        })
     }
 }
 
 impl VolumePolicy {
-    pub fn apply(&self) -> Policy {
-        Policy::Volume {
+    pub fn apply(&self) -> Option<Policy> {
+        Some(Policy::Volume {
             factor: self.factor,
-        }
+        })
     }
 }
 
