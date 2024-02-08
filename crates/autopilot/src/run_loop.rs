@@ -41,9 +41,8 @@ pub struct RunLoop {
     pub eth: infra::Ethereum,
     pub persistence: infra::Persistence,
     pub drivers: Vec<infra::Driver>,
-
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub market_makable_token_list: AutoUpdatingTokenList,
+    pub trusted_tokens: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,
@@ -311,7 +310,7 @@ impl RunLoop {
         let request = solve_request(
             id,
             auction,
-            &self.market_makable_token_list.all(),
+            &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
         );

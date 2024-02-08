@@ -130,25 +130,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
     pub auction_update_interval: Duration,
 
-    /// The URL of a list of tokens our settlement contract is willing to
-    /// internalize.
-    #[clap(long, env)]
-    pub trusted_tokens_url: Option<Url>,
-
-    /// Hardcoded list of trusted tokens to use in addition to
-    /// `trusted_tokens_url`.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub trusted_tokens: Option<Vec<H160>>,
-
-    /// Time interval after which the trusted tokens list needs to be updated.
-    #[clap(
-        long,
-        env,
-        default_value = "1h",
-        value_parser = humantime::parse_duration,
-    )]
-    pub trusted_tokens_update_interval: Duration,
-
     /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
     pub drivers: Vec<ExternalSolver>,
@@ -241,9 +222,6 @@ impl std::fmt::Display for Arguments {
             banned_users,
             max_auction_age,
             limit_order_price_factor,
-            trusted_tokens_url,
-            trusted_tokens,
-            trusted_tokens_update_interval,
             drivers,
             submission_deadline,
             additional_deadline_for_rewards,
@@ -293,13 +271,6 @@ impl std::fmt::Display for Arguments {
             f,
             "limit_order_price_factor: {:?}",
             limit_order_price_factor
-        )?;
-        display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
-        writeln!(f, "trusted_tokens: {:?}", trusted_tokens)?;
-        writeln!(
-            f,
-            "trusted_tokens_update_interval: {:?}",
-            trusted_tokens_update_interval
         )?;
         display_list(f, "drivers", drivers.iter())?;
         writeln!(f, "submission_deadline: {}", submission_deadline)?;
