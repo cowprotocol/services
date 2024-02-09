@@ -138,15 +138,6 @@ impl Order {
     }
 }
 
-/// Remaining order buy, sell and fee amounts.
-#[derive(Debug, Eq, PartialEq)]
-pub struct RemainingOrderAmounts {
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub fee_amount: U256,
-    pub full_fee_amount: U256,
-}
-
 #[derive(Clone, Default, Debug)]
 pub struct OrderBuilder(Order);
 
@@ -291,8 +282,8 @@ pub struct OrderData {
     /// as they should only ever be used to improve the price of a regular order
     /// and should not be settled on their own.
     /// This is 0 for limit orders as their fee gets taken from the surplus.
-    /// This is `OrderMetadata::full_fee_amount` modulo possible subsidies for
-    /// market orders.
+    /// This is equal to `OrderMetadata::full_fee_amount` except for old orders
+    /// where the subsidy was applied (at the time when we used the subsidies).
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
     pub kind: OrderKind,
