@@ -130,11 +130,7 @@ impl Auction {
                             } => competition::order::FeePolicy::PriceImprovement {
                                 factor,
                                 max_volume_factor,
-                                quote: competition::order::fees::Quote {
-                                    sell_amount: quote.sell_amount,
-                                    buy_amount: quote.buy_amount,
-                                    fee: quote.fee,
-                                },
+                                quote: quote.into_domain(order.sell_token, order.buy_token),
                             },
                             FeePolicy::Volume { factor } => {
                                 competition::order::FeePolicy::Volume { factor }
@@ -334,4 +330,27 @@ pub struct Quote {
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
     pub fee: eth::U256,
+}
+
+impl Quote {
+    fn into_domain(
+        self,
+        sell_token: eth::H160,
+        buy_token: eth::H160,
+    ) -> competition::order::fees::Quote {
+        competition::order::fees::Quote {
+            sell: eth::Asset {
+                amount: eth::TokenAmount(self.sell_amount),
+                token: eth::TokenAddress(eth::ContractAddress(sell_token)),
+            },
+            buy: eth::Asset {
+                amount: eth::TokenAmount(self.buy_amount),
+                token: eth::TokenAddress(eth::ContractAddress(buy_token)),
+            },
+            fee: eth::Asset {
+                amount: eth::TokenAmount(self.fee),
+                token: eth::TokenAddress(eth::ContractAddress(sell_token)),
+            },
+        }
+    }
 }

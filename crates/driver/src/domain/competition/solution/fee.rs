@@ -94,7 +94,9 @@ impl Fulfillment {
                     self.order().sell.amount.0,
                     self.order().buy.amount.0,
                     self.order().side,
-                    quote,
+                    quote.sell.amount.0,
+                    quote.buy.amount.0,
+                    quote.fee.amount.0,
                 )?;
                 self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
             }
@@ -232,17 +234,17 @@ fn adjusted_price_improvement_amounts(
     order_sell_amount: eth::U256,
     order_buy_amount: eth::U256,
     order_side: Side,
-    quote: &order::fees::Quote,
+    quote_sell_amount: eth::U256,
+    quote_buy_amount: eth::U256,
+    quote_fee_amount: eth::U256,
 ) -> Result<(eth::U256, eth::U256), Error> {
-    let quote_sell_amount = quote
-        .sell_amount
-        .checked_add(quote.fee)
+    let quote_sell_amount = quote_sell_amount
+        .checked_add(quote_fee_amount)
         .ok_or(Error::Overflow)?;
 
     match order_side {
         Side::Sell => {
-            let scaled_buy_amount = quote
-                .buy_amount
+            let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order_sell_amount)
                 .ok_or(Error::Overflow)?
                 .checked_div(quote_sell_amount)
@@ -254,7 +256,7 @@ fn adjusted_price_improvement_amounts(
             let scaled_sell_amount = quote_sell_amount
                 .checked_mul(order_buy_amount)
                 .ok_or(Error::Overflow)?
-                .checked_div(quote.buy_amount)
+                .checked_div(quote_buy_amount)
                 .ok_or(Error::DivisionByZero)?;
             let sell_amount = order_sell_amount.min(scaled_sell_amount);
             Ok((sell_amount, order_buy_amount))
@@ -292,17 +294,17 @@ mod tests {
     fn test_adjusted_price_improvement_amounts_for_sell_order() {
         let order_sell_amount = to_wei(20);
         let order_buy_amount = to_wei(19);
-        let quote = order::fees::Quote {
-            sell_amount: to_wei(21),
-            buy_amount: to_wei(18),
-            fee: to_wei(1),
-        };
+        let quote_sell_amount = to_wei(21);
+        let quote_buy_amount = to_wei(18);
+        let quote_fee_amount = to_wei(1);
 
         let (sell_amount, _) = adjusted_price_improvement_amounts(
             order_sell_amount,
             order_buy_amount,
             Side::Sell,
-            &quote,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
         )
         .unwrap();
 
@@ -316,17 +318,17 @@ mod tests {
     fn test_adjusted_price_improvement_amounts_for_buy_order() {
         let order_sell_amount = to_wei(20);
         let order_buy_amount = to_wei(19);
-        let quote = order::fees::Quote {
-            sell_amount: to_wei(21),
-            buy_amount: to_wei(18),
-            fee: to_wei(1),
-        };
+        let quote_sell_amount = to_wei(21);
+        let quote_buy_amount = to_wei(18);
+        let quote_fee_amount = to_wei(1);
 
         let (_, buy_amount) = adjusted_price_improvement_amounts(
             order_sell_amount,
             order_buy_amount,
             Side::Buy,
-            &quote,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
         )
         .unwrap();
 
@@ -340,17 +342,17 @@ mod tests {
     fn test_sell_order_with_quote_in_market_price() {
         let order_sell_amount = to_wei(10);
         let order_buy_amount = to_wei(20);
-        let quote = order::fees::Quote {
-            sell_amount: to_wei(9),
-            buy_amount: to_wei(25),
-            fee: to_wei(1),
-        };
+        let quote_sell_amount = to_wei(9);
+        let quote_buy_amount = to_wei(25);
+        let quote_fee_amount = to_wei(1);
 
         let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
             order_sell_amount,
             order_buy_amount,
             Side::Sell,
-            &quote,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
         )
         .unwrap();
 
@@ -359,7 +361,7 @@ mod tests {
             "Sell amount should be taken from the quote for sell orders in market price."
         );
         assert_eq!(
-            buy_amount, quote.buy_amount,
+            buy_amount, quote_buy_amount,
             "Buy amount should reflect the improved market condition from the quote."
         );
     }
@@ -368,23 +370,23 @@ mod tests {
     fn test_buy_order_with_quote_in_market_price() {
         let order_sell_amount = to_wei(20);
         let order_buy_amount = to_wei(10);
-        let quote = order::fees::Quote {
-            sell_amount: to_wei(17),
-            buy_amount: to_wei(10),
-            fee: to_wei(1),
-        };
+        let quote_sell_amount = to_wei(17);
+        let quote_buy_amount = to_wei(10);
+        let quote_fee_amount = to_wei(1);
 
         let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
             order_sell_amount,
             order_buy_amount,
             Side::Buy,
-            &quote,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
         )
         .unwrap();
 
         assert_eq!(
             sell_amount,
-            quote.sell_amount + quote.fee,
+            quote_sell_amount + quote_fee_amount,
             "Sell amount should reflect the improved market condition from the quote for buy \
              orders."
         );

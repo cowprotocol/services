@@ -48,7 +48,7 @@ pub enum FeePolicy {
 
 #[derive(Clone, Debug)]
 pub struct Quote {
-    pub sell_amount: eth::U256,
-    pub buy_amount: eth::U256,
-    pub fee: eth::U256,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub fee: eth::Asset,
 }
