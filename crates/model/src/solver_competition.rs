@@ -56,11 +56,11 @@ pub struct SolverSettlement {
     pub orders: Vec<Order>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
-    #[derivative(Debug(format_with = "crate::debug_optional_bytes"))]
+    #[derivative(Debug(format_with = "crate::format::debug_optional_bytes"))]
     pub call_data: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
-    #[derivative(Debug(format_with = "crate::debug_optional_bytes"))]
+    #[derivative(Debug(format_with = "crate::format::debug_optional_bytes"))]
     pub uninternalized_call_data: Option<Vec<u8>>,
 }
 
