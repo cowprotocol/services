@@ -79,8 +79,11 @@ pub enum Policy {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Quote {
+    /// The amount of the sell token.
     pub sell_amount: U256,
+    /// The amount of the buy token.
     pub buy_amount: U256,
+    /// The amount that needs to be paid, denominated in the sell token.
     pub fee: U256,
 }
 
