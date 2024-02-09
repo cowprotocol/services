@@ -3,6 +3,7 @@
 pub mod app_data;
 pub mod auction;
 pub mod bytes_hex;
+mod format;
 pub mod interaction;
 pub mod order;
 pub mod quote;
