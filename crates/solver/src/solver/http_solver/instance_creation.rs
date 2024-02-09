@@ -8,7 +8,7 @@ use {
     contracts::WETH9,
     ethcontract::{errors::ExecutionError, U256},
     itertools::{Either, Itertools as _},
-    maplit::{btreemap, hashset},
+    maplit::btreemap,
     model::{
         auction::AuctionId,
         order::{Order, OrderKind},
@@ -23,7 +23,7 @@ use {
         token_list::AutoUpdatingTokenList,
     },
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet, VecDeque},
         iter::FromIterator as _,
         sync::Arc,
     },
@@ -366,35 +366,34 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
 }
 
 fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> HashSet<H160> {
-    // Find all tokens that are connected through potentially multiple amm hops to
-    // the fee. TODO: Replace with a more optimal graph algorithm.
-    let mut pairs = liquidity
-        .iter()
-        .flat_map(|amm| amm.all_token_pairs())
-        .collect::<HashSet<_>>();
-    let mut fee_connected_tokens = hashset![native_token];
-    loop {
-        let mut added_token = false;
-        pairs.retain(|token_pair| {
-            let tokens = token_pair.get();
-            if fee_connected_tokens.contains(&tokens.0) {
-                fee_connected_tokens.insert(tokens.1);
-                added_token = true;
-                false
-            } else if fee_connected_tokens.contains(&tokens.1) {
-                fee_connected_tokens.insert(tokens.0);
-                added_token = true;
-                false
-            } else {
-                true
-            }
-        });
-        if pairs.is_empty() || !added_token {
-            break;
+    // Create a mapping of tokens to their adjacent tokens
+    let mut token_graph: HashMap<H160, HashSet<H160>> = HashMap::new();
+    for amm in liquidity {
+        let pairs = amm.all_token_pairs();
+        for pair in pairs {
+            let (token1, token2) = pair.get();
+            token_graph.entry(token1).or_default().insert(token2);
+            token_graph.entry(token2).or_default().insert(token1);
         }
     }
 
-    fee_connected_tokens
+    // Perform BFS to find all tokens connected to the native token
+    let mut visited_tokens: HashSet<H160> = HashSet::new();
+    let mut queue: VecDeque<H160> = VecDeque::new();
+    queue.push_back(native_token);
+    while let Some(token) = queue.pop_front() {
+        if visited_tokens.contains(&token) {
+            continue;
+        }
+        visited_tokens.insert(token);
+        if let Some(adjacent_tokens) = token_graph.get(&token) {
+            for &adjacent_token in adjacent_tokens {
+                queue.push_back(adjacent_token);
+            }
+        }
+    }
+
+    visited_tokens
 }
 
 /// Failure indicating the transaction reverted for some reason
