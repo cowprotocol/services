@@ -38,7 +38,6 @@ use {
     },
     anyhow::{Context, Result},
     database::PgTransaction,
-    ethrpc::current_block::RangeInclusive,
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
@@ -67,6 +66,8 @@ enum AuctionIdRecoveryStatus {
 }
 
 impl OnSettlementEventUpdater {
+    /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
+    /// first update run.
     pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
         let inner = Arc::new(Inner {
             eth,
@@ -74,16 +75,16 @@ impl OnSettlementEventUpdater {
             notify: Notify::new(),
         });
         let inner_clone = inner.clone();
-        tokio::spawn(async move { Inner::wait_for_updates(inner_clone).await });
+        tokio::spawn(async move { Inner::listen_for_updates(inner_clone).await });
         Self { inner }
     }
 
     /// Deletes settlement_observations and order executions for the given range
     pub async fn delete_observations(
         transaction: &mut PgTransaction<'_>,
-        range: RangeInclusive<u64>,
+        from_block: u64,
     ) -> Result<()> {
-        database::settlements::delete(transaction, *range.start() as i64)
+        database::settlements::delete(transaction, from_block)
             .await
             .context("delete_settlement_observations")?;
 
@@ -97,7 +98,7 @@ impl OnSettlementEventUpdater {
 }
 
 impl Inner {
-    async fn wait_for_updates(self: Arc<Inner>) -> ! {
+    async fn listen_for_updates(self: Arc<Inner>) -> ! {
         loop {
             match self.update().await {
                 Ok(true) => {

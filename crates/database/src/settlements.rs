@@ -94,15 +94,15 @@ WHERE block_number = $2 AND log_index = $3
 
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
-    delete_from_block_number: i64,
+    delete_from_block_number: u64,
 ) -> Result<(), sqlx::Error> {
     const QUERY_OBSERVATIONS: &str =
         "DELETE FROM settlement_observations WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number))
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number as i64))
         .await?;
 
     const QUERY_ORDER_EXECUTIONS: &str = "DELETE FROM order_execution WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_ORDER_EXECUTIONS).bind(delete_from_block_number))
+    ex.execute(sqlx::query(QUERY_ORDER_EXECUTIONS).bind(delete_from_block_number as i64))
         .await?;
 
     Ok(())

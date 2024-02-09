@@ -36,8 +36,9 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         range: RangeInclusive<u64>,
     ) -> Result<()> {
         let mut transaction = self.db.pool.begin().await?;
-        crate::database::events::replace_events(&mut transaction, events, range.clone()).await?;
-        OnSettlementEventUpdater::delete_observations(&mut transaction, range).await?;
+        let from_block = *range.start();
+        crate::database::events::replace_events(&mut transaction, events, from_block).await?;
+        OnSettlementEventUpdater::delete_observations(&mut transaction, from_block).await?;
         transaction.commit().await?;
 
         self.settlement_updater.schedule_update();

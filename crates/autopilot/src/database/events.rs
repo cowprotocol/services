@@ -16,7 +16,6 @@ use {
         PgTransaction,
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
-    ethrpc::current_block::RangeInclusive,
     number::conversions::u256_to_big_decimal,
     sqlx::PgConnection,
     std::convert::TryInto,
@@ -75,7 +74,7 @@ pub async fn append_events(
 pub async fn replace_events(
     transaction: &mut PgTransaction<'_>,
     events: Vec<EthContractEvent<ContractEvent>>,
-    range: RangeInclusive<u64>,
+    from_block: u64,
 ) -> Result<()> {
     let _timer = super::Metrics::get()
         .database_queries
@@ -83,7 +82,7 @@ pub async fn replace_events(
         .start_timer();
 
     let events = contract_to_db_events(events)?;
-    database::events::delete(transaction, *range.start() as i64)
+    database::events::delete(transaction, from_block)
         .await
         .context("delete_events failed")?;
     database::events::append(transaction, events.as_slice())
