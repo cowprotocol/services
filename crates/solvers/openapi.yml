@@ -607,8 +607,8 @@ components:
         fee:
           description: |
             The sell token amount that should be taken as a fee for this
-            trade. This only gets returned for partially fillable limit
-            orders and only refers to the actual amount filled by the trade.
+            trade. This only gets returned for limit orders and only refers
+            to the actual amount filled by the trade.
         executedAmount:
           description: |
             The amount of the order that was executed. This is denoted in
