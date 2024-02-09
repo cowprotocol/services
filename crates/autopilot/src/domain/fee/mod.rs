@@ -34,7 +34,7 @@ impl ProtocolFee {
         let protocol_fees = match &self.policy {
             policy::Policy::Surplus(variant) => variant.apply(&order, quote),
             policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
-            policy::Policy::Volume(variant) => variant.apply(&order, quote),
+            policy::Policy::Volume(variant) => variant.apply(&order),
         }
         .into_iter()
         .collect_vec();

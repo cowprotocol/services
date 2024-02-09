@@ -88,57 +88,23 @@ impl PriceImprovement {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
-            boundary::OrderClass::Limit => {
-                let order_ = boundary::Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
-                };
-                let quote_ = boundary::Amounts {
-                    sell: quote.sell_amount,
-                    buy: quote.buy_amount,
-                    fee: quote.fee,
-                };
-
-                boundary::is_order_outside_market_price(&order_, &quote_).then_some(
-                    domain::fee::Policy::PriceImprovement {
-                        factor: self.factor,
-                        max_volume_factor: self.max_volume_factor,
-                        quote: quote.clone().into(),
-                    },
-                )
-            }
+            boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
+                factor: self.factor,
+                max_volume_factor: self.max_volume_factor,
+                quote: quote.clone().into(),
+            }),
         }
     }
 }
 
 impl Volume {
-    pub fn apply(
-        &self,
-        order: &boundary::Order,
-        quote: &domain::Quote,
-    ) -> Option<domain::fee::Policy> {
+    pub fn apply(&self, order: &boundary::Order) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
-            boundary::OrderClass::Limit => {
-                let order_ = boundary::Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
-                };
-                let quote_ = boundary::Amounts {
-                    sell: quote.sell_amount,
-                    buy: quote.buy_amount,
-                    fee: quote.fee,
-                };
-
-                boundary::is_order_outside_market_price(&order_, &quote_).then_some(
-                    domain::fee::Policy::Volume {
-                        factor: self.factor,
-                    },
-                )
-            }
+            boundary::OrderClass::Limit => Some(domain::fee::Policy::Volume {
+                factor: self.factor,
+            }),
         }
     }
 }
