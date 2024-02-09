@@ -366,7 +366,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
 }
 
 fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> HashSet<H160> {
-    // Create a mapping of tokens to their adjacent tokens
+    // Find all tokens that are connected through potentially multiple amm hops to the fee.
     let mut token_graph: HashMap<H160, HashSet<H160>> = HashMap::new();
     for amm in liquidity {
         let pairs = amm.all_token_pairs();
@@ -376,8 +376,6 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
             token_graph.entry(token2).or_default().insert(token1);
         }
     }
-
-    // Perform BFS to find all tokens connected to the native token
     let mut visited_tokens: HashSet<H160> = HashSet::new();
     let mut queue: VecDeque<H160> = VecDeque::new();
     queue.push_back(native_token);
@@ -392,7 +390,6 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
             }
         }
     }
-
     visited_tokens
 }
 
