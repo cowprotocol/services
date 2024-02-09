@@ -104,14 +104,19 @@ impl TenderlyApi for TenderlyHttpApi {
 
     fn log(&self, simulation: SimulationRequest) -> Result<()> {
         let request_url = crate::url::join(&self.api, "simulate");
-        let simulation_url = crate::url::join(&self.dashboard, "simulator/$SIMULATION_ID");
+        let simulation_url =
+            crate::url::join(&self.dashboard, "simulator/$SIMULATION_ID").to_string();
         let body = serde_json::to_string(&simulation)?;
+
+        #[rustfmt::skip]
         tracing::error!(
-            "resimulate by setting TENDERLY_API_KEY environment variable and running:curl -X POST \
-             --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" --json '{body}' {request_url} | jq -r \
-             \".simulation.id\" | read SIMULATION_ID;echo {}",
-            simulation_url.to_string(),
+            "resimulate by setting TENDERLY_API_KEY environment variable and running: \
+            curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" --json '{body}' {request_url} \
+            | jq -r \".simulation.id\" \
+            | read SIMULATION_ID; \
+            echo {simulation_url}",
         );
+
         Ok(())
     }
 
