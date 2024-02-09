@@ -37,16 +37,23 @@ use {
         infra,
     },
     anyhow::{Context, Result},
-    futures::StreamExt,
+    database::PgTransaction,
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
+    std::sync::Arc,
+    tokio::sync::Notify,
     web3::types::Transaction,
 };
 
 pub struct OnSettlementEventUpdater {
-    pub eth: infra::Ethereum,
-    pub db: Postgres,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    eth: infra::Ethereum,
+    db: Postgres,
+    notify: Notify,
 }
 
 enum AuctionIdRecoveryStatus {
@@ -59,30 +66,54 @@ enum AuctionIdRecoveryStatus {
 }
 
 impl OnSettlementEventUpdater {
-    pub async fn run_forever(self) -> ! {
-        let mut current_block = self.eth.current_block().borrow().to_owned();
-        let mut block_stream = ethrpc::current_block::into_stream(self.eth.current_block().clone());
+    /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
+    /// first update run.
+    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
+        let inner = Arc::new(Inner {
+            eth,
+            db,
+            notify: Notify::new(),
+        });
+        let inner_clone = inner.clone();
+        tokio::spawn(async move { Inner::listen_for_updates(inner_clone).await });
+        Self { inner }
+    }
+
+    /// Deletes settlement_observations and order executions for the given range
+    pub async fn delete_observations(
+        transaction: &mut PgTransaction<'_>,
+        from_block: u64,
+    ) -> Result<()> {
+        database::settlements::delete(transaction, from_block)
+            .await
+            .context("delete_settlement_observations")?;
+
+        Ok(())
+    }
+
+    /// Schedules an update loop on a background thread
+    pub fn schedule_update(&self) {
+        self.inner.notify.notify_one();
+    }
+}
+
+impl Inner {
+    async fn listen_for_updates(self: Arc<Inner>) -> ! {
         loop {
             match self.update().await {
                 Ok(true) => {
-                    tracing::debug!(
-                        block = current_block.number,
-                        "on settlement event updater ran and processed event"
-                    );
-                    // Don't wait until next block in case there are more pending events to process.
+                    tracing::debug!("on settlement event updater ran and processed event");
+                    // There might be more pending updates, continue immediately.
                     continue;
                 }
                 Ok(false) => {
-                    tracing::debug!(
-                        block = current_block.number,
-                        "on settlement event updater ran without update"
-                    );
+                    tracing::debug!("on settlement event updater ran without update");
                 }
                 Err(err) => {
                     tracing::error!(?err, "on settlement event update task failed");
                 }
             }
-            current_block = block_stream.next().await.expect("blockchains never end");
+            self.notify.notified().await;
         }
     }
 
