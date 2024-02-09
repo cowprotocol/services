@@ -50,6 +50,7 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
 }
 
 #[serde_as]
@@ -180,6 +181,8 @@ struct SolverConfig {
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
+
+    authorization: Option<String>
 }
 
 #[serde_as]

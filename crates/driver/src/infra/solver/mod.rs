@@ -16,6 +16,8 @@ use {
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
+    reqwest::header::HeaderValue,
+
 };
 
 pub mod dto;
@@ -97,6 +99,8 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
+    //Authorization Header for requests
+    pub authorization: Option<String>
 }
 
 impl Solver {
@@ -108,6 +112,10 @@ impl Solver {
         );
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
         // TODO(#907) Also add an auth header
+        if let Some(ref auth_token) = config.authorization {
+            headers.insert(reqwest::header::AUTHORIZATION, HeaderValue::try_from(auth_token).unwrap());
+        }
+
         Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)

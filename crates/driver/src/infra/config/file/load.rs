@@ -85,7 +85,13 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         .solving_share_of_deadline
                         .try_into()
                         .unwrap(),
-                },
+                },  
+                authorization: if let Some(auth_token) = config.authorization {
+                    Some(auth_token)
+                } else {
+                    None
+                }
+                
             }
         }))
         .await,
