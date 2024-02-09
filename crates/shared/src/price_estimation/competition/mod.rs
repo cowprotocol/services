@@ -32,7 +32,6 @@ pub struct CompetitionEstimator<T> {
     stages: Vec<PriceEstimationStage<T>>,
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
-    // TODO drop this flag and always prefer verified when feature is stable
     prefer_verified_estimates: bool,
 }
 
