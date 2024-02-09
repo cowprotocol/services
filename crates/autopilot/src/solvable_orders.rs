@@ -605,7 +605,9 @@ impl OrderFilterCounter {
         for order_uid in filtered_orders.keys() {
             self.orders.remove(order_uid).unwrap();
         }
-        tracing::debug!(%reason, orders = ?filtered_orders, "filtered orders");
+        if !filtered_orders.is_empty() {
+            tracing::debug!(%reason, orders = ?filtered_orders, "filtered orders");
+        }
         filtered_orders.into_keys().collect()
     }
 
