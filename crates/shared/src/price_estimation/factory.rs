@@ -342,7 +342,8 @@ impl<'a> PriceEstimatorFactory<'a> {
         let competition_estimator = CompetitionEstimator::new(
             vec![estimators],
             PriceRanking::BestBangForBuck { native, gas },
-        );
+        )
+        .prefer_verified_estimates(self.args.prefer_verified_quotes);
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -388,6 +389,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let competition_estimator =
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
+                .prefer_verified_estimates(self.args.prefer_verified_quotes)
                 .with_early_return(results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),

@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary::buffered_web3_client,
+        boundary::unbuffered_web3_client,
         domain::{competition, eth, mempools},
         infra,
     },
@@ -51,7 +51,8 @@ impl Inner {
     pub fn new(config: Config, transport: DynWeb3) -> Self {
         let transport = match &config.kind {
             Kind::Public(_) => transport,
-            Kind::MEVBlocker { url, .. } => buffered_web3_client(url),
+            // Flashbots Protect RPC fallback doesn't support buffered transport
+            Kind::MEVBlocker { url, .. } => unbuffered_web3_client(url),
         };
         Self { config, transport }
     }
