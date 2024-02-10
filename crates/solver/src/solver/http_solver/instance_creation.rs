@@ -8,7 +8,7 @@ use {
     contracts::WETH9,
     ethcontract::{errors::ExecutionError, U256},
     itertools::{Either, Itertools as _},
-    maplit::btreemap,
+    maplit::{btreemap, hashset},
     model::{
         auction::AuctionId,
         order::{Order, OrderKind},
@@ -377,7 +377,7 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
             token_graph.entry(token2).or_default().insert(token1);
         }
     }
-    let mut fee_connected_tokens = maplit::hashset![native_token];
+    let mut fee_connected_tokens = hashset![native_token];
     let mut queue: VecDeque<H160> = VecDeque::new();
     queue.push_back(native_token);
     while let Some(token) = queue.pop_front() {
