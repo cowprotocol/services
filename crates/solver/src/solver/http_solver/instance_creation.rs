@@ -377,21 +377,20 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
             token_graph.entry(token2).or_default().insert(token1);
         }
     }
-    let mut visited_tokens: HashSet<H160> = HashSet::new();
+    let mut fee_connected_tokens = maplit::hashset![native_token];
     let mut queue: VecDeque<H160> = VecDeque::new();
     queue.push_back(native_token);
     while let Some(token) = queue.pop_front() {
-        if visited_tokens.contains(&token) {
-            continue;
-        }
-        visited_tokens.insert(token);
         if let Some(adjacent_tokens) = token_graph.get(&token) {
             for &adjacent_token in adjacent_tokens {
-                queue.push_back(adjacent_token);
+                if fee_connected_tokens.insert(adjacent_token) {
+                    queue.push_back(adjacent_token);
+                }
             }
         }
     }
-    visited_tokens
+
+    fee_connected_tokens
 }
 
 /// Failure indicating the transaction reverted for some reason
