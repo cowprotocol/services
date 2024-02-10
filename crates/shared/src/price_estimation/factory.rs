@@ -4,7 +4,7 @@ use {
         baseline::BaselinePriceEstimator,
         competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
-        http::HttpPriceEstimator,
+        http::{HttpPriceEstimator, HttpTradeFinder},
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
         native_price_cache::CachingNativePriceEstimator,
@@ -578,32 +578,40 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
 
     fn init(factory: &PriceEstimatorFactory, name: &str, params: Self::Params) -> Result<Self> {
         Ok(HttpPriceEstimator::new(
-            Arc::new(DefaultHttpSolverApi {
-                name: name.to_string(),
-                network_name: factory.network.name.clone(),
-                chain_id: factory.network.chain_id,
-                base: params.base,
-                solve_path: params.solve_path,
-                client: factory.components.http_factory.create(),
-                gzip_requests: false,
-                config: SolverConfig {
-                    use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
-                    objective: Some(Objective::SurplusFeesCosts),
-                    ..Default::default()
-                },
-            }),
-            factory.components.uniswap_v2_pools.clone(),
-            factory.components.balancer_pools.clone(),
-            factory.components.uniswap_v3_pools.clone(),
-            factory.components.tokens.clone(),
-            factory.components.gas_price.clone(),
-            factory.network.native_token,
-            factory.network.base_tokens.clone(),
-            factory.network.name.clone(),
+            name.to_string(),
+            HttpTradeFinder::new(
+                Arc::new(DefaultHttpSolverApi {
+                    name: name.to_string(),
+                    network_name: factory.network.name.clone(),
+                    chain_id: factory.network.chain_id,
+                    base: params.base,
+                    solve_path: params.solve_path,
+                    client: factory.components.http_factory.create(),
+                    gzip_requests: false,
+                    config: SolverConfig {
+                        use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
+                        objective: Some(Objective::SurplusFeesCosts),
+                        ..Default::default()
+                    },
+                }),
+                factory.components.uniswap_v2_pools.clone(),
+                factory.components.balancer_pools.clone(),
+                factory.components.uniswap_v3_pools.clone(),
+                factory.components.tokens.clone(),
+                factory.components.gas_price.clone(),
+                factory.network.native_token,
+                factory.network.base_tokens.clone(),
+                factory.network.name.clone(),
+                factory.rate_limiter(name),
+                params.use_liquidity,
+                params.solver,
+            ),
             factory.rate_limiter(name),
-            params.use_liquidity,
-            params.solver,
         ))
+    }
+
+    fn verified(&self, verifier: &Arc<dyn TradeVerifying>) -> Option<Self> {
+        Some(self.verified(verifier.clone()))
     }
 }
 

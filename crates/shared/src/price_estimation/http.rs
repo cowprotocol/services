@@ -1,4 +1,5 @@
 use {
+    super::{trade_finder::TradeEstimator, trade_verifier::TradeVerifying},
     crate::{
         baseline_solver::BaseTokens,
         http_solver::{
@@ -38,6 +39,7 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
+        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::{anyhow, Context, Result},
     ethcontract::{H160, U256},
@@ -53,7 +55,33 @@ use {
     },
 };
 
-pub struct HttpPriceEstimator {
+pub struct HttpPriceEstimator(TradeEstimator);
+
+impl HttpPriceEstimator {
+    pub fn new(
+        label: String,
+        trade_finder: HttpTradeFinder,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
+        Self(TradeEstimator::new(
+            Arc::new(trade_finder),
+            rate_limiter,
+            label,
+        ))
+    }
+
+    pub fn verified(&self, verifier: Arc<dyn TradeVerifying>) -> Self {
+        Self(self.0.clone().with_verifier(verifier))
+    }
+}
+
+impl PriceEstimating for HttpPriceEstimator {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimate(query)
+    }
+}
+
+pub struct HttpTradeFinder {
     api: Arc<dyn HttpSolverApi>,
     sharing: RequestSharing<
         Arc<Query>,
@@ -72,7 +100,7 @@ pub struct HttpPriceEstimator {
     solver: H160,
 }
 
-impl HttpPriceEstimator {
+impl HttpTradeFinder {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         api: Arc<dyn HttpSolverApi>,
@@ -105,7 +133,7 @@ impl HttpPriceEstimator {
         }
     }
 
-    async fn estimate(&self, query: Arc<Query>) -> Result<Estimate, PriceEstimationError> {
+    async fn compute_trade(&self, query: Arc<Query>) -> Result<Trade, PriceEstimationError> {
         let gas_price = U256::from_f64_lossy(
             self.gas_info
                 .estimate()
@@ -245,21 +273,29 @@ impl HttpPriceEstimator {
         for amm in settlement.amms.values() {
             cost += self.extract_cost(&amm.cost)? * amm.execution.len();
         }
-        for interaction in settlement.interaction_data {
+        for interaction in &settlement.interaction_data {
             cost += self.extract_cost(&interaction.cost)?;
         }
-        let gas = (cost / gas_price).as_u64().max(TRADE)
+        let gas_estimate = (cost / gas_price).as_u64().max(TRADE)
             + INITIALIZATION_COST // Call into contract
             + SETTLEMENT // overhead for entering the `settle()` function
             + ERC20_TRANSFER * 2; // transfer in and transfer out
-        Ok(Estimate {
+        Ok(Trade {
             out_amount: match query.kind {
                 OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
                 OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
             },
-            gas,
+            gas_estimate,
+            interactions: settlement
+                .interaction_data
+                .into_iter()
+                .map(|i| Interaction {
+                    target: i.target,
+                    value: i.value,
+                    data: i.call_data,
+                })
+                .collect(),
             solver: self.solver,
-            verified: false,
         })
     }
 
@@ -406,9 +442,36 @@ impl HttpPriceEstimator {
     }
 }
 
-impl PriceEstimating for HttpPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
-        self.estimate(query).boxed()
+#[async_trait::async_trait]
+impl TradeFinding for HttpTradeFinder {
+    async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
+        let price_estimate = self.compute_trade(Arc::new(query.clone())).await?;
+        Ok(Quote {
+            out_amount: price_estimate.out_amount,
+            gas_estimate: price_estimate.gas_estimate,
+            solver: price_estimate.solver,
+        })
+    }
+
+    async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
+        self.compute_trade(Arc::new(query.clone()))
+            .await
+            .map_err(Into::into)
+    }
+}
+
+impl PriceEstimating for HttpTradeFinder {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        async {
+            let trade = self.compute_trade(query).await?;
+            Ok(Estimate {
+                out_amount: trade.out_amount,
+                gas: trade.gas_estimate,
+                solver: trade.solver,
+                verified: false,
+            })
+        }
+        .boxed()
     }
 }
 
@@ -482,7 +545,7 @@ mod tests {
 
         let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559::default()));
 
-        let estimator = HttpPriceEstimator::new(
+        let estimator = HttpTradeFinder::new(
             Arc::new(api),
             Arc::new(FakePoolFetcher(vec![])),
             None,
@@ -538,7 +601,7 @@ mod tests {
 
         let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559::default()));
 
-        let estimator = HttpPriceEstimator::new(
+        let estimator = HttpTradeFinder::new(
             Arc::new(api),
             Arc::new(FakePoolFetcher(vec![])),
             None,
@@ -584,7 +647,7 @@ mod tests {
 
         let gas_price_estimating = Arc::new(FakeGasPriceEstimator::new(GasPrice1559::default()));
 
-        let estimator = HttpPriceEstimator::new(
+        let estimator = HttpTradeFinder::new(
             Arc::new(api),
             Arc::new(FakePoolFetcher(vec![])),
             None,
@@ -681,7 +744,7 @@ mod tests {
             ..Default::default()
         }));
 
-        let estimator = HttpPriceEstimator::new(
+        let estimator = HttpTradeFinder::new(
             Arc::new(api),
             Arc::new(FakePoolFetcher(vec![])),
             None,
@@ -797,7 +860,7 @@ mod tests {
         );
         let gas_info = Arc::new(web3);
 
-        let estimator = HttpPriceEstimator {
+        let estimator = HttpTradeFinder {
             api: Arc::new(DefaultHttpSolverApi {
                 name: "test".to_string(),
                 network_name: "1".to_string(),
