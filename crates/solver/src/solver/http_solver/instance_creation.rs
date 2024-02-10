@@ -366,7 +366,8 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
 }
 
 fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> HashSet<H160> {
-    // Find all tokens that are connected through potentially multiple amm hops to the fee.
+    // Find all tokens that are connected through potentially multiple amm hops to
+    // the fee.
     let mut token_graph: HashMap<H160, HashSet<H160>> = HashMap::new();
     for amm in liquidity {
         let pairs = amm.all_token_pairs();
