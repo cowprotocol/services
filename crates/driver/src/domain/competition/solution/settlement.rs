@@ -254,6 +254,26 @@ impl Settlement {
         Ok(score)
     }
 
+    /// Calculate the score for the settlement. Score is used for ranking
+    /// solutions.
+    ///
+    /// As per CIP?, the score is defined as the surplus of the solution, before
+    /// applying protocol fees.
+    pub fn new_score(
+        &self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+    ) -> Result<competition::Score, score::Error> {
+        let score = self
+            .solutions
+            .values()
+            .fold(eth::U256::zero(), |acc, solution| {
+                acc + solution.new_score()
+            });
+
+        Ok(score.try_into()?)
+    }
+
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.
     /// Merge another settlement into this settlement.
     ///

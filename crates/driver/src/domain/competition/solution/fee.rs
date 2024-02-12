@@ -23,7 +23,7 @@
 //! Executed = 1 WETH
 
 use {
-    super::trade::{Fee, Fulfillment, InvalidExecutedAmount},
+    super::trade::{ClearingPrices, Fee, Fulfillment, InvalidExecutedAmount},
     crate::domain::{
         competition::{
             order,
@@ -90,72 +90,85 @@ impl Fulfillment {
         }
     }
 
+    /// Returns the surplus denominated in the sell token.
+    pub fn surplus_in_sell_token(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+        let surplus = self.surplus(prices)?;
+        match self.order().side {
+            Side::Buy => Ok(surplus),
+            Side::Sell => Ok(surplus
+                .checked_mul(prices.buy)
+                .ok_or(Error::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Error::DivisionByZero)?),
+        }
+    }
+
+    // /// Returns the surplus denominated in the surplus token.
+    // pub fn surplus(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+    //     let sell_amount = self.order().sell.amount.0;
+    //     let buy_amount = self.order().buy.amount.0;
+    //     let executed = self.executed().0;
+    //     let executed_sell_amount = match self.order().side {
+    //         Side::Buy => {
+    //             // How much `sell_token` we need to sell to buy `executed` amount
+    // of `buy_token`             executed
+    //                 .checked_mul(prices.buy)
+    //                 .ok_or(Error::Overflow)?
+    //                 .checked_div(prices.sell)
+    //                 .ok_or(Error::DivisionByZero)?
+    //         }
+    //         Side::Sell => executed,
+    //     };
+    //     // Sell slightly more `sell_token` to capture the `surplus_fee`
+    //     let executed_sell_amount_with_fee = executed_sell_amount
+    //         .checked_add(
+    //             // surplus_fee is always expressed in sell token
+    //             self.surplus_fee()
+    //                 .map(|fee| fee.0)
+    //                 .ok_or(Error::ProtocolFeeOnStaticOrder)?,
+    //         )
+    //         .ok_or(Error::Overflow)?;
+    //     let surplus = match self.order().side {
+    //         Side::Buy => {
+    //             // Scale to support partially fillable orders
+    //             let limit_sell_amount = sell_amount
+    //                 .checked_mul(executed)
+    //                 .ok_or(Error::Overflow)?
+    //                 .checked_div(buy_amount)
+    //                 .ok_or(Error::DivisionByZero)?;
+    //             // Remaining surplus after fees
+    //             // Do not return error if `checked_sub` fails because violated
+    // limit prices will             // be caught by simulation
+    //             limit_sell_amount
+    //                 .checked_sub(executed_sell_amount_with_fee)
+    //                 .unwrap_or(eth::U256::zero())
+    //         }
+    //         Side::Sell => {
+    //             // Scale to support partially fillable orders
+    //             let limit_buy_amount = buy_amount
+    //                 .checked_mul(executed_sell_amount_with_fee)
+    //                 .ok_or(Error::Overflow)?
+    //                 .checked_div(sell_amount)
+    //                 .ok_or(Error::DivisionByZero)?;
+    //             // How much `buy_token` we get for `executed` amount of
+    // `sell_token`             let executed_buy_amount = executed
+    //                 .checked_mul(prices.sell)
+    //                 .ok_or(Error::Overflow)?
+    //                 .checked_div(prices.buy)
+    //                 .ok_or(Error::DivisionByZero)?;
+    //             // Remaining surplus after fees
+    //             // Do not return error if `checked_sub` fails because violated
+    // limit prices will             // be caught by simulation
+    //             let surplus = executed_buy_amount
+    //                 .checked_sub(limit_buy_amount)
+    //                 .unwrap_or(eth::U256::zero());
+    //         }
+    //     };
+    //     Ok(surplus)
+    // }
+
     fn fee_from_surplus(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
-        let sell_amount = self.order().sell.amount.0;
-        let buy_amount = self.order().buy.amount.0;
-        let executed = self.executed().0;
-        let executed_sell_amount = match self.order().side {
-            Side::Buy => {
-                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                executed
-                    .checked_mul(prices.buy)
-                    .ok_or(Error::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(Error::DivisionByZero)?
-            }
-            Side::Sell => executed,
-        };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
-        let executed_sell_amount_with_fee = executed_sell_amount
-            .checked_add(
-                // surplus_fee is always expressed in sell token
-                self.surplus_fee()
-                    .map(|fee| fee.0)
-                    .ok_or(Error::ProtocolFeeOnStaticOrder)?,
-            )
-            .ok_or(Error::Overflow)?;
-        let surplus_in_sell_token = match self.order().side {
-            Side::Buy => {
-                // Scale to support partially fillable orders
-                let limit_sell_amount = sell_amount
-                    .checked_mul(executed)
-                    .ok_or(Error::Overflow)?
-                    .checked_div(buy_amount)
-                    .ok_or(Error::DivisionByZero)?;
-                // Remaining surplus after fees
-                // Do not return error if `checked_sub` fails because violated limit prices will
-                // be caught by simulation
-                limit_sell_amount
-                    .checked_sub(executed_sell_amount_with_fee)
-                    .unwrap_or(eth::U256::zero())
-            }
-            Side::Sell => {
-                // Scale to support partially fillable orders
-                let limit_buy_amount = buy_amount
-                    .checked_mul(executed_sell_amount_with_fee)
-                    .ok_or(Error::Overflow)?
-                    .checked_div(sell_amount)
-                    .ok_or(Error::DivisionByZero)?;
-                // How much `buy_token` we get for `executed` amount of `sell_token`
-                let executed_buy_amount = executed
-                    .checked_mul(prices.sell)
-                    .ok_or(Error::Overflow)?
-                    .checked_div(prices.buy)
-                    .ok_or(Error::DivisionByZero)?;
-                // Remaining surplus after fees
-                // Do not return error if `checked_sub` fails because violated limit prices will
-                // be caught by simulation
-                let surplus = executed_buy_amount
-                    .checked_sub(limit_buy_amount)
-                    .unwrap_or(eth::U256::zero());
-                // surplus in sell token
-                surplus
-                    .checked_mul(prices.buy)
-                    .ok_or(Error::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(Error::DivisionByZero)?
-            }
-        };
+        let surplus_in_sell_token = self.surplus_in_sell_token(prices)?;
         apply_factor(surplus_in_sell_token, factor)
     }
 
@@ -190,13 +203,6 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
         .checked_mul(eth::U256::from_f64_lossy(factor * 10000.))
         .ok_or(Error::Overflow)?
         / 10000)
-}
-
-/// Uniform clearing prices at which the trade was executed.
-#[derive(Debug, Clone, Copy)]
-pub struct ClearingPrices {
-    pub sell: eth::U256,
-    pub buy: eth::U256,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1,5 +1,6 @@
+use self::trade::ClearingPrices;
+
 use {
-    self::fee::ClearingPrices,
     crate::{
         boundary,
         domain::{
@@ -39,6 +40,7 @@ pub struct Solution {
     interactions: Vec<Interaction>,
     solver: Solver,
     score: SolverScore,
+    new_score: eth::U256,
     weth: eth::WethAddress,
 }
 
@@ -51,7 +53,33 @@ impl Solution {
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
+        native_prices: HashMap<eth::TokenAddress, eth::U256>,
     ) -> Result<Self, SolutionError> {
+        let new_score = trades
+            .iter()
+            .fold(eth::U256::zero(), |acc, trade| match trade {
+                Trade::Fulfillment(fulfillment) => {
+                    let surplus_in_sell_token = fulfillment
+                        .surplus(ClearingPrices {
+                            sell: prices[&fulfillment.order().sell.token.wrap(weth)],
+                            buy: prices[&fulfillment.order().buy.token.wrap(weth)],
+                        })
+                        .unwrap_or(eth::U256::zero());
+                    acc.saturating_add(surplus_in_sell_token)
+                }
+                Trade::Jit(_) => acc,
+            });
+
+        let new_score = trades.iter().fold(new_score, |acc, trade| {
+            acc.saturating_add(trade.score(
+                &ClearingPrices {
+                    sell: prices[&fulfillment.order().sell.token.wrap(weth)],
+                    buy: prices[&fulfillment.order().buy.token.wrap(weth)],
+                },
+                &native_prices,
+            ))
+        });
+
         let solution = Self {
             id,
             trades,
@@ -59,6 +87,7 @@ impl Solution {
             interactions,
             solver,
             score,
+            new_score,
             weth,
         };
 
@@ -95,6 +124,10 @@ impl Solution {
 
     pub fn score(&self) -> &SolverScore {
         &self.score
+    }
+
+    pub fn new_score(&self) -> eth::U256 {
+        self.new_score
     }
 
     /// Approval interactions necessary for encoding the settlement.

@@ -207,6 +207,7 @@ impl Solutions {
                         } => competition::solution::SolverScore::RiskAdjusted(success_probability),
                     },
                     weth,
+                    auction.tokens().iter().map(|token| token.price)
                 )
                 .map_err(|err| match err {
                     competition::solution::SolutionError::InvalidClearingPrices => {
