@@ -72,16 +72,15 @@ impl GasPriceEstimator {
                             .min(estimate.max_fee_per_gas * additional_tip_percentage);
                         estimate.max_fee_per_gas += additional_tip;
                         estimate.max_priority_fee_per_gas += additional_tip;
-                        estimate = estimate.ceil();
                         estimate
                     }
                     None => estimate,
                 };
-                eth::GasPrice {
-                    max: self.max_fee_per_gas.into(),
-                    tip: eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
-                    base: eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
-                }
+                eth::GasPrice::new(
+                    self.max_fee_per_gas.into(),
+                    eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
+                    eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
+                )
             })
             .map_err(Error::GasPrice)
     }

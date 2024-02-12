@@ -1,0 +1,19 @@
+name: Nag Stale Pull Requests
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run every day at midnight
+jobs:
+  close_stale_prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close stale pull requests
+        uses: actions/stale@v5
+        with:
+          days-before-stale: 7
+          days-before-issue-stale: 60
+          days-before-close: 7
+          stale-pr-message: 'This pull request has been marked as stale because it has been inactive a while. Please update this pull request or it will be automatically closed.'
+          stale-issue-message: 'This issue has been marked as stale because it has been inactive a while. Please update this issue or it will be automatically closed.'
+          stale-pr-label: stale
+          exempt-pr-labels: 'blocked'
+          exempt-issue-labels: 'blocked, help wanted'

@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary::buffered_web3_client,
+        boundary::unbuffered_web3_client,
         domain::{competition, eth, mempools},
         infra,
     },
@@ -51,7 +51,8 @@ impl Inner {
     pub fn new(config: Config, transport: DynWeb3) -> Self {
         let transport = match &config.kind {
             Kind::Public(_) => transport,
-            Kind::MEVBlocker { url, .. } => buffered_web3_client(url),
+            // Flashbots Protect RPC fallback doesn't support buffered transport
+            Kind::MEVBlocker { url, .. } => unbuffered_web3_client(url),
         };
         Self { config, transport }
     }
@@ -66,8 +67,8 @@ impl Inner {
             .from(solver.account().clone())
             .to(tx.to.into())
             .gas_price(ethcontract::GasPrice::Eip1559 {
-                max_fee_per_gas: gas.price.max.into(),
-                max_priority_fee_per_gas: gas.price.tip.into(),
+                max_fee_per_gas: gas.price.max().into(),
+                max_priority_fee_per_gas: gas.price.tip().into(),
             })
             .data(tx.input.into())
             .value(tx.value.0)
@@ -81,5 +82,12 @@ impl Inner {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn may_revert(&self) -> bool {
+        match &self.config.kind {
+            Kind::Public(_) => true,
+            Kind::MEVBlocker { .. } => false,
+        }
     }
 }

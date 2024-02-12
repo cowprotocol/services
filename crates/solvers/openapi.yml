@@ -7,7 +7,7 @@ info:
   version: 0.0.1
 
 paths:
-  /:
+  /solve:
     post:
       description: |
         Solve the passed in auction instance.
@@ -23,9 +23,16 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Solution"
+                type: object
+                required:
+                  - solutions
+                properties:
+                  solutions:
+                    description: |
+                      Proposed solutions to settle some of the orders in the auction.
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Solution"
         400:
           description: There is something wrong with the request.
         429:
@@ -35,19 +42,24 @@ paths:
   /notify:
     post:
       description: |
-        Receive a status notification about a previously provided solution
+        Receive a status notification about a previously provided solution.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: true
+              description: |
+                A notification that informs the solver how its solution performed in the auction.
+                Depending on the notification type additional meta data may be attached but this
+                is not guaranteed to be stable.
               properties:
                 auctionId:
                   description: |
                     The auction ID of the auction that the solution was provided
                     for.
-                  type: number
+                  type: string
                 solutionId:
                   description: |
                     The solution ID within the auction for which the notification applies
@@ -56,7 +68,7 @@ paths:
                   description: |
                     The kind of notification.
                   type: string
-                  enum: [Timeout, EmptySolution, DuplicatedSolutionId, SimulationFailed, ZeroScore, ScoreHigherThanQuality, SuccessProbabilityOutOfRange, ObjectiveValueNonPositive, NonBufferableTokensUsed, SolverAccountInsufficientBalance, Success, Revert, Cancelled, Failed, PostprocessingTimedOut]
+                  enum: [timeout, emptySolution, duplicatedSolutionId, simulationFailed, zeroScore, scoreHigherThanQuality, successProbabilityOutOfRange, objectiveValueNonPositive, nonBufferableTokensUsed, solverAccountInsufficientBalance, success, revert, driverError, cancelled, fail, postprocessingTimedOut]
       responses:
         200:
           description: notification successfully received.
@@ -80,6 +92,30 @@ components:
         Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
       type: string
       example: "1234567890"
+
+    U256:
+      description: |
+        256 bit unsigned integer in decimal notation.
+      type: string
+      example: "1234567890"
+
+    U128:
+      description: |
+        128 bit unsigned integer in decimal notation.
+      type: string
+      example: "1234567890"
+
+    I128:
+      description: |
+        128 bit signed integer in decimal notation.
+      type: string
+      example: "-1234567890"
+
+    I32:
+      description: |
+        32 bit signed integer in decimal notation.
+      type: number
+      example: -12345
 
     BigInt:
       description: |
@@ -206,7 +242,7 @@ components:
       description: |
         How was the order signed?
       type: string
-      enum: [eip712, ethsign, presign, eip1271]
+      enum: [eip712, ethSign, preSign, eip1271]
 
     Signature:
       description: |
@@ -307,7 +343,7 @@ components:
                   - weight
                 properties:
                   scalingFactor:
-                    $ref: "#/components/schemas/BigInt"
+                    $ref: "#/components/schemas/Decimal"
                   weight:
                     $ref: "#/components/schemas/Decimal"
         fee:
@@ -341,7 +377,7 @@ components:
                   - scalingFactor
                 properties:
                   scalingFactor:
-                    $ref: "#/components/schemas/BigInt"
+                    $ref: "#/components/schemas/Decimal"
         amplificationParameter:
           $ref: "#/components/schemas/Decimal"
         fee:
@@ -368,17 +404,17 @@ components:
           items:
             $ref: "#/components/schemas/Token"
         sqrtPrice:
-          $ref: "#/components/schemas/BigInt"
+          $ref: "#/components/schemas/U256"
         liquidity:
-          $ref: "#/components/schemas/TokenAmount"
+          $ref: "#/components/schemas/U128"
         tick:
-          type: integer
+          $ref: "#/components/schemas/I32"
         liquidityNet:
           description: |
             A map of tick indices to their liquidity values.
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/BigInt"
+            $ref: "#/components/schemas/I128"
         fee:
           $ref: "#/components/schemas/Decimal"
 
@@ -571,8 +607,8 @@ components:
         fee:
           description: |
             The sell token amount that should be taken as a fee for this
-            trade. This only gets returned for partially fillable limit
-            orders and only refers to the actual amount filled by the trade.
+            trade. This only gets returned for limit orders and only refers
+            to the actual amount filled by the trade.
         executedAmount:
           description: |
             The amount of the order that was executed. This is denoted in
@@ -586,6 +622,7 @@ components:
       required:
         - kind
         - order
+        - executedAmount
       properties:
         kind:
           type: string
@@ -711,7 +748,7 @@ components:
 
     Solution:
       description: |
-        The computed solution for a given auction.
+        A computed solution for a given auction.
       type: object
       required:
         - id
@@ -729,7 +766,7 @@ components:
             arbitrary denomination.
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/BigInt"
+            $ref: "#/components/schemas/U256"
         trades:
           description: |
             CoW Protocol order trades included in the solution.

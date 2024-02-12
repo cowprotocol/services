@@ -1,6 +1,6 @@
 use {
-    crate::{events::EventIndex, TransactionHash},
-    sqlx::PgConnection,
+    crate::{events::EventIndex, PgTransaction, TransactionHash},
+    sqlx::{Executor, PgConnection},
     std::ops::Range,
 };
 
@@ -49,20 +49,15 @@ pub struct SettlementEvent {
 
 pub async fn get_settlement_without_auction(
     ex: &mut PgConnection,
-    max_block_number: i64,
 ) -> Result<Option<SettlementEvent>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index, tx_hash
 FROM settlements
 WHERE auction_id IS NULL
-AND block_number <= $1
 ORDER BY block_number ASC
 LIMIT 1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(max_block_number)
-        .fetch_optional(ex)
-        .await
+    sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
 pub async fn already_processed(
@@ -95,6 +90,22 @@ WHERE block_number = $2 AND log_index = $3
         .execute(ex)
         .await
         .map(|_| ())
+}
+
+pub async fn delete(
+    ex: &mut PgTransaction<'_>,
+    delete_from_block_number: u64,
+) -> Result<(), sqlx::Error> {
+    const QUERY_OBSERVATIONS: &str =
+        "DELETE FROM settlement_observations WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_OBSERVATIONS).bind(delete_from_block_number as i64))
+        .await?;
+
+    const QUERY_ORDER_EXECUTIONS: &str = "DELETE FROM order_execution WHERE block_number >= $1;";
+    ex.execute(sqlx::query(QUERY_ORDER_EXECUTIONS).bind(delete_from_block_number as i64))
+        .await?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -178,7 +189,7 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db, 0)
+        let settlement = get_settlement_without_auction(&mut db)
             .await
             .unwrap()
             .unwrap();
@@ -190,7 +201,7 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db, 0).await.unwrap();
+        let settlement = get_settlement_without_auction(&mut db).await.unwrap();
 
         assert!(settlement.is_none());
     }

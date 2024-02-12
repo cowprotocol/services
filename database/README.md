@@ -47,19 +47,6 @@ price       | numeric | not null | the atoms of ETH that can be bought with 1 at
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`, `token`)
 
-### auction\_transaction
-
-Because the transaction hash of a given settlement depends on the gas parameters it ultimately gets submitted with onchain we can't know the hash before it got submitted. That's why we store the transaction sender (`tx_from`) and next nonce of the winning solver. With that information we can later associate the auction with the transaction that brought it onchain by cross-referencing the `tx_from` and `tx_nonce`.
-
- Coulmn      | Type   | Nullable | Details
--------------|--------|----------|--------
- auction\_id | bigint | not null | id of the auction
- tx\_from    | bytea  | not null | address of the solver account that won the auction
- tx\_nonce   | bigint | not null | nonce that will be used by the solver to settle the auction
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`)
-
 ### auctions (and auctions\_id\_seq counter)
 
 Contains only the current auction to decouple auction creation in the `autopilot` from serving it in the `orderbook`. A new auction replaces the current one and uses the value of the `auctions_id_seq` sequence and increase it to ensure that auction ids are unique and monotonically increasing.
@@ -187,7 +174,7 @@ Contains metainformation for trades, required for reward computations that canno
  auction\_id  | bigint  | not null | in which auction this trade was initiated
  reward       | double  | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
  surplus\_fee | numeric | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
- solver\_fee  | numeric | nullable | value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).
+ block\_number| bigint  | not null | block in which the order was executed
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)
@@ -331,6 +318,7 @@ During the solver competition solvers promise a solution of a certain quality. I
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
+- settlements\_auction\_id: btree(`auction_id`)
 
 ### settlement\_scores
 

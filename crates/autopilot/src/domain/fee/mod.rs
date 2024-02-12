@@ -4,66 +4,41 @@
 //! we define the way to calculate the protocol fee based on the configuration
 //! parameters.
 
-use crate::{
-    boundary::{self},
-    domain,
+mod policy;
+
+use {
+    crate::{
+        arguments,
+        boundary::{self},
+        domain,
+    },
+    itertools::Itertools,
+    primitive_types::U256,
 };
 
 /// Constructs fee policies based on the current configuration.
-#[derive(Debug)]
 pub struct ProtocolFee {
-    policy: Policy,
-    fee_policy_skip_market_orders: bool,
+    policy: policy::Policy,
 }
 
 impl ProtocolFee {
-    pub fn new(policy: Policy, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(fee_policy_args: arguments::FeePolicy) -> Self {
         Self {
-            policy,
-            fee_policy_skip_market_orders,
+            policy: fee_policy_args.into(),
         }
     }
 
-    /// Get policies for order.
-    pub fn get(&self, order: &boundary::Order, quote: Option<&domain::Quote>) -> Vec<Policy> {
-        match order.metadata.class {
-            boundary::OrderClass::Market => {
-                if self.fee_policy_skip_market_orders {
-                    vec![]
-                } else {
-                    vec![self.policy]
-                }
-            }
-            boundary::OrderClass::Liquidity => vec![],
-            boundary::OrderClass::Limit => {
-                if !self.fee_policy_skip_market_orders {
-                    return vec![self.policy];
-                }
-
-                // if the quote is missing, we can't determine if the order is outside the
-                // market price so we protect the user and not charge a fee
-                let Some(quote) = quote else {
-                    return vec![];
-                };
-
-                let order_ = boundary::Amounts {
-                    sell: order.data.sell_amount,
-                    buy: order.data.buy_amount,
-                    fee: order.data.fee_amount,
-                };
-                let quote = boundary::Amounts {
-                    sell: quote.sell_amount,
-                    buy: quote.buy_amount,
-                    fee: quote.fee,
-                };
-                tracing::debug!(?order.metadata.uid, ?self.policy, ?order_, ?quote, "checking if order is outside market price");
-                if boundary::is_order_outside_market_price(&order_, &quote) {
-                    vec![self.policy]
-                } else {
-                    vec![]
-                }
-            }
+    /// Converts an order from the boundary layer to the domain layer, applying
+    /// protocol fees if necessary.
+    pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+        let protocol_fees = match &self.policy {
+            policy::Policy::Surplus(variant) => variant.apply(&order, quote),
+            policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
+            policy::Policy::Volume(variant) => variant.apply(&order),
         }
+        .into_iter()
+        .collect_vec();
+        boundary::order::to_domain(order, protocol_fees)
     }
 }
 
@@ -84,6 +59,14 @@ pub enum Policy {
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
     },
+    /// A price improvement corresponds to a situation where the order is
+    /// executed at a better price than the top quote. The protocol fee in such
+    /// case is calculated from a cut of this price improvement.
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
     /// token for `buy` orders.
@@ -92,4 +75,24 @@ pub enum Policy {
         /// fee.
         factor: f64,
     },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Quote {
+    /// The amount of the sell token.
+    pub sell_amount: U256,
+    /// The amount of the buy token.
+    pub buy_amount: U256,
+    /// The amount that needs to be paid, denominated in the sell token.
+    pub fee: U256,
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(value: domain::Quote) -> Self {
+        Self {
+            sell_amount: value.sell_amount,
+            buy_amount: value.buy_amount,
+            fee: value.fee,
+        }
+    }
 }

@@ -131,8 +131,6 @@ pub struct OrderQuoteRequest {
     #[serde(flatten, deserialize_with = "deserialize_optional_app_data")]
     pub app_data: OrderCreationAppData,
     #[serde(default)]
-    pub partially_fillable: bool,
-    #[serde(default)]
     pub sell_token_balance: SellTokenSource,
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
@@ -302,6 +300,7 @@ pub struct OrderQuoteResponse {
     pub from: H160,
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
+    pub verified: bool,
 }
 
 impl OrderQuoteRequest {
@@ -333,7 +332,6 @@ mod tests {
                 "buyAmountAfterFee": "1",
                 "validFor": 1800,
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "partiallyFillable": false,
                 "sellTokenBalance": "erc20",
                 "buyTokenBalance": "erc20",
                 "signingScheme": "eip712",

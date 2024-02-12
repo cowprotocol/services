@@ -25,6 +25,15 @@ jobs:
           cargo clippy --version
       - run: cargo +nightly fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
+  
+  nitpicker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ethanis/nitpicker@v1
+        with:
+          nitpicks: ".github/nitpicks.yml"
+          token: "${{ secrets.GITHUB_TOKEN }}"
 
   unit-tests:
     timeout-minutes: 60
@@ -88,6 +97,8 @@ jobs:
   test-forked-node:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    concurrency:
+      group: archive_node
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -95,7 +106,7 @@ jobs:
       CARGO_TERM_COLOR: always
       FORK_URL_MAINNET: ${{ secrets.FORK_URL_MAINNET }}
       FORK_URL_GNOSIS: ${{ secrets.FORK_URL_GNOSIS }}
-      TOML_TRACE_ERROR: 1      
+      TOML_TRACE_ERROR: 1
     steps:
       - uses: actions/checkout@v3
       - uses: foundry-rs/foundry-toolchain@v1
@@ -108,7 +119,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo nextest run -p e2e forked_node --test-threads 1 --failure-output final --run-ignored ignored-only
+      - run: cargo nextest run -p e2e forked_node --nocapture --run-ignored ignored-only
 
   test-driver:
     timeout-minutes: 60

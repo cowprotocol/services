@@ -1,10 +1,8 @@
 use {
     anyhow::Result,
-    contracts::gpv2_settlement,
     ethrpc::current_block::{BlockNumberHash, BlockRetrieving},
     shared::{
         event_handling::{EventHandler, EventRetrieving, EventStoring},
-        impl_event_retrieving,
         maintenance::Maintaining,
     },
     std::sync::Arc,
@@ -15,10 +13,6 @@ pub struct EventUpdater<
     Database: EventStoring<<W as EventRetrieving>::Event>,
     W: EventRetrieving + Send + Sync,
 >(Mutex<EventHandler<W, Database>>);
-
-impl_event_retrieving! {
-    pub GPv2SettlementContract for gpv2_settlement
-}
 
 impl<Database, W> EventUpdater<Database, W>
 where

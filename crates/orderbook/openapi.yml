@@ -431,7 +431,7 @@ paths:
         corresponding `appDataHash` can be linked to the original full `appData`.
       parameters:
         - in: path
-          name: hash
+          name: app_data_hash
           schema:
             $ref: "#/components/schemas/AppDataHash"
           required: true
@@ -450,7 +450,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/AppDataHash"
         201:
-          description: The full `appData` was succesfully registered.
+          description: The full `appData` was successfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        400:
+          description: Error validating full `appData`
+        500:
+          description: Error storing the full `appData`
+  /api/v1/app_data:
+    put:
+      summary: Registers a full `appData` and returns `appDataHash`.
+      description: |
+        Uploads a full `appData` to orderbook and returns the corresponding `appDataHash`.
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataObject"
+      responses:
+        200:
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        201:
+          description: The full `appData` was successfully registered.
           content:
             application/json:
               schema:
@@ -586,7 +615,7 @@ components:
         Optimal: The price estimate is chosen among all price estimates.
         Verified: The price estimate is chosen among all verified/simulated price estimates.
 
-        **NOTE**: Orders are supposed to be created from `verified` price estimates.
+        **NOTE**: Orders are supposed to be created from `verified` or `optimal` price estimates.
       type: string
       enum: [fast, optimal, verified]
     OrderStatus:
@@ -1196,7 +1225,7 @@ components:
               TransferSimulationFailed,
               ZeroAmount,
               IncompatibleSigningScheme,
-              TooManyLimitOrders
+              TooManyLimitOrders,
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
@@ -1385,9 +1414,6 @@ components:
                 In case they differ, the call will fail.
               anyOf:
                 - $ref: "#/components/schemas/AppDataHash"
-            partiallyFillable:
-              description: Is the order fill-or-kill or partially fillable?
-              type: boolean
             sellTokenBalance:
               allOf:
                 - $ref: "#/components/schemas/SellTokenSource"
@@ -1436,9 +1462,14 @@ components:
             Quote ID linked to a quote to enable providing more metadata when analysing
             order slippage.
           type: integer
+        verified:
+          description: |
+            Whether it was possible to verify that the quoted amounts are accurate using a simulation.
+          type: boolean
       required:
         - quote
         - expiration
+        - verified
     SolverCompetitionResponse:
       description: |
         The settlements submitted by every solver for a specific auction.
