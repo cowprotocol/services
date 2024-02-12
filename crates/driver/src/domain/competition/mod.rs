@@ -103,6 +103,33 @@ impl Competition {
             }
         });
 
+        let solutions = solutions.filter(|solution| {
+            let mut amm_orders = HashMap::<eth::Address, usize>::new();
+            for trade in solution.trades() {
+                let owner = match trade {
+                    solution::Trade::Fulfillment(f) => {
+                        let order = auction
+                            .orders()
+                            .iter()
+                            .find(|o| o.uid == f.order().uid)
+                            .unwrap();
+                        order.trader().0
+                    }
+                    solution::Trade::Jit(j) => j.order().signature.signer,
+                };
+                let is_cow_amm_order = self.eth.contracts().cow_amm_contracts().contains(&owner);
+                if is_cow_amm_order {
+                    let entry = amm_orders.entry(owner).or_default();
+                    *entry += 1;
+                    if *entry > 1 {
+                        tracing::warn!("solution contains more than 1 order for the same CoW AMM");
+                        return false;
+                    }
+                }
+            }
+            true
+        });
+
         // Encode solutions into settlements (streamed).
         let encoded = solutions
             .map(|solution| async move {
