@@ -190,7 +190,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        graph_api_base_url: uniswap_v3_graph_url.clone(),
+                        graph_api_url: uniswap_v3_graph_url.clone(),
                     },
                 })
                 .collect(),
@@ -243,7 +243,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
-                        graph_api_base_url: balancer_v2_graph_url.clone(),
+                        graph_api_url: balancer_v2_graph_url.clone(),
                     },
                 })
                 .collect(),
