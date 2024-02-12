@@ -114,11 +114,11 @@ impl Fulfillment {
     /// Returns the surplus denominated in the sell token.
     fn surplus_in_sell_token(
         &self,
-        sell_amount: eth::U256,
+        sell_amount: eth::U256, // todo refactor to eth::TokenAmount, rename to limit_sell
         buy_amount: eth::U256,
         prices: ClearingPrices,
     ) -> Result<eth::U256, Error> {
-        let surplus = self.surplus(sell_amount, buy_amount, prices)?;
+        let surplus = self.surplus(sell_amount.into(), buy_amount.into(), prices)?;
         let surplus_in_sell_token = match self.order().side {
             Side::Buy => surplus,
             Side::Sell => surplus
