@@ -245,7 +245,7 @@ mod tests {
         std::collections::HashMap,
     };
 
-    pub fn default_for_chain(client: Client) -> Result<BalancerSubgraphClient> {
+    pub fn default(client: Client) -> Result<BalancerSubgraphClient> {
         let subgraph_url =
             Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2").expect("invalid url");
         BalancerSubgraphClient::from_subgraph_url(&subgraph_url, client)
@@ -482,7 +482,7 @@ mod tests {
     async fn balancer_subgraph_query() {
         for network_name in ["Mainnet", "Goerli"] {
             println!("### {network_name}");
-            let client = default_for_chain(Client::new()).unwrap();
+            let client = default(Client::new()).unwrap();
             let result = client.get_registered_pools().await.unwrap();
             println!(
                 "Retrieved {} total pools at block {}",
