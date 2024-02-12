@@ -329,6 +329,8 @@ async fn filter_invalid_signature_orders(
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
 fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+    // Prefer newer orders over older ones.
+    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
