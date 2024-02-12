@@ -6,8 +6,7 @@ use {
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
         sources::{
-            balancer_v2::BalancerFactoryKind,
-            uniswap_v2::UniV2BaselineSourceParameters,
+            balancer_v2::BalancerFactoryKind, uniswap_v2::UniV2BaselineSourceParameters,
             BaselineSource,
         },
         tenderly_api,
@@ -142,11 +141,19 @@ pub struct Arguments {
     pub node_url: Url,
 
     /// The Balancer subgraph URL
-    #[clap(long, env, default_value = "https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")]
+    #[clap(
+        long,
+        env,
+        default_value = "https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2"
+    )]
     pub balancer_v2_graph_url: Url,
 
     /// The UniswapV3 subgraph URL
-    #[clap(long, env, default_value = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")]
+    #[clap(
+        long,
+        env,
+        default_value = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+    )]
     pub uniswap_v3_graph_url: Url,
 
     /// An Ethereum node URL that suppo.rs `eth_call`s with state overrides to

@@ -6,8 +6,7 @@ use {
         infra::{
             self,
             blockchain::Ethereum,
-            notify,
-            observe,
+            notify, observe,
             solver::{self, Solver},
             Simulator,
         },

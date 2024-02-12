@@ -1,10 +1,7 @@
 use {
     super::{
-        trade_finder::TradeEstimator,
-        trade_verifier::TradeVerifying,
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
+        trade_finder::TradeEstimator, trade_verifier::TradeVerifying, PriceEstimateResult,
+        PriceEstimating, Query,
     },
     crate::{trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi},
     primitive_types::H160,

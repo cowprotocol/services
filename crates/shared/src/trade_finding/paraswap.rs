@@ -2,12 +2,7 @@ use {
     super::{Query, Quote, TradeError, TradeFinding},
     crate::{
         paraswap_api::{
-            ParaswapApi,
-            ParaswapResponseError,
-            PriceQuery,
-            PriceResponse,
-            Side,
-            TradeAmount,
+            ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side, TradeAmount,
             TransactionBuilderQuery,
         },
         price_estimation::gas,

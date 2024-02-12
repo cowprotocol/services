@@ -1,8 +1,7 @@
 use {
     crate::{
         driver::solver_settlements::{
-            RatedSettlement,
-            {self},
+            RatedSettlement, {self},
         },
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
         settlement::{PriceCheckTokens, Settlement},
@@ -22,10 +21,7 @@ use {
     shared::{
         external_prices::ExternalPrices,
         http_solver::model::{
-            AuctionResult,
-            InternalizationStrategy,
-            SolverRejectionReason,
-            SolverRunError,
+            AuctionResult, InternalizationStrategy, SolverRejectionReason, SolverRunError,
             TransactionWithError,
         },
     },

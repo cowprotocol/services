@@ -60,8 +60,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            interactions::UnwrapWethInteraction,
-            settlement_post_processing::MockPostProcessing,
+            interactions::UnwrapWethInteraction, settlement_post_processing::MockPostProcessing,
             solver::MockSolver,
         },
         contracts::{dummy_contract, WETH9},

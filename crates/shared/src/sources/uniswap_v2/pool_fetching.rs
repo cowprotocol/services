@@ -1,9 +1,7 @@
 use {
     super::pair_provider::PairProvider,
     crate::{
-        baseline_solver::BaselineSolvable,
-        ethcontract_error::EthcontractErrorType,
-        ethrpc::Web3,
+        baseline_solver::BaselineSolvable, ethcontract_error::EthcontractErrorType, ethrpc::Web3,
         recent_block_cache::Block,
     },
     anyhow::Result,

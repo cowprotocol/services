@@ -272,8 +272,7 @@ impl UniswapV3PoolFetcher {
         max_pools_to_initialize: usize,
     ) -> Result<Self> {
         let checkpoint =
-            PoolsCheckpointHandler::new(subgraph_url,  client, max_pools_to_initialize)
-                .await?;
+            PoolsCheckpointHandler::new(subgraph_url, client, max_pools_to_initialize).await?;
 
         let init_block = checkpoint.pools_checkpoint.lock().unwrap().block_number;
         let init_block = block_retriever.block(init_block).await?;
@@ -724,10 +723,11 @@ mod tests {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let block_retriever = Arc::new(web3.clone());
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        
+        let subgraph_url =
+            Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3").expect("invalid url");
+
         let fetcher =
-            UniswapV3PoolFetcher::new( &subgraph_url, web3, Client::new(), block_retriever, 100)
+            UniswapV3PoolFetcher::new(&subgraph_url, web3, Client::new(), block_retriever, 100)
                 .await
                 .unwrap();
 
@@ -747,7 +747,8 @@ mod tests {
         let transport = ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
         let block_retriever = Arc::new(web3.clone());
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url =
+            Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3").expect("invalid url");
         let fetcher = UniswapV3PoolFetcher::new(
             &subgraph_url,
             web3.clone(),
@@ -779,10 +780,11 @@ mod tests {
             .unwrap();
         pools.sort_by(|a, b| a.address.cmp(&b.address));
 
-        
         // get the same pools using direct call to subgraph
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        let graph_api = UniV3SubgraphClient::from_subgraph_url(&subgraph_url, Client::new()).unwrap();
+        let subgraph_url =
+            Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3").expect("invalid url");
+        let graph_api =
+            UniV3SubgraphClient::from_subgraph_url(&subgraph_url, Client::new()).unwrap();
         let pool_ids = pools.iter().map(|pool| pool.address).collect::<Vec<_>>();
 
         // first get at the block in history

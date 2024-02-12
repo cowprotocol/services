@@ -2,8 +2,7 @@ use {
     crate::{
         events::EventIndex,
         order_events::{insert_order_event, OrderEvent, OrderEventLabel},
-        OrderUid,
-        PgTransaction,
+        OrderUid, PgTransaction,
     },
     chrono::Utc,
     sqlx::{Executor, PgConnection},

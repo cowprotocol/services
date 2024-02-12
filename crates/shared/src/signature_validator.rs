@@ -1,11 +1,6 @@
 use {
-    ethcontract::Bytes,
-    ethrpc::Web3,
-    hex_literal::hex,
-    model::interaction::InteractionData,
-    primitive_types::H160,
-    std::sync::Arc,
-    thiserror::Error,
+    ethcontract::Bytes, ethrpc::Web3, hex_literal::hex, model::interaction::InteractionData,
+    primitive_types::H160, std::sync::Arc, thiserror::Error,
 };
 
 mod simulation;

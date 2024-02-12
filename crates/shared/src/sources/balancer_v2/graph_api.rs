@@ -35,10 +35,7 @@ pub struct BalancerSubgraphClient(SubgraphClient);
 impl BalancerSubgraphClient {
     /// Creates a new Balancer subgraph client with full subgraph URL.
     pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
-        Ok(Self(SubgraphClient::new(
-            subgraph_url.clone(),
-            client,
-        )?))
+        Ok(Self(SubgraphClient::new(subgraph_url.clone(), client)?))
     }
 
     /// Retrieves the list of registered pools from the subgraph.
@@ -249,7 +246,8 @@ mod tests {
     };
 
     pub fn default_for_chain(client: Client) -> Result<BalancerSubgraphClient> {
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
+        let subgraph_url =
+            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2").expect("invalid url");
         BalancerSubgraphClient::from_subgraph_url(&subgraph_url, client)
     }
 
@@ -482,7 +480,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_subgraph_query() {
-        for network_name  in ["Mainnet", "Goerli"] {
+        for network_name in ["Mainnet", "Goerli"] {
             println!("### {network_name}");
             let client = default_for_chain(Client::new()).unwrap();
             let result = client.get_registered_pools().await.unwrap();

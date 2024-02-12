@@ -1,10 +1,7 @@
 use {
     super::{OnchainComponents, TestAccount},
     contracts::{
-        GnosisSafe,
-        GnosisSafeCompatibilityFallbackHandler,
-        GnosisSafeProxy,
-        GnosisSafeProxyFactory,
+        GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy, GnosisSafeProxyFactory,
     },
     ethcontract::{Bytes, H160, H256, U256},
     hex_literal::hex,

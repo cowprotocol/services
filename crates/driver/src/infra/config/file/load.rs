@@ -11,9 +11,12 @@ use {
 };
 
 lazy_static! {
-    pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
-        Url::parse("https://api.thegraph.com/subgraphs/name/")
-            .expect("invalid default Graph API base URL");
+    pub static ref DEFAULT_UNISWAP_V3_GRAPH_URL: Url =
+        Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
+            .expect("invalid default uniswap-v3 Graph API URL");
+    pub static ref DEFAULT_BALANCER_V2_GRAPH_URL: Url =
+        Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+            .expect("invalid default balancer-v3 Graph API URL");
 }
 
 /// Load the driver configuration from a TOML file for the specifed Ethereum
@@ -43,10 +46,14 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
         network.chain,
         "The configured chain ID does not match connected Ethereum node"
     );
-    let graph_api_base_url = config
+    let uniswap_v3_graph_url = config
         .liquidity
-        .graph_api_base_url
-        .unwrap_or(DEFAULT_GRAPH_API_BASE_URL.clone());
+        .uniswap_v3_graph_url
+        .unwrap_or(DEFAULT_UNISWAP_V3_GRAPH_URL.clone());
+    let balancer_v2_graph_url = config
+        .liquidity
+        .balancer_v2_graph_url
+        .unwrap_or(DEFAULT_BALANCER_V2_GRAPH_URL.clone());
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
@@ -170,7 +177,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
                                 liquidity::config::UniswapV3::uniswap_v3(
-                                    &graph_api_base_url,
+                                    &uniswap_v3_graph_url,
                                     &network.id,
                                 )
                             }
@@ -183,7 +190,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        graph_api_base_url: graph_api_base_url.clone(),
+                        graph_api_base_url: uniswap_v3_graph_url.clone(),
                     },
                 })
                 .collect(),
@@ -201,7 +208,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
                                 liquidity::config::BalancerV2::balancer_v2(
-                                    &graph_api_base_url,
+                                    &balancer_v2_graph_url,
                                     &network.id,
                                 )
                             }
@@ -236,7 +243,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
-                        graph_api_base_url: graph_api_base_url.clone(),
+                        graph_api_base_url: balancer_v2_graph_url.clone(),
                     },
                 })
                 .collect(),

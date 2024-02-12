@@ -3,10 +3,7 @@ use {
         bad_token::{BadTokenDetecting, TokenQuality},
         price_estimation::{
             gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
-            Estimate,
-            PriceEstimating,
-            PriceEstimationError,
-            Query,
+            Estimate, PriceEstimating, PriceEstimationError, Query,
         },
     },
     anyhow::anyhow,

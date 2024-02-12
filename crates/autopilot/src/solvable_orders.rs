@@ -17,8 +17,7 @@ use {
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
-            native::NativePriceEstimating,
-            native_price_cache::CachingNativePriceEstimator,
+            native::NativePriceEstimating, native_price_cache::CachingNativePriceEstimator,
         },
         remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},

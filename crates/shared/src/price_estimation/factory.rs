@@ -13,11 +13,8 @@ use {
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
         zeroex::ZeroExPriceEstimator,
-        Arguments,
-        NativePriceEstimator as NativePriceEstimatorSource,
-        PriceEstimating,
-        PriceEstimator,
-        PriceEstimatorKind,
+        Arguments, NativePriceEstimator as NativePriceEstimatorSource, PriceEstimating,
+        PriceEstimator, PriceEstimatorKind,
     },
     crate::{
         arguments::{self, CodeSimulatorKind, ExternalSolver, LegacySolver},

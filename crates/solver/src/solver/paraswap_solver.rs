@@ -1,9 +1,6 @@
 use {
     super::single_order_solver::{
-        execution_respects_order,
-        SettlementError,
-        SingleOrderSettlement,
-        SingleOrderSolving,
+        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
     },
     crate::{
         interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
@@ -20,14 +17,8 @@ use {
         ethrpc::Web3,
         external_prices::ExternalPrices,
         paraswap_api::{
-            DefaultParaswapApi,
-            ParaswapApi,
-            ParaswapResponseError,
-            PriceQuery,
-            PriceResponse,
-            Side,
-            TradeAmount,
-            TransactionBuilderQuery,
+            DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse,
+            Side, TradeAmount, TransactionBuilderQuery,
         },
         token_info::{TokenInfo, TokenInfoFetching},
     },

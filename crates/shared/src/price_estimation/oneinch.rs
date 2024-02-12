@@ -1,10 +1,7 @@
 use {
     super::{
-        trade_finder::TradeEstimator,
-        trade_verifier::TradeVerifying,
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
+        trade_finder::TradeEstimator, trade_verifier::TradeVerifying, PriceEstimateResult,
+        PriceEstimating, Query,
     },
     crate::{oneinch_api::OneInchClient, trade_finding::oneinch::OneInchTradeFinder},
     futures::FutureExt as _,

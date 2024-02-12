@@ -7,8 +7,7 @@ use {
     std::{convert::Infallible, sync::Arc},
     warp::{
         reply::{with_status, Json, WithStatus},
-        Filter,
-        Rejection,
+        Filter, Rejection,
     },
 };
 

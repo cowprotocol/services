@@ -13,8 +13,7 @@ use {
     web3::{
         helpers,
         types::{Block, BlockId, BlockNumber, U64},
-        BatchTransport,
-        Transport,
+        BatchTransport, Transport,
     },
 };
 

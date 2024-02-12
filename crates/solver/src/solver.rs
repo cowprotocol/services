@@ -14,8 +14,7 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{self, SlippageCalculator},
-            LimitOrder,
-            Liquidity,
+            LimitOrder, Liquidity,
         },
         metrics::SolverMetrics,
         s3_instance_upload::S3InstanceUploader,
@@ -25,10 +24,8 @@ use {
         solver::{
             balancer_sor_solver::BalancerSorSolver,
             http_solver::{
-                buffers::BufferRetriever,
-                instance_cache::SharedInstanceCreator,
-                instance_creation::InstanceCreator,
-                InstanceType,
+                buffers::BufferRetriever, instance_cache::SharedInstanceCreator,
+                instance_creation::InstanceCreator, InstanceType,
             },
         },
     },
@@ -48,8 +45,7 @@ use {
         http_client::HttpClientFactory,
         http_solver::{
             model::{AuctionResult, SimulatedTransaction},
-            DefaultHttpSolverApi,
-            SolverConfig,
+            DefaultHttpSolverApi, SolverConfig,
         },
         token_info::TokenInfoFetching,
         token_list::AutoUpdatingTokenList,

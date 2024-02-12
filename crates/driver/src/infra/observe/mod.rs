@@ -9,11 +9,9 @@ use {
         boundary,
         domain::{
             competition::{
-                self,
-                score,
+                self, score,
                 solution::{self, Settlement},
-                Solution,
-                Solved,
+                Solution, Solved,
             },
             eth::{self, Gas},
             mempools,

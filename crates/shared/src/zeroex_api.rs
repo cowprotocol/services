@@ -17,11 +17,7 @@ use {
     number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},
-        Client,
-        ClientBuilder,
-        IntoUrl,
-        StatusCode,
-        Url,
+        Client, ClientBuilder, IntoUrl, StatusCode, Url,
     },
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},

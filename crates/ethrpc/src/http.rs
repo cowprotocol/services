@@ -14,10 +14,7 @@ use {
     },
     web3::{
         error::{Error as Web3Error, TransportError},
-        helpers,
-        BatchTransport,
-        RequestId,
-        Transport,
+        helpers, BatchTransport, RequestId, Transport,
     },
 };
 

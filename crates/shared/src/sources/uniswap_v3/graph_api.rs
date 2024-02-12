@@ -108,10 +108,7 @@ pub struct UniV3SubgraphClient(SubgraphClient);
 impl UniV3SubgraphClient {
     /// Creates a new Uniswap V3 subgraph client from the specified URL.
     pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
-        Ok(Self(SubgraphClient::new(
-            subgraph_url.clone(),
-            client,
-        )?))
+        Ok(Self(SubgraphClient::new(subgraph_url.clone(), client)?))
     }
 
     async fn get_pools(&self, query: &str, variables: Map<String, Value>) -> Result<Vec<PoolData>> {
@@ -318,15 +315,13 @@ mod tests {
     };
 
     pub fn default_for_chain(client: Client) -> Result<UniV3SubgraphClient> {
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        UniV3SubgraphClient::from_subgraph_url(
-           &subgraph_url, 
-           client
-        )
+        let subgraph_url =
+            Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3").expect("invalid url");
+        UniV3SubgraphClient::from_subgraph_url(&subgraph_url, client)
     }
 
     #[test]
-    fn decode_pools_data(){
+    fn decode_pools_data() {
         assert_eq!(
             serde_json::from_value::<Data<PoolData>>(json!({
                 "pools": [

@@ -2,8 +2,7 @@ use {
     crate::{
         domain::{
             competition::{self, auction, order},
-            eth,
-            time,
+            eth, time,
         },
         infra::{solver::Timeouts, tokens, Ethereum},
         util::serialize,

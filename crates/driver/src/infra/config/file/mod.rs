@@ -301,8 +301,11 @@ struct LiquidityConfig {
     #[serde(default)]
     zeroex: Option<ZeroExConfig>,
 
-    /// The URL used to connect to subgraph clients.
-    graph_api_base_url: Option<Url>,
+    /// The URL used to connect to uniswap v3 subgraph client.
+    uniswap_v3_graph_url: Option<Url>,
+
+    /// The URL used to connect to balancer v2 subgraph client.
+    balancer_v2_graph_url: Option<Url>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

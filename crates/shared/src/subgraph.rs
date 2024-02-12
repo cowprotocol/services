@@ -29,18 +29,12 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn new(
-        subgraph_url: Url,
-        client: Client,
-    ) -> Result<Self> {
-        Ok(
-            Self {
-                client,
-                subgraph_url,
-            }
-        )
+    pub fn new(subgraph_url: Url, client: Client) -> Result<Self> {
+        Ok(Self {
+            client,
+            subgraph_url,
+        })
     }
-
 
     /// Performs the specified GraphQL query on the current subgraph.
     pub async fn query<T>(&self, query: &str, variables: Option<Map<String, Value>>) -> Result<T>

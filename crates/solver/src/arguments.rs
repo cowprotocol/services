@@ -4,11 +4,7 @@ use {
         s3_instance_upload_arguments::S3UploadArguments,
         settlement_access_list::AccessListEstimatorType,
         solver::{
-            risk_computation,
-            single_order_solver,
-            ExternalSolverArg,
-            SolverAccountArg,
-            SolverType,
+            risk_computation, single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType,
         },
     },
     ethcontract::U256,

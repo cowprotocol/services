@@ -371,8 +371,7 @@ mod tests {
         num::rational::Ratio,
         once_cell::sync::OnceCell,
         shared::{
-            baseline_solver::BaselineSolvable,
-            external_prices::ExternalPrices,
+            baseline_solver::BaselineSolvable, external_prices::ExternalPrices,
             sources::uniswap_v2::pool_fetching::Pool,
         },
     };

@@ -1,11 +1,7 @@
 use {
     super::{
         gas::{GAS_PER_BALANCER_SWAP, SETTLEMENT_SINGLE_TRADE},
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
+        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
     crate::{
         balancer_sor_api::{self, BalancerSorApi},
@@ -88,12 +84,8 @@ impl PriceEstimating for BalancerSor {
 #[cfg(test)]
 mod tests {
     use {
-        super::*,
-        crate::balancer_sor_api::DefaultBalancerSorApi,
-        gas_estimation::GasPrice1559,
-        model::order::OrderKind,
-        number::nonzero::U256 as NonZeroU256,
-        std::time::Duration,
+        super::*, crate::balancer_sor_api::DefaultBalancerSorApi, gas_estimation::GasPrice1559,
+        model::order::OrderKind, number::nonzero::U256 as NonZeroU256, std::time::Duration,
     };
 
     struct FixedGasPriceEstimator(f64);
