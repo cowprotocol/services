@@ -553,10 +553,7 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFee::new(
-            args.fee_policy.clone().to_domain(),
-            args.fee_policy.fee_policy_skip_market_orders,
-        ),
+        domain::ProtocolFee::new(args.fee_policy.clone()),
     );
     solvable_orders_cache
         .update(block)

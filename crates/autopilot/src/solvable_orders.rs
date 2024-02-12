@@ -1,5 +1,5 @@
 use {
-    crate::{boundary, domain, infra},
+    crate::{domain, infra},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -236,10 +236,13 @@ impl SolvableOrdersCache {
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
-                .map(|order| {
-                    let quote = db_solvable_orders.quotes.get(&order.metadata.uid.into());
-                    let protocol_fees = self.protocol_fee.get(&order, quote);
-                    boundary::order::to_domain(order, protocol_fees)
+                .filter_map(|order| {
+                    if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
+                        Some(self.protocol_fee.apply(order, quote))
+                    } else {
+                        tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
+                        None
+                    }
                 })
                 .collect(),
             prices,
