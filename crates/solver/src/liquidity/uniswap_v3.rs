@@ -3,7 +3,8 @@ use {
     crate::{
         interactions::{
             allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
-            ExactOutputSingleParams, UniswapV3Interaction,
+            ExactOutputSingleParams,
+            UniswapV3Interaction,
         },
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,
@@ -15,7 +16,9 @@ use {
     num::{rational::Ratio, CheckedMul},
     primitive_types::{H160, U256},
     shared::{
-        ethrpc::Web3, http_solver::model::TokenAmount, recent_block_cache::Block,
+        ethrpc::Web3,
+        http_solver::model::TokenAmount,
+        recent_block_cache::Block,
         sources::uniswap_v3::pool_fetching::PoolFetching,
     },
     std::{

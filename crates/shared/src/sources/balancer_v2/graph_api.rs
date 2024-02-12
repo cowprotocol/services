@@ -247,7 +247,8 @@ mod tests {
 
     pub fn default(client: Client) -> Result<BalancerSubgraphClient> {
         let subgraph_url =
-            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2").expect("invalid url");
+            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+                .expect("invalid url");
         BalancerSubgraphClient::from_subgraph_url(&subgraph_url, client)
     }
 

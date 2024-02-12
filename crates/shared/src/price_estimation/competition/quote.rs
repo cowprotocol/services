@@ -1,7 +1,11 @@
 use {
     super::{compare_error, CompetitionEstimator, PriceRanking},
     crate::price_estimation::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
     },
     anyhow::Context,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},

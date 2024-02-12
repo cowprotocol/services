@@ -315,8 +315,8 @@ mod tests {
     };
 
     pub fn default(client: Client) -> Result<UniV3SubgraphClient> {
-        let subgraph_url =
-            Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3").expect("invalid url");
+        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
+            .expect("invalid url");
         UniV3SubgraphClient::from_subgraph_url(&subgraph_url, client)
     }
 

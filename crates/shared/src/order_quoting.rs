@@ -1,6 +1,9 @@
 use {
     super::price_estimation::{
-        self, native::NativePriceEstimating, PriceEstimating, PriceEstimationError,
+        self,
+        native::NativePriceEstimating,
+        PriceEstimating,
+        PriceEstimationError,
     },
     crate::{
         db_order_conversions::order_kind_from,

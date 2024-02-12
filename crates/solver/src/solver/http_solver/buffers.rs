@@ -96,7 +96,9 @@ impl BufferRetrieving for BufferRetriever {
 #[cfg(test)]
 mod test {
     use {
-        super::*, contracts::GPv2Settlement, hex_literal::hex,
+        super::*,
+        contracts::GPv2Settlement,
+        hex_literal::hex,
         shared::ethrpc::create_test_transport,
     };
 

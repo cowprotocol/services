@@ -4,7 +4,11 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
-            token_pairs, AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity,
+            token_pairs,
+            AmmOrderExecution,
+            ConstantProductOrder,
+            LimitOrder,
+            Liquidity,
             WeightedProductOrder,
         },
         settlement::Settlement,
@@ -15,7 +19,10 @@ use {
     model::{order::OrderKind, TokenPair},
     shared::{
         baseline_solver::{
-            estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable,
+            estimate_buy_amount,
+            estimate_sell_amount,
+            BaseTokens,
+            BaselineSolvable,
         },
         http_solver::model::TokenAmount,
         sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
@@ -381,8 +388,11 @@ mod tests {
         super::*,
         crate::{
             liquidity::{
-                tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder,
-                LimitOrder, LimitOrderExecution,
+                tests::CapturingSettlementHandler,
+                AmmOrderExecution,
+                ConstantProductOrder,
+                LimitOrder,
+                LimitOrderExecution,
             },
             test::account,
         },

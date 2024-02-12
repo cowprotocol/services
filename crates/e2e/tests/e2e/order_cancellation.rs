@@ -4,8 +4,14 @@ use {
     ethcontract::prelude::U256,
     model::{
         order::{
-            CancellationPayload, OrderCancellation, OrderCancellations, OrderCreation,
-            OrderCreationAppData, OrderStatus, OrderUid, SignedOrderCancellations,
+            CancellationPayload,
+            OrderCancellation,
+            OrderCancellations,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderStatus,
+            OrderUid,
+            SignedOrderCancellations,
         },
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSignature, EcdsaSigningScheme},

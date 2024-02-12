@@ -1,10 +1,14 @@
 use {
     super::{
-        trade_finder::TradeEstimator, trade_verifier::TradeVerifying, PriceEstimateResult,
-        PriceEstimating, Query,
+        trade_finder::TradeEstimator,
+        trade_verifier::TradeVerifying,
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
     },
     crate::{
-        paraswap_api::ParaswapApi, token_info::TokenInfoFetching,
+        paraswap_api::ParaswapApi,
+        token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
     futures::FutureExt,

@@ -2,9 +2,12 @@ use {
     crate::{
         domain::{self, Mempools},
         infra::{
-            self, liquidity,
+            self,
+            liquidity,
             solver::{Solver, Timeouts},
-            tokens, Ethereum, Simulator,
+            tokens,
+            Ethereum,
+            Simulator,
         },
     },
     error::Error,

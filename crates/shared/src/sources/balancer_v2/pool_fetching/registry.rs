@@ -9,7 +9,10 @@ use {
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
-            common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus,
+            common::PoolInfoFetching,
+            FactoryIndexing,
+            Pool,
+            PoolStatus,
         },
     },
     anyhow::Result,

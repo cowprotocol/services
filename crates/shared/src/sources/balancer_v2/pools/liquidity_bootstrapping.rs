@@ -8,7 +8,8 @@ use {
     },
     anyhow::Result,
     contracts::{
-        BalancerV2LiquidityBootstrappingPool, BalancerV2LiquidityBootstrappingPoolFactory,
+        BalancerV2LiquidityBootstrappingPool,
+        BalancerV2LiquidityBootstrappingPoolFactory,
     },
     ethcontract::BlockId,
     futures::{future::BoxFuture, FutureExt as _},

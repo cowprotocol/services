@@ -10,8 +10,14 @@ use {
     model::{
         app_data::AppDataHash,
         order::{
-            Order, OrderCancellation, OrderClass, OrderCreation, OrderCreationAppData, OrderStatus,
-            OrderUid, SignedOrderCancellations,
+            Order,
+            OrderCancellation,
+            OrderClass,
+            OrderCreation,
+            OrderCreationAppData,
+            OrderStatus,
+            OrderUid,
+            SignedOrderCancellations,
         },
         quote::QuoteId,
         DomainSeparator,

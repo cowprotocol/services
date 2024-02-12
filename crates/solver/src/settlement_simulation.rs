@@ -248,8 +248,12 @@ mod tests {
         crate::{
             interactions::allowances::{Allowances, MockAllowanceManaging},
             liquidity::{
-                balancer_v2::SettlementHandler, order_converter::OrderConverter,
-                slippage::SlippageContext, uniswap_v2::Inner, ConstantProductOrder, Liquidity,
+                balancer_v2::SettlementHandler,
+                order_converter::OrderConverter,
+                slippage::SlippageContext,
+                uniswap_v2::Inner,
+                ConstantProductOrder,
+                Liquidity,
                 StablePoolOrder,
             },
             order_balance_filter::BalancedOrder,

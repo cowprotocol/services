@@ -1,7 +1,8 @@
 use {
     crate::{
         domain::{
-            auction, eth,
+            auction,
+            eth,
             notification::{self},
         },
         util::serialize,

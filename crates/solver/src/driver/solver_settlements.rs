@@ -1,5 +1,7 @@
 use {
-    crate::settlement::Settlement, model::solver_competition::Score, num::BigRational,
+    crate::settlement::Settlement,
+    model::solver_competition::Score,
+    num::BigRational,
     primitive_types::U256,
 };
 

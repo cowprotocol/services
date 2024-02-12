@@ -8,7 +8,9 @@ use {
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
         de::{DeserializeOwned, Error},
-        Deserialize, Deserializer, Serialize,
+        Deserialize,
+        Deserializer,
+        Serialize,
     },
     serde_json::Value,
     serde_with::{serde_as, DisplayFromStr},
@@ -391,7 +393,10 @@ impl Interaction for TransactionBuilderResponse {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, ethrpc::current_block::BlockInfo, reqwest::StatusCode, serde_json::json,
+        super::*,
+        ethrpc::current_block::BlockInfo,
+        reqwest::StatusCode,
+        serde_json::json,
         tokio::sync::watch,
     };
 

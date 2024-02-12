@@ -199,8 +199,11 @@ impl BalanceFetching for Balances {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, crate::account_balances::MockBalanceFetching, ethcontract::H160,
-        ethrpc::current_block::BlockInfo, model::order::SellTokenSource,
+        super::*,
+        crate::account_balances::MockBalanceFetching,
+        ethcontract::H160,
+        ethrpc::current_block::BlockInfo,
+        model::order::SellTokenSource,
     };
 
     fn query(token: u8) -> Query {

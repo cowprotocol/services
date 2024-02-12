@@ -2,7 +2,10 @@ use {
     super::SolverInfo,
     crate::{
         liquidity::{
-            order_converter::OrderConverter, LimitOrder, LimitOrderExecution, LimitOrderId,
+            order_converter::OrderConverter,
+            LimitOrder,
+            LimitOrderExecution,
+            LimitOrderId,
         },
         metrics::SolverMetrics,
         settlement::Settlement,
@@ -21,7 +24,9 @@ use {
     rand::prelude::SliceRandom,
     rate_limit::{Error, RateLimiter, Strategy},
     shared::{
-        arguments::display_option, conversions::U256Ext, external_prices::ExternalPrices,
+        arguments::display_option,
+        conversions::U256Ext,
+        external_prices::ExternalPrices,
         interaction::Interaction,
     },
     std::{
@@ -702,7 +707,8 @@ mod tests {
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
         shared::{
-            http_solver::model::InternalizationStrategy, price_estimation::gas::SETTLEMENT_OVERHEAD,
+            http_solver::model::InternalizationStrategy,
+            price_estimation::gas::SETTLEMENT_OVERHEAD,
         },
         std::{collections::HashMap, sync::Arc},
     };

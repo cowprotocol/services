@@ -6,7 +6,8 @@ pub mod event_retriever;
 use {
     super::{
         events::{bytes_to_order_uid, meta_to_event_index},
-        Metrics as DatabaseMetrics, Postgres,
+        Metrics as DatabaseMetrics,
+        Postgres,
     },
     anyhow::{anyhow, bail, Context, Result},
     chrono::{TimeZone, Utc},
@@ -37,13 +38,16 @@ use {
     number::conversions::u256_to_big_decimal,
     shared::{
         db_order_conversions::{
-            buy_token_destination_into, order_kind_into, sell_token_source_into,
+            buy_token_destination_into,
+            order_kind_into,
+            sell_token_source_into,
             signing_scheme_into,
         },
         event_handling::EventStoring,
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
-            convert_signing_scheme_into_quote_signing_scheme, get_quote_and_check_fee,
+            convert_signing_scheme_into_quote_signing_scheme,
+            get_quote_and_check_fee,
             onchain_order_placement_error_from,
         },
     },
@@ -708,7 +712,9 @@ mod test {
         number::conversions::u256_to_big_decimal,
         shared::{
             db_order_conversions::{
-                buy_token_destination_into, order_kind_into, sell_token_source_into,
+                buy_token_destination_into,
+                order_kind_into,
+                sell_token_source_into,
                 signing_scheme_into,
             },
             ethrpc::create_env_test_transport,

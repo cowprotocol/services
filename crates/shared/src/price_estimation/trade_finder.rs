@@ -5,7 +5,11 @@ use {
     super::{
         rate_limited,
         trade_verifier::{PriceQuery, TradeVerifying},
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
     },
     crate::{
         request_sharing::RequestSharing,

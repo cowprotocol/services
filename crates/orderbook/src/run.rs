@@ -1,7 +1,13 @@
 use {
     crate::{
-        api, app_data, arguments::Arguments, database::Postgres, ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData, orderbook::Orderbook, quoter::QuoteHandler,
+        api,
+        app_data,
+        arguments::Arguments,
+        database::Postgres,
+        ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook,
+        quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
     clap::Parser,
@@ -37,11 +43,14 @@ use {
         sources::{
             self,
             balancer_v2::{
-                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-            BaselineSource, PoolAggregator,
+            BaselineSource,
+            PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },

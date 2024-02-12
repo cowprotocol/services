@@ -7,7 +7,9 @@ use {
         filters::BoxedFilter,
         hyper::StatusCode,
         reply::{json, with_status, Json, WithStatus},
-        Filter, Rejection, Reply,
+        Filter,
+        Rejection,
+        Reply,
     },
 };
 

@@ -5,7 +5,9 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
-            ConstantProductOrder, LimitOrder, Liquidity,
+            ConstantProductOrder,
+            LimitOrder,
+            Liquidity,
         },
         settlement::Settlement,
         solver::{Auction, Solver},
@@ -152,7 +154,9 @@ mod tests {
         super::*,
         crate::{
             liquidity::{
-                order_converter::OrderConverter, tests::CapturingSettlementHandler, LimitOrderId,
+                order_converter::OrderConverter,
+                tests::CapturingSettlementHandler,
+                LimitOrderId,
                 LiquidityOrderId,
             },
             order_balance_filter::BalancedOrder,
@@ -160,7 +164,13 @@ mod tests {
         ethcontract::H160,
         maplit::hashmap,
         model::order::{
-            Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid, BUY_ETH_ADDRESS,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderUid,
+            BUY_ETH_ADDRESS,
         },
         num::rational::Ratio,
         shared::addr,

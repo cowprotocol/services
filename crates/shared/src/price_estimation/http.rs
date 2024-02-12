@@ -5,16 +5,30 @@ use {
         http_solver::{
             gas_model::GasModel,
             model::{
-                AmmModel, AmmParameters, BatchAuctionModel, ConcentratedPoolParameters,
-                ConstantProductPoolParameters, MetadataModel, OrderModel, SettledBatchAuctionModel,
-                StablePoolParameters, TokenAmount, TokenInfoModel, WeightedPoolTokenData,
+                AmmModel,
+                AmmParameters,
+                BatchAuctionModel,
+                ConcentratedPoolParameters,
+                ConstantProductPoolParameters,
+                MetadataModel,
+                OrderModel,
+                SettledBatchAuctionModel,
+                StablePoolParameters,
+                TokenAmount,
+                TokenInfoModel,
+                WeightedPoolTokenData,
                 WeightedProductPoolParameters,
             },
-            Error as ApiError, HttpSolverApi,
+            Error as ApiError,
+            HttpSolverApi,
         },
         price_estimation::{
             gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT, TRADE},
-            rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+            rate_limited,
+            Estimate,
+            PriceEstimateResult,
+            PriceEstimating,
+            PriceEstimationError,
             Query,
         },
         recent_block_cache::Block,
@@ -469,16 +483,22 @@ mod tests {
             gas_price_estimation::FakeGasPriceEstimator,
             http_solver::{
                 model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
-                DefaultHttpSolverApi, MockHttpSolverApi, SolverConfig,
+                DefaultHttpSolverApi,
+                MockHttpSolverApi,
+                SolverConfig,
             },
             price_estimation::Query,
             recent_block_cache::CacheConfig,
             sources::{
                 balancer_v2::{
-                    pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+                    pool_fetching::BalancerContracts,
+                    BalancerFactoryKind,
+                    BalancerPoolFetcher,
                 },
                 uniswap_v2::{
-                    self, pool_cache::PoolCache, pool_fetching::test_util::FakePoolFetcher,
+                    self,
+                    pool_cache::PoolCache,
+                    pool_fetching::test_util::FakePoolFetcher,
                 },
                 uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
                 BaselineSource,
@@ -809,7 +829,8 @@ mod tests {
                 .await
                 .unwrap();
         let subgraph_url =
-            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2").expect("invalid url");
+            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+                .expect("invalid url");
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 &subgraph_url,

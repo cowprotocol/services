@@ -5,7 +5,9 @@ pub mod quote;
 pub use {
     auction::{
         order::{Order, OrderUid},
-        Auction, AuctionId, AuctionWithId,
+        Auction,
+        AuctionId,
+        AuctionWithId,
     },
     fee::ProtocolFee,
     quote::Quote,

@@ -725,7 +725,10 @@ impl<T> CacheEntry<T> {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, crate::addr, ethrpc::current_block::BlockInfo, futures::FutureExt as _,
+        super::*,
+        crate::addr,
+        ethrpc::current_block::BlockInfo,
+        futures::FutureExt as _,
         tokio::sync::watch,
     };
 

@@ -1,6 +1,9 @@
 use {
-    crate::domain::eth, ethrpc::current_block::CurrentBlockStream, reqwest::ClientBuilder,
-    std::time::Duration, thiserror::Error,
+    crate::domain::eth,
+    ethrpc::current_block::CurrentBlockStream,
+    reqwest::ClientBuilder,
+    std::time::Duration,
+    thiserror::Error,
 };
 
 mod dto;

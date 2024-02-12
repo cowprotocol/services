@@ -4,7 +4,13 @@ use {
     super::{Interaction, Query, Quote, Trade, TradeError, TradeFinding},
     crate::{
         oneinch_api::{
-            Cache, OneInchClient, OneInchError, SellOrderQuoteQuery, Slippage, Swap, SwapQuery,
+            Cache,
+            OneInchClient,
+            OneInchError,
+            SellOrderQuoteQuery,
+            Slippage,
+            Swap,
+            SwapQuery,
         },
         price_estimation::gas,
         request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
@@ -211,7 +217,13 @@ mod tests {
     use {
         super::*,
         crate::oneinch_api::{
-            MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Spender, Swap, Token,
+            MockOneInchClient,
+            OneInchClientImpl,
+            RestError,
+            SellOrderQuote,
+            Spender,
+            Swap,
+            Token,
             Transaction,
         },
         hex_literal::hex,

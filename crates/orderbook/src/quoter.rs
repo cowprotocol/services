@@ -8,7 +8,10 @@ use {
     shared::{
         order_quoting::{CalculateQuoteError, OrderQuoting, QuoteParameters},
         order_validation::{
-            AppDataValidationError, OrderValidating, PartialValidationError, PreOrderData,
+            AppDataValidationError,
+            OrderValidating,
+            PartialValidationError,
+            PreOrderData,
         },
         price_estimation::Verification,
         trade_finding,

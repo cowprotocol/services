@@ -6,14 +6,22 @@
 
 use {
     self::{
-        aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
+        aggregate::Aggregate,
+        cache::Cache,
+        internal::InternalPoolFetching,
+        registry::Registry,
     },
     super::{
         graph_api::{BalancerSubgraphClient, RegisteredPools},
         pool_init::PoolInitializing,
         pools::{
             common::{self, PoolInfoFetcher},
-            stable, weighted, FactoryIndexing, Pool, PoolIndexing, PoolKind,
+            stable,
+            weighted,
+            FactoryIndexing,
+            Pool,
+            PoolIndexing,
+            PoolKind,
         },
         swap::fixed_point::Bfp,
     },
@@ -25,12 +33,18 @@ use {
     anyhow::{Context, Result},
     clap::ValueEnum,
     contracts::{
-        BalancerV2ComposableStablePoolFactory, BalancerV2ComposableStablePoolFactoryV3,
-        BalancerV2ComposableStablePoolFactoryV4, BalancerV2ComposableStablePoolFactoryV5,
+        BalancerV2ComposableStablePoolFactory,
+        BalancerV2ComposableStablePoolFactoryV3,
+        BalancerV2ComposableStablePoolFactoryV4,
+        BalancerV2ComposableStablePoolFactoryV5,
         BalancerV2LiquidityBootstrappingPoolFactory,
-        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactoryV2,
-        BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV3, BalancerV2WeightedPoolFactoryV4,
+        BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+        BalancerV2StablePoolFactoryV2,
+        BalancerV2Vault,
+        BalancerV2WeightedPool2TokensFactory,
+        BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3,
+        BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
     ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
@@ -524,7 +538,8 @@ mod tests {
         ))];
         // let deny_list = vec![];
         let subgraph_url =
-            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2").expect("invalid url");
+            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+                .expect("invalid url");
         let pool_fetcher = BalancerPoolFetcher::new(
             &subgraph_url,
             Arc::new(web3.clone()),
@@ -584,7 +599,8 @@ mod tests {
             pool_id_deny_list: Default::default(),
         };
         let subgraph_url =
-            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2").expect("invalid url");
+            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+                .expect("invalid url");
         // see what the subgraph says.
         let client =
             BalancerSubgraphClient::from_subgraph_url(&subgraph_url, Client::new()).unwrap();

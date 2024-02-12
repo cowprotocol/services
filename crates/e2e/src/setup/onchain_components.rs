@@ -6,7 +6,8 @@ use {
     model::{
         order::Hook,
         signature::{EcdsaSignature, EcdsaSigningScheme},
-        DomainSeparator, TokenPair,
+        DomainSeparator,
+        TokenPair,
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,

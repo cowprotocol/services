@@ -1,7 +1,10 @@
 use {
     super::{
-        trade_finder::TradeEstimator, trade_verifier::TradeVerifying, PriceEstimateResult,
-        PriceEstimating, Query,
+        trade_finder::TradeEstimator,
+        trade_verifier::TradeVerifying,
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
     },
     crate::trade_finding::external::ExternalTradeFinder,
     ethrpc::current_block::CurrentBlockStream,

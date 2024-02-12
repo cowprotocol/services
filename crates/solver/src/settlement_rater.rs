@@ -4,7 +4,9 @@ use {
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
-            call_data, settle_method, simulate_and_estimate_gas_at_current_block,
+            call_data,
+            settle_method,
+            simulate_and_estimate_gas_at_current_block,
         },
         settlement_submission::gas_limit_for_estimate,
         solver::{Simulation, SimulationError, SimulationWithError, SolverInfo},

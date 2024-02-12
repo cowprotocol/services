@@ -4,7 +4,9 @@ use {
     anyhow::{anyhow, Context},
     reqwest::{
         header::{self, HeaderValue},
-        Client, StatusCode, Url,
+        Client,
+        StatusCode,
+        Url,
     },
     serde_json::json,
     std::time::Duration,

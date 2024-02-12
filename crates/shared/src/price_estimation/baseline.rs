@@ -3,7 +3,12 @@ use {
         baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
         conversions::U256Ext,
         price_estimation::{
-            gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+            gas,
+            Estimate,
+            PriceEstimateResult,
+            PriceEstimating,
+            PriceEstimationError,
+            Query,
         },
         recent_block_cache::Block,
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
