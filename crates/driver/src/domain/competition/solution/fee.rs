@@ -122,9 +122,9 @@ impl Fulfillment {
         let surplus_in_sell_token = match self.order().side {
             Side::Buy => surplus,
             Side::Sell => surplus
-                .checked_mul(prices.sell)
+                .checked_mul(prices.buy)
                 .ok_or(trade::Error::Overflow)?
-                .checked_div(prices.buy)
+                .checked_div(prices.sell)
                 .ok_or(trade::Error::DivisionByZero)?,
         };
         Ok(surplus_in_sell_token)
