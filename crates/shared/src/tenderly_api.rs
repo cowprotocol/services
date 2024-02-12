@@ -109,7 +109,7 @@ impl TenderlyApi for TenderlyHttpApi {
         let body = serde_json::to_string(&simulation)?;
 
         #[rustfmt::skip]
-        tracing::error!(
+        tracing::debug!(
             "resimulate by setting TENDERLY_API_KEY environment variable and running: \
             curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" --json '{body}' {request_url} \
             | jq -r \".simulation.id\" \
