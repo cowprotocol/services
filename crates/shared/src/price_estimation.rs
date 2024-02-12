@@ -287,6 +287,13 @@ pub struct Arguments {
     #[clap(long, env)]
     pub trade_simulator: Option<CodeSimulatorKind>,
 
+    /// If this is enabled a price estimate we were able to verify will always
+    /// be seen as better than an unverified one even if it might report a worse
+    /// out amount. The reason is that unverified price estimates could be too
+    /// good to be true.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub prefer_verified_quotes: bool,
+
     /// Flag to enable saving Tenderly simulations in the dashboard for
     /// successful trade simulations.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -327,6 +334,7 @@ impl Display for Arguments {
             zeroex_only_estimate_buy_queries,
             one_inch_api_key,
             trade_simulator,
+            prefer_verified_quotes,
             one_inch_url,
         } = self;
 
@@ -362,7 +370,7 @@ impl Display for Arguments {
         )?;
         display_option(
             f,
-            "amount_to_estimate_prices_with",
+            "amount_to_estimate_prices_with: {}",
             amount_to_estimate_prices_with,
         )?;
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
@@ -374,6 +382,7 @@ impl Display for Arguments {
                 .as_ref()
                 .map(|value| format!("{value:?}")),
         )?;
+        writeln!(f, "prefer_verified_quotes: {}", prefer_verified_quotes)?;
         writeln!(
             f,
             "tenderly_save_successful_trade_simulations: {}",
