@@ -111,7 +111,7 @@ impl Fulfillment {
         }
     }
 
-    /// Computes protocol fee compared to the given limit amounts taken from
+    /// Computes protocol fee compared to the given reference amounts taken from
     /// the order or a quote.
     fn calculate_fee(
         &self,
