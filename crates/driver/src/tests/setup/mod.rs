@@ -80,6 +80,12 @@ impl Default for Score {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct OrderQuote {
+    sell_amount: eth::U256,
+    buy_amount: eth::U256,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Order {
     pub name: &'static str,
 
@@ -111,6 +117,7 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
+    pub precalculated_quote: Option<OrderQuote>,
 }
 
 impl Order {
@@ -200,6 +207,14 @@ impl Order {
         }
     }
 
+    #[allow(dead_code)]
+    fn quote(self, quote: OrderQuote) -> Self {
+        Self {
+            precalculated_quote: Some(quote),
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -226,6 +241,7 @@ impl Default for Order {
             executed: Default::default(),
             filtered: Default::default(),
             funded: true,
+            precalculated_quote: Default::default(),
         }
     }
 }

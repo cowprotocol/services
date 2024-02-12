@@ -527,12 +527,18 @@ impl Blockchain {
     /// Quote an order using a UniswapV2 pool. This determines the buy and sell
     /// amount of the order.
     pub async fn quote(&self, order: &Order) -> QuotedOrder {
-        let pair = self.find_pair(order);
-        let executed_sell = order.sell_amount;
-        let executed_buy = pair.pool.out(Asset {
-            amount: order.sell_amount,
-            token: order.sell_token,
-        });
+        let (executed_sell, executed_buy) = match &order.precalculated_quote {
+            Some(quote) => (quote.sell_amount, quote.buy_amount),
+            None => {
+                let pair = self.find_pair(order);
+                let executed_sell = order.sell_amount;
+                let executed_buy = pair.pool.out(Asset {
+                    amount: order.sell_amount,
+                    token: order.sell_token,
+                });
+                (executed_sell, executed_buy)
+            }
+        };
         QuotedOrder {
             order: order.clone(),
             buy: executed_buy,
