@@ -17,6 +17,42 @@ pub enum Trade {
     Jit(Jit),
 }
 
+impl Trade {
+    pub fn score(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+        weth: eth::WethAddress,
+    ) -> Option<eth::Asset> {
+        match self {
+            Self::Fulfillment(fulfillment) => {
+                let prices = ClearingPrices {
+                    sell: prices[&fulfillment.order().sell.token.wrap(weth)],
+                    buy: prices[&fulfillment.order().buy.token.wrap(weth)],
+                };
+
+                fulfillment
+                    .surplus(
+                        fulfillment.order().sell.amount,
+                        fulfillment.order().buy.amount,
+                        prices,
+                    )
+                    .map(|surplus| match fulfillment.order().side {
+                        Side::Buy => eth::Asset {
+                            token: fulfillment.order().sell.token,
+                            amount: surplus.into(),
+                        },
+                        Side::Sell => eth::Asset {
+                            token: fulfillment.order().buy.token,
+                            amount: surplus.into(),
+                        },
+                    })
+                    .ok()
+            }
+            Self::Jit(_) => None,
+        }
+    }
+}
+
 /// A trade which fulfills an order from the auction.
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
@@ -141,8 +177,8 @@ impl Fulfillment {
     /// buy order.
     pub fn surplus_over_reference_price(
         &self,
-        limit_sell: eth::U256,
-        limit_buy: eth::U256,
+        limit_sell: eth::TokenAmount,
+        limit_buy: eth::TokenAmount,
         prices: ClearingPrices,
     ) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
@@ -169,10 +205,10 @@ impl Fulfillment {
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
-                let limit_sell_amount = limit_sell
+                let limit_sell_amount = limit_sell.0
                     .checked_mul(executed)
                     .ok_or(Error::Overflow)?
-                    .checked_div(limit_buy)
+                    .checked_div(limit_buy.0)
                     .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
@@ -183,10 +219,10 @@ impl Fulfillment {
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
-                let limit_buy_amount = limit_buy
+                let limit_buy_amount = limit_buy.0
                     .checked_mul(executed_sell_amount_with_fee)
                     .ok_or(Error::Overflow)?
-                    .checked_div(limit_sell)
+                    .checked_div(limit_sell.0)
                     .ok_or(Error::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
                 let executed_buy_amount = executed
