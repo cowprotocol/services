@@ -1,6 +1,5 @@
 mod analytics;
 pub mod arguments;
-mod auction_preprocessing;
 pub mod driver;
 pub mod driver_logger;
 pub mod in_flight_orders;
