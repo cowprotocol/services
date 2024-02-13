@@ -122,7 +122,11 @@ impl Competition {
                     let entry = amm_orders.entry(owner).or_default();
                     *entry += 1;
                     if *entry > 1 {
-                        tracing::warn!("solution contains more than 1 order for the same CoW AMM");
+                        tracing::warn!(
+                            amm = ?owner,
+                            solution = ?solution.id(),
+                            "solution contains more than 1 order for the same CoW AMM"
+                        );
                         return false;
                     }
                 }
