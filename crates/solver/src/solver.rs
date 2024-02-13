@@ -1,8 +1,5 @@
 use {
-    crate::{
-        liquidity::Liquidity,
-        settlement::Settlement,
-    },
+    crate::{liquidity::Liquidity, settlement::Settlement},
     anyhow::{anyhow, Context, Result},
     ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
     model::{auction::AuctionId, order::Order},
