@@ -15,19 +15,6 @@ pub enum SimulationError {
     InsufficientBalance { needs: U256, has: U256 },
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
-#[clap(rename_all = "verbatim")]
-pub enum SolverType {
-    None,
-    Naive,
-    Baseline,
-    OneInch,
-    Paraswap,
-    ZeroEx,
-    Quasimodo,
-    BalancerSor,
-}
-
 // Wrapper type for AWS ARN identifiers
 #[derive(Debug, Clone)]
 pub struct Arn(pub String);
