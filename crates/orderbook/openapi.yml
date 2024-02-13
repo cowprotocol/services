@@ -1225,7 +1225,7 @@ components:
               TransferSimulationFailed,
               ZeroAmount,
               IncompatibleSigningScheme,
-              TooManyLimitOrders
+              TooManyLimitOrders,
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
