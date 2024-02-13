@@ -90,7 +90,7 @@ impl Fulfillment {
                 max_volume_factor,
                 quote,
             }) => {
-                let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
+                let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
                     self.order().sell.amount.0,
                     self.order().buy.amount.0,
                     self.order().side,
@@ -105,18 +105,18 @@ impl Fulfillment {
         }
     }
 
-    /// Computes protocol fee compared to the given reference amounts taken from
+    /// Computes protocol fee compared to the given limit amounts taken from
     /// the order or a quote.
     fn calculate_fee(
         &self,
-        reference_sell_amount: eth::U256,
-        reference_buy_amount: eth::U256,
+        limit_sell_amount: eth::U256,
+        limit_buy_amount: eth::U256,
         prices: ClearingPrices,
         factor: f64,
         max_volume_factor: f64,
     ) -> Result<eth::U256, Error> {
         let fee_from_surplus =
-            self.fee_from_surplus(reference_sell_amount, reference_buy_amount, prices, factor)?;
+            self.fee_from_surplus(limit_sell_amount, limit_buy_amount, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
@@ -230,7 +230,26 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
         / 10000)
 }
 
-fn adjusted_price_improvement_amounts(
+/// This function adjusts quote amounts to directly compare them with the
+/// order's limits, ensuring a meaningful comparison for potential price
+/// improvements. It scales quote amounts when necessary, accounting for quote
+/// fees, to align the quote's sell or buy amounts with the order's
+/// corresponding amounts. This adjustment is crucial for assessing whether the
+/// quote offers a price improvement over the order's conditions.
+///
+/// Scaling is needed because the quote and the order might not be directly
+/// comparable due to differences in amounts and the inclusion of fees in the
+/// quote. By adjusting the quote's amounts to match the order's sell or buy
+/// amounts, we can accurately determine if the quote provides a better rate
+/// than the order's limits.
+///
+/// ## Examples
+/// For the specific examples, consider the following unit tests:
+/// - test_adjust_quote_to_out_market_sell_order_limits
+/// - test_adjust_quote_to_out_market_buy_order_limits
+/// - test_adjust_quote_to_in_market_sell_order_limits
+/// - test_adjust_quote_to_in_market_buy_order_limits
+fn adjust_quote_to_order_limits(
     order_sell_amount: eth::U256,
     order_buy_amount: eth::U256,
     order_side: Side,
@@ -291,14 +310,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_adjusted_price_improvement_amounts_for_sell_order() {
+    fn test_adjust_quote_to_out_market_sell_order_limits() {
         let order_sell_amount = to_wei(20);
         let order_buy_amount = to_wei(19);
         let quote_sell_amount = to_wei(21);
         let quote_buy_amount = to_wei(18);
         let quote_fee_amount = to_wei(1);
 
-        let (sell_amount, _) = adjusted_price_improvement_amounts(
+        let (sell_amount, _) = adjust_quote_to_order_limits(
             order_sell_amount,
             order_buy_amount,
             Side::Sell,
@@ -315,14 +334,14 @@ mod tests {
     }
 
     #[test]
-    fn test_adjusted_price_improvement_amounts_for_buy_order() {
+    fn test_adjust_quote_to_out_market_buy_order_limits() {
         let order_sell_amount = to_wei(20);
         let order_buy_amount = to_wei(19);
         let quote_sell_amount = to_wei(21);
         let quote_buy_amount = to_wei(18);
         let quote_fee_amount = to_wei(1);
 
-        let (_, buy_amount) = adjusted_price_improvement_amounts(
+        let (_, buy_amount) = adjust_quote_to_order_limits(
             order_sell_amount,
             order_buy_amount,
             Side::Buy,
@@ -339,14 +358,14 @@ mod tests {
     }
 
     #[test]
-    fn test_sell_order_with_quote_in_market_price() {
+    fn test_adjust_quote_to_in_market_sell_order_limits() {
         let order_sell_amount = to_wei(10);
         let order_buy_amount = to_wei(20);
         let quote_sell_amount = to_wei(9);
         let quote_buy_amount = to_wei(25);
         let quote_fee_amount = to_wei(1);
 
-        let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
+        let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
             order_sell_amount,
             order_buy_amount,
             Side::Sell,
@@ -358,7 +377,7 @@ mod tests {
 
         assert_eq!(
             sell_amount, order_sell_amount,
-            "Sell amount should be taken from the quote for sell orders in market price."
+            "Sell amount should be taken from the order for sell orders in market price."
         );
         assert_eq!(
             buy_amount, quote_buy_amount,
@@ -367,14 +386,14 @@ mod tests {
     }
 
     #[test]
-    fn test_buy_order_with_quote_in_market_price() {
+    fn test_adjust_quote_to_in_market_buy_order_limits() {
         let order_sell_amount = to_wei(20);
         let order_buy_amount = to_wei(10);
         let quote_sell_amount = to_wei(17);
         let quote_buy_amount = to_wei(10);
         let quote_fee_amount = to_wei(1);
 
-        let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
+        let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
             order_sell_amount,
             order_buy_amount,
             Side::Buy,
@@ -392,7 +411,7 @@ mod tests {
         );
         assert_eq!(
             buy_amount, order_buy_amount,
-            "Buy amount should be taken from the quote for buy orders in market price."
+            "Buy amount should be taken from the order for buy orders in market price."
         );
     }
 
