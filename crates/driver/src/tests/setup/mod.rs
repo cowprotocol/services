@@ -104,39 +104,6 @@ impl FeePolicy {
     }
 }
 
-// #[serde_as]
-// #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-// #[serde(rename_all = "camelCase", tag = "kind")]
-// pub enum FeePolicyWrapper {
-//     Surplus(SurplusWrapper),
-//     Volume(VolumeWrapper),
-// }
-//
-// impl From<FeePolicy> for FeePolicyWrapper {
-//     fn from(value: FeePolicy) -> Self {
-//         match value {
-//             surplus @ FeePolicy::Surplus { .. } => {
-//                 FeePolicyWrapper::Surplus(SurplusWrapper { surplus })
-//             }
-//             volume @ FeePolicy::Volume { .. } =>
-// FeePolicyWrapper::Volume(VolumeWrapper { volume }),         }
-//     }
-// }
-//
-// #[serde_as]
-// #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-// #[serde(rename_all = "camelCase", tag = "kind")]
-// pub struct SurplusWrapper {
-//     surplus: FeePolicy,
-// }
-//
-// #[serde_as]
-// #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-// #[serde(rename_all = "camelCase", tag = "kind")]
-// pub struct VolumeWrapper {
-//     volume: FeePolicy,
-// }
-
 impl Default for Score {
     fn default() -> Self {
         Self::RiskAdjusted {
