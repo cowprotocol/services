@@ -655,10 +655,11 @@ fn prioritize_orders(
     // Chose `user_orders.len()` distinct items from `user_orders` weighted by the
     // viability of the order. This effectively sorts the orders by viability
     // with a slight randomness to not get stuck on bad orders.
-    match orders.choose_multiple_weighted(&mut rng, orders.len(), |order| {
+    let weighted_order = orders.choose_multiple_weighted(&mut rng, orders.len(), |order| {
         let price_viability = estimate_price_viability(order, prices);
         order_prioritization_config.apply_weight_constraints(price_viability)
-    }) {
+    });
+    match weighted_order {
         Ok(weighted_user_orders) => weighted_user_orders.into_iter().cloned().collect(),
         Err(err) => {
             // if weighted sorting by viability fails we fall back to shuffling randomly
