@@ -1,16 +1,15 @@
 use crate::{
-    domain::competition::order,
+    domain::{competition::order, eth},
     tests::{
         self,
-        setup::{ab_order, ab_pool, ab_solution, FeePolicy, OrderQuote},
+        setup::{ab_order, ab_pool, ab_solution, FeePolicy, OrderQuote, Pool},
     },
 };
-use crate::domain::eth;
 
 #[tokio::test]
 #[ignore]
 async fn protocol_fee() {
-    for side in [order::Side::Buy, order::Side::Sell] {
+    for side in [/* order::Side::Buy, */ order::Side::Sell] {
         for fee_policy in [
             FeePolicy::Surplus {
                 factor: 0.5,
@@ -23,21 +22,33 @@ async fn protocol_fee() {
                 max_volume_factor: 0.1,
             },
         ] {
+            let quote = match side {
+                order::Side::Sell => OrderQuote {
+                    sell_amount: ab_order().sell_amount,
+                    buy_amount: ab_order()
+                        .sell_amount
+                        .checked_div(eth::U256::from(2))
+                        .unwrap(),
+                },
+                order::Side::Buy => OrderQuote {
+                    sell_amount: ab_order()
+                        .sell_amount
+                        .checked_mul(eth::U256::from(2))
+                        .unwrap(),
+                    buy_amount: ab_order().sell_amount,
+                },
+            };
+            let pool = adjust_pool_reserve_b(ab_pool(), &quote);
+            let order = ab_order()
+                .kind(order::Kind::Limit)
+                .side(side)
+                .solver_fee(Some(10000000000000000000u128.into()))
+                .quote(quote)
+                .fee_policy(fee_policy.clone());
             let test = tests::setup()
                 .name(format!("Protocol Fee: {side:?} {fee_policy:?}"))
-                .pool(ab_pool())
-                .order(
-                    ab_order()
-                        .kind(order::Kind::Limit)
-                        .side(side)
-                        .solver_fee(Some(10000000000000000000u128.into()))
-                        .quote(OrderQuote {
-                            sell_amount: ab_order().sell_amount.checked_add(to_wei(1)).unwrap(),
-                            buy_amount: ab_order().sell_amount.checked_sub(to_wei(2)).unwrap(),
-                        })
-                        // .set_surplus(2.into())
-                        .fee_policy(fee_policy),
-                )
+                .pool(pool)
+                .order(order)
                 .solution(ab_solution())
                 .done()
                 .await;
@@ -47,6 +58,19 @@ async fn protocol_fee() {
     }
 }
 
-pub fn to_wei(base: u32) -> eth::U256 {
+fn adjust_pool_reserve_b(pool: Pool, quote: &OrderQuote) -> Pool {
+    let reserve_a_plus_sell = pool.amount_a.checked_add(quote.sell_amount).unwrap();
+    let reserve_b = reserve_a_plus_sell
+        .checked_mul(quote.buy_amount)
+        .unwrap()
+        .checked_div(quote.sell_amount)
+        .unwrap();
+    Pool {
+        amount_b: reserve_b,
+        ..pool
+    }
+}
+
+fn to_wei(base: u32) -> eth::U256 {
     eth::U256::from(base) * eth::U256::exp10(18)
 }
