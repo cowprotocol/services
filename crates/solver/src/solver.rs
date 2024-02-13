@@ -10,52 +10,18 @@ use {
     shared::{
         account_balances,
         external_prices::ExternalPrices,
-        http_solver::model::{AuctionResult, SimulatedTransaction},
+        http_solver::model::SimulatedTransaction,
     },
     std::{
         collections::HashMap,
         fmt::{self, Debug, Formatter},
         str::FromStr,
-        sync::Arc,
         time::{Duration, Instant},
     },
-    web3::types::AccessList,
 };
 
 mod baseline_solver;
 pub mod naive_solver;
-
-/// Interface that all solvers must implement.
-///
-/// A `solve` method transforming a collection of `Liquidity` (sources) into a
-/// list of independent `Settlements`. Solvers are free to choose which types
-/// `Liquidity` they would like to process, including their own private sources.
-#[mockall::automock]
-#[async_trait::async_trait]
-pub trait Solver: Send + Sync + 'static {
-    /// Runs the solver.
-    ///
-    /// The returned settlements should be independent (for example not reusing
-    /// the same user order) so that they can be merged by the driver at its
-    /// leisure.
-    ///
-    /// id identifies this instance of solving by the driver in which it invokes
-    /// all solvers.
-    async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>>;
-
-    /// Callback to notify the solver how it performed in the given auction (if
-    /// it won or failed for some reason) Has to be non-blocking to not
-    /// delay settling the actual solution
-    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
-
-    /// Returns solver's account that should be used to submit settlements.
-    fn account(&self) -> &Account;
-
-    /// Returns displayable name of the solver.
-    ///
-    /// This method is used for logging and metrics collection.
-    fn name(&self) -> &str;
-}
 
 /// A batch auction for a solver to produce a settlement for.
 #[derive(Clone, Debug)]
@@ -125,12 +91,6 @@ impl Default for Auction {
         }
     }
 }
-
-/// A vector of solvers.
-pub type Solvers = Vec<Arc<dyn Solver>>;
-
-/// A single settlement and a solver that produced it.
-pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
 
 #[derive(Debug, Clone)]
 pub struct SolverInfo {
@@ -309,52 +269,8 @@ impl FromStr for ExternalSolverArg {
 }
 
 #[cfg(test)]
-struct DummySolver;
-#[cfg(test)]
-#[async_trait::async_trait]
-impl Solver for DummySolver {
-    async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
-        unimplemented!()
-    }
-
-    fn account(&self) -> &ethcontract::Account {
-        unimplemented!()
-    }
-
-    fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
-
-    fn name(&self) -> &'static str {
-        "DummySolver"
-    }
-}
-
-#[cfg(test)]
-pub fn dummy_arc_solver() -> Arc<dyn Solver> {
-    Arc::new(DummySolver)
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Dummy solver returning no settlements
-    pub struct NoopSolver();
-    #[async_trait::async_trait]
-    impl Solver for NoopSolver {
-        async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
-            Ok(Vec::new())
-        }
-
-        fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
-
-        fn account(&self) -> &Account {
-            unimplemented!()
-        }
-
-        fn name(&self) -> &'static str {
-            "NoopSolver"
-        }
-    }
 
     impl PartialEq for SolverAccountArg {
         fn eq(&self, other: &Self) -> bool {
