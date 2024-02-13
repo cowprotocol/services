@@ -1,25 +1,21 @@
 use {
-    anyhow::{anyhow, Context, Error, Result},
+    anyhow::Result,
     contracts::GPv2Settlement,
     ethcontract::{
-        batch::CallBatch,
         contract::MethodBuilder,
         dyns::{DynMethodBuilder, DynTransport},
         errors::ExecutionError,
         transaction::TransactionBuilder,
         Account,
     },
-    ethrpc::Web3,
-    futures::FutureExt,
     gas_estimation::GasPrice1559,
     itertools::Itertools,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H160, U256},
     shared::{
         conversions::into_gas_price,
         encoded_settlement::EncodedSettlement,
-        tenderly_api::{SimulationRequest, TenderlyApi},
     },
-    web3::types::{AccessList, BlockId},
+    web3::types::AccessList,
 };
 
 const SIMULATE_BATCH_SIZE: usize = 10;
@@ -53,107 +49,6 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     }
 
     Ok(results)
-}
-
-pub async fn simulate_and_error_with_tenderly_link(
-    settlements: impl Iterator<Item = (Account, EncodedSettlement, Option<AccessList>)>,
-    contract: &GPv2Settlement,
-    web3: &Web3,
-    gas_price: GasPrice1559,
-    network_id: &str,
-    block: u64,
-    simulation_gas_limit: u128,
-) -> Vec<Result<()>> {
-    let mut batch = CallBatch::new(web3.transport());
-    let futures = settlements
-        .map(|(account, settlement, access_list)| {
-            let method = settle_method(gas_price, contract, settlement, account);
-            let method = match access_list {
-                Some(access_list) => method.access_list(access_list),
-                None => method,
-            };
-            let transaction_builder = method.tx.clone();
-            let view = method
-                .view()
-                .block(BlockId::Number(block.into()))
-                // Since we now supply the gas price for the simulation, make sure to also
-                // set a gas limit so we don't get failed simulations because of insufficient
-                // solver balance. The limit should be below the current block gas
-                // limit of 30M gas
-                .gas(simulation_gas_limit.into());
-            (view.batch_call(&mut batch), transaction_builder)
-        })
-        .collect::<Vec<_>>();
-    batch.execute_all(SIMULATE_BATCH_SIZE).await;
-
-    futures
-        .into_iter()
-        .map(|(future, transaction_builder)| {
-            future.now_or_never().unwrap().map(|_| ()).map_err(|err| {
-                Error::new(err).context(tenderly_link(
-                    block,
-                    network_id,
-                    transaction_builder,
-                    Some(gas_price),
-                    None,
-                ))
-            })
-        })
-        .collect()
-}
-
-pub async fn simulate_before_after_access_list(
-    web3: &Web3,
-    tenderly: &dyn TenderlyApi,
-    network_id: String,
-    transaction_hash: H256,
-) -> Result<f64> {
-    let transaction = web3
-        .eth()
-        .transaction(transaction_hash.into())
-        .await?
-        .context("no transaction found")?;
-
-    if transaction.access_list.is_none() {
-        return Err(anyhow!(
-            "no need to analyze access list since no access list was found in mined transaction"
-        ));
-    }
-
-    let (block_number, from, to, transaction_index) = (
-        transaction
-            .block_number
-            .context("no block number field exist")?
-            .as_u64(),
-        transaction.from.context("no from field exist")?,
-        transaction.to.context("no to field exist")?,
-        transaction
-            .transaction_index
-            .context("no transaction_index field exist")?
-            .as_u64(),
-    );
-
-    let request = SimulationRequest {
-        network_id,
-        block_number: Some(block_number),
-        transaction_index: Some(transaction_index),
-        from,
-        input: transaction.input.0,
-        to,
-        gas: Some(transaction.gas.as_u64()),
-        ..Default::default()
-    };
-
-    let gas_used_without_access_list = tenderly.simulate(request).await?.transaction.gas_used;
-    let gas_used_with_access_list = web3
-        .eth()
-        .transaction_receipt(transaction_hash)
-        .await?
-        .context("no transaction receipt")?
-        .gas_used
-        .context("no gas used field")?;
-
-    Ok(gas_used_without_access_list as f64 - gas_used_with_access_list.to_f64_lossy())
 }
 
 pub fn settle_method(
@@ -250,9 +145,8 @@ mod tests {
         shared::{
             ethrpc::create_env_test_transport,
             http_solver::model::InternalizationStrategy,
-            tenderly_api::TenderlyHttpApi,
         },
-        std::str::FromStr,
+        web3::Web3,
     };
 
     // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored
@@ -267,8 +161,6 @@ mod tests {
         );
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
-        let block = web3.eth().block_number().await.unwrap().as_u64();
-        let network_id = web3.net().version().await.unwrap();
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let account = Account::Offline(PrivateKey::from_raw([1; 32]).unwrap(), None);
 
@@ -286,17 +178,6 @@ mod tests {
                 None,
             ),
         ];
-        let result = simulate_and_error_with_tenderly_link(
-            settlements.iter().cloned(),
-            &contract,
-            &web3,
-            Default::default(),
-            network_id.as_str(),
-            block,
-            15000000u128,
-        )
-        .await;
-        let _ = dbg!(result);
 
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
@@ -349,27 +230,6 @@ mod tests {
         .await
         .unwrap();
         let _ = dbg!(result);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn simulate_before_after_access_list_test() {
-        let transport = create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let transaction_hash =
-            H256::from_str("e337fcd52afd6b98847baab279cda6c3980fcb185da9e959fd489ffd210eac60")
-                .unwrap();
-        let tenderly_api = TenderlyHttpApi::test_from_env();
-        let gas_saved = simulate_before_after_access_list(
-            &web3,
-            &*tenderly_api,
-            "1".to_string(),
-            transaction_hash,
-        )
-        .await
-        .unwrap();
-
-        dbg!(gas_saved);
     }
 
     #[test]
