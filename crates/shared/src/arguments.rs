@@ -157,7 +157,7 @@ pub struct Arguments {
     )]
     pub uniswap_v3_graph_url: Url,
 
-    /// An Ethereum node URL that suppo.rs `eth_call`s with state overrides to
+    /// An Ethereum node URL that supports `eth_call`s with state overrides to
     /// be used for simulations.
     #[clap(long, env)]
     pub simulation_node_url: Option<Url>,
