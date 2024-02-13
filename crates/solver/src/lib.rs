@@ -11,7 +11,6 @@ pub mod metrics;
 pub mod objective_value;
 pub mod order_balance_filter;
 pub mod orderbook;
-pub mod run;
 pub mod s3_instance_upload;
 pub mod s3_instance_upload_arguments;
 pub mod settlement;
@@ -24,5 +23,3 @@ pub mod settlement_submission;
 pub mod solver;
 #[cfg(test)]
 mod test;
-
-pub use self::run::{run, start};
