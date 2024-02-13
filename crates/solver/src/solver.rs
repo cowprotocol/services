@@ -1,19 +1,10 @@
 use {
     anyhow::anyhow,
-    ethcontract::{errors::ExecutionError, U256},
     std::{fmt::Debug, str::FromStr},
 };
 
 mod baseline_solver;
 pub mod naive_solver;
-
-#[derive(Debug, thiserror::Error)]
-pub enum SimulationError {
-    #[error("web3 error: {0:?}")]
-    Web3(#[from] ExecutionError),
-    #[error("insufficient balance: needs {needs} has {has}")]
-    InsufficientBalance { needs: U256, has: U256 },
-}
 
 // Wrapper type for AWS ARN identifiers
 #[derive(Debug, Clone)]
