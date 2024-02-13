@@ -173,8 +173,11 @@ impl Fulfillment {
 
     /// Returns the surplus denominated in the surplus token.
     ///
-    /// The surplus token is the buy token for a sell order and sell token for a
+    /// The surplus token is a buy token for a sell order and a sell token for a
     /// buy order.
+    ///
+    /// The surplus is defined as the improvement of price, i.e. the difference
+    /// between the executed price and the reference (limit) price.
     pub fn surplus_over_reference_price(
         &self,
         limit_sell: eth::TokenAmount,
@@ -205,7 +208,8 @@ impl Fulfillment {
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
-                let limit_sell_amount = limit_sell.0
+                let limit_sell_amount = limit_sell
+                    .0
                     .checked_mul(executed)
                     .ok_or(Error::Overflow)?
                     .checked_div(limit_buy.0)
@@ -219,7 +223,8 @@ impl Fulfillment {
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
-                let limit_buy_amount = limit_buy.0
+                let limit_buy_amount = limit_buy
+                    .0
                     .checked_mul(executed_sell_amount_with_fee)
                     .ok_or(Error::Overflow)?
                     .checked_div(limit_sell.0)
