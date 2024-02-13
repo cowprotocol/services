@@ -38,8 +38,8 @@ pub struct Solution {
     prices: HashMap<eth::TokenAddress, eth::U256>,
     interactions: Vec<Interaction>,
     solver: Solver,
-    score: SolverScore,
-    new_score: SolverScoreNew,
+    score: SolverScore, // todo remove
+    score_cip38: SolverScoreCIP38,
     weth: eth::WethAddress,
 }
 
@@ -54,7 +54,7 @@ impl Solution {
         score: SolverScore,
         weth: eth::WethAddress,
     ) -> Result<Self, SolutionError> {
-        let new_score = SolverScoreNew {
+        let score_cip38 = SolverScoreCIP38 {
             surplus: {
                 let mut surplus = vec![];
                 for trade in trades.iter() {
@@ -74,7 +74,7 @@ impl Solution {
             interactions,
             solver,
             score,
-            new_score,
+            score_cip38,
             weth,
         };
 
@@ -113,9 +113,9 @@ impl Solution {
         &self.score
     }
 
-    /// The score of a solution as per CIP?
-    pub fn new_score(&self) -> &SolverScoreNew {
-        &self.new_score
+    /// The score of a solution as per CIP38
+    pub fn score_cip38(&self) -> &SolverScoreCIP38 {
+        &self.score_cip38
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -300,7 +300,7 @@ pub enum SolverScore {
 }
 
 #[derive(Debug, Clone)]
-pub struct SolverScoreNew {
+pub struct SolverScoreCIP38 {
     // todo rename to SolverScore
     pub surplus: Vec<eth::Asset>,
 }
