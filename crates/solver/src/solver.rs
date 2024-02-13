@@ -1,93 +1,17 @@
 use {
-    crate::{liquidity::Liquidity, settlement::Settlement},
+    crate::settlement::Settlement,
     anyhow::{anyhow, Context, Result},
     ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
-    model::{auction::AuctionId, order::Order},
     reqwest::Url,
-    shared::{
-        account_balances,
-        external_prices::ExternalPrices,
-        http_solver::model::SimulatedTransaction,
-    },
+    shared::http_solver::model::SimulatedTransaction,
     std::{
-        collections::HashMap,
         fmt::{self, Debug, Formatter},
         str::FromStr,
-        time::{Duration, Instant},
     },
 };
 
 mod baseline_solver;
 pub mod naive_solver;
-
-/// A batch auction for a solver to produce a settlement for.
-#[derive(Clone, Debug)]
-pub struct Auction {
-    /// Note that multiple consecutive driver runs may use the same ID if the
-    /// previous run was unable to find a settlement.
-    pub id: AuctionId,
-
-    /// An ID that identifies a driver run.
-    ///
-    /// Note that this ID is not unique across multiple instances of drivers,
-    /// in particular it cannot be used to uniquely identify batches across
-    /// service restarts.
-    pub run: u64,
-
-    /// The GPv2 orders to match.
-    pub orders: Vec<Order>,
-
-    /// The baseline on-chain liquidity that can be used by the solvers for
-    /// settling orders.
-    pub liquidity: Vec<Liquidity>,
-
-    /// On which block the liquidity got fetched.
-    pub liquidity_fetch_block: u64,
-
-    /// The current gas price estimate.
-    pub gas_price: f64,
-
-    /// The deadline for computing a solution.
-    ///
-    /// This can be used internally for the solver to decide when to stop
-    /// trying to optimize the settlement. The caller is expected poll the solve
-    /// future at most until the deadline is reach, at which point the future
-    /// will be dropped.
-    pub deadline: Instant,
-
-    /// The set of external prices for this auction.
-    ///
-    /// The objective value is calculated with these prices so they can be
-    /// relevant for solvers.
-    ///
-    /// External prices are garanteed to exist for all orders included in the
-    /// current auction.
-    pub external_prices: ExternalPrices,
-
-    /// Balances for `orders`. Not guaranteed to have an entry for all orders
-    /// because balance fetching can fail.
-    pub balances: HashMap<account_balances::Query, U256>,
-}
-
-impl Default for Auction {
-    fn default() -> Self {
-        const SECONDS_IN_A_YEAR: u64 = 31_622_400;
-
-        // Not actually never, but good enough...
-        let never = Instant::now() + Duration::from_secs(SECONDS_IN_A_YEAR);
-        Self {
-            id: Default::default(),
-            run: Default::default(),
-            orders: Default::default(),
-            liquidity: Default::default(),
-            liquidity_fetch_block: Default::default(),
-            gas_price: Default::default(),
-            deadline: never,
-            external_prices: Default::default(),
-            balances: Default::default(),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct SolverInfo {
