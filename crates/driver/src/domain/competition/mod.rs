@@ -104,33 +104,34 @@ impl Competition {
         });
 
         let solutions = solutions.filter(|solution| {
-            let mut amm_orders = HashMap::<eth::Address, usize>::new();
+            let mut amm_orders = HashSet::<eth::Address>::new();
+
             for trade in solution.trades() {
+                let solution = solution.id();
+
                 let owner = match trade {
                     solution::Trade::Fulfillment(f) => {
-                        let order = auction
-                            .orders()
-                            .iter()
-                            .find(|o| o.uid == f.order().uid)
-                            .unwrap();
+                        let uid = f.order().uid;
+                        let Some(order) = auction.orders().iter().find(|o| o.uid == uid) else {
+                            tracing::warn!(?uid, ?solution, "order not in original auction");
+                            return false;
+                        };
                         order.trader().0
                     }
                     solution::Trade::Jit(j) => j.order().signature.signer,
                 };
+
                 let is_cow_amm_order = self.eth.contracts().cow_amms().contains(&owner);
-                if is_cow_amm_order {
-                    let entry = amm_orders.entry(owner).or_default();
-                    *entry += 1;
-                    if *entry > 1 {
-                        tracing::warn!(
-                            amm = ?owner,
-                            solution = ?solution.id(),
-                            "solution contains more than 1 order for the same CoW AMM"
-                        );
-                        return false;
-                    }
+                if is_cow_amm_order && !amm_orders.insert(owner) {
+                    tracing::warn!(
+                        amm = ?owner,
+                        ?solution,
+                        "solution contains more than 1 order for the same CoW AMM"
+                    );
+                    return false;
                 }
             }
+
             true
         });
 
