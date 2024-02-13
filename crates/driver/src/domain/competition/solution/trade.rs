@@ -30,23 +30,7 @@ impl Trade {
                     buy: prices[&fulfillment.order().buy.token.wrap(weth)],
                 };
 
-                fulfillment
-                    .surplus(
-                        fulfillment.order().sell.amount,
-                        fulfillment.order().buy.amount,
-                        prices,
-                    )
-                    .map(|surplus| match fulfillment.order().side {
-                        Side::Buy => eth::Asset {
-                            token: fulfillment.order().sell.token,
-                            amount: surplus.into(),
-                        },
-                        Side::Sell => eth::Asset {
-                            token: fulfillment.order().buy.token,
-                            amount: surplus.into(),
-                        },
-                    })
-                    .ok()
+                fulfillment.surplus(prices).ok()
             }
             Self::Jit(_) => None,
         }
@@ -244,6 +228,30 @@ impl Fulfillment {
             }
         };
         Ok(surplus)
+    }
+
+    /// Returns the surplus denominated in the surplus token.
+    ///
+    /// The surplus token is a buy token for a sell order and a sell token for a
+    /// buy order.
+    ///
+    /// The surplus is defined as the improvement of price, i.e. the difference
+    /// between the executed price and the order limit price.
+    pub fn surplus(&self, prices: ClearingPrices) -> Result<eth::Asset, Error> {
+        let limit_sell = self.order().sell.amount;
+        let limit_buy = self.order().buy.amount;
+
+        self.surplus_over_reference_price(limit_sell, limit_buy, prices)
+            .map(|surplus| match self.order().side {
+                Side::Buy => eth::Asset {
+                    token: self.order().sell.token,
+                    amount: surplus.into(),
+                },
+                Side::Sell => eth::Asset {
+                    token: self.order().buy.token,
+                    amount: surplus.into(),
+                },
+            })
     }
 
     /// Returns the surplus denominated in the sell token.

@@ -85,8 +85,8 @@ impl Fulfillment {
                 factor,
                 max_volume_factor,
             }) => self.calculate_fee(
-                self.order().sell.amount.0,
-                self.order().buy.amount.0,
+                self.order().sell.amount,
+                self.order().buy.amount,
                 prices,
                 *factor,
                 *max_volume_factor,
@@ -97,12 +97,12 @@ impl Fulfillment {
                 quote,
             }) => {
                 let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
-                    self.order().sell.amount.0,
-                    self.order().buy.amount.0,
+                    self.order().sell.amount,
+                    self.order().buy.amount,
                     self.order().side,
-                    quote.sell.amount.0,
-                    quote.buy.amount.0,
-                    quote.fee.amount.0,
+                    quote.sell.amount,
+                    quote.buy.amount,
+                    quote.fee.amount,
                 )?;
                 self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
             }
@@ -115,8 +115,8 @@ impl Fulfillment {
     /// the order or a quote.
     fn calculate_fee(
         &self,
-        limit_sell_amount: eth::U256,
-        limit_buy_amount: eth::U256,
+        limit_sell_amount: eth::TokenAmount,
+        limit_buy_amount: eth::TokenAmount,
         prices: ClearingPrices,
         factor: f64,
         max_volume_factor: f64,
@@ -132,8 +132,8 @@ impl Fulfillment {
 
     fn fee_from_surplus(
         &self,
-        sell_amount: eth::U256,
-        buy_amount: eth::U256,
+        sell_amount: eth::TokenAmount,
+        buy_amount: eth::TokenAmount,
         prices: ClearingPrices,
         factor: f64,
     ) -> Result<eth::U256, Error> {
@@ -195,35 +195,37 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
 fn adjust_quote_to_order_limits(
-    order_sell_amount: eth::U256,
-    order_buy_amount: eth::U256,
+    order_sell_amount: eth::TokenAmount,
+    order_buy_amount: eth::TokenAmount,
     order_side: Side,
-    quote_sell_amount: eth::U256,
-    quote_buy_amount: eth::U256,
-    quote_fee_amount: eth::U256,
-) -> Result<(eth::U256, eth::U256), Error> {
+    quote_sell_amount: eth::TokenAmount,
+    quote_buy_amount: eth::TokenAmount,
+    quote_fee_amount: eth::TokenAmount,
+) -> Result<(eth::TokenAmount, eth::TokenAmount), Error> {
     let quote_sell_amount = quote_sell_amount
-        .checked_add(quote_fee_amount)
+        .0
+        .checked_add(quote_fee_amount.0)
         .ok_or(trade::Error::Overflow)?;
 
     match order_side {
         Side::Sell => {
             let scaled_buy_amount = quote_buy_amount
-                .checked_mul(order_sell_amount)
+                .0
+                .checked_mul(order_sell_amount.0)
                 .ok_or(trade::Error::Overflow)?
                 .checked_div(quote_sell_amount)
                 .ok_or(trade::Error::DivisionByZero)?;
-            let buy_amount = order_buy_amount.max(scaled_buy_amount);
-            Ok((order_sell_amount, buy_amount))
+            let buy_amount = order_buy_amount.0.max(scaled_buy_amount);
+            Ok((order_sell_amount, buy_amount.into()))
         }
         Side::Buy => {
             let scaled_sell_amount = quote_sell_amount
-                .checked_mul(order_buy_amount)
+                .checked_mul(order_buy_amount.0)
                 .ok_or(trade::Error::Overflow)?
-                .checked_div(quote_buy_amount)
+                .checked_div(quote_buy_amount.0)
                 .ok_or(trade::Error::DivisionByZero)?;
-            let sell_amount = order_sell_amount.min(scaled_sell_amount);
-            Ok((sell_amount, order_buy_amount))
+            let sell_amount = order_sell_amount.0.min(scaled_sell_amount);
+            Ok((sell_amount.into(), order_buy_amount))
         }
     }
 }
@@ -243,11 +245,11 @@ mod tests {
 
     #[test]
     fn test_adjust_quote_to_out_market_sell_order_limits() {
-        let order_sell_amount = to_wei(20);
-        let order_buy_amount = to_wei(19);
-        let quote_sell_amount = to_wei(21);
-        let quote_buy_amount = to_wei(18);
-        let quote_fee_amount = to_wei(1);
+        let order_sell_amount = to_wei(20).into();
+        let order_buy_amount = to_wei(19).into();
+        let quote_sell_amount = to_wei(21).into();
+        let quote_buy_amount = to_wei(18).into();
+        let quote_fee_amount = to_wei(1).into();
 
         let (sell_amount, _) = adjust_quote_to_order_limits(
             order_sell_amount,
@@ -267,11 +269,11 @@ mod tests {
 
     #[test]
     fn test_adjust_quote_to_out_market_buy_order_limits() {
-        let order_sell_amount = to_wei(20);
-        let order_buy_amount = to_wei(19);
-        let quote_sell_amount = to_wei(21);
-        let quote_buy_amount = to_wei(18);
-        let quote_fee_amount = to_wei(1);
+        let order_sell_amount = to_wei(20).into();
+        let order_buy_amount = to_wei(19).into();
+        let quote_sell_amount = to_wei(21).into();
+        let quote_buy_amount = to_wei(18).into();
+        let quote_fee_amount = to_wei(1).into();
 
         let (_, buy_amount) = adjust_quote_to_order_limits(
             order_sell_amount,
@@ -291,11 +293,11 @@ mod tests {
 
     #[test]
     fn test_adjust_quote_to_in_market_sell_order_limits() {
-        let order_sell_amount = to_wei(10);
-        let order_buy_amount = to_wei(20);
-        let quote_sell_amount = to_wei(9);
-        let quote_buy_amount = to_wei(25);
-        let quote_fee_amount = to_wei(1);
+        let order_sell_amount = to_wei(10).into();
+        let order_buy_amount = to_wei(20).into();
+        let quote_sell_amount = to_wei(9).into();
+        let quote_buy_amount = to_wei(25).into();
+        let quote_fee_amount = to_wei(1).into();
 
         let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
             order_sell_amount,
@@ -319,11 +321,11 @@ mod tests {
 
     #[test]
     fn test_adjust_quote_to_in_market_buy_order_limits() {
-        let order_sell_amount = to_wei(20);
-        let order_buy_amount = to_wei(10);
-        let quote_sell_amount = to_wei(17);
-        let quote_buy_amount = to_wei(10);
-        let quote_fee_amount = to_wei(1);
+        let order_sell_amount = to_wei(20).into();
+        let order_buy_amount = to_wei(10).into();
+        let quote_sell_amount = to_wei(17).into();
+        let quote_buy_amount = to_wei(10).into();
+        let quote_fee_amount = to_wei(1).into();
 
         let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
             order_sell_amount,
@@ -337,7 +339,7 @@ mod tests {
 
         assert_eq!(
             sell_amount,
-            quote_sell_amount + quote_fee_amount,
+            (quote_sell_amount.0 + quote_fee_amount.0).into(),
             "Sell amount should reflect the improved market condition from the quote for buy \
              orders."
         );
