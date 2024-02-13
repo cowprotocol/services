@@ -3,7 +3,6 @@ pub mod liquidity;
 pub mod liquidity_collector;
 mod metrics;
 pub mod order_balance_filter;
-pub mod s3_instance_upload;
 pub mod settlement;
 pub mod settlement_access_list;
 pub mod settlement_rater;
