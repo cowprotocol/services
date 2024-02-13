@@ -12,5 +12,3 @@ pub mod settlement_rater;
 pub mod settlement_simulation;
 pub mod settlement_submission;
 pub mod solver;
-#[cfg(test)]
-mod test;
