@@ -1,49 +1,10 @@
 use {
-    crate::solver::SimulationWithError,
     anyhow::{anyhow, Context, Result},
     num::{zero, BigRational, CheckedDiv, One},
     number::conversions::big_rational_to_u256,
     primitive_types::U256,
     std::cmp::min,
 };
-
-pub enum SimulateError {
-    FailedSimulation(SimulationWithError),
-    Internal(anyhow::Error),
-}
-
-impl From<anyhow::Error> for SimulateError {
-    fn from(error: anyhow::Error) -> Self {
-        Self::Internal(error)
-    }
-}
-
-#[derive(Debug)]
-pub enum RatingError {
-    FailedSimulation(SimulationWithError),
-    FailedScoring(ScoringError),
-    Internal(anyhow::Error),
-}
-
-impl From<SimulateError> for RatingError {
-    fn from(error: SimulateError) -> Self {
-        match error {
-            SimulateError::FailedSimulation(failure) => Self::FailedSimulation(failure),
-            SimulateError::Internal(error) => Self::Internal(error),
-        }
-    }
-}
-
-impl From<ScoringError> for RatingError {
-    fn from(error: ScoringError) -> Self {
-        Self::FailedScoring(error)
-    }
-}
-impl From<anyhow::Error> for RatingError {
-    fn from(error: anyhow::Error) -> Self {
-        Self::Internal(error)
-    }
-}
 
 #[derive(Debug)]
 pub enum ScoringError {
