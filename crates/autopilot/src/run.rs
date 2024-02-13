@@ -557,6 +557,7 @@ pub async fn run(args: Arguments) {
             args.fee_policy.clone().to_domain(),
             args.fee_policy.fee_policy_skip_market_orders,
         ),
+        args.cow_amms.into_iter().collect(),
     );
     solvable_orders_cache
         .update(block)
