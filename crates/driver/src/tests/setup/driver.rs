@@ -76,12 +76,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
                 order::Kind::Liquidity => json!([]),
-                order::Kind::Limit { .. } => json!([{
-                    "surplus": {
-                        "factor": 0.0,
-                        "maxVolumeFactor": 0.06
-                    }
-                }]),
+                order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
             },
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {

@@ -3,11 +3,7 @@
 use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver as SolverInstance},
     crate::{
-        domain::{
-            competition::{order, order::FeePolicy},
-            eth,
-            time,
-        },
+        domain::{competition::order, eth, time},
         infra::{
             self,
             config::file::{default_http_time_buffer, default_solving_share_of_deadline},
@@ -34,6 +30,7 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
+    serde_json::json,
     serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
@@ -74,6 +71,71 @@ pub enum Score {
     #[serde(rename_all = "camelCase")]
     RiskAdjusted { success_probability: f64 },
 }
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    #[allow(dead_code)]
+    Volume { factor: f64 },
+}
+
+impl FeePolicy {
+    pub fn to_json_value(&self) -> serde_json::Value {
+        match self {
+            FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => json!({
+                "surplus": {
+                    "factor": factor,
+                    "maxVolumeFactor": max_volume_factor
+                }
+            }),
+            FeePolicy::Volume { factor } => json!({
+                "volume": {
+                    "factor": factor
+                }
+            }),
+        }
+    }
+}
+
+// #[serde_as]
+// #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+// #[serde(rename_all = "camelCase", tag = "kind")]
+// pub enum FeePolicyWrapper {
+//     Surplus(SurplusWrapper),
+//     Volume(VolumeWrapper),
+// }
+//
+// impl From<FeePolicy> for FeePolicyWrapper {
+//     fn from(value: FeePolicy) -> Self {
+//         match value {
+//             surplus @ FeePolicy::Surplus { .. } => {
+//                 FeePolicyWrapper::Surplus(SurplusWrapper { surplus })
+//             }
+//             volume @ FeePolicy::Volume { .. } =>
+// FeePolicyWrapper::Volume(VolumeWrapper { volume }),         }
+//     }
+// }
+//
+// #[serde_as]
+// #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+// #[serde(rename_all = "camelCase", tag = "kind")]
+// pub struct SurplusWrapper {
+//     surplus: FeePolicy,
+// }
+//
+// #[serde_as]
+// #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+// #[serde(rename_all = "camelCase", tag = "kind")]
+// pub struct VolumeWrapper {
+//     volume: FeePolicy,
+// }
 
 impl Default for Score {
     fn default() -> Self {
@@ -122,7 +184,7 @@ pub struct Order {
     /// order? True by default.
     pub funded: bool,
     pub precalculated_quote: Option<OrderQuote>,
-    pub fee_policy: Option<FeePolicy>,
+    pub fee_policy: FeePolicy,
 }
 
 impl Order {
@@ -213,10 +275,7 @@ impl Order {
     }
 
     pub fn fee_policy(self, fee_policy: FeePolicy) -> Self {
-        Self {
-            fee_policy: Some(fee_policy),
-            ..self
-        }
+        Self { fee_policy, ..self }
     }
 
     #[allow(dead_code)]
@@ -254,7 +313,10 @@ impl Default for Order {
             filtered: Default::default(),
             funded: true,
             precalculated_quote: Default::default(),
-            fee_policy: Default::default(),
+            fee_policy: FeePolicy::Surplus {
+                factor: 0.0,
+                max_volume_factor: 0.06,
+            },
         }
     }
 }
