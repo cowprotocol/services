@@ -114,7 +114,8 @@ impl TenderlyApi for TenderlyHttpApi {
             curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" --json '{body}' {request_url} \
             | jq -r \".simulation.id\" \
             | read SIMULATION_ID; \
-            echo {simulation_url}",
+            echo {simulation_url} \
+            | xargs xdg-open",
         );
 
         Ok(())
