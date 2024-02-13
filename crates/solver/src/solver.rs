@@ -1,59 +1,20 @@
 use {
-    self::{
-        baseline_solver::BaselineSolver,
-        http_solver::HttpSolver,
-        naive_solver::NaiveSolver,
-        oneinch_solver::OneInchSolver,
-        optimizing_solver::OptimizingSolver,
-        paraswap_solver::ParaswapSolver,
-        single_order_solver::{SingleOrderSolver, SingleOrderSolving},
-        zeroex_solver::ZeroExSolver,
-    },
     crate::{
-        interactions::allowances::AllowanceManager,
         liquidity::{
             order_converter::OrderConverter,
-            slippage::{self, SlippageCalculator},
             LimitOrder,
             Liquidity,
         },
-        metrics::SolverMetrics,
-        s3_instance_upload::S3InstanceUploader,
         settlement::Settlement,
-        settlement_post_processing::PostProcessing,
-        settlement_rater::SettlementRating,
-        solver::{
-            balancer_sor_solver::BalancerSorSolver,
-            http_solver::{
-                buffers::BufferRetriever,
-                instance_cache::SharedInstanceCreator,
-                instance_creation::InstanceCreator,
-                InstanceType,
-            },
-        },
     },
     anyhow::{anyhow, Context, Result},
-    contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
-    ethrpc::current_block::CurrentBlockStream,
-    futures::future::join_all,
-    model::{auction::AuctionId, order::Order, DomainSeparator},
+    model::{auction::AuctionId, order::Order},
     reqwest::Url,
     shared::{
         account_balances,
-        balancer_sor_api::DefaultBalancerSorApi,
-        baseline_solver::BaseTokens,
-        ethrpc::Web3,
         external_prices::ExternalPrices,
-        http_client::HttpClientFactory,
-        http_solver::{
-            model::{AuctionResult, SimulatedTransaction},
-            DefaultHttpSolverApi,
-            SolverConfig,
-        },
-        token_info::TokenInfoFetching,
-        token_list::AutoUpdatingTokenList,
-        zeroex_api::ZeroExApi,
+        http_solver::model::{AuctionResult, SimulatedTransaction},
     },
     std::{
         collections::HashMap,
@@ -65,16 +26,12 @@ use {
     web3::types::AccessList,
 };
 
-pub mod balancer_sor_solver;
 mod baseline_solver;
 pub mod http_solver;
 pub mod naive_solver;
-mod oneinch_solver;
 pub mod optimizing_solver;
-mod paraswap_solver;
 pub mod risk_computation;
 pub mod single_order_solver;
-mod zeroex_solver;
 
 /// Interface that all solvers must implement.
 ///
@@ -357,263 +314,6 @@ impl FromStr for ExternalSolverArg {
                 .context("parse user_balance_support")?,
         })
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub async fn create(
-    web3: Web3,
-    solvers: Vec<(Account, SolverType)>,
-    base_tokens: Arc<BaseTokens>,
-    native_token: WETH9,
-    quasimodo_solver_url: Url,
-    balancer_sor_url: Url,
-    settlement_contract: &GPv2Settlement,
-    vault_contract: Option<&BalancerV2Vault>,
-    token_info_fetcher: Arc<dyn TokenInfoFetching>,
-    network_id: String,
-    chain_id: u64,
-    disabled_one_inch_protocols: Vec<String>,
-    disabled_paraswap_dexs: Vec<String>,
-    paraswap_partner: Option<String>,
-    paraswap_api_url: String,
-    http_factory: &HttpClientFactory,
-    solver_metrics: Arc<dyn SolverMetrics>,
-    zeroex_api: Arc<dyn ZeroExApi>,
-    zeroex_disabled_sources: Vec<String>,
-    zeroex_enable_rfqt: bool,
-    zeroex_enable_slippage_protection: bool,
-    use_internal_buffers: bool,
-    one_inch_url: Url,
-    one_inch_referrer_address: Option<H160>,
-    external_solvers: Vec<ExternalSolverArg>,
-    order_converter: OrderConverter,
-    max_settlements_per_solver: usize,
-    max_merged_settlements: usize,
-    smallest_partial_fill: U256,
-    slippage_configuration: &slippage::Arguments,
-    market_makable_token_list: AutoUpdatingTokenList,
-    order_prioritization_config: &single_order_solver::Arguments,
-    post_processing_pipeline: Arc<dyn PostProcessing>,
-    domain: &DomainSeparator,
-    s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
-    risk_configuration: &risk_computation::Arguments,
-    settlement_rater: Arc<dyn SettlementRating>,
-    enforce_correct_fees: bool,
-    ethflow_contract: Option<H160>,
-    current_block_stream: CurrentBlockStream,
-) -> Result<Solvers> {
-    // Tiny helper function to help out with type inference. Otherwise, all
-    // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
-    fn shared(solver: impl Solver + 'static) -> Arc<dyn Solver> {
-        Arc::new(solver)
-    }
-
-    let buffer_retriever = Arc::new(BufferRetriever::new(
-        web3.clone(),
-        settlement_contract.address(),
-    ));
-    let allowance_manager = Arc::new(AllowanceManager::new(
-        web3.clone(),
-        settlement_contract.address(),
-    ));
-    let instance_creator = InstanceCreator {
-        native_token,
-        ethflow_contract,
-        token_info_fetcher: token_info_fetcher.clone(),
-        buffer_retriever,
-        market_makable_token_list: market_makable_token_list.clone(),
-        environment_metadata: network_id.clone(),
-    };
-    let shared_instance_creator = Arc::new(SharedInstanceCreator::new(
-        instance_creator,
-        s3_instance_uploader,
-    ));
-
-    // Helper function to create http solver instances.
-    let create_http_solver = |account: Account,
-                              url: Url,
-                              name: String,
-                              config: SolverConfig,
-                              instance_type: InstanceType,
-                              slippage_calculator: SlippageCalculator,
-                              use_liquidity: bool|
-     -> HttpSolver {
-        HttpSolver::new(
-            DefaultHttpSolverApi {
-                name,
-                network_name: network_id.clone(),
-                chain_id,
-                base: url,
-                solve_path: "solve".to_owned(),
-                client: http_factory.create(),
-                gzip_requests: false,
-                config,
-            },
-            account,
-            allowance_manager.clone(),
-            order_converter.clone(),
-            instance_type,
-            slippage_calculator,
-            market_makable_token_list.clone(),
-            *domain,
-            shared_instance_creator.clone(),
-            use_liquidity,
-            enforce_correct_fees,
-        )
-    };
-
-    let mut solvers: Vec<Arc<dyn Solver>> = solvers
-        .into_iter()
-        .filter_map(|(account, solver_type)| {
-            let single_order = |inner: Box<dyn SingleOrderSolving>| {
-                SingleOrderSolver::new(
-                    inner,
-                    solver_metrics.clone(),
-                    max_merged_settlements,
-                    max_settlements_per_solver,
-                    order_prioritization_config.clone(),
-                    smallest_partial_fill,
-                    settlement_rater.clone(),
-                    ethflow_contract,
-                    order_converter.clone(),
-                )
-            };
-
-            let slippage_calculator = slippage_configuration.get_calculator(solver_type);
-            tracing::debug!(
-                solver = ?solver_type, slippage = ?slippage_calculator,
-                "configured slippage",
-            );
-
-            let risk_calculator = risk_configuration.get_calculator(solver_type);
-
-            let solver = match solver_type {
-                SolverType::None => return None,
-                SolverType::Naive => shared(NaiveSolver::new(
-                    account,
-                    slippage_calculator,
-                    enforce_correct_fees,
-                    ethflow_contract,
-                    order_converter.clone(),
-                )),
-                SolverType::Baseline => shared(BaselineSolver::new(
-                    account,
-                    base_tokens.clone(),
-                    slippage_calculator,
-                    ethflow_contract,
-                    order_converter.clone(),
-                )),
-                SolverType::Quasimodo => shared(create_http_solver(
-                    account,
-                    quasimodo_solver_url.clone(),
-                    "Quasimodo".to_string(),
-                    SolverConfig {
-                        use_internal_buffers: Some(use_internal_buffers),
-                        ..Default::default()
-                    },
-                    InstanceType::Filtered,
-                    slippage_calculator,
-                    true,
-                )),
-                SolverType::OneInch => shared(single_order(Box::new(
-                    OneInchSolver::with_disabled_protocols(
-                        account,
-                        web3.clone(),
-                        settlement_contract.clone(),
-                        chain_id,
-                        disabled_one_inch_protocols.clone(),
-                        http_factory.create(),
-                        one_inch_url.clone(),
-                        slippage_calculator,
-                        one_inch_referrer_address,
-                        current_block_stream.clone(),
-                    )
-                    .unwrap(),
-                ))),
-                SolverType::ZeroEx => {
-                    let zeroex_solver = ZeroExSolver::new(
-                        account,
-                        web3.clone(),
-                        settlement_contract.clone(),
-                        chain_id,
-                        zeroex_api.clone(),
-                        zeroex_disabled_sources.clone(),
-                        slippage_calculator,
-                    )
-                    .unwrap()
-                    .with_rfqt(zeroex_enable_rfqt)
-                    .with_slippage_protection(zeroex_enable_slippage_protection);
-                    shared(single_order(Box::new(zeroex_solver)))
-                }
-                SolverType::Paraswap => shared(single_order(Box::new(ParaswapSolver::new(
-                    account,
-                    web3.clone(),
-                    settlement_contract.clone(),
-                    token_info_fetcher.clone(),
-                    disabled_paraswap_dexs.clone(),
-                    http_factory.create(),
-                    paraswap_partner.clone(),
-                    paraswap_api_url.clone(),
-                    slippage_calculator,
-                    current_block_stream.clone(),
-                )))),
-                SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(
-                    account,
-                    vault_contract
-                        .expect("missing Balancer Vault deployment for SOR solver")
-                        .clone(),
-                    settlement_contract.clone(),
-                    Arc::new(
-                        DefaultBalancerSorApi::new(
-                            http_factory.create(),
-                            balancer_sor_url.clone(),
-                            chain_id,
-                        )
-                        .unwrap(),
-                    ),
-                    allowance_manager.clone(),
-                    slippage_calculator,
-                )))),
-            };
-
-            Some(shared(OptimizingSolver {
-                inner: solver,
-                post_processing_pipeline: post_processing_pipeline.clone(),
-                risk_calculator,
-            }))
-        })
-        .collect();
-
-    let external_solvers = join_all(external_solvers.into_iter().map(|solver| async move {
-        shared(create_http_solver(
-            solver.account.into_account(chain_id).await,
-            solver.url,
-            solver.name,
-            SolverConfig {
-                use_internal_buffers: Some(use_internal_buffers),
-                ..Default::default()
-            },
-            InstanceType::Plain,
-            slippage_configuration.get_global_calculator(),
-            solver.use_liquidity,
-        ))
-    }))
-    .await;
-    solvers.extend(external_solvers);
-
-    if solvers.is_empty() {
-        return Err(anyhow!("no solvers configured"));
-    }
-
-    for solver in &solvers {
-        tracing::info!(
-            "initialized solver {} at address {:#x}",
-            solver.name(),
-            solver.account().address()
-        )
-    }
-
-    Ok(solvers)
 }
 
 #[cfg(test)]
