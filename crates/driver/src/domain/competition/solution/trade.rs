@@ -139,10 +139,10 @@ impl Fulfillment {
     ///
     /// The surplus token is the buy token for a sell order and sell token for a
     /// buy order.
-    pub fn surplus(
+    pub fn surplus_over_reference_price(
         &self,
-        sell_amount: eth::U256,
-        buy_amount: eth::U256,
+        limit_sell: eth::U256,
+        limit_buy: eth::U256,
         prices: ClearingPrices,
     ) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
@@ -169,10 +169,10 @@ impl Fulfillment {
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
-                let limit_sell_amount = sell_amount
+                let limit_sell_amount = limit_sell
                     .checked_mul(executed)
                     .ok_or(Error::Overflow)?
-                    .checked_div(buy_amount)
+                    .checked_div(limit_buy)
                     .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
@@ -183,10 +183,10 @@ impl Fulfillment {
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
-                let limit_buy_amount = buy_amount
+                let limit_buy_amount = limit_buy
                     .checked_mul(executed_sell_amount_with_fee)
                     .ok_or(Error::Overflow)?
-                    .checked_div(sell_amount)
+                    .checked_div(limit_sell)
                     .ok_or(Error::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
                 let executed_buy_amount = executed
@@ -203,6 +203,23 @@ impl Fulfillment {
             }
         };
         Ok(surplus)
+    }
+
+    /// Returns the surplus denominated in the sell token.
+    pub fn surplus_in_sell_token(
+        &self,
+        surplus: eth::U256,
+        prices: ClearingPrices,
+    ) -> Result<eth::U256, Error> {
+        let surplus_in_sell_token = match self.order().side {
+            Side::Buy => surplus,
+            Side::Sell => surplus
+                .checked_mul(prices.buy)
+                .ok_or(Error::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Error::DivisionByZero)?,
+        };
+        Ok(surplus_in_sell_token)
     }
 }
 

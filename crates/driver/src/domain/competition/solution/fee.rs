@@ -111,25 +111,6 @@ impl Fulfillment {
         }
     }
 
-    /// Returns the surplus denominated in the sell token.
-    fn surplus_in_sell_token(
-        &self,
-        sell_amount: eth::U256,
-        buy_amount: eth::U256,
-        prices: ClearingPrices,
-    ) -> Result<eth::U256, Error> {
-        let surplus = self.surplus(sell_amount, buy_amount, prices)?;
-        let surplus_in_sell_token = match self.order().side {
-            Side::Buy => surplus,
-            Side::Sell => surplus
-                .checked_mul(prices.buy)
-                .ok_or(trade::Error::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(trade::Error::DivisionByZero)?,
-        };
-        Ok(surplus_in_sell_token)
-    }
-
     /// Computes protocol fee compared to the given reference amounts taken from
     /// the order or a quote.
     fn calculate_fee(
@@ -156,7 +137,8 @@ impl Fulfillment {
         prices: ClearingPrices,
         factor: f64,
     ) -> Result<eth::U256, Error> {
-        let surplus_in_sell_token = self.surplus_in_sell_token(sell_amount, buy_amount, prices)?;
+        let surplus = self.surplus_over_reference_price(sell_amount, buy_amount, prices)?;
+        let surplus_in_sell_token = self.surplus_in_sell_token(surplus, prices)?;
         apply_factor(surplus_in_sell_token, factor)
     }
 
