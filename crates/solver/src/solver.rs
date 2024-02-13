@@ -28,7 +28,6 @@ use {
 
 mod baseline_solver;
 pub mod naive_solver;
-pub mod risk_computation;
 pub mod single_order_solver;
 
 /// Interface that all solvers must implement.
