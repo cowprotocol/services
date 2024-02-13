@@ -11,10 +11,7 @@ use {
     gas_estimation::GasPrice1559,
     itertools::Itertools,
     primitive_types::U256,
-    shared::{
-        conversions::into_gas_price,
-        encoded_settlement::EncodedSettlement,
-    },
+    shared::{conversions::into_gas_price, encoded_settlement::EncodedSettlement},
     web3::types::AccessList,
 };
 
@@ -129,10 +126,7 @@ mod tests {
         super::*,
         crate::settlement::Settlement,
         ethcontract::{Account, PrivateKey},
-        shared::{
-            ethrpc::create_env_test_transport,
-            http_solver::model::InternalizationStrategy,
-        },
+        shared::{ethrpc::create_env_test_transport, http_solver::model::InternalizationStrategy},
         web3::Web3,
     };
 
