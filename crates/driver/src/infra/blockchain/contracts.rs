@@ -11,14 +11,14 @@ pub struct Contracts {
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
     weth: contracts::WETH9,
-    cow_amm_contracts: HashSet<eth::Address>,
+    cow_amms: HashSet<eth::Address>,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
-    pub cow_amm_contracts: Option<HashSet<eth::Address>>,
+    pub cow_amms: Option<HashSet<eth::Address>>,
 }
 
 impl Contracts {
@@ -56,7 +56,7 @@ impl Contracts {
             vault_relayer,
             vault,
             weth,
-            cow_amm_contracts: addresses.cow_amm_contracts.unwrap_or_default(),
+            cow_amms: addresses.cow_amms.unwrap_or_default(),
         })
     }
 
@@ -80,8 +80,8 @@ impl Contracts {
         self.weth.address().into()
     }
 
-    pub fn cow_amm_contracts(&self) -> &HashSet<eth::Address> {
-        &self.cow_amm_contracts
+    pub fn cow_amms(&self) -> &HashSet<eth::Address> {
+        &self.cow_amms
     }
 }
 

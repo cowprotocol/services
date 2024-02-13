@@ -117,7 +117,7 @@ impl Competition {
                     }
                     solution::Trade::Jit(j) => j.order().signature.signer,
                 };
-                let is_cow_amm_order = self.eth.contracts().cow_amm_contracts().contains(&owner);
+                let is_cow_amm_order = self.eth.contracts().cow_amms().contains(&owner);
                 if is_cow_amm_order {
                     let entry = amm_orders.entry(owner).or_default();
                     *entry += 1;

@@ -238,7 +238,7 @@ struct ContractsConfig {
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
 
-    cow_amm_contracts: Option<Vec<eth::H160>>,
+    cow_amms: Option<Vec<eth::H160>>,
 }
 
 #[derive(Debug, Deserialize)]

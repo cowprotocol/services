@@ -220,7 +220,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
-                cow_amm_contracts: Some(Default::default()),
+                cow_amms: Some(Default::default()),
             },
             gas,
         )

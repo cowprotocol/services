@@ -80,7 +80,7 @@ pub struct SolvableOrdersCache {
     protocol_fee: domain::ProtocolFee,
     // TODO: remove ASAP since this we only use this for a mitigation that
     // should be implemented on a smart contract level.
-    cow_amm_contracts: HashSet<H160>,
+    cow_amms: HashSet<H160>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -105,7 +105,7 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
-        cow_amm_contracts: HashSet<H160>,
+        cow_amms: HashSet<H160>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -123,7 +123,7 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fee,
-            cow_amm_contracts,
+            cow_amms,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -159,7 +159,7 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("invalid_signature", &orders);
         invalid_order_uids.extend(removed);
 
-        let orders = filter_duplicate_cow_amm_orders(orders, &self.cow_amm_contracts);
+        let orders = filter_duplicate_cow_amm_orders(orders, &self.cow_amms);
         let removed = counter.checkpoint("duplicate_cow_amm_order", &orders);
         invalid_order_uids.extend(removed);
 
@@ -531,14 +531,11 @@ async fn filter_unsupported_tokens(
 
 /// Enforces that for all CoW AMMs at most 1 order is in the auction.
 /// This is needed to protect against a known attack vector.
-fn filter_duplicate_cow_amm_orders(
-    mut orders: Vec<Order>,
-    cow_amm_contracts: &HashSet<H160>,
-) -> Vec<Order> {
+fn filter_duplicate_cow_amm_orders(mut orders: Vec<Order>, cow_amms: &HashSet<H160>) -> Vec<Order> {
     let mut amm_orders = HashMap::<H160, Vec<&Order>>::new();
     for order in &orders {
         let owner = order.metadata.owner;
-        if cow_amm_contracts.contains(&owner) {
+        if cow_amms.contains(&owner) {
             amm_orders.entry(owner).or_default().push(order);
         }
     }
@@ -564,8 +561,7 @@ fn filter_duplicate_cow_amm_orders(
         .collect();
 
     orders.retain(|o| {
-        !cow_amm_contracts.contains(&o.metadata.owner)
-            || canonical_amm_orders.contains(&o.metadata.uid)
+        !cow_amms.contains(&o.metadata.owner) || canonical_amm_orders.contains(&o.metadata.uid)
     });
     orders
 }
