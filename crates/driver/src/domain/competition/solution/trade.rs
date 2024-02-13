@@ -239,8 +239,8 @@ impl Fulfillment {
     /// The surplus token is a buy token for a sell order and a sell token for a
     /// buy order.
     ///
-    /// The surplus is defined as the improvement of price, i.e. the difference
-    /// between the executed price and the order limit price.
+    /// The surplus is defined as the difference between the executed price and
+    /// the order limit price.
     pub fn surplus(&self, prices: ClearingPrices) -> Result<eth::Asset, Error> {
         let limit_sell = self.order().sell.amount;
         let limit_buy = self.order().buy.amount;
