@@ -38,13 +38,12 @@ pub struct Solution {
     prices: HashMap<eth::TokenAddress, eth::U256>,
     interactions: Vec<Interaction>,
     solver: Solver,
-    score: SolverScore, // todo remove
+    score: SolverScore, // todo CIP38 remove
     score_cip38: SolverScoreCIP38,
     weth: eth::WethAddress,
 }
 
 impl Solution {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
         trades: Vec<Trade>,
@@ -60,7 +59,10 @@ impl Solution {
                 for trade in trades.iter() {
                     match trade.score(&prices, weth) {
                         Ok(score) => surplus.push(score),
-                        Err(err) => return Err(SolutionError::Scoring(err)),
+                        Err(_err) => {
+                            // todo CIP38 enable
+                            // return Err(SolutionError::Scoring(err))
+                        }
                     }
                 }
                 surplus
@@ -301,7 +303,7 @@ pub enum SolverScore {
 
 #[derive(Debug, Clone)]
 pub struct SolverScoreCIP38 {
-    // todo rename to SolverScore
+    // todo CIP38 rename to SolverScore
     pub surplus: Vec<eth::Asset>,
 }
 
