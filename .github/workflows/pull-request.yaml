@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -45,6 +46,7 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - run: cargo build --tests
@@ -60,6 +62,7 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
@@ -82,6 +85,7 @@ jobs:
       TOML_TRACE_ERROR: 1      
     steps:
       - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
@@ -109,6 +113,7 @@ jobs:
       TOML_TRACE_ERROR: 1
     steps:
       - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
@@ -132,6 +137,7 @@ jobs:
       TOML_TRACE_ERROR: 1      
     steps:
       - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
