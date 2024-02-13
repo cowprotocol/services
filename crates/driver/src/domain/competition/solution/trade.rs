@@ -22,7 +22,7 @@ impl Trade {
         &self,
         prices: &HashMap<eth::TokenAddress, eth::U256>,
         weth: eth::WethAddress,
-    ) -> Option<eth::Asset> {
+    ) -> Result<eth::Asset, Error> {
         match self {
             Self::Fulfillment(fulfillment) => {
                 let prices = ClearingPrices {
@@ -30,9 +30,13 @@ impl Trade {
                     buy: prices[&fulfillment.order().buy.token.wrap(weth)],
                 };
 
-                fulfillment.surplus(prices).ok()
+                fulfillment.surplus(prices)
             }
-            Self::Jit(_) => None,
+            // JIT orders have a zero score
+            Self::Jit(jit) => Ok(eth::Asset {
+                token: jit.order().sell.token,
+                amount: 0.into(),
+            }),
         }
     }
 }

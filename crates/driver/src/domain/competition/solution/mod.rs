@@ -55,18 +55,17 @@ impl Solution {
         weth: eth::WethAddress,
     ) -> Result<Self, SolutionError> {
         let new_score = SolverScoreNew {
-            surplus: trades.iter().fold(vec![], |mut acc, trade| {
-                match trade.score(&prices, weth) {
-                    Some(score) => {
-                        acc.push(score);
-                        acc
+            surplus: {
+                let mut surplus = vec![];
+                for trade in trades.iter() {
+                    match trade.score(&prices, weth) {
+                        Ok(score) => surplus.push(score),
+                        Err(err) => return Err(SolutionError::Scoring(err)),
                     }
-                    None => acc,
                 }
-            }),
+                surplus
+            },
         };
-
-        println!("new_score: {:?}", new_score);
 
         let solution = Self {
             id,
@@ -347,6 +346,8 @@ pub enum Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SolutionError {
+    #[error("scoring failed: {0:?}")]
+    Scoring(#[from] crate::domain::competition::solution::trade::Error),
     #[error("invalid clearing prices")]
     InvalidClearingPrices,
     #[error(transparent)]
