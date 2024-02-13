@@ -1,10 +1,6 @@
 use {
     crate::{
-        liquidity::{
-            order_converter::OrderConverter,
-            LimitOrder,
-            Liquidity,
-        },
+        liquidity::Liquidity,
         settlement::Settlement,
     },
     anyhow::{anyhow, Context, Result},
@@ -28,7 +24,6 @@ use {
 
 mod baseline_solver;
 pub mod naive_solver;
-pub mod single_order_solver;
 
 /// Interface that all solvers must implement.
 ///
@@ -336,30 +331,6 @@ impl Solver for DummySolver {
 #[cfg(test)]
 pub fn dummy_arc_solver() -> Arc<dyn Solver> {
     Arc::new(DummySolver)
-}
-
-fn balance_and_convert_orders(
-    ethflow_contract: Option<H160>,
-    converter: &OrderConverter,
-    mut balances: HashMap<account_balances::Query, U256>,
-    orders: Vec<Order>,
-    external_prices: &ExternalPrices,
-) -> Vec<LimitOrder> {
-    crate::order_balance_filter::balance_orders(
-        orders,
-        &mut balances,
-        ethflow_contract,
-        external_prices,
-    )
-    .into_iter()
-    .filter_map(|order| match converter.normalize_limit_order(order) {
-        Ok(order) => Some(order),
-        Err(err) => {
-            tracing::debug!(?err, "error normalizing limit order");
-            None
-        }
-    })
-    .collect()
 }
 
 #[cfg(test)]
