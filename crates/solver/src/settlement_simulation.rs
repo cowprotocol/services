@@ -10,7 +10,7 @@ use {
     },
     gas_estimation::GasPrice1559,
     itertools::Itertools,
-    primitive_types::{H160, U256},
+    primitive_types::U256,
     shared::{
         conversions::into_gas_price,
         encoded_settlement::EncodedSettlement,
@@ -51,7 +51,7 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     Ok(results)
 }
 
-pub fn settle_method(
+fn settle_method(
     gas_price: GasPrice1559,
     contract: &GPv2Settlement,
     settlement: EncodedSettlement,
@@ -73,19 +73,6 @@ pub fn settle_method_builder(
             settlement.interactions,
         )
         .from(from)
-}
-
-/// The call data of a settle call with this settlement.
-pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
-    let contract = GPv2Settlement::at(&ethrpc::dummy::web3(), H160::default());
-    let method = contract.settle(
-        settlement.tokens,
-        settlement.clearing_prices,
-        settlement.trades,
-        settlement.interactions,
-    );
-    // Unwrap because there should always be calldata.
-    method.tx.data.unwrap().0
 }
 
 // Creates a simulation link in the gp-v2 tenderly workspace
@@ -230,12 +217,5 @@ mod tests {
         .await
         .unwrap();
         let _ = dbg!(result);
-    }
-
-    #[test]
-    fn calldata_works() {
-        let settlement = EncodedSettlement::default();
-        let data = call_data(settlement);
-        assert!(!data.is_empty());
     }
 }
