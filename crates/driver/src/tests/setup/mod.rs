@@ -3,7 +3,11 @@
 use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver as SolverInstance},
     crate::{
-        domain::{competition::order, eth, time},
+        domain::{
+            competition::{order, order::FeePolicy},
+            eth,
+            time,
+        },
         infra::{
             self,
             config::file::{default_http_time_buffer, default_solving_share_of_deadline},
@@ -81,8 +85,8 @@ impl Default for Score {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrderQuote {
-    sell_amount: eth::U256,
-    buy_amount: eth::U256,
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +122,7 @@ pub struct Order {
     /// order? True by default.
     pub funded: bool,
     pub precalculated_quote: Option<OrderQuote>,
+    pub fee_policy: Option<FeePolicy>,
 }
 
 impl Order {
@@ -207,8 +212,15 @@ impl Order {
         }
     }
 
+    pub fn fee_policy(self, fee_policy: FeePolicy) -> Self {
+        Self {
+            fee_policy: Some(fee_policy),
+            ..self
+        }
+    }
+
     #[allow(dead_code)]
-    fn quote(self, quote: OrderQuote) -> Self {
+    pub fn quote(self, quote: OrderQuote) -> Self {
         Self {
             precalculated_quote: Some(quote),
             ..self
@@ -242,6 +254,7 @@ impl Default for Order {
             filtered: Default::default(),
             funded: true,
             precalculated_quote: Default::default(),
+            fee_policy: Default::default(),
         }
     }
 }

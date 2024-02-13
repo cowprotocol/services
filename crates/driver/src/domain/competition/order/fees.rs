@@ -1,6 +1,6 @@
 use crate::domain::eth;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FeePolicy {
     /// If the order receives more than limit price, take the protocol fee as a
     /// percentage of the difference. The fee is taken in `sell` token for
@@ -46,7 +46,7 @@ pub enum FeePolicy {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Quote {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
