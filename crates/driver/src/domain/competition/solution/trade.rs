@@ -246,15 +246,12 @@ impl Fulfillment {
         let limit_buy = self.order().buy.amount;
 
         self.surplus_over_reference_price(limit_sell, limit_buy, prices)
-            .map(|surplus| match self.order().side {
-                Side::Buy => eth::Asset {
-                    token: self.order().sell.token,
-                    amount: surplus.into(),
+            .map(|surplus| eth::Asset {
+                token: match self.order().side {
+                    Side::Sell => self.order().buy.token,
+                    Side::Buy => self.order().sell.token,
                 },
-                Side::Sell => eth::Asset {
-                    token: self.order().buy.token,
-                    amount: surplus.into(),
-                },
+                amount: surplus.into(),
             })
     }
 
