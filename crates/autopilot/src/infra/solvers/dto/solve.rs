@@ -1,12 +1,57 @@
 use {
-    crate::{boundary, infra::persistence::dto::order::Order},
+    crate::{
+        boundary,
+        domain,
+        infra::persistence::{dto, dto::order::Order},
+    },
     chrono::{DateTime, Utc},
+    itertools::Itertools,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
-    std::collections::HashMap,
+    std::{
+        collections::{HashMap, HashSet},
+        time::Duration,
+    },
 };
+
+impl Request {
+    pub fn new(
+        id: domain::AuctionId,
+        auction: &domain::Auction,
+        trusted_tokens: &HashSet<H160>,
+        score_cap: U256,
+        time_limit: Duration,
+    ) -> Self {
+        Self {
+            id,
+            orders: auction
+                .orders
+                .clone()
+                .into_iter()
+                .map(dto::order::from_domain)
+                .collect(),
+            tokens: auction
+                .prices
+                .iter()
+                .map(|(address, price)| Token {
+                    address: address.to_owned(),
+                    price: Some(price.to_owned()),
+                    trusted: trusted_tokens.contains(address),
+                })
+                .chain(trusted_tokens.iter().map(|&address| Token {
+                    address,
+                    price: None,
+                    trusted: true,
+                }))
+                .unique_by(|token| token.address)
+                .collect(),
+            deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
+            score_cap,
+        }
+    }
+}
 
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]

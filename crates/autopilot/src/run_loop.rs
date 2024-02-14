@@ -4,7 +4,6 @@ use {
         domain::{self, auction::order::Class, OrderUid},
         infra::{
             self,
-            persistence::dto,
             solvers::dto::{reveal, settle, solve},
         },
         run::Liveness,
@@ -12,9 +11,7 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
-    chrono::Utc,
     database::order_events::OrderEventLabel,
-    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -307,7 +304,7 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let request = solve_request(
+        let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
@@ -470,41 +467,6 @@ impl RunLoop {
         }
 
         auction
-    }
-}
-
-pub fn solve_request(
-    id: domain::AuctionId,
-    auction: &domain::Auction,
-    trusted_tokens: &HashSet<H160>,
-    score_cap: U256,
-    time_limit: Duration,
-) -> solve::Request {
-    solve::Request {
-        id,
-        orders: auction
-            .orders
-            .clone()
-            .into_iter()
-            .map(dto::order::from_domain)
-            .collect(),
-        tokens: auction
-            .prices
-            .iter()
-            .map(|(address, price)| solve::Token {
-                address: address.to_owned(),
-                price: Some(price.to_owned()),
-                trusted: trusted_tokens.contains(address),
-            })
-            .chain(trusted_tokens.iter().map(|&address| solve::Token {
-                address,
-                price: None,
-                trusted: true,
-            }))
-            .unique_by(|token| token.address)
-            .collect(),
-        deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-        score_cap,
     }
 }
 
