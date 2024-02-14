@@ -9,7 +9,7 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn protocol_fee() {
-    for side in [/* order::Side::Buy, */ order::Side::Sell] {
+    for side in [order::Side::Buy, order::Side::Sell] {
         for fee_policy in [
             FeePolicy::Surplus {
                 factor: 0.5,
@@ -22,31 +22,29 @@ async fn protocol_fee() {
                 max_volume_factor: 0.1,
             },
         ] {
+            let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
+            let quote = OrderQuote {
+                sell_amount: to_wei(10),
+                buy_amount: eth::U256::from(8975447849413476402u128),
+            };
             let order = Order {
-                    sell_amount: to_wei(10),
-                    ..ab_order()
-                }
+                sell_amount: to_wei(10),
+                ..ab_order()
+            }
                 .kind(order::Kind::Limit)
                 .side(side)
                 .no_surplus()
-                // .solver_fee(Some(10000000000000000000u128.into()))
-                .solver_fee(Some(0u128.into()))
-                .fee_policy(fee_policy.clone());
-            let quote = match order.side {
-                order::Side::Sell => OrderQuote {
-                    sell_amount: to_wei(10),
-                    buy_amount: to_wei(9),
-                },
-                order::Side::Buy => panic!("buy is not supported"),
-            };
+                .solver_fee(Some(1000000000000000000u128.into()))
+                .fee_policy(fee_policy)
+                .quote(quote);
             let pool = Pool {
                 amount_a: to_wei(100),
+                amount_b: to_wei(99),
                 ..ab_pool()
             };
-            let pool = adjust_pool_reserve_b(pool, &quote);
-            let order = order.quote(quote);
+            // let pool = adjust_pool_reserve_b(pool, &quote);
             let test = tests::setup()
-                .name(format!("Protocol Fee: {side:?} {fee_policy:?}"))
+                .name(test_name)
                 .pool(pool)
                 .order(order)
                 .solution(ab_solution())
