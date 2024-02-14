@@ -2,7 +2,7 @@ use crate::{
     domain::{competition::order, eth},
     tests::{
         self,
-        setup::{ab_order, ab_pool, ab_solution, FeePolicy, Order, OrderQuote, Pool},
+        setup::{ab_order, ab_pool, ab_solution, FeePolicy, OrderQuote, Pool},
     },
 };
 
@@ -24,28 +24,19 @@ async fn protocol_fee() {
         ] {
             let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
             let quote = OrderQuote {
-                sell_amount: to_wei(10),
-                buy_amount: eth::U256::from(8975447849413476402u128),
+                sell_amount: to_wei(50),
+                buy_amount: eth::U256::from(2989509729399894152u128),
             };
-            let order = Order {
-                sell_amount: to_wei(10),
-                ..ab_order()
-            }
+            let order = ab_order()
                 .kind(order::Kind::Limit)
                 .side(side)
                 .no_surplus()
-                .solver_fee(Some(1000000000000000000u128.into()))
+                .solver_fee(Some(10000000000000000000u128.into()))
                 .fee_policy(fee_policy)
                 .quote(quote);
-            let pool = Pool {
-                amount_a: to_wei(100),
-                amount_b: to_wei(99),
-                ..ab_pool()
-            };
-            // let pool = adjust_pool_reserve_b(pool, &quote);
             let test = tests::setup()
                 .name(test_name)
-                .pool(pool)
+                .pool(ab_pool())
                 .order(order)
                 .solution(ab_solution())
                 .done()
