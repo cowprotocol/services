@@ -43,7 +43,6 @@ use {
     sqlx::PgConnection,
     std::sync::Arc,
     tokio::sync::Notify,
-    web3::types::Transaction,
 };
 
 pub struct OnSettlementEventUpdater {

@@ -6,8 +6,8 @@ use {
 
 pub mod encoded;
 pub mod event;
-pub mod transaction;
 pub mod observation;
+pub mod transaction;
 
 pub use {encoded::Encoded, event::Event, transaction::Transaction};
 
