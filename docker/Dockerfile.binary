@@ -14,7 +14,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solver / && \
     cp target/release/solvers / && \
     cp -r database/sql /sql && \
     cp -r database/flyway.conf /flyway.conf
@@ -45,10 +44,6 @@ FROM intermediate as refunder
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
 ENTRYPOINT [ "refunder" ]
 
-FROM intermediate as solver
-COPY --from=cargo-build /solver /usr/local/bin/solver
-ENTRYPOINT [ "solver" ]
-
 FROM intermediate as solvers
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 ENTRYPOINT [ "solvers" ]
@@ -65,7 +60,6 @@ COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
 COPY --from=cargo-build /driver /usr/local/bin/driver
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
-COPY --from=cargo-build /solver /usr/local/bin/solver
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 
 CMD echo "Specify binary..."
