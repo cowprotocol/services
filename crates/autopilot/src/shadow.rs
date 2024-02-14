@@ -10,11 +10,10 @@
 use {
     crate::{
         domain::{self, auction::order::Class},
-        driver_model::{
-            reveal,
-            solve::{self},
+        infra::{
+            self,
+            solvers::dto::{reveal, solve},
         },
-        infra,
         run::Liveness,
         run_loop::{self, observe},
     },

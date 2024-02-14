@@ -2,12 +2,11 @@ use {
     crate::{
         database::competition::Competition,
         domain::{self, auction::order::Class, OrderUid},
-        driver_model::{
-            reveal::{self, Request},
-            settle,
-            solve::{self, TradedAmounts},
+        infra::{
+            self,
+            persistence::dto,
+            solvers::dto::{reveal, settle, solve},
         },
-        infra::{self, persistence::dto},
         run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
@@ -399,7 +398,7 @@ impl RunLoop {
         solution_id: u64,
     ) -> Result<reveal::Response, RevealError> {
         let response = driver
-            .reveal(&Request { solution_id })
+            .reveal(&reveal::Request { solution_id })
             .await
             .map_err(RevealError::Failure)?;
         if !response
@@ -526,7 +525,7 @@ struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
-    orders: HashMap<domain::OrderUid, TradedAmounts>,
+    orders: HashMap<domain::OrderUid, solve::TradedAmounts>,
     clearing_prices: HashMap<H160, U256>,
 }
 
@@ -535,7 +534,7 @@ impl Solution {
         self.orders.keys()
     }
 
-    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedAmounts> {
+    pub fn orders(&self) -> &HashMap<domain::OrderUid, solve::TradedAmounts> {
         &self.orders
     }
 }
