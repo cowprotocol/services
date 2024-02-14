@@ -35,7 +35,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: docker/Dockerfile.binary
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta_services.outputs.tags }}
           labels: ${{ steps.meta_services.outputs.labels }}
@@ -51,7 +51,8 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: docker/Dockerfile.migration
+          file: Dockerfile
+          target: migrations
           push: true
           tags: ${{ steps.meta_migration.outputs.tags }}
           labels: ${{ steps.meta_migration.outputs.labels }}
