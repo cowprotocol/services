@@ -42,17 +42,6 @@ services:
     ports:
       - 5432:5432
 
-  db-migrations:
-    build:
-      context: ../
-      target: migrations
-      dockerfile: ./docker/Dockerfile.binary
-    restart: on-failure
-    environment:
-      - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-    depends_on:
-      - db
-
   adminer:
     image: adminer
     restart: always
@@ -61,11 +50,22 @@ services:
     depends_on:
       - db
 
+  db-migrations:
+    build:
+      context: ../
+      target: migrations
+      dockerfile: ./Dockerfile
+    restart: on-failure
+    environment:
+      - FLYWAY_URL=jdbc:postgresql://db/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
+    depends_on:
+      - db
+
   orderbook:
     build:
       context: ../
       target: orderbook
-      dockerfile: ./docker/Dockerfile.binary
+      dockerfile: ./Dockerfile
     restart: always
     environment:
       - NODE_URL=http://chain:8545
@@ -94,7 +94,7 @@ services:
     build:
       context: ../
       target: autopilot
-      dockerfile: ./docker/Dockerfile.binary
+      dockerfile: ./Dockerfile
     restart: always
     environment:
       - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
@@ -122,7 +122,7 @@ services:
     build:
       context: ../
       target: driver
-      dockerfile: ./docker/Dockerfile.binary
+      dockerfile: ./Dockerfile
     restart: always
     command: --config /driver.toml
     environment:
@@ -138,7 +138,7 @@ services:
     build:
       context: ../
       target: solvers
-      dockerfile: ./docker/Dockerfile.binary
+      dockerfile: ./Dockerfile
     restart: always
     command: baseline --config /baseline.toml
     environment:
