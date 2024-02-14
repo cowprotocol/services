@@ -2,7 +2,7 @@ use crate::{
     domain::{competition::order, eth},
     tests::{
         self,
-        setup::{ab_order, ab_pool, ab_solution, FeePolicy, OrderQuote, Pool},
+        setup::{ab_order, ab_pool, ab_solution, FeePolicy, Order, OrderQuote, Pool},
     },
 };
 
@@ -22,22 +22,28 @@ async fn protocol_fee() {
                 max_volume_factor: 0.1,
             },
         ] {
-            let order = ab_order()
+            let order = Order {
+                    sell_amount: to_wei(10),
+                    ..ab_order()
+                }
                 .kind(order::Kind::Limit)
                 .side(side)
-                .solver_fee(Some(10000000000000000000u128.into()))
+                .no_surplus()
+                // .solver_fee(Some(10000000000000000000u128.into()))
+                .solver_fee(Some(0u128.into()))
                 .fee_policy(fee_policy.clone());
             let quote = match order.side {
                 order::Side::Sell => OrderQuote {
-                    sell_amount: order.sell_amount,
-                    buy_amount: order.sell_amount.checked_div(eth::U256::from(2)).unwrap(),
+                    sell_amount: to_wei(10),
+                    buy_amount: to_wei(9),
                 },
-                order::Side::Buy => OrderQuote {
-                    sell_amount: order.sell_amount.checked_mul(eth::U256::from(2)).unwrap(),
-                    buy_amount: order.sell_amount,
-                },
+                order::Side::Buy => panic!("buy is not supported"),
             };
-            let pool = adjust_pool_reserve_b(ab_pool(), &quote);
+            let pool = Pool {
+                amount_a: to_wei(100),
+                ..ab_pool()
+            };
+            let pool = adjust_pool_reserve_b(pool, &quote);
             let order = order.quote(quote);
             let test = tests::setup()
                 .name(format!("Protocol Fee: {side:?} {fee_policy:?}"))
