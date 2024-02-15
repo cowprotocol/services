@@ -51,11 +51,19 @@ pub struct Interaction {
     pub internalize: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LiquidityProvider {
+    Amm,
+    #[allow(dead_code)]
+    Private,
+}
+
 /// A uniswap pool deployed as part of the blockchain setup.
 #[derive(Debug, Clone, Copy)]
 pub struct Pool {
     pub reserve_a: Asset,
     pub reserve_b: Asset,
+    pub liquidity_provider: LiquidityProvider,
 }
 
 impl Pool {

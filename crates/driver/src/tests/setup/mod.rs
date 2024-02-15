@@ -21,7 +21,7 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
-            setup::blockchain::Blockchain,
+            setup::blockchain::{Blockchain, LiquidityProvider},
         },
         util::{self, serialize},
     },
@@ -355,6 +355,7 @@ pub struct Pool {
     pub token_b: &'static str,
     pub amount_a: eth::U256,
     pub amount_b: eth::U256,
+    pub liquidity_provider: LiquidityProvider,
 }
 
 #[derive(Debug)]
@@ -488,6 +489,7 @@ pub fn ab_pool() -> Pool {
         token_b: "B",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -527,6 +529,7 @@ pub fn cd_pool() -> Pool {
         token_b: "D",
         amount_a: DEFAULT_POOL_AMOUNT_C.into(),
         amount_b: DEFAULT_POOL_AMOUNT_D.into(),
+        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -559,6 +562,7 @@ pub fn weth_pool() -> Pool {
         token_b: "WETH",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -603,6 +607,7 @@ impl Setup {
                 token: pool.token_b,
                 amount: pool.amount_b,
             },
+            liquidity_provider: pool.liquidity_provider,
         });
         self
     }
