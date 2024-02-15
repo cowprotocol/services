@@ -40,7 +40,7 @@ use {
     web3::types::TransactionId,
 };
 
-mod blockchain;
+pub mod blockchain;
 mod driver;
 mod solver;
 
@@ -1015,6 +1015,49 @@ impl<'a> SolveOk<'a> {
         }
         self
     }
+
+    pub fn expected_orders(self, expected_orders: &[ExpectedOrder]) -> Self {
+        let solution = self.solution();
+        assert!(solution.get("orders").is_some());
+        let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
+            solution.get("orders").unwrap().clone(),
+        )
+        .unwrap();
+
+        for (expected, fulfillment) in expected_orders.iter().map(|expected_order| {
+            let fulfillment = self
+                .fulfillments
+                .iter()
+                .find(|f| f.quoted_order.order.name == expected_order.name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "unexpected orders {expected_orders:?}: fulfillment not found in {:?}",
+                        self.fulfillments,
+                    )
+                });
+            (expected_order, fulfillment)
+        }) {
+            let uid = fulfillment.quoted_order.order_uid(self.blockchain);
+            let trade = trades
+                .get(&uid.to_string())
+                .expect("Didn't find expected trade in solution");
+            let u256 = |value: &serde_json::Value| {
+                eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
+            };
+            tracing::info!("newlog expected={:?}", expected);
+            tracing::info!(
+                "newlog actual_buy={:?}",
+                u256(trade.get("buyAmount").unwrap())
+            );
+            tracing::info!(
+                "newlog actual_sell={:?}",
+                u256(trade.get("sellAmount").unwrap())
+            );
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected.executed_buy_amount);
+            assert!(u256(trade.get("sellAmount").unwrap()) == expected.executed_sell_amount);
+        }
+        self
+    }
 }
 
 /// A /reveal response.
@@ -1029,6 +1072,13 @@ impl Reveal {
         assert_eq!(self.status, hyper::StatusCode::OK);
         RevealOk { body: self.body }
     }
+}
+
+#[derive(Debug)]
+pub struct ExpectedOrder {
+    pub name: &'static str,
+    pub executed_sell_amount: eth::U256,
+    pub executed_buy_amount: eth::U256,
 }
 
 pub struct RevealOk {

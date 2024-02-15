@@ -1,83 +1,151 @@
 use crate::{
-    domain::{competition::order, eth},
+    domain::competition::order,
     tests::{
         self,
-        setup::{ab_order, ab_pool, ab_solution, FeePolicy, OrderQuote, Pool},
+        setup::{ab_order, ab_pool, ab_solution, ExpectedOrder, FeePolicy, OrderQuote},
     },
 };
 
 #[tokio::test]
 #[ignore]
-async fn protocol_fee() {
-    for side in [order::Side::Buy, order::Side::Sell] {
-        for fee_policy in [
-            FeePolicy::Surplus {
-                factor: 0.5,
-                // high enough so we don't get capped by volume fee
-                max_volume_factor: 1.0,
-            },
-            FeePolicy::Surplus {
-                factor: 0.5,
-                // low enough so we get capped by volume fee
-                max_volume_factor: 0.1,
-            },
-        ] {
-            let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-            let quote = OrderQuote {
-                sell_amount: to_wei(50),
-                buy_amount: eth::U256::from(2989509729399894152u128),
-            };
-            let order = ab_order()
-                .kind(order::Kind::Limit)
-                .side(side)
-                .no_surplus()
-                .solver_fee(Some(10000000000000000000u128.into()))
-                .fee_policy(fee_policy)
-                .quote(quote);
-            let test = tests::setup()
-                .name(test_name)
-                .pool(ab_pool())
-                .order(order)
-                .solution(ab_solution())
-                .done()
-                .await;
+async fn surplus_protocol_fee_buy_order_not_capped() {
+    let side = order::Side::Buy;
+    let fee_policy = FeePolicy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
+    };
+    let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
+    let quote = OrderQuote {
+        sell_amount: 500000000000000000000u128.into(),
+        buy_amount: 2989509729399894152u128.into(),
+    };
+    let order = ab_order()
+        .kind(order::Kind::Limit)
+        .side(side)
+        .solver_fee(Some(10000000000000000000u128.into()))
+        .fee_policy(fee_policy)
+        .quote(quote);
+    let test = tests::setup()
+        .name(test_name)
+        .pool(ab_pool())
+        .order(order)
+        .solution(ab_solution())
+        .done()
+        .await;
+    let expected = ExpectedOrder {
+        name: ab_order().name,
+        executed_sell_amount: 1000000000000000000000u128.into(),
+        executed_buy_amount: 2989509729399894152u128.into(),
+    };
 
-            test.solve().await.ok().orders(&[ab_order().name]);
-        }
-    }
+    test.solve().await.ok().expected_orders(&[expected]);
 }
 
 #[tokio::test]
 #[ignore]
-async fn test_adjust_pool_reserve_b() {
-    let pool = Pool {
-        amount_a: to_wei(100),
-        ..ab_pool()
+async fn surplus_protocol_fee_sell_order_not_capped() {
+    let side = order::Side::Buy;
+    let fee_policy = FeePolicy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
     };
+    let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = OrderQuote {
-        sell_amount: to_wei(10),
-        buy_amount: to_wei(9),
+        sell_amount: 50000000000000000000u128.into(),
+        buy_amount: 2989509729399894152u128.into(),
+    };
+    let order = ab_order()
+        .kind(order::Kind::Limit)
+        .side(side)
+        .solver_fee(Some(10000000000000000000u128.into()))
+        .fee_policy(fee_policy)
+        .quote(quote);
+    let test = tests::setup()
+        .name(test_name)
+        .pool(ab_pool())
+        .order(order)
+        .solution(ab_solution())
+        .done()
+        .await;
+    let expected = ExpectedOrder {
+        name: ab_order().name,
+        executed_sell_amount: 100000000000000000000u128.into(),
+        executed_buy_amount: 2989509729399894152u128.into(),
     };
 
-    let pool = adjust_pool_reserve_b(pool, &quote);
-
-    assert_eq!(pool.amount_b, to_wei(99));
-    assert_eq!(pool.amount_a, to_wei(100));
+    test.solve().await.ok().expected_orders(&[expected]);
 }
 
-fn adjust_pool_reserve_b(pool: Pool, quote: &OrderQuote) -> Pool {
-    let reserve_a_plus_sell = pool.amount_a.checked_add(quote.sell_amount).unwrap();
-    let reserve_b = reserve_a_plus_sell
-        .checked_mul(quote.buy_amount)
-        .unwrap()
-        .checked_div(quote.sell_amount)
-        .unwrap();
-    Pool {
-        amount_b: reserve_b,
-        ..pool
-    }
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_buy_order_capped() {
+    let side = order::Side::Sell;
+    let fee_policy = FeePolicy::Surplus {
+        factor: 0.5,
+        // low enough so we get capped by volume fee
+        max_volume_factor: 0.1,
+    };
+    let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
+    let quote = OrderQuote {
+        sell_amount: 50000000000000000000u128.into(),
+        buy_amount: 2989509729399894152u128.into(),
+    };
+    let order = ab_order()
+        .kind(order::Kind::Limit)
+        .side(side)
+        .solver_fee(Some(10000000000000000000u128.into()))
+        .fee_policy(fee_policy)
+        .quote(quote);
+    let test = tests::setup()
+        .name(test_name)
+        .pool(ab_pool())
+        .order(order)
+        .solution(ab_solution())
+        .done()
+        .await;
+    let expected = ExpectedOrder {
+        name: ab_order().name,
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 2615821013224907383u128.into(),
+    };
+
+    test.solve().await.ok().expected_orders(&[expected]);
 }
 
-fn to_wei(base: u32) -> eth::U256 {
-    eth::U256::from(base) * eth::U256::exp10(18)
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_sell_order_capped() {
+    let side = order::Side::Sell;
+    let fee_policy = FeePolicy::Surplus {
+        factor: 0.5,
+        // low enough so we get capped by volume fee
+        max_volume_factor: 0.1,
+    };
+    let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
+    let quote = OrderQuote {
+        sell_amount: 50000000000000000000u128.into(),
+        buy_amount: 2989509729399894152u128.into(),
+    };
+    let order = ab_order()
+        .kind(order::Kind::Limit)
+        .side(side)
+        .solver_fee(Some(10000000000000000000u128.into()))
+        .fee_policy(fee_policy)
+        .quote(quote);
+    let test = tests::setup()
+        .name(test_name)
+        .pool(ab_pool())
+        .order(order)
+        .solution(ab_solution())
+        .done()
+        .await;
+    let expected = ExpectedOrder {
+        name: ab_order().name,
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 2615821013224907383u128.into(),
+    };
+
+    test.solve().await.ok().expected_orders(&[expected]);
 }
