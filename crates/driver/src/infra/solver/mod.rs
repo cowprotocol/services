@@ -16,8 +16,8 @@ use {
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
-    reqwest::header::HeaderValue,
-
+    reqwest::header::HeaderName,
+    std::collections::HashMap
 };
 
 pub mod dto;
@@ -100,7 +100,7 @@ pub struct Config {
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
     //Authorization Header for requests
-    pub authorization: Option<String>
+    pub request_headers: HashMap<String, String>
 }
 
 impl Solver {
@@ -111,9 +111,11 @@ impl Solver {
             "application/json".parse().unwrap(),
         );
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
-        // TODO(#907) Also add an auth header
-        if let Some(ref auth_token) = config.authorization {
-            headers.insert(reqwest::header::AUTHORIZATION, HeaderValue::try_from(auth_token).unwrap());
+
+        for (key, val) in config.request_headers.iter() {
+            if let Ok(header_name) = HeaderName::try_from(key) {
+                headers.insert(header_name, val.parse().unwrap());
+            }
         }
 
         Self {

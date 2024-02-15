@@ -6,6 +6,7 @@ use {
     serde_with::serde_as,
     solver::solver::Arn,
     std::time::Duration,
+    std::collections::HashMap
 };
 
 mod load;
@@ -50,7 +51,6 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
-
 }
 
 #[serde_as]
@@ -182,7 +182,8 @@ struct SolverConfig {
     #[serde(default, flatten)]
     timeouts: Timeouts,
 
-    authorization: Option<String>
+    #[serde(default)]
+    request_headers: HashMap<String, String>
 }
 
 #[serde_as]
