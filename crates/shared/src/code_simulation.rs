@@ -24,6 +24,7 @@ pub trait CodeSimulating: Send + Sync + 'static {
         &self,
         call: CallRequest,
         overrides: StateOverrides,
+        block: Option<u64>,
     ) -> Result<Vec<u8>, SimulationError>;
 }
 
@@ -63,10 +64,14 @@ impl CodeSimulating for Web3 {
         &self,
         call: CallRequest,
         overrides: StateOverrides,
+        block: Option<u64>,
     ) -> Result<Vec<u8>, SimulationError> {
+        let block = block
+            .map(|b| BlockNumber::Number(b.into()))
+            .unwrap_or(BlockNumber::Latest);
         Ok(self
             .eth()
-            .call_with_state_overrides(call, BlockNumber::Latest.into(), overrides)
+            .call_with_state_overrides(call, block.into(), overrides)
             .await?
             .0)
     }
@@ -101,6 +106,46 @@ impl TenderlyCodeSimulator {
         };
         self
     }
+
+    fn prepare_request(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+        block: Option<u64>,
+    ) -> Result<SimulationRequest> {
+        Ok(SimulationRequest {
+            block_number: block,
+            network_id: self.network_id.clone(),
+            from: call.from.unwrap_or_default(),
+            to: call.to.unwrap_or_default(),
+            input: call.data.unwrap_or_default().0,
+            gas: call.gas.map(|g| g.as_u64()),
+            gas_price: call.gas_price.map(|p| p.as_u64()),
+            value: call.value,
+            simulation_kind: Some(SimulationKind::Quick),
+            state_objects: Some(
+                overrides
+                    .into_iter()
+                    .map(|(key, value)| Ok((key, value.try_into()?)))
+                    .collect::<Result<_>>()?,
+            ),
+            ..Default::default()
+        })
+    }
+
+    pub fn log_simulation_command(
+        &self,
+        call: CallRequest,
+        overrides: StateOverrides,
+        block: Option<u64>,
+    ) -> Result<()> {
+        let request = SimulationRequest {
+            save: Some(true),
+            save_if_fails: Some(true),
+            ..self.prepare_request(call, overrides, block)?
+        };
+        self.tenderly.log(request)
+    }
 }
 
 #[async_trait::async_trait]
@@ -109,27 +154,14 @@ impl CodeSimulating for TenderlyCodeSimulator {
         &self,
         call: CallRequest,
         overrides: StateOverrides,
+        block: Option<u64>,
     ) -> Result<Vec<u8>, SimulationError> {
         let result = self
             .tenderly
             .simulate(SimulationRequest {
-                network_id: self.network_id.clone(),
-                from: call.from.unwrap_or_default(),
-                to: call.to.unwrap_or_default(),
-                input: call.data.unwrap_or_default().0,
-                gas: call.gas.map(|g| g.as_u64()),
-                gas_price: call.gas_price.map(|p| p.as_u64()),
-                value: call.value,
-                simulation_kind: Some(SimulationKind::Quick),
-                state_objects: Some(
-                    overrides
-                        .into_iter()
-                        .map(|(key, value)| Ok((key, value.try_into()?)))
-                        .collect::<Result<_>>()?,
-                ),
                 save: Some(self.save.on_success),
                 save_if_fails: Some(self.save.on_failure),
-                ..Default::default()
+                ..self.prepare_request(call, overrides, block)?
             })
             .await?;
 
@@ -209,17 +241,15 @@ impl CodeSimulating for Web3ThenTenderly {
         &self,
         call: CallRequest,
         overrides: StateOverrides,
+        block: Option<u64>,
     ) -> Result<Vec<u8>, SimulationError> {
-        let result = self.web3.simulate(call.clone(), overrides.clone()).await;
+        let result = self
+            .web3
+            .simulate(call.clone(), overrides.clone(), block)
+            .await;
 
-        // Spawn a background thread to simulate on Tenderly. This allows us:
-        // 1. To return right away with the result form the Web3 simulator
-        // 2. Still simulate and save the simulation on Tenderly for debugging purposes.
-        if let Err(err) = &result {
-            tracing::warn!(?err, "web3 code simulation failed, fallback to Tenderly");
-
-            let tenderly = self.tenderly.clone();
-            tokio::spawn(async move { tenderly.simulate(call, overrides).await });
+        if let Err(err) = self.tenderly.log_simulation_command(call, overrides, block) {
+            tracing::debug!(?err, "could not log tenderly simulation command");
         }
 
         result
@@ -279,6 +309,7 @@ mod tests {
                             ..Default::default()
                         },
                     },
+                    None,
                 )
                 .await
                 .unwrap();
@@ -322,6 +353,7 @@ mod tests {
                             ..Default::default()
                         },
                     },
+                    None,
                 )
                 .await;
 
@@ -365,6 +397,7 @@ mod tests {
                         ..Default::default()
                     },
                 },
+                None,
             )
             .await;
 

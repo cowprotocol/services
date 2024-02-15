@@ -1,169 +1,17 @@
 //! Module defining slippage computation for AMM liquidity.
 
 use {
-    super::{AmmOrderExecution, LimitOrder},
-    crate::solver::SolverType,
-    anyhow::{anyhow, Context as _, Result},
-    clap::{Parser, ValueEnum as _},
+    super::AmmOrderExecution,
+    anyhow::{Context as _, Result},
     ethcontract::{H160, U256},
-    model::order::OrderKind,
     num::{BigInt, BigRational, CheckedDiv, Integer as _, ToPrimitive as _},
     once_cell::sync::OnceCell,
     shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
-    std::{
-        borrow::Cow,
-        cmp,
-        collections::HashMap,
-        fmt::{self, Display, Formatter},
-        str::FromStr,
-    },
+    std::{borrow::Cow, cmp},
 };
 
-/// Slippage configuration command line arguments.
-#[derive(Debug, Parser)]
-#[group(skip)]
-pub struct Arguments {
-    /// The relative slippage tolerance to apply to on-chain swaps. This flag
-    /// expects a comma-separated list of relative slippage values in basis
-    /// points per solver. If a solver is not included, it will use the default
-    /// global value. For example, "10,oneinch=20,zeroex=5" will configure all
-    /// solvers to have 10 BPS of relative slippage tolerance, with 1Inch and
-    /// 0x solvers configured for 20 and 5 BPS respectively. The global value
-    /// can be specified as `~` to keep it its default. For example,
-    /// "~,paraswap=42" will configure all solvers to use the default
-    /// configuration, while overriding the ParaSwap solver to use 42 BPS.
-    #[clap(long, env, default_value = "10")]
-    pub relative_slippage_bps: SlippageArgumentValues<u32>,
-
-    /// The absolute slippage tolerance in native token units to cap relative
-    /// slippage at. This makes it so very large trades use a potentially
-    /// tighter slippage tolerance to reduce absolute losses. This parameter
-    /// uses the same format as `--relative-slippage-bps`. For example,
-    /// "~,oneinch=0.001,zeroex=0.042" will disable absolute slippage tolerance
-    /// globally for all solvers, while overriding 1Inch and 0x solvers to cap
-    /// absolute slippage at 0.001Ξ and 0.042Ξ respectively.
-    #[clap(long, env, default_value = "~")]
-    pub absolute_slippage_in_native_token: SlippageArgumentValues<f64>,
-}
-
-impl Arguments {
-    /// Returns the slippage calculator for the specified solver.
-    pub fn get_calculator(&self, solver: SolverType) -> SlippageCalculator {
-        let bps = self
-            .relative_slippage_bps
-            .get(solver)
-            .copied()
-            .unwrap_or(DEFAULT_MAX_SLIPPAGE_BPS);
-        let absolute = self
-            .absolute_slippage_in_native_token
-            .get(solver)
-            .map(|value| U256::from_f64_lossy(value * 1e18));
-
-        SlippageCalculator::from_bps(bps, absolute)
-    }
-
-    /// Returns the slippage calculator for the specified solver.
-    pub fn get_global_calculator(&self) -> SlippageCalculator {
-        let bps = self
-            .relative_slippage_bps
-            .get_global()
-            .copied()
-            .unwrap_or(DEFAULT_MAX_SLIPPAGE_BPS);
-        let absolute = self
-            .absolute_slippage_in_native_token
-            .get_global()
-            .map(|value| U256::from_f64_lossy(value * 1e18));
-
-        SlippageCalculator::from_bps(bps, absolute)
-    }
-}
-
-impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let Self {
-            relative_slippage_bps,
-            absolute_slippage_in_native_token,
-        } = self;
-
-        writeln!(f, "relative_slippage_bps: {}", relative_slippage_bps)?;
-        writeln!(
-            f,
-            "absolute_slippage_in_native_token: {}",
-            absolute_slippage_in_native_token,
-        )?;
-
-        Ok(())
-    }
-}
-
-/// A comma separated slippage value per solver.
-#[derive(Clone, Debug)]
-pub struct SlippageArgumentValues<T>(Option<T>, HashMap<SolverType, T>);
-
-impl<T> SlippageArgumentValues<T> {
-    /// Gets the slippage configuration value for the specified solver.
-    pub fn get(&self, solver: SolverType) -> Option<&T> {
-        self.1.get(&solver).or(self.0.as_ref())
-    }
-
-    /// Gets the global slippage configuration value.
-    pub fn get_global(&self) -> Option<&T> {
-        self.0.as_ref()
-    }
-}
-
-impl<T> Display for SlippageArgumentValues<T>
-where
-    T: Display,
-{
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.0 {
-            Some(global) => write!(f, "{global}")?,
-            None => f.write_str("~")?,
-        }
-        for (solver, value) in &self.1 {
-            write!(f, ",{solver:?}={value}")?;
-        }
-        Ok(())
-    }
-}
-
-impl<T> FromStr for SlippageArgumentValues<T>
-where
-    T: FromStr,
-    anyhow::Error: From<T::Err>,
-{
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut values = s.split(',');
-
-        let global_value = values
-            .next()
-            .map(|value| match value {
-                "~" => Ok(None),
-                _ => Ok(Some(value.parse()?)),
-            })
-            .transpose()?
-            .flatten();
-        let solver_values = values
-            .map(|part| {
-                let (solver, value) = part
-                    .split_once('=')
-                    .context("malformed solver slippage value")?;
-                Ok((
-                    SolverType::from_str(solver, true).map_err(|message| anyhow!(message))?,
-                    value.parse()?,
-                ))
-            })
-            .collect::<Result<HashMap<_, _>>>()?;
-
-        Ok(Self(global_value, solver_values))
-    }
-}
-
 /// Constant maximum slippage of 10 BPS (0.1%) to use for on-chain liquidity.
-pub const DEFAULT_MAX_SLIPPAGE_BPS: u32 = 10;
+const DEFAULT_MAX_SLIPPAGE_BPS: u32 = 10;
 
 /// Basis points in 100%.
 const BPS_BASE: u32 = 10000;
@@ -270,25 +118,6 @@ impl<'a> SlippageContext<'a> {
     pub fn apply_to_amount_out(&self, token: H160, amount: U256) -> Result<U256> {
         Ok(self.slippage(token, amount)?.sub_from_amount(amount))
     }
-
-    /// Computes the relative slippage for a limit order.
-    pub fn relative_for_order(&self, order: &LimitOrder) -> Result<RelativeSlippage> {
-        // We use the fixed token and amount for computing relative slippage.
-        // This is because the variable token amount may not be representative
-        // of the actual trade value. For example, a "pure" market sell order
-        // would have almost 0 limit buy amount, which would cause a potentially
-        // large order to not get capped on the absolute slippage value.
-        let (token, amount) = match order.kind {
-            OrderKind::Sell => (order.sell_token, order.sell_amount),
-            OrderKind::Buy => (order.buy_token, order.buy_amount),
-        };
-        self.relative(token, amount)
-    }
-
-    /// Computes the relative slippage for a token and amount.
-    pub fn relative(&self, token: H160, amount: U256) -> Result<RelativeSlippage> {
-        Ok(self.slippage(token, amount)?.relative())
-    }
 }
 
 impl Default for SlippageContext<'static> {
@@ -391,31 +220,6 @@ impl SlippageAmount {
     pub fn add_to_amount(&self, amount: U256) -> U256 {
         amount.saturating_add(self.absolute)
     }
-
-    /// Returns the relative slippage value.
-    pub fn relative(&self) -> RelativeSlippage {
-        RelativeSlippage(self.relative)
-    }
-}
-
-/// A relative slippage value.
-pub struct RelativeSlippage(f64);
-
-impl RelativeSlippage {
-    /// Returns the relative slippage as a factor.
-    pub fn as_factor(&self) -> f64 {
-        self.0
-    }
-
-    /// Returns the relative slippage as a percentage.
-    pub fn as_percentage(&self) -> f64 {
-        self.0 * 100.
-    }
-
-    /// Returns the relative slippage as basis points rounded down.
-    pub fn as_bps(&self) -> u32 {
-        (self.0 * 10000.) as _
-    }
 }
 
 fn absolute_slippage_amount(relative: &BigRational, amount: &BigInt) -> BigInt {
@@ -428,30 +232,9 @@ fn absolute_slippage_amount(relative: &BigRational, amount: &BigInt) -> BigInt {
 mod tests {
     use {
         super::*,
-        shared::{conversions::U256Ext as _, externalprices},
+        shared::externalprices,
         testlib::tokens::{GNO, USDC, WETH},
     };
-
-    #[test]
-    fn limits_max_slippage() {
-        let calculator = SlippageCalculator::from_bps(10, Some(U256::exp10(17)));
-        let prices = externalprices! {
-            native_token: WETH,
-            GNO => U256::exp10(9).to_big_rational(),
-            USDC => BigRational::new(2.into(), 1000.into()),
-        };
-
-        let slippage = calculator.context(&prices);
-        for (token, amount, expected_slippage) in [
-            (GNO, U256::exp10(12), 1),
-            (USDC, U256::exp10(23), 5),
-            (GNO, U256::exp10(8), 10),
-            (GNO, U256::exp10(17), 0),
-        ] {
-            let relative = slippage.relative(token, amount).unwrap();
-            assert_eq!(relative.as_bps(), expected_slippage);
-        }
-    }
 
     #[test]
     fn errors_on_missing_token_price() {

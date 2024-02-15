@@ -18,12 +18,6 @@ pub struct BalancerSwapGivenOutInteraction {
     pub user_data: Bytes<Vec<u8>>,
 }
 
-#[repr(u8)]
-pub enum SwapKind {
-    GivenIn = 0,
-    GivenOut = 1,
-}
-
 lazy_static::lazy_static! {
     /// An impossibly distant future timestamp. Note that we use `0x80000...00`
     /// as the value so that it is mostly 0's to save small amounts of gas on
@@ -36,7 +30,7 @@ impl BalancerSwapGivenOutInteraction {
         let method = self.vault.swap(
             (
                 Bytes(self.pool_id.0),
-                SwapKind::GivenOut as _,
+                1, // GivenOut,
                 self.asset_in_max.token,
                 self.asset_out.token,
                 self.asset_out.amount,
