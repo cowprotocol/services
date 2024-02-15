@@ -502,6 +502,13 @@ pub fn ab_order() -> Order {
     }
 }
 
+pub fn ab_order_quote() -> OrderQuote {
+    OrderQuote {
+        sell_amount: 500000000000000000000u128.into(),
+        buy_amount: 2989509729399894152u128.into(),
+    }
+}
+
 /// A solution solving the [`ab_order`].
 pub fn ab_solution() -> Solution {
     Solution {
