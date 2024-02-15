@@ -123,7 +123,7 @@ impl Ethereum {
 
     /// Create access list used by a transaction.
     pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
-        const DEFAULT_GAS: u64 = 8_000_000;
+        const MAX_BLOCK_SIZE: u64 = 30_000_000;
 
         let tx = web3::types::TransactionRequest {
             from: tx.from.into(),
@@ -134,7 +134,7 @@ impl Ethereum {
             access_list: Some(tx.access_list.into()),
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
-            gas: Some(DEFAULT_GAS.into()),
+            gas: Some(MAX_BLOCK_SIZE.into()),
             ..Default::default()
         };
         let json = self
