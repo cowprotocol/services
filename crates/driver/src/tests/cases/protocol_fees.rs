@@ -63,7 +63,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 100000000000000000000u128.into(),
+        executed_sell_amount: 1000000000000000000000u128.into(),
         executed_buy_amount: 2989509729399894152u128.into(),
     };
 
@@ -95,8 +95,8 @@ async fn surplus_protocol_fee_buy_order_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 2615821013224907383u128.into(),
+        executed_sell_amount: 500000000000000000000u128.into(),
+        executed_buy_amount: 2684457716195823320u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -127,8 +127,8 @@ async fn surplus_protocol_fee_sell_order_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 2615821013224907383u128.into(),
+        executed_sell_amount: 500000000000000000000u128.into(),
+        executed_buy_amount: 2684457716195823320u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
