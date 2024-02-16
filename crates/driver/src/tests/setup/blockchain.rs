@@ -12,7 +12,7 @@ use {
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
-    std::collections::HashMap,
+    std::{collections::HashMap, str::FromStr},
 };
 
 // TODO Possibly might be a good idea to use an enum for tokens instead of
@@ -55,7 +55,7 @@ pub struct Interaction {
 pub enum LiquidityProvider {
     Amm,
     #[allow(dead_code)]
-    Private,
+    Pmm,
 }
 
 /// A uniswap pool deployed as part of the blockchain setup.
@@ -63,7 +63,6 @@ pub enum LiquidityProvider {
 pub struct Pool {
     pub reserve_a: Asset,
     pub reserve_b: Asset,
-    pub liquidity_provider: LiquidityProvider,
 }
 
 impl Pool {
@@ -146,6 +145,7 @@ impl QuotedOrder {
 
 pub struct Config {
     pub pools: Vec<Pool>,
+    pub liquidity_provider: LiquidityProvider,
     pub trader_address: eth::H160,
     pub trader_secret_key: SecretKey,
     pub solvers: Vec<super::Solver>,
@@ -333,163 +333,170 @@ impl Blockchain {
                 tokens.insert(pool.reserve_b.token, token);
             }
         }
-
-        // Create the uniswap factory.
-        let uniswap_factory = wait_for(
-            &web3,
-            contracts::UniswapV2Factory::builder(&web3, config.trader_address)
-                .from(trader_account.clone())
-                .deploy(),
-        )
-        .await
-        .unwrap();
-
-        // Create and fund a uniswap pair for each pool. Fund the settlement contract
-        // with the same liquidity as the pool, to allow for internalized interactions.
         let mut pairs = Vec::new();
-        for pool in config.pools {
-            // Get token addresses.
-            let token_a = if pool.reserve_a.token == "WETH" {
-                weth.address()
-            } else {
-                tokens.get(pool.reserve_a.token).unwrap().address()
-            };
-            let token_b = if pool.reserve_b.token == "WETH" {
-                weth.address()
-            } else {
-                tokens.get(pool.reserve_b.token).unwrap().address()
-            };
-            // Create the pair.
-            wait_for(
-                &web3,
-                uniswap_factory
-                    .create_pair(token_a, token_b)
-                    .from(trader_account.clone())
-                    .send(),
-            )
-            .await
-            .unwrap();
-            // Fund the pair and the settlement contract.
-            let pair = contracts::IUniswapLikePair::at(
-                &web3,
-                uniswap_factory
-                    .get_pair(token_a, token_b)
-                    .call()
+        match config.liquidity_provider {
+            LiquidityProvider::Amm => {
+                // Create the uniswap factory.
+                let uniswap_factory = wait_for(
+                    &web3,
+                    contracts::UniswapV2Factory::builder(&web3, config.trader_address)
+                        .from(trader_account.clone())
+                        .deploy(),
+                )
+                .await
+                .unwrap();
+                // Create and fund a uniswap pair for each pool. Fund the settlement contract
+                // with the same liquidity as the pool, to allow for internalized interactions.
+                for pool in config.pools {
+                    // Get token addresses.
+                    let token_a = if pool.reserve_a.token == "WETH" {
+                        weth.address()
+                    } else {
+                        tokens.get(pool.reserve_a.token).unwrap().address()
+                    };
+                    let token_b = if pool.reserve_b.token == "WETH" {
+                        weth.address()
+                    } else {
+                        tokens.get(pool.reserve_b.token).unwrap().address()
+                    };
+                    // Create the pair.
+                    wait_for(
+                        &web3,
+                        uniswap_factory
+                            .create_pair(token_a, token_b)
+                            .from(trader_account.clone())
+                            .send(),
+                    )
                     .await
-                    .unwrap(),
-            );
-            pairs.push(Pair {
-                token_a: pool.reserve_a.token,
-                token_b: pool.reserve_b.token,
-                contract: pair.clone(),
-                pool: pool.to_owned(),
-            });
-            if pool.reserve_a.token == "WETH" {
-                wait_for(
-                    &web3,
-                    weth.transfer(pair.address(), pool.reserve_a.amount)
-                        .from(primary_account(&web3).await)
-                        .send(),
-                )
-                .await
-                .unwrap();
-                wait_for(
-                    &web3,
-                    weth.transfer(settlement.address(), pool.reserve_a.amount)
-                        .from(primary_account(&web3).await)
-                        .send(),
-                )
-                .await
-                .unwrap();
-            } else {
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_a.token)
-                        .unwrap()
-                        .mint(pair.address(), pool.reserve_a.amount)
+                    .unwrap();
+                    // Fund the pair and the settlement contract.
+                    let pair = contracts::IUniswapLikePair::at(
+                        &web3,
+                        uniswap_factory
+                            .get_pair(token_a, token_b)
+                            .call()
+                            .await
+                            .unwrap(),
+                    );
+                    pairs.push(Pair {
+                        token_a: pool.reserve_a.token,
+                        token_b: pool.reserve_b.token,
+                        contract: pair.clone(),
+                        pool: pool.to_owned(),
+                    });
+                    if pool.reserve_a.token == "WETH" {
+                        wait_for(
+                            &web3,
+                            weth.transfer(pair.address(), pool.reserve_a.amount)
+                                .from(primary_account(&web3).await)
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                        wait_for(
+                            &web3,
+                            weth.transfer(settlement.address(), pool.reserve_a.amount)
+                                .from(primary_account(&web3).await)
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                    } else {
+                        wait_for(
+                            &web3,
+                            tokens
+                                .get(pool.reserve_a.token)
+                                .unwrap()
+                                .mint(pair.address(), pool.reserve_a.amount)
+                                .from(trader_account.clone())
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                        wait_for(
+                            &web3,
+                            tokens
+                                .get(pool.reserve_a.token)
+                                .unwrap()
+                                .mint(settlement.address(), pool.reserve_a.amount)
+                                .from(trader_account.clone())
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                    }
+                    if pool.reserve_b.token == "WETH" {
+                        wait_for(
+                            &web3,
+                            weth.transfer(pair.address(), pool.reserve_b.amount)
+                                .from(primary_account(&web3).await)
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                        wait_for(
+                            &web3,
+                            weth.transfer(settlement.address(), pool.reserve_b.amount)
+                                .from(primary_account(&web3).await)
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                    } else {
+                        wait_for(
+                            &web3,
+                            tokens
+                                .get(pool.reserve_b.token)
+                                .unwrap()
+                                .mint(pair.address(), pool.reserve_b.amount)
+                                .from(trader_account.clone())
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                        wait_for(
+                            &web3,
+                            tokens
+                                .get(pool.reserve_b.token)
+                                .unwrap()
+                                .mint(settlement.address(), pool.reserve_b.amount)
+                                .from(trader_account.clone())
+                                .send(),
+                        )
+                        .await
+                        .unwrap();
+                    }
+                    wait_for(
+                        &web3,
+                        pair.mint(
+                            "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
+                                .parse()
+                                .unwrap(),
+                        )
                         .from(trader_account.clone())
                         .send(),
-                )
-                .await
-                .unwrap();
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_a.token)
-                        .unwrap()
-                        .mint(settlement.address(), pool.reserve_a.amount)
-                        .from(trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-            }
-            if pool.reserve_b.token == "WETH" {
-                wait_for(
-                    &web3,
-                    weth.transfer(pair.address(), pool.reserve_b.amount)
-                        .from(primary_account(&web3).await)
-                        .send(),
-                )
-                .await
-                .unwrap();
-                wait_for(
-                    &web3,
-                    weth.transfer(settlement.address(), pool.reserve_b.amount)
-                        .from(primary_account(&web3).await)
-                        .send(),
-                )
-                .await
-                .unwrap();
-            } else {
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_b.token)
-                        .unwrap()
-                        .mint(pair.address(), pool.reserve_b.amount)
-                        .from(trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-                wait_for(
-                    &web3,
-                    tokens
-                        .get(pool.reserve_b.token)
-                        .unwrap()
-                        .mint(settlement.address(), pool.reserve_b.amount)
-                        .from(trader_account.clone())
-                        .send(),
-                )
-                .await
-                .unwrap();
-            }
-            wait_for(
-                &web3,
-                pair.mint(
-                    "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
-                        .parse()
-                        .unwrap(),
-                )
-                .from(trader_account.clone())
-                .send(),
-            )
-            .await
-            .unwrap();
-        }
+                    )
+                    .await
+                    .unwrap();
+                }
 
-        // UniswapV2Pair._update, which is called by both mint() and swap(), will check
-        // the block.timestamp and decide what to do based on it. If the block.timestamp
-        // has changed since the last _update call, a conditional block will be
-        // executed, which affects the gas used. The mint call above will result in the
-        // first call to _update, and the onchain settlement will be the second.
-        //
-        // This timeout ensures that when the settlement is executed at least one UNIX
-        // second has passed, so that conditional block always gets executed and the
-        // gas usage is deterministic.
-        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+                // UniswapV2Pair._update, which is called by both mint() and swap(), will check
+                // the block.timestamp and decide what to do based on it. If the block.timestamp
+                // has changed since the last _update call, a conditional block will be
+                // executed, which affects the gas used. The mint call above will result in the
+                // first call to _update, and the onchain settlement will be the second.
+                //
+                // This timeout ensures that when the settlement is executed at least one UNIX
+                // second has passed, so that conditional block always gets executed and the
+                // gas usage is deterministic.
+                tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+            }
+            LiquidityProvider::Pmm => {
+                let _pmm_address =
+                    eth::H160::from_str("2c4c28ddbdac9c5e7055b4c863b72ea0149d8afe").unwrap();
+                unimplemented!()
+            }
+        }
 
         Self {
             trader_address: config.trader_address,

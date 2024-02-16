@@ -355,7 +355,6 @@ pub struct Pool {
     pub token_b: &'static str,
     pub amount_a: eth::U256,
     pub amount_b: eth::U256,
-    pub liquidity_provider: LiquidityProvider,
 }
 
 #[derive(Debug)]
@@ -381,6 +380,7 @@ pub fn setup() -> Setup {
         enable_simulation: true,
         settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
+        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -402,6 +402,7 @@ pub struct Setup {
     settlement_address: Option<eth::H160>,
     /// Via which mempool the solutions should be submitted
     mempools: Vec<Mempool>,
+    liquidity_provider: LiquidityProvider,
 }
 
 /// The validity of a solution.
@@ -489,7 +490,6 @@ pub fn ab_pool() -> Pool {
         token_b: "B",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
-        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -529,7 +529,6 @@ pub fn cd_pool() -> Pool {
         token_b: "D",
         amount_a: DEFAULT_POOL_AMOUNT_C.into(),
         amount_b: DEFAULT_POOL_AMOUNT_D.into(),
-        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -562,7 +561,6 @@ pub fn weth_pool() -> Pool {
         token_b: "WETH",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
-        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -607,7 +605,6 @@ impl Setup {
                 token: pool.token_b,
                 amount: pool.amount_b,
             },
-            liquidity_provider: pool.liquidity_provider,
         });
         self
     }
@@ -656,6 +653,12 @@ impl Setup {
         self
     }
 
+    #[allow(dead_code)]
+    pub fn liquidity_provider(mut self, liquidity_provider: LiquidityProvider) -> Self {
+        self.liquidity_provider = liquidity_provider;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -692,6 +695,7 @@ impl Setup {
             trader_secret_key,
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
+            liquidity_provider: self.liquidity_provider,
         })
         .await;
         let mut solutions = Vec::new();
