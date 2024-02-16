@@ -1060,15 +1060,6 @@ impl<'a> SolveOk<'a> {
             let u256 = |value: &serde_json::Value| {
                 eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
             };
-            tracing::info!("newlog expected={:?}", expected);
-            tracing::info!(
-                "newlog actual_buy={:?}",
-                u256(trade.get("buyAmount").unwrap())
-            );
-            tracing::info!(
-                "newlog actual_sell={:?}",
-                u256(trade.get("sellAmount").unwrap())
-            );
             assert!(u256(trade.get("buyAmount").unwrap()) == expected.executed_buy_amount);
             assert!(u256(trade.get("sellAmount").unwrap()) == expected.executed_sell_amount);
         }
