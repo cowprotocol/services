@@ -446,11 +446,14 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+
+    let on_settlement_event_updater =
+        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(eth.clone(), db.clone());
     let event_updater = Arc::new(EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
-        boundary::events::settlement::Indexer::new(db.clone()),
+        boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater),
         block_retriever.clone(),
         skip_event_sync_start,
     ));
@@ -550,10 +553,8 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFee::new(
-            args.fee_policy.clone().to_domain(),
-            args.fee_policy.fee_policy_skip_market_orders,
-        ),
+        domain::ProtocolFee::new(args.fee_policy.clone()),
+        args.cow_amms.into_iter().collect(),
     );
     solvable_orders_cache
         .update(block)
@@ -562,17 +563,6 @@ pub async fn run(args: Arguments) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
-
-    let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater {
-            eth: eth.clone(),
-            db: db.clone(),
-        };
-    tokio::task::spawn(
-        on_settlement_event_updater
-            .run_forever()
-            .instrument(tracing::info_span!("on_settlement_event_updater")),
-    );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
