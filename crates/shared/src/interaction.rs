@@ -10,11 +10,11 @@ pub trait Interaction: std::fmt::Debug + Send + Sync {
     // Write::write returns a result but we know we write to a vector in memory so
     // we know it will never fail. Then the question becomes whether
     // interactions should be allowed to fail encoding for other reasons.
-    fn encode(&self) -> Vec<EncodedInteraction>;
+    fn encode(&self) -> EncodedInteraction;
 }
 
 impl Interaction for Box<dyn Interaction> {
-    fn encode(&self) -> Vec<EncodedInteraction> {
+    fn encode(&self) -> EncodedInteraction {
         self.as_ref().encode()
     }
 }
@@ -26,14 +26,14 @@ pub type EncodedInteraction = (
 );
 
 impl Interaction for EncodedInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![self.clone()]
+    fn encode(&self) -> EncodedInteraction {
+        self.clone()
     }
 }
 
 impl Interaction for InteractionData {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
+    fn encode(&self) -> EncodedInteraction {
+        (self.target, self.value, Bytes(self.call_data.clone()))
     }
 }
 

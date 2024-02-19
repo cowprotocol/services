@@ -23,8 +23,8 @@ impl Erc20ApproveInteraction {
 }
 
 impl Interaction for Erc20ApproveInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![self.as_encoded()]
+    fn encode(&self) -> EncodedInteraction {
+        self.as_encoded()
     }
 }
 

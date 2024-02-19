@@ -51,8 +51,8 @@ impl BalancerSwapGivenOutInteraction {
 }
 
 impl Interaction for BalancerSwapGivenOutInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![self.encode_swap()]
+    fn encode(&self) -> EncodedInteraction {
+        self.encode_swap()
     }
 }
 
@@ -95,7 +95,7 @@ mod tests {
         // ```
         assert_eq!(
             interaction.encode(),
-            vec![(
+            (
                 vault.address(),
                 0.into(),
                 Bytes(
@@ -118,7 +118,7 @@ mod tests {
                     )
                     .unwrap()
                 ),
-            )]
+            )
         );
     }
 }

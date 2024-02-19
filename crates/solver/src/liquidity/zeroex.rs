@@ -387,8 +387,7 @@ pub mod tests {
                     zeroex
                 }
                 .encode(),
-            ]
-            .concat(),
+            ],
         );
     }
 
@@ -420,8 +419,7 @@ pub mod tests {
                 taker_token_fill_amount: 100,
                 zeroex
             }
-            .encode(),]
-            .concat(),
+            .encode()],
         );
     }
 }
