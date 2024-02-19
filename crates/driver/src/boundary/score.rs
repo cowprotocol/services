@@ -2,15 +2,22 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::score::{
+            competition::{
                 self,
-                risk::{ObjectiveValue, SuccessProbability},
+                score::{
+                    self,
+                    risk::{ObjectiveValue, SuccessProbability},
+                },
+                solution::SolverScoreCIP38,
             },
             eth,
         },
+        infra::Ethereum,
         util::conv::u256::U256Ext,
     },
+    number::conversions::{big_rational_to_u256, u256_to_big_rational},
     score::Score,
+    shared::external_prices::ExternalPrices,
     solver::settlement_rater::ScoreCalculator,
 };
 
@@ -28,4 +35,35 @@ pub fn score(
         Ok(score) => Ok(score.try_into()?),
         Err(err) => Err(boundary::Error::from(err).into()),
     }
+}
+
+pub fn to_native_score(
+    score: SolverScoreCIP38,
+    eth: &Ethereum,
+    auction: &competition::Auction,
+) -> Result<Score, score::Error> {
+    let prices = ExternalPrices::try_from_auction_prices(
+        eth.contracts().weth().address(),
+        auction
+            .tokens()
+            .iter()
+            .filter_map(|token| {
+                token
+                    .price
+                    .map(|price| (token.address.into(), price.into()))
+            })
+            .collect(),
+    )?;
+
+    let native_score = score
+        .surplus
+        .iter()
+        .filter_map(|(token, amount)| {
+            let native_amount =
+                prices.try_get_native_amount(token.0 .0, u256_to_big_rational(&amount.0))?;
+            Some((token.0 .0, big_rational_to_u256(&native_amount).ok()?))
+        })
+        .fold(eth::U256::zero(), |acc, (_, amount)| acc + amount);
+
+    Ok(Score(native_score.try_into()?))
 }

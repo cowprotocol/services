@@ -1,5 +1,5 @@
 use {
-    super::{Error, Solution},
+    super::{Error, Solution, SolverScoreCIP38},
     crate::{
         boundary,
         domain::{
@@ -213,6 +213,31 @@ impl Settlement {
             .tx(self.auction_id, contract, internalization)
             .input
             .into()
+    }
+
+    /// CIP38 score denominated in the native token (ETH)
+    pub fn new_score(
+        &self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+    ) -> Result<competition::Score, score::Error> {
+        // CIP38 score denominated in the surplus tokens
+        // Settlement score is a sum of the scores of the solutions it contains.
+        let score = SolverScoreCIP38 {
+            surplus: self.solutions.values().fold(
+                Default::default(),
+                |mut surplus: HashMap<eth::TokenAddress, eth::TokenAmount>, solution| {
+                    for (token, amount) in &solution.score_cip38.surplus {
+                        if !amount.0.is_zero() {
+                            surplus.entry(*token).or_default().0 += amount.0;
+                        }
+                    }
+                    surplus
+                },
+            ),
+        };
+
+        boundary::score::to_native_score(score, eth, auction)
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
