@@ -62,8 +62,7 @@ impl Solution {
                             surplus
                                 .entry(token)
                                 .or_insert(eth::TokenAmount(eth::U256::zero()))
-                                .0
-                                .saturating_add(amount.0);
+                                .0 += amount.0;
                         }
                         Err(_err) => {
                             // todo CIP38 enable
