@@ -37,6 +37,8 @@ pub fn score(
     }
 }
 
+/// Converts a solver provided score denominated in surplus tokens, to a
+/// competition score denominated in native token.
 pub fn to_native_score(
     score: SolverScoreCIP38,
     eth: &Ethereum,

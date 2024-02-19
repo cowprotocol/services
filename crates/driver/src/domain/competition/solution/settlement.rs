@@ -216,7 +216,7 @@ impl Settlement {
     }
 
     /// CIP38 score denominated in the native token (ETH)
-    pub fn new_score(
+    pub fn score_cip38(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
