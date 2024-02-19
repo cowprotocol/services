@@ -70,8 +70,6 @@ services:
     environment:
       - NODE_URL=http://chain:8545
       - DB_URL=postgres://db:5432/?user=${POSTGRES_USER}&password=${POSTGRES_PASSWORD}
-      - ENABLE_CUSTOM_INTERACTIONS=true
-      - ENABLE_PRESIGN_ORDERS=true
       - ACCOUNT_BALANCES_SIMULATION=true
       - ACCOUNT_BALANCES_SIMULATOR=Web3
       - SIMULATION_NODE_URL=http://chain:8545
@@ -81,7 +79,6 @@ services:
       - NATIVE_PRICE_ESTIMATORS=baseline
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
-      - ALLOW_PLACING_PARTIALLY_FILLABLE_LIMIT_ORDERS=true
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
       - BASELINE_SOURCES=None
@@ -106,7 +103,6 @@ services:
       - PRICE_ESTIMATORS=None
       - NATIVE_PRICE_ESTIMATORS=baseline
       - BLOCK_STREAM_POLL_INTERVAL=1s
-      - ENABLE_LIMIT_ORDERS=true
       - NATIVE_PRICE_CACHE_MAX_UPDATE_SIZE=100
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
@@ -114,7 +110,6 @@ services:
       - DRIVERS=baseline|http://driver/baseline
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
-      - ENABLE_COLOCATION=true
     depends_on:
       - orderbook
 
