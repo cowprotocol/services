@@ -57,13 +57,13 @@ impl Solution {
             surplus: {
                 let mut surplus = HashMap::new();
                 for trade in trades.iter() {
-                    match trade.score(&prices, weth) {
-                        Ok(score) => {
+                    match trade.surplus(&prices, weth) {
+                        Ok(eth::Asset { token, amount }) => {
                             surplus
-                                .entry(score.token)
+                                .entry(token)
                                 .or_insert(eth::TokenAmount(eth::U256::zero()))
                                 .0
-                                .saturating_add(score.amount.0);
+                                .saturating_add(amount.0);
                         }
                         Err(_err) => {
                             // todo CIP38 enable

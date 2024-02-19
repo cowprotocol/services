@@ -18,7 +18,8 @@ pub enum Trade {
 }
 
 impl Trade {
-    pub fn score(
+    /// Surplus denominated in the surplus token.
+    pub fn surplus(
         &self,
         prices: &HashMap<eth::TokenAddress, eth::U256>,
         weth: eth::WethAddress,
