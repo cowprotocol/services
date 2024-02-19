@@ -31,6 +31,7 @@ pub use {gas_estimation::GasPriceEstimating, solver::settlement_submission::Glob
 #[derive(Debug, Clone)]
 pub struct Config {
     pub additional_tip_percentage: f64,
+    pub max_additional_tip: eth::U256,
     pub gas_price_cap: eth::U256,
     pub target_confirm_time: std::time::Duration,
     pub max_confirm_time: std::time::Duration,
@@ -52,7 +53,6 @@ pub enum Kind {
     /// The MEVBlocker private mempool.
     MEVBlocker {
         url: reqwest::Url,
-        max_additional_tip: eth::U256,
         use_soft_cancellations: bool,
     },
 }
@@ -154,16 +154,7 @@ impl Mempool {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap.to_f64_lossy()),
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
-            max_additional_tip: match (&self.config.kind, settlement.boundary.revertable()) {
-                (
-                    Kind::MEVBlocker {
-                        max_additional_tip, ..
-                    },
-                    true,
-                ) => max_additional_tip.to_f64_lossy(),
-                (Kind::MEVBlocker { .. }, false) => 0.,
-                (Kind::Public(_), _) => 0.,
-            },
+            max_additional_tip: self.config.max_additional_tip.to_f64_lossy(),
         };
         let use_soft_cancellations = match self.config.kind {
             Kind::Public(_) => false,

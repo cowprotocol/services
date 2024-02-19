@@ -62,6 +62,12 @@ struct SubmissionConfig {
     #[serde(default = "default_additional_tip_percentage")]
     additional_tip_percentage: f64,
 
+    /// Maximum additional tip in Gwei that we are willing to give above regular
+    /// gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serialize::U256")]
+    max_additional_tip: eth::U256,
+
     /// The maximum gas price in Gwei the solver is willing to pay in a
     /// settlement.
     #[serde(default = "default_gas_price_cap")]
@@ -102,11 +108,6 @@ enum Mempool {
     MevBlocker {
         /// The MEVBlocker URL to use.
         url: Url,
-        /// Maximum additional tip in Gwei that we are willing to give to
-        /// MEVBlocker above regular gas price estimation.
-        #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
         /// Configures whether the submission logic is allowed to assume the
         /// submission nodes implement soft cancellations. With soft
         /// cancellations a cancellation transaction doesn't have to get mined

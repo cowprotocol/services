@@ -18,7 +18,7 @@ type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 pub struct GasPriceEstimator {
     //TODO: remove visibility once boundary is removed
     pub(super) gas: Arc<NativeGasEstimator>,
-    additional_tip: Option<AdditionalTip>,
+    additional_tip: AdditionalTip,
     max_fee_per_gas: eth::U256,
 }
 
@@ -29,20 +29,19 @@ impl GasPriceEstimator {
                 .await
                 .map_err(Error::GasPrice)?,
         );
-        let additional_tip = mempools
+        // Use the highest max_additional_tip of all mempools as the max_additional_tip
+        let max_additional_tip = mempools
             .iter()
-            .find(|mempool| matches!(mempool.kind, mempool::Kind::MEVBlocker { .. }))
-            .map(|mempool| {
-                (
-                    match mempool.kind {
-                        mempool::Kind::MEVBlocker {
-                            max_additional_tip, ..
-                        } => max_additional_tip,
-                        _ => unreachable!(),
-                    },
-                    mempool.additional_tip_percentage,
-                )
-            });
+            .map(|mempool| mempool.max_additional_tip)
+            .max()
+            .expect("at least one mempool");
+        // Use the highest additional_tip_percentage of all mempools as the
+        // additional_tip_percentage
+        let additional_tip_percentage = mempools
+            .iter()
+            .map(|mempool| mempool.additional_tip_percentage)
+            .max_by(|a, b| a.total_cmp(b))
+            .expect("at least one mempool");
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()
@@ -51,7 +50,7 @@ impl GasPriceEstimator {
             .expect("at least one mempool");
         Ok(Self {
             gas,
-            additional_tip,
+            additional_tip: (max_additional_tip, additional_tip_percentage),
             max_fee_per_gas,
         })
     }
@@ -65,16 +64,15 @@ impl GasPriceEstimator {
             .estimate()
             .await
             .map(|mut estimate| {
-                let estimate = match self.additional_tip {
-                    Some((max_additional_tip, additional_tip_percentage)) => {
-                        let additional_tip = max_additional_tip
-                            .to_f64_lossy()
-                            .min(estimate.max_fee_per_gas * additional_tip_percentage);
-                        estimate.max_fee_per_gas += additional_tip;
-                        estimate.max_priority_fee_per_gas += additional_tip;
-                        estimate
-                    }
-                    None => estimate,
+                let estimate = {
+                    let additional_tip = self
+                        .additional_tip
+                        .0
+                        .to_f64_lossy()
+                        .min(estimate.max_fee_per_gas * self.additional_tip.1);
+                    estimate.max_fee_per_gas += additional_tip;
+                    estimate.max_priority_fee_per_gas += additional_tip;
+                    estimate
                 };
                 eth::GasPrice::new(
                     self.max_fee_per_gas.into(),
