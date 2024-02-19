@@ -114,6 +114,8 @@ impl Default for Score {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrderQuote {
+    pub sell_token: &'static str,
+    pub buy_token: &'static str,
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
 }
@@ -355,6 +357,35 @@ pub struct Pool {
     pub token_b: &'static str,
     pub amount_a: eth::U256,
     pub amount_b: eth::U256,
+    pub liquidity_provider: LiquidityProvider,
+}
+
+impl Pool {
+    #[allow(dead_code)]
+    pub fn adjusted_reserve_a(self, quote: &OrderQuote) -> Self {
+        let reserve_a = ((eth::U256::from(997)
+            * quote.sell_amount
+            * (self.amount_b - quote.buy_amount - eth::U256::from(1))
+            + eth::U256::from(1))
+            / (eth::U256::from(1000) * (quote.buy_amount + eth::U256::from(1))))
+            + eth::U256::from(1);
+        Self {
+            amount_a: reserve_a,
+            ..self
+        }
+    }
+
+    pub fn adjusted_reserve_b(self, quote: &OrderQuote) -> Self {
+        let reserve_b = (((quote.buy_amount + eth::U256::from(1))
+            * (eth::U256::from(1000) * self.amount_a + eth::U256::from(997) * quote.sell_amount)
+            - eth::U256::from(1))
+            / (eth::U256::from(997) * quote.sell_amount))
+            + eth::U256::from(1);
+        Self {
+            amount_b: reserve_b,
+            ..self
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -490,6 +521,17 @@ pub fn ab_pool() -> Pool {
         token_b: "B",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        liquidity_provider: LiquidityProvider::Amm,
+    }
+}
+
+pub fn ab_pmm_pool() -> Pool {
+    Pool {
+        token_a: "A",
+        token_b: "B",
+        amount_a: DEFAULT_POOL_AMOUNT_A.into(),
+        amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        liquidity_provider: LiquidityProvider::Pmm,
     }
 }
 
@@ -506,7 +548,9 @@ pub fn ab_order() -> Order {
 
 pub fn ab_order_quote() -> OrderQuote {
     OrderQuote {
-        sell_amount: 500000000000000000000u128.into(),
+        sell_token: "A",
+        buy_token: "B",
+        sell_amount: AB_ORDER_AMOUNT.into(),
         buy_amount: 2989509729399894152u128.into(),
     }
 }
@@ -529,6 +573,7 @@ pub fn cd_pool() -> Pool {
         token_b: "D",
         amount_a: DEFAULT_POOL_AMOUNT_C.into(),
         amount_b: DEFAULT_POOL_AMOUNT_D.into(),
+        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -561,6 +606,7 @@ pub fn weth_pool() -> Pool {
         token_b: "WETH",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -605,6 +651,7 @@ impl Setup {
                 token: pool.token_b,
                 amount: pool.amount_b,
             },
+            liquidity_provider: pool.liquidity_provider,
         });
         self
     }
@@ -650,12 +697,6 @@ impl Setup {
 
     pub fn mempools(mut self, mempools: Vec<Mempool>) -> Self {
         self.mempools = mempools;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn liquidity_provider(mut self, liquidity_provider: LiquidityProvider) -> Self {
-        self.liquidity_provider = liquidity_provider;
         self
     }
 

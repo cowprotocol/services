@@ -12,7 +12,7 @@ use {
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
-    std::{collections::HashMap, str::FromStr},
+    std::collections::HashMap,
 };
 
 // TODO Possibly might be a good idea to use an enum for tokens instead of
@@ -63,6 +63,7 @@ pub enum LiquidityProvider {
 pub struct Pool {
     pub reserve_a: Asset,
     pub reserve_b: Asset,
+    pub liquidity_provider: LiquidityProvider,
 }
 
 impl Pool {
@@ -76,6 +77,27 @@ impl Pool {
         };
         output_reserve * input.amount * eth::U256::from(997)
             / (input_reserve * eth::U256::from(1000) + input.amount * eth::U256::from(997))
+    }
+
+    fn executed_amounts(&self, order: &Order) -> (eth::U256, eth::U256) {
+        match (self.liquidity_provider, &order.precalculated_quote) {
+            (LiquidityProvider::Amm, _) => {
+                let executed_sell = order.sell_amount;
+                let executed_buy = self.out(Asset {
+                    amount: order.sell_amount,
+                    token: order.sell_token,
+                });
+                (executed_sell, executed_buy)
+            }
+            (LiquidityProvider::Pmm, Some(quote)) => {
+                if quote.sell_token == self.reserve_a.token {
+                    (quote.sell_amount, quote.buy_amount)
+                } else {
+                    (quote.buy_amount, quote.sell_amount)
+                }
+            }
+            (LiquidityProvider::Pmm, None) => panic!("Quote is required for PMM"),
+        }
     }
 }
 
@@ -334,169 +356,160 @@ impl Blockchain {
             }
         }
         let mut pairs = Vec::new();
-        match config.liquidity_provider {
-            LiquidityProvider::Amm => {
-                // Create the uniswap factory.
-                let uniswap_factory = wait_for(
+        // Create the uniswap factory.
+        let uniswap_factory = wait_for(
+            &web3,
+            contracts::UniswapV2Factory::builder(&web3, config.trader_address)
+                .from(trader_account.clone())
+                .deploy(),
+        )
+        .await
+        .unwrap();
+        // Create and fund a uniswap pair for each pool. Fund the settlement contract
+        // with the same liquidity as the pool, to allow for internalized interactions.
+        for pool in config.pools {
+            // Get token addresses.
+            let token_a = if pool.reserve_a.token == "WETH" {
+                weth.address()
+            } else {
+                tokens.get(pool.reserve_a.token).unwrap().address()
+            };
+            let token_b = if pool.reserve_b.token == "WETH" {
+                weth.address()
+            } else {
+                tokens.get(pool.reserve_b.token).unwrap().address()
+            };
+            // Create the pair.
+            wait_for(
+                &web3,
+                uniswap_factory
+                    .create_pair(token_a, token_b)
+                    .from(trader_account.clone())
+                    .send(),
+            )
+            .await
+            .unwrap();
+            // Fund the pair and the settlement contract.
+            let pair = contracts::IUniswapLikePair::at(
+                &web3,
+                uniswap_factory
+                    .get_pair(token_a, token_b)
+                    .call()
+                    .await
+                    .unwrap(),
+            );
+            pairs.push(Pair {
+                token_a: pool.reserve_a.token,
+                token_b: pool.reserve_b.token,
+                contract: pair.clone(),
+                pool: pool.to_owned(),
+            });
+            if pool.reserve_a.token == "WETH" {
+                wait_for(
                     &web3,
-                    contracts::UniswapV2Factory::builder(&web3, config.trader_address)
-                        .from(trader_account.clone())
-                        .deploy(),
+                    weth.transfer(pair.address(), pool.reserve_a.amount)
+                        .from(primary_account(&web3).await)
+                        .send(),
                 )
                 .await
                 .unwrap();
-                // Create and fund a uniswap pair for each pool. Fund the settlement contract
-                // with the same liquidity as the pool, to allow for internalized interactions.
-                for pool in config.pools {
-                    // Get token addresses.
-                    let token_a = if pool.reserve_a.token == "WETH" {
-                        weth.address()
-                    } else {
-                        tokens.get(pool.reserve_a.token).unwrap().address()
-                    };
-                    let token_b = if pool.reserve_b.token == "WETH" {
-                        weth.address()
-                    } else {
-                        tokens.get(pool.reserve_b.token).unwrap().address()
-                    };
-                    // Create the pair.
-                    wait_for(
-                        &web3,
-                        uniswap_factory
-                            .create_pair(token_a, token_b)
-                            .from(trader_account.clone())
-                            .send(),
-                    )
-                    .await
-                    .unwrap();
-                    // Fund the pair and the settlement contract.
-                    let pair = contracts::IUniswapLikePair::at(
-                        &web3,
-                        uniswap_factory
-                            .get_pair(token_a, token_b)
-                            .call()
-                            .await
-                            .unwrap(),
-                    );
-                    pairs.push(Pair {
-                        token_a: pool.reserve_a.token,
-                        token_b: pool.reserve_b.token,
-                        contract: pair.clone(),
-                        pool: pool.to_owned(),
-                    });
-                    if pool.reserve_a.token == "WETH" {
-                        wait_for(
-                            &web3,
-                            weth.transfer(pair.address(), pool.reserve_a.amount)
-                                .from(primary_account(&web3).await)
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                        wait_for(
-                            &web3,
-                            weth.transfer(settlement.address(), pool.reserve_a.amount)
-                                .from(primary_account(&web3).await)
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                    } else {
-                        wait_for(
-                            &web3,
-                            tokens
-                                .get(pool.reserve_a.token)
-                                .unwrap()
-                                .mint(pair.address(), pool.reserve_a.amount)
-                                .from(trader_account.clone())
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                        wait_for(
-                            &web3,
-                            tokens
-                                .get(pool.reserve_a.token)
-                                .unwrap()
-                                .mint(settlement.address(), pool.reserve_a.amount)
-                                .from(trader_account.clone())
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                    }
-                    if pool.reserve_b.token == "WETH" {
-                        wait_for(
-                            &web3,
-                            weth.transfer(pair.address(), pool.reserve_b.amount)
-                                .from(primary_account(&web3).await)
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                        wait_for(
-                            &web3,
-                            weth.transfer(settlement.address(), pool.reserve_b.amount)
-                                .from(primary_account(&web3).await)
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                    } else {
-                        wait_for(
-                            &web3,
-                            tokens
-                                .get(pool.reserve_b.token)
-                                .unwrap()
-                                .mint(pair.address(), pool.reserve_b.amount)
-                                .from(trader_account.clone())
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                        wait_for(
-                            &web3,
-                            tokens
-                                .get(pool.reserve_b.token)
-                                .unwrap()
-                                .mint(settlement.address(), pool.reserve_b.amount)
-                                .from(trader_account.clone())
-                                .send(),
-                        )
-                        .await
-                        .unwrap();
-                    }
-                    wait_for(
-                        &web3,
-                        pair.mint(
-                            "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
-                                .parse()
-                                .unwrap(),
-                        )
+                wait_for(
+                    &web3,
+                    weth.transfer(settlement.address(), pool.reserve_a.amount)
+                        .from(primary_account(&web3).await)
+                        .send(),
+                )
+                .await
+                .unwrap();
+            } else {
+                wait_for(
+                    &web3,
+                    tokens
+                        .get(pool.reserve_a.token)
+                        .unwrap()
+                        .mint(pair.address(), pool.reserve_a.amount)
                         .from(trader_account.clone())
                         .send(),
-                    )
-                    .await
-                    .unwrap();
-                }
-
-                // UniswapV2Pair._update, which is called by both mint() and swap(), will check
-                // the block.timestamp and decide what to do based on it. If the block.timestamp
-                // has changed since the last _update call, a conditional block will be
-                // executed, which affects the gas used. The mint call above will result in the
-                // first call to _update, and the onchain settlement will be the second.
-                //
-                // This timeout ensures that when the settlement is executed at least one UNIX
-                // second has passed, so that conditional block always gets executed and the
-                // gas usage is deterministic.
-                tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+                )
+                .await
+                .unwrap();
+                wait_for(
+                    &web3,
+                    tokens
+                        .get(pool.reserve_a.token)
+                        .unwrap()
+                        .mint(settlement.address(), pool.reserve_a.amount)
+                        .from(trader_account.clone())
+                        .send(),
+                )
+                .await
+                .unwrap();
             }
-            LiquidityProvider::Pmm => {
-                let _pmm_address =
-                    eth::H160::from_str("2c4c28ddbdac9c5e7055b4c863b72ea0149d8afe").unwrap();
-                unimplemented!()
+            if pool.reserve_b.token == "WETH" {
+                wait_for(
+                    &web3,
+                    weth.transfer(pair.address(), pool.reserve_b.amount)
+                        .from(primary_account(&web3).await)
+                        .send(),
+                )
+                .await
+                .unwrap();
+                wait_for(
+                    &web3,
+                    weth.transfer(settlement.address(), pool.reserve_b.amount)
+                        .from(primary_account(&web3).await)
+                        .send(),
+                )
+                .await
+                .unwrap();
+            } else {
+                wait_for(
+                    &web3,
+                    tokens
+                        .get(pool.reserve_b.token)
+                        .unwrap()
+                        .mint(pair.address(), pool.reserve_b.amount)
+                        .from(trader_account.clone())
+                        .send(),
+                )
+                .await
+                .unwrap();
+                wait_for(
+                    &web3,
+                    tokens
+                        .get(pool.reserve_b.token)
+                        .unwrap()
+                        .mint(settlement.address(), pool.reserve_b.amount)
+                        .from(trader_account.clone())
+                        .send(),
+                )
+                .await
+                .unwrap();
             }
+            wait_for(
+                &web3,
+                pair.mint(
+                    "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
+                        .parse()
+                        .unwrap(),
+                )
+                .from(trader_account.clone())
+                .send(),
+            )
+            .await
+            .unwrap();
         }
+
+        // UniswapV2Pair._update, which is called by both mint() and swap(), will check
+        // the block.timestamp and decide what to do based on it. If the block.timestamp
+        // has changed since the last _update call, a conditional block will be
+        // executed, which affects the gas used. The mint call above will result in the
+        // first call to _update, and the onchain settlement will be the second.
+        //
+        // This timeout ensures that when the settlement is executed at least one UNIX
+        // second has passed, so that conditional block always gets executed and the
+        // gas usage is deterministic.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
         Self {
             trader_address: config.trader_address,
@@ -542,17 +555,9 @@ impl Blockchain {
     /// Quote an order using a UniswapV2 pool. This determines the buy and sell
     /// amount of the order.
     pub async fn quote(&self, order: &Order) -> QuotedOrder {
-        let (executed_sell, executed_buy) = match &order.precalculated_quote {
-            Some(quote) => (quote.sell_amount, quote.buy_amount),
-            None => {
-                let pair = self.find_pair(order);
-                let executed_sell = order.sell_amount;
-                let executed_buy = pair.pool.out(Asset {
-                    amount: order.sell_amount,
-                    token: order.sell_token,
-                });
-                (executed_sell, executed_buy)
-            }
+        let (executed_sell, executed_buy) = {
+            let pair = self.find_pair(order);
+            pair.pool.executed_amounts(order)
         };
         QuotedOrder {
             order: order.clone(),
