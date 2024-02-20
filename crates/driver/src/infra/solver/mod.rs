@@ -99,7 +99,7 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
-    //Authorization Header for requests
+    /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>
 }
 
@@ -115,6 +115,9 @@ impl Solver {
         for (key, val) in config.request_headers.iter() {
             if let Ok(header_name) = HeaderName::try_from(key) {
                 headers.insert(header_name, val.parse().unwrap());
+            }
+            else {
+                panic!("Header Name: {:?} could not be parsed", key);
             }
         }
 
