@@ -47,8 +47,8 @@ mod solver;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Asset {
-    pub token: &'static str,
-    pub amount: eth::U256,
+    token: &'static str,
+    amount: eth::U256,
 }
 
 #[allow(dead_code)]
