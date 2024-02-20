@@ -58,7 +58,7 @@ pub trait ToWei {
 impl ToWei for f64 {
     fn to_wei(self) -> eth::U256 {
         let wei = self * 1e18;
-        eth::U256::from(wei as u64)
+        eth::U256::from_f64_lossy(wei)
     }
 }
 
