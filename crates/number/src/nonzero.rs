@@ -30,6 +30,14 @@ impl TryFrom<ZeroU256> for U256 {
     }
 }
 
+impl TryFrom<crate::U256> for U256 {
+    type Error = anyhow::Error;
+
+    fn try_from(value: crate::U256) -> Result<Self, Self::Error> {
+        ZeroU256::from(value).try_into()
+    }
+}
+
 impl Serialize for U256 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

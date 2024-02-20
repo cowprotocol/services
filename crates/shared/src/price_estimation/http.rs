@@ -153,16 +153,16 @@ impl HttpTradeFinder {
                 id: Default::default(),
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
-                sell_amount,
-                buy_amount,
+                sell_amount: sell_amount.into(),
+                buy_amount: buy_amount.into(),
                 allow_partial_fill: false,
                 is_sell_order: query.kind == OrderKind::Sell,
                 fee: TokenAmount {
-                    amount: U256::from(GAS_PER_ORDER) * gas_price,
+                    amount: (U256::from(GAS_PER_ORDER) * gas_price).into(),
                     token: self.native_token,
                 },
                 cost: TokenAmount {
-                    amount: U256::from(GAS_PER_ORDER) * gas_price,
+                    amount: (U256::from(GAS_PER_ORDER) * gas_price).into(),
                     token: self.native_token,
                 },
                 is_liquidity_order: false,
@@ -282,8 +282,8 @@ impl HttpTradeFinder {
             + ERC20_TRANSFER * 2; // transfer in and transfer out
         Ok(Trade {
             out_amount: match query.kind {
-                OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
-                OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
+                OrderKind::Buy => settlement.orders[&0].exec_sell_amount.into(),
+                OrderKind::Sell => settlement.orders[&0].exec_buy_amount.into(),
             },
             gas_estimate,
             interactions: settlement
@@ -291,7 +291,7 @@ impl HttpTradeFinder {
                 .into_iter()
                 .map(|i| Interaction {
                     target: i.target,
-                    value: i.value,
+                    value: i.value.into(),
                     data: i.call_data,
                 })
                 .collect(),
@@ -348,7 +348,7 @@ impl HttpTradeFinder {
                     BigInt::from(*pool.state.fee.numer()),
                     BigInt::from(*pool.state.fee.denom()),
                 )),
-                cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas),
+                cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas.into()),
                 address: pool.address,
                 parameters: AmmParameters::Concentrated(ConcentratedPoolParameters { pool }),
                 mandatory: false,
@@ -382,7 +382,7 @@ impl HttpTradeFinder {
                         (
                             token,
                             WeightedPoolTokenData {
-                                balance: state.common.balance,
+                                balance: state.common.balance.into(),
                                 weight: BigRational::from(state.weight),
                             },
                         )
@@ -402,12 +402,12 @@ impl HttpTradeFinder {
                     parameters: AmmParameters::Stable(StablePoolParameters {
                         reserves: pool
                             .reserves_without_bpt()
-                            .map(|(token, state)| (token, state.balance))
+                            .map(|(token, state)| (token, state.balance.into()))
                             .collect(),
                         scaling_rates: pool
                             .reserves_without_bpt()
                             .map(|(token, state)| {
-                                Ok((token, compute_scaling_rate(state.scaling_factor)?))
+                                Ok((token, compute_scaling_rate(state.scaling_factor)?.into()))
                             })
                             .collect::<Result<_>>()
                             .with_context(|| "convert stable pool to solver model".to_string())?,
@@ -434,7 +434,7 @@ impl HttpTradeFinder {
                     cost.token
                 )))
             } else {
-                Ok(cost.amount)
+                Ok(*cost.amount)
             }
         } else {
             Ok(U256::zero())
@@ -526,8 +526,8 @@ mod tests {
             Ok(SettledBatchAuctionModel {
                 orders: hashmap! {
                     0 => ExecutedOrderModel {
-                        exec_sell_amount: 50.into(),
-                        exec_buy_amount: 200.into(),
+                        exec_sell_amount: 50_u32.into(),
+                        exec_buy_amount: 200_u32.into(),
                         exec_fee_amount: None,
                         cost: None,
                         fee: None,
@@ -684,11 +684,11 @@ mod tests {
             Ok(SettledBatchAuctionModel {
                 orders: hashmap! {
                     0 => ExecutedOrderModel {
-                        exec_sell_amount: 100.into(),
-                        exec_buy_amount: 100.into(),
+                        exec_sell_amount: 100_u32.into(),
+                        exec_buy_amount: 100_u32.into(),
                         exec_fee_amount: None,
                         cost: Some(TokenAmount {
-                            amount: 100_000.into(),
+                            amount: 100_000_u32.into(),
                             token: native_token
                         }),
                         fee: None,
@@ -700,18 +700,18 @@ mod tests {
                         execution: vec![ExecutedAmmModel {
                             sell_token: H160::from_low_u64_be(0),
                             buy_token: H160::from_low_u64_be(1),
-                            exec_sell_amount: 100.into(),
-                            exec_buy_amount: 100.into(),
+                            exec_sell_amount: 100_u32.into(),
+                            exec_buy_amount: 100_u32.into(),
                             exec_plan: Default::default(),
                         },ExecutedAmmModel {
                             sell_token: H160::from_low_u64_be(1),
                             buy_token: H160::from_low_u64_be(0),
-                            exec_sell_amount: 100.into(),
-                            exec_buy_amount: 100.into(),
+                            exec_sell_amount: 100_u32.into(),
+                            exec_buy_amount: 100_u32.into(),
                             exec_plan: Default::default(),
                         }],
                         cost: Some(TokenAmount {
-                            amount: 200_000.into(),
+                            amount: 200_000_u32.into(),
                             token: native_token
                         }
                         ),
@@ -719,13 +719,13 @@ mod tests {
                 },
                 interaction_data: vec![InteractionData {
                     target: H160::zero(),
-                    value: U256::zero(),
+                    value: U256::zero().into(),
                     call_data: vec![],
                     inputs: vec![],
                     outputs: vec![],
                     exec_plan: Default::default(),
                     cost: Some(TokenAmount {
-                        amount: 300_000.into(),
+                        amount: 300_000_u32.into(),
                         token: native_token,
                     }),
                 }],

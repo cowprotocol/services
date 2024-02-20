@@ -25,6 +25,7 @@ humantime-serde = { workspace = true }
 hyper = "0.14"
 itertools = "0.11"
 num = "0.4"
+number = { path = "../number" }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rate-limit = { path = "../rate-limit" }

@@ -228,7 +228,7 @@ impl RunLoop {
             })
             .ok_or(Error::NoSolutions)?;
 
-        let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
+        let score = NonZeroU256::new(*score).ok_or(Error::ZeroScore)?;
 
         let revealed = driver
             .reveal(&reveal::Request { solution_id })

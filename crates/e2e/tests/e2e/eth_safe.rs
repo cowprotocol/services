@@ -51,9 +51,9 @@ async fn test(web3: Web3) {
     assert_eq!(balance, 0.into());
     let order = OrderCreation {
         sell_token: token.address(),
-        sell_amount: to_wei(4),
+        sell_amount: to_wei(4).into(),
         buy_token: BUY_ETH_ADDRESS,
-        buy_amount: to_wei(3),
+        buy_amount: to_wei(3).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,

@@ -442,23 +442,26 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         // order's fee and sell amounts, and thus can always fit in a `U256`
         // - as it is limited by the order format.
         executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-            .context(
-            "executed sell amount before fees does not fit in a u256",
-        )?,
+            .context("executed sell amount before fees does not fit in a u256")?
+            .into(),
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
-            .context("executed fee amount is not a valid u256")?,
+            .context("executed fee amount is not a valid u256")?
+            .into(),
         executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
-            .context("executed surplus fee is not a valid u256")?,
+            .context("executed surplus fee is not a valid u256")?
+            .into(),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
-            .context("full_fee_amount is not U256")?,
+            .context("full_fee_amount is not U256")?
+            .into(),
         // Initialize unscaled and scale later when required.
         solver_fee: big_decimal_to_u256(&order.full_fee_amount)
-            .context("solver_fee is not U256")?,
+            .context("solver_fee is not U256")?
+            .into(),
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -472,11 +475,17 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         sell_token: H160(order.sell_token.0),
         buy_token: H160(order.buy_token.0),
         receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        sell_amount: big_decimal_to_u256(&order.sell_amount)
+            .context("sell_amount is not U256")?
+            .into(),
+        buy_amount: big_decimal_to_u256(&order.buy_amount)
+            .context("buy_amount is not U256")?
+            .into(),
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount: big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?,
+        fee_amount: big_decimal_to_u256(&order.fee_amount)
+            .context("fee_amount is not U256")?
+            .into(),
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),

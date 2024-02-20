@@ -1,13 +1,18 @@
 use {
     crate::{
         domain::{
-            competition::{self, auction, order},
+            competition::{
+                self,
+                auction::{self},
+                order,
+            },
             eth,
             time,
         },
         infra::{solver::Timeouts, tokens, Ethereum},
         util::serialize,
     },
+    number::U256,
     serde::Deserialize,
     serde_with::serde_as,
 };
@@ -35,18 +40,18 @@ impl Auction {
                     receiver: order.receiver.map(Into::into),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
-                        amount: order.buy_amount.into(),
+                        amount: (*order.buy_amount).into(),
                         token: order.buy_token.into(),
                     },
                     sell: eth::Asset {
-                        amount: order.sell_amount.into(),
+                        amount: (*order.sell_amount).into(),
                         token: order.sell_token.into(),
                     },
                     side: match order.kind {
                         Kind::Sell => competition::order::Side::Sell,
                         Kind::Buy => competition::order::Side::Buy,
                     },
-                    user_fee: order.user_fee.into(),
+                    user_fee: (*order.user_fee).into(),
                     kind: match order.class {
                         Class::Market => competition::order::Kind::Market,
                         Class::Limit => competition::order::Kind::Limit,
@@ -57,9 +62,11 @@ impl Auction {
                         competition::order::Partial::Yes {
                             available: match order.kind {
                                 Kind::Sell => {
-                                    order.sell_amount.saturating_sub(order.executed).into()
+                                    (*order.sell_amount).saturating_sub(*order.executed).into()
                                 }
-                                Kind::Buy => order.buy_amount.saturating_sub(order.executed).into(),
+                                Kind::Buy => {
+                                    (*order.buy_amount).saturating_sub(*order.executed).into()
+                                }
                             },
                         }
                     } else {
@@ -70,7 +77,7 @@ impl Auction {
                         .into_iter()
                         .map(|interaction| eth::Interaction {
                             target: interaction.target.into(),
-                            value: interaction.value.into(),
+                            value: (*interaction.value).into(),
                             call_data: interaction.call_data.into(),
                         })
                         .collect(),
@@ -79,7 +86,7 @@ impl Auction {
                         .into_iter()
                         .map(|interaction| eth::Interaction {
                             target: interaction.target.into(),
-                            value: interaction.value.into(),
+                            value: (*interaction.value).into(),
                             call_data: interaction.call_data.into(),
                         })
                         .collect(),
@@ -145,14 +152,16 @@ impl Auction {
                     decimals: info.and_then(|i| i.decimals),
                     symbol: info.and_then(|i| i.symbol.clone()),
                     address: token.address.into(),
-                    price: token.price.map(Into::into),
+                    price: token.price.map(|price| (*price).into()),
                     available_balance: info.map(|i| i.balance).unwrap_or(0.into()).into(),
                     trusted: token.trusted,
                 }
             }),
             time::Deadline::new(self.deadline, timeouts),
             eth,
-            self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
+            (*self.score_cap)
+                .try_into()
+                .map_err(|_| Error::ZeroScoreCap)?,
         )
         .await
         .map_err(Into::into)
@@ -200,8 +209,7 @@ pub struct Auction {
     tokens: Vec<Token>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
-    #[serde_as(as = "serialize::U256")]
-    score_cap: eth::U256,
+    score_cap: U256,
 }
 
 impl Auction {
@@ -210,13 +218,11 @@ impl Auction {
     }
 }
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Token {
     pub address: eth::H160,
-    #[serde_as(as = "Option<serialize::U256>")]
-    pub price: Option<eth::U256>,
+    pub price: Option<U256>,
     pub trusted: bool,
 }
 
@@ -228,12 +234,9 @@ struct Order {
     uid: [u8; order::UID_LEN],
     sell_token: eth::H160,
     buy_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    user_fee: eth::U256,
+    sell_amount: U256,
+    buy_amount: U256,
+    user_fee: U256,
     protocol_fees: Vec<FeePolicy>,
     valid_to: u32,
     kind: Kind,
@@ -241,8 +244,7 @@ struct Order {
     owner: eth::H160,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.
-    #[serde_as(as = "serialize::U256")]
-    executed: eth::U256,
+    executed: U256,
     pre_interactions: Vec<Interaction>,
     post_interactions: Vec<Interaction>,
     #[serde(default)]
@@ -269,8 +271,7 @@ enum Kind {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Interaction {
     target: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    value: eth::U256,
+    value: U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
 }

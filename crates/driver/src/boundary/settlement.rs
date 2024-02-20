@@ -160,7 +160,9 @@ impl Settlement {
         }
 
         settlement.score = match solution.score().clone() {
-            competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
+            competition::SolverScore::Solver(score) => http_solver::model::Score::Solver {
+                score: score.into(),
+            },
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {
                     success_probability,
@@ -206,7 +208,7 @@ impl Settlement {
 
     pub fn score(&self) -> competition::SolverScore {
         match self.inner.score {
-            http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(score),
+            http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(*score),
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
@@ -265,9 +267,9 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         data: OrderData {
             sell_token: order.sell.token.into(),
             buy_token: order.buy.token.into(),
-            sell_amount: order.sell.amount.into(),
-            buy_amount: order.buy.amount.into(),
-            fee_amount: order.user_fee.into(),
+            sell_amount: eth::U256::from(order.sell.amount).into(),
+            buy_amount: eth::U256::from(order.buy.amount).into(),
+            fee_amount: eth::U256::from(order.user_fee).into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
             app_data: AppDataHash(order.app_data.into()),
@@ -288,7 +290,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         },
         metadata: OrderMetadata {
             full_fee_amount: Default::default(),
-            solver_fee: order.user_fee.into(),
+            solver_fee: eth::U256::from(order.user_fee).into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
@@ -319,7 +321,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 .iter()
                 .map(|interaction| model::interaction::InteractionData {
                     target: interaction.target.into(),
-                    value: interaction.value.into(),
+                    value: eth::U256::from(interaction.value).into(),
                     call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
@@ -328,7 +330,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 .iter()
                 .map(|interaction| model::interaction::InteractionData {
                     target: interaction.target.into(),
-                    value: interaction.value.into(),
+                    value: eth::U256::from(interaction.value).into(),
                     call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
@@ -341,11 +343,11 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         sell_token: order.sell.token.into(),
         buy_token: order.buy.token.into(),
         receiver: Some(order.receiver.into()),
-        sell_amount: order.sell.amount.into(),
-        buy_amount: order.buy.amount.into(),
+        sell_amount: eth::U256::from(order.sell.amount).into(),
+        buy_amount: eth::U256::from(order.buy.amount).into(),
         valid_to: order.valid_to.into(),
         app_data: AppDataHash(order.app_data.into()),
-        fee_amount: order.fee.into(),
+        fee_amount: eth::U256::from(order.fee).into(),
         kind: match order.side {
             competition::order::Side::Buy => OrderKind::Buy,
             competition::order::Side::Sell => OrderKind::Sell,
@@ -363,7 +365,7 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
     };
     let metadata = OrderMetadata {
         owner: order.signature.signer.into(),
-        full_fee_amount: order.fee.into(),
+        full_fee_amount: eth::U256::from(order.fee).into(),
         // All foreign orders **MUST** be liquidity, this is
         // important so they cannot be used to affect the objective.
         class: OrderClass::Liquidity,
@@ -410,7 +412,7 @@ pub fn to_boundary_interaction(
     match interaction {
         competition::solution::Interaction::Custom(custom) => Ok(InteractionData {
             target: custom.target.into(),
-            value: custom.value.into(),
+            value: eth::U256::from(custom.value).into(),
             call_data: custom.call_data.clone().into(),
         }),
         competition::solution::Interaction::Liquidity(liquidity) => {
@@ -429,11 +431,11 @@ pub fn to_boundary_interaction(
 
             let input = liquidity::MaxInput(eth::Asset {
                 token: boundary_execution.input_max.token.into(),
-                amount: boundary_execution.input_max.amount.into(),
+                amount: (*boundary_execution.input_max.amount).into(),
             });
             let output = liquidity::ExactOutput(eth::Asset {
                 token: boundary_execution.output.token.into(),
-                amount: boundary_execution.output.amount.into(),
+                amount: (*boundary_execution.output.amount).into(),
             });
 
             let interaction = match &liquidity.liquidity.kind {
@@ -457,7 +459,7 @@ pub fn to_boundary_interaction(
 
             Ok(InteractionData {
                 target: interaction.target.into(),
-                value: interaction.value.into(),
+                value: eth::U256::from(interaction.value).into(),
                 call_data: interaction.call_data.into(),
             })
         }

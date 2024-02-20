@@ -143,8 +143,8 @@ impl Inner {
             UniswapInteraction {
                 router: self.router.clone(),
                 settlement: self.gpv2_settlement.clone(),
-                amount_out: token_amount_out.amount,
-                amount_in_max: token_amount_in_max.amount,
+                amount_out: *token_amount_out.amount,
+                amount_in_max: *token_amount_in_max.amount,
                 token_in: token_amount_in_max.token,
                 token_out: token_amount_out.token,
             },

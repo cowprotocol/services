@@ -33,7 +33,7 @@ impl Interaction for EncodedInteraction {
 
 impl Interaction for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        (self.target, self.value, Bytes(self.call_data.clone()))
+        (self.target, *self.value, Bytes(self.call_data.clone()))
     }
 }
 
@@ -43,7 +43,7 @@ where
 {
     InteractionData {
         target: tx.to.unwrap(),
-        value: tx.value.unwrap_or_default(),
+        value: tx.value.unwrap_or_default().into(),
         call_data: tx.data.unwrap().0,
     }
 }

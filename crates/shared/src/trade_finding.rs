@@ -118,7 +118,7 @@ impl From<InteractionData> for Interaction {
     fn from(interaction: InteractionData) -> Self {
         Self {
             target: interaction.target,
-            value: interaction.value,
+            value: *interaction.value,
             data: interaction.call_data,
         }
     }

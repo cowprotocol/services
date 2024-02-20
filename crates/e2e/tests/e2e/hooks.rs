@@ -73,10 +73,10 @@ async fn allowance(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: cow.address(),
-        sell_amount: to_wei(4),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(4).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: onchain.contracts().weth.address(),
-        buy_amount: to_wei(3),
+        buy_amount: to_wei(3).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full {
@@ -120,7 +120,7 @@ async fn allowance(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert!(balance >= order.buy_amount);
+    assert!(balance >= *order.buy_amount);
 
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
@@ -244,10 +244,10 @@ async fn signature(web3: Web3) {
     let mut order = OrderCreation {
         from: Some(safe.address()),
         sell_token: token.address(),
-        sell_amount: to_wei(4),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(4).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: onchain.contracts().weth.address(),
-        buy_amount: to_wei(3),
+        buy_amount: to_wei(3).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full {
@@ -295,7 +295,7 @@ async fn signature(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert!(balance >= order.buy_amount);
+    assert!(balance >= *order.buy_amount);
 
     // Check Safe was deployed
     let code = web3.eth().code(safe.address(), None).await.unwrap();
@@ -341,9 +341,9 @@ async fn partial_fills(web3: Web3) {
     tracing::info!("Placing order");
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(2),
+        sell_amount: to_wei(2).into(),
         buy_token: token.address(),
-        buy_amount: to_wei(1),
+        buy_amount: to_wei(1).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,

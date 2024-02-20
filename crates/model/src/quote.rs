@@ -7,8 +7,8 @@ use {
     },
     anyhow::bail,
     chrono::{DateTime, Utc},
-    number::{nonzero::U256 as NonZeroU256, serialization::HexOrDecimalU256},
-    primitive_types::{H160, U256},
+    number::nonzero::U256 as NonZeroU256,
+    primitive_types::H160,
     serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::serde_as,
 };
@@ -268,22 +268,18 @@ pub enum SellAmount {
 }
 
 /// The quoted order by the service.
-#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
     pub sell_token: H160,
     pub buy_token: H160,
     pub receiver: Option<H160>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub sell_amount: number::U256,
+    pub buy_amount: number::U256,
     pub valid_to: u32,
     #[serde(flatten)]
     pub app_data: OrderCreationAppData,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
+    pub fee_amount: number::U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenSource,

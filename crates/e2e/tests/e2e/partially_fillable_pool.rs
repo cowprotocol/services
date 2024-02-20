@@ -74,9 +74,9 @@ async fn test(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(500),
+        sell_amount: to_wei(500).into(),
         buy_token: token_b.address(),
-        buy_amount: to_wei(390),
+        buy_amount: to_wei(390).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,
@@ -97,7 +97,7 @@ async fn test(web3: Web3) {
     let order = auction.orders.into_iter().next().unwrap();
     assert!(order.partially_fillable);
     assert!(matches!(order.class, OrderClass::Limit));
-    assert_eq!(order.user_fee, 0.into());
+    assert_eq!(order.user_fee, 0_u32.into());
 
     tracing::info!("Waiting for trade.");
     let trade_happened =

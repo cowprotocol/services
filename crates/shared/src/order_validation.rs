@@ -370,7 +370,7 @@ impl OrderValidator {
             } else {
                 vec![InteractionData {
                     target: self.hooks.address(),
-                    value: U256::zero(),
+                    value: U256::zero().into(),
                     call_data: self
                         .hooks
                         .execute(
@@ -570,9 +570,9 @@ impl OrderValidating for OrderValidator {
         let quote_parameters = QuoteSearchParameters {
             sell_token: data.sell_token,
             buy_token: data.buy_token,
-            sell_amount: data.sell_amount,
-            buy_amount: data.buy_amount,
-            fee_amount: data.fee_amount,
+            sell_amount: *data.sell_amount,
+            buy_amount: *data.buy_amount,
+            fee_amount: *data.fee_amount,
             kind: data.kind,
             signing_scheme: convert_signing_scheme_into_quote_signing_scheme(
                 order.signature.scheme(),
@@ -585,9 +585,13 @@ impl OrderValidating for OrderValidator {
         let quote = match class {
             OrderClass::Market => {
                 let fee = Some(data.fee_amount);
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, fee)
-                        .await?;
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    fee.map(Into::into),
+                )
+                .await?;
                 Some(quote)
             }
             OrderClass::Limit => {
@@ -660,9 +664,9 @@ impl OrderValidating for OrderValidator {
             (OrderClass::Market, Some(quote))
                 if is_order_outside_market_price(
                     &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
+                        sell: *data.sell_amount,
+                        buy: *data.buy_amount,
+                        fee: *data.fee_amount,
                     },
                     &Amounts {
                         sell: quote.sell_amount,
@@ -775,7 +779,7 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
     if order.partially_fillable {
         return Some(1.into());
     }
-    order.sell_amount.checked_add(order.fee_amount)
+    (*order.sell_amount).checked_add(*order.fee_amount)
 }
 
 /// Retrieves the quote for an order that is being created and verify that its
@@ -924,14 +928,14 @@ mod tests {
     #[test]
     fn minimum_balance_() {
         let order = OrderData {
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
+            sell_amount: U256::MAX.into(),
+            fee_amount: U256::from(1).into(),
             ..Default::default()
         };
         assert_eq!(minimum_balance(&order), None);
         let order = OrderData {
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             ..Default::default()
         };
         assert_eq!(minimum_balance(&order), Some(U256::from(2)));
@@ -1243,9 +1247,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1295,7 +1299,7 @@ mod tests {
 
         let pre_interactions = vec![InteractionData {
             target: hooks.address(),
-            value: U256::zero(),
+            value: U256::zero().into(),
             call_data: hooks
                 .execute(vec![(
                     addr!("1111111111111111111111111111111111111111"),
@@ -1362,7 +1366,7 @@ mod tests {
             .is_ok());
 
         let creation_ = OrderCreation {
-            fee_amount: U256::zero(),
+            fee_amount: U256::zero().into(),
             ..creation.clone()
         };
         let (order, quote) = validator
@@ -1373,7 +1377,7 @@ mod tests {
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
-            fee_amount: U256::zero(),
+            fee_amount: U256::zero().into(),
             partially_fillable: true,
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1436,8 +1440,8 @@ mod tests {
             valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1493,9 +1497,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(0),
-            sell_amount: U256::from(0),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(0).into(),
+            sell_amount: U256::from(0).into(),
+            fee_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1550,9 +1554,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: expected_buy_amount + 1, // buy more than expected
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: (expected_buy_amount + 1).into(), // buy more than expected
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             kind: OrderKind::Sell,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
@@ -1606,9 +1610,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             from: Some(Default::default()),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
@@ -1657,9 +1661,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1710,9 +1714,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1767,9 +1771,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::MAX.into(),
+            fee_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1818,9 +1822,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1874,9 +1878,9 @@ mod tests {
             valid_to: time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            buy_amount: U256::from(1).into(),
+            sell_amount: U256::from(1).into(),
+            fee_amount: U256::from(1).into(),
             from: Some(H160([1; 20])),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
@@ -1935,10 +1939,10 @@ mod tests {
             let order = OrderCreation {
                 valid_to: u32::MAX,
                 sell_token: H160::from_low_u64_be(1),
-                sell_amount: 1.into(),
+                sell_amount: 1_u32.into(),
                 buy_token: H160::from_low_u64_be(2),
-                buy_amount: 1.into(),
-                fee_amount: 1.into(),
+                buy_amount: 1_u32.into(),
+                fee_amount: 1_u32.into(),
                 app_data: OrderCreationAppData::Full {
                     full: "{}".to_string(),
                 },

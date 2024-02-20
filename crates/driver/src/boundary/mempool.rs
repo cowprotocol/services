@@ -6,6 +6,7 @@ use {
     },
     async_trait::async_trait,
     ethcontract::{transaction::TransactionBuilder, transport::DynTransport},
+    primitive_types,
     solver::{
         settlement_access_list::AccessListEstimating,
         settlement_submission::{
@@ -51,7 +52,7 @@ pub enum Kind {
     /// The MEVBlocker private mempool.
     MEVBlocker {
         url: reqwest::Url,
-        max_additional_tip: eth::U256,
+        max_additional_tip: primitive_types::U256,
         additional_tip_percentage: f64,
         use_soft_cancellations: bool,
     },

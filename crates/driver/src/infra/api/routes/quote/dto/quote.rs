@@ -3,6 +3,7 @@ use {
         domain::{eth, quote},
         util::serialize,
     },
+    number::U256,
     serde::Serialize,
     serde_with::serde_as,
 };
@@ -10,13 +11,13 @@ use {
 impl Quote {
     pub fn new(quote: &quote::Quote) -> Self {
         Self {
-            amount: quote.amount,
+            amount: quote.amount.into(),
             interactions: quote
                 .interactions
                 .iter()
                 .map(|interaction| Interaction {
                     target: interaction.target.into(),
-                    value: interaction.value.into(),
+                    value: eth::U256::from(interaction.value).into(),
                     call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
@@ -25,12 +26,10 @@ impl Quote {
     }
 }
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
-    #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
+    amount: U256,
     interactions: Vec<Interaction>,
     solver: eth::H160,
 }
@@ -40,8 +39,7 @@ pub struct Quote {
 #[serde(rename_all = "camelCase")]
 struct Interaction {
     target: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    value: eth::U256,
+    value: U256,
     #[serde_as(as = "serialize::Hex")]
     call_data: Vec<u8>,
 }

@@ -2,10 +2,9 @@
 
 use {
     crate::order::Order,
-    number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
+    number::U256,
+    primitive_types::H160,
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
     std::collections::BTreeMap,
 };
 
@@ -26,7 +25,6 @@ pub struct AuctionWithId {
 }
 
 /// A batch auction.
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
@@ -47,7 +45,6 @@ pub struct Auction {
     pub orders: Vec<Order>,
 
     /// The reference prices for all traded tokens in the auction.
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
 }
 
@@ -74,8 +71,8 @@ mod tests {
             latest_settlement_block: 40,
             orders: vec![order(1), order(2)],
             prices: btreemap! {
-                H160([2; 20]) => U256::from(2),
-                H160([1; 20]) => U256::from(1),
+                H160([2; 20]) => U256::from(2_u32),
+                H160([1; 20]) => U256::from(1_u32),
             },
         };
         let auction = AuctionWithId { id: 0, auction };

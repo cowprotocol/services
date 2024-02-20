@@ -113,8 +113,8 @@ impl QuoteHandler {
                 sell_token: request.sell_token,
                 buy_token: request.buy_token,
                 receiver: request.receiver,
-                sell_amount: quote.sell_amount,
-                buy_amount: quote.buy_amount,
+                sell_amount: quote.sell_amount.into(),
+                buy_amount: quote.buy_amount.into(),
                 valid_to,
                 app_data: match &request.app_data {
                     OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
@@ -123,7 +123,7 @@ impl QuoteHandler {
                     },
                     app_data => app_data.clone(),
                 },
-                fee_amount: quote.fee_amount,
+                fee_amount: quote.fee_amount.into(),
                 kind: quote.data.kind,
                 partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,

@@ -12,7 +12,7 @@ pub struct GasModel {
 impl GasModel {
     pub fn cost_for_gas(&self, gas: U256) -> TokenAmount {
         TokenAmount {
-            amount: U256::from_f64_lossy(self.gas_price) * gas,
+            amount: (U256::from_f64_lossy(self.gas_price) * gas).into(),
             token: self.native_token,
         }
     }

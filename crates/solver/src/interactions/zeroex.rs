@@ -29,7 +29,7 @@ impl Interaction for ZeroExInteraction {
                 self.order.fee_recipient,
                 Bytes(self.order.pool.0),
                 self.order.expiry,
-                self.order.salt,
+                *self.order.salt,
             ),
             (
                 self.order.signature.signature_type,

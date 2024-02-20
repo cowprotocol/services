@@ -16,7 +16,6 @@ use {
     derivative::Derivative,
     hex_literal::hex,
     num::BigUint,
-    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::{serde_as, DisplayFromStr},
@@ -153,12 +152,12 @@ impl OrderBuilder {
     }
 
     pub fn with_sell_amount(mut self, sell_amount: U256) -> Self {
-        self.0.data.sell_amount = sell_amount;
+        self.0.data.sell_amount = sell_amount.into();
         self
     }
 
     pub fn with_buy_amount(mut self, buy_amount: U256) -> Self {
-        self.0.data.buy_amount = buy_amount;
+        self.0.data.buy_amount = buy_amount.into();
         self
     }
 
@@ -178,12 +177,12 @@ impl OrderBuilder {
     }
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
-        self.0.data.fee_amount = fee_amount;
+        self.0.data.fee_amount = fee_amount.into();
         self
     }
 
     pub fn with_full_fee_amount(mut self, full_fee_amount: U256) -> Self {
-        self.0.metadata.full_fee_amount = full_fee_amount;
+        self.0.metadata.full_fee_amount = full_fee_amount.into();
         self
     }
 
@@ -245,7 +244,7 @@ impl OrderBuilder {
     }
 
     pub fn with_solver_fee(mut self, fee: U256) -> Self {
-        self.0.metadata.solver_fee = fee;
+        self.0.metadata.solver_fee = fee.into();
         self
     }
 
@@ -263,7 +262,6 @@ impl OrderBuilder {
 ///
 /// These are the exact fields that get signed and verified by the settlement
 /// contract.
-#[serde_as]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderData {
@@ -271,10 +269,8 @@ pub struct OrderData {
     pub buy_token: H160,
     #[serde(default)]
     pub receiver: Option<H160>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub sell_amount: number::U256,
+    pub buy_amount: number::U256,
     pub valid_to: u32,
     pub app_data: AppDataHash,
     /// Fees that will be taken in terms of `sell_token`.
@@ -284,8 +280,7 @@ pub struct OrderData {
     /// This is 0 for limit orders as their fee gets taken from the surplus.
     /// This is equal to `OrderMetadata::full_fee_amount` except for old orders
     /// where the subsidy was applied (at the time when we used the subsidies).
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
+    pub fee_amount: number::U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     #[serde(default)]
@@ -344,8 +339,8 @@ impl OrderData {
 
     /// Checks if the order is a market order.
     pub fn within_market(&self, quote: QuoteAmounts) -> bool {
-        (self.sell_amount + self.fee_amount).full_mul(quote.buy)
-            >= (quote.sell + quote.fee).full_mul(self.buy_amount)
+        (*self.sell_amount + *self.fee_amount).full_mul(quote.buy)
+            >= (quote.sell + quote.fee).full_mul(self.buy_amount.into())
     }
 }
 
@@ -359,7 +354,6 @@ pub struct QuoteAmounts {
 }
 
 /// An order as provided to the POST order endpoint.
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
@@ -368,13 +362,10 @@ pub struct OrderCreation {
     pub buy_token: H160,
     #[serde(default)]
     pub receiver: Option<H160>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub sell_amount: number::U256,
+    pub buy_amount: number::U256,
     pub valid_to: u32,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
+    pub fee_amount: number::U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
     #[serde(default)]
@@ -734,20 +725,16 @@ pub struct OrderMetadata {
     pub owner: H160,
     pub uid: OrderUid,
     /// deprecated, always set to null
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub available_balance: Option<U256>,
+    pub available_balance: Option<number::U256>,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed_sell_amount_before_fees: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed_fee_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed_surplus_fee: U256,
+    pub executed_sell_amount_before_fees: number::U256,
+    pub executed_fee_amount: number::U256,
+    pub executed_surplus_fee: number::U256,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]
@@ -761,8 +748,7 @@ pub struct OrderMetadata {
     /// Does not take partial fill into account.
     ///
     /// [TO BE DEPRECATED]
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub full_fee_amount: U256,
+    pub full_fee_amount: number::U256,
     /// The fee amount that should be used for objective value computations.
     ///
     /// This is different than the actual signed fee in that it
@@ -772,8 +758,7 @@ pub struct OrderMetadata {
     /// Does not take partial fill into account.
     ///
     /// [TO BE DEPRECATED]
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub solver_fee: U256,
+    pub solver_fee: number::U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1129,14 +1114,14 @@ mod tests {
                 available_balance: None,
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
                 executed_sell_amount: BigUint::from_bytes_be(&[5]),
-                executed_sell_amount_before_fees: 4.into(),
-                executed_fee_amount: 1.into(),
-                executed_surplus_fee: 1.into(),
+                executed_sell_amount_before_fees: 4_u32.into(),
+                executed_fee_amount: 1_u32.into(),
+                executed_surplus_fee: 1_u32.into(),
                 invalidated: true,
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
-                full_fee_amount: U256::MAX,
-                solver_fee: U256::MAX,
+                full_fee_amount: U256::MAX.into(),
+                solver_fee: U256::MAX.into(),
                 full_app_data: Some("123".to_string()),
                 ..Default::default()
             },
@@ -1144,13 +1129,13 @@ mod tests {
                 sell_token: H160::from_low_u64_be(10),
                 buy_token: H160::from_low_u64_be(9),
                 receiver: Some(H160::from_low_u64_be(11)),
-                sell_amount: 1.into(),
-                buy_amount: 0.into(),
+                sell_amount: 1_u32.into(),
+                buy_amount: 0_u32.into(),
                 valid_to: u32::MAX,
                 app_data: AppDataHash(hex!(
                     "6000000000000000000000000000000000000000000000000000000000000007"
                 )),
-                fee_amount: U256::MAX,
+                fee_amount: U256::MAX.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
@@ -1202,13 +1187,13 @@ mod tests {
                 sell_token: H160([0x11; 20]),
                 buy_token: H160([0x22; 20]),
                 receiver: Some(H160([0x33; 20])),
-                sell_amount: 123.into(),
-                buy_amount: 456.into(),
+                sell_amount: 123_u32.into(),
+                buy_amount: 456_u32.into(),
                 valid_to: 1337,
                 app_data: OrderCreationAppData::Hash {
                     hash: AppDataHash([0x44; 32]),
                 },
-                fee_amount: 789.into(),
+                fee_amount: 789_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,

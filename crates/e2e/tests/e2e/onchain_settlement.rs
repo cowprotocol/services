@@ -98,10 +98,10 @@ async fn onchain_settlement(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(100),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(100).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: token_b.address(),
-        buy_amount: to_wei(80),
+        buy_amount: to_wei(80).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -115,10 +115,10 @@ async fn onchain_settlement(web3: Web3) {
 
     let order_b = OrderCreation {
         sell_token: token_b.address(),
-        sell_amount: to_wei(50),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(50).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: token_a.address(),
-        buy_amount: to_wei(40),
+        buy_amount: to_wei(40).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -152,9 +152,9 @@ async fn onchain_settlement(web3: Web3) {
 
     // Check matching
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    assert!(balance >= order_a.buy_amount);
+    assert!(balance >= *order_a.buy_amount);
     let balance = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    assert!(balance >= order_b.buy_amount);
+    assert!(balance >= *order_b.buy_amount);
 
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };

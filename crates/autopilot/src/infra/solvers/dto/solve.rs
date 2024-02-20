@@ -6,7 +6,6 @@ use {
     },
     chrono::{DateTime, Utc},
     itertools::Itertools,
-    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
@@ -37,7 +36,7 @@ impl Request {
                 .iter()
                 .map(|(address, price)| Token {
                     address: address.to_owned(),
-                    price: Some(price.to_owned()),
+                    price: Some(price.to_owned().into()),
                     trusted: trusted_tokens.contains(address),
                 })
                 .chain(trusted_tokens.iter().map(|&address| Token {
@@ -48,7 +47,7 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            score_cap,
+            score_cap: score_cap.into(),
         }
     }
 }
@@ -62,30 +61,24 @@ pub struct Request {
     pub tokens: Vec<Token>,
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub score_cap: U256,
+    pub score_cap: number::U256,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub address: H160,
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub price: Option<U256>,
+    pub price: Option<number::U256>,
     pub trusted: bool,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TradedAmounts {
     /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
+    pub sell_amount: number::U256,
     /// The effective amount the user received after all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub buy_amount: number::U256,
 }
 
 #[serde_as]
@@ -96,13 +89,11 @@ pub struct Solution {
     /// it in subsequent requests (reveal, settle).
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub solution_id: u64,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub score: U256,
+    pub score: number::U256,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: H160,
     pub orders: HashMap<boundary::OrderUid, TradedAmounts>,
-    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-    pub clearing_prices: HashMap<H160, U256>,
+    pub clearing_prices: HashMap<H160, number::U256>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

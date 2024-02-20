@@ -46,7 +46,7 @@ impl ExternalTradeFinder {
         let order = dto::Order {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
-            amount: query.in_amount.get(),
+            amount: query.in_amount.get().into(),
             kind: query.kind,
             deadline,
         };
@@ -111,14 +111,14 @@ impl From<dto::Quote> for Trade {
         const TRADE_GAS: u64 = 290_000;
 
         Self {
-            out_amount: quote.amount,
+            out_amount: *quote.amount,
             gas_estimate: TRADE_GAS,
             interactions: quote
                 .interactions
                 .into_iter()
                 .map(|interaction| Interaction {
                     target: interaction.target,
-                    value: interaction.value,
+                    value: *interaction.value,
                     data: interaction.call_data,
                 })
                 .collect(),
@@ -156,31 +156,26 @@ impl TradeFinding for ExternalTradeFinder {
 
 mod dto {
     use {
-        ethcontract::{H160, U256},
+        ethcontract::H160,
         model::{bytes_hex::BytesHex, order::OrderKind},
-        number::serialization::HexOrDecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
 
-    #[serde_as]
     #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Order {
         pub sell_token: H160,
         pub buy_token: H160,
-        #[serde_as(as = "HexOrDecimalU256")]
-        pub amount: U256,
+        pub amount: number::U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
     }
 
-    #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Quote {
-        #[serde_as(as = "HexOrDecimalU256")]
-        pub amount: U256,
+        pub amount: number::U256,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
     }
@@ -190,8 +185,7 @@ mod dto {
     #[serde(rename_all = "camelCase")]
     pub struct Interaction {
         pub target: H160,
-        #[serde_as(as = "HexOrDecimalU256")]
-        pub value: U256,
+        pub value: number::U256,
         #[serde_as(as = "BytesHex")]
         pub call_data: Vec<u8>,
     }

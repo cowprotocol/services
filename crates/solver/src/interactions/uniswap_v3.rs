@@ -31,8 +31,8 @@ impl Interaction for UniswapV3Interaction {
             self.params.fee,
             self.params.recipient,
             self.params.deadline,
-            self.params.token_amount_out.amount,
-            self.params.token_amount_in_max.amount,
+            *self.params.token_amount_out.amount,
+            *self.params.token_amount_in_max.amount,
             self.params.sqrt_price_limit_x96,
         ));
         let calldata = method.tx.data.expect("no calldata").0;

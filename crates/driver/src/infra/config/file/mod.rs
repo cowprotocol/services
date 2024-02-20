@@ -1,6 +1,7 @@
 pub use load::load;
 use {
-    crate::{domain::eth, util::serialize},
+    crate::domain::eth,
+    number::U256,
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
@@ -10,7 +11,6 @@ use {
 
 mod load;
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
@@ -28,8 +28,7 @@ struct Config {
     /// Disable gas simulation and always use this fixed gas value instead. This
     /// can be useful for testing, but shouldn't be used in production since it
     /// will cause the driver to return invalid scores.
-    #[serde_as(as = "Option<serialize::U256>")]
-    disable_gas_simulation: Option<eth::U256>,
+    disable_gas_simulation: Option<U256>,
 
     /// Parameters related to settlement submission.
     #[serde(default)]
@@ -52,21 +51,18 @@ struct Config {
     liquidity: LiquidityConfig,
 }
 
-#[serde_as]
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SubmissionConfig {
     /// The minimum priority fee in Gwei the solver is ensuring to pay in a
     /// settlement.
     #[serde(default)]
-    #[serde_as(as = "serialize::U256")]
-    min_priority_fee: eth::U256,
+    min_priority_fee: U256,
 
     /// The maximum gas price in Gwei the solver is willing to pay in a
     /// settlement.
     #[serde(default = "default_gas_price_cap")]
-    #[serde_as(as = "serialize::U256")]
-    gas_price_cap: eth::U256,
+    gas_price_cap: U256,
 
     /// The target confirmation time for settlement transactions used
     /// to estimate gas price.
@@ -92,7 +88,6 @@ struct SubmissionConfig {
     logic: Logic,
 }
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mempool")]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -105,8 +100,7 @@ enum Mempool {
         /// Maximum additional tip in Gwei that we are willing to give to
         /// MEVBlocker above regular gas price estimation.
         #[serde(default = "default_max_additional_tip")]
-        #[serde_as(as = "serialize::U256")]
-        max_additional_tip: eth::U256,
+        max_additional_tip: U256,
         /// Additional tip in percentage of max_fee_per_gas we are giving to
         /// MEVBlocker above regular gas price estimation. Expects a
         /// floating point value between 0 and 1.
@@ -127,8 +121,8 @@ fn default_additional_tip_percentage() -> f64 {
 }
 
 /// 1000 gwei
-fn default_gas_price_cap() -> eth::U256 {
-    eth::U256::from(1000) * eth::U256::exp10(9)
+fn default_gas_price_cap() -> U256 {
+    U256::from(eth::U256::from(1000) * eth::U256::exp10(9))
 }
 
 fn default_target_confirm_time() -> Duration {
@@ -144,8 +138,8 @@ fn default_max_confirm_time() -> Duration {
 }
 
 /// 3 gwei
-fn default_max_additional_tip() -> eth::U256 {
-    eth::U256::from(3) * eth::U256::exp10(9)
+fn default_max_additional_tip() -> U256 {
+    U256::from(eth::U256::from(3) * eth::U256::exp10(9))
 }
 
 fn default_soft_cancellations_flag() -> bool {
@@ -230,8 +224,7 @@ struct Slippage {
 
     /// The absolute slippage allowed by the solver.
     #[serde(rename = "absolute-slippage")]
-    #[serde_as(as = "Option<serialize::U256>")]
-    absolute: Option<eth::U256>,
+    absolute: Option<U256>,
 }
 
 #[derive(Debug, Default, Deserialize)]

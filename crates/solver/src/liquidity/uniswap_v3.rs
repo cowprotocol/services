@@ -239,11 +239,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_a,
-                amount: 50.into(),
+                amount: 50_u32.into(),
             },
             TokenAmount {
                 token: token_b,
-                amount: 100.into(),
+                amount: 100_u32.into(),
             },
         );
         assert_eq!(approval, None);
@@ -251,11 +251,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_a,
-                amount: 99.into(),
+                amount: 99_u32.into(),
             },
             TokenAmount {
                 token: token_b,
-                amount: 100.into(),
+                amount: 100_u32.into(),
             },
         );
         assert_eq!(approval, None);
@@ -264,11 +264,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_b,
-                amount: 150.into(),
+                amount: 150_u32.into(),
             },
             TokenAmount {
                 token: token_a,
-                amount: 100.into(),
+                amount: 100_u32.into(),
             },
         );
         assert_eq!(approval, None);
@@ -276,11 +276,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: token_b,
-                amount: 199.into(),
+                amount: 199_u32.into(),
             },
             TokenAmount {
                 token: token_a,
-                amount: 100.into(),
+                amount: 100_u32.into(),
             },
         );
         assert_eq!(approval, None);
@@ -289,11 +289,11 @@ mod tests {
         let (approval, _) = settlement_handler.settle(
             TokenAmount {
                 token: H160::from_low_u64_be(3),
-                amount: 1.into(),
+                amount: 1_u32.into(),
             },
             TokenAmount {
                 token: token_a,
-                amount: 100.into(),
+                amount: 100_u32.into(),
             },
         );
         assert_ne!(approval, None);

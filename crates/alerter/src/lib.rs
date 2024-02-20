@@ -7,11 +7,9 @@ use {
     anyhow::{Context, Result},
     clap::Parser,
     model::order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
-    number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     prometheus::IntGauge,
     reqwest::Client,
-    serde_with::serde_as,
     std::{
         collections::HashMap,
         time::{Duration, Instant},
@@ -19,17 +17,14 @@ use {
     url::Url,
 };
 
-#[serde_as]
 #[derive(Debug, serde::Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct Order {
     kind: OrderKind,
     buy_token: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    buy_amount: U256,
+    buy_amount: number::U256,
     sell_token: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    sell_amount: U256,
+    sell_amount: number::U256,
     uid: OrderUid,
     partially_fillable: bool,
     #[serde(flatten)]
@@ -130,14 +125,11 @@ impl ZeroExApi {
             .append_pair("buyToken", &format!("{buy_token:#x}"))
             .append_pair(amount_name, &amount.to_string());
 
-        #[serde_as]
         #[derive(Debug, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct Response {
-            #[serde_as(as = "HexOrDecimalU256")]
-            pub sell_amount: U256,
-            #[serde_as(as = "HexOrDecimalU256")]
-            pub buy_amount: U256,
+            pub sell_amount: number::U256,
+            pub buy_amount: number::U256,
         }
 
         let response: Response = self

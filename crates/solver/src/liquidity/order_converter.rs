@@ -63,8 +63,8 @@ impl OrderConverter {
             }
             OrderClass::Limit => LimitOrderId::Limit(order.metadata.uid),
         };
-        let sell_amount = remaining.remaining(sell_amount)?;
-        let buy_amount = remaining.remaining(order.data.buy_amount)?;
+        let sell_amount = remaining.remaining(*sell_amount)?;
+        let buy_amount = remaining.remaining(*order.data.buy_amount)?;
         ensure!(
             !sell_amount.is_zero() && !buy_amount.is_zero(),
             "order with 0 amounts",
@@ -78,7 +78,7 @@ impl OrderConverter {
             buy_amount,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            user_fee: remaining.remaining(order.data.fee_amount)?,
+            user_fee: remaining.remaining(*order.data.fee_amount)?,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token: self.native_token.clone(),
@@ -140,8 +140,8 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
+                sell_amount: 1_u32.into(),
+                buy_amount: 1_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -163,8 +163,8 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token,
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
+                sell_amount: 1_u32.into(),
+                buy_amount: 1_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -197,7 +197,7 @@ pub mod tests {
             data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
                 sell_token,
-                sell_amount: 1337.into(),
+                sell_amount: 1337_u32.into(),
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
@@ -241,7 +241,7 @@ pub mod tests {
             let order = Order {
                 data: OrderData {
                     buy_token: BUY_ETH_ADDRESS,
-                    buy_amount: 1337.into(),
+                    buy_amount: 1337_u32.into(),
                     sell_token,
                     kind: OrderKind::Buy,
                     ..Default::default()
@@ -293,9 +293,9 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 buy_token: not_buy_eth_address,
-                buy_amount: 1337.into(),
+                buy_amount: 1337_u32.into(),
                 sell_token,
-                sell_amount: 1337.into(),
+                sell_amount: 1337_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -321,16 +321,16 @@ pub mod tests {
         let converter = OrderConverter::test(H160::default());
         let mut order = Order {
             data: OrderData {
-                sell_amount: 20.into(),
-                buy_amount: 40.into(),
-                fee_amount: 60.into(),
+                sell_amount: 20_u32.into(),
+                buy_amount: 40_u32.into(),
+                fee_amount: 60_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 10.into(),
-                solver_fee: 60.into(),
+                executed_sell_amount_before_fees: 10_u32.into(),
+                solver_fee: 60_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -358,7 +358,7 @@ pub mod tests {
         assert_eq!(order_.buy_amount, 10.into());
         assert_eq!(order_.user_fee, 15.into());
 
-        order.metadata.executed_sell_amount_before_fees = 0.into();
+        order.metadata.executed_sell_amount_before_fees = 0_u32.into();
         let order_ = converter
             .normalize_limit_order(BalancedOrder {
                 order,
@@ -377,9 +377,9 @@ pub mod tests {
 
         let sell = Order {
             data: OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 10.into(),
-                fee_amount: 0.into(),
+                sell_amount: 100_u32.into(),
+                buy_amount: 10_u32.into(),
+                fee_amount: 0_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -403,9 +403,9 @@ pub mod tests {
 
         let buy = Order {
             data: OrderData {
-                sell_amount: 10.into(),
-                buy_amount: 100.into(),
-                fee_amount: 0.into(),
+                sell_amount: 10_u32.into(),
+                buy_amount: 100_u32.into(),
+                fee_amount: 0_u32.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()

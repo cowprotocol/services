@@ -3,33 +3,27 @@ use {
         boundary::{self},
         domain,
     },
-    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     pub uid: boundary::OrderUid,
     pub sell_token: H160,
     pub buy_token: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub user_fee: U256,
+    pub sell_amount: number::U256,
+    pub buy_amount: number::U256,
+    pub user_fee: number::U256,
     pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,
     pub owner: H160,
     pub partially_fillable: bool,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed: U256,
+    pub executed: number::U256,
     pub pre_interactions: Vec<boundary::InteractionData>,
     pub post_interactions: Vec<boundary::InteractionData>,
     pub sell_token_balance: boundary::SellTokenSource,
@@ -46,16 +40,16 @@ pub fn from_domain(order: domain::Order) -> Order {
         uid: order.uid.into(),
         sell_token: order.sell_token,
         buy_token: order.buy_token,
-        sell_amount: order.sell_amount,
-        buy_amount: order.buy_amount,
-        user_fee: order.user_fee,
+        sell_amount: order.sell_amount.into(),
+        buy_amount: order.buy_amount.into(),
+        user_fee: order.user_fee.into(),
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.kind.into(),
         receiver: order.receiver,
         owner: order.owner,
         partially_fillable: order.partially_fillable,
-        executed: order.executed,
+        executed: order.executed.into(),
         pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
         post_interactions: order
             .post_interactions
@@ -75,16 +69,16 @@ pub fn to_domain(order: Order) -> domain::Order {
         uid: order.uid.into(),
         sell_token: order.sell_token,
         buy_token: order.buy_token,
-        sell_amount: order.sell_amount,
-        buy_amount: order.buy_amount,
-        user_fee: order.user_fee,
+        sell_amount: *order.sell_amount,
+        buy_amount: *order.buy_amount,
+        user_fee: *order.user_fee,
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.kind.into(),
         receiver: order.receiver,
         owner: order.owner,
         partially_fillable: order.partially_fillable,
-        executed: order.executed,
+        executed: *order.executed,
         pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
         post_interactions: order
             .post_interactions
@@ -153,7 +147,7 @@ impl From<domain::auction::order::Interaction> for boundary::InteractionData {
     fn from(interaction: domain::auction::order::Interaction) -> Self {
         Self {
             target: interaction.target,
-            value: interaction.value,
+            value: interaction.value.into(),
             call_data: interaction.call_data,
         }
     }
@@ -163,7 +157,7 @@ impl From<boundary::InteractionData> for domain::auction::order::Interaction {
     fn from(interaction: boundary::InteractionData) -> Self {
         Self {
             target: interaction.target,
-            value: interaction.value,
+            value: *interaction.value,
             call_data: interaction.call_data,
         }
     }

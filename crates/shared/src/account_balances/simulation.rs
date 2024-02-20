@@ -57,7 +57,7 @@ impl Balances {
                     query
                         .interactions
                         .iter()
-                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                        .map(|i| (i.target, i.value.into(), Bytes(i.call_data.clone())))
                         .collect(),
                 ),
             )

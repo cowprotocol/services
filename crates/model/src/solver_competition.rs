@@ -1,7 +1,6 @@
 use {
     crate::{auction::AuctionId, bytes_hex::BytesHex, order::OrderUid},
     derivative::Derivative,
-    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -30,13 +29,11 @@ pub struct SolverCompetitionAPI {
     pub common: SolverCompetitionDB,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionAuction {
     pub orders: Vec<OrderUid>,
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<H160, number::U256>,
 }
 
 #[serde_as]
@@ -51,8 +48,7 @@ pub struct SolverSettlement {
     pub score: Option<Score>,
     #[serde(default)]
     pub ranking: usize,
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub clearing_prices: BTreeMap<H160, U256>,
+    pub clearing_prices: BTreeMap<H160, number::U256>,
     pub orders: Vec<Order>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
@@ -64,25 +60,24 @@ pub struct SolverSettlement {
     pub uninternalized_call_data: Option<Vec<u8>>,
 }
 
-#[serde_as]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Score {
     /// The score is provided by the solver.
     #[serde(rename = "score")]
-    Solver(#[serde_as(as = "HexOrDecimalU256")] U256),
+    Solver(number::U256),
     /// The score is calculated by the protocol (and equal to the objective
     /// function).
     #[serde(rename = "scoreProtocol")]
-    Protocol(#[serde_as(as = "HexOrDecimalU256")] U256),
+    Protocol(number::U256),
     /// The score is calculated by the protocol and success_probability provided
     /// by solver is taken into account
     #[serde(rename = "scoreProtocolWithSolverRisk")]
-    ProtocolWithSolverRisk(#[serde_as(as = "HexOrDecimalU256")] U256),
+    ProtocolWithSolverRisk(number::U256),
     /// The score is calculated by the protocol, by applying a discount to the
     /// `Self::Protocol` value.
     /// [DEPRECATED] Kept to not brake the solver competition API.
     #[serde(rename = "scoreDiscounted")]
-    Discounted(#[serde_as(as = "HexOrDecimalU256")] U256),
+    Discounted(number::U256),
 }
 
 impl Default for Score {
@@ -94,15 +89,14 @@ impl Default for Score {
 impl Score {
     pub fn score(&self) -> U256 {
         match self {
-            Self::Solver(score) => *score,
-            Self::Protocol(score) => *score,
-            Self::ProtocolWithSolverRisk(score) => *score,
-            Self::Discounted(score) => *score,
+            Self::Solver(score) => (*score).into(),
+            Self::Protocol(score) => (*score).into(),
+            Self::ProtocolWithSolverRisk(score) => (*score).into(),
+            Self::Discounted(score) => (*score).into(),
         }
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum Order {
@@ -110,17 +104,14 @@ pub enum Order {
     Colocated {
         id: OrderUid,
         /// The effective amount that left the user's wallet including all fees.
-        #[serde_as(as = "HexOrDecimalU256")]
-        sell_amount: U256,
+        sell_amount: number::U256,
         /// The effective amount the user received after all fees.
-        #[serde_as(as = "HexOrDecimalU256")]
-        buy_amount: U256,
+        buy_amount: number::U256,
     },
     #[serde(rename_all = "camelCase")]
     Legacy {
         id: OrderUid,
-        #[serde_as(as = "HexOrDecimalU256")]
-        executed_amount: U256,
+        executed_amount: number::U256,
     },
 }
 
@@ -194,28 +185,28 @@ mod tests {
                         OrderUid([0x33; 56]),
                     ],
                     prices: btreemap! {
-                        H160([0x11; 20]) => 1000.into(),
-                        H160([0x22; 20]) => 2000.into(),
-                        H160([0x33; 20]) => 3000.into(),
+                        H160([0x11; 20]) => 1000_u32.into(),
+                        H160([0x22; 20]) => 2000_u32.into(),
+                        H160([0x33; 20]) => 3000_u32.into(),
                     },
                 },
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
                     solver_address: H160([0x22; 20]),
-                    score: Some(Score::Solver(1.into())),
+                    score: Some(Score::Solver(1_u32.into())),
                     ranking: 1,
                     clearing_prices: btreemap! {
-                        H160([0x22; 20]) => 8.into(),
+                        H160([0x22; 20]) => 8_u32.into(),
                     },
                     orders: vec![
                         Order::Colocated {
                             id: OrderUid([0x33; 56]),
-                            sell_amount: 12.into(),
-                            buy_amount: 13.into(),
+                            sell_amount: 12_u32.into(),
+                            buy_amount: 13_u32.into(),
                         },
                         Order::Legacy {
                             id: OrderUid([0x44; 56]),
-                            executed_amount: 14.into(),
+                            executed_amount: 14_u32.into(),
                         },
                     ],
                     call_data: Some(vec![0x13]),

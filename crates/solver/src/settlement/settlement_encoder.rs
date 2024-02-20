@@ -259,7 +259,7 @@ impl SettlementEncoder {
             OrderClass::Market => self.add_market_trade(order, executed_amount, fee)?,
             OrderClass::Liquidity => {
                 let (sell_price, buy_price) = (order.data.buy_amount, order.data.sell_amount);
-                self.add_custom_price_trade(order, executed_amount, fee, sell_price, buy_price)?
+                self.add_custom_price_trade(order, executed_amount, fee, *sell_price, *buy_price)?
             }
             OrderClass::Limit => {
                 let surplus_fee = fee;
@@ -307,8 +307,8 @@ impl SettlementEncoder {
             OrderKind::Sell => order.data.sell_amount,
         };
         anyhow::ensure!(
-            (order.data.partially_fillable && executed_amount <= target_amount)
-                || (!order.data.partially_fillable && executed_amount == target_amount),
+            (order.data.partially_fillable && executed_amount <= *target_amount)
+                || (!order.data.partially_fillable && executed_amount == *target_amount),
             "this function should only be called with valid executed amounts"
         );
 
@@ -725,10 +725,10 @@ impl PricedTrade<'_> {
 pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
     let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
-        (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
-        (true, OrderKind::Buy) => executed <= remaining.remaining(order.data.buy_amount)?,
-        (false, OrderKind::Sell) => executed == remaining.remaining(order.data.sell_amount)?,
-        (false, OrderKind::Buy) => executed == remaining.remaining(order.data.buy_amount)?,
+        (true, OrderKind::Sell) => executed <= remaining.remaining(*order.data.sell_amount)?,
+        (true, OrderKind::Buy) => executed <= remaining.remaining(*order.data.buy_amount)?,
+        (false, OrderKind::Sell) => executed == remaining.remaining(*order.data.sell_amount)?,
+        (false, OrderKind::Buy) => executed == remaining.remaining(*order.data.buy_amount)?,
     };
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())
@@ -752,9 +752,9 @@ pub mod tests {
         let order0 = Order {
             data: OrderData {
                 sell_token: token0,
-                sell_amount: 1.into(),
+                sell_amount: 1_u32.into(),
                 buy_token: token1,
-                buy_amount: 1.into(),
+                buy_amount: 1_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -762,9 +762,9 @@ pub mod tests {
         let order1 = Order {
             data: OrderData {
                 sell_token: token1,
-                sell_amount: 1.into(),
+                sell_amount: 1_u32.into(),
                 buy_token: token0,
-                buy_amount: 1.into(),
+                buy_amount: 1_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -876,7 +876,10 @@ pub mod tests {
         assert_eq!(finished_settlement.tokens, vec![token(0), token(1)]);
         assert_eq!(
             finished_settlement.clearing_prices,
-            vec![order01.data.buy_amount, order01.data.sell_amount]
+            vec![
+                order01.data.buy_amount.into(),
+                order01.data.sell_amount.into()
+            ]
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
@@ -943,9 +946,9 @@ pub mod tests {
                 Order {
                     data: OrderData {
                         sell_token: token_a,
-                        sell_amount: 6.into(),
+                        sell_amount: 6_u32.into(),
                         buy_token: token_b,
-                        buy_amount: 3.into(),
+                        buy_amount: 3_u32.into(),
                         ..Default::default()
                     },
                     ..Default::default()
@@ -1133,12 +1136,12 @@ pub mod tests {
         let mut encoder = SettlementEncoder::new(prices);
         let i1 = InteractionData {
             target: H160::from_low_u64_be(12),
-            value: 321.into(),
+            value: 321_u32.into(),
             call_data: vec![1, 2, 3, 4],
         };
         let i2 = InteractionData {
             target: H160::from_low_u64_be(42),
-            value: 1212.into(),
+            value: 1212_u32.into(),
             call_data: vec![4, 3, 2, 1],
         };
         encoder
@@ -1146,9 +1149,9 @@ pub mod tests {
                 Order {
                     data: OrderData {
                         sell_token: token(1),
-                        sell_amount: 33.into(),
+                        sell_amount: 33_u32.into(),
                         buy_token: token(3),
-                        buy_amount: 11.into(),
+                        buy_amount: 11_u32.into(),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -1169,9 +1172,9 @@ pub mod tests {
                 Order {
                     data: OrderData {
                         sell_token: token(1),
-                        sell_amount: 66.into(),
+                        sell_amount: 66_u32.into(),
                         buy_token: token(3),
-                        buy_amount: 22.into(),
+                        buy_amount: 22_u32.into(),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -1189,8 +1192,8 @@ pub mod tests {
         assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
         assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
 
-        let i1 = (i1.target, i1.value, Bytes(i1.call_data));
-        let i2 = (i2.target, i2.value, Bytes(i2.call_data));
+        let i1 = (i1.target, i1.value.into(), Bytes(i1.call_data));
+        let i2 = (i2.target, i2.value.into(), Bytes(i2.call_data));
         let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
             encoded.interactions,
@@ -1203,19 +1206,19 @@ pub mod tests {
         let mut encoder0 = SettlementEncoder::new(Default::default());
         encoder0.post_interactions.push(InteractionData {
             target: H160([1; 20]),
-            value: U256::zero(),
+            value: U256::zero().into(),
             call_data: vec![0xa],
         });
 
         let mut encoder1 = SettlementEncoder::new(Default::default());
         encoder1.post_interactions.push(InteractionData {
             target: H160([1; 20]),
-            value: U256::zero(),
+            value: U256::zero().into(),
             call_data: vec![0xa],
         });
         encoder1.post_interactions.push(InteractionData {
             target: H160([2; 20]),
-            value: U256::one(),
+            value: U256::one().into(),
             call_data: vec![0xb],
         });
 
@@ -1225,17 +1228,17 @@ pub mod tests {
             vec![
                 InteractionData {
                     target: H160([1; 20]),
-                    value: U256::zero(),
+                    value: U256::zero().into(),
                     call_data: vec![0xa],
                 },
                 InteractionData {
                     target: H160([1; 20]),
-                    value: U256::zero(),
+                    value: U256::zero().into(),
                     call_data: vec![0xa],
                 },
                 InteractionData {
                     target: H160([2; 20]),
-                    value: U256::one(),
+                    value: U256::one().into(),
                     call_data: vec![0xb],
                 },
             ]
@@ -1247,19 +1250,19 @@ pub mod tests {
         let mut encoder0 = SettlementEncoder::new(Default::default());
         encoder0.pre_interactions.push(InteractionData {
             target: H160([1; 20]),
-            value: U256::zero(),
+            value: U256::zero().into(),
             call_data: vec![0xa],
         });
 
         let mut encoder1 = SettlementEncoder::new(Default::default());
         encoder1.pre_interactions.push(InteractionData {
             target: H160([1; 20]),
-            value: U256::zero(),
+            value: U256::zero().into(),
             call_data: vec![0xa],
         });
         encoder1.pre_interactions.push(InteractionData {
             target: H160([2; 20]),
-            value: U256::one(),
+            value: U256::one().into(),
             call_data: vec![0xb],
         });
 
@@ -1269,17 +1272,17 @@ pub mod tests {
             vec![
                 InteractionData {
                     target: H160([1; 20]),
-                    value: U256::zero(),
+                    value: U256::zero().into(),
                     call_data: vec![0xa],
                 },
                 InteractionData {
                     target: H160([1; 20]),
-                    value: U256::zero(),
+                    value: U256::zero().into(),
                     call_data: vec![0xa],
                 },
                 InteractionData {
                     target: H160([2; 20]),
-                    value: U256::one(),
+                    value: U256::one().into(),
                     call_data: vec![0xb],
                 },
             ]

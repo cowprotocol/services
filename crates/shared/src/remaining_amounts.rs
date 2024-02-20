@@ -51,17 +51,17 @@ impl From<&ModelOrder> for Order {
     fn from(o: &ModelOrder) -> Self {
         Self {
             kind: o.data.kind,
-            buy_amount: o.data.buy_amount,
-            sell_amount: o.data.sell_amount,
-            fee_amount: o.data.fee_amount,
+            buy_amount: *o.data.buy_amount,
+            sell_amount: *o.data.sell_amount,
+            fee_amount: *o.data.fee_amount,
             executed_amount: match o.data.kind {
                 // A real buy order cannot execute more than U256::MAX so in order to make this
                 // function infallible we treat a larger amount as a full execution.
                 OrderKind::Buy => {
                     number::conversions::big_uint_to_u256(&o.metadata.executed_buy_amount)
-                        .unwrap_or(o.data.buy_amount)
+                        .unwrap_or(*o.data.buy_amount)
                 }
-                OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,
+                OrderKind::Sell => *o.metadata.executed_sell_amount_before_fees,
             },
             partially_fillable: o.data.partially_fillable,
         }
@@ -189,15 +189,15 @@ mod tests {
         // orders (where `{sell,fee}_amount * buy_amount` would overflow).
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1000.into(),
-                buy_amount: U256::MAX,
-                fee_amount: 337.into(),
+                sell_amount: 1000_u32.into(),
+                buy_amount: U256::MAX.into(),
+                fee_amount: 337_u32.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                full_fee_amount: 42.into(),
+                full_fee_amount: 42_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -211,16 +211,16 @@ mod tests {
         // order amounts.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 10.into(),
-                buy_amount: 11.into(),
-                fee_amount: 12.into(),
+                sell_amount: 10_u32.into(),
+                buy_amount: 11_u32.into(),
+                fee_amount: 12_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 0.into(),
-                full_fee_amount: 13.into(),
+                executed_sell_amount_before_fees: 0_u32.into(),
+                full_fee_amount: 13_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -234,16 +234,16 @@ mod tests {
         // settlement contract.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                fee_amount: 101.into(),
+                sell_amount: 100_u32.into(),
+                buy_amount: 100_u32.into(),
+                fee_amount: 101_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 90.into(),
-                full_fee_amount: 200.into(),
+                executed_sell_amount_before_fees: 90_u32.into(),
+                full_fee_amount: 200_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -256,16 +256,16 @@ mod tests {
 
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 10.into(),
-                fee_amount: 101.into(),
+                sell_amount: 100_u32.into(),
+                buy_amount: 10_u32.into(),
+                fee_amount: 101_u32.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 executed_buy_amount: 9_u32.into(),
-                full_fee_amount: 200.into(),
+                full_fee_amount: 200_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -283,9 +283,9 @@ mod tests {
         // Partially fillable order overflow when computing fill ratio.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1000.into(),
-                fee_amount: 337.into(),
-                buy_amount: U256::MAX,
+                sell_amount: 1000_u32.into(),
+                fee_amount: 337_u32.into(),
+                buy_amount: U256::MAX.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()
@@ -298,7 +298,7 @@ mod tests {
         // Partially filled order overflowing executed amount.
         let order = ModelOrder {
             data: OrderData {
-                buy_amount: U256::MAX,
+                buy_amount: U256::MAX.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()
@@ -315,13 +315,13 @@ mod tests {
         // Partially filled order that has executed more than its maximum.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1.into(),
+                sell_amount: 1_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 2.into(),
+                executed_sell_amount_before_fees: 2_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -332,7 +332,7 @@ mod tests {
         // Partially fillable order with zero amount.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 0.into(),
+                sell_amount: 0_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -349,9 +349,9 @@ mod tests {
         // insufficient balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 1000.into(),
-                buy_amount: 2000.into(),
-                fee_amount: 337.into(),
+                sell_amount: 1000_u32.into(),
+                buy_amount: 2000_u32.into(),
+                fee_amount: 337_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
@@ -366,9 +366,9 @@ mod tests {
         // to the available balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 800.into(),
-                buy_amount: 2000.into(),
-                fee_amount: 200.into(),
+                sell_amount: 800_u32.into(),
+                buy_amount: 2000_u32.into(),
+                fee_amount: 200_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -391,15 +391,15 @@ mod tests {
         // to the remaining execution and available balance.
         let order = ModelOrder {
             data: OrderData {
-                sell_amount: 800.into(),
-                buy_amount: 2000.into(),
-                fee_amount: 200.into(),
+                sell_amount: 800_u32.into(),
+                buy_amount: 2000_u32.into(),
+                fee_amount: 200_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 400.into(),
+                executed_sell_amount_before_fees: 400_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -421,8 +421,8 @@ mod tests {
     fn support_scaling_for_large_orders_with_partial_balance() {
         let order: Order = ModelOrder {
             data: OrderData {
-                sell_amount: U256::exp10(30),
-                buy_amount: 1.into(),
+                sell_amount: U256::exp10(30).into(),
+                buy_amount: 1_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()

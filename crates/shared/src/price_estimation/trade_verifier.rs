@@ -246,13 +246,13 @@ fn encode_settlement(
     };
     let fake_order = OrderData {
         sell_token: query.sell_token,
-        sell_amount,
+        sell_amount: sell_amount.into(),
         buy_token: query.buy_token,
-        buy_amount,
+        buy_amount: buy_amount.into(),
         receiver: Some(verification.receiver),
         valid_to: u32::MAX,
         app_data: Default::default(),
-        fee_amount: 0.into(),
+        fee_amount: 0_u32.into(),
         kind: query.kind,
         partially_fillable: false,
         sell_token_balance: verification.sell_token_source,

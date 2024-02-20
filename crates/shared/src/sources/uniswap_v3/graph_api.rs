@@ -7,9 +7,8 @@ use {
         subgraph::{ContainsId, SubgraphClient},
     },
     anyhow::{bail, Result},
-    ethcontract::{H160, U256},
+    ethcontract::H160,
     num::BigInt,
-    number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::{Deserialize, Serialize},
     serde_json::{json, Map, Value},
@@ -240,12 +239,9 @@ pub struct PoolData {
     pub id: H160,
     pub token0: Token,
     pub token1: Token,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_tier: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub liquidity: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sqrt_price: U256,
+    pub fee_tier: number::U256,
+    pub liquidity: number::U256,
+    pub sqrt_price: number::U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
     #[serde_as(as = "DisplayFromStr")]
@@ -319,6 +315,7 @@ mod tests {
     use {
         super::*,
         crate::subgraph::{Data, QUERY_PAGE_SIZE},
+        number::U256,
         serde_json::json,
         std::str::FromStr,
     };

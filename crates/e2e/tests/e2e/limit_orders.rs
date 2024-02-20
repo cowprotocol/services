@@ -134,9 +134,9 @@ async fn single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(10),
+        sell_amount: to_wei(10).into(),
         buy_token: token_b.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(5).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -232,9 +232,9 @@ async fn two_limit_orders_test(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(10),
+        sell_amount: to_wei(10).into(),
         buy_token: token_b.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(5).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -251,9 +251,9 @@ async fn two_limit_orders_test(web3: Web3) {
 
     let order_b = OrderCreation {
         sell_token: token_b.address(),
-        sell_amount: to_wei(5),
+        sell_amount: to_wei(5).into(),
         buy_token: token_a.address(),
-        buy_amount: to_wei(2),
+        buy_amount: to_wei(2).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -357,9 +357,9 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(10),
+        sell_amount: to_wei(10).into(),
         buy_token: token_b.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(5).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -376,10 +376,10 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 
     let order_b = OrderCreation {
         sell_token: token_b.address(),
-        sell_amount: to_wei(5),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(5).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: token_a.address(),
-        buy_amount: to_wei(2),
+        buy_amount: to_wei(2).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -453,9 +453,9 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(1),
+        sell_amount: to_wei(1).into(),
         buy_token: onchain.contracts().weth.address(),
-        buy_amount: to_wei(1),
+        buy_amount: to_wei(1).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -471,9 +471,9 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // one limit order per user.
     let order = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(1),
+        sell_amount: to_wei(1).into(),
         buy_token: onchain.contracts().weth.address(),
-        buy_amount: to_wei(2),
+        buy_amount: to_wei(2).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -532,9 +532,9 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
-        sell_amount: to_wei_with_exp(1000, 6),
+        sell_amount: to_wei_with_exp(1000, 6).into(),
         buy_token: token_usdt.address(),
-        buy_amount: to_wei_with_exp(500, 6),
+        buy_amount: to_wei_with_exp(500, 6).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -644,9 +644,9 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
-        sell_amount: to_wei_with_exp(1000, 6),
+        sell_amount: to_wei_with_exp(1000, 6).into(),
         buy_token: token_wxdai.address(),
-        buy_amount: to_wei(500),
+        buy_amount: to_wei(500).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()

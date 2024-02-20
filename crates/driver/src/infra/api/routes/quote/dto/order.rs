@@ -2,10 +2,9 @@ use {
     crate::{
         domain::{competition, eth, quote, time},
         infra::solver::Timeouts,
-        util::serialize,
     },
+    number::U256,
     serde::Deserialize,
-    serde_with::serde_as,
 };
 
 impl Order {
@@ -13,7 +12,7 @@ impl Order {
         Ok(quote::Order {
             tokens: quote::Tokens::new(self.sell_token.into(), self.buy_token.into())
                 .map_err(|quote::SameTokens| Error::SameTokens)?,
-            amount: self.amount.into(),
+            amount: eth::U256::from(self.amount).into(),
             side: match self.kind {
                 Kind::Sell => competition::order::Side::Sell,
                 Kind::Buy => competition::order::Side::Buy,
@@ -23,14 +22,12 @@ impl Order {
     }
 }
 
-#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Order {
     sell_token: eth::H160,
     buy_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
+    amount: U256,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
 }

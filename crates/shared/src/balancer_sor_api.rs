@@ -6,12 +6,10 @@
 use {
     crate::price_estimation::PriceEstimationError,
     anyhow::{Context, Result},
-    ethcontract::{H160, H256, U256},
+    ethcontract::{H160, H256},
     model::order::OrderKind,
-    number::serialization::HexOrDecimalU256,
     reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
 };
 
 /// Trait for mockable Balancer SOR API.
@@ -82,7 +80,6 @@ impl BalancerSorApi for DefaultBalancerSorApi {
 }
 
 /// An SOR query.
-#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Query {
@@ -96,16 +93,13 @@ pub struct Query {
     ///
     /// For sell orders this is the exact amount of sell token to trade, for buy
     /// orders, this is the amount of buy tokens to buy.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub amount: U256,
+    pub amount: number::U256,
     /// The current gas price estimate used for determining how the trading
     /// route should be split.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub gas_price: U256,
+    pub gas_price: number::U256,
 }
 
 /// The swap route found by the Balancer SOR service.
-#[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
@@ -116,13 +110,11 @@ pub struct Quote {
     /// The swapped token amount.
     ///
     /// In sell token for sell orders or buy token for buy orders.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub swap_amount: U256,
+    pub swap_amount: number::U256,
     /// The returned token amount.
     ///
     /// In buy token for sell orders or sell token for buy orders.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub return_amount: U256,
+    pub return_amount: number::U256,
     /// The input (sell) token.
     #[serde(with = "address_default_when_empty")]
     pub token_in: H160,
@@ -132,7 +124,6 @@ pub struct Quote {
 }
 
 /// A swap included in a larger batched swap.
-#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Swap {
@@ -145,8 +136,7 @@ pub struct Swap {
     #[serde(with = "value_or_string")]
     pub asset_out_index: usize,
     /// The amount to swap.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub amount: U256,
+    pub amount: number::U256,
     /// Additional user data to pass to the pool.
     #[serde(with = "model::bytes_hex")]
     pub user_data: Vec<u8>,
@@ -216,7 +206,7 @@ mod value_or_string {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex, serde_json::json, std::env};
+    use {super::*, hex_literal::hex, number::U256, serde_json::json, std::env};
 
     #[test]
     fn serialize_query() {
@@ -226,7 +216,7 @@ mod tests {
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
                 amount: 1_000_000_000_000_000_000_u128.into(),
-                gas_price: 10_000_000.into(),
+                gas_price: 10_000_000_u128.into(),
             })
             .unwrap(),
             json!({
@@ -291,7 +281,7 @@ mod tests {
                         pool_id: H256(hex!("0b09dea16768f0799065c475be02919503cb2a3500020000000000000000001a")),
                         asset_in_index: 1,
                         asset_out_index: 2,
-                        amount: 0.into(),
+                        amount: 0_u32.into(),
                         user_data: Default::default(),
                     },
                 ],
@@ -361,7 +351,7 @@ mod tests {
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
                 amount: 1_000_000_000_000_000_000_u128.into(),
-                gas_price: 10_000_000.into(),
+                gas_price: 10_000_000_u128.into(),
             })
             .await
             .unwrap()
@@ -374,7 +364,7 @@ mod tests {
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Buy,
                 amount: 100_000_000_000_000_000_000_u128.into(),
-                gas_price: 10_000_000.into(),
+                gas_price: 10_000_000_u128.into(),
             })
             .await
             .unwrap()

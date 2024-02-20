@@ -49,9 +49,9 @@ async fn test(web3: Web3) {
     assert_eq!(balance, 0.into());
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(4),
+        sell_amount: to_wei(4).into(),
         buy_token: token.address(),
-        buy_amount: to_wei(3),
+        buy_amount: to_wei(3).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,
@@ -92,7 +92,7 @@ async fn test(web3: Web3) {
     let settlement_event_processed = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        order.metadata.executed_surplus_fee > U256::zero()
+        order.metadata.executed_surplus_fee > U256::zero().into()
     };
     wait_for_condition(TIMEOUT, settlement_event_processed)
         .await

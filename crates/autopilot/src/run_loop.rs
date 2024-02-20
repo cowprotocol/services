@@ -210,7 +210,11 @@ impl RunLoop {
                         .iter()
                         .map(|order| order.uid.into())
                         .collect(),
-                    prices: auction.prices.clone(),
+                    prices: auction
+                        .prices
+                        .iter()
+                        .map(|(key, val)| (*key, (*val).into()))
+                        .collect::<BTreeMap<_, number::U256>>(),
                 },
                 solutions: solutions
                     .iter()
@@ -220,7 +224,7 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
-                            score: Some(Score::Solver(participant.solution.score.get())),
+                            score: Some(Score::Solver(participant.solution.score.get().into())),
                             ranking: solutions.len() - index,
                             orders: participant
                                 .solution
@@ -236,7 +240,7 @@ impl RunLoop {
                                 .solution
                                 .clearing_prices
                                 .iter()
-                                .map(|(token, price)| (*token, *price))
+                                .map(|(token, price)| (*token, (*price).into()))
                                 .collect(),
                             call_data: None,
                             uninternalized_call_data: None,
@@ -375,13 +379,17 @@ impl RunLoop {
                 Ok(Solution {
                     id: solution.solution_id,
                     account: solution.submission_address,
-                    score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
+                    score: NonZeroU256::new(*solution.score).ok_or(ZeroScoreError)?,
                     orders: solution
                         .orders
                         .into_iter()
                         .map(|(o, amounts)| (o.into(), amounts))
                         .collect(),
-                    clearing_prices: solution.clearing_prices,
+                    clearing_prices: solution
+                        .clearing_prices
+                        .iter()
+                        .map(|(key, val)| (*key, (*val).into()))
+                        .collect(),
                 })
             })
             .collect())

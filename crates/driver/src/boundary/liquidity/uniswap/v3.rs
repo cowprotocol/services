@@ -46,7 +46,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
 
     Ok(liquidity::Liquidity {
         id,
-        gas: eth::Gas(pool.pool.gas_stats.mean_gas),
+        gas: eth::Gas(*pool.pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
             router: handler.inner.router.address().into(),
             address: pool.pool.address.into(),
@@ -54,7 +54,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
                 pool.pool.tokens[0].id.into(),
                 pool.pool.tokens[1].id.into(),
             )?,
-            sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
+            sqrt_price: SqrtPrice(*pool.pool.state.sqrt_price),
             liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
             tick: Tick(pool.pool.state.tick.try_into()?),
             liquidity_net: pool

@@ -69,7 +69,10 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 name: config.name.into(),
                 slippage: solver::Slippage {
                     relative: config.slippage.relative,
-                    absolute: config.slippage.absolute.map(eth::Ether),
+                    absolute: config
+                        .slippage
+                        .absolute
+                        .map(|absolute| eth::Ether::from(*absolute)),
                 },
                 liquidity: if config.skip_liquidity {
                     solver::Liquidity::Skip
@@ -251,8 +254,8 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
             .mempools
             .iter()
             .map(|mempool| mempool::Config {
-                min_priority_fee: config.submission.min_priority_fee,
-                gas_price_cap: config.submission.gas_price_cap,
+                min_priority_fee: *config.submission.min_priority_fee,
+                gas_price_cap: *config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
                 max_confirm_time: config.submission.max_confirm_time,
                 retry_interval: config.submission.retry_interval,
@@ -281,7 +284,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         use_soft_cancellations,
                     } => mempool::Kind::MEVBlocker {
                         url: url.to_owned(),
-                        max_additional_tip: *max_additional_tip,
+                        max_additional_tip: (*max_additional_tip).into(),
                         additional_tip_percentage: *additional_tip_percentage,
                         use_soft_cancellations: *use_soft_cancellations,
                     },
@@ -319,6 +322,8 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 .map(|contracts| contracts.into_iter().map(eth::Address).collect()),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
-        disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
+        disable_gas_simulation: config
+            .disable_gas_simulation
+            .map(|disable_gas_simulation| (*disable_gas_simulation).into()),
     }
 }

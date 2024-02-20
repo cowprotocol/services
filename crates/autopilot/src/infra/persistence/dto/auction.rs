@@ -1,8 +1,7 @@
 use {
     super::order::Order,
     crate::domain,
-    number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::BTreeMap,
@@ -17,7 +16,11 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
             .into_iter()
             .map(super::order::from_domain)
             .collect(),
-        prices: auction.prices,
+        prices: auction
+            .prices
+            .iter()
+            .map(|(key, val)| (*key, (*val).into()))
+            .collect(),
     }
 }
 
@@ -30,19 +33,21 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
             .into_iter()
             .map(super::order::to_domain)
             .collect(),
-        prices: auction.prices,
+        prices: auction
+            .prices
+            .iter()
+            .map(|(key, val)| (*key, (*val).into()))
+            .collect(),
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     pub block: u64,
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<H160, number::U256>,
 }
 
 pub type AuctionId = i64;

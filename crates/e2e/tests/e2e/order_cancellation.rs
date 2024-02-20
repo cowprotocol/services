@@ -97,7 +97,7 @@ async fn order_cancellation(web3: Web3) {
                 sell_amount: quote.sell_amount,
                 fee_amount: quote.fee_amount,
                 buy_token: quote.buy_token,
-                buy_amount: (quote.buy_amount * 99) / 100,
+                buy_amount: number::U256::from((*quote.buy_amount * 99) / 100),
                 valid_to: quote.valid_to,
                 app_data: quote.app_data,
                 ..Default::default()

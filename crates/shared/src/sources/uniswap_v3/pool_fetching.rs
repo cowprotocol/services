@@ -17,7 +17,6 @@ use {
     itertools::{Either, Itertools},
     model::TokenPair,
     num::{rational::Ratio, BigInt, Zero},
-    number::serialization::HexOrDecimalU256,
     reqwest::{Client, Url},
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
@@ -53,10 +52,8 @@ pub struct PoolInfo {
 #[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolState {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sqrt_price: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub liquidity: U256,
+    pub sqrt_price: number::U256,
+    pub liquidity: number::U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
     // (tick_idx, liquidity_net)
@@ -67,12 +64,10 @@ pub struct PoolState {
 }
 
 /// Pool stats in a format prepared for solvers
-#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolStats {
-    #[serde_as(as = "HexOrDecimalU256")]
     #[serde(rename = "mean")]
-    pub mean_gas: U256,
+    pub mean_gas: number::U256,
 }
 
 impl TryFrom<PoolData> for PoolInfo {
@@ -101,7 +96,7 @@ impl TryFrom<PoolData> for PoolInfo {
                 fee: Ratio::new(pool.fee_tier.as_u32(), 1_000_000u32),
             },
             gas_stats: PoolStats {
-                mean_gas: U256::from(108_163), // as estimated by https://dune.com/queries/1044812
+                mean_gas: U256::from(108_163).into(), /* as estimated by https://dune.com/queries/1044812 */
             },
         })
     }
@@ -385,7 +380,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
         // return only pools which current liquidity is positive
         Ok(checkpoint
             .into_values()
-            .filter(|pool| pool.state.liquidity > U256::zero())
+            .filter(|pool| pool.state.liquidity > U256::zero().into())
             .collect())
     }
 }
@@ -406,7 +401,7 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
-                        pool.liquidity -= burn.amount.into();
+                        *pool.liquidity -= burn.amount.into();
                     }
 
                     pool.liquidity_net
@@ -435,7 +430,7 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV
                     // liquidity tracks the liquidity on recent tick,
                     // only need to update it if the new position includes the recent tick.
                     if tick_lower <= pool.tick && pool.tick < tick_upper {
-                        pool.liquidity += mint.amount.into();
+                        *pool.liquidity += primitive_types::U256::from(mint.amount);
                     }
 
                     pool.liquidity_net
@@ -460,7 +455,7 @@ fn append_events(pools: &mut HashMap<H160, PoolInfo>, events: Vec<Event<UniswapV
                 UniswapV3Event::Swap(swap) => {
                     pool.tick = BigInt::from(swap.tick);
                     pool.liquidity = swap.liquidity.into();
-                    pool.sqrt_price = swap.sqrt_price_x96;
+                    pool.sqrt_price = swap.sqrt_price_x96.into();
                 }
             }
         }
@@ -546,8 +541,10 @@ mod tests {
                 },
             ],
             state: PoolState {
-                sqrt_price: U256::from_dec_str("792216481398733702759960397").unwrap(),
-                liquidity: U256::from_dec_str("303015134493562686441").unwrap(),
+                sqrt_price: U256::from_dec_str("792216481398733702759960397")
+                    .unwrap()
+                    .into(),
+                liquidity: U256::from_dec_str("303015134493562686441").unwrap().into(),
                 tick: BigInt::from_str("-92110").unwrap(),
                 liquidity_net: BTreeMap::from([
                     (
@@ -566,7 +563,7 @@ mod tests {
                 fee: Ratio::new(10_000u32, 1_000_000u32),
             },
             gas_stats: PoolStats {
-                mean_gas: U256::from(300000),
+                mean_gas: U256::from(300000).into(),
             },
         };
 
@@ -607,8 +604,8 @@ mod tests {
         append_events(&mut pools, vec![event]);
 
         assert_eq!(pools[&address].state.tick, BigInt::from(3));
-        assert_eq!(pools[&address].state.liquidity, U256::from(2));
-        assert_eq!(pools[&address].state.sqrt_price, U256::from(1));
+        assert_eq!(pools[&address].state.liquidity, U256::from(2).into());
+        assert_eq!(pools[&address].state.sqrt_price, U256::from(1).into());
     }
 
     #[test]

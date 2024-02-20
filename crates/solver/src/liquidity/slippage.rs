@@ -105,7 +105,7 @@ impl<'a> SlippageContext<'a> {
             );
         }
 
-        execution.input_max.amount = slippage.add_to_amount(execution.input_max.amount);
+        execution.input_max.amount = slippage.add_to_amount(*execution.input_max.amount).into();
         Ok(execution)
     }
 

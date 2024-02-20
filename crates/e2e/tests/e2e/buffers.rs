@@ -76,10 +76,10 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     // Place Order
     let order = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(9),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(9).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: token_b.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(5).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -92,8 +92,9 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services.create_order(&order).await.unwrap();
 
     tracing::info!("waiting for first trade");
-    let trade_happened =
-        || async { token_b.balance_of(trader.address()).call().await.unwrap() == order.buy_amount };
+    let trade_happened = || async {
+        token_b.balance_of(trader.address()).call().await.unwrap() == *order.buy_amount
+    };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check that settlement buffers were traded.
@@ -119,7 +120,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     tracing::info!("waiting for second trade");
     let trade_happened = || async {
-        token_b.balance_of(trader.address()).call().await.unwrap() == order.buy_amount * 2
+        token_b.balance_of(trader.address()).call().await.unwrap() == *order.buy_amount * 2
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 }

@@ -80,15 +80,15 @@ pub fn solve(
                             order::Class::Limit => OrderClass::Limit,
                             order::Class::Liquidity => OrderClass::Liquidity,
                         },
-                        solver_fee: order.fee().amount,
+                        solver_fee: order.fee().amount.into(),
                         ..Default::default()
                     },
                     data: OrderData {
                         sell_token: order.sell.token.0,
                         buy_token: order.buy.token.0,
-                        sell_amount: order.sell.amount,
-                        buy_amount: order.buy.amount,
-                        fee_amount: order.fee().amount,
+                        sell_amount: order.sell.amount.into(),
+                        buy_amount: order.buy.amount.into(),
+                        fee_amount: order.fee().amount.into(),
                         kind: match order.side {
                             order::Side::Buy => OrderKind::Buy,
                             order::Side::Sell => OrderKind::Sell,
@@ -236,11 +236,11 @@ impl SettlementHandling<ConstantProductOrder> for PoolHandler {
         *self.swap.lock().unwrap() = Some((
             eth::Asset {
                 token: eth::TokenAddress(execution.input_max.token),
-                amount: execution.input_max.amount,
+                amount: *execution.input_max.amount,
             },
             eth::Asset {
                 token: eth::TokenAddress(execution.output.token),
-                amount: execution.output.amount,
+                amount: *execution.output.amount,
             },
         ));
         Ok(())

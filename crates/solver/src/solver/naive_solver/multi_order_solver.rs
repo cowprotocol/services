@@ -489,8 +489,10 @@ mod tests {
 
         // Make sure the sell amounts cover the uniswap in, and min buy amounts are
         // covered by uniswap out
-        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input_max.amount);
-        assert!(interaction.output.amount >= orders[0].buy_amount + orders[1].buy_amount);
+        assert!(orders[0].sell_amount + orders[1].sell_amount >= *interaction.input_max.amount);
+        assert!(
+            interaction.output.amount >= ((orders[0].buy_amount + orders[1].buy_amount).into())
+        );
 
         // Make sure expected buy amounts (given prices) are also covered by uniswap out
         // amounts
@@ -499,7 +501,7 @@ mod tests {
 
         let first_expected_buy = orders[0].sell_amount * price_a / price_b;
         let second_expected_buy = orders[1].sell_amount * price_a / price_b;
-        assert!(interaction.output.amount >= first_expected_buy + second_expected_buy);
+        assert!(interaction.output.amount >= (first_expected_buy + second_expected_buy).into());
     }
 
     #[test]
@@ -681,8 +683,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
-                    sell_amount: to_wei(1),
-                    buy_amount: to_wei(1000),
+                    sell_amount: to_wei(1).into(),
+                    buy_amount: to_wei(1000).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -695,8 +697,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
-                    sell_amount: to_wei(1000),
-                    buy_amount: to_wei(1000),
+                    sell_amount: to_wei(1000).into(),
+                    buy_amount: to_wei(1000).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -709,8 +711,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
-                    sell_amount: to_wei(1000),
-                    buy_amount: to_wei(1000),
+                    sell_amount: to_wei(1000).into(),
+                    buy_amount: to_wei(1000).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -723,8 +725,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
-                    sell_amount: to_wei(2),
-                    buy_amount: to_wei(1000),
+                    sell_amount: to_wei(2).into(),
+                    buy_amount: to_wei(1000).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -757,8 +759,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
-                    sell_amount: to_wei(900),
-                    buy_amount: to_wei(1000),
+                    sell_amount: to_wei(900).into(),
+                    buy_amount: to_wei(1000).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -770,8 +772,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
-                    sell_amount: to_wei(900),
-                    buy_amount: to_wei(1000),
+                    sell_amount: to_wei(900).into(),
+                    buy_amount: to_wei(1000).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -801,8 +803,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
-                    sell_amount: to_wei(10),
-                    buy_amount: to_wei(8),
+                    sell_amount: to_wei(10).into(),
+                    buy_amount: to_wei(8).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -813,8 +815,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
-                    sell_amount: to_wei(10),
-                    buy_amount: to_wei(9),
+                    sell_amount: to_wei(10).into(),
+                    buy_amount: to_wei(9).into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -886,8 +888,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
-                    sell_amount: U256::MAX,
-                    buy_amount: 1.into(),
+                    sell_amount: U256::MAX.into(),
+                    buy_amount: 1_u32.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -899,8 +901,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
-                    sell_amount: 1.into(),
-                    buy_amount: 1.into(),
+                    sell_amount: 1_u32.into(),
+                    buy_amount: 1_u32.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -945,7 +947,7 @@ mod tests {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: 900_000_000_000_000u128.into(),
-                    buy_amount: 100.into(),
+                    buy_amount: 100_u32.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -980,8 +982,8 @@ mod tests {
                 data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
-                    sell_amount: 9_000_000.into(),
-                    buy_amount: 8_500_000.into(),
+                    sell_amount: 9_000_000_u32.into(),
+                    buy_amount: 8_500_000_u32.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     ..Default::default()
@@ -993,8 +995,8 @@ mod tests {
                 data: OrderData {
                     buy_token: token_a,
                     sell_token: token_b,
-                    buy_amount: 8_000_001.into(),
-                    sell_amount: 8_500_000.into(),
+                    buy_amount: 8_000_001_u32.into(),
+                    sell_amount: 8_500_000_u32.into(),
                     kind: OrderKind::Buy,
                     partially_fillable: false,
                     ..Default::default()

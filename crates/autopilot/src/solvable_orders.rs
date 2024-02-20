@@ -354,7 +354,7 @@ fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order
             return true;
         }
 
-        let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
+        let needed_balance = match (*order.data.sell_amount).checked_add(*order.data.fee_amount) {
             None => return false,
             Some(balance) => balance,
         };
@@ -384,8 +384,8 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
         };
 
         let (Ok(sell_amount), Ok(buy_amount)) = (
-            remaining.remaining(order.data.sell_amount),
-            remaining.remaining(order.data.buy_amount),
+            remaining.remaining(*order.data.sell_amount),
+            remaining.remaining(*order.data.buy_amount),
         ) else {
             return false;
         };
@@ -844,8 +844,8 @@ mod tests {
                 ..Default::default()
             },
             data: OrderData {
-                buy_amount: 1.into(),
-                sell_amount: 1.into(),
+                buy_amount: 1_u32.into(),
+                sell_amount: 1_u32.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -874,12 +874,12 @@ mod tests {
                 interactions: Interactions {
                     pre: vec![InteractionData {
                         target: H160([0xe1; 20]),
-                        value: U256::zero(),
+                        value: U256::zero().into(),
                         call_data: vec![1, 2],
                     }],
                     post: vec![InteractionData {
                         target: H160([0xe2; 20]),
-                        value: U256::zero(),
+                        value: U256::zero().into(),
                         call_data: vec![3, 4],
                     }],
                 },
@@ -894,12 +894,12 @@ mod tests {
                 interactions: Interactions {
                     pre: vec![InteractionData {
                         target: H160([0xe3; 20]),
-                        value: U256::zero(),
+                        value: U256::zero().into(),
                         call_data: vec![5, 6],
                     }],
                     post: vec![InteractionData {
                         target: H160([0xe4; 20]),
-                        value: U256::zero(),
+                        value: U256::zero().into(),
                         call_data: vec![7, 9],
                     }],
                 },
@@ -940,7 +940,7 @@ mod tests {
                     signature: vec![2, 2],
                     interactions: vec![InteractionData {
                         target: H160([0xe3; 20]),
-                        value: U256::zero(),
+                        value: U256::zero().into(),
                         call_data: vec![5, 6],
                     }],
                 },
@@ -1069,8 +1069,8 @@ mod tests {
             Order {
                 data: OrderData {
                     sell_token: H160::from_low_u64_be(2),
-                    sell_amount: 1.into(),
-                    fee_amount: 1.into(),
+                    sell_amount: 1_u32.into(),
+                    fee_amount: 1_u32.into(),
                     partially_fillable: false,
                     ..Default::default()
                 },
@@ -1080,8 +1080,8 @@ mod tests {
             Order {
                 data: OrderData {
                     sell_token: H160::from_low_u64_be(3),
-                    sell_amount: 1.into(),
-                    fee_amount: 1.into(),
+                    sell_amount: 1_u32.into(),
+                    fee_amount: 1_u32.into(),
                     partially_fillable: false,
                     ..Default::default()
                 },
@@ -1091,8 +1091,8 @@ mod tests {
             Order {
                 data: OrderData {
                     sell_token: H160::from_low_u64_be(4),
-                    sell_amount: 2.into(),
-                    fee_amount: 0.into(),
+                    sell_amount: 2_u32.into(),
+                    fee_amount: 0_u32.into(),
                     partially_fillable: true,
                     ..Default::default()
                 },
@@ -1102,8 +1102,8 @@ mod tests {
             Order {
                 data: OrderData {
                     sell_token: H160::from_low_u64_be(5),
-                    sell_amount: 2.into(),
-                    fee_amount: 0.into(),
+                    sell_amount: 2_u32.into(),
+                    fee_amount: 0_u32.into(),
                     partially_fillable: true,
                     ..Default::default()
                 },

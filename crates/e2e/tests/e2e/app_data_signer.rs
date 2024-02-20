@@ -43,10 +43,10 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         let order = OrderCreation {
             app_data,
             sell_token: token_a.address(),
-            sell_amount: to_wei(2),
-            fee_amount: to_wei(1),
+            sell_amount: to_wei(2).into(),
+            fee_amount: to_wei(1).into(),
             buy_token: token_b.address(),
-            buy_amount: to_wei(1),
+            buy_amount: to_wei(1).into(),
             valid_to,
             kind: OrderKind::Sell,
             ..Default::default()

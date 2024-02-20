@@ -4,11 +4,9 @@ use {
     anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
-    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     reqwest::{header::AUTHORIZATION, Client},
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -16,9 +14,8 @@ use {
     url::Url,
 };
 
-#[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
-struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, PriceInWei>);
+struct Response(HashMap<Token, PriceInWei>);
 
 type Token = H160;
 type PriceInWei = U256;

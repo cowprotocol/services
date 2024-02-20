@@ -74,10 +74,10 @@ async fn eth_integration(web3: Web3) {
     let order_buy_eth_a = OrderCreation {
         kind: OrderKind::Buy,
         sell_token: token.address(),
-        sell_amount: to_wei(50),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(50).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: BUY_ETH_ADDRESS,
-        buy_amount: to_wei(49),
+        buy_amount: to_wei(49).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }
@@ -90,10 +90,10 @@ async fn eth_integration(web3: Web3) {
     let order_buy_eth_b = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: token.address(),
-        sell_amount: to_wei(50),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(50).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: BUY_ETH_ADDRESS,
-        buy_amount: to_wei(49),
+        buy_amount: to_wei(49).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     }

@@ -98,7 +98,7 @@ impl OneInchTradeFinder {
             Some(spender),
             Interaction {
                 target: swap.tx.to,
-                value: swap.tx.value,
+                value: swap.tx.value.into(),
                 data: swap.tx.data,
             },
             self.inner.solver,
@@ -156,7 +156,7 @@ impl Inner {
             .await?;
 
         Ok(Quote {
-            out_amount: quote.to_token_amount,
+            out_amount: quote.to_token_amount.into(),
             gas_estimate: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
             solver: self.solver,
         })

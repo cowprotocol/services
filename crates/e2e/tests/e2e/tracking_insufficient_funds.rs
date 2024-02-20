@@ -59,10 +59,10 @@ async fn test(web3: Web3) {
     tracing::info!("Placing order");
     let order_a = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(2),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(2).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: token.address(),
-        buy_amount: to_wei(1),
+        buy_amount: to_wei(1).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -74,10 +74,10 @@ async fn test(web3: Web3) {
     );
     let order_b = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(2),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(2).into(),
+        fee_amount: to_wei(1).into(),
         buy_token: token.address(),
-        buy_amount: to_wei(1),
+        buy_amount: to_wei(1).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()

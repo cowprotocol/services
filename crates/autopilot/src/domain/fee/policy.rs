@@ -62,9 +62,9 @@ impl Surplus {
                     Some(policy)
                 } else {
                     let order_ = boundary::Amounts {
-                        sell: order.data.sell_amount,
-                        buy: order.data.buy_amount,
-                        fee: order.data.fee_amount,
+                        sell: *order.data.sell_amount,
+                        buy: *order.data.buy_amount,
+                        fee: *order.data.fee_amount,
                     };
                     let quote_ = boundary::Amounts {
                         sell: quote.sell_amount,

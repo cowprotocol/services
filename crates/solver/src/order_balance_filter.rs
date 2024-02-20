@@ -156,8 +156,8 @@ fn sort_orders_for_balance_priority(orders: &mut [Order], external_prices: &Exte
 /// Returns `Err` on overflow.
 fn max_transfer_out_amount(order: &Order) -> Result<U256> {
     let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
-    let sell = remaining.remaining(order.data.sell_amount)?;
-    let fee = remaining.remaining(order.data.fee_amount)?;
+    let sell = remaining.remaining(*order.data.sell_amount)?;
+    let fee = remaining.remaining(*order.data.fee_amount)?;
     sell.checked_add(fee).context("add")
 }
 
@@ -179,9 +179,9 @@ mod tests {
         let mut orders = vec![
             Order {
                 data: OrderData {
-                    sell_amount: 3.into(),
-                    buy_amount: 3.into(),
-                    fee_amount: 3.into(),
+                    sell_amount: 3_u32.into(),
+                    buy_amount: 3_u32.into(),
+                    fee_amount: 3_u32.into(),
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -192,9 +192,9 @@ mod tests {
             },
             Order {
                 data: OrderData {
-                    sell_amount: 2.into(),
-                    buy_amount: 3.into(),
-                    fee_amount: 2.into(),
+                    sell_amount: 2_u32.into(),
+                    buy_amount: 3_u32.into(),
+                    fee_amount: 2_u32.into(),
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -205,9 +205,9 @@ mod tests {
             },
             Order {
                 data: OrderData {
-                    sell_amount: 10.into(),
-                    buy_amount: 10.into(),
-                    fee_amount: 10.into(),
+                    sell_amount: 10_u32.into(),
+                    buy_amount: 10_u32.into(),
+                    fee_amount: 10_u32.into(),
                     partially_fillable: true,
                     ..Default::default()
                 },
@@ -240,7 +240,7 @@ mod tests {
             Some(&0.into())
         );
 
-        orders[1].data.buy_amount = 1.into();
+        orders[1].data.buy_amount = 1_u32.into();
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
         let orders_ = balance_orders(orders.clone(), &mut balances, None, &external_prices);
         assert_eq!(orders_.len(), 2);
@@ -258,8 +258,8 @@ mod tests {
     async fn records_remaining_balance() {
         let orders = vec![Order {
             data: OrderData {
-                sell_amount: 3.into(),
-                fee_amount: 3.into(),
+                sell_amount: 3_u32.into(),
+                fee_amount: 3_u32.into(),
                 ..Default::default()
             },
             metadata: OrderMetadata {
@@ -284,8 +284,8 @@ mod tests {
         let ethflow_address = H160([3u8; 20]);
         let orders = vec![Order {
             data: OrderData {
-                sell_amount: 3.into(),
-                fee_amount: 3.into(),
+                sell_amount: 3_u32.into(),
+                fee_amount: 3_u32.into(),
                 ..Default::default()
             },
             metadata: OrderMetadata {

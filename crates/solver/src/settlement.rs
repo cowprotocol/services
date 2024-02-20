@@ -142,7 +142,7 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/GPv2Settlement.sol#L383-L385
     pub fn executed_fee(&self) -> Option<U256> {
-        self.scale_amount(self.order.data.fee_amount)
+        self.scale_amount(*self.order.data.fee_amount)
     }
 
     /// Returns the actual fees taken by the protocol.
@@ -151,9 +151,9 @@ impl Trade {
         match self.order.solver_determines_fee() {
             true => {
                 // Solvers already scale the `fee` for these orders.
-                self.scale_amount(user_fee)?.checked_add(self.fee)
+                self.scale_amount(*user_fee)?.checked_add(self.fee)
             }
-            false => self.scale_amount(user_fee),
+            false => self.scale_amount(*user_fee),
         }
     }
 
@@ -162,10 +162,10 @@ impl Trade {
         match self.order.data.kind {
             model::order::OrderKind::Buy => amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.data.buy_amount),
+                .checked_div(*self.order.data.buy_amount),
             model::order::OrderKind::Sell => amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.data.sell_amount),
+                .checked_div(*self.order.data.sell_amount),
         }
     }
 
@@ -613,7 +613,7 @@ pub mod tests {
         let order1 = Order {
             data: OrderData {
                 sell_token: token0,
-                sell_amount: 10.into(),
+                sell_amount: 10_u32.into(),
                 buy_token: token1,
                 kind: OrderKind::Sell,
                 ..Default::default()
@@ -623,7 +623,7 @@ pub mod tests {
         let order2 = Order {
             data: OrderData {
                 sell_token: token1,
-                sell_amount: 10.into(),
+                sell_amount: 10_u32.into(),
                 buy_token: token2,
                 kind: OrderKind::Sell,
                 ..Default::default()
@@ -633,12 +633,12 @@ pub mod tests {
         let trades = vec![
             Trade {
                 order: order1.clone(),
-                executed_amount: order1.data.sell_amount,
+                executed_amount: *order1.data.sell_amount,
                 ..Default::default()
             },
             Trade {
                 order: order2.clone(),
-                executed_amount: order2.data.sell_amount,
+                executed_amount: *order2.data.sell_amount,
                 ..Default::default()
             },
         ];
@@ -758,7 +758,7 @@ pub mod tests {
         let order = Order {
             data: OrderData {
                 sell_token: native_token,
-                sell_amount: 10.into(),
+                sell_amount: 10_u32.into(),
                 buy_token: usd,
                 kind: OrderKind::Sell,
                 ..Default::default()
@@ -767,7 +767,7 @@ pub mod tests {
         };
         let mut trades = vec![Trade {
             order: order.clone(),
-            executed_amount: order.data.sell_amount,
+            executed_amount: *order.data.sell_amount,
             ..Default::default()
         }];
         let clearing_prices = hashmap! {native_token => 1700.into(), usd => U256::one()};
@@ -785,7 +785,7 @@ pub mod tests {
         let counter_order = Order {
             data: OrderData {
                 sell_token: usd,
-                sell_amount: 10.into(),
+                sell_amount: 10_u32.into(),
                 buy_token: native_token,
                 kind: OrderKind::Sell,
                 ..Default::default()
@@ -794,7 +794,7 @@ pub mod tests {
         };
         trades.push(Trade {
             order: counter_order.clone(),
-            executed_amount: counter_order.data.sell_amount,
+            executed_amount: *counter_order.data.sell_amount,
             ..Default::default()
         });
         let settlement = test_settlement(clearing_prices, trades);
@@ -812,8 +812,8 @@ pub mod tests {
             order: Order {
                 data: OrderData {
                     kind: OrderKind::Sell,
-                    sell_amount: 10.into(),
-                    buy_amount: 6.into(),
+                    sell_amount: 10_u32.into(),
+                    buy_amount: 6_u32.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -835,8 +835,8 @@ pub mod tests {
             order: Order {
                 data: OrderData {
                     kind: OrderKind::Buy,
-                    sell_amount: 10.into(),
-                    buy_amount: 6.into(),
+                    sell_amount: 10_u32.into(),
+                    buy_amount: 6_u32.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -894,8 +894,8 @@ pub mod tests {
             data: OrderData {
                 sell_token: token0,
                 buy_token: token1,
-                sell_amount: 10.into(),
-                buy_amount: 9.into(),
+                sell_amount: 10_u32.into(),
+                buy_amount: 9_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -906,8 +906,8 @@ pub mod tests {
             data: OrderData {
                 sell_token: token1,
                 buy_token: token0,
-                sell_amount: 10.into(),
-                buy_amount: 9.into(),
+                sell_amount: 10_u32.into(),
+                buy_amount: 9_u32.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -1031,8 +1031,8 @@ pub mod tests {
             data: OrderData {
                 sell_token: token0,
                 buy_token: token1,
-                sell_amount: 10.into(),
-                buy_amount: 9.into(),
+                sell_amount: 10_u32.into(),
+                buy_amount: 9_u32.into(),
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
@@ -1200,8 +1200,8 @@ pub mod tests {
         let fully_filled_sell = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    sell_amount: 100_u32.into(),
+                    fee_amount: 5_u32.into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -1215,8 +1215,8 @@ pub mod tests {
         let partially_filled_sell = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    sell_amount: 100_u32.into(),
+                    fee_amount: 5_u32.into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -1230,8 +1230,8 @@ pub mod tests {
         let fully_filled_buy = Trade {
             order: Order {
                 data: OrderData {
-                    buy_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    buy_amount: 100_u32.into(),
+                    fee_amount: 5_u32.into(),
                     kind: OrderKind::Buy,
                     ..Default::default()
                 },
@@ -1245,8 +1245,8 @@ pub mod tests {
         let partially_filled_buy = Trade {
             order: Order {
                 data: OrderData {
-                    buy_amount: 100.into(),
-                    fee_amount: 5.into(),
+                    buy_amount: 100_u32.into(),
+                    fee_amount: 5_u32.into(),
                     kind: OrderKind::Buy,
                     ..Default::default()
                 },
@@ -1263,8 +1263,8 @@ pub mod tests {
         let large_amounts = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: U256::max_value(),
-                    fee_amount: U256::max_value(),
+                    sell_amount: U256::max_value().into(),
+                    fee_amount: U256::max_value().into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -1278,8 +1278,8 @@ pub mod tests {
         let zero_amounts = Trade {
             order: Order {
                 data: OrderData {
-                    sell_amount: U256::zero(),
-                    fee_amount: U256::zero(),
+                    sell_amount: U256::zero().into(),
+                    fee_amount: U256::zero().into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -1300,8 +1300,8 @@ pub mod tests {
             order: Order {
                 data: OrderData {
                     sell_token: token0,
-                    sell_amount: 10.into(),
-                    fee_amount: 1.into(),
+                    sell_amount: 10_u32.into(),
+                    fee_amount: 1_u32.into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -1317,8 +1317,8 @@ pub mod tests {
             order: Order {
                 data: OrderData {
                     sell_token: token1,
-                    sell_amount: 10.into(),
-                    fee_amount: 2.into(),
+                    sell_amount: 10_u32.into(),
+                    fee_amount: 2_u32.into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
@@ -1361,10 +1361,10 @@ pub mod tests {
                         data: OrderData {
                             sell_token: token0,
                             buy_token: token1,
-                            sell_amount: 1.into(),
+                            sell_amount: 1_u32.into(),
                             kind: OrderKind::Sell,
                             // Note that this fee amount is NOT used!
-                            fee_amount: 6.into(),
+                            fee_amount: 6_u32.into(),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1378,9 +1378,9 @@ pub mod tests {
                         data: OrderData {
                             sell_token: token1,
                             buy_token: token0,
-                            buy_amount: 1.into(),
+                            buy_amount: 1_u32.into(),
                             kind: OrderKind::Buy,
-                            fee_amount: 28.into(),
+                            fee_amount: 28_u32.into(),
                             ..Default::default()
                         },
                         metadata: OrderMetadata {

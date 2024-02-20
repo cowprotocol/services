@@ -126,11 +126,11 @@ impl Inner {
             dest_token: query.buy_token,
             trade_amount: match query.kind {
                 OrderKind::Buy => TradeAmount::Buy {
-                    dest_amount: query.in_amount.get(),
+                    dest_amount: query.in_amount.get().into(),
                     slippage: Self::DEFAULT_SLIPPAGE,
                 },
                 OrderKind::Sell => TradeAmount::Sell {
-                    src_amount: query.in_amount.get(),
+                    src_amount: query.in_amount.get().into(),
                     slippage: Self::DEFAULT_SLIPPAGE,
                 },
             },
@@ -156,7 +156,7 @@ impl Inner {
             Some(quote.price.token_transfer_proxy),
             Interaction {
                 target: tx.to,
-                value: tx.value,
+                value: tx.value.into(),
                 data: tx.data,
             },
             self.solver,

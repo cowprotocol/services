@@ -14,7 +14,6 @@ use {
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
     ethrpc::current_block::{BlockInfo, CurrentBlockStream},
-    number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},
         Client,
@@ -233,8 +232,7 @@ pub struct Order {
     pub pool: H256,
     /// A value that can be used to guarantee order uniqueness. Typically it is
     /// set to a random number.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub salt: U256,
+    pub salt: number::U256,
     /// It allows the maker to enforce that the order flow through some
     /// additional logic before it can be filled (e.g., a KYC whitelist).
     pub sender: H160,
@@ -299,10 +297,8 @@ pub struct OrdersResponse {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceResponse {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub sell_amount: number::U256,
+    pub buy_amount: number::U256,
     pub allowance_target: H160,
     #[serde_as(as = "DisplayFromStr")]
     pub price: f64,
@@ -322,13 +318,12 @@ pub struct SwapResponse {
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub value: U256,
+    pub value: number::U256,
 }
 
 impl Interaction for SwapResponse {
     fn encode(&self) -> EncodedInteraction {
-        (self.to, self.value, Bytes(self.data.clone()))
+        (self.to, *self.value, Bytes(self.data.clone()))
     }
 }
 
@@ -774,7 +769,7 @@ mod tests {
                         maker_amount: 500000000u128,
                         maker_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                         pool: H256::zero(),
-                        salt: 1645858724.into(),
+                        salt: 1645858724_u64.into(),
                         sender: H160::zero(),
                         signature: ZeroExSignature {
                             signature_type: 3,
@@ -810,8 +805,8 @@ mod tests {
                 swap,
                 SwapResponse {
                     price: PriceResponse {
-                        sell_amount: U256::from_dec_str("100000000000000000").unwrap(),
-                        buy_amount: U256::from_dec_str("1312100257517027783").unwrap(),
+                        sell_amount: U256::from_dec_str("100000000000000000").unwrap().into(),
+                        buy_amount: U256::from_dec_str("1312100257517027783").unwrap().into(),
                         allowance_target: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                         price: 13.121_002_575_170_278_f64,
                         estimated_gas: 111000,
@@ -820,7 +815,7 @@ mod tests {
                     data: hex::decode(
                         "d9627aa40000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000001206e6c0056936e100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006810e776880c02933d47db1b9fc05908e5386b96869584cd0000000000000000000000001000000000000000000000000000000000000011000000000000000000000000000000000000000000000092415e982f60d431ba"
                     ).unwrap(),
-                    value: U256::from_dec_str("0").unwrap(),
+                    value: U256::from_dec_str("0").unwrap().into(),
                 }
             );
     }

@@ -85,14 +85,14 @@ impl Inner {
         Ok(Trade::swap(
             query.sell_token,
             match query.kind {
-                OrderKind::Buy => swap.price.sell_amount,
-                OrderKind::Sell => swap.price.buy_amount,
+                OrderKind::Buy => swap.price.sell_amount.into(),
+                OrderKind::Sell => swap.price.buy_amount.into(),
             },
             gas::SETTLEMENT_OVERHEAD + swap.price.estimated_gas,
             Some(swap.price.allowance_target),
             Interaction {
                 target: swap.to,
-                value: swap.value,
+                value: swap.value.into(),
                 data: swap.data,
             },
             self.solver,
@@ -166,7 +166,7 @@ mod tests {
                         estimated_gas: 111000,
                     },
                     to: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    value: 42.into(),
+                    value: 42_u32.into(),
                     data: vec![1, 2, 3, 4],
                 })
             }

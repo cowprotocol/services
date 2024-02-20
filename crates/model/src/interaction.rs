@@ -1,17 +1,14 @@
 use {
-    number::serialization::HexOrDecimalU256,
-    primitive_types::{H160, U256},
+    number::U256,
+    primitive_types::H160,
     serde::{Deserialize, Serialize},
-    serde_with::serde_as,
     std::fmt::{self, Debug, Formatter},
 };
 
-#[serde_as]
 #[derive(Eq, PartialEq, Clone, Hash, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionData {
     pub target: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(with = "crate::bytes_hex")]
     pub call_data: Vec<u8>,

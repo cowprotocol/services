@@ -7,6 +7,7 @@ use {
         },
     },
     indexmap::IndexMap,
+    number::U256,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
@@ -27,8 +28,8 @@ impl Auction {
                     Token {
                         decimals: token.decimals,
                         symbol: token.symbol.clone(),
-                        reference_price: token.price.map(Into::into),
-                        available_balance: token.available_balance,
+                        reference_price: token.price.map(eth::U256::from).map(Into::into),
+                        available_balance: token.available_balance.into(),
                         trusted: token.trusted,
                     },
                 )
@@ -64,9 +65,9 @@ impl Auction {
                         uid: order.uid.into(),
                         sell_token: available.sell.token.into(),
                         buy_token: available.buy.token.into(),
-                        sell_amount: available.sell.amount.into(),
-                        buy_amount: available.buy.amount.into(),
-                        fee_amount: available.user_fee.into(),
+                        sell_amount: eth::U256::from(available.sell.amount).into(),
+                        buy_amount: eth::U256::from(available.buy.amount).into(),
+                        fee_amount: eth::U256::from(available.user_fee).into(),
                         kind: match order.side {
                             competition::order::Side::Buy => Kind::Buy,
                             competition::order::Side::Sell => Kind::Sell,
@@ -87,7 +88,7 @@ impl Auction {
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.address.into(),
-                            gas_estimate: liquidity.gas.into(),
+                            gas_estimate: eth::U256::from(liquidity.gas).into(),
                             tokens: pool
                                 .reserves
                                 .iter()
@@ -95,7 +96,7 @@ impl Auction {
                                     (
                                         asset.token.into(),
                                         ConstantProductReserve {
-                                            balance: asset.amount.into(),
+                                            balance: eth::U256::from(asset.amount).into(),
                                         },
                                     )
                                 })
@@ -107,9 +108,9 @@ impl Auction {
                         Liquidity::ConcentratedLiquidity(ConcentratedLiquidityPool {
                             id: liquidity.id.into(),
                             address: pool.address.0,
-                            gas_estimate: liquidity.gas.0,
+                            gas_estimate: liquidity.gas.0.into(),
                             tokens: vec![pool.tokens.get().0.into(), pool.tokens.get().1.into()],
-                            sqrt_price: pool.sqrt_price.0,
+                            sqrt_price: pool.sqrt_price.0.into(),
                             liquidity: pool.liquidity.0,
                             tick: pool.tick.0,
                             liquidity_net: pool
@@ -123,7 +124,7 @@ impl Auction {
                     liquidity::Kind::BalancerV2Stable(pool) => Liquidity::Stable(StablePool {
                         id: liquidity.id.into(),
                         address: pool.id.address().into(),
-                        gas_estimate: liquidity.gas.into(),
+                        gas_estimate: eth::U256::from(liquidity.gas).into(),
                         tokens: pool
                             .reserves
                             .iter()
@@ -131,7 +132,7 @@ impl Auction {
                                 (
                                     r.asset.token.into(),
                                     StableReserve {
-                                        balance: r.asset.amount.into(),
+                                        balance: eth::U256::from(r.asset.amount).into(),
                                         scaling_factor: scaling_factor_to_decimal(r.scale),
                                     },
                                 )
@@ -147,7 +148,7 @@ impl Auction {
                         Liquidity::WeightedProduct(WeightedProductPool {
                             id: liquidity.id.into(),
                             address: pool.id.address().into(),
-                            gas_estimate: liquidity.gas.into(),
+                            gas_estimate: eth::U256::from(liquidity.gas).into(),
                             tokens: pool
                                 .reserves
                                 .iter()
@@ -155,7 +156,7 @@ impl Auction {
                                     (
                                         r.asset.token.into(),
                                         WeightedProductReserve {
-                                            balance: r.asset.amount.into(),
+                                            balance: eth::U256::from(r.asset.amount).into(),
                                             scaling_factor: scaling_factor_to_decimal(r.scale),
                                             weight: weight_to_decimal(r.weight),
                                         },
@@ -177,7 +178,7 @@ impl Auction {
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.base.address.into(),
-                            gas_estimate: liquidity.gas.into(),
+                            gas_estimate: eth::U256::from(liquidity.gas).into(),
                             tokens: pool
                                 .base
                                 .reserves
@@ -186,7 +187,7 @@ impl Auction {
                                     (
                                         asset.token.into(),
                                         ConstantProductReserve {
-                                            balance: asset.amount.into(),
+                                            balance: eth::U256::from(asset.amount).into(),
                                         },
                                     )
                                 })
@@ -198,13 +199,12 @@ impl Auction {
                 })
                 .collect(),
             tokens,
-            effective_gas_price: auction.gas_price().effective().into(),
+            effective_gas_price: eth::U256::from(auction.gas_price().effective()).into(),
             deadline: auction.deadline().solvers(),
         }
     }
 }
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
@@ -212,8 +212,7 @@ pub struct Auction {
     tokens: HashMap<eth::H160, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,
-    #[serde_as(as = "serialize::U256")]
-    effective_gas_price: eth::U256,
+    effective_gas_price: U256,
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
@@ -225,12 +224,9 @@ struct Order {
     uid: [u8; order::UID_LEN],
     sell_token: eth::H160,
     buy_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    fee_amount: eth::U256,
+    sell_amount: U256,
+    buy_amount: U256,
+    fee_amount: U256,
     kind: Kind,
     partially_fillable: bool,
     class: Class,
@@ -251,16 +247,13 @@ enum Class {
     Liquidity,
 }
 
-#[serde_as]
 #[derive(Default, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Token {
     decimals: Option<u8>,
     symbol: Option<String>,
-    #[serde_as(as = "Option<serialize::U256>")]
-    reference_price: Option<eth::U256>,
-    #[serde_as(as = "serialize::U256")]
-    available_balance: eth::U256,
+    reference_price: Option<U256>,
+    available_balance: U256,
     trusted: bool,
 }
 
@@ -283,18 +276,15 @@ struct ConstantProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
+    gas_estimate: U256,
     tokens: BTreeMap<eth::H160, ConstantProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 struct ConstantProductReserve {
-    #[serde_as(as = "serialize::U256")]
-    balance: eth::U256,
+    balance: U256,
 }
 
 #[serde_as]
@@ -304,8 +294,7 @@ struct WeightedProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
+    gas_estimate: U256,
     tokens: IndexMap<eth::H160, WeightedProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
@@ -316,8 +305,7 @@ struct WeightedProductPool {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WeightedProductReserve {
-    #[serde_as(as = "serialize::U256")]
-    balance: eth::U256,
+    balance: U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     scaling_factor: bigdecimal::BigDecimal,
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -338,8 +326,7 @@ struct StablePool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
+    gas_estimate: U256,
     tokens: IndexMap<eth::H160, StableReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     amplification_parameter: bigdecimal::BigDecimal,
@@ -351,8 +338,7 @@ struct StablePool {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StableReserve {
-    #[serde_as(as = "serialize::U256")]
-    balance: eth::U256,
+    balance: U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     scaling_factor: bigdecimal::BigDecimal,
 }
@@ -364,11 +350,9 @@ struct ConcentratedLiquidityPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
+    gas_estimate: U256,
     tokens: Vec<eth::H160>,
-    #[serde_as(as = "serialize::U256")]
-    sqrt_price: eth::U256,
+    sqrt_price: U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     liquidity: u128,
     tick: i32,
@@ -385,18 +369,14 @@ struct ForeignLimitOrder {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    gas_estimate: eth::U256,
+    gas_estimate: U256,
     #[serde_as(as = "serialize::Hex")]
     hash: [u8; 32],
     maker_token: eth::H160,
     taker_token: eth::H160,
-    #[serde_as(as = "serialize::U256")]
-    maker_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    taker_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    taker_token_fee_amount: eth::U256,
+    maker_amount: U256,
+    taker_amount: U256,
+    taker_token_fee_amount: U256,
 }
 
 fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {

@@ -4,7 +4,6 @@ use {
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
     ethrpc::current_block::CurrentBlockStream,
-    number::serialization::HexOrDecimalU256,
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
         de::{DeserializeOwned, Error},
@@ -247,10 +246,8 @@ impl<'de> Deserialize<'de> for PriceResponse {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct PriceRoute {
-            #[serde_as(as = "HexOrDecimalU256")]
-            src_amount: U256,
-            #[serde_as(as = "HexOrDecimalU256")]
-            dest_amount: U256,
+            src_amount: number::U256,
+            dest_amount: number::U256,
             token_transfer_proxy: H160,
             #[serde_as(as = "DisplayFromStr")]
             gas_cost: u64,
@@ -266,8 +263,8 @@ impl<'de> Deserialize<'de> for PriceResponse {
             .map_err(D::Error::custom)?;
         Ok(PriceResponse {
             price_route_raw: parsed.price_route,
-            src_amount,
-            dest_amount,
+            src_amount: *src_amount,
+            dest_amount: *dest_amount,
             token_transfer_proxy,
             gas_cost,
         })
@@ -296,7 +293,6 @@ pub struct TransactionBuilderQuery {
 }
 
 /// The amounts for buying and selling.
-#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TradeAmount {
@@ -305,8 +301,7 @@ pub enum TradeAmount {
     #[serde(rename_all = "camelCase")]
     Sell {
         /// The source amount
-        #[serde_as(as = "HexOrDecimalU256")]
-        src_amount: U256,
+        src_amount: number::U256,
         /// The maximum slippage in BPS.
         slippage: u32,
     },
@@ -315,8 +310,7 @@ pub enum TradeAmount {
     #[serde(rename_all = "camelCase")]
     Buy {
         /// The destination amount
-        #[serde_as(as = "HexOrDecimalU256")]
-        dest_amount: U256,
+        dest_amount: number::U256,
         /// The maximum slippage in BPS.
         slippage: u32,
     },
@@ -325,10 +319,8 @@ pub enum TradeAmount {
     /// on the initial `/price` query and the included `price_route`.
     #[serde(rename_all = "camelCase")]
     Exact {
-        #[serde_as(as = "HexOrDecimalU256")]
-        src_amount: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        dest_amount: U256,
+        src_amount: number::U256,
+        dest_amount: number::U256,
     },
 }
 
@@ -361,7 +353,6 @@ impl TransactionBuilderQueryWithPartner<'_> {
 }
 
 /// Paraswap transaction builder response.
-#[serde_as]
 #[derive(Clone, Derivative, Deserialize, Default)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -373,20 +364,18 @@ pub struct TransactionBuilderResponse {
     /// the chain for which this transaction is valid
     pub chain_id: u64,
     /// the native token value to be set on the transaction
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub value: U256,
+    pub value: number::U256,
     /// the calldata for the transaction
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
     /// the suggested gas price
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub gas_price: U256,
+    pub gas_price: number::U256,
 }
 
 impl Interaction for TransactionBuilderResponse {
     fn encode(&self) -> EncodedInteraction {
-        (self.to, self.value, Bytes(self.data.clone()))
+        (self.to, *self.value, Bytes(self.data.clone()))
     }
 }
 
@@ -434,7 +423,7 @@ mod tests {
                 src_token,
                 dest_token,
                 trade_amount: TradeAmount::Sell {
-                    src_amount: price_response.src_amount,
+                    src_amount: price_response.src_amount.into(),
                     slippage: 1000,
                 },
                 src_decimals: 18,
@@ -497,7 +486,7 @@ mod tests {
                 src_token,
                 dest_token,
                 trade_amount: TradeAmount::Buy {
-                    dest_amount: price_response.dest_amount,
+                    dest_amount: price_response.dest_amount.into(),
                     slippage: 1000,
                 },
                 src_decimals: 18,
@@ -814,7 +803,7 @@ mod tests {
             src_token,
             dest_token,
             trade_amount: TradeAmount::Sell {
-                src_amount: price_response.src_amount,
+                src_amount: price_response.src_amount.into(),
                 slippage: 1000, // 10%
             },
             src_decimals: 18,
@@ -833,7 +822,7 @@ mod tests {
                 src_token: H160([1; 20]),
                 dest_token: H160([2; 20]),
                 trade_amount: TradeAmount::Sell {
-                    src_amount: 1337.into(),
+                    src_amount: 1337_u32.into(),
                     slippage: 250,
                 },
                 src_decimals: 18,

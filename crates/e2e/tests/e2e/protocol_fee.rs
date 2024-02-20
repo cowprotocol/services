@@ -305,9 +305,9 @@ async fn execute_test(
 
     let order = OrderCreation {
         sell_token: token_gno.address(),
-        sell_amount: to_wei(10),
+        sell_amount: to_wei(10).into(),
         buy_token: token_dai.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(5).into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: order_kind,
         ..Default::default()
@@ -332,7 +332,7 @@ async fn execute_test(
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        is_approximately_equal(order.metadata.executed_surplus_fee, expected_surplus_fee)
+        is_approximately_equal(*order.metadata.executed_surplus_fee, expected_surplus_fee)
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 

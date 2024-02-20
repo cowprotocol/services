@@ -56,8 +56,8 @@ impl BalancerSor {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
             order_kind: query.kind,
-            amount: query.in_amount.get(),
-            gas_price: U256::from_f64_lossy(gas_price.effective_gas_price()),
+            amount: query.in_amount.get().into(),
+            gas_price: U256::from_f64_lossy(gas_price.effective_gas_price()).into(),
         };
         let api = self.api.clone();
         let future = async move {
@@ -71,7 +71,7 @@ impl BalancerSor {
         let future = self.sharing.shared(query.clone(), future.boxed());
         let quote = future.await?;
         Ok(Estimate {
-            out_amount: quote.return_amount,
+            out_amount: quote.return_amount.into(),
             gas: SETTLEMENT_SINGLE_TRADE + (quote.swaps.len() as u64) * GAS_PER_BALANCER_SWAP,
             solver: self.solver,
             verified: false,

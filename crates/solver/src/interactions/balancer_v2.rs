@@ -33,7 +33,7 @@ impl BalancerSwapGivenOutInteraction {
                 1, // GivenOut,
                 self.asset_in_max.token,
                 self.asset_out.token,
-                self.asset_out.amount,
+                *self.asset_out.amount,
                 self.user_data.clone(),
             ),
             (
@@ -42,7 +42,7 @@ impl BalancerSwapGivenOutInteraction {
                 self.settlement.address(), // recipient
                 false,                     // toInternalBalance
             ),
-            self.asset_in_max.amount,
+            *self.asset_in_max.amount,
             *NEVER,
         );
         let calldata = method.tx.data.expect("no calldata").0;

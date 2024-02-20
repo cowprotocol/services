@@ -12,7 +12,6 @@ use {
         signature::Signature,
     },
     num::BigRational,
-    number::serialization::HexOrDecimalU256,
     primitive_types::{H256, U256},
     serde::{Deserialize, Deserializer, Serialize},
     serde_json::Value,
@@ -29,17 +28,14 @@ pub struct BatchAuctionModel {
     pub metadata: Option<MetadataModel>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize)]
 pub struct OrderModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<OrderUid>,
     pub sell_token: H160,
     pub buy_token: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+    pub sell_amount: number::U256,
+    pub buy_amount: number::U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
     /// Represents user_fee. Which is 0 for limit orders.
@@ -83,18 +79,14 @@ pub enum AmmParameters {
     Concentrated(ConcentratedPoolParameters),
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ConstantProductPoolParameters {
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub reserves: BTreeMap<H160, U256>,
+    pub reserves: BTreeMap<H160, number::U256>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeightedPoolTokenData {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub balance: U256,
+    pub balance: number::U256,
     #[serde(with = "ratio_as_decimal")]
     pub weight: BigRational,
 }
@@ -104,13 +96,10 @@ pub struct WeightedProductPoolParameters {
     pub reserves: BTreeMap<H160, WeightedPoolTokenData>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize)]
 pub struct StablePoolParameters {
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub reserves: BTreeMap<H160, U256>,
-    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
-    pub scaling_rates: BTreeMap<H160, U256>,
+    pub reserves: BTreeMap<H160, number::U256>,
+    pub scaling_rates: BTreeMap<H160, number::U256>,
     #[serde(with = "ratio_as_decimal")]
     pub amplification_parameter: BigRational,
 }
@@ -121,52 +110,44 @@ pub struct ConcentratedPoolParameters {
     pub pool: PoolInfo,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct TokenInfoModel {
     pub decimals: Option<u8>,
     pub alias: Option<String>,
     pub external_price: Option<f64>,
     pub normalize_priority: Option<u64>,
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub internal_buffer: Option<U256>,
+    pub internal_buffer: Option<number::U256>,
     /// Is token in the external list containing only safe tokens
     pub accepted_for_internalization: bool,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TokenAmount {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub amount: U256,
+    pub amount: number::U256,
     pub token: H160,
 }
 
 impl TokenAmount {
     pub fn new<T: Into<U256>>(token: H160, amount: T) -> Self {
         Self {
-            amount: amount.into(),
+            amount: amount.into().into(),
             token,
         }
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApprovalModel {
     pub token: H160,
     pub spender: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub amount: U256,
+    pub amount: number::U256,
 }
 
-#[serde_as]
 #[derive(Clone, Derivative, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub value: U256,
+    pub value: number::U256,
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub call_data: Vec<u8>,
@@ -189,27 +170,22 @@ pub struct InteractionData {
 
 impl Interaction for InteractionData {
     fn encode(&self) -> EncodedInteraction {
-        (self.target, self.value, Bytes(self.call_data.clone()))
+        (self.target, *self.value, Bytes(self.call_data.clone()))
     }
 }
 
-#[serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Score {
     /// The score value is provided as is from solver.
     /// Success probability is not incorporated into this value.
-    Solver {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-    },
+    Solver { score: number::U256 },
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol given the success
     /// probability and optionally the amount of gas this settlement will take.
     RiskAdjusted {
         success_probability: f64,
-        #[serde_as(as = "Option<HexOrDecimalU256>")]
-        gas_amount: Option<U256>,
+        gas_amount: Option<number::U256>,
     },
 }
 
@@ -237,7 +213,7 @@ impl Score {
         match (self, other) {
             (Score::Solver { score: left }, Score::Solver { score: right }) => {
                 Some(Score::Solver {
-                    score: left.checked_add(*right)?,
+                    score: left.checked_add(**right)?.into(),
                 })
             }
             (
@@ -252,14 +228,14 @@ impl Score {
             ) => Some(Score::RiskAdjusted {
                 success_probability: p_left * p_right,
                 gas_amount: gas_left
-                    .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
+                    .and_then(|left| gas_right.and_then(|right| left.checked_add(*right)))
+                    .map(Into::into),
             }),
             _ => None,
         }
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
@@ -268,8 +244,7 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub amms: HashMap<H160, UpdatedAmmModel>,
     pub ref_token: Option<H160>,
-    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-    pub prices: HashMap<H160, U256>,
+    pub prices: HashMap<H160, number::U256>,
     #[serde(default)]
     pub approvals: Vec<ApprovalModel>,
     #[serde(default)]
@@ -315,15 +290,11 @@ pub struct SettledBatchAuctionMetadataModel {
     pub result: Option<String>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExecutedOrderModel {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub exec_sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub exec_buy_amount: U256,
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub exec_fee_amount: Option<U256>,
+    pub exec_sell_amount: number::U256,
+    pub exec_buy_amount: number::U256,
+    pub exec_fee_amount: Option<number::U256>,
     pub cost: Option<TokenAmount>,
     pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit
@@ -331,14 +302,11 @@ pub struct ExecutedOrderModel {
     pub exec_plan: Option<ExecutionPlan>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ExecutedLiquidityOrderModel {
     pub order: NativeLiquidityOrder,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub exec_sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub exec_buy_amount: U256,
+    pub exec_sell_amount: number::U256,
+    pub exec_buy_amount: number::U256,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -358,22 +326,19 @@ pub struct UpdatedAmmModel {
     pub cost: Option<TokenAmount>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ExecutedAmmModel {
     pub sell_token: H160,
     pub buy_token: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub exec_sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub exec_buy_amount: U256,
+    pub exec_sell_amount: number::U256,
+    pub exec_buy_amount: number::U256,
     pub exec_plan: ExecutionPlan,
 }
 
 impl UpdatedAmmModel {
     /// Returns true there is at least one non-zero update.
     pub fn is_non_trivial(&self) -> bool {
-        let zero = &U256::zero();
+        let zero = &number::U256::zero();
         let has_non_trivial_execution = self
             .execution
             .iter()
@@ -423,7 +388,6 @@ pub enum AuctionResult {
 
 type SimulationSucceededAtLeastOnce = bool;
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SolverRejectionReason {
@@ -465,10 +429,8 @@ pub enum SolverRejectionReason {
     /// Objective value is too low.
     #[serde(rename_all = "camelCase")]
     ObjectiveValueNonPositive {
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        gas_cost: U256,
+        quality: number::U256,
+        gas_cost: number::U256,
     },
 
     /// Success probability is out of the allowed range [0, 1]
@@ -478,10 +440,8 @@ pub enum SolverRejectionReason {
     /// fees).
     #[serde(rename_all = "camelCase")]
     ScoreHigherThanQuality {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
+        score: number::U256,
+        quality: number::U256,
     },
 
     /// Solver balance too low to cover the execution costs.
@@ -516,7 +476,6 @@ pub struct TransactionWithError {
 }
 
 /// Transaction data used for simulation of the settlement
-#[serde_as]
 #[derive(Clone, Serialize, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -542,10 +501,8 @@ pub struct SimulatedTransaction {
     pub data: Vec<u8>,
     /// Gas price can influence the success of simulation if sender balance
     /// is not enough for paying the costs of executing the transaction onchain
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub max_fee_per_gas: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub max_priority_fee_per_gas: U256,
+    pub max_fee_per_gas: number::U256,
+    pub max_priority_fee_per_gas: number::U256,
 }
 
 /// Whether or not internalizable interactions should be encoded as calldata
@@ -591,12 +548,12 @@ mod tests {
         .is_non_trivial());
 
         let execution_with_sell = ExecutedAmmModel {
-            exec_sell_amount: U256::one(),
+            exec_sell_amount: U256::one().into(),
             ..Default::default()
         };
 
         let execution_with_buy = ExecutedAmmModel {
-            exec_buy_amount: U256::one(),
+            exec_buy_amount: U256::one().into(),
             ..Default::default()
         };
 
@@ -629,16 +586,16 @@ mod tests {
             id: Some(OrderUid::default()),
             sell_token,
             buy_token,
-            sell_amount: U256::from(1),
-            buy_amount: U256::from(2),
+            sell_amount: U256::from(1).into(),
+            buy_amount: U256::from(2).into(),
             allow_partial_fill: false,
             is_sell_order: true,
             fee: TokenAmount {
-                amount: U256::from(2),
+                amount: U256::from(2).into(),
                 token: sell_token,
             },
             cost: TokenAmount {
-                amount: U256::from(1),
+                amount: U256::from(1).into(),
                 token: native_token,
             },
             is_liquidity_order: false,
@@ -650,13 +607,13 @@ mod tests {
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
                 reserves: btreemap! {
-                    buy_token => U256::from(100),
-                    sell_token => U256::from(200),
+                    buy_token => U256::from(100).into(),
+                    sell_token => U256::from(200).into(),
                 },
             }),
             fee: BigRational::new(3.into(), 1000.into()),
             cost: TokenAmount {
-                amount: U256::from(3),
+                amount: U256::from(3).into(),
                 token: native_token,
             },
             mandatory: false,
@@ -666,18 +623,18 @@ mod tests {
             parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
                 reserves: btreemap! {
                     sell_token => WeightedPoolTokenData {
-                        balance: U256::from(808),
+                        balance: U256::from(808).into(),
                         weight: BigRational::new(2.into(), 10.into()),
                     },
                     buy_token => WeightedPoolTokenData {
-                        balance: U256::from(64),
+                        balance: U256::from(64).into(),
                         weight: BigRational::new(8.into(), 10.into()),
                     }
                 },
             }),
             fee: BigRational::new(2.into(), 1000.into()),
             cost: TokenAmount {
-                amount: U256::from(2),
+                amount: U256::from(2).into(),
                 token: native_token,
             },
             mandatory: true,
@@ -686,18 +643,18 @@ mod tests {
         let stable_pool_model = AmmModel {
             parameters: AmmParameters::Stable(StablePoolParameters {
                 reserves: btreemap! {
-                    sell_token => U256::from(1000),
-                    buy_token => U256::from(1_001_000_000),
+                    sell_token => U256::from(1000).into(),
+                    buy_token => U256::from(1_001_000_000).into(),
                 },
                 scaling_rates: btreemap! {
-                    sell_token => U256::from(1),
-                    buy_token => U256::from(1_000_000),
+                    sell_token => U256::from(1).into(),
+                    buy_token => U256::from(1_000_000).into(),
                 },
                 amplification_parameter: BigRational::new(1337.into(), 100.into()),
             }),
             fee: BigRational::new(3.into(), 1000.into()),
             cost: TokenAmount {
-                amount: U256::from(3),
+                amount: U256::from(3).into(),
                 token: native_token,
             },
             mandatory: true,
@@ -722,7 +679,7 @@ mod tests {
             }),
             fee: BigRational::new(3.into(), 1000.into()),
             cost: TokenAmount {
-                amount: U256::from(3),
+                amount: U256::from(3).into(),
                 token: native_token,
             },
             mandatory: false,
@@ -735,7 +692,7 @@ mod tests {
                     alias: Some("CAT".to_string()),
                     external_price: Some(1.2),
                     normalize_priority: Some(1),
-                    internal_buffer: Some(U256::from(1337)),
+                    internal_buffer: Some(U256::from(1337).into()),
                     accepted_for_internalization: true,
                 },
                 sell_token => TokenInfoModel {
@@ -743,7 +700,7 @@ mod tests {
                     alias: Some("DOG".to_string()),
                     external_price: Some(2345.0),
                     normalize_priority: Some(0),
-                    internal_buffer: Some(U256::from(42)),
+                    internal_buffer: Some(U256::from(42).into()),
                     accepted_for_internalization: true,
                 }
             },
@@ -916,7 +873,7 @@ mod tests {
             ApprovalModel {
                 token: addr!("7777777777777777777777777777777777777777"),
                 spender: addr!("5555555555555555555555555555555555555555"),
-                amount: 1337.into(),
+                amount: 1337_u32.into(),
             }
         );
     }
@@ -989,7 +946,7 @@ mod tests {
                 .score,
             Score::RiskAdjusted {
                 success_probability: 0.9,
-                gas_amount: Some(4269.into())
+                gas_amount: Some(4269_u32.into())
             }
         );
 
@@ -1094,20 +1051,20 @@ mod tests {
             .unwrap(),
             InteractionData {
                 target: H160([0xff; 20]),
-                value: 0.into(),
+                value: 0_u32.into(),
                 call_data: vec![1, 2, 3, 4],
                 inputs: vec![TokenAmount {
                     token: H160([1; 20]),
-                    amount: 9999.into(),
+                    amount: 9999_u32.into(),
                 }],
                 outputs: vec![
                     TokenAmount {
                         token: H160([2; 20]),
-                        amount: 2000.into(),
+                        amount: 2000_u32.into(),
                     },
                     TokenAmount {
                         token: H160([3; 20]),
-                        amount: 3000.into(),
+                        amount: 3000_u32.into(),
                     }
                 ],
                 exec_plan: Some(ExecutionPlan {
@@ -1118,7 +1075,7 @@ mod tests {
                     internal: true,
                 }),
                 cost: Some(TokenAmount {
-                    amount: 1.into(),
+                    amount: 1_u32.into(),
                     token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
                 })
             },
@@ -1160,11 +1117,11 @@ mod tests {
                     data: OrderData {
                         sell_token: H160([1; 20]),
                         buy_token: H160([2; 20]),
-                        sell_amount: 101.into(),
-                        buy_amount: 102.into(),
+                        sell_amount: 101_u32.into(),
+                        buy_amount: 102_u32.into(),
                         valid_to: 3,
                         app_data: AppDataHash([3; 32]),
-                        fee_amount: 13.into(),
+                        fee_amount: 13_u32.into(),
                         kind: OrderKind::Sell,
                         partially_fillable: true,
                         sell_token_balance: SellTokenSource::External,
@@ -1172,8 +1129,8 @@ mod tests {
                     },
                     signature: Signature::Eip1271(vec![1, 2, 3, 4]),
                 },
-                exec_sell_amount: 50.into(),
-                exec_buy_amount: 51.into(),
+                exec_sell_amount: 50_u32.into(),
+                exec_buy_amount: 51_u32.into(),
             },
         );
     }
@@ -1192,8 +1149,8 @@ mod tests {
                 to: H160::from_str("0x9008D19f58AAbD9eD0D60971565AA8510560ab41").unwrap(),
                 data: vec![19, 250, 73],
                 internalization: InternalizationStrategy::SkipInternalizableInteraction,
-                max_fee_per_gas: U256::from(100),
-                max_priority_fee_per_gas: U256::from(10),
+                max_fee_per_gas: U256::from(100).into(),
+                max_priority_fee_per_gas: U256::from(10).into(),
             })
             .unwrap(),
             json!({
@@ -1247,8 +1204,8 @@ mod tests {
     fn serialize_objective_value_non_positive_colocated() {
         let auction_result =
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
-                quality: U256::from(1),
-                gas_cost: U256::from(2),
+                quality: U256::from(1).into(),
+                gas_cost: U256::from(2).into(),
             });
 
         assert_eq!(
@@ -1280,8 +1237,8 @@ mod tests {
     fn serialize_score_higher_than_quality() {
         let auction_result =
             AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
-                score: U256::from(1),
-                quality: U256::from(2),
+                score: U256::from(1).into(),
+                quality: U256::from(2).into(),
             });
 
         assert_eq!(

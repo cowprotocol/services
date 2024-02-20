@@ -85,20 +85,21 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // order's fee and sell amounts, and thus can always fit in a `U256`
         // - as it is limited by the order format.
         executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-            .context(
-            "executed sell amount before fees does not fit in a u256",
-        )?,
+            .context("executed sell amount before fees does not fit in a u256")?
+            .into(),
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
-            .context("executed fee amount is not a valid u256")?,
+            .context("executed fee amount is not a valid u256")?
+            .into(),
         executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
-            .context("executed surplus fee is not a valid u256")?,
+            .context("executed surplus fee is not a valid u256")?
+            .into(),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
         settlement_contract: H160(order.settlement_contract.0),
-        full_fee_amount,
-        solver_fee,
+        full_fee_amount: full_fee_amount.into(),
+        solver_fee: solver_fee.into(),
         ethflow_data,
         onchain_user,
         onchain_order_data,
@@ -112,11 +113,15 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         sell_token: H160(order.sell_token.0),
         buy_token: H160(order.buy_token.0),
         receiver: order.receiver.map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        sell_amount: big_decimal_to_u256(&order.sell_amount)
+            .context("sell_amount is not U256")?
+            .into(),
+        buy_amount: big_decimal_to_u256(&order.buy_amount)
+            .context("buy_amount is not U256")?
+            .into(),
         valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data.0),
-        fee_amount,
+        fee_amount: fee_amount.into(),
         kind: order_kind_from(order.kind),
         partially_fillable: order.partially_fillable,
         sell_token_balance: sell_token_source_from(order.sell_token_balance),
@@ -149,7 +154,8 @@ pub fn extract_interactions(
             Ok(InteractionData {
                 target: H160(interaction.0 .0),
                 value: big_decimal_to_u256(&interaction.1)
-                    .context("interaction value is not U256")?,
+                    .context("interaction value is not U256")?
+                    .into(),
                 call_data: interaction.2.to_vec(),
             })
         })

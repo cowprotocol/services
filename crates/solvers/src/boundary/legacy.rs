@@ -162,7 +162,7 @@ fn to_boundary_auction(
                         external_price: info
                             .reference_price
                             .map(|price| price.0 .0.to_f64_lossy() / 1e18),
-                        internal_buffer: Some(info.available_balance),
+                        internal_buffer: Some(info.available_balance.into()),
                         accepted_for_internalization: info.trusted,
                         // Quasimodo crashes when the reference token (i.e. WETH) doesn't
                         // have decimals. So use a reasonable default if we don't get one.
@@ -205,12 +205,12 @@ fn to_boundary_auction(
                 id: Some(OrderUid(order.uid.0)),
                 sell_token: order.sell.token.0,
                 buy_token: order.buy.token.0,
-                sell_amount: order.sell.amount,
-                buy_amount: order.buy.amount,
+                sell_amount: order.sell.amount.into(),
+                buy_amount: order.buy.amount.into(),
                 allow_partial_fill: order.partially_fillable,
                 is_sell_order: order.side == order::Side::Sell,
                 fee: TokenAmount {
-                    amount: order.fee().amount,
+                    amount: order.fee().amount.into(),
                     token: order.fee().token.0,
                 },
                 cost: gas.gp_order_cost(),
@@ -225,7 +225,7 @@ fn to_boundary_auction(
 
     for liquidity in &auction.liquidity {
         let cost = TokenAmount {
-            amount: U256::from_f64_lossy(liquidity.gas.0.to_f64_lossy() * gas.gas_price),
+            amount: U256::from_f64_lossy(liquidity.gas.0.to_f64_lossy() * gas.gas_price).into(),
             token: weth.0,
         };
 
@@ -235,11 +235,11 @@ fn to_boundary_auction(
                     reserves: [
                         (
                             state.reserves.get().0.token.0,
-                            state.reserves.get().0.amount,
+                            state.reserves.get().0.amount.into(),
                         ),
                         (
                             state.reserves.get().1.token.0,
-                            state.reserves.get().1.amount,
+                            state.reserves.get().1.amount.into(),
                         ),
                     ]
                     .into_iter()
@@ -256,7 +256,7 @@ fn to_boundary_auction(
                             (
                                 reserve.asset.token.0,
                                 WeightedPoolTokenData {
-                                    balance: reserve.asset.amount,
+                                    balance: reserve.asset.amount.into(),
                                     weight: to_big_rational(&reserve.weight),
                                 },
                             )
@@ -281,7 +281,12 @@ fn to_boundary_auction(
                 };
 
                 let Some(scaling_rates) = reserves_without_bpt()
-                    .map(|reserve| Some((reserve.asset.token.0, to_scaling_rate(&reserve.scale)?)))
+                    .map(|reserve| {
+                        Some((
+                            reserve.asset.token.0,
+                            to_scaling_rate(&reserve.scale)?.into(),
+                        ))
+                    })
                     .collect()
                 else {
                     // A scaling factor that cannot be represented in the format
@@ -292,7 +297,7 @@ fn to_boundary_auction(
                 (
                     AmmParameters::Stable(StablePoolParameters {
                         reserves: reserves_without_bpt()
-                            .map(|reserve| (reserve.asset.token.0, reserve.asset.amount))
+                            .map(|reserve| (reserve.asset.token.0, reserve.asset.amount.into()))
                             .collect(),
                         scaling_rates,
                         amplification_parameter: to_big_rational(&state.amplification_parameter),
@@ -317,7 +322,7 @@ fn to_boundary_auction(
                             address: liquidity.address,
                             tokens: vec![token(state.tokens.get().0), token(state.tokens.get().1)],
                             state: PoolState {
-                                sqrt_price: state.sqrt_price.0,
+                                sqrt_price: state.sqrt_price.0.into(),
                                 liquidity: state.liquidity.0.into(),
                                 tick: num::BigInt::from(state.tick.0),
                                 liquidity_net: state
@@ -333,7 +338,7 @@ fn to_boundary_auction(
                                 ),
                             },
                             gas_stats: PoolStats {
-                                mean_gas: liquidity.gas.0,
+                                mean_gas: liquidity.gas.0.into(),
                             },
                         },
                     }),
@@ -349,12 +354,12 @@ fn to_boundary_auction(
                         id: None,
                         sell_token: state.maker.token.0,
                         buy_token: state.taker.token.0,
-                        sell_amount: state.maker.amount,
-                        buy_amount: state.taker.amount,
+                        sell_amount: state.maker.amount.into(),
+                        buy_amount: state.taker.amount.into(),
                         allow_partial_fill: true,
                         is_sell_order: false,
                         fee: TokenAmount {
-                            amount: state.fee().amount,
+                            amount: state.fee().amount.into(),
                             token: state.fee().token.0,
                         },
                         cost,
@@ -399,13 +404,13 @@ fn to_domain_solution(
                 signature: jit.order.signature.clone().into(),
                 sell: eth::Asset {
                     token: eth::TokenAddress(jit.order.data.sell_token),
-                    amount: jit.order.data.sell_amount,
+                    amount: *jit.order.data.sell_amount,
                 },
                 buy: eth::Asset {
                     token: eth::TokenAddress(jit.order.data.buy_token),
-                    amount: jit.order.data.buy_amount,
+                    amount: *jit.order.data.buy_amount,
                 },
-                fee: order::Fee(jit.order.data.fee_amount),
+                fee: order::Fee(*jit.order.data.fee_amount),
                 side: match jit.order.data.kind {
                     OrderKind::Buy => order::Side::Buy,
                     OrderKind::Sell => order::Side::Sell,
@@ -417,8 +422,8 @@ fn to_domain_solution(
                 valid_to: jit.order.data.valid_to,
             },
             executed: match jit.order.data.kind {
-                model::order::OrderKind::Buy => jit.exec_buy_amount,
-                model::order::OrderKind::Sell => jit.exec_sell_amount,
+                model::order::OrderKind::Buy => *jit.exec_buy_amount,
+                model::order::OrderKind::Sell => *jit.exec_sell_amount,
             },
         }));
     }
@@ -433,12 +438,13 @@ fn to_domain_solution(
                 solution::Fulfillment::new(
                     (*order).clone(),
                     match order.side {
-                        order::Side::Buy => execution.exec_buy_amount,
-                        order::Side::Sell => execution.exec_sell_amount,
+                        order::Side::Buy => *execution.exec_buy_amount,
+                        order::Side::Sell => *execution.exec_sell_amount,
                     },
                     match order.solver_determines_fee() {
                         true => execution
                             .exec_fee_amount
+                            .map(Into::into)
                             .map(solution::Fee::Surplus)
                             .context("no surplus fee")?,
                         false => solution::Fee::Protocol,
@@ -453,11 +459,11 @@ fn to_domain_solution(
                         liquidity: (*liquidity).clone(),
                         input: eth::Asset {
                             token: state.taker.token,
-                            amount: execution.exec_buy_amount,
+                            amount: *execution.exec_buy_amount,
                         },
                         output: eth::Asset {
                             token: state.maker.token,
-                            amount: execution.exec_sell_amount,
+                            amount: *execution.exec_sell_amount,
                         },
                         internalize: execution
                             .exec_plan
@@ -482,11 +488,11 @@ fn to_domain_solution(
                 liquidity: (*liquidity).clone(),
                 input: eth::Asset {
                     token: eth::TokenAddress(interaction.buy_token),
-                    amount: interaction.exec_buy_amount,
+                    amount: *interaction.exec_buy_amount,
                 },
                 output: eth::Asset {
                     token: eth::TokenAddress(interaction.sell_token),
-                    amount: interaction.exec_sell_amount,
+                    amount: *interaction.exec_sell_amount,
                 },
                 internalize: interaction.exec_plan.internal,
             });
@@ -498,14 +504,14 @@ fn to_domain_solution(
         let coordinate = interaction.exec_plan.as_ref().map(|e| &e.coordinates);
         let interaction = solution::Interaction::Custom(solution::CustomInteraction {
             target: interaction.target,
-            value: eth::Ether(interaction.value),
+            value: eth::Ether(*interaction.value),
             calldata: interaction.call_data.clone(),
             inputs: interaction
                 .inputs
                 .iter()
                 .map(|i| eth::Asset {
                     token: eth::TokenAddress(i.token),
-                    amount: i.amount,
+                    amount: *i.amount,
                 })
                 .collect(),
             outputs: interaction
@@ -513,7 +519,7 @@ fn to_domain_solution(
                 .iter()
                 .map(|i| eth::Asset {
                     token: eth::TokenAddress(i.token),
-                    amount: i.amount,
+                    amount: *i.amount,
                 })
                 .collect(),
             internalize: interaction
@@ -537,7 +543,7 @@ fn to_domain_solution(
             spender: approval.spender,
             asset: eth::Asset {
                 token: eth::TokenAddress(approval.token),
-                amount: approval.amount,
+                amount: *approval.amount,
             },
         })
         .collect();
@@ -561,7 +567,7 @@ fn to_domain_solution(
             model
                 .prices
                 .iter()
-                .map(|(address, price)| (eth::TokenAddress(*address), *price))
+                .map(|(address, price)| (eth::TokenAddress(*address), (*price).into()))
                 .collect(),
         ),
         trades,
@@ -570,7 +576,7 @@ fn to_domain_solution(
             .map(|(interaction, _)| interaction)
             .collect(),
         score: match model.score {
-            Score::Solver { score } => solution::Score::Solver(score),
+            Score::Solver { score } => solution::Score::Solver(*score),
             Score::RiskAdjusted {
                 success_probability,
                 ..
@@ -611,8 +617,8 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         }
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(quality, gas_cost)) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
-                quality: quality.0,
-                gas_cost: gas_cost.0,
+                quality: quality.0.into(),
+                gas_cost: gas_cost.0.into(),
             })
         }
         Kind::ScoringFailed(ScoreKind::ZeroScore) => {
@@ -620,8 +626,8 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         }
         Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality(score, quality)) => {
             AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
-                score: score.0,
-                quality: quality.0,
+                score: score.0.into(),
+                quality: quality.0.into(),
             })
         }
         Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(_)) => {

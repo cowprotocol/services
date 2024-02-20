@@ -7,6 +7,7 @@ use {
         infra::notify,
         util::serialize,
     },
+    number::U256,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
@@ -32,7 +33,7 @@ impl Notification {
                             from: tx.from.into(),
                             to: tx.to.into(),
                             input: tx.input.into(),
-                            value: tx.value.into(),
+                            value: eth::U256::from(tx.value).into(),
                             access_list: tx.access_list.into(),
                         },
                         succeeded_once,
@@ -43,8 +44,8 @@ impl Notification {
                     score,
                     quality,
                 )) => Kind::ScoreHigherThanQuality {
-                    score: score.0.get(),
-                    quality: quality.0,
+                    score: score.0.get().into(),
+                    quality: quality.0.into(),
                 },
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
                     success_probability,
@@ -55,15 +56,15 @@ impl Notification {
                     quality,
                     gas_cost,
                 )) => Kind::ObjectiveValueNonPositive {
-                    quality: quality.0,
-                    gas_cost: gas_cost.get().0,
+                    quality: quality.0.into(),
+                    gas_cost: gas_cost.get().0.into(),
                 },
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
                 notify::Kind::SolverAccountInsufficientBalance(required) => {
                     Kind::SolverAccountInsufficientBalance {
-                        required: required.0,
+                        required: required.0.into(),
                     }
                 }
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
@@ -94,7 +95,6 @@ pub struct Notification {
     kind: Kind,
 }
 
-#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
@@ -109,27 +109,22 @@ pub enum Kind {
     },
     ZeroScore,
     ScoreHigherThanQuality {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
+        score: U256,
+        quality: U256,
     },
     SuccessProbabilityOutOfRange {
         probability: f64,
     },
     #[serde(rename_all = "camelCase")]
     ObjectiveValueNonPositive {
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        gas_cost: eth::U256,
+        quality: U256,
+        gas_cost: U256,
     },
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
     },
     SolverAccountInsufficientBalance {
-        #[serde_as(as = "serialize::U256")]
-        required: eth::U256,
+        required: U256,
     },
     Success {
         transaction: eth::H256,
@@ -155,7 +150,6 @@ pub struct Tx {
     pub to: eth::H160,
     #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
-    #[serde_as(as = "serialize::U256")]
-    pub value: eth::U256,
+    pub value: U256,
     pub access_list: AccessList,
 }

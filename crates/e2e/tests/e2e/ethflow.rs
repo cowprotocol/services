@@ -135,7 +135,7 @@ async fn eth_flow_tx_zero_fee(web3: Web3) {
             .get_order(&ethflow_order.uid(onchain.contracts()).await)
             .await
             .unwrap();
-        order.metadata.executed_surplus_fee > U256::zero()
+        order.metadata.executed_surplus_fee > U256::zero().into()
     };
     wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
 
@@ -351,9 +351,15 @@ async fn test_submit_quote(
     // Ideally the fee would be nonzero, but this is not the case in the test
     // environment assert_ne!(response.quote.fee_amount, 0.into());
     // Amount is reasonable (±10% from real price)
-    let approx_output: U256 = response.quote.sell_amount * DAI_PER_ETH;
-    assert!(response.quote.buy_amount.gt(&(approx_output * 9u64 / 10)));
-    assert!(response.quote.buy_amount.lt(&(approx_output * 11u64 / 10)));
+    let approx_output: U256 = *response.quote.sell_amount * DAI_PER_ETH;
+    assert!(response
+        .quote
+        .buy_amount
+        .gt(&(approx_output * 9u64 / 10).into()));
+    assert!(response
+        .quote
+        .buy_amount
+        .lt(&(approx_output * 11u64 / 10).into()));
 
     let OrderQuoteSide::Sell {
         sell_amount:
@@ -365,7 +371,10 @@ async fn test_submit_quote(
         panic!("untested!");
     };
 
-    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get());
+    assert_eq!(
+        response.quote.sell_amount,
+        sell_amount_after_fees.get().into()
+    );
 
     response
 }
@@ -606,10 +615,10 @@ impl ExtendedEthFlowOrder {
         ExtendedEthFlowOrder(EthflowOrder {
             buy_token: quote.buy_token,
             receiver: quote.receiver.expect("eth-flow order without receiver"),
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
+            sell_amount: *quote.sell_amount,
+            buy_amount: *quote.buy_amount,
             app_data: ethcontract::Bytes(quote.app_data.hash().0),
-            fee_amount: quote.fee_amount,
+            fee_amount: *quote.fee_amount,
             valid_to, // note: valid to in the quote is always unlimited
             partially_fillable: quote.partially_fillable,
             quote_id: quote_response.id.expect("No quote id"),

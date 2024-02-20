@@ -23,12 +23,13 @@ use {
             },
             setup::blockchain::Blockchain,
         },
-        util::{self, serialize},
+        util::{self},
     },
     bigdecimal::FromPrimitive,
     ethcontract::BlockId,
     futures::future::join_all,
     hyper::StatusCode,
+    number::U256,
     secp256k1::SecretKey,
     serde_json::json,
     serde_with::serde_as,
@@ -60,16 +61,16 @@ pub enum Partial {
     },
 }
 
-#[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
     Solver {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
+        score: U256,
     },
     #[serde(rename_all = "camelCase")]
-    RiskAdjusted { success_probability: f64 },
+    RiskAdjusted {
+        success_probability: f64,
+    },
 }
 
 #[serde_as]

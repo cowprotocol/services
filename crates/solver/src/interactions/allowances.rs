@@ -74,7 +74,7 @@ impl Allowances {
             .copied()
             .ok_or_else(|| anyhow!("missing allowance for token {:?}", token_amount.token))?;
 
-        Ok(if allowance < token_amount.amount {
+        Ok(if allowance < *token_amount.amount {
             Some(Approval {
                 token: token_amount.token,
                 spender: self.spender,
