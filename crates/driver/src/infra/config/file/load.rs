@@ -1,13 +1,7 @@
 use {
     crate::{
-        domain::eth,
-        infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
-    },
-    futures::future::join_all,
-    lazy_static::lazy_static,
-    reqwest::Url,
-    std::path::Path,
-    tokio::fs,
+        boundary::liquidity::uniswap, domain::eth, infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver}
+    }, futures::future::join_all, lazy_static::lazy_static, reqwest::Url, shared::sources::uniswap_v3, std::path::Path, tokio::fs
 };
 
 lazy_static! {
@@ -187,10 +181,11 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
+                        graph_url
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        graph_api_url: uniswap_v3_graph_url.clone(),
+                        graph_url,
                     },
                 })
                 .collect(),
@@ -223,6 +218,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         liquidity_bootstrapping,
                         composable_stable,
                         pool_deny_list,
+                        graph_url,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
                         weighted: weighted
@@ -243,7 +239,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
-                        graph_api_url: balancer_v2_graph_url.clone(),
+                        graph_url 
                     },
                 })
                 .collect(),
