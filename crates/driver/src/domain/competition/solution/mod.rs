@@ -53,6 +53,9 @@ impl Solution {
         old_score: OldSolverScore,
         weth: eth::WethAddress,
     ) -> Result<Self, SolutionError> {
+        // Score is calculated at the beginning of the solution generation process, so
+        // that the surplus is based on the raw solution received from the solver,
+        // before any protocol fees are added.
         let score = SolverScore {
             surplus: {
                 let mut surplus = HashMap::new();
