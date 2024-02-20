@@ -1030,6 +1030,7 @@ pub mod tests {
         encoder0
             .add_trade(order12.clone(), 11.into(), 0.into())
             .unwrap();
+        encoder0.append_to_execution_plan(Arc::new(TestInteraction));
         encoder0.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
             amount: 1.into(),
@@ -1058,6 +1059,7 @@ pub mod tests {
         encoder1
             .add_trade(order23.clone(), 11.into(), 0.into())
             .unwrap();
+        encoder1.append_to_execution_plan(Arc::new(TestInteraction));
         encoder1.add_unwrap(UnwrapWethInteraction {
             weth,
             amount: 2.into(),
