@@ -22,7 +22,7 @@ use {
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::{conversions::u256_to_big_int, nonzero::U256 as NonZeroU256},
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -127,6 +127,7 @@ impl TradeVerifying for TradeVerifier {
                 verification.from,
                 query.sell_token,
                 sell_amount,
+                query.buy_token,
                 self.native_token,
                 verification.receiver,
                 Bytes(settlement.data.unwrap().0),
@@ -176,18 +177,18 @@ impl TradeVerifying for TradeVerifier {
             .simulate(call, overrides, Some(block))
             .await
             .context("failed to simulate quote")?;
-        let summary =
-            SettleOutput::decode(&output).context("could not decode simulation output")?;
+        let summary = SettleOutput::decode(&output, query.kind)
+            .context("could not decode simulation output")?;
         let verified = VerifiedEstimate {
-            out_amount: summary
-                .out_amount(query.kind)
-                .context("could not compute out_amount")?,
+            out_amount: summary.out_amount,
             gas: summary.gas_used.as_u64(),
             solver: trade.solver,
         };
         tracing::debug!(
             out_diff = ?trade.out_amount.abs_diff(verified.out_amount),
             gas_diff = ?trade.gas_estimate.abs_diff(verified.gas),
+            lost_buy_amount = ?summary.buy_tokens_diff,
+            lost_sell_amount = ?summary.sell_tokens_diff,
             time = ?start.elapsed(),
             promised_out_amount = ?trade.out_amount,
             promised_gas = trade.gas_estimate,
@@ -306,39 +307,51 @@ fn add_balance_queries(
     settlement
 }
 
-/// Output of `Trader::settle` smart contract call.
+/// Analyzed output of `Solver::settle` smart contract call.
 #[derive(Debug)]
 struct SettleOutput {
     /// Gas used for the `settle()` call.
     gas_used: U256,
-    /// Balances queried during the simulation in the order specified during the
-    /// simulation set up.
-    queried_balances: Vec<U256>,
+    /// `out_amount` perceived by the trader (sell token for buy orders or buy
+    /// token for sell order)
+    out_amount: U256,
+    /// Difference in buy tokens of the settlement contract before and after the
+    /// trade.
+    buy_tokens_diff: num::BigInt,
+    /// Difference in sell tokens of the settlement contract before and after
+    /// the trade.
+    sell_tokens_diff: num::BigInt,
 }
 
 impl SettleOutput {
-    fn decode(output: &[u8]) -> Result<Self> {
+    fn decode(output: &[u8], kind: OrderKind) -> Result<Self> {
         let function = Solver::raw_contract().abi.function("swap").unwrap();
         let tokens = function.decode_output(output).context("decode")?;
-        let (gas_used, queried_balances) = Tokenize::from_token(Token::Tuple(tokens))?;
-        Ok(Self {
-            gas_used,
-            queried_balances,
-        })
-    }
+        let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
 
-    /// Computes the actual [`Trade::out_amount`] based on the simulation.
-    fn out_amount(&self, kind: OrderKind) -> Result<U256> {
-        let balances = &self.queried_balances;
-        let balance_before = balances.first().context("no balance before settlement")?;
-        let balance_after = balances.get(1).context("no balance after settlement")?;
+        let settlement_sell_balance_before = u256_to_big_int(&balances[0]);
+        let settlement_buy_balance_before = u256_to_big_int(&balances[1]);
+
+        let trader_balance_before = balances[2];
+        let trader_balance_after = balances[3];
+
+        let settlement_sell_balance_after = u256_to_big_int(&balances[4]);
+        let settlement_buy_balance_after = u256_to_big_int(&balances[5]);
+
         let out_amount = match kind {
             // for sell orders we track the buy_token amount which increases during the settlement
-            OrderKind::Sell => balance_after.checked_sub(*balance_before),
+            OrderKind::Sell => trader_balance_after.checked_sub(trader_balance_before),
             // for buy orders we track the sell_token amount which decreases during the settlement
-            OrderKind::Buy => balance_before.checked_sub(*balance_after),
+            OrderKind::Buy => trader_balance_before.checked_sub(trader_balance_after),
         };
-        out_amount.context("underflow during out_amount computation")
+        let out_amount = out_amount.context("underflow during out_amount computation")?;
+
+        Ok(SettleOutput {
+            gas_used,
+            out_amount,
+            buy_tokens_diff: settlement_buy_balance_before - settlement_buy_balance_after,
+            sell_tokens_diff: settlement_sell_balance_before - settlement_sell_balance_after,
+        })
     }
 }
 
