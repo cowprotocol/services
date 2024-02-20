@@ -34,7 +34,7 @@ pub use {
         risk::{ObjectiveValue, SuccessProbability},
         Score,
     },
-    solution::{Solution, SolverScore},
+    solution::{OldSolverScore, Solution},
 };
 
 /// An ongoing competition. There is one competition going on per solver at any
@@ -173,9 +173,10 @@ impl Competition {
             .map(|settlement| {
                 observe::scoring(&settlement);
                 (
-                    settlement.score(&self.eth, auction, &self.mempools.revert_protection()),
+                    settlement.old_score(&self.eth, auction, &self.mempools.revert_protection()),
                     settlement,
-                )
+                ) // todo CIP38 remove
+                  //(settlement.score(&self.eth, auction), settlement)
             })
             .collect_vec();
 

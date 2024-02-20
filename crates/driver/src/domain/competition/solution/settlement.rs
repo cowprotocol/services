@@ -1,5 +1,5 @@
 use {
-    super::{Error, Solution, SolverScoreCIP38},
+    super::{Error, Solution, SolverScore},
     crate::{
         boundary,
         domain::{
@@ -216,18 +216,18 @@ impl Settlement {
     }
 
     /// CIP38 score denominated in the native token (ETH)
-    pub fn score_cip38(
+    pub fn score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Result<competition::Score, score::Error> {
         // CIP38 score denominated in the surplus tokens
         // Settlement score is a sum of the scores of the solutions it contains.
-        let score = SolverScoreCIP38 {
+        let score = SolverScore {
             surplus: self.solutions.values().fold(
                 Default::default(),
                 |mut surplus: HashMap<eth::TokenAddress, eth::TokenAmount>, solution| {
-                    for (token, amount) in &solution.score_cip38.surplus {
+                    for (token, amount) in &solution.score.surplus {
                         if !amount.0.is_zero() {
                             surplus.entry(*token).or_default().0 += amount.0;
                         }
@@ -242,7 +242,7 @@ impl Settlement {
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
     /// Calculate the score for this settlement.
-    pub fn score(
+    pub fn old_score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
@@ -251,8 +251,8 @@ impl Settlement {
         let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => score.try_into()?,
-            competition::SolverScore::RiskAdjusted(success_probability) => {
+            competition::OldSolverScore::Solver(score) => score.try_into()?,
+            competition::OldSolverScore::RiskAdjusted(success_probability) => {
                 let gas_cost = self.gas.estimate * auction.gas_price().effective();
                 let success_probability = success_probability.try_into()?;
                 let objective_value = (quality - gas_cost)?;

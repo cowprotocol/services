@@ -38,8 +38,8 @@ pub struct Solution {
     prices: HashMap<eth::TokenAddress, eth::U256>,
     interactions: Vec<Interaction>,
     solver: Solver,
-    score: SolverScore, // todo CIP38 remove
-    score_cip38: SolverScoreCIP38,
+    old_score: OldSolverScore, // todo CIP38 remove
+    score: SolverScore,
     weth: eth::WethAddress,
 }
 
@@ -50,10 +50,10 @@ impl Solution {
         prices: HashMap<eth::TokenAddress, eth::U256>,
         interactions: Vec<Interaction>,
         solver: Solver,
-        score: SolverScore,
+        old_score: OldSolverScore,
         weth: eth::WethAddress,
     ) -> Result<Self, SolutionError> {
-        let score_cip38 = SolverScoreCIP38 {
+        let score = SolverScore {
             surplus: {
                 let mut surplus = HashMap::new();
                 for trade in trades.iter() {
@@ -80,8 +80,8 @@ impl Solution {
             prices,
             interactions,
             solver,
+            old_score,
             score,
-            score_cip38,
             weth,
         };
 
@@ -116,13 +116,13 @@ impl Solution {
         &self.solver
     }
 
-    pub fn score(&self) -> &SolverScore {
-        &self.score
+    pub fn old_score(&self) -> &OldSolverScore {
+        &self.old_score
     }
 
     /// The score of a solution as per CIP38
-    pub fn score_cip38(&self) -> &SolverScoreCIP38 {
-        &self.score_cip38
+    pub fn score(&self) -> &SolverScore {
+        &self.score
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -294,21 +294,23 @@ impl std::fmt::Debug for Solution {
             .field("prices", &self.prices)
             .field("interactions", &self.interactions)
             .field("solver", &self.solver.name())
+            .field("old_score", &self.old_score)
             .field("score", &self.score)
             .finish()
     }
 }
 
 /// Carries information how the score should be calculated.
+///
+/// todo CIP38 remove
 #[derive(Debug, Clone)]
-pub enum SolverScore {
+pub enum OldSolverScore {
     Solver(eth::U256),
     RiskAdjusted(f64),
 }
 
 #[derive(Debug, Clone)]
-pub struct SolverScoreCIP38 {
-    // todo CIP38 rename to SolverScore
+pub struct SolverScore {
     pub surplus: HashMap<eth::TokenAddress, eth::TokenAmount>,
 }
 

@@ -159,9 +159,11 @@ impl Settlement {
             );
         }
 
-        settlement.score = match solution.score().clone() {
-            competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
-            competition::SolverScore::RiskAdjusted(success_probability) => {
+        settlement.score = match solution.old_score().clone() {
+            competition::OldSolverScore::Solver(score) => {
+                http_solver::model::Score::Solver { score }
+            }
+            competition::OldSolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {
                     success_probability,
                     gas_amount: None,
@@ -204,13 +206,15 @@ impl Settlement {
         }
     }
 
-    pub fn score(&self) -> competition::SolverScore {
+    pub fn score(&self) -> competition::OldSolverScore {
         match self.inner.score {
-            http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(score),
+            http_solver::model::Score::Solver { score } => {
+                competition::OldSolverScore::Solver(score)
+            }
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => competition::SolverScore::RiskAdjusted(success_probability),
+            } => competition::OldSolverScore::RiskAdjusted(success_probability),
         }
     }
 
