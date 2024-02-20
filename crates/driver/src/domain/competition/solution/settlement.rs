@@ -224,17 +224,17 @@ impl Settlement {
         // CIP38 score denominated in the surplus tokens
         // Settlement score is a sum of the scores of the solutions it contains.
         let score = SolverScore {
-            surplus: self.solutions.values().fold(
-                Default::default(),
-                |mut surplus: HashMap<eth::TokenAddress, eth::TokenAmount>, solution| {
+            surplus: self
+                .solutions
+                .values()
+                .fold(Default::default(), |mut surplus, solution| {
                     for (token, amount) in &solution.score.surplus {
                         if !amount.0.is_zero() {
                             surplus.entry(*token).or_default().0 += amount.0;
                         }
                     }
                     surplus
-                },
-            ),
+                }),
         };
 
         boundary::score::to_native_score(score, eth, auction)
