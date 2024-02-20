@@ -552,14 +552,12 @@ pub fn ab_pool() -> Pool {
     }
 }
 
-pub fn ab_pmm_pool() -> Pool {
+pub fn ab_pmm_pool(quote: &OrderQuote) -> Pool {
     Pool {
-        token_a: "A",
-        token_b: "B",
-        amount_a: DEFAULT_POOL_AMOUNT_A.to_wei(),
-        amount_b: DEFAULT_POOL_AMOUNT_B.to_wei(),
         liquidity_provider: LiquidityProvider::Pmm,
+        ..ab_pool()
     }
+    .adjusted_reserve_b(quote)
 }
 
 /// An example order which sells token "A" for token "B".

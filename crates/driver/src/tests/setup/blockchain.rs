@@ -354,7 +354,6 @@ impl Blockchain {
                 tokens.insert(pool.reserve_b.token, token);
             }
         }
-        let mut pairs = Vec::new();
         // Create the uniswap factory.
         let uniswap_factory = wait_for(
             &web3,
@@ -364,8 +363,10 @@ impl Blockchain {
         )
         .await
         .unwrap();
+
         // Create and fund a uniswap pair for each pool. Fund the settlement contract
         // with the same liquidity as the pool, to allow for internalized interactions.
+        let mut pairs = Vec::new();
         for pool in config.pools {
             // Get token addresses.
             let token_a = if pool.reserve_a.token == "WETH" {

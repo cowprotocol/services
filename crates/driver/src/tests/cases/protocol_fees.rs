@@ -18,7 +18,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_order_quote();
-    let pool = ab_pmm_pool().adjusted_reserve_b(&quote);
+    let pool = ab_pmm_pool(&quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
@@ -52,7 +52,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_order_quote();
-    let pool = ab_pmm_pool().adjusted_reserve_b(&quote);
+    let pool = ab_pmm_pool(&quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
@@ -86,7 +86,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_order_quote();
-    let pool = ab_pmm_pool().adjusted_reserve_b(&quote);
+    let pool = ab_pmm_pool(&quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
@@ -120,7 +120,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_order_quote();
-    let pool = ab_pmm_pool().adjusted_reserve_b(&quote);
+    let pool = ab_pmm_pool(&quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
@@ -150,7 +150,7 @@ async fn volume_protocol_fee_buy_order() {
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_order_quote();
-    let pool = ab_pmm_pool().adjusted_reserve_b(&quote);
+    let pool = ab_pmm_pool(&quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
@@ -180,7 +180,7 @@ async fn volume_protocol_fee_sell_order() {
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_order_quote();
-    let pool = ab_pmm_pool().adjusted_reserve_b(&quote);
+    let pool = ab_pmm_pool(&quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
