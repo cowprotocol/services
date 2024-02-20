@@ -1,7 +1,7 @@
 //! Test that driver properly does competition.
 
 use crate::tests::{
-    cases::DEFAULT_SCORE_MIN,
+    cases::{ToWei, DEFAULT_SCORE_MIN},
     setup::{ab_order, ab_pool, ab_solution, setup, Score},
 };
 
@@ -29,7 +29,7 @@ async fn risk_adjusted_score_winner() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution().score(Score::Solver {
-            score: DEFAULT_SCORE_MIN.into(),
+            score: DEFAULT_SCORE_MIN.to_wei(),
         }))
         .solution(ab_solution().score(Score::RiskAdjusted {
             success_probability: 0.9,
