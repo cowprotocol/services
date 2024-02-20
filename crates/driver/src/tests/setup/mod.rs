@@ -551,7 +551,7 @@ pub fn ab_order_quote() -> OrderQuote {
         sell_token: "A",
         buy_token: "B",
         sell_amount: AB_ORDER_AMOUNT.into(),
-        buy_amount: 2989509729399894152u128.into(),
+        buy_amount: 40000000000000000000u128.into(),
     }
 }
 

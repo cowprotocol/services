@@ -34,7 +34,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     let expected = ExpectedOrder {
         name: ab_order().name,
         executed_sell_amount: 100000000000000000000u128.into(),
-        executed_buy_amount: 2989509729399894152u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -68,7 +68,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     let expected = ExpectedOrder {
         name: ab_order().name,
         executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 1494754864849422562u128.into(),
+        executed_buy_amount: 20000000002000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -102,7 +102,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
     let expected = ExpectedOrder {
         name: ab_order().name,
         executed_sell_amount: 55000000000000000000u128.into(),
-        executed_buy_amount: 2989509729399894152u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -136,7 +136,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
     let expected = ExpectedOrder {
         name: ab_order().name,
         executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 2615821013224907383u128.into(),
+        executed_buy_amount: 35000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -166,7 +166,7 @@ async fn volume_protocol_fee_buy_order() {
     let expected = ExpectedOrder {
         name: ab_order().name,
         executed_sell_amount: 75000000000000000000u128.into(),
-        executed_buy_amount: 2989509729399894152u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -196,7 +196,7 @@ async fn volume_protocol_fee_sell_order() {
     let expected = ExpectedOrder {
         name: ab_order().name,
         executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 1121066148524960307u128.into(),
+        executed_buy_amount: 15000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
