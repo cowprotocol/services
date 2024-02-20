@@ -32,15 +32,15 @@ impl GasPriceEstimator {
         );
         let additional_tip = mempools
             .iter()
-            .find(|mempool| matches!(mempool.kind, mempool::Kind::MEVBlocker { .. }))
-            .map(|mempool| match mempool.kind {
+            .filter_map(|mempool| match mempool.kind {
                 mempool::Kind::MEVBlocker {
                     max_additional_tip,
                     additional_tip_percentage,
                     ..
-                } => (max_additional_tip, additional_tip_percentage),
-                _ => unreachable!(),
-            });
+                } => Some((max_additional_tip, additional_tip_percentage)),
+                mempool::Kind::Public(_) => None,
+            })
+            .next();
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()

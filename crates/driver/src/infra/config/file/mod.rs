@@ -107,7 +107,7 @@ enum Mempool {
         #[serde(default = "default_max_additional_tip")]
         #[serde_as(as = "serialize::U256")]
         max_additional_tip: eth::U256,
-        /// Additional tip in percentage of max_fee_per_gas we are willing to
+        /// Additional tip in percentage of max_fee_per_gas we are giving to
         /// MEVBlocker above regular gas price estimation. Expects a
         /// floating point value between 0 and 1.
         #[serde(default = "default_additional_tip_percentage")]
