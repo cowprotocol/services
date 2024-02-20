@@ -254,7 +254,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
             .mempools
             .iter()
             .map(|mempool| mempool::Config {
-                additional_tip_percentage: config.submission.additional_tip_percentage,
+                min_priority_fee: config.submission.min_priority_fee,
                 gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
                 max_confirm_time: config.submission.max_confirm_time,
@@ -280,10 +280,12 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::Mempool::MevBlocker {
                         url,
                         max_additional_tip,
+                        additional_tip_percentage,
                         use_soft_cancellations,
                     } => mempool::Kind::MEVBlocker {
                         url: url.to_owned(),
                         max_additional_tip: *max_additional_tip,
+                        additional_tip_percentage: *additional_tip_percentage,
                         use_soft_cancellations: *use_soft_cancellations,
                     },
                 },

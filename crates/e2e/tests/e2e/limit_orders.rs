@@ -447,7 +447,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     services
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
