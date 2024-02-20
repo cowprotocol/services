@@ -1,7 +1,13 @@
 use {
     crate::{
-        domain::eth, infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver}
-    }, futures::future::join_all, lazy_static::lazy_static, reqwest::Url, std::path::Path, tokio::fs
+        domain::eth,
+        infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
+    },
+    futures::future::join_all,
+    lazy_static::lazy_static,
+    reqwest::Url,
+    std::path::Path,
+    tokio::fs,
 };
 
 lazy_static! {
@@ -181,7 +187,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
-                        graph_url
+                        graph_url,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
@@ -239,7 +245,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
-                        graph_url 
+                        graph_url,
                     },
                 })
                 .collect(),

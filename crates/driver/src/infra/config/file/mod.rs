@@ -460,7 +460,7 @@ enum BalancerV2Config {
 
         /// The URL used to connect to balancer v2 subgraph client.
         graph_url: Url,
-    }
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]
