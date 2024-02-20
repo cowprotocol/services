@@ -47,8 +47,8 @@ mod solver;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Asset {
-    token: &'static str,
-    amount: eth::U256,
+    pub token: &'static str,
+    pub amount: eth::U256,
 }
 
 #[allow(dead_code)]
@@ -362,31 +362,59 @@ pub struct Pool {
 }
 
 impl Pool {
+    /// Restores reserve_a value from the given reserve_b and the quote. Reverse
+    /// operation for the `blockchain::Pool::out` function
     #[allow(dead_code)]
     pub fn adjusted_reserve_a(self, quote: &OrderQuote) -> Self {
-        let reserve_a = ((eth::U256::from(997)
-            * quote.sell_amount
-            * (self.amount_b - quote.buy_amount - eth::U256::from(1))
-            + eth::U256::from(1))
-            / (eth::U256::from(1000) * (quote.buy_amount + eth::U256::from(1))))
-            + eth::U256::from(1);
+        let reserve_a_min = ceil_div(
+            eth::U256::from(997)
+                * quote.sell_amount
+                * (self.amount_b - quote.buy_amount - eth::U256::from(1)),
+            eth::U256::from(1000) * quote.buy_amount,
+        );
+        let reserve_a_max =
+            (eth::U256::from(997) * quote.sell_amount * (self.amount_b - quote.buy_amount))
+                / (eth::U256::from(1000) * quote.buy_amount);
+        if reserve_a_min > reserve_a_max {
+            panic!(
+                "Unexpected calculated reserves. min: {:?}, max: {:?}",
+                reserve_a_min, reserve_a_max
+            );
+        }
         Self {
-            amount_a: reserve_a,
+            amount_a: reserve_a_min,
             ..self
         }
     }
 
+    /// Restores reserve_b value from the given reserve_a and the quote. Reverse
+    /// operation for the `blockchain::Pool::out` function
     pub fn adjusted_reserve_b(self, quote: &OrderQuote) -> Self {
-        let reserve_b = (((quote.buy_amount + eth::U256::from(1))
+        let reserve_b_min = ceil_div(
+            quote.buy_amount
+                * (eth::U256::from(1000) * self.amount_a
+                    + eth::U256::from(997) * quote.sell_amount),
+            eth::U256::from(997) * quote.sell_amount,
+        );
+        let reserve_b_max = ((quote.buy_amount + eth::U256::from(1))
             * (eth::U256::from(1000) * self.amount_a + eth::U256::from(997) * quote.sell_amount)
             - eth::U256::from(1))
-            / (eth::U256::from(997) * quote.sell_amount))
-            + eth::U256::from(1);
+            / (eth::U256::from(997) * quote.sell_amount);
+        if reserve_b_min > reserve_b_max {
+            panic!(
+                "Unexpected calculated reserves. min: {:?}, max: {:?}",
+                reserve_b_min, reserve_b_max
+            );
+        }
         Self {
-            amount_b: reserve_b,
+            amount_b: reserve_b_min,
             ..self
         }
     }
+}
+
+fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
+    (x + y - eth::U256::from(1)) / y
 }
 
 #[derive(Debug)]
