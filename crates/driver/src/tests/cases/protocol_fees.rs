@@ -2,6 +2,7 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
+        cases::ToWei,
         setup::{ab_order, ab_order_quote, ab_pmm_pool, ab_solution, ExpectedOrder, FeePolicy},
     },
 };
@@ -21,7 +22,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
+        .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
         .quote(quote);
     let test = tests::setup()
@@ -33,8 +34,8 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 100000000000000000000u128.into(),
-        executed_buy_amount: 40000000000000000000u128.into(),
+        executed_sell_amount: 100u32.to_wei(),
+        executed_buy_amount: 40u32.to_wei(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -55,7 +56,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
+        .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
         .quote(quote);
     let test = tests::setup()
@@ -67,7 +68,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_sell_amount: 50u32.to_wei(),
         executed_buy_amount: 20000000002000000000u128.into(),
     };
 
@@ -89,7 +90,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
+        .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
         .quote(quote);
     let test = tests::setup()
@@ -101,8 +102,8 @@ async fn surplus_protocol_fee_buy_order_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 55000000000000000000u128.into(),
-        executed_buy_amount: 40000000000000000000u128.into(),
+        executed_sell_amount: 55u32.to_wei(),
+        executed_buy_amount: 40u32.to_wei(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -123,7 +124,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
+        .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
         .quote(quote);
     let test = tests::setup()
@@ -135,8 +136,8 @@ async fn surplus_protocol_fee_sell_order_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 35000000000000000000u128.into(),
+        executed_sell_amount: 50u32.to_wei(),
+        executed_buy_amount: 35u32.to_wei(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -153,7 +154,7 @@ async fn volume_protocol_fee_buy_order() {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
+        .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
         .quote(quote);
     let test = tests::setup()
@@ -165,8 +166,8 @@ async fn volume_protocol_fee_buy_order() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 75000000000000000000u128.into(),
-        executed_buy_amount: 40000000000000000000u128.into(),
+        executed_sell_amount: 75u32.to_wei(),
+        executed_buy_amount: 40u32.to_wei(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -183,7 +184,7 @@ async fn volume_protocol_fee_sell_order() {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
+        .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
         .quote(quote);
     let test = tests::setup()
@@ -195,8 +196,8 @@ async fn volume_protocol_fee_sell_order() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 15000000000000000000u128.into(),
+        executed_sell_amount: 50u32.to_wei(),
+        executed_buy_amount: 15u32.to_wei(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
