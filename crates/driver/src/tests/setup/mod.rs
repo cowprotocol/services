@@ -80,7 +80,6 @@ pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
-    #[allow(dead_code)]
     Volume { factor: f64 },
 }
 
@@ -248,7 +247,6 @@ impl Order {
         Self { fee_policy, ..self }
     }
 
-    #[allow(dead_code)]
     pub fn quote(self, quote: OrderQuote) -> Self {
         Self {
             precalculated_quote: Some(quote),

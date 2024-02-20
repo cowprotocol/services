@@ -54,7 +54,6 @@ pub struct Interaction {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LiquidityProvider {
     Amm,
-    #[allow(dead_code)]
     Pmm,
 }
 
