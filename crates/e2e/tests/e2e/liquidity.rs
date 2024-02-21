@@ -168,7 +168,6 @@ async fn zero_ex_liquidity(web3: Web3) {
         ])
         .await;
     let order_id = services.create_order(&order).await.unwrap();
-    println!("newlog order_id={:?}", order_id);
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
