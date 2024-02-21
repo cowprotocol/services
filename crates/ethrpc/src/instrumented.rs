@@ -1,7 +1,10 @@
 use {
-    ethcontract::jsonrpc as jsonrpc_core,
+    ethcontract::{
+        dyns::DynWeb3,
+        jsonrpc::types::{Call, Value},
+        transport::DynTransport,
+    },
     futures::{future::BoxFuture, FutureExt},
-    jsonrpc_core::types::{Call, Value},
     std::sync::Arc,
     web3::{error::Error as Web3Error, BatchTransport, RequestId, Transport},
 };
@@ -48,22 +51,17 @@ impl Metrics {
 }
 
 #[derive(Debug, Clone)]
-pub struct InstrumentedTransport<T>(Arc<Inner<T>>);
+pub struct InstrumentedTransport(Arc<Inner>);
 
-impl<T> InstrumentedTransport<T> {
-    pub fn new(label: String, transport: T) -> Self {
+impl InstrumentedTransport {
+    pub fn new(label: String, transport: DynTransport) -> Self {
         Self(Arc::new(Inner {
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             transport,
             label,
         }))
     }
-}
 
-impl<T> InstrumentedTransport<T>
-where
-    T: Clone,
-{
     pub fn with_additional_label(&self, label: String) -> Self {
         Self(Arc::new(Inner {
             label: format!("{}_{label}", self.0.label),
@@ -73,20 +71,27 @@ where
     }
 }
 
+/// Adds metrics for RPC requests using the provided label.
+pub fn instrument_with_label(web3: &DynWeb3, label: String) -> DynWeb3 {
+    let transport = web3.transport().clone();
+    let instrumented = if let Some(instrumented) = transport.downcast::<InstrumentedTransport>() {
+        instrumented.with_additional_label(label)
+    } else {
+        InstrumentedTransport::new(label, transport)
+    };
+    web3::Web3::new(DynTransport::new(instrumented))
+}
+
 #[derive(Debug)]
-struct Inner<T> {
+struct Inner {
     metrics: &'static Metrics,
-    transport: T,
+    transport: DynTransport,
     label: String,
 }
 
 type RpcResult = Result<Value, Web3Error>;
 
-impl<T> Transport for InstrumentedTransport<T>
-where
-    T: Transport + Sync + Send + 'static,
-    <T as Transport>::Out: Send,
-{
+impl Transport for InstrumentedTransport {
     type Out = BoxFuture<'static, RpcResult>;
 
     fn prepare(&self, method: &str, params: Vec<Value>) -> (RequestId, Call) {
@@ -106,12 +111,7 @@ where
     }
 }
 
-impl<T> BatchTransport for InstrumentedTransport<T>
-where
-    T: BatchTransport + Sync + Send + 'static,
-    <T as BatchTransport>::Batch: Send,
-    InstrumentedTransport<T>: Transport + Sync + Send + 'static,
-{
+impl BatchTransport for InstrumentedTransport {
     type Batch = BoxFuture<'static, Result<Vec<RpcResult>, Web3Error>>;
 
     fn send_batch<R>(&self, requests: R) -> Self::Batch
