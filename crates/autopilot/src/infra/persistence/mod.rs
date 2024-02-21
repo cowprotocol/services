@@ -1,6 +1,8 @@
 use {
     crate::{boundary, database::Postgres, domain},
+    anyhow::Context,
     chrono::Utc,
+    itertools::Itertools,
     std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
@@ -9,6 +11,7 @@ use {
 pub mod cli;
 pub mod dto;
 
+#[derive(Clone)]
 pub struct Persistence {
     s3: Option<s3::Uploader>,
     postgres: Arc<Postgres>,
@@ -45,6 +48,16 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
+    pub async fn solvable_orders(
+        &self,
+        min_valid_to: u32,
+    ) -> Result<boundary::SolvableOrders, Error> {
+        self.postgres
+            .solvable_orders(min_valid_to)
+            .await
+            .map_err(Error::DbError)
+    }
+
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
@@ -75,26 +88,57 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    /// Inserts the given events with the current timestamp into the DB.
-    /// If this function encounters an error it will only be printed. More
-    /// elaborate error handling is not necessary because this is just
-    /// debugging information.
-    pub fn store_order_events(&self, events: Vec<(domain::OrderUid, boundary::OrderEventLabel)>) {
+    /// Inserts an order event for each order uid in the given set.
+    /// Unique order uids are required to avoid inserting events with the same
+    /// label within the same order_uid. If this function encounters an error it
+    /// will only be printed. More elaborate error handling is not necessary
+    /// because this is just debugging information.
+    pub fn store_order_events(
+        &self,
+        order_uids: Vec<domain::OrderUid>,
+        label: boundary::OrderEventLabel,
+    ) {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
                 let start = Instant::now();
-                match boundary::store_order_events(&db, &events, Utc::now()).await {
+                let events_count = order_uids.len();
+                match boundary::store_order_events(&db, order_uids, label, Utc::now()).await {
                     Ok(_) => {
-                        tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
+                        tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
                     }
                     Err(err) => {
                         tracing::warn!(?err, "failed to insert order events");
                     }
                 }
             }
-            .instrument(tracing::Span::current()),
+                .instrument(tracing::Span::current()),
         );
+    }
+
+    /// Saves the given fee policies to the DB as a single batch.
+    pub async fn store_fee_policies(
+        &self,
+        auction_id: domain::AuctionId,
+        fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
+    ) -> anyhow::Result<()> {
+        let fee_policies = fee_policies
+            .into_iter()
+            .flat_map(|(order_uid, policies)| {
+                policies
+                    .into_iter()
+                    .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
+            })
+            .collect_vec();
+
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        for chunk in fee_policies.chunks(self.postgres.config.insert_batch_size.get()) {
+            crate::database::fee_policies::insert_batch(&mut ex, chunk.iter().cloned())
+                .await
+                .context("fee_policies::insert_batch")?;
+        }
+
+        ex.commit().await.context("commit")
     }
 }
 

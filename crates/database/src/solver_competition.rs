@@ -31,8 +31,7 @@ pub async fn load_by_id(
 SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
-LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
-LEFT OUTER JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 WHERE sc.id = $1
     ;"#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
@@ -45,8 +44,7 @@ pub async fn load_latest_competition(
 SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
-LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
-LEFT OUTER JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 ORDER BY sc.id DESC
 LIMIT 1
     ;"#;
@@ -60,8 +58,7 @@ pub async fn load_by_tx_hash(
     const QUERY: &str = r#"
 SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
-JOIN auction_transaction at ON sc.id = at.auction_id
-JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+JOIN settlements s ON sc.id = s.auction_id
 WHERE s.tx_hash = $1
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
@@ -74,7 +71,6 @@ mod tests {
         crate::{
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement},
-            Address,
         },
         sqlx::Connection,
     };
@@ -127,21 +123,14 @@ mod tests {
             .await
             .unwrap();
 
-        let tx_from: Address = ByteArray([0x01; 20]);
-        let tx_nonce: i64 = 2;
-        crate::auction_transaction::insert_settlement_tx_info(
+        crate::settlements::update_settlement_auction(
             &mut db,
             index.block_number,
             index.log_index,
-            &tx_from,
-            tx_nonce,
+            id,
         )
         .await
         .unwrap();
-
-        crate::auction_transaction::try_insert_auction_transaction(&mut db, id, &tx_from, tx_nonce)
-            .await
-            .unwrap();
 
         // Now succeeds.
         let value_by_hash = load_by_tx_hash(&mut db, &hash).await.unwrap().unwrap();

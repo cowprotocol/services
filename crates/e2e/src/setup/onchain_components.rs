@@ -271,6 +271,11 @@ impl OnchainComponents {
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
+        forked_node_api
+            .set_balance(&auth_manager, to_wei(100))
+            .await
+            .expect("could not set auth_manager balance");
+
         let auth_manager = forked_node_api
             .impersonate(&auth_manager)
             .await
@@ -468,23 +473,6 @@ impl OnchainComponents {
             .send()
             .await
             .unwrap();
-    }
-
-    /// We will only index events when they are 64 blocks old so we don't have
-    /// to throw out indexed data on reorgs.
-    /// This function executes enough transactions to ensure that all events
-    /// before calling this function are old enough to be indexed.
-    pub async fn mint_blocks_past_reorg_threshold(&self) {
-        tracing::info!("mining blocks to get past the reorg safety threshold for indexing events");
-
-        let current_block = || async { self.web3.eth().block_number().await.unwrap() };
-        let target = current_block().await + 65;
-        // Simply issuing n transactions may not result in n blocks being mined.
-        // Therefore we continually call `evm_mine` until we can confirm the block
-        // number increased the expected number of times.
-        while current_block().await <= target {
-            let _ = self.web3.transport().execute("evm_mine", vec![]).await;
-        }
     }
 
     pub async fn mint_block(&self) {

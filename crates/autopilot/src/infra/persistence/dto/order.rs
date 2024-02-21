@@ -21,9 +21,8 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub solver_fee: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
     pub user_fee: U256,
+    pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,
@@ -40,7 +39,6 @@ pub struct Order {
     pub app_data: boundary::AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
-    pub fee_policies: Vec<FeePolicy>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -50,8 +48,8 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_token: order.buy_token,
         sell_amount: order.sell_amount,
         buy_amount: order.buy_amount,
-        solver_fee: order.solver_fee,
         user_fee: order.user_fee,
+        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.kind.into(),
         receiver: order.receiver,
@@ -69,7 +67,6 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -80,8 +77,8 @@ pub fn to_domain(order: Order) -> domain::Order {
         buy_token: order.buy_token,
         sell_amount: order.sell_amount,
         buy_amount: order.buy_amount,
-        solver_fee: order.solver_fee,
         user_fee: order.user_fee,
+        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.kind.into(),
         receiver: order.receiver,
@@ -99,7 +96,6 @@ pub fn to_domain(order: Order) -> domain::Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -270,20 +266,48 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee: U256,
 }
 
 impl From<domain::fee::Policy> for FeePolicy {
     fn from(policy: domain::fee::Policy) -> Self {
         match policy {
+            domain::fee::Policy::Surplus {
+                factor,
+                max_volume_factor,
+            } => Self::Surplus {
+                factor,
+                max_volume_factor,
+            },
             domain::fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
+                quote,
             } => Self::PriceImprovement {
                 factor,
                 max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume { factor },
         }
@@ -293,12 +317,25 @@ impl From<domain::fee::Policy> for FeePolicy {
 impl From<FeePolicy> for domain::fee::Policy {
     fn from(policy: FeePolicy) -> Self {
         match policy {
+            FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => Self::Surplus {
+                factor,
+                max_volume_factor,
+            },
             FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
+                quote,
             } => Self::PriceImprovement {
                 factor,
                 max_volume_factor,
+                quote: domain::fee::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                },
             },
             FeePolicy::Volume { factor } => Self::Volume { factor },
         }

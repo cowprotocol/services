@@ -64,6 +64,22 @@ async fn test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
+    // Mine a trivial settlement (not encoding auction ID). This mimics fee
+    // withdrawals and asserts we can handle these gracefully.
+    tx!(
+        solver.account(),
+        onchain.contracts().gp_settlement.settle(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            [
+                vec![(trader.address(), U256::from(0), Default::default())],
+                Default::default(),
+                Default::default()
+            ],
+        )
+    );
+
     tracing::info!("Waiting for trade.");
     let trade_happened =
         || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
@@ -89,9 +105,8 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
-    onchain.mint_blocks_past_reorg_threshold().await;
-
     let cip_20_data_updated = || async {
+        onchain.mint_block().await;
         let data = match crate::database::most_recent_cip_20_data(services.db()).await {
             Some(data) => data,
             None => return false,
@@ -104,8 +119,6 @@ async fn test(web3: Web3) {
             && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
             // and won the auction
             && data.score.winner.0 == solver.address().0
-            // and submitted the solution
-            && data.tx.tx_from.0 == solver.address().0
             // and calldata is present
             && !data.call_data.call_data.is_empty()
     };

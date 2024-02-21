@@ -1,5 +1,4 @@
 use {
-    super::Postgres,
     anyhow::{anyhow, Context, Result},
     contracts::gpv2_settlement::{
         event_data::{
@@ -14,11 +13,11 @@ use {
         byte_array::ByteArray,
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         OrderUid,
+        PgTransaction,
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
-    ethrpc::current_block::RangeInclusive,
     number::conversions::u256_to_big_decimal,
-    shared::event_handling::EventStoring,
+    sqlx::PgConnection,
     std::convert::TryInto,
 };
 
@@ -44,57 +43,52 @@ pub fn contract_to_db_events(
         .collect::<Result<Vec<_>>>()
 }
 
-#[async_trait::async_trait]
-impl EventStoring<ContractEvent> for Postgres {
-    async fn last_event_block(&self) -> Result<u64> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["last_event_block"])
-            .start_timer();
+pub async fn last_event_block(connection: &mut PgConnection) -> Result<u64> {
+    let _timer = super::Metrics::get()
+        .database_queries
+        .with_label_values(&["last_event_block"])
+        .start_timer();
 
-        let mut con = self.pool.acquire().await?;
-        let block_number = database::events::last_block(&mut con)
-            .await
-            .context("block_number_of_most_recent_event failed")?;
-        block_number.try_into().context("block number is negative")
-    }
+    let block_number = database::events::last_block(connection)
+        .await
+        .context("block_number_of_most_recent_event failed")?;
+    block_number.try_into().context("block number is negative")
+}
 
-    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["append_events"])
-            .start_timer();
+pub async fn append_events(
+    transaction: &mut PgTransaction<'_>,
+    events: Vec<EthContractEvent<ContractEvent>>,
+) -> Result<()> {
+    let _timer = super::Metrics::get()
+        .database_queries
+        .with_label_values(&["append_events"])
+        .start_timer();
 
-        let events = contract_to_db_events(events)?;
-        let mut transaction = self.pool.begin().await?;
-        database::events::append(&mut transaction, &events)
-            .await
-            .context("append_events")?;
-        transaction.commit().await.context("commit")?;
-        Ok(())
-    }
+    let events = contract_to_db_events(events)?;
+    database::events::append(transaction, &events)
+        .await
+        .context("append_events")?;
+    Ok(())
+}
 
-    async fn replace_events(
-        &mut self,
-        events: Vec<EthContractEvent<ContractEvent>>,
-        range: RangeInclusive<u64>,
-    ) -> Result<()> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["replace_events"])
-            .start_timer();
+pub async fn replace_events(
+    transaction: &mut PgTransaction<'_>,
+    events: Vec<EthContractEvent<ContractEvent>>,
+    from_block: u64,
+) -> Result<()> {
+    let _timer = super::Metrics::get()
+        .database_queries
+        .with_label_values(&["replace_events"])
+        .start_timer();
 
-        let events = contract_to_db_events(events)?;
-        let mut transaction = self.pool.begin().await?;
-        database::events::delete(&mut transaction, *range.start() as i64)
-            .await
-            .context("delete_events failed")?;
-        database::events::append(&mut transaction, events.as_slice())
-            .await
-            .context("insert_events failed")?;
-        transaction.commit().await.context("commit")?;
-        Ok(())
-    }
+    let events = contract_to_db_events(events)?;
+    database::events::delete(transaction, from_block)
+        .await
+        .context("delete_events failed")?;
+    database::events::append(transaction, events.as_slice())
+        .await
+        .context("insert_events failed")?;
+    Ok(())
 }
 
 pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {

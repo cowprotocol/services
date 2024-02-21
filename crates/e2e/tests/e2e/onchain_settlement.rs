@@ -92,7 +92,7 @@ async fn onchain_settlement(web3: Web3) {
     );
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
@@ -132,11 +132,13 @@ async fn onchain_settlement(web3: Web3) {
 
     // Only start the autopilot now to ensure that these orders are settled in a
     // batch which seems to be expected in this test.
-    // However, this currently does not work because the driver will not merge the
-    // individual solutions because the token prices don't match after scaling.
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
+    services.start_autopilot(
+        None,
+        vec![
+            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ],
+    );
 
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());

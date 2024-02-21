@@ -195,7 +195,7 @@ impl PoolsCheckpointHandler {
             .flatten()
             .peekable();
 
-        tracing::debug!("get checkpoint for pool_ids: {:?}", pool_ids);
+        tracing::trace!("get checkpoint for pool_ids: {:?}", pool_ids);
 
         match pool_ids.peek() {
             Some(_) => {
@@ -205,7 +205,7 @@ impl PoolsCheckpointHandler {
                         Some(entry) => Either::Left((*pool_id, entry.clone())),
                         _ => Either::Right(pool_id),
                     });
-                tracing::debug!(
+                tracing::trace!(
                     "cache hit: {:?}, cache miss: {:?}",
                     existing_pools.keys(),
                     missing_pools

@@ -1,5 +1,5 @@
 use {
-    crate::{domain, infra},
+    crate::infra,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -54,7 +54,7 @@ pub struct Arguments {
 
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
-    pub order_events_insert_batch_size: NonZeroUsize,
+    pub insert_batch_size: NonZeroUsize,
 
     /// Skip syncing past events (useful for local deployments)
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -217,6 +217,9 @@ pub struct Arguments {
     /// `order_events` database table.
     #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_threshold: Duration,
+
+    #[clap(long, env, use_value_delimiter = true)]
+    pub cow_amms: Vec<H160>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -254,11 +257,12 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
-            order_events_insert_batch_size,
+            insert_batch_size,
             native_price_estimation_results_required,
             auction_update_interval,
             max_settlement_transaction_wait,
             s3,
+            cow_amms,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -322,11 +326,7 @@ impl std::fmt::Display for Arguments {
             "order_events_cleanup_threshold: {:?}",
             order_events_cleanup_threshold
         )?;
-        writeln!(
-            f,
-            "order_events_insert_batch_size: {}",
-            order_events_insert_batch_size
-        )?;
+        writeln!(f, "insert_batch_size: {}", insert_batch_size)?;
         writeln!(
             f,
             "native_price_estimation_results_required: {}",
@@ -339,6 +339,7 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait
         )?;
         writeln!(f, "s3: {:?}", s3)?;
+        writeln!(f, "cow_amms: {:?}", cow_amms)?;
         Ok(())
     }
 }
@@ -347,7 +348,13 @@ impl std::fmt::Display for Arguments {
 pub struct FeePolicy {
     /// Type of fee policy to use. Examples:
     ///
-    /// - Price improvement without cap
+    /// - Surplus without cap
+    /// surplus:0.5:1.0
+    ///
+    /// - Surplus with cap:
+    /// surplus:0.5:0.06
+    ///
+    /// - Price improvement without cap:
     /// price_improvement:0.5:1.0
     ///
     /// - Price improvement with cap:
@@ -355,7 +362,7 @@ pub struct FeePolicy {
     ///
     /// - Volume based:
     /// volume:0.1
-    #[clap(long, env, default_value = "priceImprovement:0.0:1.0")]
+    #[clap(long, env, default_value = "surplus:0.0:1.0")]
     pub fee_policy_kind: FeePolicyKind,
 
     /// Should protocol fees be collected or skipped for orders whose
@@ -365,25 +372,13 @@ pub struct FeePolicy {
     pub fee_policy_skip_market_orders: bool,
 }
 
-impl FeePolicy {
-    pub fn to_domain(self) -> domain::fee::Policy {
-        match self.fee_policy_kind {
-            FeePolicyKind::PriceImprovement {
-                factor,
-                max_volume_factor,
-            } => domain::fee::Policy::PriceImprovement {
-                factor,
-                max_volume_factor,
-            },
-            FeePolicyKind::Volume { factor } => domain::fee::Policy::Volume { factor },
-        }
-    }
-}
-
 #[derive(clap::Parser, Debug, Clone)]
 pub enum FeePolicyKind {
-    /// How much of the order's price improvement over max(limit price,
-    /// best_bid) should be taken as a protocol fee.
+    /// How much of the order's surplus should be taken as a protocol fee.
+    Surplus { factor: f64, max_volume_factor: f64 },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
     PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
@@ -396,6 +391,22 @@ impl FromStr for FeePolicyKind {
         let mut parts = s.split(':');
         let kind = parts.next().ok_or("missing fee policy kind")?;
         match kind {
+            "surplus" => {
+                let factor = parts
+                    .next()
+                    .ok_or("missing surplus factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid surplus factor: {}", e))?;
+                let max_volume_factor = parts
+                    .next()
+                    .ok_or("missing max volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid max volume factor: {}", e))?;
+                Ok(Self::Surplus {
+                    factor,
+                    max_volume_factor,
+                })
+            }
             "priceImprovement" => {
                 let factor = parts
                     .next()
@@ -404,9 +415,9 @@ impl FromStr for FeePolicyKind {
                     .map_err(|e| format!("invalid price improvement factor: {}", e))?;
                 let max_volume_factor = parts
                     .next()
-                    .ok_or("missing max volume factor")?
+                    .ok_or("missing price improvement max volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid max volume factor: {}", e))?;
+                    .map_err(|e| format!("invalid price improvement max volume factor: {}", e))?;
                 Ok(Self::PriceImprovement {
                     factor,
                     max_volume_factor,

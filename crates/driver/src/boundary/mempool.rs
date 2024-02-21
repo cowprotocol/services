@@ -12,7 +12,6 @@ use {
             submitter::{
                 flashbots_api::FlashbotsApi,
                 public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-                Strategy,
                 Submitter,
                 SubmitterGasPriceEstimator,
                 SubmitterParams,
@@ -30,12 +29,19 @@ pub use {gas_estimation::GasPriceEstimating, solver::settlement_submission::Glob
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub additional_tip_percentage: f64,
-    pub gas_price_cap: f64,
+    pub min_priority_fee: eth::U256,
+    pub gas_price_cap: eth::U256,
     pub target_confirm_time: std::time::Duration,
     pub max_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     pub kind: Kind,
+    pub submission: SubmissionLogic,
+}
+
+impl Config {
+    pub fn deadline(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now() + self.max_confirm_time
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +51,8 @@ pub enum Kind {
     /// The MEVBlocker private mempool.
     MEVBlocker {
         url: reqwest::Url,
-        max_additional_tip: f64,
+        max_additional_tip: eth::U256,
+        additional_tip_percentage: f64,
         use_soft_cancellations: bool,
     },
 }
@@ -69,6 +76,15 @@ impl Kind {
 pub enum RevertProtection {
     Enabled,
     Disabled,
+}
+
+/// The submission logic to use for publishing settlements to the blockchain.
+/// Can either use the battle tested legacy code, or the new domain native
+/// driver logic.
+#[derive(Debug, Clone)]
+pub enum SubmissionLogic {
+    Boundary,
+    Native,
 }
 
 /// The mempool to use for publishing settlements to the blockchain.
@@ -106,14 +122,14 @@ impl Mempool {
                     )],
                     matches!(revert_protection, RevertProtection::Enabled),
                 )),
-                submitted_transactions: pool.add_sub_pool(Strategy::PublicMempool),
+                submitted_transactions: pool.add_sub_pool(),
                 gas_price_estimator: eth.boundary_gas_estimator(),
                 config,
                 eth,
             },
             Kind::MEVBlocker { url, .. } => Self {
                 submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url.to_owned())?),
-                submitted_transactions: pool.add_sub_pool(Strategy::Flashbots),
+                submitted_transactions: pool.add_sub_pool(),
                 gas_price_estimator: eth.boundary_gas_estimator(),
                 config,
                 eth,
@@ -133,18 +149,31 @@ impl Mempool {
             .transaction_count(solver.address().into(), None)
             .await
             .map_err(anyhow::Error::from)?;
-        let max_fee_per_gas = eth::U256::from(settlement.gas.price).to_f64_lossy();
+        let max_fee_per_gas = eth::U256::from(settlement.gas.price.max()).to_f64_lossy();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
-            max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
-            additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
+            max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap.to_f64_lossy()),
+            additional_tip_percentage_of_max_fee: match (
+                &self.config.kind,
+                settlement.boundary.revertable(),
+            ) {
+                (
+                    Kind::MEVBlocker {
+                        additional_tip_percentage,
+                        ..
+                    },
+                    true,
+                ) => *additional_tip_percentage,
+                (Kind::MEVBlocker { .. }, false) => 0.,
+                (Kind::Public(_), _) => 0.,
+            },
             max_additional_tip: match (&self.config.kind, settlement.boundary.revertable()) {
                 (
                     Kind::MEVBlocker {
                         max_additional_tip, ..
                     },
                     true,
-                ) => *max_additional_tip,
+                ) => max_additional_tip.to_f64_lossy(),
                 (Kind::MEVBlocker { .. }, false) => 0.,
                 (Kind::Public(_), _) => 0.,
             },

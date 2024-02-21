@@ -2,7 +2,6 @@ use {
     e2e::setup::{safe::Safe, *},
     ethcontract::{Bytes, H160, U256},
     model::{
-        app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
     },
@@ -73,8 +72,8 @@ async fn smart_contract_orders(web3: Web3) {
             ..order_template.clone()
         },
         OrderCreation {
-            app_data: OrderCreationAppData::Hash {
-                hash: AppDataHash([1; 32]),
+            app_data: OrderCreationAppData::Full {
+                full: "{\"salt\": \"second\"}".to_string(),
             },
             from: Some(safe.address()),
             signature: Signature::PreSign,

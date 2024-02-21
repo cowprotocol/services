@@ -74,6 +74,7 @@ impl BalancerSor {
             out_amount: quote.return_amount,
             gas: SETTLEMENT_SINGLE_TRADE + (quote.swaps.len() as u64) * GAS_PER_BALANCER_SWAP,
             solver: self.solver,
+            verified: false,
         })
     }
 }

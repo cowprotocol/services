@@ -1,11 +1,12 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
+    crate::quoter::{OrderQuoteError, QuoteHandler},
     anyhow::Result,
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
     shared::{
         api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply},
-        order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
+        order_quoting::CalculateQuoteError,
     },
     std::{convert::Infallible, sync::Arc},
     warp::{Filter, Rejection},
@@ -95,10 +96,7 @@ mod tests {
         number::nonzero::U256 as NonZeroU256,
         reqwest::StatusCode,
         serde_json::json,
-        shared::{
-            api::response_body,
-            order_quoting::{CalculateQuoteError, OrderQuoteError},
-        },
+        shared::{api::response_body, order_quoting::CalculateQuoteError},
         warp::{test::request, Reply},
     };
 
@@ -131,7 +129,6 @@ mod tests {
                 },
                 validity: Validity::To(0x12345678),
                 app_data: AppDataHash([0x90; 32]).into(),
-                partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
                 signing_scheme: QuoteSigningScheme::PreSign {
@@ -170,7 +167,6 @@ mod tests {
                 },
                 validity: Validity::For(1000),
                 app_data: AppDataHash([0x90; 32]).into(),
-                partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
                 price_quality: PriceQuality::Fast,
                 ..Default::default()
@@ -203,7 +199,6 @@ mod tests {
                 },
                 validity: Validity::To(0x12345678),
                 app_data: AppDataHash([0x90; 32]).into(),
-                partially_fillable: false,
                 ..Default::default()
             }
         );
@@ -282,6 +277,7 @@ mod tests {
             from: H160::zero(),
             expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
+            verified: false,
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
             order_quote_response.clone(),

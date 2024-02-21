@@ -84,10 +84,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let amount = 500;
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api
-        .impersonate(&crate::limit_orders::USDC_WHALE)
-        .await
-        .unwrap();
+    let usdc_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
     tx!(
         usdc_whale,
         token_usdc.transfer(trader.address(), to_wei_with_exp(amount, 6))
@@ -161,9 +158,10 @@ async fn zero_ex_liquidity(web3: Web3) {
         }],
         zeroex_api_port,
     );
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
+    services.start_autopilot(
+        None,
+        vec!["--drivers=test_solver|http://localhost:11088/test_solver".to_string()],
+    );
     services
         .start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),

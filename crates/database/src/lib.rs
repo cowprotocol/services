@@ -2,7 +2,6 @@ pub mod app_data;
 pub mod auction;
 pub mod auction_participants;
 pub mod auction_prices;
-pub mod auction_transaction;
 pub mod byte_array;
 pub mod ethflow_orders;
 pub mod events;
@@ -59,7 +58,6 @@ pub const TABLES: &[&str] = &[
     "ethflow_orders",
     "order_execution",
     "interactions",
-    "auction_transaction",
     "ethflow_refunds",
     "settlement_scores",
     "settlement_observations",
