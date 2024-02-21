@@ -76,11 +76,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
             "userFee": quote.order.user_fee.to_string(),
-            "protocolFees": match quote.order.kind {
-                order::Kind::Market => json!([]),
-                order::Kind::Liquidity => json!([]),
-                order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
-            },
+            "protocolFees": json!([quote.order.fee_policy.to_json_value()]),
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
                 order::Side::Sell => "sell",
