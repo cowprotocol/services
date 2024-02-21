@@ -361,11 +361,12 @@ async fn merge_settlements(
     eth: &Ethereum,
     simulator: &Simulator,
 ) {
+    let eth = eth.with_metric_label("mergeSettlements".into());
     let mut new = std::pin::pin!(new);
     while let Some(settlement) = new.next().await {
         // Try to merge [`settlement`] into some settlements.
         for other in merged.iter_mut() {
-            match other.merge(&settlement, eth, simulator).await {
+            match other.merge(&settlement, &eth, simulator).await {
                 Ok(m) => {
                     *other = m;
                     observe::merged(&settlement, other);
