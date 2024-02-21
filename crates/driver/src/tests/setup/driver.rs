@@ -4,7 +4,7 @@ use {
         domain::competition::order,
         infra::time,
         tests::{
-            cases::{self, ToWei},
+            cases::{self, IntoWei},
             hex_address,
         },
     },

@@ -21,8 +21,6 @@ pub mod solver_balance;
 /// Example solver name.
 const SOLVER_NAME: &str = "test1";
 
-// All values below in WEI
-
 /// The default surplus factor. Set to a high value to ensure a positive score
 /// by default. Use a surplus factor of 1 if you want to test negative scores.
 pub const DEFAULT_SURPLUS_FACTOR: f64 = 1e-8;
@@ -51,24 +49,24 @@ pub const DEFAULT_SOLVER_FEE: f64 = 1e-16;
 /// The default maximum value to be payout out to solver per solution
 pub const DEFAULT_SCORE_CAP: f64 = 0.01;
 
-pub trait ToWei {
+pub trait IntoWei {
     fn to_wei(self) -> eth::U256;
 }
 
-impl ToWei for f64 {
+impl IntoWei for f64 {
     fn to_wei(self) -> eth::U256 {
         let wei = self * 1e18;
         eth::U256::from_f64_lossy(wei)
     }
 }
 
-impl ToWei for u64 {
+impl IntoWei for u64 {
     fn to_wei(self) -> eth::U256 {
         eth::U256::from(self) * eth::U256::exp10(18)
     }
 }
 
-impl ToWei for u32 {
+impl IntoWei for u32 {
     fn to_wei(self) -> eth::U256 {
         (self as u64).to_wei()
     }

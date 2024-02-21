@@ -2,7 +2,7 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::{ToWei, DEFAULT_SOLVER_FEE},
+        cases::{IntoWei, DEFAULT_SOLVER_FEE},
         setup::{ab_order, ab_pool, ab_solution},
     },
 };

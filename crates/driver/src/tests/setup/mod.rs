@@ -10,7 +10,7 @@ use {
         },
         tests::{
             cases::{
-                ToWei,
+                IntoWei,
                 AB_ORDER_AMOUNT,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,

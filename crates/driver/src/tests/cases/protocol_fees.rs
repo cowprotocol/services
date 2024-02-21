@@ -2,7 +2,7 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::ToWei,
+        cases::IntoWei,
         setup::{ab_order, ab_order_quote, ab_pmm_pool, ab_solution, ExpectedOrder, FeePolicy},
     },
 };
