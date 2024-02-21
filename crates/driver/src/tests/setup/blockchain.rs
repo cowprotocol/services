@@ -6,7 +6,7 @@ use {
             eth::{self, ContractAddress},
         },
         infra::time,
-        tests::{self, boundary},
+        tests::{self, boundary, setup::LiquidityQuote},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
@@ -54,7 +54,7 @@ pub struct Interaction {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LiquidityProvider {
     Amm,
-    Pmm,
+    Pmm(LiquidityQuote),
 }
 
 /// A uniswap pool deployed as part of the blockchain setup.
@@ -79,8 +79,8 @@ impl Pool {
     }
 
     fn executed_amounts(&self, order: &Order) -> (eth::U256, eth::U256) {
-        match (self.liquidity_provider, &order.precalculated_quote) {
-            (LiquidityProvider::Amm, _) => {
+        match &self.liquidity_provider {
+            LiquidityProvider::Amm => {
                 let executed_sell = order.sell_amount;
                 let executed_buy = self.out(Asset {
                     amount: order.sell_amount,
@@ -88,14 +88,13 @@ impl Pool {
                 });
                 (executed_sell, executed_buy)
             }
-            (LiquidityProvider::Pmm, Some(quote)) => {
+            LiquidityProvider::Pmm(quote) => {
                 if quote.sell_token == self.reserve_a.token {
                     (quote.sell_amount, quote.buy_amount)
                 } else {
                     (quote.buy_amount, quote.sell_amount)
                 }
             }
-            (LiquidityProvider::Pmm, None) => panic!("Quote is required for PMM"),
         }
     }
 }

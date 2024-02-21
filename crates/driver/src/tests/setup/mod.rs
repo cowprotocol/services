@@ -112,8 +112,8 @@ impl Default for Score {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct OrderQuote {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LiquidityQuote {
     pub sell_token: &'static str,
     pub buy_token: &'static str,
     pub sell_amount: eth::U256,
@@ -152,7 +152,6 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
-    pub precalculated_quote: Option<OrderQuote>,
     pub fee_policy: FeePolicy,
 }
 
@@ -247,13 +246,6 @@ impl Order {
         Self { fee_policy, ..self }
     }
 
-    pub fn quote(self, quote: OrderQuote) -> Self {
-        Self {
-            precalculated_quote: Some(quote),
-            ..self
-        }
-    }
-
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -280,7 +272,6 @@ impl Default for Order {
             executed: Default::default(),
             filtered: Default::default(),
             funded: true,
-            precalculated_quote: Default::default(),
             fee_policy: FeePolicy::Surplus {
                 factor: 0.0,
                 max_volume_factor: 0.06,
@@ -364,7 +355,7 @@ impl Pool {
     /// operation for the `blockchain::Pool::out` function.
     /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
     #[allow(dead_code)]
-    pub fn adjusted_reserve_a(self, quote: &OrderQuote) -> Self {
+    pub fn adjusted_reserve_a(self, quote: &LiquidityQuote) -> Self {
         let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
             (quote.sell_amount, quote.buy_amount)
         } else {
@@ -394,7 +385,7 @@ impl Pool {
     /// Restores reserve_b value from the given reserve_a and the quote. Reverse
     /// operation for the `blockchain::Pool::out` function
     /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
-    pub fn adjusted_reserve_b(self, quote: &OrderQuote) -> Self {
+    pub fn adjusted_reserve_b(self, quote: &LiquidityQuote) -> Self {
         let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
             (quote.sell_amount, quote.buy_amount)
         } else {
@@ -564,12 +555,12 @@ pub fn ab_pool() -> Pool {
     }
 }
 
-pub fn ab_pmm_pool(quote: &OrderQuote) -> Pool {
+pub fn ab_pmm_pool(quote: LiquidityQuote) -> Pool {
     Pool {
-        liquidity_provider: LiquidityProvider::Pmm,
+        liquidity_provider: LiquidityProvider::Pmm(quote),
         ..ab_pool()
     }
-    .adjusted_reserve_b(quote)
+    .adjusted_reserve_b(&quote)
 }
 
 /// An example order which sells token "A" for token "B".
@@ -583,8 +574,8 @@ pub fn ab_order() -> Order {
     }
 }
 
-pub fn ab_order_quote() -> OrderQuote {
-    OrderQuote {
+pub fn ab_liquidity_quote() -> LiquidityQuote {
+    LiquidityQuote {
         sell_token: "A",
         buy_token: "B",
         sell_amount: AB_ORDER_AMOUNT.to_wei(),

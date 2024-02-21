@@ -3,7 +3,7 @@ use crate::{
     tests::{
         self,
         cases::IntoWei,
-        setup::{ab_order, ab_order_quote, ab_pmm_pool, ab_solution, ExpectedOrder, FeePolicy},
+        setup::{ab_liquidity_quote, ab_order, ab_pmm_pool, ab_solution, ExpectedOrder, FeePolicy},
     },
 };
 
@@ -17,14 +17,13 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_order_quote();
-    let pool = ab_pmm_pool(&quote);
+    let quote = ab_liquidity_quote();
+    let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
-        .fee_policy(fee_policy)
-        .quote(quote);
+        .fee_policy(fee_policy);
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -51,14 +50,13 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_order_quote();
-    let pool = ab_pmm_pool(&quote);
+    let quote = ab_liquidity_quote();
+    let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
-        .fee_policy(fee_policy)
-        .quote(quote);
+        .fee_policy(fee_policy);
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -85,14 +83,13 @@ async fn surplus_protocol_fee_buy_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_order_quote();
-    let pool = ab_pmm_pool(&quote);
+    let quote = ab_liquidity_quote();
+    let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
-        .fee_policy(fee_policy)
-        .quote(quote);
+        .fee_policy(fee_policy);
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -119,14 +116,13 @@ async fn surplus_protocol_fee_sell_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_order_quote();
-    let pool = ab_pmm_pool(&quote);
+    let quote = ab_liquidity_quote();
+    let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
-        .fee_policy(fee_policy)
-        .quote(quote);
+        .fee_policy(fee_policy);
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -149,14 +145,13 @@ async fn volume_protocol_fee_buy_order() {
     let side = order::Side::Buy;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_order_quote();
-    let pool = ab_pmm_pool(&quote);
+    let quote = ab_liquidity_quote();
+    let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
-        .fee_policy(fee_policy)
-        .quote(quote);
+        .fee_policy(fee_policy);
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -179,14 +174,13 @@ async fn volume_protocol_fee_sell_order() {
     let side = order::Side::Sell;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_order_quote();
-    let pool = ab_pmm_pool(&quote);
+    let quote = ab_liquidity_quote();
+    let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
-        .fee_policy(fee_policy)
-        .quote(quote);
+        .fee_policy(fee_policy);
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
