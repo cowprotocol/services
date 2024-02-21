@@ -173,10 +173,13 @@ impl Competition {
             .map(|settlement| {
                 observe::scoring(&settlement);
                 (
-                    settlement.old_score(&self.eth, auction, &self.mempools.revert_protection()),
+                    if self.solver.cip38_activated(auction.deadline().driver()) {
+                        settlement.score(&self.eth, auction)
+                    } else {
+                        settlement.old_score(&self.eth, auction, &self.mempools.revert_protection())
+                    },
                     settlement,
-                ) // todo CIP38 remove
-                  //(settlement.score(&self.eth, auction), settlement)
+                )
             })
             .collect_vec();
 

@@ -86,6 +86,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         .try_into()
                         .unwrap(),
                 },
+                cip38_activation: config.cip38_activation,
             }
         }))
         .await,

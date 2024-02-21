@@ -97,6 +97,8 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
+    /// Whether or not the CIP-38 rules should be activated.
+    pub cip38_activation: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Solver {
@@ -145,6 +147,13 @@ impl Solver {
     /// Timeout configuration for this solver.
     pub fn timeouts(&self) -> Timeouts {
         self.config.timeouts
+    }
+
+    /// Whether or not the CIP-38 rules are activated.
+    pub fn cip38_activated(&self, current: chrono::DateTime<chrono::Utc>) -> bool {
+        self.config
+            .cip38_activation
+            .is_some_and(|activation| current > activation)
     }
 
     /// Make a POST request instructing the solver to solve an auction.

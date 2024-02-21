@@ -180,6 +180,10 @@ struct SolverConfig {
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
+
+    /// Datetime when the CIP38 should be activated.
+    #[serde(default)]
+    cip38_activation: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[serde_as]
