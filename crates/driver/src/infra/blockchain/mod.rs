@@ -47,6 +47,10 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
     chain: eth::ChainId,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
@@ -65,35 +69,43 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
     ) -> Self {
-        let Rpc {
-            web3,
-            chain: network,
-        } = rpc;
-        let contracts = Contracts::new(&web3, network, addresses)
+        let Rpc { web3, chain } = rpc;
+        let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
 
         Self {
-            current_block: ethrpc::current_block::current_block_stream(
-                Arc::new(web3.clone()),
-                std::time::Duration::from_millis(500),
-            )
-            .await
-            .expect("couldn't initialize current block stream"),
+            inner: Arc::new(Inner {
+                current_block: ethrpc::current_block::current_block_stream(
+                    Arc::new(web3.clone()),
+                    std::time::Duration::from_millis(500),
+                )
+                .await
+                .expect("couldn't initialize current block stream"),
+                chain,
+                contracts,
+                gas,
+            }),
             web3,
-            chain: network,
-            contracts,
-            gas,
         }
     }
 
     pub fn network(&self) -> eth::ChainId {
-        self.chain
+        self.inner.chain
+    }
+
+    /// Clones self and returns an instance that captures metrics extended with
+    /// the provided label.
+    pub fn with_metric_label(&self, label: String) -> Self {
+        Self {
+            web3: ethrpc::instrumented::instrument_with_label(&self.web3, label),
+            ..self.clone()
+        }
     }
 
     /// Onchain smart contract bindings.
     pub fn contracts(&self) -> &Contracts {
-        &self.contracts
+        &self.inner.contracts
     }
 
     /// Create a contract instance at the specified address.
@@ -110,7 +122,7 @@ impl Ethereum {
     /// Returns a type that monitors the block chain to inform about the current
     /// block.
     pub fn current_block(&self) -> &CurrentBlockStream {
-        &self.current_block
+        &self.inner.current_block
     }
 
     /// Create access list used by a transaction.
@@ -146,7 +158,7 @@ impl Ethereum {
     }
 
     pub fn boundary_gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
-        self.gas.gas.clone()
+        self.inner.gas.gas.clone()
     }
 
     /// Estimate gas used by a transaction.
@@ -171,11 +183,11 @@ impl Ethereum {
     }
 
     pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
-        self.gas.estimate().await
+        self.inner.gas.estimate().await
     }
 
     pub fn gas_limit(&self) -> eth::Gas {
-        self.current_block.borrow().gas_limit.into()
+        self.inner.current_block.borrow().gas_limit.into()
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.
@@ -220,8 +232,8 @@ impl fmt::Debug for Ethereum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Ethereum")
             .field("web3", &self.web3)
-            .field("network", &self.chain)
-            .field("contracts", &self.contracts)
+            .field("chain", &self.inner.chain)
+            .field("contracts", &self.inner.contracts)
             .field("gas", &"Arc<NativeGasEstimator>")
             .finish()
     }
