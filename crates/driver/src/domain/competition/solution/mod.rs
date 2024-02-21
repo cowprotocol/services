@@ -1,5 +1,5 @@
 use {
-    self::fee::ClearingPrices,
+    self::trade::ClearingPrices,
     crate::{
         boundary,
         domain::{

@@ -49,11 +49,7 @@ impl Solutions {
                                     },
                                 )
                                 .map(competition::solution::Trade::Fulfillment)
-                                .map_err(
-                                    |competition::solution::trade::InvalidExecutedAmount| {
-                                        super::Error("invalid trade fulfillment".to_owned())
-                                    },
-                                )
+                                .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
                             }
                             Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
                                 competition::solution::trade::Jit::new(
@@ -115,13 +111,7 @@ impl Solutions {
                                     },
                                     jit.executed_amount.into(),
                                 )
-                                .map_err(
-                                    |competition::solution::trade::InvalidExecutedAmount| {
-                                        super::Error(
-                                            "invalid executed amount in JIT order".to_owned(),
-                                        )
-                                    },
-                                )?,
+                                .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
                             )),
                         })
                         .try_collect()?,

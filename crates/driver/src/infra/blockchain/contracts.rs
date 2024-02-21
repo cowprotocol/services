@@ -1,6 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     ethcontract::dyns::DynWeb3,
+    std::collections::HashSet,
     thiserror::Error,
 };
 
@@ -10,12 +11,14 @@ pub struct Contracts {
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
     weth: contracts::WETH9,
+    cow_amms: HashSet<eth::Address>,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
+    pub cow_amms: Option<HashSet<eth::Address>>,
 }
 
 impl Contracts {
@@ -53,6 +56,7 @@ impl Contracts {
             vault_relayer,
             vault,
             weth,
+            cow_amms: addresses.cow_amms.unwrap_or_default(),
         })
     }
 
@@ -74,6 +78,10 @@ impl Contracts {
 
     pub fn weth_address(&self) -> eth::WethAddress {
         self.weth.address().into()
+    }
+
+    pub fn cow_amms(&self) -> &HashSet<eth::Address> {
+        &self.cow_amms
     }
 }
 

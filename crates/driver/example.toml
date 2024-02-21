@@ -13,7 +13,6 @@ account = "0x0000000000000000000000000000000000000000000000000000000000000001" #
 
 [submission]
 gas-price-cap = "1000000000000"
-additional-tip-percentage = 0.05
 
 [[submission.mempool]]
 mempool = "public"
@@ -23,6 +22,7 @@ revert-protection = true
 mempool = "mev-blocker"
 url = "https://your.custom.rpc.endpoint"
 max-additional-tip = "5000000000"
+additional-tip-percentage = 0.05
 use-soft-cancellations = true
 
 [contracts] # Optionally override the contract addresses, necessary on less popular blockchains

@@ -203,7 +203,7 @@ impl Solver {
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),
                 &[infra::mempool::Config {
-                    additional_tip_percentage: Default::default(),
+                    min_priority_fee: Default::default(),
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
                     max_confirm_time: Default::default(),
@@ -220,6 +220,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
+                cow_amms: Some(Default::default()),
             },
             gas,
         )

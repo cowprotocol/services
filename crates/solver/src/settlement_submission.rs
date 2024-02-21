@@ -27,7 +27,6 @@ use {
     },
     submitter::{
         DisabledReason,
-        Strategy,
         Submitter,
         SubmitterGasPriceEstimator,
         SubmitterParams,
@@ -50,8 +49,7 @@ pub fn gas_limit_for_estimate(gas_estimate: U256) -> U256 {
 }
 
 #[derive(Debug)]
-pub struct SubTxPool {
-    pub strategy: Strategy,
+struct SubTxPool {
     // Key (Address, U256) represents pair (sender, nonce)
     pub pools: HashMap<(Address, U256), Vec<(TransactionHandle, GasPrice1559)>>,
 }
@@ -59,17 +57,16 @@ type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
 #[derive(Debug, Default, Clone)]
 pub struct GlobalTxPool {
-    pub pools: TxPool,
+    pools: TxPool,
 }
 
 impl GlobalTxPool {
-    pub fn add_sub_pool(&self, strategy: Strategy) -> SubTxPoolRef {
+    pub fn add_sub_pool(&self) -> SubTxPoolRef {
         let pools = self.pools.clone();
         let index = {
             let mut pools = pools.lock().unwrap();
             let index = pools.len();
             pools.push(SubTxPool {
-                strategy,
                 pools: Default::default(),
             });
             index
@@ -519,7 +516,7 @@ mod tests {
         let nonce = U256::zero();
         let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
 
-        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::PublicMempool);
+        let submitted_transactions = GlobalTxPool::default().add_sub_pool();
 
         submitted_transactions.update(sender, nonce, transactions);
         let entry = submitted_transactions.get(sender, nonce);

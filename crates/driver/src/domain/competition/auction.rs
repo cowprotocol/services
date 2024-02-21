@@ -233,10 +233,11 @@ impl AuctionProcessor {
                 }
             };
 
-            let max_sell = match {
+            let available_sell_amount = {
                 let available = order.available(weth);
                 available.sell.amount.0.checked_add(available.user_fee.0)
-            } {
+            };
+            let max_sell = match available_sell_amount {
                 Some(amount) => order::SellAmount(amount),
                 None => {
                     observe::order_excluded_from_auction(

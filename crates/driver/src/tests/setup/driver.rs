@@ -184,7 +184,6 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
-           additional-tip-percentage = 0.0
            logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
@@ -208,6 +207,7 @@ async fn create_config_file(
                     file,
                     r#"[[submission.mempool]]
                     mempool = "mev-blocker"
+                    additional-tip-percentage = 0.0
                     url = "{}"
                     "#,
                     url.clone().unwrap_or(blockchain.web3_url.clone()),

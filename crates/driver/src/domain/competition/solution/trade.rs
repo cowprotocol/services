@@ -1,6 +1,9 @@
 use {
     crate::domain::{
-        competition::{self, order},
+        competition::{
+            self,
+            order::{self, Side},
+        },
         eth,
     },
     std::collections::HashMap,
@@ -30,7 +33,7 @@ impl Fulfillment {
         order: competition::Order,
         executed: order::TargetAmount,
         fee: Fee,
-    ) -> Result<Self, InvalidExecutedAmount> {
+    ) -> Result<Self, Error> {
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -43,8 +46,12 @@ impl Fulfillment {
                 }),
             };
 
-            let executed_with_fee =
-                order::TargetAmount(executed.0.checked_add(fee.0).ok_or(InvalidExecutedAmount)?);
+            let executed_with_fee = order::TargetAmount(
+                executed
+                    .0
+                    .checked_add(fee.0)
+                    .ok_or(Error::InvalidExecutedAmount)?,
+            );
             match order.partial {
                 order::Partial::Yes { available } => executed_with_fee <= available,
                 order::Partial::No => executed_with_fee == order.target(),
@@ -65,7 +72,7 @@ impl Fulfillment {
                 fee,
             })
         } else {
-            Err(InvalidExecutedAmount)
+            Err(Error::InvalidExecutedAmount)
         }
     }
 
@@ -127,6 +134,93 @@ impl Fulfillment {
         };
         Some(eth::TokenAmount(amount))
     }
+
+    /// Returns the surplus denominated in the surplus token.
+    ///
+    /// The surplus token is the buy token for a sell order and sell token for a
+    /// buy order.
+    pub fn surplus_over_reference_price(
+        &self,
+        limit_sell: eth::U256,
+        limit_buy: eth::U256,
+        prices: ClearingPrices,
+    ) -> Result<eth::U256, Error> {
+        let executed = self.executed().0;
+        let executed_sell_amount = match self.order().side {
+            Side::Buy => {
+                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
+                executed
+                    .checked_mul(prices.buy)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(prices.sell)
+                    .ok_or(Error::DivisionByZero)?
+            }
+            Side::Sell => executed,
+        };
+        // Sell slightly more `sell_token` to capture the `surplus_fee`
+        let executed_sell_amount_with_fee = executed_sell_amount
+            .checked_add(
+                // surplus_fee is always expressed in sell token
+                self.surplus_fee()
+                    .map(|fee| fee.0)
+                    .ok_or(Error::ProtocolFeeOnStaticOrder)?,
+            )
+            .ok_or(Error::Overflow)?;
+        let surplus = match self.order().side {
+            Side::Buy => {
+                // Scale to support partially fillable orders
+                let limit_sell_amount = limit_sell
+                    .checked_mul(executed)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(limit_buy)
+                    .ok_or(Error::DivisionByZero)?;
+                // Remaining surplus after fees
+                // Do not return error if `checked_sub` fails because violated limit prices will
+                // be caught by simulation
+                limit_sell_amount
+                    .checked_sub(executed_sell_amount_with_fee)
+                    .unwrap_or(eth::U256::zero())
+            }
+            Side::Sell => {
+                // Scale to support partially fillable orders
+                let limit_buy_amount = limit_buy
+                    .checked_mul(executed_sell_amount_with_fee)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(limit_sell)
+                    .ok_or(Error::DivisionByZero)?;
+                // How much `buy_token` we get for `executed` amount of `sell_token`
+                let executed_buy_amount = executed
+                    .checked_mul(prices.sell)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(prices.buy)
+                    .ok_or(Error::DivisionByZero)?;
+                // Remaining surplus after fees
+                // Do not return error if `checked_sub` fails because violated limit prices will
+                // be caught by simulation
+                executed_buy_amount
+                    .checked_sub(limit_buy_amount)
+                    .unwrap_or(eth::U256::zero())
+            }
+        };
+        Ok(surplus)
+    }
+
+    /// Returns the surplus denominated in the sell token.
+    pub fn surplus_in_sell_token(
+        &self,
+        surplus: eth::U256,
+        prices: ClearingPrices,
+    ) -> Result<eth::U256, Error> {
+        let surplus_in_sell_token = match self.order().side {
+            Side::Buy => surplus,
+            Side::Sell => surplus
+                .checked_mul(prices.buy)
+                .ok_or(Error::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Error::DivisionByZero)?,
+        };
+        Ok(surplus_in_sell_token)
+    }
 }
 
 /// A fee that is charged for executing an order.
@@ -138,6 +232,13 @@ pub enum Fee {
     Static,
     /// A dynamic solver computed surplus fee.
     Dynamic(order::SellAmount),
+}
+
+/// Uniform clearing prices at which the trade was executed.
+#[derive(Debug, Clone, Copy)]
+pub struct ClearingPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
 }
 
 /// A trade which adds a JIT order. See [`order::Jit`].
@@ -152,10 +253,7 @@ pub struct Jit {
 }
 
 impl Jit {
-    pub fn new(
-        order: order::Jit,
-        executed: order::TargetAmount,
-    ) -> Result<Self, InvalidExecutedAmount> {
+    pub fn new(order: order::Jit, executed: order::TargetAmount) -> Result<Self, Error> {
         // If the order is partially fillable, the executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -167,7 +265,7 @@ impl Jit {
         if is_valid {
             Ok(Self { order, executed })
         } else {
-            Err(InvalidExecutedAmount)
+            Err(Error::InvalidExecutedAmount)
         }
     }
 
@@ -190,5 +288,13 @@ pub struct Execution {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("invalid executed amount")]
-pub struct InvalidExecutedAmount;
+pub enum Error {
+    #[error("orders with non solver determined gas cost fees are not supported")]
+    ProtocolFeeOnStaticOrder,
+    #[error("overflow error while calculating protocol fee")]
+    Overflow,
+    #[error("division by zero error while calculating protocol fee")]
+    DivisionByZero,
+    #[error("invalid executed amount")]
+    InvalidExecutedAmount,
+}

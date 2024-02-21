@@ -99,10 +99,11 @@ impl IpfsAppData {
             return Ok(cached);
         }
 
-        let result = match {
+        let fetched = {
             let _timer = self.metrics.fetches.start_timer();
             self.fetch_raw(contract_app_data).await
-        } {
+        };
+        let result = match fetched {
             Ok(result) => result,
             Err(err) => {
                 metric.with_label_values(&["error", "node"]).inc();

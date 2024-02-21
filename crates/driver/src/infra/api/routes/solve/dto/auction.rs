@@ -340,16 +340,16 @@ impl Quote {
     ) -> competition::order::fees::Quote {
         competition::order::fees::Quote {
             sell: eth::Asset {
-                amount: eth::TokenAmount(self.sell_amount),
-                token: eth::TokenAddress(eth::ContractAddress(sell_token)),
+                amount: self.sell_amount.into(),
+                token: sell_token.into(),
             },
             buy: eth::Asset {
-                amount: eth::TokenAmount(self.buy_amount),
-                token: eth::TokenAddress(eth::ContractAddress(buy_token)),
+                amount: self.buy_amount.into(),
+                token: buy_token.into(),
             },
             fee: eth::Asset {
-                amount: eth::TokenAmount(self.fee),
-                token: eth::TokenAddress(eth::ContractAddress(sell_token)),
+                amount: self.fee.into(),
+                token: sell_token.into(),
             },
         }
     }

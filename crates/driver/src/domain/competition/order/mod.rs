@@ -358,7 +358,7 @@ pub enum BuyTokenBalance {
 
 /// The address which placed the order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Trader(eth::Address);
+pub struct Trader(pub eth::Address);
 
 impl From<Trader> for eth::Address {
     fn from(value: Trader) -> Self {

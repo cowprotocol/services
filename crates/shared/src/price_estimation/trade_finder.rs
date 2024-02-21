@@ -55,7 +55,7 @@ impl TradeEstimator {
     pub fn with_verifier(mut self, verifier: Arc<dyn TradeVerifying>) -> Self {
         self.inner = Arc::new(Inner {
             verifier: Some(verifier),
-            ..arc_unwrap_or_clone(self.inner)
+            ..Arc::unwrap_or_clone(self.inner)
         });
         self
     }
@@ -141,11 +141,4 @@ impl From<TradeError> for PriceEstimationError {
             TradeError::Other(err) => Self::EstimatorInternal(err),
         }
     }
-}
-
-fn arc_unwrap_or_clone<T>(arc: Arc<T>) -> T
-where
-    T: Clone,
-{
-    Arc::try_unwrap(arc).unwrap_or_else(|arc| (*arc).clone())
 }

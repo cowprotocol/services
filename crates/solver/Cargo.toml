@@ -10,10 +10,6 @@ name = "solver"
 path = "src/lib.rs"
 doctest = false
 
-[[bin]]
-name = "solver"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
