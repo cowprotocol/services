@@ -3,6 +3,7 @@ use {
     crate::{
         domain::{
             competition::order,
+            eth,
             time::{self},
         },
         infra::{self, blockchain::contracts::Addresses, Ethereum},
@@ -199,15 +200,27 @@ impl Solver {
         let url = config.blockchain.web3_url.parse().unwrap();
         let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
         let gas = Arc::new(
-            infra::blockchain::GasPriceEstimator::new(rpc.web3(), &[])
-                .await
-                .unwrap(),
+            infra::blockchain::GasPriceEstimator::new(
+                rpc.web3(),
+                &[infra::mempool::Config {
+                    min_priority_fee: Default::default(),
+                    gas_price_cap: eth::U256::MAX,
+                    target_confirm_time: Default::default(),
+                    max_confirm_time: Default::default(),
+                    retry_interval: Default::default(),
+                    kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
+                    submission: infra::mempool::SubmissionLogic::Native,
+                }],
+            )
+            .await
+            .unwrap(),
         );
         let eth = Ethereum::new(
             rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
+                cow_amms: Some(Default::default()),
             },
             gas,
         )

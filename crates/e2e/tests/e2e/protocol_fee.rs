@@ -292,13 +292,14 @@ async fn execute_test(
         None,
         vec![
             "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--fee-policy-skip-market-orders=false".to_string(),
             fee_policy.to_string(),
         ],
     );
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
@@ -328,7 +329,6 @@ async fn execute_test(
         .await
         .unwrap();
 
-    onchain.mint_blocks_past_reorg_threshold().await;
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();

@@ -1,6 +1,7 @@
 use {
     crate::{
         arguments::Arguments,
+        boundary,
         database::{
             ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
@@ -11,14 +12,14 @@ use {
             Postgres,
         },
         domain,
-        event_updater::{EventUpdater, GPv2SettlementContract},
+        event_updater::EventUpdater,
         infra::{self},
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
     clap::Parser,
-    contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
+    contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
@@ -33,7 +34,6 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -56,7 +56,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -97,8 +96,12 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(ethrpc: infra::blockchain::Rpc, poll_interval: Duration) -> infra::Ethereum {
-    infra::Ethereum::new(ethrpc, poll_interval).await
+async fn ethereum(
+    ethrpc: infra::blockchain::Rpc,
+    contracts: infra::blockchain::contracts::Addresses,
+    poll_interval: Duration,
+) -> infra::Ethereum {
+    infra::Ethereum::new(ethrpc, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -156,25 +159,24 @@ pub async fn run(args: Arguments) {
     }
 
     let ethrpc = ethrpc(&args.shared.node_url).await;
-    let eth = ethereum(ethrpc, args.shared.current_block.block_stream_poll_interval).await;
-
-    let settlement_contract = match args.shared.settlement_contract_address {
-        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
-        None => contracts::GPv2Settlement::deployed(&web3)
-            .await
-            .expect("load settlement contract"),
+    let contracts = infra::blockchain::contracts::Addresses {
+        settlement: args.shared.settlement_contract_address,
+        weth: args.shared.native_token_address,
     };
-    let vault_relayer = settlement_contract
+    let eth = ethereum(
+        ethrpc,
+        contracts,
+        args.shared.current_block.block_stream_poll_interval,
+    )
+    .await;
+
+    let vault_relayer = eth
+        .contracts()
+        .settlement()
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let native_token = match args.shared.native_token_address {
-        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
-        None => WETH9::deployed(&web3)
-            .await
-            .expect("load native token contract"),
-    };
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
             &web3, address, None,
@@ -204,7 +206,7 @@ pub async fn run(args: Arguments) {
         &web3,
         signature_validator::Contracts {
             chain_id,
-            settlement: settlement_contract.address(),
+            settlement: eth.contracts().settlement().address(),
             vault_relayer,
         },
     );
@@ -213,7 +215,7 @@ pub async fn run(args: Arguments) {
         &web3,
         account_balances::Contracts {
             chain_id,
-            settlement: settlement_contract.address(),
+            settlement: eth.contracts().settlement().address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
@@ -254,7 +256,7 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        eth.contracts().weth().address(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -285,7 +287,7 @@ pub async fn run(args: Arguments) {
                     "trace",
                 ),
                 finder,
-                settlement_contract: settlement_contract.address(),
+                settlement_contract: eth.contracts().settlement().address(),
             }),
             args.token_quality_cache_expiry,
         ))
@@ -392,9 +394,11 @@ pub async fn run(args: Arguments) {
             simulation_web3,
             name: network_name.to_string(),
             chain_id,
-            native_token: native_token.address(),
-            settlement: settlement_contract.address(),
-            authenticator: settlement_contract
+            native_token: eth.contracts().weth().address(),
+            settlement: eth.contracts().settlement().address(),
+            authenticator: eth
+                .contracts()
+                .settlement()
                 .authenticator()
                 .call()
                 .await
@@ -442,32 +446,23 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+
+    let on_settlement_event_updater =
+        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(eth.clone(), db.clone());
     let event_updater = Arc::new(EventUpdater::new(
-        GPv2SettlementContract::new(settlement_contract.clone()),
-        db.clone(),
+        boundary::events::settlement::GPv2SettlementContract::new(
+            eth.contracts().settlement().clone(),
+        ),
+        boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater),
         block_retriever.clone(),
         skip_event_sync_start,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let liquidity_order_owners: HashSet<_> = args
-        .order_quoting
-        .liquidity_order_owners
-        .iter()
-        .copied()
-        .collect();
-    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.order_quoting.fee_discount,
-        min_discounted_fee: args.order_quoting.min_discounted_fee,
-        fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: liquidity_order_owners.clone(),
-    }) as Arc<dyn FeeSubsidizing>;
-
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
-        fee_subsidy,
         Arc::new(db.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
@@ -514,9 +509,8 @@ pub async fn run(args: Arguments) {
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(chain_id, settlement_contract.address()),
-            settlement_contract.address(),
-            liquidity_order_owners,
+            DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
+            eth.contracts().settlement().address(),
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(
@@ -541,10 +535,13 @@ pub async fn run(args: Arguments) {
         service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
 
+    let persistence =
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
+
     let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
-        db.clone(),
+        persistence.clone(),
         args.banned_users.iter().copied().collect(),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
@@ -552,15 +549,12 @@ pub async fn run(args: Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         args.auction_update_interval,
-        args.ethflow_contract,
-        native_token.address(),
+        eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFee::new(
-            args.fee_policy.clone().to_domain(),
-            args.fee_policy.fee_policy_skip_market_orders,
-        ),
+        domain::ProtocolFee::new(args.fee_policy.clone()),
+        args.cow_amms.into_iter().collect(),
     );
     solvable_orders_cache
         .update(block)
@@ -570,27 +564,12 @@ pub async fn run(args: Arguments) {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
-    let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater {
-            web3: web3.clone(),
-            contract: settlement_contract,
-            native_token: native_token.address(),
-            db: db.clone(),
-        };
-    tokio::task::spawn(
-        on_settlement_event_updater
-            .run_forever(eth.current_block().clone())
-            .instrument(tracing::info_span!("on_settlement_event_updater")),
-    );
-
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,
         args.order_events_cleanup_threshold,
     );
-    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
-        order_events_cleaner_config,
-        db.clone(),
-    );
+    let order_events_cleaner =
+        crate::periodic_db_cleanup::OrderEventsCleaner::new(order_events_cleaner_config, db);
 
     tokio::task::spawn(
         order_events_cleaner
@@ -624,8 +603,7 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
-        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db))
-            .await,
+        persistence: persistence.clone(),
         liveness: liveness.clone(),
     };
     run.run_forever().await;

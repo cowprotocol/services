@@ -42,6 +42,7 @@ pub struct OrderModel {
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
+    /// Represents user_fee. Which is 0 for limit orders.
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,

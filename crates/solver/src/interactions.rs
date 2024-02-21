@@ -1,11 +1,10 @@
 pub mod allowances;
-pub mod balancer_v2;
-pub mod block_coinbase;
+mod balancer_v2;
 mod erc20;
 mod uniswap_v2;
 mod uniswap_v3;
 mod weth;
-pub mod zeroex;
+mod zeroex;
 
 pub use {
     balancer_v2::BalancerSwapGivenOutInteraction,

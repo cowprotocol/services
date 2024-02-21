@@ -1,5 +1,6 @@
 use {
     crate::{auction::AuctionId, bytes_hex::BytesHex, order::OrderUid},
+    derivative::Derivative,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
@@ -39,7 +40,8 @@ pub struct CompetitionAuction {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Default, Deserialize, Serialize, PartialEq, Derivative)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverSettlement {
     pub solver: String,
@@ -54,9 +56,11 @@ pub struct SolverSettlement {
     pub orders: Vec<Order>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
+    #[derivative(Debug(format_with = "crate::format::debug_optional_bytes"))]
     pub call_data: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
+    #[derivative(Debug(format_with = "crate::format::debug_optional_bytes"))]
     pub uninternalized_call_data: Option<Vec<u8>>,
 }
 

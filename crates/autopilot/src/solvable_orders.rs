@@ -1,5 +1,5 @@
 use {
-    crate::{boundary, database::Postgres, domain},
+    crate::{domain, infra},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -13,6 +13,7 @@ use {
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    rand::seq::SliceRandom,
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -66,7 +67,7 @@ pub struct Metrics {
 /// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    database: Arc<Postgres>,
+    persistence: infra::Persistence,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -74,10 +75,12 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
-    ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fee: domain::ProtocolFee,
+    // TODO: remove ASAP since this we only use this for a mitigation that
+    // should be implemented on a smart contract level.
+    cow_amms: HashSet<H160>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -91,7 +94,7 @@ impl SolvableOrdersCache {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_order_validity_period: Duration,
-        database: Postgres,
+        persistence: infra::Persistence,
         banned_users: HashSet<H160>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -99,14 +102,14 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
-        ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
+        cow_amms: HashSet<H160>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
-            database: Arc::new(database),
+            persistence,
             banned_users,
             balance_fetcher,
             bad_token_detector,
@@ -117,10 +120,10 @@ impl SolvableOrdersCache {
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
-            ethflow_contract_address,
             weth,
             limit_order_price_factor,
             protocol_fee,
+            cow_amms,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -141,11 +144,11 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
+        let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut invalid_order_uids = HashSet::new();
-        let mut filtered_order_events = HashSet::new();
+        let mut invalid_order_uids = Vec::new();
+        let mut filtered_order_events = Vec::new();
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
@@ -154,6 +157,10 @@ impl SolvableOrdersCache {
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
+        invalid_order_uids.extend(removed);
+
+        let orders = filter_duplicate_cow_amm_orders(orders, &self.cow_amms);
+        let removed = counter.checkpoint("duplicate_cow_amm_order", &orders);
         invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
@@ -180,11 +187,11 @@ impl SolvableOrdersCache {
             })
             .collect::<HashMap<_, _>>();
 
-        let orders = orders_with_balance(orders, &balances, self.ethflow_contract_address);
+        let orders = orders_with_balance(orders, &balances);
         let removed = counter.checkpoint("insufficient_balance", &orders);
         invalid_order_uids.extend(removed);
 
-        let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
+        let orders = filter_dust_orders(orders, &balances);
         let removed = counter.checkpoint("dust_order", &orders);
         filtered_order_events.extend(removed);
 
@@ -219,29 +226,33 @@ impl SolvableOrdersCache {
 
         // spawning a background task since `order_events` table insert operation takes
         // a while and the result is ignored.
-        let db = self.database.clone();
-        tokio::spawn(async move {
-            db.store_non_subsequent_label_order_events(
-                &invalid_order_uids,
-                OrderEventLabel::Invalid,
-            )
-            .await;
-            db.store_non_subsequent_label_order_events(
-                &filtered_order_events,
-                OrderEventLabel::Filtered,
-            )
-            .await;
-        });
+        self.persistence.store_order_events(
+            invalid_order_uids
+                .iter()
+                .map(|id| domain::OrderUid(id.0))
+                .collect(),
+            OrderEventLabel::Invalid,
+        );
+        self.persistence.store_order_events(
+            filtered_order_events
+                .iter()
+                .map(|id| domain::OrderUid(id.0))
+                .collect(),
+            OrderEventLabel::Filtered,
+        );
 
         let auction = domain::Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
-                .map(|order| {
-                    let quote = db_solvable_orders.quotes.get(&order.metadata.uid.into());
-                    let protocol_fees = self.protocol_fee.get(&order, quote);
-                    boundary::order::to_domain(order, protocol_fees)
+                .filter_map(|order| {
+                    if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
+                        Some(self.protocol_fee.apply(order, quote))
+                    } else {
+                        tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
+                        None
+                    }
                 })
                 .collect(),
             prices,
@@ -330,19 +341,10 @@ async fn filter_invalid_signature_orders(
 
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
-fn orders_with_balance(
-    mut orders: Vec<Order>,
-    balances: &Balances,
-    ethflow_contract: Option<H160>,
-) -> Vec<Order> {
+fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+    // Prefer newer orders over older ones.
+    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        // For ethflow orders, there is no need to check the balance. The contract
-        // ensures that there will always be sufficient balance, after the wrapAll
-        // pre_interaction has been called.
-        if Some(order.metadata.owner) == ethflow_contract {
-            return true;
-        }
-
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
             Some(balance) => *balance,
@@ -363,20 +365,13 @@ fn orders_with_balance(
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
-fn filter_dust_orders(
-    mut orders: Vec<Order>,
-    balances: &Balances,
-    ethflow_contract: Option<H160>,
-) -> Vec<Order> {
+fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
     orders.retain(|order| {
         if !order.data.partially_fillable {
             return true;
         }
 
-        let balance = if Some(order.metadata.owner) == ethflow_contract {
-            // For EthFlow orders, assume that there is always enough balance.
-            U256::MAX
-        } else if let Some(balance) = balances.get(&Query::from_order(order)) {
+        let balance = if let Some(balance) = balances.get(&Query::from_order(order)) {
             *balance
         } else {
             return false;
@@ -534,6 +529,43 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
+/// Enforces that for all CoW AMMs at most 1 order is in the auction.
+/// This is needed to protect against a known attack vector.
+fn filter_duplicate_cow_amm_orders(mut orders: Vec<Order>, cow_amms: &HashSet<H160>) -> Vec<Order> {
+    let mut amm_orders = HashMap::<H160, Vec<&Order>>::new();
+    for order in &orders {
+        let owner = order.metadata.owner;
+        if cow_amms.contains(&owner) {
+            amm_orders.entry(owner).or_default().push(order);
+        }
+    }
+    let canonical_amm_orders: HashSet<OrderUid> = amm_orders
+        .into_iter()
+        .map(|(owner, orders)| {
+            let uid = orders
+                .choose(&mut rand::thread_rng())
+                .expect("every group contains at least 1 order")
+                .metadata
+                .uid;
+            if orders.len() > 1 {
+                // TODO: find better heuristic to pick "canonical" order
+                tracing::warn!(
+                    num = orders.len(),
+                    amm = ?owner,
+                    order = ?uid,
+                    "multiple orders for the same CoW AMM; picked random order"
+                );
+            }
+            uid
+        })
+        .collect();
+
+    orders.retain(|o| {
+        !cow_amms.contains(&o.metadata.owner) || canonical_amm_orders.contains(&o.metadata.uid)
+    });
+    orders
+}
+
 /// Filter out limit orders which are far enough outside the estimated native
 /// token price.
 fn filter_mispriced_limit_orders(
@@ -622,9 +654,11 @@ impl OrderFilterCounter {
             });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for (order, class) in &filtered_orders {
-            self.orders.remove(order).unwrap();
-            tracing::debug!(%order, ?class, %reason, "filtered order")
+        for order_uid in filtered_orders.keys() {
+            self.orders.remove(order_uid).unwrap();
+        }
+        if !filtered_orders.is_empty() {
+            tracing::debug!(%reason, orders = ?filtered_orders, "filtered orders");
         }
         filtered_orders.into_keys().collect()
     }
@@ -1030,7 +1064,6 @@ mod tests {
 
     #[test]
     fn orders_with_balance_() {
-        let ethflow = H160::from_low_u64_be(1);
         let orders = vec![
             // enough balance for sell and fee
             Order {
@@ -1076,34 +1109,18 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // 0 ethflow balance
-            Order {
-                data: OrderData {
-                    sell_token: ethflow,
-                    sell_amount: 1.into(),
-                    fee_amount: 0.into(),
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    owner: ethflow,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
         ];
         let balances = [
             (Query::from_order(&orders[0]), 2.into()),
             (Query::from_order(&orders[1]), 1.into()),
             (Query::from_order(&orders[2]), 1.into()),
             (Query::from_order(&orders[3]), 0.into()),
-            (Query::from_order(&orders[4]), 0.into()),
         ]
         .into_iter()
         .collect();
-        let expected = &[0, 2, 4];
+        let expected = &[0, 2];
 
-        let filtered = orders_with_balance(orders.clone(), &balances, Some(ethflow));
+        let filtered = orders_with_balance(orders.clone(), &balances);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);

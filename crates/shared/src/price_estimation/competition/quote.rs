@@ -36,7 +36,15 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
             let winner = results
                 .into_iter()
                 .filter(|(_index, r)| r.is_err() || gas_is_reasonable(r))
-                .max_by(|a, b| compare_quote_result(&query, &a.1, &b.1, &context))
+                .max_by(|a, b| {
+                    compare_quote_result(
+                        &query,
+                        &a.1,
+                        &b.1,
+                        &context,
+                        self.prefer_verified_estimates,
+                    )
+                })
                 .with_context(|| "all price estimates reported 0 gas cost")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
             self.report_winner(&query, query.kind, winner)
@@ -50,9 +58,17 @@ fn compare_quote_result(
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
+    prefer_verified_estimates: bool,
 ) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => compare_quote(query, a, b, context),
+        (Ok(a), Ok(b)) => {
+            match (prefer_verified_estimates, a.verified, b.verified) {
+                // prefer verified over unverified quotes
+                (true, true, false) => Ordering::Greater,
+                (true, false, true) => Ordering::Less,
+                _ => compare_quote(query, a, b, context),
+            }
+        }
         (Ok(_), Err(_)) => Ordering::Greater,
         (Err(_), Ok(_)) => Ordering::Less,
         (Err(a), Err(b)) => compare_error(a, b),
@@ -171,6 +187,7 @@ mod tests {
         ranking: PriceRanking,
         kind: OrderKind,
         estimates: Vec<PriceEstimateResult>,
+        prefer_verified_estimates: bool,
     ) -> PriceEstimateResult {
         fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
             let mut estimator = MockPriceEstimating::new();
@@ -188,7 +205,8 @@ mod tests {
                 .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
                 .collect()],
             ranking.clone(),
-        );
+        )
+        .prefer_verified_estimates(prefer_verified_estimates);
 
         priority
             .estimate(Arc::new(Query {
@@ -214,6 +232,7 @@ mod tests {
                 // User effectively receives `99_999` `buy_token`.
                 price(107_999, 2_000),
             ],
+            false,
         )
         .await;
         assert_eq!(best, price(104_000, 1_000));
@@ -227,6 +246,7 @@ mod tests {
                 // User effectively pays `100_002` `sell_token`.
                 price(92_002, 2_000),
             ],
+            false,
         )
         .await;
         assert_eq!(best, price(96_000, 1_000));
@@ -250,6 +270,7 @@ mod tests {
                 // gets discarded because it quotes 0 gas.
                 price(104_000, 0),
             ],
+            false,
         )
         .await;
         assert_eq!(best, price(104_000, 1_000));
@@ -266,6 +287,7 @@ mod tests {
                 // gets discarded because it quotes 0 gas.
                 price(99_000, 0),
             ],
+            false,
         )
         .await;
         assert_eq!(best, price(96_000, 1_000));
@@ -283,6 +305,7 @@ mod tests {
                 error(PriceEstimationError::RateLimited),
                 error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
             ],
+            false,
         )
         .await;
         assert_eq!(best, error(PriceEstimationError::RateLimited));
@@ -298,8 +321,49 @@ mod tests {
                 price(1, 1_000_000),
                 error(PriceEstimationError::RateLimited),
             ],
+            false,
         )
         .await;
         assert_eq!(best, price(1, 1_000_000));
+    }
+
+    #[tokio::test]
+    async fn prefer_verified_over_unverified() {
+        let worse_verified_quote = Ok(Estimate {
+            out_amount: 900_000.into(),
+            gas: 2_000,
+            verified: true,
+            ..Default::default()
+        });
+        let better_unverified_quote = Ok(Estimate {
+            out_amount: 1_000_000.into(),
+            gas: 1_000,
+            verified: false,
+            ..Default::default()
+        });
+
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                better_unverified_quote.clone(),
+                worse_verified_quote.clone(),
+            ],
+            true,
+        )
+        .await;
+        assert_eq!(best, worse_verified_quote.clone());
+
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                better_unverified_quote.clone(),
+                worse_verified_quote.clone(),
+            ],
+            false,
+        )
+        .await;
+        assert_eq!(best, better_unverified_quote);
     }
 }

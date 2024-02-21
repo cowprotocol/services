@@ -83,7 +83,7 @@ mod tests {
     // database connection handling.
     #[tokio::test]
     #[ignore]
-    async fn order_events_cleaner_flow() {
+    async fn postgres_order_events_cleaner_flow() {
         let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
@@ -94,18 +94,23 @@ mod tests {
             timestamp: now - chrono::Duration::milliseconds(300),
             label: OrderEventLabel::Created,
         };
+        database::order_events::insert_order_event(&mut ex, &event_a)
+            .await
+            .unwrap();
         let event_b = OrderEvent {
             order_uid: ByteArray([2; 56]),
             timestamp: now - chrono::Duration::milliseconds(100),
             label: OrderEventLabel::Created,
         };
+        database::order_events::insert_order_event(&mut ex, &event_b)
+            .await
+            .unwrap();
         let event_c = OrderEvent {
             order_uid: ByteArray([3; 56]),
             timestamp: now,
             label: OrderEventLabel::Created,
         };
-
-        database::order_events::insert_order_events_batch(&mut ex, [event_a, event_b, event_c])
+        database::order_events::insert_order_event(&mut ex, &event_c)
             .await
             .unwrap();
 

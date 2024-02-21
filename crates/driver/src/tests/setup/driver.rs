@@ -1,5 +1,5 @@
 use {
-    super::{blockchain::Blockchain, Partial, Solver, Test},
+    super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
     crate::{
         domain::competition::order,
         infra::time,
@@ -16,6 +16,7 @@ pub struct Config {
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
+    pub mempools: Vec<Mempool>,
 }
 
 pub struct Driver {
@@ -71,7 +72,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
-            "solverFee": quote.order.user_fee.to_string(),
             "userFee": quote.order.user_fee.to_string(),
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
@@ -185,15 +185,39 @@ async fn create_config_file(
            weth = "{}"
 
            [submission]
-           gas-price-cap = 1000000000000
-
-           [[submission.mempool]]
-           mempool = "public"
+           gas-price-cap = "1000000000000"
+           logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address())
     )
     .unwrap();
+
+    for mempool in &config.mempools {
+        match mempool {
+            Mempool::Public => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    mempool = "public"
+                    "#,
+                )
+                .unwrap();
+            }
+            Mempool::Private { url } => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    mempool = "mev-blocker"
+                    additional-tip-percentage = 0.0
+                    url = "{}"
+                    "#,
+                    url.clone().unwrap_or(blockchain.web3_url.clone()),
+                )
+                .unwrap();
+            }
+        }
+    }
 
     for (solver, addr) in solvers {
         write!(

@@ -52,19 +52,21 @@ struct Config {
     liquidity: LiquidityConfig,
 }
 
+#[serde_as]
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SubmissionConfig {
-    /// Additional tip in percentage of max_fee_per_gas we are willing to give
-    /// to miners above regular gas price estimation. Expects a floating point
-    /// value between 0 and 1.
-    #[serde(default = "default_additional_tip_percentage")]
-    additional_tip_percentage: f64,
+    /// The minimum priority fee in Gwei the solver is ensuring to pay in a
+    /// settlement.
+    #[serde(default)]
+    #[serde_as(as = "serialize::U256")]
+    min_priority_fee: eth::U256,
 
     /// The maximum gas price in Gwei the solver is willing to pay in a
     /// settlement.
     #[serde(default = "default_gas_price_cap")]
-    gas_price_cap: f64,
+    #[serde_as(as = "serialize::U256")]
+    gas_price_cap: eth::U256,
 
     /// The target confirmation time for settlement transactions used
     /// to estimate gas price.
@@ -85,8 +87,12 @@ struct SubmissionConfig {
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
+
+    #[serde(default)]
+    logic: Logic,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mempool")]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -99,7 +105,13 @@ enum Mempool {
         /// Maximum additional tip in Gwei that we are willing to give to
         /// MEVBlocker above regular gas price estimation.
         #[serde(default = "default_max_additional_tip")]
-        max_additional_tip: f64,
+        #[serde_as(as = "serialize::U256")]
+        max_additional_tip: eth::U256,
+        /// Additional tip in percentage of max_fee_per_gas we are giving to
+        /// MEVBlocker above regular gas price estimation. Expects a
+        /// floating point value between 0 and 1.
+        #[serde(default = "default_additional_tip_percentage")]
+        additional_tip_percentage: f64,
         /// Configures whether the submission logic is allowed to assume the
         /// submission nodes implement soft cancellations. With soft
         /// cancellations a cancellation transaction doesn't have to get mined
@@ -115,8 +127,8 @@ fn default_additional_tip_percentage() -> f64 {
 }
 
 /// 1000 gwei
-fn default_gas_price_cap() -> f64 {
-    1e12
+fn default_gas_price_cap() -> eth::U256 {
+    eth::U256::from(1000) * eth::U256::exp10(9)
 }
 
 fn default_target_confirm_time() -> Duration {
@@ -132,8 +144,8 @@ fn default_max_confirm_time() -> Duration {
 }
 
 /// 3 gwei
-fn default_max_additional_tip() -> f64 {
-    3e9
+fn default_max_additional_tip() -> eth::U256 {
+    eth::U256::from(3) * eth::U256::exp10(9)
 }
 
 fn default_soft_cancellations_flag() -> bool {
@@ -230,6 +242,8 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
+
+    cow_amms: Option<Vec<eth::H160>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -444,6 +458,16 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+enum Logic {
+    /// Use legacy submissions logic (default)
+    #[default]
+    Boundary,
+    /// Use Driver domain native submission logic
+    Native,
 }
 
 #[derive(Clone, Debug, Deserialize)]
