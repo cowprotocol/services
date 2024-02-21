@@ -46,6 +46,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     crate::infra::observe::init(&args.log);
 
     let ethrpc = ethrpc(&args).await;
+    let web3 = ethrpc.web3().clone();
     let config = config::file::load(ethrpc.network(), &args.config).await;
     tracing::info!("running driver with {config:#?}");
 
@@ -60,10 +61,21 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             config
                 .mempools
                 .iter()
-                .map(|mempool| {
-                    Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone()).unwrap()
+                .map(|mempool| match mempool.submission {
+                    infra::mempool::SubmissionLogic::Boundary => Mempool::Boundary(
+                        crate::boundary::Mempool::new(
+                            mempool.to_owned(),
+                            eth.clone(),
+                            tx_pool.clone(),
+                        )
+                        .unwrap(),
+                    ),
+                    infra::mempool::SubmissionLogic::Native => Mempool::Native(Box::new(
+                        crate::infra::mempool::Inner::new(mempool.to_owned(), web3.clone()),
+                    )),
                 })
                 .collect(),
+            eth.clone(),
         )
         .unwrap(),
         eth,
@@ -131,7 +143,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts, gas).await
+    Ethereum::new(ethrpc, config.contracts.clone(), gas).await
 }
 
 fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

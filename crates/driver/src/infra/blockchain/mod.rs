@@ -12,7 +12,7 @@ pub mod contracts;
 pub mod gas;
 pub mod token;
 
-use gas_estimation::GasPriceEstimating;
+use {ethcontract::errors::ExecutionError, gas_estimation::GasPriceEstimating};
 
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
@@ -123,6 +123,8 @@ impl Ethereum {
 
     /// Create access list used by a transaction.
     pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
+        const MAX_BLOCK_SIZE: u64 = 30_000_000;
+
         let tx = web3::types::TransactionRequest {
             from: tx.from.into(),
             to: Some(tx.to.into()),
@@ -130,6 +132,9 @@ impl Ethereum {
             value: Some(tx.value.into()),
             data: Some(tx.input.into()),
             access_list: Some(tx.access_list.into()),
+            // Specifically set high gas because some nodes don't pick a sensible value if omitted.
+            // And since we are only interested in access lists a very high value is fine.
+            gas: Some(MAX_BLOCK_SIZE.into()),
             ..Default::default()
         };
         let json = self
@@ -177,6 +182,10 @@ impl Ethereum {
         self.gas.estimate().await
     }
 
+    pub fn gas_limit(&self) -> eth::Gas {
+        self.current_block.borrow().gas_limit.into()
+    }
+
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3
@@ -190,6 +199,28 @@ impl Ethereum {
     /// Returns a [`token::Erc20`] for the specified address.
     pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
         token::Erc20::new(self, address)
+    }
+
+    /// Returns the transaction's on-chain inclusion status.
+    pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
+        self.web3
+            .eth()
+            .transaction_receipt(tx_hash.0)
+            .await
+            .map(|result| match result {
+                Some(web3::types::TransactionReceipt {
+                    status: Some(status),
+                    ..
+                }) => {
+                    if status.is_zero() {
+                        eth::TxStatus::Reverted
+                    } else {
+                        eth::TxStatus::Executed
+                    }
+                }
+                _ => eth::TxStatus::Pending,
+            })
+            .map_err(Into::into)
     }
 }
 
@@ -214,6 +245,23 @@ pub enum Error {
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
     AccessList(serde_json::Value),
+}
+
+impl Error {
+    /// Returns whether the error indicates that the original transaction
+    /// reverted.
+    pub fn is_revert(&self) -> bool {
+        // This behavior is node dependent
+        match self {
+            Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
+            Error::Web3(inner) => {
+                let error = ExecutionError::from(inner.clone());
+                matches!(error, ExecutionError::Revert(_))
+            }
+            Error::GasPrice(_) => false,
+            Error::AccessList(_) => true,
+        }
+    }
 }
 
 impl From<contracts::Error> for Error {

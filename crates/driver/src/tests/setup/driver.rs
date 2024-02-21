@@ -1,5 +1,5 @@
 use {
-    super::{blockchain::Blockchain, Partial, Solver, Test},
+    super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
     crate::{
         domain::competition::order,
         infra::time,
@@ -16,6 +16,7 @@ pub struct Config {
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
+    pub mempools: Vec<Mempool>,
 }
 
 pub struct Driver {
@@ -71,8 +72,17 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
-            "solverFee": quote.order.user_fee.to_string(),
             "userFee": quote.order.user_fee.to_string(),
+            "protocolFees": match quote.order.kind {
+                order::Kind::Market => json!([]),
+                order::Kind::Liquidity => json!([]),
+                order::Kind::Limit { .. } => json!([{
+                    "surplus": {
+                        "factor": 0.0,
+                        "maxVolumeFactor": 0.06
+                    }
+                }]),
+            },
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
                 order::Side::Sell => "sell",
@@ -94,16 +104,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
-            "feePolicies": match quote.order.kind {
-                order::Kind::Market => json!([]),
-                order::Kind::Liquidity => json!([]),
-                order::Kind::Limit { .. } => json!([{
-                    "priceImprovement": {
-                        "factor": 0.0,
-                        "maxVolumeFactor": 0.06
-                    }
-                }]),
-            },
         }));
     }
     for fulfillment in test.fulfillments.iter() {
@@ -185,15 +185,39 @@ async fn create_config_file(
            weth = "{}"
 
            [submission]
-           gas-price-cap = 1000000000000
-
-           [[submission.mempool]]
-           mempool = "public"
+           gas-price-cap = "1000000000000"
+           logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address())
     )
     .unwrap();
+
+    for mempool in &config.mempools {
+        match mempool {
+            Mempool::Public => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    mempool = "public"
+                    "#,
+                )
+                .unwrap();
+            }
+            Mempool::Private { url } => {
+                write!(
+                    file,
+                    r#"[[submission.mempool]]
+                    mempool = "mev-blocker"
+                    additional-tip-percentage = 0.0
+                    url = "{}"
+                    "#,
+                    url.clone().unwrap_or(blockchain.web3_url.clone()),
+                )
+                .unwrap();
+            }
+        }
+    }
 
     for (solver, addr) in solvers {
         write!(

@@ -46,10 +46,7 @@ impl Auction {
                         Kind::Sell => competition::order::Side::Sell,
                         Kind::Buy => competition::order::Side::Buy,
                     },
-                    fee: competition::order::Fee {
-                        user: order.user_fee.into(),
-                        solver: order.solver_fee.into(),
-                    },
+                    user_fee: order.user_fee.into(),
                     kind: match order.class {
                         Class::Market => competition::order::Kind::Market,
                         Class::Limit => competition::order::Kind::Limit,
@@ -115,16 +112,25 @@ impl Auction {
                         data: order.signature.into(),
                         signer: order.owner.into(),
                     },
-                    fee_policies: order
-                        .fee_policies
+                    protocol_fees: order
+                        .protocol_fees
                         .into_iter()
                         .map(|policy| match policy {
+                            FeePolicy::Surplus {
+                                factor,
+                                max_volume_factor,
+                            } => competition::order::FeePolicy::Surplus {
+                                factor,
+                                max_volume_factor,
+                            },
                             FeePolicy::PriceImprovement {
                                 factor,
                                 max_volume_factor,
+                                quote,
                             } => competition::order::FeePolicy::PriceImprovement {
                                 factor,
                                 max_volume_factor,
+                                quote: quote.into_domain(order.sell_token, order.buy_token),
                             },
                             FeePolicy::Volume { factor } => {
                                 competition::order::FeePolicy::Volume { factor }
@@ -227,9 +233,8 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    solver_fee: eth::U256,
-    #[serde_as(as = "serialize::U256")]
     user_fee: eth::U256,
+    protocol_fees: Vec<FeePolicy>,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,
@@ -250,7 +255,6 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    fee_policies: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -309,7 +313,44 @@ enum Class {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum FeePolicy {
     #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Quote {
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
+    pub fee: eth::U256,
+}
+
+impl Quote {
+    fn into_domain(
+        self,
+        sell_token: eth::H160,
+        buy_token: eth::H160,
+    ) -> competition::order::fees::Quote {
+        competition::order::fees::Quote {
+            sell: eth::Asset {
+                amount: self.sell_amount.into(),
+                token: sell_token.into(),
+            },
+            buy: eth::Asset {
+                amount: self.buy_amount.into(),
+                token: buy_token.into(),
+            },
+            fee: eth::Asset {
+                amount: self.fee.into(),
+                token: sell_token.into(),
+            },
+        }
+    }
 }

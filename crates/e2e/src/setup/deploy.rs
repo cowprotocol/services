@@ -10,12 +10,13 @@ use {
         UniswapV2Router02,
         WETH9,
     },
-    ethcontract::{Address, U256},
+    ethcontract::{Address, H256, U256},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
 
 pub struct Contracts {
+    pub chain_id: u64,
     pub balancer_vault: BalancerV2Vault,
     pub gp_settlement: GPv2Settlement,
     pub gp_authenticator: GPv2AllowListAuthentication,
@@ -36,6 +37,9 @@ impl Contracts {
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
 
         Self {
+            chain_id: network_id
+                .parse()
+                .expect("Couldn't parse network ID to u64"),
             balancer_vault: BalancerV2Vault::deployed(web3).await.unwrap(),
             gp_authenticator: GPv2AllowListAuthentication::deployed(web3).await.unwrap(),
             uniswap_v2_factory: UniswapV2Factory::deployed(web3).await.unwrap(),
@@ -138,6 +142,9 @@ impl Contracts {
         let hooks = deploy!(HooksTrampoline(gp_settlement.address()));
 
         Self {
+            chain_id: network_id
+                .parse()
+                .expect("Couldn't parse network ID to u64"),
             balancer_vault,
             gp_settlement,
             gp_authenticator,
@@ -148,6 +155,13 @@ impl Contracts {
             domain_separator,
             ethflow,
             hooks,
+        }
+    }
+
+    pub fn default_pool_code(&self) -> H256 {
+        match self.chain_id {
+            100 => H256(shared::sources::uniswap_v2::HONEYSWAP_INIT),
+            _ => H256(shared::sources::uniswap_v2::UNISWAP_INIT),
         }
     }
 }

@@ -1,15 +1,16 @@
 use {
     crate::domain::{eth, liquidity},
-    anyhow::anyhow,
+    anyhow::{anyhow, Context},
     contracts::IZeroEx,
     ethcontract::Bytes,
     primitive_types::{H160, H256, U256},
+    std::sync::Arc,
 };
 
 #[derive(Clone, Debug)]
 pub struct LimitOrder {
     pub order: Order,
-    pub zeroex: IZeroEx,
+    pub zeroex: Arc<IZeroEx>,
 }
 
 #[derive(Clone, Debug)]
@@ -26,15 +27,20 @@ pub struct Order {
     pub pool: H256,
     pub expiry: u64,
     pub salt: U256,
+    pub signature: ZeroExSignature,
+}
+
+#[derive(Clone, Debug)]
+pub struct ZeroExSignature {
+    pub r: H256,
+    pub s: H256,
+    pub v: u8,
     pub signature_type: u8,
-    pub signature_r: H256,
-    pub signature_s: H256,
-    pub signature_v: u8,
 }
 
 impl LimitOrder {
     pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
-        let method = self.zeroex.fill_or_kill_limit_order(
+        let method = self.zeroex.clone().fill_or_kill_limit_order(
             (
                 self.order.maker_token,
                 self.order.taker_token,
@@ -50,17 +56,23 @@ impl LimitOrder {
                 self.order.salt,
             ),
             (
-                self.order.signature_type,
-                self.order.signature_v,
-                Bytes(self.order.signature_r.0),
-                Bytes(self.order.signature_s.0),
+                self.order.signature.signature_type,
+                self.order.signature.v,
+                Bytes(self.order.signature.r.0),
+                Bytes(self.order.signature.s.0),
             ),
-            input.0.amount.0.as_u128(),
+            input
+                .0
+                .amount
+                .0
+                .try_into()
+                .map_err(|err: &str| anyhow!(err))
+                .context("executed amount does not fit into u128")?,
         );
         let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
 
         Ok(eth::Interaction {
-            target: self.zeroex.address().into(),
+            target: self.zeroex.clone().address().into(),
             value: 0.into(),
             call_data: calldata.0.into(),
         })

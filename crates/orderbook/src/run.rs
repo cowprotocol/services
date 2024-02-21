@@ -7,6 +7,7 @@ use {
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
+        quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
     clap::Parser,
@@ -25,14 +26,13 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
-        order_quoting::{self, OrderQuoter, QuoteHandler},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
+        order_quoting::{self, OrderQuoter},
+        order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
             factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
             native::NativePriceEstimating,
@@ -407,27 +407,10 @@ pub async fn run(args: Arguments) {
         )
         .unwrap();
 
-    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.order_quoting.fee_discount,
-        min_discounted_fee: args.order_quoting.min_discounted_fee,
-        fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: args
-            .order_quoting
-            .liquidity_order_owners
-            .iter()
-            .copied()
-            .collect(),
-    }) as Arc<dyn FeeSubsidizing>;
-
     let validity_configuration = OrderValidPeriodConfiguration {
         min: args.min_order_validity_period,
         max_market: args.max_order_validity_period,
         max_limit: args.max_limit_order_validity_period,
-    };
-    let signature_configuration = SignatureConfiguration {
-        eip1271: args.enable_eip1271_orders,
-        eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
-        presign: args.enable_presign_orders,
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
@@ -435,7 +418,6 @@ pub async fn run(args: Arguments) {
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
-            fee_subsidy.clone(),
             Arc::new(postgres.clone()),
             order_quoting::Validity {
                 eip1271_onchain_quote: chrono::Duration::from_std(
@@ -461,13 +443,8 @@ pub async fn run(args: Arguments) {
         OrderValidator::new(
             native_token.clone(),
             args.banned_users.iter().copied().collect(),
-            args.order_quoting
-                .liquidity_order_owners
-                .iter()
-                .copied()
-                .collect(),
             validity_configuration,
-            signature_configuration,
+            args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),
             hooks_contract,
             optimal_quoter.clone(),
@@ -478,10 +455,6 @@ pub async fn run(args: Arguments) {
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
             app_data_validator.clone(),
         )
-        .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
-        .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
-        .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments)
-        .with_custom_interactions(args.enable_custom_interactions)
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
     let ipfs = args
@@ -495,12 +468,17 @@ pub async fn run(args: Arguments) {
             )
         })
         .map(IpfsAppData::new);
+    let app_data = Arc::new(app_data::Registry::new(
+        app_data_validator,
+        postgres.clone(),
+        ipfs,
+    ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
         postgres.clone(),
         order_validator.clone(),
-        ipfs,
+        app_data.clone(),
     ));
 
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
@@ -509,12 +487,10 @@ pub async fn run(args: Arguments) {
     }
 
     check_database_connection(orderbook.as_ref()).await;
-    let quotes =
-        Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
-    let app_data = Arc::new(app_data::Registry::new(
-        app_data_validator,
-        postgres.clone(),
-    ));
+    let quotes = Arc::new(
+        QuoteHandler::new(order_validator, optimal_quoter, app_data.clone())
+            .with_fast_quoter(fast_quoter),
+    );
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(

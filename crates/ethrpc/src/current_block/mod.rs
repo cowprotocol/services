@@ -5,7 +5,7 @@ pub mod retriever;
 use {
     crate::Web3,
     anyhow::{anyhow, ensure, Context as _, Result},
-    primitive_types::H256,
+    primitive_types::{H256, U256},
     std::{sync::Arc, time::Duration},
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
@@ -52,6 +52,7 @@ pub struct BlockInfo {
     pub hash: H256,
     pub parent_hash: H256,
     pub timestamp: u64,
+    pub gas_limit: U256,
 }
 
 impl TryFrom<Block<H256>> for BlockInfo {
@@ -63,6 +64,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
             hash: value.hash.context("block missing hash")?,
             parent_hash: value.parent_hash,
             timestamp: value.timestamp.as_u64(),
+            gas_limit: value.gas_limit,
         })
     }
 }

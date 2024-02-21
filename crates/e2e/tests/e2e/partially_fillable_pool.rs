@@ -97,7 +97,7 @@ async fn test(web3: Web3) {
     let order = auction.orders.into_iter().next().unwrap();
     assert!(order.partially_fillable);
     assert!(matches!(order.class, OrderClass::Limit));
-    assert_eq!(order.solver_fee, 0.into());
+    assert_eq!(order.user_fee, 0.into());
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
@@ -117,7 +117,6 @@ async fn test(web3: Web3) {
             .contains(&buy_balance.as_u128())
     );
 
-    onchain.mint_blocks_past_reorg_threshold().await;
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();

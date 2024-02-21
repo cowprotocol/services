@@ -27,7 +27,7 @@ use {
 
 pub struct ZeroExLiquidity {
     pub api: Arc<dyn ZeroExApi>,
-    pub zeroex: IZeroEx,
+    pub zeroex: Arc<IZeroEx>,
     pub gpv2: GPv2Settlement,
     pub allowance_manager: Box<dyn AllowanceManaging>,
 }
@@ -39,7 +39,7 @@ impl ZeroExLiquidity {
         let allowance_manager = AllowanceManager::new(web3, gpv2.address());
         Self {
             api,
-            zeroex,
+            zeroex: Arc::new(zeroex),
             gpv2,
             allowance_manager: Box::new(allowance_manager),
         }
@@ -67,7 +67,7 @@ impl ZeroExLiquidity {
             buy_amount: record.metadata.remaining_fillable_taker_amount.into(),
             kind: OrderKind::Buy,
             partially_fillable: true,
-            scoring_fee: U256::zero(),
+            user_fee: U256::zero(),
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order: record.order,
                 zeroex: self.zeroex.clone(),
@@ -179,7 +179,7 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
 #[derive(Clone)]
 pub struct OrderSettlementHandler {
     pub order: Order,
-    pub zeroex: IZeroEx,
+    pub zeroex: Arc<IZeroEx>,
     pub allowances: Arc<Allowances>,
 }
 
@@ -356,7 +356,7 @@ pub mod tests {
     #[tokio::test]
     async fn interaction_encodes_approval_when_insufficient() {
         let sell_token = H160::from_low_u64_be(1);
-        let zeroex = contracts::dummy_contract!(IZeroEx, H160::default());
+        let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx, H160::default()));
         let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 99.into() });
         let order = Order {
             taker_amount: 100,
@@ -385,7 +385,7 @@ pub mod tests {
                 ZeroExInteraction {
                     order,
                     taker_token_fill_amount: 100,
-                    zeroex
+                    zeroex: zeroex.clone(),
                 }
                 .encode(),
             ]
@@ -396,7 +396,7 @@ pub mod tests {
     #[tokio::test]
     async fn interaction_encodes_no_approval_when_sufficient() {
         let sell_token = H160::from_low_u64_be(1);
-        let zeroex = contracts::dummy_contract!(IZeroEx, H160::default());
+        let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx, H160::default()));
         let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 100.into() });
         let order = Order {
             taker_amount: 100,
@@ -419,7 +419,7 @@ pub mod tests {
             [ZeroExInteraction {
                 order,
                 taker_token_fill_amount: 100,
-                zeroex
+                zeroex: zeroex.clone(),
             }
             .encode(),]
             .concat(),

@@ -47,19 +47,6 @@ price       | numeric | not null | the atoms of ETH that can be bought with 1 at
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`, `token`)
 
-### auction\_transaction
-
-Because the transaction hash of a given settlement depends on the gas parameters it ultimately gets submitted with onchain we can't know the hash before it got submitted. That's why we store the transaction sender (`tx_from`) and next nonce of the winning solver. With that information we can later associate the auction with the transaction that brought it onchain by cross-referencing the `tx_from` and `tx_nonce`.
-
- Coulmn      | Type   | Nullable | Details
--------------|--------|----------|--------
- auction\_id | bigint | not null | id of the auction
- tx\_from    | bytea  | not null | address of the solver account that won the auction
- tx\_nonce   | bigint | not null | nonce that will be used by the solver to settle the auction
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`)
-
 ### auctions (and auctions\_id\_seq counter)
 
 Contains only the current auction to decouple auction creation in the `autopilot` from serving it in the `orderbook`. A new auction replaces the current one and uses the value of the `auctions_id_seq` sequence and increase it to ensure that auction ids are unique and monotonically increasing.
@@ -187,7 +174,7 @@ Contains metainformation for trades, required for reward computations that canno
  auction\_id  | bigint  | not null | in which auction this trade was initiated
  reward       | double  | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
  surplus\_fee | numeric | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
- solver\_fee  | numeric | nullable | value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).
+ block\_number| bigint  | not null | block in which the order was executed
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)
@@ -248,6 +235,32 @@ Column                    | Type                         | Nullable | Details
 Indexes:
 - PRIMARY KEY: btree(`uid`)
 
+### fee_policies
+
+Contains all relevant data of fee policies applied to orders during auctions.
+
+Column                    | Type                         | Nullable | Details
+--------------------------|------------------------------|----------|--------
+ auction_id               | bigint                       | not null | unique identifier for the auction
+ order_uid                | bytea                        | not null | 56 bytes identifier linking to the order in the `orders` table
+ application_order        | serial                       | not null | the order in which the fee policies are inserted and applied
+ kind                     | [PolicyKind](#policykind)    | not null | type of the fee policy, defined in the PolicyKind enum
+ surplus_factor           | double precision             |          | percentage of the surplus for fee calculation; value is between 0 and 1
+ max_volume_factor        | double precision             |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
+ volume_factor            | double precision             |          | fee percentage of the order volume; value is between 0 and 1
+
+Indexes:
+- PRIMARY KEY: composite key(`auction_id`, `order_uid`, `application_order`)
+
+#### Enums
+
+- #### PolicyKind
+    Enum for the `kind` column in `fee_policies` table.
+
+    Values:
+    - `surplus`: The fee is based on the surplus achieved in the trade.
+    - `volume`: The fee is based on the volume of the order.
+
 ### presignature\_events
 
 Stores data of [`PreSignature`](https://github.com/cowprotocol/contracts/blob/5e5c28877c1690415548de7bc4b5502f87e7f222/src/contracts/mixins/GPv2Signing.sol#L59-L61) events. This is a mechanism where users can supply a signature for an order\_uid even before creating the original order in the backend. These events can give or revoke a signature.
@@ -301,10 +314,11 @@ During the solver competition solvers promise a solution of a certain quality. I
  gas\_used             | numeric | not null | amount of gas the settlement consumed
  effective\_gas\_price | numeric | not null | effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)
  surplus               | numeric | not null | amount of tokens users received more than their limit price converted to ETH
- fee                   | numeric | not null | total amount of `solver_fee` collected in the auction (see order\_execution.solver\_fee)
+ fee                   | numeric | not null | total amount of fees collected in the auction
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
+- settlements\_auction\_id: btree(`auction_id`)
 
 ### settlement\_scores
 

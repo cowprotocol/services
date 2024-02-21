@@ -118,7 +118,7 @@ impl Order {
                 buy: self.buy(),
                 sell: self.sell(),
                 side: self.side,
-                fee: Default::default(),
+                user_fee: Default::default(),
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
@@ -131,7 +131,7 @@ impl Order {
                     data: Default::default(),
                     signer: Default::default(),
                 },
-                fee_policies: Default::default(),
+                protocol_fees: Default::default(),
             }],
             [
                 auction::Token {

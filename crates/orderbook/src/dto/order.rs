@@ -23,9 +23,8 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub solver_fee: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
     pub user_fee: U256,
+    pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: OrderKind,
     pub receiver: Option<H160>,
@@ -42,7 +41,6 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,
-    pub fee_policies: Vec<FeePolicy>,
 }
 
 #[serde_as]
@@ -50,7 +48,7 @@ pub struct Order {
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }

@@ -1,5 +1,5 @@
 use {
-    super::TestAccount,
+    super::{colocation::start_legacy_solver, TestAccount},
     crate::setup::{
         colocation::{self, SolverEngine},
         wait_for_condition,
@@ -8,7 +8,7 @@ use {
     },
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::H256,
+    ethcontract::{H256, U256},
     model::{
         app_data::{AppDataDocument, AppDataHash},
         order::{Order, OrderCreation, OrderUid},
@@ -16,7 +16,7 @@ use {
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
-    reqwest::{Client, StatusCode},
+    reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
     std::time::Duration,
 };
@@ -30,6 +30,37 @@ pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
+
+pub struct ServicesBuilder {
+    timeout: Duration,
+}
+
+impl Default for ServicesBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ServicesBuilder {
+    pub fn new() -> Self {
+        Self {
+            timeout: Duration::from_secs(10),
+        }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub async fn build(self, contracts: &Contracts) -> Services {
+        Services {
+            contracts,
+            http: Client::builder().timeout(self.timeout).build().unwrap(),
+            db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+        }
+    }
+}
 
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
@@ -51,12 +82,18 @@ impl<'a> Services<'a> {
         }
     }
 
+    pub fn builder() -> ServicesBuilder {
+        ServicesBuilder::new()
+    }
+
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
-            "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
-            "--native-price-estimators=Baseline".to_string(),
+            "--price-estimators=None".to_string(),
+            "--native-price-estimators=test_quoter".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
+            "--trade-simulator=Web3".to_string(),
+            "--simulation-node-url=http://localhost:8545".to_string(),
         ]
         .into_iter()
     }
@@ -69,7 +106,7 @@ impl<'a> Services<'a> {
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
                 self.contracts.uniswap_v2_router.address(),
-                H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+                self.contracts.default_pool_code(),
             ),
             format!(
                 "--settlement-contract-address={:?}",
@@ -85,13 +122,19 @@ impl<'a> Services<'a> {
     }
 
     /// Start the autopilot service in a background task.
-    pub fn start_autopilot(&self, extra_args: Vec<String>) {
+    /// Optionally specify a solve deadline to use instead of the default 2s.
+    /// (note: specifying a larger solve deadline will impact test times as the
+    /// driver delays the submission of the solution until shortly before the
+    /// deadline in case the solution would start to revert at some point)
+    pub fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
+        let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
+
         let args = [
             "autopilot".to_string(),
             "--auction-update-interval=1s".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
-            "--solve-deadline=2s".to_string(),
+            format!("--solve-deadline={solve_deadline:?}"),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -107,15 +150,10 @@ impl<'a> Services<'a> {
     pub async fn start_api(&self, extra_args: Vec<String>) {
         let args = [
             "orderbook".to_string(),
-            "--enable-presign-orders=true".to_string(),
-            "--enable-eip1271-orders=true".to_string(),
-            "--enable-custom-interactions=true".to_string(),
-            "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--enable-eth-smart-contract-payments=true".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -140,11 +178,64 @@ impl<'a> Services<'a> {
                 endpoint: solver_endpoint,
             }],
         );
-        self.start_autopilot(vec![
-            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ]);
+        self.start_autopilot(
+            None,
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        );
         self.start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+    }
+
+    /// Starts a basic version of the protocol with a single legacy solver and
+    /// quoter.
+    pub async fn start_protocol_legacy_solver(
+        &self,
+        solver: TestAccount,
+        solver_endpoint: Option<Url>,
+        quoter_endpoint: Option<Url>,
+        chain_id: Option<U256>,
+    ) {
+        let external_solver_endpoint =
+            solver_endpoint.unwrap_or("http://localhost:8000/solve".parse().unwrap());
+        let colocated_solver_endpoint =
+            start_legacy_solver(external_solver_endpoint, chain_id).await;
+
+        let external_quoter_endpoint =
+            quoter_endpoint.unwrap_or("http://localhost:8000/quote".parse().unwrap());
+        let colocated_quoter_endpoint =
+            start_legacy_solver(external_quoter_endpoint, chain_id).await;
+
+        colocation::start_driver(
+            self.contracts,
+            vec![
+                SolverEngine {
+                    name: "test_solver".into(),
+                    account: solver.clone(),
+                    endpoint: colocated_solver_endpoint,
+                },
+                SolverEngine {
+                    name: "test_quoter".into(),
+                    account: solver,
+                    endpoint: colocated_quoter_endpoint,
+                },
+            ],
+        );
+        self.start_autopilot(
+            Some(Duration::from_secs(11)),
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
+                    .to_string(),
+            ],
+        );
+        self.start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
         ])
         .await;
     }
@@ -328,22 +419,21 @@ impl<'a> Services<'a> {
 
     pub async fn put_app_data_document(
         &self,
-        app_data: AppDataHash,
+        app_data: Option<AppDataHash>,
         document: AppDataDocument,
-    ) -> Result<(), (StatusCode, String)> {
-        let response = self
-            .http
-            .put(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
-            .json(&document)
-            .send()
-            .await
-            .unwrap();
+    ) -> Result<String, (StatusCode, String)> {
+        let url = match app_data {
+            Some(app_data) => format!("{API_HOST}/api/v1/app_data/{app_data:?}"),
+            None => format!("{API_HOST}/api/v1/app_data"),
+        };
+        let response = self.http.put(url).json(&document).send().await.unwrap();
 
         let status = response.status();
         let body = response.text().await.unwrap();
 
         if status.is_success() {
-            Ok(())
+            let body = serde_json::from_str::<String>(&body).unwrap();
+            Ok(body)
         } else {
             Err((status, body))
         }
@@ -351,9 +441,9 @@ impl<'a> Services<'a> {
 
     pub async fn put_app_data(
         &self,
-        app_data: AppDataHash,
+        app_data: Option<AppDataHash>,
         full_app_data: &str,
-    ) -> Result<(), (StatusCode, String)> {
+    ) -> Result<String, (StatusCode, String)> {
         self.put_app_data_document(
             app_data,
             AppDataDocument {
