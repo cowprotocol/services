@@ -3,6 +3,7 @@ pub mod current_block;
 pub mod dummy;
 pub mod extensions;
 pub mod http;
+pub mod instrumented;
 pub mod mock;
 pub mod multicall;
 
