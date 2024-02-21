@@ -171,7 +171,7 @@ api-key = {:?}
 http-timeout = "10s"
 
 [submission]
-gas-price-cap = 1000000000000
+gas-price-cap = "1000000000000"
 
 [[submission.mempool]]
 mempool = "public"
