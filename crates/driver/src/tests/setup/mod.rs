@@ -246,6 +246,13 @@ impl Order {
         Self { fee_policy, ..self }
     }
 
+    pub fn executed(self, executed: eth::U256) -> Self {
+        Self {
+            executed: Some(executed),
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
