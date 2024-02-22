@@ -57,6 +57,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
+    score: competition::SolverScore,
     pub solver: eth::Address,
 }
 
@@ -167,11 +168,13 @@ impl Settlement {
                     gas_amount: None,
                 }
             }
+            // This is a bit of a hack, but it's the best we can do for now.
             competition::SolverScore::Surplus(score) => http_solver::model::Score::Solver { score },
         };
 
         Ok(Self {
             inner: settlement,
+            score: solution.score().clone(),
             solver: solution.solver().address(),
         })
     }
@@ -212,9 +215,6 @@ impl Settlement {
                 success_probability,
                 ..
             } => competition::SolverScore::RiskAdjusted(success_probability),
-            http_solver::model::Score::Surplus { score } => {
-                competition::SolverScore::Surplus(score)
-            }
         }
     }
 
@@ -245,8 +245,12 @@ impl Settlement {
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
-        self.inner.merge(other.inner).map(|inner| Self {
+        let inner = self.inner.merge(other.inner)?;
+        let score = self.score.merge(other.score)?;
+
+        Ok(Self {
             inner,
+            score,
             solver: self.solver,
         })
     }
