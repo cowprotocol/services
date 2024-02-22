@@ -159,7 +159,7 @@ impl Settlement {
             );
         }
 
-        settlement.score = match solution.solver_score().clone() {
+        settlement.score = match solution.score().clone() {
             competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {

@@ -248,7 +248,7 @@ impl Settlement {
             competition::SolverScore::Surplus => {
                 let mut score: HashMap<eth::TokenAddress, eth::TokenAmount> = HashMap::new();
                 for solution in self.solutions.values() {
-                    for (token, amount) in &solution.score()? {
+                    for (token, amount) in &solution.scores()? {
                         if !amount.0.is_zero() {
                             score.entry(*token).or_default().0 += amount.0;
                         }
