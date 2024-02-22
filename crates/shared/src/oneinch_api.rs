@@ -402,8 +402,8 @@ pub struct Swap {
 }
 
 impl Interaction for Swap {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.tx.to, self.tx.value, Bytes(self.tx.data.clone()))]
+    fn encode(&self) -> EncodedInteraction {
+        (self.tx.to, self.tx.value, Bytes(self.tx.data.clone()))
     }
 }
 
