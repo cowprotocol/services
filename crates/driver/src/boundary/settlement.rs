@@ -73,7 +73,7 @@ impl Settlement {
 
         let settlement_contract = eth.contracts().settlement();
         let domain = order::signature::domain_separator(
-            eth.network().chain,
+            eth.network().id,
             settlement_contract.clone().address().into(),
         );
 

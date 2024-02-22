@@ -49,7 +49,7 @@ pub struct UniswapV2 {
 impl UniswapV2 {
     /// Returns the liquidity configuration for Uniswap V2.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v2(network: &eth::NetworkId) -> Option<Self> {
+    pub fn uniswap_v2(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV2Router02::raw_contract(), network)?,
             pool_code: hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f")
@@ -59,7 +59,7 @@ impl UniswapV2 {
     }
 
     /// Returns the liquidity configuration for SushiSwap.
-    pub fn sushi_swap(network: &eth::NetworkId) -> Option<Self> {
+    pub fn sushi_swap(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::SushiSwapRouter::raw_contract(), network)?,
             pool_code: hex!("e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303")
@@ -69,7 +69,7 @@ impl UniswapV2 {
     }
 
     /// Returns the liquidity configuration for Honeyswap.
-    pub fn honeyswap(network: &eth::NetworkId) -> Option<Self> {
+    pub fn honeyswap(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::HoneyswapRouter::raw_contract(), network)?,
             pool_code: hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93")
@@ -79,7 +79,7 @@ impl UniswapV2 {
     }
 
     /// Returns the liquidity configuration for Baoswap.
-    pub fn baoswap(network: &eth::NetworkId) -> Option<Self> {
+    pub fn baoswap(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::BaoswapRouter::raw_contract(), network)?,
             pool_code: hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d")
@@ -89,7 +89,7 @@ impl UniswapV2 {
     }
 
     /// Returns the liquidity configuration for PancakeSwap.
-    pub fn pancake_swap(network: &eth::NetworkId) -> Option<Self> {
+    pub fn pancake_swap(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::PancakeRouter::raw_contract(), network)?,
             pool_code: hex!("57224589c67f3f30a6b0d7a1b54cf3153ab84563bc609ef41dfb34f8b2974d2d")
@@ -100,7 +100,7 @@ impl UniswapV2 {
 
     /// Returns the liquidity configuration for liquidity sources only used on
     /// test networks.
-    pub fn testnet_uniswapv2(network: &eth::NetworkId) -> Option<Self> {
+    pub fn testnet_uniswapv2(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(
                 contracts::TestnetUniswapV2Router02::raw_contract(),
@@ -129,7 +129,7 @@ pub struct Swapr {
 impl Swapr {
     /// Returns the liquidity configuration for Swapr.
     #[allow(clippy::self_named_constructors)]
-    pub fn swapr(network: &eth::NetworkId) -> Option<Self> {
+    pub fn swapr(network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::SwaprRouter::raw_contract(), network)?,
             pool_code: hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776")
@@ -155,7 +155,7 @@ pub struct UniswapV3 {
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
+    pub fn uniswap_v3(graph_api_base_url: &Url, network: &eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
             max_pools_to_initialize: 100,
@@ -199,7 +199,7 @@ pub struct BalancerV2 {
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
-    pub fn balancer_v2(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
+    pub fn balancer_v2(graph_api_base_url: &Url, network: &eth::ChainId) -> Option<Self> {
         let factory_addresses =
             |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
                 contracts

@@ -25,8 +25,7 @@ pub struct Rpc {
 /// Network information for an Ethereum blockchain connection.
 #[derive(Clone, Debug)]
 pub struct Network {
-    pub id: eth::NetworkId,
-    pub chain: eth::ChainId,
+    pub id: eth::ChainId,
 }
 
 impl Rpc {
@@ -34,12 +33,11 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, Error> {
         let web3 = boundary::buffered_web3_client(url);
-        let id = web3.net().version().await?.into();
-        let chain = web3.eth().chain_id().await?.into();
+        let id = web3.eth().chain_id().await?.into();
 
         Ok(Self {
             web3,
-            network: Network { id, chain },
+            network: Network { id },
         })
     }
 

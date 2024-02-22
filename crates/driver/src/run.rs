@@ -110,7 +110,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
                 save: tenderly.save,
                 save_if_fails: tenderly.save_if_fails,
             },
-            eth.network().id.clone(),
+            eth.network().id,
             eth.to_owned(),
         ),
         Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(

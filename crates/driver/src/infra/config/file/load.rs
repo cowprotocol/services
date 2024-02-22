@@ -39,8 +39,8 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
     });
 
     assert_eq!(
-        config.chain_id.map(eth::ChainId).unwrap_or(network.chain),
-        network.chain,
+        config.chain_id.map(eth::ChainId).unwrap_or(network.id),
+        network.id,
         "The configured chain ID does not match connected Ethereum node"
     );
     let graph_api_base_url = config

@@ -31,6 +31,12 @@ pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChainId(pub U256);
 
+impl std::fmt::Display for ChainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl From<U256> for ChainId {
     fn from(value: U256) -> Self {
         Self(value)
@@ -40,30 +46,6 @@ impl From<U256> for ChainId {
 impl From<ChainId> for u64 {
     fn from(value: ChainId) -> Self {
         value.0.as_u64()
-    }
-}
-
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Debug, Clone)]
-pub struct NetworkId(pub String);
-
-impl NetworkId {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for NetworkId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl std::fmt::Display for NetworkId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
