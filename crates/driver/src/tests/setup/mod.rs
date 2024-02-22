@@ -120,6 +120,19 @@ pub struct LiquidityQuote {
     pub buy_amount: eth::U256,
 }
 
+impl LiquidityQuote {
+    pub fn buy_amount(self, buy_amount: eth::U256) -> Self {
+        Self { buy_amount, ..self }
+    }
+
+    pub fn sell_amount(self, sell_amount: eth::U256) -> Self {
+        Self {
+            sell_amount,
+            ..self
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Order {
     pub name: &'static str,
@@ -249,6 +262,13 @@ impl Order {
     pub fn executed(self, executed: eth::U256) -> Self {
         Self {
             executed: Some(executed),
+            ..self
+        }
+    }
+
+    pub fn sell_amount(self, sell_amount: eth::U256) -> Self {
+        Self {
+            sell_amount,
             ..self
         }
     }

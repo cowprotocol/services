@@ -17,15 +17,17 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_liquidity_quote();
+    let quote = ab_liquidity_quote()
+        .sell_amount(50u32.to_wei())
+        .buy_amount(40u32.to_wei());
     let pool = ab_pmm_pool(quote);
-    let executed_price = 40u32.to_wei();
     let order = ab_order()
         .kind(order::Kind::Limit)
+        .sell_amount(50u32.to_wei())
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
-        .executed(executed_price);
+        .executed(40u32.to_wei());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -52,15 +54,17 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_liquidity_quote();
+    let quote = ab_liquidity_quote()
+        .sell_amount(50u32.to_wei())
+        .buy_amount(40u32.to_wei());
     let pool = ab_pmm_pool(quote);
-    let executed_price = 40u32.to_wei();
     let order = ab_order()
         .kind(order::Kind::Limit)
+        .sell_amount(50u32.to_wei())
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
-        .executed(executed_price);
+        .executed(40u32.to_wei());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -87,15 +91,17 @@ async fn surplus_protocol_fee_buy_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_liquidity_quote();
+    let quote = ab_liquidity_quote()
+        .sell_amount(50u32.to_wei())
+        .buy_amount(40u32.to_wei());
     let pool = ab_pmm_pool(quote);
-    let executed_price = 40u32.to_wei();
     let order = ab_order()
         .kind(order::Kind::Limit)
+        .sell_amount(50u32.to_wei())
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
-        .executed(executed_price);
+        .executed(40u32.to_wei());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -122,15 +128,17 @@ async fn surplus_protocol_fee_sell_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_liquidity_quote();
+    let quote = ab_liquidity_quote()
+        .sell_amount(50u32.to_wei())
+        .buy_amount(40u32.to_wei());
     let pool = ab_pmm_pool(quote);
-    let executed_price = 40u32.to_wei();
     let order = ab_order()
         .kind(order::Kind::Limit)
+        .sell_amount(50u32.to_wei())
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
-        .executed(executed_price);
+        .executed(40u32.to_wei());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -153,15 +161,17 @@ async fn volume_protocol_fee_buy_order() {
     let side = order::Side::Buy;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_liquidity_quote();
+    let quote = ab_liquidity_quote()
+        .sell_amount(50u32.to_wei())
+        .buy_amount(40u32.to_wei());
     let pool = ab_pmm_pool(quote);
-    let executed_price = 40u32.to_wei();
     let order = ab_order()
         .kind(order::Kind::Limit)
+        .sell_amount(50u32.to_wei())
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
-        .executed(executed_price);
+        .executed(40u32.to_wei());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -184,11 +194,14 @@ async fn volume_protocol_fee_sell_order() {
     let side = order::Side::Sell;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
-    let quote = ab_liquidity_quote();
+    let quote = ab_liquidity_quote()
+        .sell_amount(50u32.to_wei())
+        .buy_amount(40u32.to_wei());
     let pool = ab_pmm_pool(quote);
     let executed_price = 40u32.to_wei();
     let order = ab_order()
         .kind(order::Kind::Limit)
+        .sell_amount(50u32.to_wei())
         .side(side)
         .solver_fee(Some(10u32.to_wei()))
         .fee_policy(fee_policy)
