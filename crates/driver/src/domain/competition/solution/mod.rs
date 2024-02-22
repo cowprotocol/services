@@ -101,19 +101,17 @@ impl Solution {
     pub fn score(&self) -> Result<HashMap<eth::TokenAddress, eth::TokenAmount>, SolutionError> {
         let mut score = HashMap::new();
         for trade in self.trades.iter() {
-            match trade.score(&self.prices, self.weth) {
-                Ok((surplus, protocol_fee)) => {
-                    score
-                        .entry(surplus.token)
-                        .or_insert(eth::TokenAmount(eth::U256::zero()))
-                        .0 += surplus.amount.0;
-                    score
-                        .entry(protocol_fee.token)
-                        .or_insert(eth::TokenAmount(eth::U256::zero()))
-                        .0 += protocol_fee.amount.0;
-                }
-                Err(err) => return Err(SolutionError::ProtocolFee(err)),
-            };
+            let surplus = trade.surplus(&self.prices, self.weth)?;
+            score
+                .entry(surplus.token)
+                .or_insert(eth::TokenAmount(0.into()))
+                .0 += surplus.amount.0;
+
+            let protocol_fee = trade.observed_protocol_fee(&self.prices, self.weth)?;
+            score
+                .entry(protocol_fee.token)
+                .or_insert(eth::TokenAmount(0.into()))
+                .0 += protocol_fee.amount.0;
         }
         Ok(score)
     }

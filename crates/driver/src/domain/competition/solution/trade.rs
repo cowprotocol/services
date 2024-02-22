@@ -18,13 +18,11 @@ pub enum Trade {
 }
 
 impl Trade {
-    /// Score defined as surplus + protocol fees.
-    pub fn score(
+    pub fn surplus(
         &self,
         prices: &HashMap<eth::TokenAddress, eth::U256>,
         weth: eth::WethAddress,
-    ) -> Result<(eth::Asset, eth::Asset), super::fee::Error> {
-        // fix error handling
+    ) -> Result<eth::Asset, Error> {
         match self {
             Self::Fulfillment(fulfillment) => {
                 let prices = ClearingPrices {
@@ -32,21 +30,36 @@ impl Trade {
                     buy: prices[&fulfillment.order().buy.token.wrap(weth)],
                 };
 
-                let surplus = fulfillment.surplus(prices)?;
-                let protocol_fee = fulfillment.observed_protocol_fee(prices)?;
-                Ok((surplus, protocol_fee))
+                fulfillment.surplus(prices)
             }
-            // JIT orders have a zero score
-            Self::Jit(jit) => Ok((
-                eth::Asset {
-                    token: jit.order().sell.token,
-                    amount: 0.into(),
-                },
-                eth::Asset {
-                    token: jit.order().sell.token,
-                    amount: 0.into(),
-                },
-            )),
+            // JIT orders have a zero surplus
+            Self::Jit(jit) => Ok(eth::Asset {
+                token: jit.order().sell.token,
+                amount: 0.into(),
+            }),
+        }
+    }
+
+    /// Returns the already applied protocol fee, in the sell token.
+    pub fn observed_protocol_fee(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+        weth: eth::WethAddress,
+    ) -> Result<eth::Asset, super::fee::Error> {
+        match self {
+            Self::Fulfillment(fulfillment) => {
+                let prices = ClearingPrices {
+                    sell: prices[&fulfillment.order().sell.token.wrap(weth)],
+                    buy: prices[&fulfillment.order().buy.token.wrap(weth)],
+                };
+
+                fulfillment.observed_protocol_fee(prices)
+            }
+            // JIT orders have a zero protocol fee
+            Self::Jit(jit) => Ok(eth::Asset {
+                token: jit.order().sell.token,
+                amount: 0.into(),
+            }),
         }
     }
 }
