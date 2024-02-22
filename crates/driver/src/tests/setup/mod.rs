@@ -579,7 +579,7 @@ pub fn ab_pool() -> Pool {
     }
 }
 
-pub fn ab_pmm_pool(quote: LiquidityQuote) -> Pool {
+pub fn ab_adjusted_pool(quote: LiquidityQuote) -> Pool {
     Pool {
         liquidity_quote: Some(quote),
         ..ab_pool()

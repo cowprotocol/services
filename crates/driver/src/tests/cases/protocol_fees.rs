@@ -3,9 +3,9 @@ use crate::{
     tests::{
         self,
         setup::{
+            ab_adjusted_pool,
             ab_liquidity_quote,
             ab_order,
-            ab_pmm_pool,
             ab_solution,
             ExpectedOrder,
             FeePolicy,
@@ -23,7 +23,7 @@ async fn protocol_fee_test_case(
     let quote = ab_liquidity_quote()
         .sell_amount(50000000000000000000u128.into())
         .buy_amount(40000000000000000000u128.into());
-    let pool = ab_pmm_pool(quote);
+    let pool = ab_adjusted_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
         .sell_amount(50000000000000000000u128.into())
