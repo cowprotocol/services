@@ -14,16 +14,16 @@ use crate::{
     },
 };
 
-pub struct TestCase {
-    pub order_side: order::Side,
-    pub fee_policy: FeePolicy,
-    pub order_sell_amount: eth::U256,
-    pub solver_fee: Option<eth::U256>,
-    pub quote_sell_amount: eth::U256,
-    pub quote_buy_amount: eth::U256,
-    pub executed: eth::U256,
-    pub executed_sell_amount: eth::U256,
-    pub executed_buy_amount: eth::U256,
+struct TestCase {
+    order_side: order::Side,
+    fee_policy: FeePolicy,
+    order_sell_amount: eth::U256,
+    solver_fee: Option<eth::U256>,
+    quote_sell_amount: eth::U256,
+    quote_buy_amount: eth::U256,
+    executed: eth::U256,
+    executed_sell_amount: eth::U256,
+    executed_buy_amount: eth::U256,
 }
 
 async fn protocol_fee_test_case(test_case: TestCase) {
@@ -61,14 +61,13 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_buy_order_not_capped() {
-    let side = order::Side::Buy;
     let fee_policy = FeePolicy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        order_side: side,
+        order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
         solver_fee: Some(10000000000000000000u128.into()),
@@ -85,14 +84,13 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_sell_order_not_capped() {
-    let side = order::Side::Sell;
     let fee_policy = FeePolicy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        order_side: side,
+        order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
         solver_fee: Some(10000000000000000000u128.into()),
@@ -109,14 +107,13 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_buy_order_capped() {
-    let side = order::Side::Buy;
     let fee_policy = FeePolicy::Surplus {
         factor: 0.5,
         // low enough so we get capped by volume fee
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        order_side: side,
+        order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
         solver_fee: Some(10000000000000000000u128.into()),
@@ -133,14 +130,13 @@ async fn surplus_protocol_fee_buy_order_capped() {
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_sell_order_capped() {
-    let side = order::Side::Sell;
     let fee_policy = FeePolicy::Surplus {
         factor: 0.5,
         // low enough so we get capped by volume fee
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        order_side: side,
+        order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
         solver_fee: Some(10000000000000000000u128.into()),
@@ -157,10 +153,9 @@ async fn surplus_protocol_fee_sell_order_capped() {
 #[tokio::test]
 #[ignore]
 async fn volume_protocol_fee_buy_order() {
-    let side = order::Side::Buy;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_case = TestCase {
-        order_side: side,
+        order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
         solver_fee: Some(10000000000000000000u128.into()),
@@ -177,10 +172,9 @@ async fn volume_protocol_fee_buy_order() {
 #[tokio::test]
 #[ignore]
 async fn volume_protocol_fee_sell_order() {
-    let side = order::Side::Sell;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_case = TestCase {
-        order_side: side,
+        order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
         solver_fee: Some(10000000000000000000u128.into()),
