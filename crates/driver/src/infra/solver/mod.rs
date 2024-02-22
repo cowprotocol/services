@@ -17,7 +17,8 @@ use {
     thiserror::Error,
     tracing::Instrument,
     reqwest::header::HeaderName,
-    std::collections::HashMap
+    std::collections::HashMap,
+    anyhow::{Result},
 };
 
 pub mod dto;
@@ -104,7 +105,7 @@ pub struct Config {
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum) -> Self {
+    pub fn new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -113,22 +114,20 @@ impl Solver {
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
 
         for (key, val) in config.request_headers.iter() {
-            if let Ok(header_name) = HeaderName::try_from(key) {
-                headers.insert(header_name, val.parse().unwrap());
-            }
-            else {
-                panic!("Header Name: {:?} could not be parsed", key);
-            }
+            let header_name = HeaderName::try_from(key)?;
+            headers.insert(header_name, val.parse()?);
         }
 
-        Self {
-            client: reqwest::ClientBuilder::new()
-                .default_headers(headers)
-                .build()
-                .unwrap(),
-            config,
-            eth,
-        }
+        Ok(
+            Self {
+                client: reqwest::ClientBuilder::new()
+                    .default_headers(headers)
+                    .build()
+                    .unwrap(),
+                config,
+                eth,
+            }
+        )
     }
 
     pub fn name(&self) -> &Name {

@@ -150,7 +150,12 @@ fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
     config
         .solvers
         .iter()
-        .map(|config| Solver::new(config.clone(), eth.clone()))
+        .map(|config| {
+            match Solver::new(config.clone(), eth.clone()) {
+                Ok(solver) => solver,
+                Err(err) => panic!("Could Not initialize solver: {:?}", err)
+            }}
+        )
         .collect()
 }
 

@@ -6,7 +6,7 @@ relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
 
 [solver.request-headers]
-fake-header-one = "FAKE-HEADER-VALUE" #The authorization token which must be provided on each request
+fake-header-one = "FAKE-HEADER-VALUE" # For instance an authorization token which must be provided on each request
 
 # [[solver]] # And so on, specify as many solvers as needed
 # name = "othersolver"
