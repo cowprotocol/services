@@ -1,5 +1,5 @@
 use crate::{
-    domain::competition::order,
+    domain::{competition::order, eth},
     tests::{
         self,
         setup::{
@@ -14,23 +14,38 @@ use crate::{
     },
 };
 
-async fn protocol_fee_test_case(
-    side: order::Side,
-    fee_policy: FeePolicy,
-    expected_amounts: ExecutedOrderAmounts,
-) {
-    let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
+pub struct TestCase {
+    pub order_side: order::Side,
+    pub fee_policy: FeePolicy,
+    pub order_sell_amount: eth::U256,
+    pub solver_fee: Option<eth::U256>,
+    pub quote_sell_amount: eth::U256,
+    pub quote_buy_amount: eth::U256,
+    pub executed_price: eth::U256,
+    pub executed_sell_amount: eth::U256,
+    pub executed_buy_amount: eth::U256,
+}
+
+async fn protocol_fee_test_case(test_case: TestCase) {
+    let test_name = format!(
+        "Protocol Fee: {:?} {:?}",
+        test_case.order_side, test_case.fee_policy
+    );
     let quote = ab_liquidity_quote()
-        .sell_amount(50000000000000000000u128.into())
-        .buy_amount(40000000000000000000u128.into());
+        .sell_amount(test_case.quote_sell_amount)
+        .buy_amount(test_case.quote_buy_amount);
     let pool = ab_adjusted_pool(quote);
+    let expected_amounts = ExecutedOrderAmounts {
+        sell: test_case.executed_sell_amount,
+        buy: test_case.executed_buy_amount,
+    };
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50000000000000000000u128.into())
-        .side(side)
-        .solver_fee(Some(10000000000000000000u128.into()))
-        .fee_policy(fee_policy)
-        .executed_price(40000000000000000000u128.into())
+        .sell_amount(test_case.order_sell_amount)
+        .side(test_case.order_side)
+        .solver_fee(test_case.solver_fee)
+        .fee_policy(test_case.fee_policy)
+        .executed_price(test_case.executed_price)
         .executed_amounts(expected_amounts);
     let test: Test = tests::setup()
         .name(test_name)
@@ -52,12 +67,19 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
-    let expected = ExecutedOrderAmounts {
-        sell: 100000000000000000000u128.into(),
-        buy: 40000000000000000000u128.into(),
+    let test_case = TestCase {
+        order_side: side,
+        fee_policy,
+        order_sell_amount: 50000000000000000000u128.into(),
+        solver_fee: Some(10000000000000000000u128.into()),
+        quote_sell_amount: 50000000000000000000u128.into(),
+        quote_buy_amount: 40000000000000000000u128.into(),
+        executed_price: 40000000000000000000u128.into(),
+        executed_sell_amount: 100000000000000000000u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
-    protocol_fee_test_case(side, fee_policy, expected).await;
+    protocol_fee_test_case(test_case).await;
 }
 
 #[tokio::test]
@@ -69,12 +91,19 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
-    let expected = ExecutedOrderAmounts {
-        sell: 50000000000000000000u128.into(),
-        buy: 20000000002000000000u128.into(),
+    let test_case = TestCase {
+        order_side: side,
+        fee_policy,
+        order_sell_amount: 50000000000000000000u128.into(),
+        solver_fee: Some(10000000000000000000u128.into()),
+        quote_sell_amount: 50000000000000000000u128.into(),
+        quote_buy_amount: 40000000000000000000u128.into(),
+        executed_price: 40000000000000000000u128.into(),
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 20000000002000000000u128.into(),
     };
 
-    protocol_fee_test_case(side, fee_policy, expected).await;
+    protocol_fee_test_case(test_case).await;
 }
 
 #[tokio::test]
@@ -86,12 +115,19 @@ async fn surplus_protocol_fee_buy_order_capped() {
         // low enough so we get capped by volume fee
         max_volume_factor: 0.1,
     };
-    let expected = ExecutedOrderAmounts {
-        sell: 55000000000000000000u128.into(),
-        buy: 40000000000000000000u128.into(),
+    let test_case = TestCase {
+        order_side: side,
+        fee_policy,
+        order_sell_amount: 50000000000000000000u128.into(),
+        solver_fee: Some(10000000000000000000u128.into()),
+        quote_sell_amount: 50000000000000000000u128.into(),
+        quote_buy_amount: 40000000000000000000u128.into(),
+        executed_price: 40000000000000000000u128.into(),
+        executed_sell_amount: 55000000000000000000u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
-    protocol_fee_test_case(side, fee_policy, expected).await;
+    protocol_fee_test_case(test_case).await;
 }
 
 #[tokio::test]
@@ -103,12 +139,19 @@ async fn surplus_protocol_fee_sell_order_capped() {
         // low enough so we get capped by volume fee
         max_volume_factor: 0.1,
     };
-    let expected = ExecutedOrderAmounts {
-        sell: 50000000000000000000u128.into(),
-        buy: 35000000000000000000u128.into(),
+    let test_case = TestCase {
+        order_side: side,
+        fee_policy,
+        order_sell_amount: 50000000000000000000u128.into(),
+        solver_fee: Some(10000000000000000000u128.into()),
+        quote_sell_amount: 50000000000000000000u128.into(),
+        quote_buy_amount: 40000000000000000000u128.into(),
+        executed_price: 40000000000000000000u128.into(),
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 35000000000000000000u128.into(),
     };
 
-    protocol_fee_test_case(side, fee_policy, expected).await;
+    protocol_fee_test_case(test_case).await;
 }
 
 #[tokio::test]
@@ -116,12 +159,19 @@ async fn surplus_protocol_fee_sell_order_capped() {
 async fn volume_protocol_fee_buy_order() {
     let side = order::Side::Buy;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
-    let expected = ExecutedOrderAmounts {
-        sell: 75000000000000000000u128.into(),
-        buy: 40000000000000000000u128.into(),
+    let test_case = TestCase {
+        order_side: side,
+        fee_policy,
+        order_sell_amount: 50000000000000000000u128.into(),
+        solver_fee: Some(10000000000000000000u128.into()),
+        quote_sell_amount: 50000000000000000000u128.into(),
+        quote_buy_amount: 40000000000000000000u128.into(),
+        executed_price: 40000000000000000000u128.into(),
+        executed_sell_amount: 75000000000000000000u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
-    protocol_fee_test_case(side, fee_policy, expected).await;
+    protocol_fee_test_case(test_case).await;
 }
 
 #[tokio::test]
@@ -129,10 +179,17 @@ async fn volume_protocol_fee_buy_order() {
 async fn volume_protocol_fee_sell_order() {
     let side = order::Side::Sell;
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
-    let expected = ExecutedOrderAmounts {
-        sell: 50000000000000000000u128.into(),
-        buy: 15000000000000000000u128.into(),
+    let test_case = TestCase {
+        order_side: side,
+        fee_policy,
+        order_sell_amount: 50000000000000000000u128.into(),
+        solver_fee: Some(10000000000000000000u128.into()),
+        quote_sell_amount: 50000000000000000000u128.into(),
+        quote_buy_amount: 40000000000000000000u128.into(),
+        executed_price: 40000000000000000000u128.into(),
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 15000000000000000000u128.into(),
     };
 
-    protocol_fee_test_case(side, fee_policy, expected).await;
+    protocol_fee_test_case(test_case).await;
 }
