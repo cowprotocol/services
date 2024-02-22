@@ -63,14 +63,36 @@ impl Solution {
         };
 
         // Check that the solution includes clearing prices for all user trades.
-        if solution.user_trades().all(|trade| {
-            solution.clearing_price(trade.order().sell.token).is_some()
-                && solution.clearing_price(trade.order().buy.token).is_some()
+        if solution.user_trades().any(|trade| {
+            solution.clearing_price(trade.order().sell.token).is_none()
+                || solution.clearing_price(trade.order().buy.token).is_none()
         }) {
-            Ok(solution.with_protocol_fees()?)
-        } else {
-            Err(SolutionError::InvalidClearingPrices)
+            return Err(SolutionError::InvalidClearingPrices);
         }
+
+        // Apply protocol fees
+        let mut trades = Vec::with_capacity(solution.trades.len());
+        for trade in solution.trades {
+            match &trade {
+                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                    order::Kind::Market | order::Kind::Limit { .. } => {
+                        let prices = ClearingPrices {
+                            sell: solution.prices
+                                [&fulfillment.order().sell.token.wrap(solution.weth)],
+                            buy: solution.prices
+                                [&fulfillment.order().buy.token.wrap(solution.weth)],
+                        };
+                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        trades.push(Trade::Fulfillment(fulfillment))
+                    }
+                    order::Kind::Liquidity => {
+                        trades.push(trade);
+                    }
+                },
+                Trade::Jit(_) => trades.push(trade),
+            }
+        }
+        Ok(Self { trades, ..solution })
     }
 
     /// The ID of this solution.
@@ -176,29 +198,6 @@ impl Solution {
         simulator: &Simulator,
     ) -> Result<Settlement, Error> {
         Settlement::encode(self, auction, eth, simulator).await
-    }
-
-    pub fn with_protocol_fees(self) -> Result<Self, fee::Error> {
-        let mut trades = Vec::with_capacity(self.trades.len());
-        for trade in self.trades {
-            match &trade {
-                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                    order::Kind::Market | order::Kind::Limit { .. } => {
-                        let prices = ClearingPrices {
-                            sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
-                            buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
-                        };
-                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
-                        trades.push(Trade::Fulfillment(fulfillment))
-                    }
-                    order::Kind::Liquidity => {
-                        trades.push(trade);
-                    }
-                },
-                Trade::Jit(_) => trades.push(trade),
-            }
-        }
-        Ok(Self { trades, ..self })
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
