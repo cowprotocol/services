@@ -157,8 +157,9 @@ pub struct Order {
     pub surplus_factor: eth::U256,
     /// Override the executed amount of the order. Useful for testing liquidity
     /// orders. Otherwise [`execution_diff`] is probably more suitable.
-    pub executed: Option<eth::U256>,
-
+    pub executed_price: Option<eth::U256>,
+    /// Provides explicit expected order executed amounts.
+    pub executed_amounts: Option<ExecutedOrderAmounts>,
     /// Should this order be filtered out before being sent to the solver?
     pub filtered: bool,
     /// Should the trader account be funded with enough tokens to place this
@@ -258,9 +259,16 @@ impl Order {
         Self { fee_policy, ..self }
     }
 
-    pub fn executed(self, executed: eth::U256) -> Self {
+    pub fn executed_price(self, executed_price: eth::U256) -> Self {
         Self {
-            executed: Some(executed),
+            executed_price: Some(executed_price),
+            ..self
+        }
+    }
+
+    pub fn executed_amounts(self, executed_amounts: ExecutedOrderAmounts) -> Self {
+        Self {
+            executed_amounts: Some(executed_amounts),
             ..self
         }
     }
@@ -295,7 +303,8 @@ impl Default for Order {
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
-            executed: Default::default(),
+            executed_price: Default::default(),
+            executed_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
             fee_policy: FeePolicy::Surplus {
@@ -1089,7 +1098,7 @@ impl<'a> SolveOk<'a> {
     }
 
     /// Check that the solution contains the expected orders.
-    pub fn orders(self, order_names: &[&str]) -> Self {
+    pub fn orders(self, orders: &[Order]) -> Self {
         let solution = self.solution();
         assert!(solution.get("orders").is_some());
         let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
@@ -1097,50 +1106,15 @@ impl<'a> SolveOk<'a> {
         )
         .unwrap();
 
-        for expected in order_names.iter().map(|name| {
-            self.fulfillments
-                .iter()
-                .find(|f| f.quoted_order.order.name == *name)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "unexpected orders {order_names:?}: fulfillment not found in {:?}",
-                        self.fulfillments,
-                    )
-                })
-        }) {
-            let uid = expected.quoted_order.order_uid(self.blockchain);
-            let trade = trades
-                .get(&uid.to_string())
-                .expect("Didn't find expected trade in solution");
-            let u256 = |value: &serde_json::Value| {
-                eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
-            };
-            assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
-            assert!(
-                u256(trade.get("sellAmount").unwrap())
-                    == expected.quoted_order.sell + expected.quoted_order.order.user_fee
-            );
-        }
-        self
-    }
-
-    pub fn expected_orders(self, expected_orders: &[ExpectedOrder]) -> Self {
-        let solution = self.solution();
-        assert!(solution.get("orders").is_some());
-        let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
-            solution.get("orders").unwrap().clone(),
-        )
-        .unwrap();
-
-        for (expected, fulfillment) in expected_orders.iter().map(|expected_order| {
+        for (expected, fulfillment) in orders.iter().map(|expected_order| {
             let fulfillment = self
                 .fulfillments
                 .iter()
                 .find(|f| f.quoted_order.order.name == expected_order.name)
                 .unwrap_or_else(|| {
                     panic!(
-                        "unexpected orders {expected_orders:?}: fulfillment not found in {:?}",
-                        self.fulfillments,
+                        "unexpected order {:?}: fulfillment not found in {:?}",
+                        expected_order.name, self.fulfillments,
                     )
                 });
             (expected_order, fulfillment)
@@ -1152,8 +1126,16 @@ impl<'a> SolveOk<'a> {
             let u256 = |value: &serde_json::Value| {
                 eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
             };
-            assert!(u256(trade.get("buyAmount").unwrap()) == expected.executed_buy_amount);
-            assert!(u256(trade.get("sellAmount").unwrap()) == expected.executed_sell_amount);
+
+            let (expected_sell, expected_buy) = match &expected.executed_amounts {
+                Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
+                None => (
+                    fulfillment.quoted_order.sell + fulfillment.quoted_order.order.user_fee,
+                    fulfillment.quoted_order.buy,
+                ),
+            };
+            assert!(u256(trade.get("sellAmount").unwrap()) == expected_sell);
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected_buy);
         }
         self
     }
@@ -1173,11 +1155,10 @@ impl Reveal {
     }
 }
 
-#[derive(Debug)]
-pub struct ExpectedOrder {
-    pub name: &'static str,
-    pub executed_sell_amount: eth::U256,
-    pub executed_buy_amount: eth::U256,
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExecutedOrderAmounts {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
 }
 
 pub struct RevealOk {
