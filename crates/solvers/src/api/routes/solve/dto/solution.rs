@@ -127,6 +127,7 @@ impl Solutions {
                         solution::Score::RiskAdjusted(score) => Score::RiskAdjusted {
                             success_probability: score.0,
                         },
+                        solution::Score::Surplus => Score::Surplus,
                     },
                 })
                 .collect(),
@@ -319,5 +320,8 @@ pub enum Score {
         score: U256,
     },
     #[serde(rename_all = "camelCase")]
-    RiskAdjusted { success_probability: f64 },
+    RiskAdjusted {
+        success_probability: f64,
+    },
+    Surplus,
 }

@@ -188,13 +188,19 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    match solution.score {
-                        Score::Solver { score } => {
-                            competition::solution::SolverScore::Solver(score)
+                    if auction.cip38_activated() {
+                        competition::solution::SolverScore::Surplus
+                    } else {
+                        match solution.score {
+                            Score::Solver { score } => {
+                                competition::solution::SolverScore::Solver(score)
+                            }
+                            Score::RiskAdjusted {
+                                success_probability,
+                            } => competition::solution::SolverScore::RiskAdjusted(
+                                success_probability,
+                            ),
                         }
-                        Score::RiskAdjusted {
-                            success_probability,
-                        } => competition::solution::SolverScore::RiskAdjusted(success_probability),
                     },
                     weth,
                 )

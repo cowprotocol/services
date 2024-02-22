@@ -153,6 +153,7 @@ impl Auction {
             time::Deadline::new(self.deadline, timeouts),
             eth,
             self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
+            false, // todo from config
         )
         .await
         .map_err(Into::into)

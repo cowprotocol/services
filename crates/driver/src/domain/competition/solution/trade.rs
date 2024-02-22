@@ -18,12 +18,13 @@ pub enum Trade {
 }
 
 impl Trade {
-    /// Surplus denominated in the surplus token.
-    pub fn surplus(
+    /// Score defined as surplus + protocol fees.
+    pub fn score(
         &self,
         prices: &HashMap<eth::TokenAddress, eth::U256>,
         weth: eth::WethAddress,
-    ) -> Result<eth::Asset, Error> {
+    ) -> Result<(eth::Asset, eth::Asset), super::fee::Error> {
+        // fix error handling
         match self {
             Self::Fulfillment(fulfillment) => {
                 let prices = ClearingPrices {
@@ -31,13 +32,21 @@ impl Trade {
                     buy: prices[&fulfillment.order().buy.token.wrap(weth)],
                 };
 
-                fulfillment.surplus(prices)
+                let surplus = fulfillment.surplus(prices)?;
+                let protocol_fee = fulfillment.observed_protocol_fee(prices)?;
+                Ok((surplus, protocol_fee))
             }
             // JIT orders have a zero score
-            Self::Jit(jit) => Ok(eth::Asset {
-                token: jit.order().sell.token,
-                amount: 0.into(),
-            }),
+            Self::Jit(jit) => Ok((
+                eth::Asset {
+                    token: jit.order().sell.token,
+                    amount: 0.into(),
+                },
+                eth::Asset {
+                    token: jit.order().sell.token,
+                    amount: 0.into(),
+                },
+            )),
         }
     }
 }

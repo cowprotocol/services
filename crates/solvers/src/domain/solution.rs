@@ -412,6 +412,9 @@ pub enum Score {
     /// Instead, the score should be computed by the protocol given the success
     /// probability.
     RiskAdjusted(SuccessProbability),
+    /// The score should be calculated based on the surplus of the solution.
+    /// This is calculated in the driver.
+    Surplus,
 }
 
 impl Default for Score {

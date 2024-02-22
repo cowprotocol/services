@@ -8,7 +8,6 @@ use {
                     self,
                     risk::{ObjectiveValue, SuccessProbability},
                 },
-                solution,
             },
             eth,
         },
@@ -19,6 +18,7 @@ use {
     score::Score,
     shared::external_prices::ExternalPrices,
     solver::settlement_rater::ScoreCalculator,
+    std::collections::HashMap,
 };
 
 pub fn score(
@@ -40,7 +40,7 @@ pub fn score(
 /// Converts a solver provided score denominated in surplus tokens, to a
 /// competition score denominated in native token.
 pub fn to_native_score(
-    score: solution::Score,
+    score: HashMap<eth::TokenAddress, eth::TokenAmount>,
     eth: &Ethereum,
     auction: &competition::Auction,
 ) -> Result<competition::Score, score::Error> {
@@ -58,7 +58,6 @@ pub fn to_native_score(
     )?;
 
     let native_score = score
-        .surplus
         .iter()
         .filter_map(|(token, amount)| {
             let native_amount =

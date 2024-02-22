@@ -74,45 +74,6 @@ impl Fulfillment {
         Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
-    /// Removes the applied protocol fee from the fulfillment creating a new
-    /// one.
-    pub fn without_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
-        let protocol_fee = self.observed_protocol_fee(prices)?;
-        println!("protocol_fee: {:?}", protocol_fee);
-
-        // Decrease the fee by the protocol fee
-        let fee = match self.surplus_fee() {
-            None => {
-                if !protocol_fee.is_zero() {
-                    return Err(trade::Error::ProtocolFeeOnStaticOrder.into());
-                }
-                Fee::Static
-            }
-            Some(fee) => Fee::Dynamic(
-                (fee.0
-                    .checked_sub(protocol_fee)
-                    .ok_or(trade::Error::Overflow)?)
-                .into(),
-            ),
-        };
-
-        // Increase the executed amount by the protocol fee. This is because
-        // solvers are unaware of the protocol fee that driver introduces and
-        // they only account for their own fee.
-        let order = self.order().clone();
-        let executed = match order.side {
-            order::Side::Buy => self.executed(),
-            order::Side::Sell => order::TargetAmount(
-                self.executed()
-                    .0
-                    .checked_add(protocol_fee)
-                    .ok_or(trade::Error::Overflow)?,
-            ),
-        };
-
-        Fulfillment::new(order, executed, fee).map_err(Into::into)
-    }
-
     fn protocol_fee(
         &self,
         prices: ClearingPrices,
@@ -155,7 +116,7 @@ impl Fulfillment {
     }
 
     /// Returns the already applied protocol fee to the fulfillment.
-    fn observed_protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+    pub fn observed_protocol_fee(&self, prices: ClearingPrices) -> Result<eth::Asset, Error> {
         // TODO: support multiple fee policies
         if self.order().protocol_fees.len() > 1 {
             return Err(Error::MultipleFeePolicies);
@@ -193,7 +154,11 @@ impl Fulfillment {
             .collect::<Vec<_>>();
         println!("reversed protocol_fees: {:?}", protocol_fees);
 
-        self.protocol_fee(prices, &protocol_fees)
+        let protocol_fee = self.protocol_fee(prices, &protocol_fees)?;
+        Ok(eth::Asset {
+            amount: protocol_fee.into(),
+            token: self.order().sell.token,
+        })
     }
 
     /// Computes protocol fee compared to the given limit amounts taken from

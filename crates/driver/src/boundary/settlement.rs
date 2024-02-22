@@ -167,6 +167,7 @@ impl Settlement {
                     gas_amount: None,
                 }
             }
+            competition::SolverScore::Surplus => http_solver::model::Score::Surplus,
         };
 
         Ok(Self {
@@ -211,6 +212,7 @@ impl Settlement {
                 success_probability,
                 ..
             } => competition::SolverScore::RiskAdjusted(success_probability),
+            http_solver::model::Score::Surplus => competition::SolverScore::Surplus,
         }
     }
 

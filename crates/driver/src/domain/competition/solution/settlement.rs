@@ -215,35 +215,9 @@ impl Settlement {
             .into()
     }
 
-    /// CIP38 score denominated in the native token (ETH)
-    pub fn score(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-    ) -> Result<competition::Score, score::Error> {
-        // CIP38 score denominated in the surplus tokens
-        // Settlement score is a sum of the scores of the solutions it contains.
-        let score = solution::Score {
-            surplus: {
-                let mut surplus: HashMap<eth::TokenAddress, eth::TokenAmount> = HashMap::new();
-                for solution in self.solutions.values() {
-                    for (token, amount) in &solution.score()?.surplus {
-                        if !amount.0.is_zero() {
-                            surplus.entry(*token).or_default().0 += amount.0;
-                        }
-                    }
-                }
-                surplus
-            },
-        };
-        println!("SCORE {:?}", score);
-
-        boundary::score::to_native_score(score, eth, auction)
-    }
-
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
     /// Calculate the score for this settlement.
-    pub fn solver_score(
+    pub fn score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
@@ -270,6 +244,17 @@ impl Settlement {
                     success_probability,
                     failure_cost,
                 )?
+            }
+            competition::SolverScore::Surplus => {
+                let mut score: HashMap<eth::TokenAddress, eth::TokenAmount> = HashMap::new();
+                for solution in self.solutions.values() {
+                    for (token, amount) in &solution.score()? {
+                        if !amount.0.is_zero() {
+                            score.entry(*token).or_default().0 += amount.0;
+                        }
+                    }
+                }
+                boundary::score::to_native_score(score, eth, auction)?
             }
         };
 

@@ -172,9 +172,10 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(&settlement);
-                (settlement.score(&self.eth, auction), settlement) // todo CIP38
-                                                                   // remove
-                                                                   //(settlement.score(&self.eth, auction), settlement)
+                (
+                    settlement.score(&self.eth, auction, &self.mempools.revert_protection()),
+                    settlement,
+                )
             })
             .collect_vec();
 

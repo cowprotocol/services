@@ -275,6 +275,9 @@ impl SettlementRating for SettlementRater {
                     success_probability,
                 )?)
             }
+            http_solver::model::Score::Surplus => {
+                unimplemented!("SettlementRater is not used anymore")
+            }
         };
 
         let rated_settlement = RatedSettlement {

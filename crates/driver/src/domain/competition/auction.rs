@@ -33,6 +33,7 @@ pub struct Auction {
     gas_price: eth::GasPrice,
     deadline: time::Deadline,
     score_cap: Score,
+    cip38_activated: bool,
 }
 
 impl Auction {
@@ -43,6 +44,7 @@ impl Auction {
         deadline: time::Deadline,
         eth: &Ethereum,
         score_cap: Score,
+        cip38_activated: bool,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
@@ -67,6 +69,7 @@ impl Auction {
             gas_price: eth.gas_price().await?,
             deadline,
             score_cap,
+            cip38_activated,
         })
     }
 
@@ -111,6 +114,10 @@ impl Auction {
 
     pub fn score_cap(&self) -> Score {
         self.score_cap
+    }
+
+    pub fn cip38_activated(&self) -> bool {
+        self.cip38_activated
     }
 }
 

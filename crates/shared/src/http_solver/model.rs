@@ -211,6 +211,7 @@ pub enum Score {
         #[serde_as(as = "Option<HexOrDecimalU256>")]
         gas_amount: Option<U256>,
     },
+    Surplus,
 }
 
 impl Default for Score {
