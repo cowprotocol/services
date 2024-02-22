@@ -10,7 +10,6 @@ use {
         },
         tests::{
             cases::{
-                IntoWei,
                 AB_ORDER_AMOUNT,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,
@@ -295,7 +294,7 @@ impl Default for Order {
             user_fee: Default::default(),
             solver_fee: Default::default(),
             name: Default::default(),
-            surplus_factor: DEFAULT_SURPLUS_FACTOR.to_wei(),
+            surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
             executed: Default::default(),
             filtered: Default::default(),
             funded: true,
@@ -576,8 +575,8 @@ pub fn ab_pool() -> Pool {
     Pool {
         token_a: "A",
         token_b: "B",
-        amount_a: DEFAULT_POOL_AMOUNT_A.to_wei(),
-        amount_b: DEFAULT_POOL_AMOUNT_B.to_wei(),
+        amount_a: DEFAULT_POOL_AMOUNT_A.into(),
+        amount_b: DEFAULT_POOL_AMOUNT_B.into(),
         liquidity_provider: LiquidityProvider::Amm,
     }
 }
@@ -594,7 +593,7 @@ pub fn ab_pmm_pool(quote: LiquidityQuote) -> Pool {
 pub fn ab_order() -> Order {
     Order {
         name: "A-B order",
-        sell_amount: AB_ORDER_AMOUNT.to_wei(),
+        sell_amount: AB_ORDER_AMOUNT.into(),
         sell_token: "A",
         buy_token: "B",
         ..Default::default()
@@ -605,8 +604,8 @@ pub fn ab_liquidity_quote() -> LiquidityQuote {
     LiquidityQuote {
         sell_token: "A",
         buy_token: "B",
-        sell_amount: AB_ORDER_AMOUNT.to_wei(),
-        buy_amount: 40u32.to_wei(),
+        sell_amount: AB_ORDER_AMOUNT.into(),
+        buy_amount: 40000000000000000000u128.into(),
     }
 }
 
@@ -626,8 +625,8 @@ pub fn cd_pool() -> Pool {
     Pool {
         token_a: "C",
         token_b: "D",
-        amount_a: DEFAULT_POOL_AMOUNT_C.to_wei(),
-        amount_b: DEFAULT_POOL_AMOUNT_D.to_wei(),
+        amount_a: DEFAULT_POOL_AMOUNT_C.into(),
+        amount_b: DEFAULT_POOL_AMOUNT_D.into(),
         liquidity_provider: LiquidityProvider::Amm,
     }
 }
@@ -636,7 +635,7 @@ pub fn cd_pool() -> Pool {
 pub fn cd_order() -> Order {
     Order {
         name: "C-D order",
-        sell_amount: CD_ORDER_AMOUNT.to_wei(),
+        sell_amount: CD_ORDER_AMOUNT.into(),
         sell_token: "C",
         buy_token: "D",
         ..Default::default()
@@ -659,8 +658,8 @@ pub fn weth_pool() -> Pool {
     Pool {
         token_a: "A",
         token_b: "WETH",
-        amount_a: DEFAULT_POOL_AMOUNT_A.to_wei(),
-        amount_b: DEFAULT_POOL_AMOUNT_B.to_wei(),
+        amount_a: DEFAULT_POOL_AMOUNT_A.into(),
+        amount_b: DEFAULT_POOL_AMOUNT_B.into(),
         liquidity_provider: LiquidityProvider::Amm,
     }
 }
@@ -669,7 +668,7 @@ pub fn weth_pool() -> Pool {
 pub fn eth_order() -> Order {
     Order {
         name: "ETH order",
-        sell_amount: ETH_ORDER_AMOUNT.to_wei(),
+        sell_amount: ETH_ORDER_AMOUNT.into(),
         sell_token: "A",
         buy_token: "ETH",
         ..Default::default()
@@ -1084,7 +1083,7 @@ impl<'a> SolveOk<'a> {
 
     /// Ensure that the score is within the default expected range.
     pub fn default_score(self) -> Self {
-        self.score_in_range(DEFAULT_SCORE_MIN.to_wei(), DEFAULT_SCORE_MAX.to_wei())
+        self.score_in_range(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
     }
 
     /// Ensures that `/solve` returns no solutions.
@@ -1399,7 +1398,7 @@ impl<'a> SettleOk<'a> {
     /// Ensure that the onchain balances changed in accordance with the
     /// [`ab_order`].
     pub async fn ab_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.to_wei()))
+        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.into()))
             .await
             .balance("B", Balance::Greater)
             .await
@@ -1408,7 +1407,7 @@ impl<'a> SettleOk<'a> {
     /// Ensure that the onchain balances changed in accordance with the
     /// [`cd_order`].
     pub async fn cd_order_executed(self) -> SettleOk<'a> {
-        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.to_wei()))
+        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.into()))
             .await
             .balance("D", Balance::Greater)
             .await
@@ -1417,7 +1416,7 @@ impl<'a> SettleOk<'a> {
     /// Ensure that the onchain balances changed in accordance with the
     /// [`eth_order`].
     pub async fn eth_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.to_wei()))
+        self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.into()))
             .await
             .balance("ETH", Balance::Greater)
             .await

@@ -3,10 +3,7 @@ use {
     crate::{
         domain::competition::order,
         infra::time,
-        tests::{
-            cases::{self, IntoWei},
-            hex_address,
-        },
+        tests::{cases, hex_address},
     },
     rand::seq::SliceRandom,
     serde_json::json,
@@ -121,7 +118,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "scoreCap": cases::DEFAULT_SCORE_CAP.to_wei().to_string(),
+        "scoreCap": cases::DEFAULT_SCORE_CAP.to_string(),
     })
 }
 
