@@ -2,7 +2,6 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::IntoWei,
         setup::{ab_liquidity_quote, ab_order, ab_pmm_pool, ab_solution, ExpectedOrder, FeePolicy},
     },
 };
@@ -18,16 +17,16 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_liquidity_quote()
-        .sell_amount(50u32.to_wei())
-        .buy_amount(40u32.to_wei());
+        .sell_amount(50000000000000000000u128.into())
+        .buy_amount(40000000000000000000u128.into());
     let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50u32.to_wei())
+        .sell_amount(50000000000000000000u128.into())
         .side(side)
-        .solver_fee(Some(10u32.to_wei()))
+        .solver_fee(Some(10000000000000000000u128.into()))
         .fee_policy(fee_policy)
-        .executed(40u32.to_wei());
+        .executed(40000000000000000000u128.into());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -37,8 +36,8 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 100u32.to_wei(),
-        executed_buy_amount: 40u32.to_wei(),
+        executed_sell_amount: 100000000000000000000u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -55,16 +54,16 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_liquidity_quote()
-        .sell_amount(50u32.to_wei())
-        .buy_amount(40u32.to_wei());
+        .sell_amount(50000000000000000000u128.into())
+        .buy_amount(40000000000000000000u128.into());
     let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50u32.to_wei())
+        .sell_amount(50000000000000000000u128.into())
         .side(side)
-        .solver_fee(Some(10u32.to_wei()))
+        .solver_fee(Some(10000000000000000000u128.into()))
         .fee_policy(fee_policy)
-        .executed(40u32.to_wei());
+        .executed(40000000000000000000u128.into());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -74,7 +73,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50u32.to_wei(),
+        executed_sell_amount: 50000000000000000000u128.into(),
         executed_buy_amount: 20000000002000000000u128.into(),
     };
 
@@ -92,16 +91,16 @@ async fn surplus_protocol_fee_buy_order_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_liquidity_quote()
-        .sell_amount(50u32.to_wei())
-        .buy_amount(40u32.to_wei());
+        .sell_amount(50000000000000000000u128.into())
+        .buy_amount(40000000000000000000u128.into());
     let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50u32.to_wei())
+        .sell_amount(50000000000000000000u128.into())
         .side(side)
-        .solver_fee(Some(10u32.to_wei()))
+        .solver_fee(Some(10000000000000000000u128.into()))
         .fee_policy(fee_policy)
-        .executed(40u32.to_wei());
+        .executed(40000000000000000000u128.into());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -111,8 +110,8 @@ async fn surplus_protocol_fee_buy_order_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 55u32.to_wei(),
-        executed_buy_amount: 40u32.to_wei(),
+        executed_sell_amount: 55000000000000000000u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -129,16 +128,16 @@ async fn surplus_protocol_fee_sell_order_capped() {
     };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_liquidity_quote()
-        .sell_amount(50u32.to_wei())
-        .buy_amount(40u32.to_wei());
+        .sell_amount(50000000000000000000u128.into())
+        .buy_amount(40000000000000000000u128.into());
     let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50u32.to_wei())
+        .sell_amount(50000000000000000000u128.into())
         .side(side)
-        .solver_fee(Some(10u32.to_wei()))
+        .solver_fee(Some(10000000000000000000u128.into()))
         .fee_policy(fee_policy)
-        .executed(40u32.to_wei());
+        .executed(40000000000000000000u128.into());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -148,8 +147,8 @@ async fn surplus_protocol_fee_sell_order_capped() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50u32.to_wei(),
-        executed_buy_amount: 35u32.to_wei(),
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 35000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -162,16 +161,16 @@ async fn volume_protocol_fee_buy_order() {
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_liquidity_quote()
-        .sell_amount(50u32.to_wei())
-        .buy_amount(40u32.to_wei());
+        .sell_amount(50000000000000000000u128.into())
+        .buy_amount(40000000000000000000u128.into());
     let pool = ab_pmm_pool(quote);
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50u32.to_wei())
+        .sell_amount(50000000000000000000u128.into())
         .side(side)
-        .solver_fee(Some(10u32.to_wei()))
+        .solver_fee(Some(10000000000000000000u128.into()))
         .fee_policy(fee_policy)
-        .executed(40u32.to_wei());
+        .executed(40000000000000000000u128.into());
     let test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -181,8 +180,8 @@ async fn volume_protocol_fee_buy_order() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 75u32.to_wei(),
-        executed_buy_amount: 40u32.to_wei(),
+        executed_sell_amount: 75000000000000000000u128.into(),
+        executed_buy_amount: 40000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
@@ -195,15 +194,15 @@ async fn volume_protocol_fee_sell_order() {
     let fee_policy = FeePolicy::Volume { factor: 0.5 };
     let test_name = format!("Protocol Fee: {side:?} {fee_policy:?}");
     let quote = ab_liquidity_quote()
-        .sell_amount(50u32.to_wei())
-        .buy_amount(40u32.to_wei());
+        .sell_amount(50000000000000000000u128.into())
+        .buy_amount(40000000000000000000u128.into());
     let pool = ab_pmm_pool(quote);
-    let executed_price = 40u32.to_wei();
+    let executed_price = 40000000000000000000u128.into();
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(50u32.to_wei())
+        .sell_amount(50000000000000000000u128.into())
         .side(side)
-        .solver_fee(Some(10u32.to_wei()))
+        .solver_fee(Some(10000000000000000000u128.into()))
         .fee_policy(fee_policy)
         .executed(executed_price);
     let test = tests::setup()
@@ -215,8 +214,8 @@ async fn volume_protocol_fee_sell_order() {
         .await;
     let expected = ExpectedOrder {
         name: ab_order().name,
-        executed_sell_amount: 50u32.to_wei(),
-        executed_buy_amount: 15u32.to_wei(),
+        executed_sell_amount: 50000000000000000000u128.into(),
+        executed_buy_amount: 15000000000000000000u128.into(),
     };
 
     test.solve().await.ok().expected_orders(&[expected]);
