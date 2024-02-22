@@ -19,13 +19,7 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    network: Network,
-}
-
-/// Network information for an Ethereum blockchain connection.
-#[derive(Clone, Debug)]
-pub struct Network {
-    pub id: eth::ChainId,
+    network: eth::ChainId,
 }
 
 impl Rpc {
@@ -33,17 +27,14 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, Error> {
         let web3 = boundary::buffered_web3_client(url);
-        let id = web3.eth().chain_id().await?.into();
+        let network = web3.eth().chain_id().await?.into();
 
-        Ok(Self {
-            web3,
-            network: Network { id },
-        })
+        Ok(Self { web3, network })
     }
 
     /// Returns the network information for the RPC connection.
-    pub fn network(&self) -> &Network {
-        &self.network
+    pub fn network(&self) -> eth::ChainId {
+        self.network
     }
 
     /// Returns a reference to the underlying web3 client.
@@ -56,7 +47,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    network: Network,
+    network: eth::ChainId,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockStream,
@@ -75,7 +66,7 @@ impl Ethereum {
         gas: Arc<GasPriceEstimator>,
     ) -> Self {
         let Rpc { web3, network } = rpc;
-        let contracts = Contracts::new(&web3, &network.id, addresses)
+        let contracts = Contracts::new(&web3, network, addresses)
             .await
             .expect("could not initialize important smart contracts");
 
@@ -93,8 +84,8 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> &Network {
-        &self.network
+    pub fn network(&self) -> eth::ChainId {
+        self.network
     }
 
     /// Onchain smart contract bindings.

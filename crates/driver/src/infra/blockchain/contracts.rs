@@ -24,13 +24,13 @@ pub struct Addresses {
 impl Contracts {
     pub(super) async fn new(
         web3: &DynWeb3,
-        network_id: &eth::ChainId,
+        network: eth::ChainId,
         addresses: Addresses,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
             address
-                .or_else(|| deployment_address(contract, network_id))
+                .or_else(|| deployment_address(contract, network))
                 .unwrap()
                 .0
         };
@@ -89,9 +89,15 @@ impl Contracts {
 /// there is no known deployment for the contract on that network.
 pub fn deployment_address(
     contract: &ethcontract::Contract,
-    network_id: &eth::ChainId,
+    network_id: eth::ChainId,
 ) -> Option<eth::ContractAddress> {
-    Some(contract.networks.get(&network_id.to_string())?.address.into())
+    Some(
+        contract
+            .networks
+            .get(&network_id.to_string())?
+            .address
+            .into(),
+    )
 }
 
 /// A trait for initializing contract instances with dynamic addresses.

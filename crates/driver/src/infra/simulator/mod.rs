@@ -54,7 +54,7 @@ impl Simulator {
         Self {
             inner: Inner::Enso(enso::Enso::new(
                 config,
-                eth.network().id,
+                eth.network(),
                 eth.current_block().clone(),
             )),
             eth,
