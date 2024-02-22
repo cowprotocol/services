@@ -1,5 +1,5 @@
 use {
-    super::{Error, Solution, SolverScore},
+    super::{Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -223,26 +223,27 @@ impl Settlement {
     ) -> Result<competition::Score, score::Error> {
         // CIP38 score denominated in the surplus tokens
         // Settlement score is a sum of the scores of the solutions it contains.
-        let score = SolverScore {
-            surplus: self
-                .solutions
-                .values()
-                .fold(Default::default(), |mut surplus, solution| {
-                    for (token, amount) in &solution.score.surplus {
+        let score = solution::Score {
+            surplus: {
+                let mut surplus: HashMap<eth::TokenAddress, eth::TokenAmount> = HashMap::new();
+                for solution in self.solutions.values() {
+                    for (token, amount) in &solution.score()?.surplus {
                         if !amount.0.is_zero() {
                             surplus.entry(*token).or_default().0 += amount.0;
                         }
                     }
-                    surplus
-                }),
+                }
+                surplus
+            },
         };
+        println!("SCORE {:?}", score);
 
         boundary::score::to_native_score(score, eth, auction)
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
     /// Calculate the score for this settlement.
-    pub fn old_score(
+    pub fn solver_score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
@@ -251,8 +252,8 @@ impl Settlement {
         let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::OldSolverScore::Solver(score) => score.try_into()?,
-            competition::OldSolverScore::RiskAdjusted(success_probability) => {
+            competition::SolverScore::Solver(score) => score.try_into()?,
+            competition::SolverScore::RiskAdjusted(success_probability) => {
                 let gas_cost = self.gas.estimate * auction.gas_price().effective();
                 let success_probability = success_probability.try_into()?;
                 let objective_value = (quality - gas_cost)?;

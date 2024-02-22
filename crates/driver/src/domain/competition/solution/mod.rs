@@ -38,8 +38,7 @@ pub struct Solution {
     prices: HashMap<eth::TokenAddress, eth::U256>,
     interactions: Vec<Interaction>,
     solver: Solver,
-    old_score: OldSolverScore, // todo CIP38 remove
-    score: SolverScore,
+    score: SolverScore, // todo CIP38 remove
     weth: eth::WethAddress,
 }
 
@@ -50,40 +49,15 @@ impl Solution {
         prices: HashMap<eth::TokenAddress, eth::U256>,
         interactions: Vec<Interaction>,
         solver: Solver,
-        old_score: OldSolverScore,
+        score: SolverScore,
         weth: eth::WethAddress,
     ) -> Result<Self, SolutionError> {
-        // Score is calculated at the beginning of the solution generation process, so
-        // that the surplus is based on the raw solution received from the solver,
-        // before any protocol fees are added.
-        let score = SolverScore {
-            surplus: {
-                let mut surplus = HashMap::new();
-                for trade in trades.iter() {
-                    match trade.surplus(&prices, weth) {
-                        Ok(eth::Asset { token, amount }) => {
-                            surplus
-                                .entry(token)
-                                .or_insert(eth::TokenAmount(eth::U256::zero()))
-                                .0 += amount.0;
-                        }
-                        Err(_err) => {
-                            // todo CIP38 enable
-                            // return Err(SolutionError::Scoring(err))
-                        }
-                    }
-                }
-                surplus
-            },
-        };
-
         let solution = Self {
             id,
             trades,
             prices,
             interactions,
             solver,
-            old_score,
             score,
             weth,
         };
@@ -119,13 +93,38 @@ impl Solution {
         &self.solver
     }
 
-    pub fn old_score(&self) -> &OldSolverScore {
-        &self.old_score
+    pub fn solver_score(&self) -> &SolverScore {
+        &self.score
     }
 
     /// The score of a solution as per CIP38
-    pub fn score(&self) -> &SolverScore {
-        &self.score
+    pub fn score(&self) -> Result<Score, SolutionError> {
+        // Per CIP38, the score is equal to surplus of the solution before any protocol
+        // fees are applied to it. Therefore, we need to remove protocol fees
+        // from the solution before scoring it.
+        let solution = self.without_protocol_fees()?;
+
+        let score = Score {
+            surplus: {
+                let mut surplus = HashMap::new();
+                for trade in solution.trades.iter() {
+                    match trade.surplus(&solution.prices, solution.weth) {
+                        Ok(eth::Asset { token, amount }) => {
+                            surplus
+                                .entry(token)
+                                .or_insert(eth::TokenAmount(eth::U256::zero()))
+                                .0 += amount.0;
+                        }
+                        Err(_err) => {
+                            // todo CIP38 enable
+                            // return Err(SolutionError::Scoring(err))
+                        }
+                    }
+                }
+                surplus
+            },
+        };
+        Ok(score)
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -209,7 +208,7 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator).await
     }
 
-    pub fn with_protocol_fees(self) -> Result<Self, fee::Error> {
+    fn with_protocol_fees(self) -> Result<Self, fee::Error> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.trades {
             match &trade {
@@ -230,6 +229,32 @@ impl Solution {
             }
         }
         Ok(Self { trades, ..self })
+    }
+
+    fn without_protocol_fees(&self) -> Result<Self, fee::Error> {
+        let mut trades = Vec::with_capacity(self.trades.len());
+        for trade in self.trades.iter() {
+            match trade {
+                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                    order::Kind::Market | order::Kind::Limit { .. } => {
+                        let prices = ClearingPrices {
+                            sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
+                            buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
+                        };
+                        let fulfillment = fulfillment.without_protocol_fee(prices)?;
+                        trades.push(Trade::Fulfillment(fulfillment))
+                    }
+                    order::Kind::Liquidity => {
+                        trades.push(trade.clone());
+                    }
+                },
+                Trade::Jit(_) => trades.push(trade.clone()),
+            }
+        }
+        Ok(Self {
+            trades,
+            ..self.clone()
+        })
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
@@ -297,7 +322,6 @@ impl std::fmt::Debug for Solution {
             .field("prices", &self.prices)
             .field("interactions", &self.interactions)
             .field("solver", &self.solver.name())
-            .field("old_score", &self.old_score)
             .field("score", &self.score)
             .finish()
     }
@@ -307,13 +331,13 @@ impl std::fmt::Debug for Solution {
 ///
 /// todo CIP38 remove
 #[derive(Debug, Clone)]
-pub enum OldSolverScore {
+pub enum SolverScore {
     Solver(eth::U256),
     RiskAdjusted(f64),
 }
 
 #[derive(Debug, Clone)]
-pub struct SolverScore {
+pub struct Score {
     pub surplus: HashMap<eth::TokenAddress, eth::TokenAmount>,
 }
 

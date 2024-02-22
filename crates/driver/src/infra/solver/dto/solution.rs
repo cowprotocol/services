@@ -190,13 +190,11 @@ impl Solutions {
                     solver.clone(),
                     match solution.score {
                         Score::Solver { score } => {
-                            competition::solution::OldSolverScore::Solver(score)
+                            competition::solution::SolverScore::Solver(score)
                         }
                         Score::RiskAdjusted {
                             success_probability,
-                        } => {
-                            competition::solution::OldSolverScore::RiskAdjusted(success_probability)
-                        }
+                        } => competition::solution::SolverScore::RiskAdjusted(success_probability),
                     },
                     weth,
                 )

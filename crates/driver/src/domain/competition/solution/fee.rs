@@ -39,7 +39,7 @@ use {
 impl Fulfillment {
     /// Applies the protocol fee to the existing fulfillment creating a new one.
     pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
-        let protocol_fee = self.protocol_fee(prices)?;
+        let protocol_fee = self.protocol_fee(prices, &self.order().protocol_fees)?;
 
         // Increase the fee by the protocol fee
         let fee = match self.surplus_fee() {
@@ -74,13 +74,56 @@ impl Fulfillment {
         Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
-    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+    /// Removes the applied protocol fee from the fulfillment creating a new
+    /// one.
+    pub fn without_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
+        let protocol_fee = self.observed_protocol_fee(prices)?;
+        println!("protocol_fee: {:?}", protocol_fee);
+
+        // Decrease the fee by the protocol fee
+        let fee = match self.surplus_fee() {
+            None => {
+                if !protocol_fee.is_zero() {
+                    return Err(trade::Error::ProtocolFeeOnStaticOrder.into());
+                }
+                Fee::Static
+            }
+            Some(fee) => Fee::Dynamic(
+                (fee.0
+                    .checked_sub(protocol_fee)
+                    .ok_or(trade::Error::Overflow)?)
+                .into(),
+            ),
+        };
+
+        // Increase the executed amount by the protocol fee. This is because
+        // solvers are unaware of the protocol fee that driver introduces and
+        // they only account for their own fee.
+        let order = self.order().clone();
+        let executed = match order.side {
+            order::Side::Buy => self.executed(),
+            order::Side::Sell => order::TargetAmount(
+                self.executed()
+                    .0
+                    .checked_add(protocol_fee)
+                    .ok_or(trade::Error::Overflow)?,
+            ),
+        };
+
+        Fulfillment::new(order, executed, fee).map_err(Into::into)
+    }
+
+    fn protocol_fee(
+        &self,
+        prices: ClearingPrices,
+        protocol_fees: &[FeePolicy],
+    ) -> Result<eth::U256, Error> {
         // TODO: support multiple fee policies
-        if self.order().protocol_fees.len() > 1 {
+        if protocol_fees.len() > 1 {
             return Err(Error::MultipleFeePolicies);
         }
 
-        match self.order().protocol_fees.first() {
+        match protocol_fees.first() {
             Some(FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
@@ -111,6 +154,48 @@ impl Fulfillment {
         }
     }
 
+    /// Returns the already applied protocol fee to the fulfillment.
+    fn observed_protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+        // TODO: support multiple fee policies
+        if self.order().protocol_fees.len() > 1 {
+            return Err(Error::MultipleFeePolicies);
+        }
+
+        // Reverse the protocol fee parameters
+        //
+        // If the original surplus was 1000 and the protocol factor was 0.3, surplus
+        // becomes 700. To get the protocol fee, we need to multiply the
+        // current surplus (700) by 0.3/(1-0.3).
+        let protocol_fees = self
+            .order()
+            .protocol_fees
+            .clone()
+            .into_iter()
+            .map(|policy| match policy {
+                FeePolicy::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => FeePolicy::Surplus {
+                    factor: factor / (1. - factor),
+                    max_volume_factor,
+                },
+                FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                    quote,
+                } => FeePolicy::PriceImprovement {
+                    factor: factor / (1. - factor),
+                    max_volume_factor,
+                    quote,
+                },
+                FeePolicy::Volume { factor } => FeePolicy::Volume { factor },
+            })
+            .collect::<Vec<_>>();
+        println!("reversed protocol_fees: {:?}", protocol_fees);
+
+        self.protocol_fee(prices, &protocol_fees)
+    }
+
     /// Computes protocol fee compared to the given limit amounts taken from
     /// the order or a quote.
     fn calculate_fee(
@@ -139,6 +224,7 @@ impl Fulfillment {
     ) -> Result<eth::U256, Error> {
         let surplus = self.surplus_over_reference_price(sell_amount, buy_amount, prices)?;
         let surplus_in_sell_token = self.surplus_in_sell_token(surplus, prices)?;
+        println!("surplus_in_sell_token: {:?}", surplus_in_sell_token);
         apply_factor(surplus_in_sell_token, factor)
     }
 
@@ -170,9 +256,9 @@ impl Fulfillment {
 
 fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
     Ok(amount
-        .checked_mul(eth::U256::from_f64_lossy(factor * 10000.))
+        .checked_mul(eth::U256::from_f64_lossy(factor * 1000000000000000000.))
         .ok_or(trade::Error::Overflow)?
-        / 10000)
+        / 1000000000000000000u128)
 }
 
 /// This function adjusts quote amounts to directly compare them with the

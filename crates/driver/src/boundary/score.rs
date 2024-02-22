@@ -8,7 +8,7 @@ use {
                     self,
                     risk::{ObjectiveValue, SuccessProbability},
                 },
-                solution::SolverScore,
+                solution,
             },
             eth,
         },
@@ -40,10 +40,10 @@ pub fn score(
 /// Converts a solver provided score denominated in surplus tokens, to a
 /// competition score denominated in native token.
 pub fn to_native_score(
-    score: SolverScore,
+    score: solution::Score,
     eth: &Ethereum,
     auction: &competition::Auction,
-) -> Result<Score, score::Error> {
+) -> Result<competition::Score, score::Error> {
     let prices = ExternalPrices::try_from_auction_prices(
         eth.contracts().weth().address(),
         auction
@@ -67,5 +67,6 @@ pub fn to_native_score(
         })
         .fold(eth::U256::zero(), |acc, (_, amount)| acc + amount);
 
+    println!("native_score: {:?}", native_score);
     Ok(Score(native_score.try_into()?))
 }

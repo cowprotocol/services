@@ -173,7 +173,10 @@ impl Fulfillment {
         limit_buy: eth::TokenAmount,
         prices: ClearingPrices,
     ) -> Result<eth::U256, Error> {
+        println!("limit_sell: {:?}", limit_sell);
+        println!("limit_buy: {:?}", limit_buy);
         let executed = self.executed().0;
+        println!("executed: {:?}", executed);
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
@@ -185,6 +188,7 @@ impl Fulfillment {
             }
             Side::Sell => executed,
         };
+        println!("executed_sell_amount: {:?}", executed_sell_amount);
         // Sell slightly more `sell_token` to capture the `surplus_fee`
         let executed_sell_amount_with_fee = executed_sell_amount
             .checked_add(
@@ -194,6 +198,10 @@ impl Fulfillment {
                     .ok_or(Error::ProtocolFeeOnStaticOrder)?,
             )
             .ok_or(Error::Overflow)?;
+        println!(
+            "executed_sell_amount_with_fee: {:?}",
+            executed_sell_amount_with_fee
+        );
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
@@ -232,6 +240,7 @@ impl Fulfillment {
                     .unwrap_or(eth::U256::zero())
             }
         };
+        println!("surplus: {:?}", surplus);
         Ok(surplus)
     }
 

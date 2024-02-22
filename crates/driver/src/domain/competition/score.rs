@@ -1,4 +1,5 @@
 use {
+    super::solution,
     crate::{boundary, domain::eth},
     std::cmp::Ordering,
 };
@@ -68,6 +69,8 @@ pub enum Error {
     RiskAdjusted(#[from] risk::Error),
     #[error(transparent)]
     Boundary(#[from] boundary::Error),
+    #[error(transparent)]
+    SolutionError(#[from] solution::SolutionError),
 }
 
 pub mod risk {
