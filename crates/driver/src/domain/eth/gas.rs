@@ -126,7 +126,7 @@ impl From<EffectiveGasPrice> for GasPrice {
 /// `{max,max_priority,base}_fee_per_gas` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Ord, Eq, PartialEq, PartialOrd)]
 pub struct FeePerGas(pub Ether);
 
 impl FeePerGas {

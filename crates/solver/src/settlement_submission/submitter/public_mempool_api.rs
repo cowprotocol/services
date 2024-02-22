@@ -211,7 +211,21 @@ pub async fn validate_submission_node(node: &Web3, expected_network_id: &String)
 }
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::settlement::NoopInteraction, std::sync::Arc};
+    use {
+        super::*,
+        ethcontract::Bytes,
+        primitive_types::{H160, U256},
+        shared::interaction::{EncodedInteraction, Interaction},
+        std::sync::Arc,
+    };
+
+    #[derive(Debug)]
+    pub struct TestInteraction;
+    impl Interaction for TestInteraction {
+        fn encode(&self) -> EncodedInteraction {
+            (H160::zero(), U256::zero(), Bytes::default())
+        }
+    }
 
     #[test]
     fn submission_status_configuration() {
@@ -219,7 +233,7 @@ mod tests {
             let mut settlement = Settlement::new(Default::default());
             settlement
                 .encoder
-                .append_to_execution_plan(Arc::new(NoopInteraction));
+                .append_to_execution_plan(Arc::new(TestInteraction));
             assert_eq!(settlement.revertable(), Revertable::HighRisk);
             settlement
         };

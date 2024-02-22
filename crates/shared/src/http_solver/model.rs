@@ -188,8 +188,8 @@ pub struct InteractionData {
 }
 
 impl Interaction for InteractionData {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.target, self.value, Bytes(self.call_data.clone()))]
+    fn encode(&self) -> EncodedInteraction {
+        (self.target, self.value, Bytes(self.call_data.clone()))
     }
 }
 

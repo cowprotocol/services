@@ -10,13 +10,12 @@
 use {
     crate::{
         domain::{self, auction::order::Class},
-        driver_model::{
-            reveal,
-            solve::{self},
+        infra::{
+            self,
+            solvers::dto::{reveal, solve},
         },
-        infra,
         run::Liveness,
-        run_loop::{self, observe},
+        run_loop::observe,
     },
     ::observe::metrics,
     number::nonzero::U256 as NonZeroU256,
@@ -190,7 +189,7 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let request = run_loop::solve_request(
+        let request = solve::Request::new(
             id,
             auction,
             &self.trusted_tokens.all(),

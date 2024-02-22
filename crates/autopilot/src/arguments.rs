@@ -218,7 +218,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_threshold: Duration,
 
-    #[clap(long, env)]
+    #[clap(long, env, use_value_delimiter = true)]
     pub cow_amms: Vec<H160>,
 }
 
