@@ -579,6 +579,7 @@ fn to_domain_solution(
                 success_probability,
                 ..
             } => solution::Score::RiskAdjusted(solution::SuccessProbability(success_probability)),
+            Score::Surplus { .. } => unreachable!("Solvers cannot specify surplus scores"),
         },
     })
 }

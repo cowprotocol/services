@@ -245,6 +245,7 @@ impl Settlement {
                     failure_cost,
                 )?
             }
+            competition::SolverScore::Surplus(surplus) => surplus.try_into()?,
         };
 
         if score > quality {
