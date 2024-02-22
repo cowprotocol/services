@@ -7,7 +7,7 @@ use crate::{
             ab_liquidity_quote,
             ab_order,
             ab_solution,
-            ExecutedOrderAmounts,
+            ExpectedOrderAmounts,
             FeePolicy,
             Test,
         },
@@ -21,7 +21,7 @@ pub struct TestCase {
     pub solver_fee: Option<eth::U256>,
     pub quote_sell_amount: eth::U256,
     pub quote_buy_amount: eth::U256,
-    pub executed_price: eth::U256,
+    pub executed: eth::U256,
     pub executed_sell_amount: eth::U256,
     pub executed_buy_amount: eth::U256,
 }
@@ -35,7 +35,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.quote_sell_amount)
         .buy_amount(test_case.quote_buy_amount);
     let pool = ab_adjusted_pool(quote);
-    let expected_amounts = ExecutedOrderAmounts {
+    let expected_amounts = ExpectedOrderAmounts {
         sell: test_case.executed_sell_amount,
         buy: test_case.executed_buy_amount,
     };
@@ -45,8 +45,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .side(test_case.order_side)
         .solver_fee(test_case.solver_fee)
         .fee_policy(test_case.fee_policy)
-        .executed_price(test_case.executed_price)
-        .executed_amounts(expected_amounts);
+        .executed(test_case.executed)
+        .expected_amounts(expected_amounts);
     let test: Test = tests::setup()
         .name(test_name)
         .pool(pool)
@@ -74,7 +74,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         solver_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
-        executed_price: 40000000000000000000u128.into(),
+        executed: 40000000000000000000u128.into(),
         executed_sell_amount: 100000000000000000000u128.into(),
         executed_buy_amount: 40000000000000000000u128.into(),
     };
@@ -98,7 +98,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         solver_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
-        executed_price: 40000000000000000000u128.into(),
+        executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
         executed_buy_amount: 20000000002000000000u128.into(),
     };
@@ -122,7 +122,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
         solver_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
-        executed_price: 40000000000000000000u128.into(),
+        executed: 40000000000000000000u128.into(),
         executed_sell_amount: 55000000000000000000u128.into(),
         executed_buy_amount: 40000000000000000000u128.into(),
     };
@@ -146,7 +146,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
         solver_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
-        executed_price: 40000000000000000000u128.into(),
+        executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
         executed_buy_amount: 35000000000000000000u128.into(),
     };
@@ -166,7 +166,7 @@ async fn volume_protocol_fee_buy_order() {
         solver_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
-        executed_price: 40000000000000000000u128.into(),
+        executed: 40000000000000000000u128.into(),
         executed_sell_amount: 75000000000000000000u128.into(),
         executed_buy_amount: 40000000000000000000u128.into(),
     };
@@ -186,7 +186,7 @@ async fn volume_protocol_fee_sell_order() {
         solver_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
-        executed_price: 40000000000000000000u128.into(),
+        executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
         executed_buy_amount: 15000000000000000000u128.into(),
     };

@@ -157,9 +157,9 @@ pub struct Order {
     pub surplus_factor: eth::U256,
     /// Override the executed amount of the order. Useful for testing liquidity
     /// orders. Otherwise [`execution_diff`] is probably more suitable.
-    pub executed_price: Option<eth::U256>,
+    pub executed: Option<eth::U256>,
     /// Provides explicit expected order executed amounts.
-    pub executed_amounts: Option<ExecutedOrderAmounts>,
+    pub expected_amounts: Option<ExpectedOrderAmounts>,
     /// Should this order be filtered out before being sent to the solver?
     pub filtered: bool,
     /// Should the trader account be funded with enough tokens to place this
@@ -259,16 +259,16 @@ impl Order {
         Self { fee_policy, ..self }
     }
 
-    pub fn executed_price(self, executed_price: eth::U256) -> Self {
+    pub fn executed(self, executed_price: eth::U256) -> Self {
         Self {
-            executed_price: Some(executed_price),
+            executed: Some(executed_price),
             ..self
         }
     }
 
-    pub fn executed_amounts(self, executed_amounts: ExecutedOrderAmounts) -> Self {
+    pub fn expected_amounts(self, expected_amounts: ExpectedOrderAmounts) -> Self {
         Self {
-            executed_amounts: Some(executed_amounts),
+            expected_amounts: Some(expected_amounts),
             ..self
         }
     }
@@ -303,8 +303,8 @@ impl Default for Order {
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
-            executed_price: Default::default(),
-            executed_amounts: Default::default(),
+            executed: Default::default(),
+            expected_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
             fee_policy: FeePolicy::Surplus {
@@ -1127,7 +1127,7 @@ impl<'a> SolveOk<'a> {
                 eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
             };
 
-            let (expected_sell, expected_buy) = match &expected.executed_amounts {
+            let (expected_sell, expected_buy) = match &expected.expected_amounts {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (
                     fulfillment.quoted_order.sell + fulfillment.quoted_order.order.user_fee,
@@ -1156,7 +1156,7 @@ impl Reveal {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExecutedOrderAmounts {
+pub struct ExpectedOrderAmounts {
     pub sell: eth::U256,
     pub buy: eth::U256,
 }

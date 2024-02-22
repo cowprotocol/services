@@ -126,7 +126,7 @@ impl Solver {
                     } else {
                         fulfillment.quoted_order.order_uid(config.blockchain)
                     };
-                    let executed_amount = match fulfillment.quoted_order.order.executed_price {
+                    let executed_amount = match fulfillment.quoted_order.order.executed {
                         Some(executed) => executed.to_string(),
                         None => match fulfillment.quoted_order.order.side {
                             order::Side::Sell => (fulfillment.quoted_order.sell_amount()
