@@ -52,6 +52,22 @@ impl Solution {
         score: SolverScore,
         weth: eth::WethAddress,
     ) -> Result<Self, SolutionError> {
+        let score = if false {
+            // CIP38 activated
+            SolverScore::Solver(trades.iter().fold(eth::U256::zero(), |sum, trade| {
+                sum + trade
+                    .surplus(&prices, weth)
+                    .map(|eth::Asset { token, amount }| {
+                        prices
+                            .get(&token)
+                            .map(|price| price * amount.0)
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default()
+            }))
+        } else {
+            score
+        };
         let solution = Self {
             id,
             trades,

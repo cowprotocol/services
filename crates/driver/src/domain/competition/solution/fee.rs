@@ -137,7 +137,8 @@ impl Fulfillment {
         prices: ClearingPrices,
         factor: f64,
     ) -> Result<eth::U256, Error> {
-        let surplus = self.surplus_over_reference_price(sell_amount, buy_amount, prices)?;
+        let surplus =
+            self.surplus_over_reference_price(sell_amount.into(), buy_amount.into(), prices)?;
         let surplus_in_sell_token = self.surplus_in_sell_token(surplus, prices)?;
         apply_factor(surplus_in_sell_token, factor)
     }

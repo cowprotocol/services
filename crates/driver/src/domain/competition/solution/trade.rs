@@ -17,6 +17,31 @@ pub enum Trade {
     Jit(Jit),
 }
 
+impl Trade {
+    /// Surplus denominated in the surplus token.
+    pub fn surplus(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+        weth: eth::WethAddress,
+    ) -> Result<eth::Asset, Error> {
+        match self {
+            Self::Fulfillment(fulfillment) => {
+                let prices = ClearingPrices {
+                    sell: prices[&fulfillment.order().sell.token.wrap(weth)],
+                    buy: prices[&fulfillment.order().buy.token.wrap(weth)],
+                };
+
+                fulfillment.surplus(prices)
+            }
+            // JIT orders have a zero score
+            Self::Jit(jit) => Ok(eth::Asset {
+                token: jit.order().sell.token,
+                amount: 0.into(),
+            }),
+        }
+    }
+}
+
 /// A trade which fulfills an order from the auction.
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
@@ -137,12 +162,15 @@ impl Fulfillment {
 
     /// Returns the surplus denominated in the surplus token.
     ///
-    /// The surplus token is the buy token for a sell order and sell token for a
+    /// The surplus token is a buy token for a sell order and a sell token for a
     /// buy order.
+    ///
+    /// The surplus is defined as the improvement of price, i.e. the difference
+    /// between the executed price and the reference (limit) price.
     pub fn surplus_over_reference_price(
         &self,
-        limit_sell: eth::U256,
-        limit_buy: eth::U256,
+        limit_sell: eth::TokenAmount,
+        limit_buy: eth::TokenAmount,
         prices: ClearingPrices,
     ) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
@@ -170,9 +198,10 @@ impl Fulfillment {
             Side::Buy => {
                 // Scale to support partially fillable orders
                 let limit_sell_amount = limit_sell
+                    .0
                     .checked_mul(executed)
                     .ok_or(Error::Overflow)?
-                    .checked_div(limit_buy)
+                    .checked_div(limit_buy.0)
                     .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
@@ -184,9 +213,10 @@ impl Fulfillment {
             Side::Sell => {
                 // Scale to support partially fillable orders
                 let limit_buy_amount = limit_buy
+                    .0
                     .checked_mul(executed_sell_amount_with_fee)
                     .ok_or(Error::Overflow)?
-                    .checked_div(limit_sell)
+                    .checked_div(limit_sell.0)
                     .ok_or(Error::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
                 let executed_buy_amount = executed
@@ -203,6 +233,27 @@ impl Fulfillment {
             }
         };
         Ok(surplus)
+    }
+
+    /// Returns the surplus denominated in the surplus token.
+    ///
+    /// The surplus token is a buy token for a sell order and a sell token for a
+    /// buy order.
+    ///
+    /// The surplus is defined as the difference between the executed price and
+    /// the order limit price.
+    pub fn surplus(&self, prices: ClearingPrices) -> Result<eth::Asset, Error> {
+        let limit_sell = self.order().sell.amount;
+        let limit_buy = self.order().buy.amount;
+
+        self.surplus_over_reference_price(limit_sell, limit_buy, prices)
+            .map(|surplus| eth::Asset {
+                token: match self.order().side {
+                    Side::Sell => self.order().buy.token,
+                    Side::Buy => self.order().sell.token,
+                },
+                amount: surplus.into(),
+            })
     }
 
     /// Returns the surplus denominated in the sell token.
