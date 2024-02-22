@@ -307,12 +307,6 @@ struct LiquidityConfig {
     /// Liquidity provided by 0x API.
     #[serde(default)]
     zeroex: Option<ZeroExConfig>,
-
-    /// The URL used to connect to uniswap v3 subgraph client.
-    uniswap_v3_graph_url: Option<Url>,
-
-    /// The URL used to connect to balancer v2 subgraph client.
-    balancer_v2_graph_url: Option<Url>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -386,6 +380,9 @@ enum UniswapV3Config {
         /// How many pools to initialize during start up.
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
         max_pools_to_initialize: usize,
+
+        #[serde(default = "uniswap_v3::default_uniswap_v3_graph_url")]
+        graph_url: Url,
     },
 
     #[serde(rename_all = "kebab-case")]
@@ -409,8 +406,15 @@ enum UniswapV3Preset {
 }
 
 mod uniswap_v3 {
+    use url::Url;
+
     pub fn default_max_pools_to_initialize() -> usize {
         100
+    }
+
+    pub fn default_uniswap_v3_graph_url() -> Url {
+        Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
+                .expect("invalid default uniswap-v3 Graph API URL")
     }
 }
 
@@ -424,6 +428,10 @@ enum BalancerV2Config {
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
         pool_deny_list: Vec<eth::H256>,
+
+        /// The URL used to connect to balancer v2 subgraph client.
+        #[serde(default = "balancer_v2::default_balancer_v2_graph_url")]
+        graph_url: Url,
     },
 
     #[serde(rename_all = "kebab-case")]
@@ -467,6 +475,14 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
+}
+mod balancer_v2 {
+    use url::Url;
+
+    pub fn default_balancer_v2_graph_url() -> Url {
+            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+                .expect("invalid default balancer-v3 Graph API URL")
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
