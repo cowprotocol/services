@@ -21,7 +21,7 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
-            setup::blockchain::{Blockchain, LiquidityProvider},
+            setup::blockchain::Blockchain,
         },
         util::{self, serialize},
     },
@@ -373,7 +373,7 @@ pub struct Pool {
     pub token_b: &'static str,
     pub amount_a: eth::U256,
     pub amount_b: eth::U256,
-    pub liquidity_provider: LiquidityProvider,
+    pub liquidity_quote: Option<LiquidityQuote>,
 }
 
 impl Pool {
@@ -467,7 +467,6 @@ pub fn setup() -> Setup {
         enable_simulation: true,
         settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
-        liquidity_provider: LiquidityProvider::Amm,
     }
 }
 
@@ -489,7 +488,6 @@ pub struct Setup {
     settlement_address: Option<eth::H160>,
     /// Via which mempool the solutions should be submitted
     mempools: Vec<Mempool>,
-    liquidity_provider: LiquidityProvider,
 }
 
 /// The validity of a solution.
@@ -577,13 +575,13 @@ pub fn ab_pool() -> Pool {
         token_b: "B",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
-        liquidity_provider: LiquidityProvider::Amm,
+        liquidity_quote: None,
     }
 }
 
 pub fn ab_pmm_pool(quote: LiquidityQuote) -> Pool {
     Pool {
-        liquidity_provider: LiquidityProvider::Pmm(quote),
+        liquidity_quote: Some(quote),
         ..ab_pool()
     }
     .adjusted_reserve_b(&quote)
@@ -627,7 +625,7 @@ pub fn cd_pool() -> Pool {
         token_b: "D",
         amount_a: DEFAULT_POOL_AMOUNT_C.into(),
         amount_b: DEFAULT_POOL_AMOUNT_D.into(),
-        liquidity_provider: LiquidityProvider::Amm,
+        liquidity_quote: None,
     }
 }
 
@@ -660,7 +658,7 @@ pub fn weth_pool() -> Pool {
         token_b: "WETH",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
-        liquidity_provider: LiquidityProvider::Amm,
+        liquidity_quote: None,
     }
 }
 
@@ -705,7 +703,7 @@ impl Setup {
                 token: pool.token_b,
                 amount: pool.amount_b,
             },
-            liquidity_provider: pool.liquidity_provider,
+            liquidity_quote: pool.liquidity_quote,
         });
         self
     }
@@ -790,7 +788,6 @@ impl Setup {
             trader_secret_key,
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
-            liquidity_provider: self.liquidity_provider,
         })
         .await;
         let mut solutions = Vec::new();

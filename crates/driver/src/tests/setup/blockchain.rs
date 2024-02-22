@@ -51,18 +51,14 @@ pub struct Interaction {
     pub internalize: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LiquidityProvider {
-    Amm,
-    Pmm(LiquidityQuote),
-}
-
 /// A uniswap pool deployed as part of the blockchain setup.
 #[derive(Debug, Clone, Copy)]
 pub struct Pool {
     pub reserve_a: Asset,
     pub reserve_b: Asset,
-    pub liquidity_provider: LiquidityProvider,
+    /// Specifies a predefined quote. Original AMM formula is used in case the
+    /// quote is empty.
+    pub liquidity_quote: Option<LiquidityQuote>,
 }
 
 impl Pool {
@@ -79,21 +75,21 @@ impl Pool {
     }
 
     fn executed_amounts(&self, order: &Order) -> (eth::U256, eth::U256) {
-        match &self.liquidity_provider {
-            LiquidityProvider::Amm => {
+        match self.liquidity_quote {
+            Some(quote) => {
+                if quote.sell_token == self.reserve_a.token {
+                    (quote.sell_amount, quote.buy_amount)
+                } else {
+                    (quote.buy_amount, quote.sell_amount)
+                }
+            }
+            None => {
                 let executed_sell = order.sell_amount;
                 let executed_buy = self.out(Asset {
                     amount: order.sell_amount,
                     token: order.sell_token,
                 });
                 (executed_sell, executed_buy)
-            }
-            LiquidityProvider::Pmm(quote) => {
-                if quote.sell_token == self.reserve_a.token {
-                    (quote.sell_amount, quote.buy_amount)
-                } else {
-                    (quote.buy_amount, quote.sell_amount)
-                }
             }
         }
     }
@@ -165,7 +161,6 @@ impl QuotedOrder {
 
 pub struct Config {
     pub pools: Vec<Pool>,
-    pub liquidity_provider: LiquidityProvider,
     pub trader_address: eth::H160,
     pub trader_secret_key: SecretKey,
     pub solvers: Vec<super::Solver>,
