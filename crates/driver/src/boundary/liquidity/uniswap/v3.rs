@@ -13,7 +13,6 @@ use {
     anyhow::Context,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     ethrpc::current_block::BlockRetrieving,
-    itertools::Itertools,
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
@@ -92,16 +91,12 @@ pub fn to_interaction(
         TokenAmount::new(output.0.token.into(), output.0.amount),
     );
 
-    interaction
-        .encode()
-        .into_iter()
-        .map(|(target, value, call_data)| eth::Interaction {
-            target: eth::Address(target),
-            value: eth::Ether(value),
-            call_data: call_data.0.into(),
-        })
-        .exactly_one()
-        .unwrap()
+    let encoded = interaction.encode();
+    eth::Interaction {
+        target: eth::Address(encoded.0),
+        value: eth::Ether(encoded.1),
+        call_data: crate::util::Bytes(encoded.2 .0),
+    }
 }
 
 pub fn collector(

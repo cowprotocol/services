@@ -32,10 +32,10 @@ impl UnwrapWethInteraction {
 }
 
 impl Interaction for UnwrapWethInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
+    fn encode(&self) -> EncodedInteraction {
         let method = self.weth.withdraw(self.amount);
         let calldata = method.tx.data.expect("no calldata").0;
-        vec![(self.weth.address(), 0.into(), Bytes(calldata))]
+        (self.weth.address(), 0.into(), Bytes(calldata))
     }
 }
 
@@ -51,9 +51,8 @@ mod tests {
             weth: weth.clone(),
             amount,
         };
-        let encoded_interactions = interaction.encode();
+        let withdraw_call = interaction.encode();
 
-        let withdraw_call = &encoded_interactions[0];
         assert_eq!(withdraw_call.0, weth.address());
         assert_eq!(withdraw_call.1, U256::from(0));
         let call = &withdraw_call.2 .0;
