@@ -118,8 +118,6 @@ impl BatchTransport for InstrumentedTransport {
     where
         R: IntoIterator<Item = (RequestId, Call)>,
     {
-        // TODO: Can we get rid of this clone?
-        // Do we even need the `BatchTransport` impl here?
         let inner = self.0.clone();
         let requests: Vec<_> = requests.into_iter().collect();
 
