@@ -16,10 +16,10 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub async fn new(web3: &DynWeb3, network: &ChainId, addresses: Addresses) -> Self {
+    pub async fn new(web3: &DynWeb3, chain: &ChainId, addresses: Addresses) -> Self {
         let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
             address
-                .or_else(|| deployment_address(contract, network))
+                .or_else(|| deployment_address(contract, chain))
                 .unwrap()
         };
 
@@ -67,6 +67,6 @@ impl Contracts {
 
 /// Returns the address of a contract for the specified network, or `None` if
 /// there is no known deployment for the contract on that network.
-pub fn deployment_address(contract: &ethcontract::Contract, network: &ChainId) -> Option<H160> {
-    Some(contract.networks.get(&network.to_string())?.address)
+pub fn deployment_address(contract: &ethcontract::Contract, chain: &ChainId) -> Option<H160> {
+    Some(contract.networks.get(&chain.to_string())?.address)
 }

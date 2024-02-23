@@ -19,7 +19,7 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    network: eth::ChainId,
+    chain: eth::ChainId,
 }
 
 impl Rpc {
@@ -27,14 +27,14 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, Error> {
         let web3 = boundary::buffered_web3_client(url);
-        let network = web3.eth().chain_id().await?.into();
+        let chain = web3.eth().chain_id().await?.into();
 
-        Ok(Self { web3, network })
+        Ok(Self { web3, chain })
     }
 
-    /// Returns the network information for the RPC connection.
-    pub fn network(&self) -> eth::ChainId {
-        self.network
+    /// Returns the chain id for the RPC connection.
+    pub fn chain(&self) -> eth::ChainId {
+        self.chain
     }
 
     /// Returns a reference to the underlying web3 client.
@@ -47,7 +47,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    network: eth::ChainId,
+    chain: eth::ChainId,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockStream,
@@ -65,7 +65,10 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
     ) -> Self {
-        let Rpc { web3, network } = rpc;
+        let Rpc {
+            web3,
+            chain: network,
+        } = rpc;
         let contracts = Contracts::new(&web3, network, addresses)
             .await
             .expect("could not initialize important smart contracts");
@@ -78,14 +81,14 @@ impl Ethereum {
             .await
             .expect("couldn't initialize current block stream"),
             web3,
-            network,
+            chain: network,
             contracts,
             gas,
         }
     }
 
     pub fn network(&self) -> eth::ChainId {
-        self.network
+        self.chain
     }
 
     /// Onchain smart contract bindings.
@@ -217,7 +220,7 @@ impl fmt::Debug for Ethereum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Ethereum")
             .field("web3", &self.web3)
-            .field("network", &self.network)
+            .field("network", &self.chain)
             .field("contracts", &self.contracts)
             .field("gas", &"Arc<NativeGasEstimator>")
             .finish()

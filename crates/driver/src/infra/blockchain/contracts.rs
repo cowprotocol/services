@@ -24,13 +24,13 @@ pub struct Addresses {
 impl Contracts {
     pub(super) async fn new(
         web3: &DynWeb3,
-        network: eth::ChainId,
+        chain: eth::ChainId,
         addresses: Addresses,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
             address
-                .or_else(|| deployment_address(contract, network))
+                .or_else(|| deployment_address(contract, chain))
                 .unwrap()
                 .0
         };

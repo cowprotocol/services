@@ -61,7 +61,7 @@ pub struct UniV2BaselineSource {
 }
 
 impl UniV2BaselineSourceParameters {
-    pub fn from_baseline_source(source: BaselineSource, net_version: &str) -> Option<Self> {
+    pub fn from_baseline_source(source: BaselineSource, chain: &str) -> Option<Self> {
         use BaselineSource as BS;
         let (contract, init_code_digest, pool_reading) = match source {
             BS::None | BS::BalancerV2 | BS::ZeroEx | BS::UniswapV3 => None,
@@ -97,7 +97,7 @@ impl UniV2BaselineSourceParameters {
             )),
         }?;
         Some(Self {
-            router: contract.networks.get(net_version)?.address,
+            router: contract.networks.get(chain)?.address,
             init_code_digest: H256(init_code_digest),
             pool_reading,
         })
