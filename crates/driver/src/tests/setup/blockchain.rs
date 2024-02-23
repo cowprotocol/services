@@ -6,7 +6,7 @@ use {
             eth::{self, ContractAddress},
         },
         infra::time,
-        tests::{self, boundary, setup::LiquidityQuote},
+        tests::{self, boundary},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
@@ -56,9 +56,6 @@ pub struct Interaction {
 pub struct Pool {
     pub reserve_a: Asset,
     pub reserve_b: Asset,
-    /// Specifies a predefined quote. Original AMM formula is used in case the
-    /// quote is empty.
-    pub liquidity_quote: Option<LiquidityQuote>,
 }
 
 impl Pool {
@@ -72,26 +69,6 @@ impl Pool {
         };
         output_reserve * input.amount * eth::U256::from(997)
             / (input_reserve * eth::U256::from(1000) + input.amount * eth::U256::from(997))
-    }
-
-    fn executed_amounts(&self, order: &Order) -> (eth::U256, eth::U256) {
-        match self.liquidity_quote {
-            Some(quote) => {
-                if quote.sell_token == self.reserve_a.token {
-                    (quote.sell_amount, quote.buy_amount)
-                } else {
-                    (quote.buy_amount, quote.sell_amount)
-                }
-            }
-            None => {
-                let executed_sell = order.sell_amount;
-                let executed_buy = self.out(Asset {
-                    amount: order.sell_amount,
-                    token: order.sell_token,
-                });
-                (executed_sell, executed_buy)
-            }
-        }
     }
 }
 
@@ -549,10 +526,12 @@ impl Blockchain {
     /// Quote an order using a UniswapV2 pool. This determines the buy and sell
     /// amount of the order.
     pub async fn quote(&self, order: &Order) -> QuotedOrder {
-        let (executed_sell, executed_buy) = {
-            let pair = self.find_pair(order);
-            pair.pool.executed_amounts(order)
-        };
+        let pair = self.find_pair(order);
+        let executed_sell = order.sell_amount;
+        let executed_buy = pair.pool.out(Asset {
+            amount: order.sell_amount,
+            token: order.sell_token,
+        });
         QuotedOrder {
             order: order.clone(),
             buy: executed_buy,

@@ -382,7 +382,6 @@ pub struct Pool {
     pub token_b: &'static str,
     pub amount_a: eth::U256,
     pub amount_b: eth::U256,
-    pub liquidity_quote: Option<LiquidityQuote>,
 }
 
 impl Pool {
@@ -584,16 +583,11 @@ pub fn ab_pool() -> Pool {
         token_b: "B",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
-        liquidity_quote: None,
     }
 }
 
 pub fn ab_adjusted_pool(quote: LiquidityQuote) -> Pool {
-    Pool {
-        liquidity_quote: Some(quote),
-        ..ab_pool()
-    }
-    .adjusted_reserve_b(&quote)
+    ab_pool().adjusted_reserve_b(&quote)
 }
 
 /// An example order which sells token "A" for token "B".
@@ -634,7 +628,6 @@ pub fn cd_pool() -> Pool {
         token_b: "D",
         amount_a: DEFAULT_POOL_AMOUNT_C.into(),
         amount_b: DEFAULT_POOL_AMOUNT_D.into(),
-        liquidity_quote: None,
     }
 }
 
@@ -667,7 +660,6 @@ pub fn weth_pool() -> Pool {
         token_b: "WETH",
         amount_a: DEFAULT_POOL_AMOUNT_A.into(),
         amount_b: DEFAULT_POOL_AMOUNT_B.into(),
-        liquidity_quote: None,
     }
 }
 
@@ -712,7 +704,6 @@ impl Setup {
                 token: pool.token_b,
                 amount: pool.amount_b,
             },
-            liquidity_quote: pool.liquidity_quote,
         });
         self
     }
