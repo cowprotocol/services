@@ -1,6 +1,5 @@
 FROM docker.io/flyway/flyway:10.7.1 as migrations
-COPY --from=cargo-build /sql /flyway/sql
-COPY --from=cargo-build /flyway.conf /flyway/conf/flyway.conf
+COPY database/ /flyway/
 CMD ["migrate"]
 
 FROM docker.io/rust:1-slim-bookworm as cargo-build
