@@ -29,9 +29,10 @@ pub enum Config {
 
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config, network_id: eth::ChainId, eth: Ethereum) -> Self {
+    pub fn tenderly(config: tenderly::Config, chain: eth::ChainId, eth: Ethereum) -> Self {
+        let eth = eth.with_metric_label("tenderlySimulator".into());
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(config, network_id)),
+            inner: Inner::Tenderly(tenderly::Tenderly::new(config, chain)),
             eth,
             disable_access_lists: false,
             disable_gas: None,
@@ -40,6 +41,7 @@ impl Simulator {
 
     /// Simulate transactions using the Ethereum RPC API.
     pub fn ethereum(eth: Ethereum) -> Self {
+        let eth = eth.with_metric_label("web3Simulator".into());
         Self {
             inner: Inner::Ethereum,
             eth,
@@ -51,6 +53,7 @@ impl Simulator {
     /// Simulate transactions using the [Enso Simulator](https://github.com/EnsoFinance/transaction-simulator).
     /// Uses Ethereum RPC API to generate access lists.
     pub fn enso(config: enso::Config, eth: Ethereum) -> Self {
+        let eth = eth.with_metric_label("ensoSimulator".into());
         Self {
             inner: Inner::Enso(enso::Enso::new(
                 config,

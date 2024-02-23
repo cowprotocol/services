@@ -223,7 +223,8 @@ impl Settlement {
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, score::Error> {
-        let quality = self.boundary.quality(eth, auction)?;
+        let eth = eth.with_metric_label("scoringSolution".into());
+        let quality = self.boundary.quality(&eth, auction)?;
 
         let score = match self.boundary.score() {
             competition::SolverScore::Solver(score) => score.try_into()?,

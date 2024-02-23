@@ -104,7 +104,7 @@ pub fn collector(
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
 ) -> Box<dyn LiquidityCollecting> {
-    let eth = Arc::new(eth.clone());
+    let eth = Arc::new(eth.with_metric_label("uniswapV3".into()));
     let config = Arc::new(Clone::clone(config));
     let init = move || {
         let eth = eth.clone();
