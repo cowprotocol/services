@@ -259,7 +259,7 @@ impl Mempools {
         let tx = mempool.submit(tx, gas, solver, nonce).await?;
         tracing::debug!(?tx, ?nonce, "Submitted tx and tracking nonce");
 
-        // Track pending transactions
+        // Track pending transaction
         if let Some(nonce) = nonce {
             self.tx_pool.lock().await.insert(
                 solver.address(),
