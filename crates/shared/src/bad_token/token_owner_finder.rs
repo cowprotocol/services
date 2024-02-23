@@ -214,6 +214,7 @@ pub async fn init(
     uniswapv3_factory: Option<&IUniswapV3Factory>,
     base_tokens: &BaseTokens,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
+    let web3 = ethrpc::instrumented::instrument_with_label(&web3, "tokenOwners".into());
     let finders = args
         .token_owner_finders
         .as_deref()
