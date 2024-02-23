@@ -40,7 +40,7 @@ use {
     web3::types::TransactionId,
 };
 
-pub mod blockchain;
+mod blockchain;
 mod driver;
 mod solver;
 
