@@ -88,7 +88,7 @@ pub async fn estimate_settlement_access_list(
                     .value(1.into());
                 let simulation_link = tenderly_link(
                     web3.eth().block_number().await?.as_u64(),
-                    &web3.net().version().await?,
+                    &web3.eth().chain_id().await?.to_string(),
                     tx.clone(),
                     None,
                     None
@@ -128,7 +128,7 @@ pub async fn estimate_settlement_access_list(
 
     let simulation_link = tenderly_link(
         web3.eth().block_number().await?.as_u64(),
-        &web3.net().version().await?,
+        &web3.eth().chain_id().await?.to_string(),
         tx.clone(),
         None,
         Some(partial_access_list.clone()),

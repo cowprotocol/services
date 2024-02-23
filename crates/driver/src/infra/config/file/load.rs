@@ -22,7 +22,7 @@ lazy_static! {
 /// # Panics
 ///
 /// This method panics if the config is invalid or on I/O errors.
-pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
+pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
@@ -39,8 +39,8 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
     });
 
     assert_eq!(
-        config.chain_id.map(eth::ChainId).unwrap_or(network.chain),
-        network.chain,
+        config.chain_id.map(eth::ChainId).unwrap_or(chain),
+        chain,
         "The configured chain ID does not match connected Ethereum node"
     );
     let graph_api_base_url = config
@@ -105,22 +105,22 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 .map(|config| match config {
                     file::UniswapV2Config::Preset { preset } => match preset {
                         file::UniswapV2Preset::UniswapV2 => {
-                            liquidity::config::UniswapV2::uniswap_v2(&network.id)
+                            liquidity::config::UniswapV2::uniswap_v2(chain)
                         }
                         file::UniswapV2Preset::SushiSwap => {
-                            liquidity::config::UniswapV2::sushi_swap(&network.id)
+                            liquidity::config::UniswapV2::sushi_swap(chain)
                         }
                         file::UniswapV2Preset::Honeyswap => {
-                            liquidity::config::UniswapV2::honeyswap(&network.id)
+                            liquidity::config::UniswapV2::honeyswap(chain)
                         }
                         file::UniswapV2Preset::Baoswap => {
-                            liquidity::config::UniswapV2::baoswap(&network.id)
+                            liquidity::config::UniswapV2::baoswap(chain)
                         }
                         file::UniswapV2Preset::PancakeSwap => {
-                            liquidity::config::UniswapV2::pancake_swap(&network.id)
+                            liquidity::config::UniswapV2::pancake_swap(chain)
                         }
                         file::UniswapV2Preset::TestnetUniswapV2 => {
-                            liquidity::config::UniswapV2::testnet_uniswapv2(&network.id)
+                            liquidity::config::UniswapV2::testnet_uniswapv2(chain)
                         }
                     }
                     .expect("no Uniswap V2 preset for current network"),
@@ -142,7 +142,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 .cloned()
                 .map(|config| match config {
                     file::SwaprConfig::Preset { preset } => match preset {
-                        file::SwaprPreset::Swapr => liquidity::config::Swapr::swapr(&network.id),
+                        file::SwaprPreset::Swapr => liquidity::config::Swapr::swapr(chain),
                     }
                     .expect("no Swapr preset for current network"),
                     file::SwaprConfig::Manual {
@@ -169,10 +169,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(
-                                    &graph_api_base_url,
-                                    &network.id,
-                                )
+                                liquidity::config::UniswapV3::uniswap_v3(&graph_api_base_url, chain)
                             }
                         }
                         .expect("no Uniswap V3 preset for current network")
@@ -202,7 +199,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             file::BalancerV2Preset::BalancerV2 => {
                                 liquidity::config::BalancerV2::balancer_v2(
                                     &graph_api_base_url,
-                                    &network.id,
+                                    chain,
                                 )
                             }
                         }
