@@ -234,8 +234,7 @@ impl Mempools {
             .cloned()
         {
             // There is a pending transaction, optimistically cancel it and increment the
-            // nonce for the actual settlement using the public mempool
-            // preferably.
+            // nonce for the actual settlement.
             tracing::info!(
                 ?solver,
                 ?nonce,
