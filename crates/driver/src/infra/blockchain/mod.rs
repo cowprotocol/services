@@ -125,6 +125,10 @@ impl Ethereum {
         &self.inner.current_block
     }
 
+    pub async fn nonce(&self, address: eth::Address) -> Result<eth::U256, Error> {
+        Ok(self.web3.eth().transaction_count(address.0, None).await?)
+    }
+
     /// Create access list used by a transaction.
     pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
         const MAX_BLOCK_SIZE: u64 = 30_000_000;

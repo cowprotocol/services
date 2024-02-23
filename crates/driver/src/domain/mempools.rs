@@ -4,9 +4,12 @@ use {
         domain::{competition::solution::Settlement, eth::TxStatus},
         infra::{self, observe, solver::Solver, Ethereum},
     },
+    anyhow::anyhow,
     ethrpc::current_block::into_stream,
     futures::{future::select_ok, FutureExt, StreamExt},
+    std::{collections::HashMap, sync::Arc},
     thiserror::Error,
+    tokio::sync::Mutex,
     tracing::Instrument,
 };
 
@@ -21,7 +24,14 @@ const CANCELLATION_GAS_AMOUNT: u64 = 21000;
 #[derive(Debug, Clone)]
 pub struct Mempools {
     mempools: Vec<infra::Mempool>,
+    tx_pool: Arc<Mutex<HashMap<eth::Address, PendingTx>>>,
     ethereum: Ethereum,
+}
+
+#[derive(Debug, Clone)]
+struct PendingTx {
+    nonce: eth::U256,
+    gas_price: eth::GasPrice,
 }
 
 impl Mempools {
@@ -29,7 +39,11 @@ impl Mempools {
         if mempools.is_empty() {
             Err(NoMempools)
         } else {
-            Ok(Self { mempools, ethereum })
+            Ok(Self {
+                mempools,
+                tx_pool: Default::default(),
+                ethereum,
+            })
         }
     }
 
@@ -39,6 +53,23 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
     ) -> Result<eth::TxId, Error> {
+        // Native solution submission via public mempool may require cancelling
+        // a pending transaction and determining a custom nonce.
+        let nonce = if let Some(inner) = self.mempools.iter().find_map(|mempool| match mempool {
+            infra::Mempool::Boundary(_) => None,
+            infra::Mempool::Native(inner) => {
+                if matches!(inner.config().kind, infra::mempool::Kind::Public(_)) {
+                    Some(inner)
+                } else {
+                    None
+                }
+            }
+        }) {
+            Some(self.cancel_pending_tx(solver, inner).await?)
+        } else {
+            None
+        };
+
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
@@ -47,7 +78,7 @@ impl Mempools {
                             mempool.execute(solver, settlement.clone()).await
                         }
                         infra::Mempool::Native(inner) => {
-                            self.submit(inner, solver, settlement)
+                            self.submit(inner, solver, settlement, nonce)
                                 .instrument(tracing::info_span!(
                                     "mempool",
                                     kind = inner.to_string()
@@ -85,6 +116,7 @@ impl Mempools {
         mempool: &infra::mempool::Inner,
         solver: &Solver,
         settlement: &Settlement,
+        nonce: Option<eth::U256>,
     ) -> Result<eth::TxId, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -104,7 +136,9 @@ impl Mempools {
                 competition::solution::settlement::Internalization::Enable,
             )
         };
-        let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
+        let hash = self
+            .execute_and_track(mempool, tx.clone(), settlement.gas, solver, nonce)
+            .await?;
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
         loop {
             // Wait for the next block to be mined or we time out. Block stream immediately
@@ -114,7 +148,8 @@ impl Mempools {
                 .is_err()
             {
                 tracing::info!(?hash, "tx not confirmed in time, cancelling");
-                self.cancel(mempool, settlement.gas.price, solver).await?;
+                self.cancel(mempool, settlement.gas.price, solver, nonce)
+                    .await?;
                 return Err(Error::Expired);
             }
             tracing::debug!(?hash, "checking if tx is confirmed");
@@ -139,7 +174,8 @@ impl Mempools {
                                 ?err,
                                 "tx started failing in mempool, cancelling"
                             );
-                            self.cancel(mempool, settlement.gas.price, solver).await?;
+                            self.cancel(mempool, settlement.gas.price, solver, nonce)
+                                .await?;
                             return Err(Error::SimulationRevert);
                         } else {
                             tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
@@ -157,6 +193,7 @@ impl Mempools {
         mempool: &infra::mempool::Inner,
         pending: eth::GasPrice,
         solver: &Solver,
+        nonce: Option<eth::U256>,
     ) -> Result<(), Error> {
         let cancellation = eth::Tx {
             from: solver.address(),
@@ -170,8 +207,70 @@ impl Mempools {
             limit: CANCELLATION_GAS_AMOUNT.into(),
             price: pending * GAS_PRICE_BUMP,
         };
-        mempool.submit(cancellation, gas, solver).await?;
+        self.execute_and_track(mempool, cancellation, gas, solver, nonce)
+            .await?;
         Ok(())
+    }
+
+    /// Checks if there is a pending transaction, and if so cancels it.
+    /// Returns the nonce to use for the new transaction.
+    async fn cancel_pending_tx(
+        &self,
+        solver: &Solver,
+        mempool: &infra::mempool::Inner,
+    ) -> Result<eth::U256, Error> {
+        let nonce = self
+            .ethereum
+            .nonce(solver.address())
+            .await
+            .map_err(|err| Error::Other(anyhow!("Error fetching nonce {}", err)))?;
+
+        if let Some(pending) = self
+            .tx_pool
+            .lock()
+            .await
+            .get(&solver.address())
+            .filter(|p| p.nonce == nonce)
+            .cloned()
+        {
+            // There is a pending transaction, optimistically cancel it and increment the
+            // nonce for the actual settlement using the public mempool
+            // preferably.
+            tracing::info!(
+                ?solver,
+                ?nonce,
+                "Cancelling pending transaction from previous auction"
+            );
+            self.cancel(mempool, pending.gas_price, &solver, Some(nonce))
+                .await?;
+            Ok(nonce + 1)
+        } else {
+            Ok(nonce)
+        }
+    }
+
+    async fn execute_and_track(
+        &self,
+        mempool: &infra::mempool::Inner,
+        tx: eth::Tx,
+        gas: competition::solution::settlement::Gas,
+        solver: &infra::Solver,
+        nonce: Option<eth::U256>,
+    ) -> Result<eth::TxId, Error> {
+        let tx = mempool.submit(tx, gas, solver, nonce).await?;
+        tracing::debug!(?tx, ?nonce, "Submitted tx and tracking nonce");
+
+        // Track pending transactions
+        if let Some(nonce) = nonce {
+            self.tx_pool.lock().await.insert(
+                solver.address(),
+                PendingTx {
+                    nonce,
+                    gas_price: gas.price,
+                },
+            );
+        };
+        Ok(tx)
     }
 }
 

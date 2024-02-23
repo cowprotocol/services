@@ -62,8 +62,9 @@ impl Inner {
         tx: eth::Tx,
         gas: competition::solution::settlement::Gas,
         solver: &infra::Solver,
+        nonce: Option<eth::U256>,
     ) -> Result<eth::TxId, mempools::Error> {
-        ethcontract::transaction::TransactionBuilder::new(self.transport.clone())
+        let mut tx = ethcontract::transaction::TransactionBuilder::new(self.transport.clone())
             .from(solver.account().clone())
             .to(tx.to.into())
             .gas_price(ethcontract::GasPrice::Eip1559 {
@@ -73,8 +74,13 @@ impl Inner {
             .data(tx.input.into())
             .value(tx.value.0)
             .gas(gas.limit.0)
-            .access_list(web3::types::AccessList::from(tx.access_list))
-            .send()
+            .access_list(web3::types::AccessList::from(tx.access_list));
+
+        if let Some(nonce) = nonce {
+            tx = tx.nonce(nonce)
+        };
+
+        tx.send()
             .await
             .map(|result| eth::TxId(result.hash()))
             .map_err(|err| mempools::Error::Other(anyhow::Error::from(err)))
