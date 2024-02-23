@@ -18,7 +18,7 @@ struct Config {
     /// Note that the actual chain ID is fetched from the configured Ethereum
     /// RPC endpoint, and the driver will exit if it does not match this
     /// value.
-    chain_id: Option<eth::U256>,
+    chain_id: Option<u64>,
 
     /// Disable access list simulation, useful for environments that don't
     /// support this, such as less popular blockchains.
@@ -56,11 +56,11 @@ struct Config {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SubmissionConfig {
-    /// Additional tip in percentage of max_fee_per_gas we are willing to give
-    /// to miners above regular gas price estimation. Expects a floating point
-    /// value between 0 and 1.
-    #[serde(default = "default_additional_tip_percentage")]
-    additional_tip_percentage: f64,
+    /// The minimum priority fee in Gwei the solver is ensuring to pay in a
+    /// settlement.
+    #[serde(default)]
+    #[serde_as(as = "serialize::U256")]
+    min_priority_fee: eth::U256,
 
     /// The maximum gas price in Gwei the solver is willing to pay in a
     /// settlement.
@@ -107,6 +107,11 @@ enum Mempool {
         #[serde(default = "default_max_additional_tip")]
         #[serde_as(as = "serialize::U256")]
         max_additional_tip: eth::U256,
+        /// Additional tip in percentage of max_fee_per_gas we are giving to
+        /// MEVBlocker above regular gas price estimation. Expects a
+        /// floating point value between 0 and 1.
+        #[serde(default = "default_additional_tip_percentage")]
+        additional_tip_percentage: f64,
         /// Configures whether the submission logic is allowed to assume the
         /// submission nodes implement soft cancellations. With soft
         /// cancellations a cancellation transaction doesn't have to get mined

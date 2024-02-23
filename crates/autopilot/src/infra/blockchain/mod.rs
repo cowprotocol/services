@@ -18,23 +18,14 @@ use crate::domain::{self, eth};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChainId(pub U256);
 
+impl std::fmt::Display for ChainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl From<U256> for ChainId {
     fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct NetworkId(pub String);
-
-impl NetworkId {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for NetworkId {
-    fn from(value: String) -> Self {
         Self(value)
     }
 }
@@ -42,14 +33,7 @@ impl From<String> for NetworkId {
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    network: Network,
-}
-
-/// Network information for an Ethereum blockchain connection.
-#[derive(Clone, Debug)]
-pub struct Network {
-    pub id: NetworkId,
-    pub chain: ChainId,
+    chain: ChainId,
 }
 
 impl Rpc {
@@ -57,18 +41,14 @@ impl Rpc {
     /// at the specifed URL.
     pub async fn new(url: &url::Url) -> Result<Self, Error> {
         let web3 = boundary::buffered_web3_client(url);
-        let id = web3.net().version().await?.into();
         let chain = web3.eth().chain_id().await?.into();
 
-        Ok(Self {
-            web3,
-            network: Network { id, chain },
-        })
+        Ok(Self { web3, chain })
     }
 
-    /// Returns the network information for the RPC connection.
-    pub fn network(&self) -> &Network {
-        &self.network
+    /// Returns the chain id for the RPC connection.
+    pub fn chain(&self) -> ChainId {
+        self.chain
     }
 
     /// Returns a reference to the underlying web3 client.
@@ -81,7 +61,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    network: Network,
+    chain: ChainId,
     current_block: CurrentBlockStream,
     contracts: Contracts,
 }
@@ -94,8 +74,8 @@ impl Ethereum {
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
     pub async fn new(rpc: Rpc, addresses: contracts::Addresses, poll_interval: Duration) -> Self {
-        let Rpc { web3, network } = rpc;
-        let contracts = Contracts::new(&web3, &network.id, addresses).await;
+        let Rpc { web3, chain } = rpc;
+        let contracts = Contracts::new(&web3, &chain, addresses).await;
 
         Self {
             current_block: ethrpc::current_block::current_block_stream(
@@ -105,13 +85,13 @@ impl Ethereum {
             .await
             .expect("couldn't initialize current block stream"),
             web3,
-            network,
+            chain,
             contracts,
         }
     }
 
-    pub fn network(&self) -> &Network {
-        &self.network
+    pub fn network(&self) -> &ChainId {
+        &self.chain
     }
 
     /// Returns a stream that monitors the block chain to inform about the

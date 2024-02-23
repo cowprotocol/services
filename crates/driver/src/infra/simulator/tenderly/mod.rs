@@ -9,7 +9,7 @@ pub(super) struct Tenderly {
     endpoint: reqwest::Url,
     client: reqwest::Client,
     config: Config,
-    network_id: eth::NetworkId,
+    chain_id: eth::ChainId,
 }
 
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ pub struct Config {
 }
 
 impl Tenderly {
-    pub(super) fn new(config: Config, network_id: eth::NetworkId) -> Self {
+    pub(super) fn new(config: Config, chain_id: eth::ChainId) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -57,7 +57,7 @@ impl Tenderly {
                 .build()
                 .unwrap(),
             config,
-            network_id,
+            chain_id,
         }
     }
 
@@ -70,7 +70,7 @@ impl Tenderly {
             .client
             .post(self.endpoint.clone())
             .json(&dto::Request {
-                network_id: self.network_id.to_string(),
+                network_id: self.chain_id.to_string(),
                 from: tx.from.into(),
                 to: tx.to.into(),
                 input: tx.input.into(),

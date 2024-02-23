@@ -385,8 +385,8 @@ pub struct TransactionBuilderResponse {
 }
 
 impl Interaction for TransactionBuilderResponse {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.to, self.value, Bytes(self.data.clone()))]
+    fn encode(&self) -> EncodedInteraction {
+        (self.to, self.value, Bytes(self.data.clone()))
     }
 }
 

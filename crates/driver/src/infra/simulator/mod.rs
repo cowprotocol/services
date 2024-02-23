@@ -29,7 +29,7 @@ pub enum Config {
 
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config, network_id: eth::NetworkId, eth: Ethereum) -> Self {
+    pub fn tenderly(config: tenderly::Config, network_id: eth::ChainId, eth: Ethereum) -> Self {
         Self {
             inner: Inner::Tenderly(tenderly::Tenderly::new(config, network_id)),
             eth,
@@ -54,7 +54,7 @@ impl Simulator {
         Self {
             inner: Inner::Enso(enso::Enso::new(
                 config,
-                eth.network().chain,
+                eth.network(),
                 eth.current_block().clone(),
             )),
             eth,

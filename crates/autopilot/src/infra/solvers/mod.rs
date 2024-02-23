@@ -1,10 +1,13 @@
 use {
-    crate::{boundary, util},
+    self::dto::{reveal, settle, solve},
+    crate::util,
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
     std::time::Duration,
     url::Url,
 };
+
+pub mod dto;
 
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
@@ -27,25 +30,19 @@ impl Driver {
         }
     }
 
-    pub async fn solve(
-        &self,
-        request: &boundary::solve::Request,
-    ) -> Result<boundary::solve::Response> {
+    pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
         self.request_response("solve", request, None).await
     }
 
-    pub async fn reveal(
-        &self,
-        request: &boundary::reveal::Request,
-    ) -> Result<boundary::reveal::Response> {
+    pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
         self.request_response("reveal", request, None).await
     }
 
     pub async fn settle(
         &self,
-        request: &boundary::settle::Request,
+        request: &settle::Request,
         timeout: std::time::Duration,
-    ) -> Result<boundary::settle::Response> {
+    ) -> Result<settle::Response> {
         self.request_response("settle", request, Some(timeout))
             .await
     }
