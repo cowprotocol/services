@@ -147,22 +147,20 @@ impl Inner {
                     auction_data: Some(self.fetch_auction_data(settlement, &prices)?),
                 }
             }
-            Err(err) => match err {
-                domain::settlement::Error::Blockchain(err) => return Err(err.into()),
-                domain::settlement::Error::TransactionNotFound => {
-                    tracing::warn!(?hash, "settlement tx not found, reorg happened");
-                    return Ok(false);
+            Err(domain::settlement::Error::Blockchain(err)) => return Err(err.into()),
+            Err(domain::settlement::Error::TransactionNotFound) => {
+                tracing::warn!(?hash, "settlement tx not found, reorg happened");
+                return Ok(false);
+            }
+            Err(domain::settlement::Error::Encoded(err)) => {
+                tracing::warn!(?hash, ?err, "could not decode settlement tx");
+                SettlementUpdate {
+                    block_number: event.block_number,
+                    log_index: event.log_index,
+                    auction_id: err.auction_id().unwrap_or_default(),
+                    auction_data: None,
                 }
-                domain::settlement::Error::Encoded(err) => {
-                    tracing::warn!(?err, "could not decode settlement tx");
-                    SettlementUpdate {
-                        block_number: event.block_number,
-                        log_index: event.log_index,
-                        auction_id: 0,
-                        auction_data: None,
-                    }
-                }
-            },
+            }
         };
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");

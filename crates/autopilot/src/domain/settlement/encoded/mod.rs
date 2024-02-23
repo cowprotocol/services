@@ -50,8 +50,16 @@ impl Encoded {
             .ok_or(Error::InvalidSelector)?;
 
         let (calldata, metadata) = data.split_at(data.len() - Self::META_DATA_LEN);
-        let tokenized = function.decode_input(calldata)?;
-        let tokenized = <tokenized::Settlement>::from_token(web3::ethabi::Token::Tuple(tokenized))?;
+        let metadata: Option<[u8; Self::META_DATA_LEN]> = metadata.try_into().ok();
+        let auction_id = metadata
+            .map(auction::Id::from_be_bytes)
+            .ok_or(Error::MissingAuctionId)?;
+
+        let tokenized = function
+            .decode_input(calldata)
+            .map_err(|err| EncodingError::Decoding(err).with(auction_id))?;
+        let tokenized = <tokenized::Settlement>::from_token(web3::ethabi::Token::Tuple(tokenized))
+            .map_err(|err| EncodingError::Tokenizing(err).with(auction_id))?;
 
         let (tokens, clearing_prices, decoded_trades, interactions) = tokenized;
 
@@ -59,10 +67,12 @@ impl Encoded {
         for trade in decoded_trades {
             let flags = TradeFlags(trade.8);
             let signature = boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
-                .map_err(boundary::order::Error::Signature)?;
+                .map_err(boundary::order::Error::Signature)
+                .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?;
 
             trades.push(Trade {
-                order_uid: boundary::order::order_uid(&trade, &tokens, &domain_separator)?,
+                order_uid: boundary::order::order_uid(&trade, &tokens, &domain_separator)
+                    .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?,
                 sell_token_index: trade.0.as_usize(),
                 buy_token_index: trade.1.as_usize(),
                 receiver: trade.2.into(),
@@ -78,10 +88,6 @@ impl Encoded {
         }
         let tokens: Vec<eth::Address> = tokens.into_iter().map(Into::into).collect();
         let interactions = interactions.map(|inner| inner.into_iter().map(Into::into).collect());
-        let metadata: Option<[u8; Self::META_DATA_LEN]> = metadata.try_into().ok();
-        let auction_id = metadata
-            .map(auction::Id::from_be_bytes)
-            .ok_or(Error::MissingAuctionId)?;
 
         Ok(Self {
             tokens,
@@ -205,9 +211,7 @@ impl From<(Address, U256, Bytes<Vec<u8>>)> for Interaction {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("transaction calldata is not a settlement")]
-    InvalidSelector,
+pub enum EncodingError {
     #[error("unable to decode settlement calldata: {0}")]
     Decoding(#[from] web3::ethabi::Error),
     #[error("unable to tokenize calldata into expected format: {0}")]
@@ -216,4 +220,30 @@ pub enum Error {
     OrderUidRecover(#[from] boundary::order::Error),
     #[error("no auction id found in calldata")]
     MissingAuctionId,
+}
+
+impl EncodingError {
+    pub fn with(self, auction: auction::Id) -> Error {
+        Error::Encoding(auction, self)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("transaction calldata is not a settlement")]
+    InvalidSelector,
+    #[error("no auction id found in calldata")]
+    MissingAuctionId,
+    #[error("auction {0} failed encoding: {1}")]
+    Encoding(auction::Id, EncodingError),
+}
+
+impl Error {
+    pub fn auction_id(&self) -> Option<auction::Id> {
+        match self {
+            Self::InvalidSelector => None,
+            Self::MissingAuctionId => None,
+            Self::Encoding(auction, _) => Some(*auction),
+        }
+    }
 }
