@@ -111,7 +111,7 @@ impl Ethereum {
         Ok(self
             .web3
             .eth()
-            .transaction(hash.0.into())
+            .transaction((*hash).into())
             .await
             .map_err(Error::from)?
             .map(Into::into))
@@ -124,7 +124,7 @@ impl Ethereum {
         Ok(self
             .web3
             .eth()
-            .transaction_receipt(hash.0.into())
+            .transaction_receipt((*hash).into())
             .await
             .map_err(Error::from)?
             .map(Into::into))

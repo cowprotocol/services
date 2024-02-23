@@ -454,7 +454,7 @@ impl RunLoop {
             _ => u64::MAX.into(),
         };
 
-        if auction.latest_settlement_block < prev_settlement_block.0 {
+        if auction.latest_settlement_block < *prev_settlement_block {
             // Auction was built before the in-flight orders were processed.
             auction
                 .orders
