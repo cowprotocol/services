@@ -14,7 +14,9 @@ use {
     },
     num::BigRational,
     number::conversions::{big_rational_to_u256, u256_to_big_rational},
-    shared::{conversions::U256Ext, external_prices::ExternalPrices},
+    primitive_types::H160,
+    shared::conversions::U256Ext,
+    std::collections::BTreeMap,
     web3::ethabi::{Function, Token},
 };
 
@@ -239,7 +241,7 @@ impl DecodedSettlement {
 
     /// Returns the total surplus denominated in the native asset for the
     /// solution.
-    pub fn total_surplus(&self, external_prices: &ExternalPrices) -> U256 {
+    pub fn total_surplus(&self, external_prices: &BTreeMap<H160, BigRational>) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
             acc + match surplus(trade, &self.tokens, &self.clearing_prices, external_prices) {
                 Some(surplus) => surplus,
@@ -254,7 +256,7 @@ impl DecodedSettlement {
     /// Returns fees for all trades.
     pub fn all_fees(
         &self,
-        external_prices: &ExternalPrices,
+        external_prices: &BTreeMap<H160, BigRational>,
         domain_separator: &DomainSeparator,
     ) -> Vec<Fees> {
         self.trades
@@ -291,7 +293,7 @@ impl DecodedSettlement {
         &self,
         trade: &DecodedTrade,
         order: OrderUid,
-        external_prices: &ExternalPrices,
+        external_prices: &BTreeMap<H160, BigRational>,
     ) -> Option<Fees> {
         let sell_index = trade.sell_token_index.as_u64() as usize;
         let buy_index = trade.buy_token_index.as_u64() as usize;
@@ -343,8 +345,7 @@ impl DecodedSettlement {
 
         // converts the fee which is denominated in `sell_token` to the native token.
         tracing::trace!(?fee, "fee before conversion to native token");
-        let native =
-            external_prices.try_get_native_amount(*sell_token, u256_to_big_rational(&fee))?;
+        let native = external_prices.get(sell_token)?.clone() * u256_to_big_rational(&fee);
         tracing::trace!(?native, "fee after conversion to native token");
 
         Some(Fees {
@@ -390,7 +391,7 @@ fn surplus(
     trade: &DecodedTrade,
     tokens: &[Address],
     clearing_prices: &[U256],
-    external_prices: &ExternalPrices,
+    external_prices: &BTreeMap<H160, BigRational>,
 ) -> Option<U256> {
     let sell_token_index = trade.sell_token_index.as_u64() as usize;
     let buy_token_index = trade.buy_token_index.as_u64() as usize;
@@ -420,12 +421,11 @@ fn surplus(
     let normalized_surplus = match kind {
         OrderKind::Sell => {
             let buy_token = tokens.get(buy_token_index)?;
-            external_prices.try_get_native_amount(*buy_token, surplus / buy_token_clearing_price)?
+            external_prices.get(buy_token)?.clone() * surplus / buy_token_clearing_price
         }
         OrderKind::Buy => {
             let sell_token = tokens.get(sell_token_index)?;
-            external_prices
-                .try_get_native_amount(*sell_token, surplus / sell_token_clearing_price)?
+            external_prices.get(sell_token)?.clone() * surplus / sell_token_clearing_price
         }
     };
 

@@ -38,8 +38,9 @@ use {
     },
     anyhow::{Context, Result},
     database::PgTransaction,
+    num::BigInt,
     primitive_types::H256,
-    shared::external_prices::ExternalPrices,
+    shared::conversions::U256Ext,
     sqlx::PgConnection,
     std::sync::Arc,
     tokio::sync::Notify,
@@ -194,22 +195,17 @@ impl Inner {
         let effective_gas_price = receipt
             .effective_gas_price
             .with_context(|| format!("no effective gas price {hash:?}"))?;
-        let auction_external_prices = Postgres::get_auction_prices(ex, auction_id)
+        let unit = BigInt::from(1_000_000_000_000_000_000_u128);
+        let external_prices = Postgres::get_auction_prices(ex, auction_id)
             .await
             .with_context(|| {
                 format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?;
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.eth.contracts().weth().address(),
-            auction_external_prices.clone(),
-        )?;
+            })?
+            .into_iter()
+            .map(|(token, price)| (token, price.to_big_rational() / &unit))
+            .collect();
 
-        tracing::debug!(
-            ?auction_id,
-            ?auction_external_prices,
-            ?external_prices,
-            "observations input"
-        );
+        tracing::debug!(?auction_id, ?external_prices, "observations input");
 
         // surplus and fees calculation
         let surplus = settlement.total_surplus(&external_prices);
