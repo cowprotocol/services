@@ -56,7 +56,10 @@ pub fn order_uid(
         valid_to: trade.5,
         app_data: crate::boundary::AppDataHash(trade.6 .0),
         fee_amount: trade.7,
-        kind: flags.order_kind(),
+        kind: match flags.order_kind() {
+            domain::auction::order::Kind::Buy => model::order::OrderKind::Buy,
+            domain::auction::order::Kind::Sell => model::order::OrderKind::Sell,
+        },
         partially_fillable: flags.partially_fillable(),
         receiver: Some(trade.2),
         sell_token_balance: flags.sell_token_balance(),

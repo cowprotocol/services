@@ -9,6 +9,21 @@ pub type BlockNo = SimpleValue<u64>;
 /// A transaction ID, AKA transaction hash.
 pub type TxId = SimpleValue<H256>;
 
+pub type TokenAddress = SimpleValue<H160>;
+pub type TokenAmount = SimpleValue<U256>;
+
+/// An amount denominated in the sell token for [`Kind::Sell`], or in
+/// the buy token for [`Kind::Buy`].
+pub type TargetAmount = SimpleValue<U256>;
+
+/// An asset on the Ethereum blockchain. Represents a particular amount of a
+/// particular token.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct Asset {
+    pub amount: TokenAmount,
+    pub token: TokenAddress,
+}
+
 /// Domain separator used for signing.
 ///
 /// https://eips.ethereum.org/EIPS/eip-712#definition-of-domainseparator
@@ -29,5 +44,25 @@ impl<T> std::ops::Deref for SimpleValue<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl<T> std::ops::Add for SimpleValue<T>
+where
+    T: std::ops::Add<Output = T>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl<T> std::ops::AddAssign for SimpleValue<T>
+where
+    T: std::ops::AddAssign,
+{
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
     }
 }

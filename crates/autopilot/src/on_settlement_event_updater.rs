@@ -188,28 +188,31 @@ impl Inner {
         );
 
         // surplus and fees calculation
-        let surplus = settlement.total_surplus(&external_prices);
-        let (fee, order_executions) = {
-            let domain_separator = self.eth.contracts().settlement_domain_separator();
-            let all_fees = settlement.all_fees(&external_prices, domain_separator);
-            // total fee used for CIP20 rewards
-            let fee = all_fees
-                .iter()
-                .fold(0.into(), |acc, fees| acc + fees.native);
-            // executed surplus fees for each order execution
-            let order_executions = all_fees
-                .into_iter()
-                .map(|fee| (fee.order, fee.executed_surplus_fee().unwrap_or(0.into())))
-                .collect();
-            (fee, order_executions)
-        };
+        // let surplus = settlement.total_surplus(&external_prices);
+        // let (fee, order_executions) = {
+        //     let domain_separator =
+        // self.eth.contracts().settlement_domain_separator();     let all_fees
+        // = settlement.all_fees(&external_prices, domain_separator);     // total
+        // fee used for CIP20 rewards     let fee = all_fees
+        //         .iter()
+        //         .fold(0.into(), |acc, fees| acc + fees.native);
+        //     // executed surplus fees for each order execution
+        //     let order_executions = all_fees
+        //         .into_iter()
+        //         .map(|fee| (fee.order,
+        // fee.executed_surplus_fee().unwrap_or(0.into())))         .collect();
+        //     (fee, order_executions)
+        // };
 
-        Ok(AuctionData {
-            surplus,
-            fee,
-            gas_used: settlement.transaction_receipt().gas(),
-            effective_gas_price: settlement.transaction_receipt().effective_gas_price(),
-            order_executions,
-        })
+        // Ok(AuctionData {
+        //     surplus,
+        //     fee,
+        //     gas_used: settlement.transaction_receipt().gas(),
+        //     effective_gas_price:
+        // settlement.transaction_receipt().effective_gas_price(),
+        //     order_executions,
+        // })
+
+        Ok(Default::default())
     }
 }

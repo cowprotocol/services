@@ -59,16 +59,16 @@ impl Encoded {
 
             trades.push(Trade {
                 order_uid: boundary::order::order_uid(&trade, &tokens, &domain_separator)?,
-                sell_token_index: trade.0,
-                buy_token_index: trade.1,
+                sell_token_index: trade.0.as_usize(),
+                buy_token_index: trade.1.as_usize(),
                 receiver: trade.2.into(),
-                sell_amount: trade.3,
-                buy_amount: trade.4,
+                sell_amount: trade.3.into(),
+                buy_amount: trade.4.into(),
                 valid_to: trade.5,
                 app_data: order::AppDataHash(trade.6 .0),
-                fee_amount: trade.7,
+                fee_amount: trade.7.into(),
                 flags,
-                executed_amount: trade.9,
+                executed: trade.9.into(),
                 signature: signature.into(),
             })
         }
@@ -91,26 +91,38 @@ impl Encoded {
     pub fn auction_id(&self) -> AuctionId {
         self.auction_id
     }
+
+    pub fn trades(&self) -> &[Trade] {
+        &self.trades
+    }
+
+    pub fn tokens(&self) -> &[eth::Address] {
+        &self.tokens
+    }
+
+    pub fn clearing_prices(&self) -> &[eth::U256] {
+        &self.clearing_prices
+    }
 }
 
 #[derive(Debug)]
-struct Trade {
-    sell_token_index: eth::U256,
-    buy_token_index: eth::U256,
-    receiver: eth::Address,
-    sell_amount: eth::U256,
-    buy_amount: eth::U256,
-    valid_to: u32,
-    app_data: order::AppDataHash,
-    fee_amount: eth::U256,
-    flags: TradeFlags,
-    executed_amount: eth::U256,
-    signature: order::Signature,
+pub struct Trade {
+    pub sell_token_index: usize,
+    pub buy_token_index: usize,
+    pub receiver: eth::Address,
+    pub sell_amount: eth::TokenAmount,
+    pub buy_amount: eth::TokenAmount,
+    pub valid_to: u32,
+    pub app_data: order::AppDataHash,
+    pub fee_amount: eth::TokenAmount,
+    pub flags: TradeFlags,
+    pub executed: eth::TargetAmount,
+    pub signature: order::Signature,
 
     /// [ Additional derived fields ]
     ///
     /// The order uid of the order associated with this trade.
-    order_uid: domain::OrderUid,
+    pub order_uid: domain::OrderUid,
 }
 
 /// Trade flags are encoded in a 256-bit integer field. For more information on
@@ -124,11 +136,11 @@ impl TradeFlags {
         self.0.byte(0)
     }
 
-    pub fn order_kind(&self) -> boundary::OrderKind {
+    pub fn order_kind(&self) -> order::Kind {
         if self.as_u8() & 0b1 == 0 {
-            boundary::OrderKind::Sell
+            order::Kind::Sell
         } else {
-            boundary::OrderKind::Buy
+            order::Kind::Buy
         }
     }
 
