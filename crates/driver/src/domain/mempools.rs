@@ -240,7 +240,7 @@ impl Mempools {
                 ?nonce,
                 "Cancelling pending transaction from previous auction"
             );
-            self.cancel(mempool, pending.gas_price, &solver, Some(nonce))
+            self.cancel(mempool, pending.gas_price, solver, Some(nonce))
                 .await?;
             Ok(nonce + 1)
         } else {
