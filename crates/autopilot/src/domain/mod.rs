@@ -8,10 +8,9 @@ pub use {
     auction::{
         order::{Order, OrderUid},
         Auction,
-        AuctionId,
         AuctionWithId,
     },
     fee::ProtocolFee,
     quote::Quote,
-    settlement::{Event, Settlement},
+    settlement::Settlement,
 };

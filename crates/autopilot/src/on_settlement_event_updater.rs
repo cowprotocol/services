@@ -188,6 +188,8 @@ impl Inner {
         );
 
         // surplus and fees calculation
+        let _surplus = domain::settlement::Surplus::new(&settlement.encoded());
+        // surplus and fees calculation
         // let surplus = settlement.total_surplus(&external_prices);
         // let (fee, order_executions) = {
         //     let domain_separator =

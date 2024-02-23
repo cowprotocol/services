@@ -1,15 +1,21 @@
 use {
-    super::{eth, AuctionId},
+    super::{auction, eth},
     crate::infra,
     anyhow::Result,
 };
 
 pub mod encoded;
-pub mod event;
+pub mod fees;
 pub mod observation;
+pub mod surplus;
 pub mod transaction;
 
-pub use {encoded::Encoded, event::Event, transaction::Transaction};
+pub use {
+    encoded::Encoded,
+    fees::Fees,
+    surplus::{NormalizedSurplus, Surplus},
+    transaction::Transaction,
+};
 
 /// A transaction that settles a settlement. Interacts with the settlement
 /// contract `settle` function.
@@ -38,7 +44,7 @@ impl Settlement {
         })
     }
 
-    pub fn auction_id(&self) -> AuctionId {
+    pub fn auction_id(&self) -> auction::Id {
         self.encoded.auction_id()
     }
 
@@ -48,6 +54,10 @@ impl Settlement {
 
     pub fn transaction_receipt(&self) -> &transaction::Receipt {
         &self.receipt
+    }
+
+    pub fn encoded(&self) -> &Encoded {
+        &self.encoded
     }
 }
 
