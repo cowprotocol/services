@@ -8,19 +8,16 @@ use crate::tests::{
 #[tokio::test]
 #[ignore]
 async fn valid() {
+    let order = ab_order();
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order())
+        .order(order.clone())
         .solution(ab_solution())
         .solution(ab_solution().reduce_score())
         .done()
         .await;
 
-    test.solve()
-        .await
-        .ok()
-        .default_score()
-        .orders(&[ab_order().name]);
+    test.solve().await.ok().default_score().orders(&[order]);
     test.reveal().await.ok().calldata();
 }
 
@@ -29,18 +26,15 @@ async fn valid() {
 #[tokio::test]
 #[ignore]
 async fn invalid() {
+    let order = ab_order();
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order())
+        .order(order.clone())
         .solution(ab_solution().reduce_score())
         .solution(ab_solution().invalid())
         .done()
         .await;
 
-    test.solve()
-        .await
-        .ok()
-        .default_score()
-        .orders(&[ab_order().name]);
+    test.solve().await.ok().default_score().orders(&[order]);
     test.reveal().await.ok().calldata();
 }

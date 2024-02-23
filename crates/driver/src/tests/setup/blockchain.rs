@@ -325,7 +325,6 @@ impl Blockchain {
                 tokens.insert(pool.reserve_b.token, token);
             }
         }
-
         // Create the uniswap factory.
         let uniswap_factory = wait_for(
             &web3,
