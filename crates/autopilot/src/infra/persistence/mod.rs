@@ -140,30 +140,6 @@ impl Persistence {
 
         ex.commit().await.context("commit")
     }
-
-    /// Returns the oldest settlement event that has not been processed yet.
-    ///
-    /// Settlement events are first saved by EventHandler and then processed by
-    /// SettlementHandler.
-    pub async fn oldest_unprocessed_settlement(
-        &self,
-    ) -> Result<Option<(domain::settlement::Event, domain::eth::TxId)>, Error> {
-        let event = self
-            .postgres
-            .get_settlement_event_without_tx_info()
-            .await
-            .map_err(Error::DbError)?;
-
-        Ok(event.map(|event| {
-            (
-                domain::settlement::Event {
-                    block: (event.block_number as u64).into(),
-                    log: (event.log_index as u64).into(),
-                },
-                domain::eth::TxId(domain::eth::H256(event.tx_hash.0)),
-            )
-        }))
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
