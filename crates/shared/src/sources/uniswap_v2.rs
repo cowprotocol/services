@@ -201,7 +201,7 @@ mod tests {
         token1: H160,
         expected_pool_address: H160,
     ) {
-        let version_ = web3.net().version().await.unwrap();
+        let version_ = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version_, version, "wrong node for test");
         let source = UniV2BaselineSourceParameters::from_baseline_source(source, version)
             .unwrap()
@@ -218,7 +218,7 @@ mod tests {
     async fn baseline_mainnet() {
         let http = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(http);
-        let version = web3.net().version().await.unwrap();
+        let version = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version, "1", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "1", source, token0, token1, expected)
@@ -252,7 +252,7 @@ mod tests {
     async fn baseline_sepolia() {
         let http = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(http);
-        let version = web3.net().version().await.unwrap();
+        let version = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version, "11155111", "test must be run with mainnet node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "11155111", source, token0, token1, expected)
@@ -273,7 +273,7 @@ mod tests {
     async fn baseline_xdai() {
         let http = crate::ethrpc::create_env_test_transport();
         let web3 = Web3::new(http);
-        let version = web3.net().version().await.unwrap();
+        let version = web3.eth().chain_id().await.unwrap().to_string();
         assert_eq!(version, "100", "test must be run with xdai node");
         let test = |source, token0, token1, expected| {
             test_baseline_source(&web3, "100", source, token0, token1, expected)
