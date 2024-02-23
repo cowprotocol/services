@@ -18,9 +18,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solvers / && \
-    cp -r database/sql /sql && \
-    cp -r database/flyway.conf /flyway.conf
+    cp target/release/solvers
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
