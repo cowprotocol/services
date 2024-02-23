@@ -1,5 +1,6 @@
 use {
-    super::Order,
+    super::{eth::SimpleValue, Order},
+    num::BigRational,
     primitive_types::{H160, U256},
     std::collections::BTreeMap,
 };
@@ -22,3 +23,6 @@ pub struct AuctionWithId {
     pub id: Id,
     pub auction: Auction,
 }
+
+/// Auction price normalized to the same unit (ETH).
+pub type NormalizedPrice = SimpleValue<BigRational>;

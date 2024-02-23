@@ -66,3 +66,14 @@ where
         self.0 += rhs.0;
     }
 }
+
+impl<BigRational> std::ops::Mul for SimpleValue<BigRational>
+where
+    BigRational: std::ops::Mul<Output = BigRational>,
+{
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0 * rhs.0)
+    }
+}

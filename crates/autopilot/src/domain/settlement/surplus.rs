@@ -2,13 +2,17 @@
 
 use {
     super::Encoded,
-    crate::domain::{auction::order, eth},
+    crate::domain::{auction, auction::order, eth},
+    num::BigRational,
+    number::conversions::big_rational_to_u256,
+    shared::conversions::U256Ext,
     std::collections::HashMap,
 };
 
 /// Settlement surplus
 ///
-/// Denominated in surplus tokens.
+/// Denominated in surplus tokens. Contains multiple values since settlement can
+/// have multiple orders with different tokens.
 pub struct Surplus {
     surplus: HashMap<eth::TokenAddress, eth::TokenAmount>,
 }
@@ -55,10 +59,18 @@ impl Surplus {
     }
 
     /// Surplus denominated in the native token (ETH)
-    pub fn normalized(
-        &self, // prices: BtreeMap<eth::TokenAddress, eth::U256>,
-    ) -> NormalizedSurplus {
-        todo!()
+    pub fn normalized_with(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> Option<NormalizedSurplus> {
+        let mut surplus = eth::TokenAmount::default();
+        for (token, amount) in &self.surplus {
+            let price = prices.get(token).cloned()?;
+            let amount: eth::SimpleValue<BigRational> = amount.to_big_rational().into();
+            let normalized_surplus = big_rational_to_u256(&(amount * price)).ok()?.into();
+            surplus += normalized_surplus;
+        }
+        Some(surplus)
     }
 }
 
@@ -66,7 +78,7 @@ impl Surplus {
 ///
 /// Denominated in the native token (ETH). A single value convenient for
 /// comparison of settlements.
-pub type NormalizedSurplus = eth::Asset;
+pub type NormalizedSurplus = eth::TokenAmount; // eth::Ether?
 
 /// Uniform clearing prices at which the trade was executed.
 #[derive(Debug, Clone, Copy)]

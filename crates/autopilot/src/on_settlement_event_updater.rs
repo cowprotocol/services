@@ -33,15 +33,13 @@ use {
             on_settlement_event_updater::{AuctionData, SettlementUpdate},
             Postgres,
         },
-        domain,
+        domain::{self, auction, eth},
         infra,
     },
     anyhow::{Context, Result},
     database::PgTransaction,
     primitive_types::H256,
-    shared::external_prices::ExternalPrices,
-    sqlx::PgConnection,
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     tokio::sync::Notify,
 };
 
@@ -51,6 +49,7 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
+    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
 }
@@ -58,9 +57,10 @@ struct Inner {
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
         let inner = Arc::new(Inner {
             eth,
+            persistence,
             db,
             notify: Notify::new(),
         });
@@ -130,12 +130,23 @@ impl Inner {
 
         let settlement = domain::Settlement::new(hash.into(), self.eth.clone()).await;
         let update = match settlement {
-            Ok(settlement) => SettlementUpdate {
-                block_number: event.block_number,
-                log_index: event.log_index,
-                auction_id: settlement.auction_id(),
-                auction_data: Some(self.fetch_auction_data(settlement, &mut ex).await?),
-            },
+            Ok(settlement) => {
+                let prices = self
+                    .persistence
+                    .normalized_auction_prices(settlement.auction_id())
+                    .await?;
+                tracing::debug!(
+                    ?prices,
+                    "normalized auction prices for auction {}",
+                    settlement.auction_id(),
+                );
+                SettlementUpdate {
+                    block_number: event.block_number,
+                    log_index: event.log_index,
+                    auction_id: settlement.auction_id(),
+                    auction_data: Some(self.fetch_auction_data(settlement, &prices)?),
+                }
+            }
             Err(err) => match err {
                 domain::settlement::Error::Blockchain(err) => return Err(err.into()),
                 domain::settlement::Error::TransactionNotFound => {
@@ -163,32 +174,14 @@ impl Inner {
         Ok(true)
     }
 
-    async fn fetch_auction_data(
+    fn fetch_auction_data(
         &self,
         settlement: domain::Settlement,
-        ex: &mut PgConnection,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
     ) -> Result<AuctionData> {
-        let auction_id = settlement.auction_id();
-        let hash = settlement.transaction().hash();
-        let auction_external_prices = Postgres::get_auction_prices(ex, auction_id)
-            .await
-            .with_context(|| {
-                format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?;
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.eth.contracts().weth().address(),
-            auction_external_prices.clone(),
-        )?;
-
-        tracing::debug!(
-            ?auction_id,
-            ?auction_external_prices,
-            ?external_prices,
-            "observations input"
-        );
-
         // surplus and fees calculation
-        let _surplus = domain::settlement::Surplus::new(&settlement.encoded());
+        let _normalized_surplus =
+            domain::settlement::Surplus::new(&settlement.encoded()).normalized_with(prices);
         // surplus and fees calculation
         // let surplus = settlement.total_surplus(&external_prices);
         // let (fee, order_executions) = {
