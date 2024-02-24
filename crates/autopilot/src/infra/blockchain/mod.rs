@@ -112,9 +112,9 @@ impl Ethereum {
             .web3
             .eth()
             .transaction((*hash).into())
-            .await
-            .map_err(Error::from)?
-            .map(Into::into))
+            .await?
+            .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
+            .transpose()?)
     }
 
     pub async fn transaction_receipt(
@@ -125,9 +125,9 @@ impl Ethereum {
             .web3
             .eth()
             .transaction_receipt((*hash).into())
-            .await
-            .map_err(Error::from)?
-            .map(Into::into))
+            .await?
+            .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
+            .transpose()?)
     }
 }
 
@@ -135,4 +135,6 @@ impl Ethereum {
 pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("missing field {0}, node client bug?")]
+    IncompleteTransactionData(&'static str),
 }

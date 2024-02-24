@@ -31,13 +31,15 @@ impl Transaction {
 #[derive(Debug)]
 pub struct CallData(pub util::Bytes<Vec<u8>>);
 
-impl From<web3::types::Transaction> for Transaction {
-    fn from(value: web3::types::Transaction) -> Self {
-        Self {
+impl TryFrom<web3::types::Transaction> for Transaction {
+    type Error = &'static str;
+
+    fn try_from(value: web3::types::Transaction) -> Result<Self, Self::Error> {
+        Ok(Self {
             hash: value.hash.into(),
-            solver: value.from.unwrap().into(),
+            solver: value.from.ok_or("from")?.into(),
             input: CallData(value.input.0.into()),
-        }
+        })
     }
 }
 
@@ -72,13 +74,15 @@ impl Receipt {
     }
 }
 
-impl From<web3::types::TransactionReceipt> for Receipt {
-    fn from(value: web3::types::TransactionReceipt) -> Self {
-        Self {
+impl TryFrom<web3::types::TransactionReceipt> for Receipt {
+    type Error = &'static str;
+
+    fn try_from(value: web3::types::TransactionReceipt) -> Result<Self, Self::Error> {
+        Ok(Self {
             hash: value.transaction_hash.into(),
-            block: value.block_number.unwrap().0[0].into(),
-            gas: value.gas_used.unwrap(),
-            effective_gas_price: value.effective_gas_price.unwrap(),
-        }
+            block: value.block_number.ok_or("block_number")?.0[0].into(),
+            gas: value.gas_used.ok_or("gas_used")?,
+            effective_gas_price: value.effective_gas_price.ok_or("effective_gas_price")?,
+        })
     }
 }
