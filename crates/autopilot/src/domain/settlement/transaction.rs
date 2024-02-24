@@ -6,6 +6,7 @@ use crate::{domain::eth, util};
 #[derive(Debug)]
 pub struct Transaction {
     hash: eth::TxId,
+    solver: eth::Address,
     input: CallData,
 }
 
@@ -13,6 +14,11 @@ impl Transaction {
     /// The hash of the transaction.
     pub fn hash(&self) -> eth::TxId {
         self.hash
+    }
+
+    /// The address of the solver that submitted the transaction.
+    pub fn solver(&self) -> eth::Address {
+        self.solver
     }
 
     /// The call data of the transaction.
@@ -29,6 +35,7 @@ impl From<web3::types::Transaction> for Transaction {
     fn from(value: web3::types::Transaction) -> Self {
         Self {
             hash: value.hash.into(),
+            solver: value.from.unwrap().into(),
             input: CallData(value.input.0.into()),
         }
     }
