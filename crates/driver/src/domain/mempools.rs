@@ -104,11 +104,16 @@ impl Mempools {
                 competition::solution::settlement::Internalization::Enable,
             )
         };
-        let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
+
+        // Instantiate block stream and skip the current block before we submit the
+        // settlement. This way we only run iterations in blocks that can potentially
+        // include the settlement.
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
+        block_stream.next().await;
+
+        let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
         loop {
-            // Wait for the next block to be mined or we time out. Block stream immediately
-            // yields the latest block, thus the first iteration starts immediately.
+            // Wait for the next block to be mined or we time out.
             if tokio::time::timeout_at(mempool.config().deadline(), block_stream.next())
                 .await
                 .is_err()
