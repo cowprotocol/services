@@ -13,7 +13,6 @@ use {
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
-    rand::seq::SliceRandom,
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -78,9 +77,6 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fee: domain::ProtocolFee,
-    // TODO: remove ASAP since this we only use this for a mitigation that
-    // should be implemented on a smart contract level.
-    cow_amms: HashSet<H160>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -105,7 +101,6 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
-        cow_amms: HashSet<H160>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -123,7 +118,6 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fee,
-            cow_amms,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -157,10 +151,6 @@ impl SolvableOrdersCache {
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        invalid_order_uids.extend(removed);
-
-        let orders = filter_duplicate_cow_amm_orders(orders, &self.cow_amms);
-        let removed = counter.checkpoint("duplicate_cow_amm_order", &orders);
         invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
@@ -527,43 +517,6 @@ async fn filter_unsupported_tokens(
         index += 1;
     }
     Ok(orders)
-}
-
-/// Enforces that for all CoW AMMs at most 1 order is in the auction.
-/// This is needed to protect against a known attack vector.
-fn filter_duplicate_cow_amm_orders(mut orders: Vec<Order>, cow_amms: &HashSet<H160>) -> Vec<Order> {
-    let mut amm_orders = HashMap::<H160, Vec<&Order>>::new();
-    for order in &orders {
-        let owner = order.metadata.owner;
-        if cow_amms.contains(&owner) {
-            amm_orders.entry(owner).or_default().push(order);
-        }
-    }
-    let canonical_amm_orders: HashSet<OrderUid> = amm_orders
-        .into_iter()
-        .map(|(owner, orders)| {
-            let uid = orders
-                .choose(&mut rand::thread_rng())
-                .expect("every group contains at least 1 order")
-                .metadata
-                .uid;
-            if orders.len() > 1 {
-                // TODO: find better heuristic to pick "canonical" order
-                tracing::warn!(
-                    num = orders.len(),
-                    amm = ?owner,
-                    order = ?uid,
-                    "multiple orders for the same CoW AMM; picked random order"
-                );
-            }
-            uid
-        })
-        .collect();
-
-    orders.retain(|o| {
-        !cow_amms.contains(&o.metadata.owner) || canonical_amm_orders.contains(&o.metadata.uid)
-    });
-    orders
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
