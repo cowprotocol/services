@@ -23,8 +23,6 @@ pub async fn solve(
             }
         };
 
-        tracing::trace!(?auction);
-
         let auction_id = auction.id;
         let solutions = state
             .solve(auction)
