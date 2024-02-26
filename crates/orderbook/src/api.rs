@@ -1,4 +1,5 @@
 use {
+    self::model::common::Error,
     crate::{
         api::model::order::{OrderCreation, OrderKind, OrderUid},
         app_data,
@@ -117,6 +118,6 @@ pub fn handle_all_routes(
 #[derive(OpenApi)]
 #[openapi(
     paths(post_order::post_order),
-    components(schemas(OrderCreation, OrderKind, OrderUid))
+    components(schemas(OrderCreation, OrderKind, OrderUid, Error))
 )]
 pub struct ApiDoc;

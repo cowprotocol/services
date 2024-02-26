@@ -16,7 +16,7 @@ use {
     },
     std::{collections::BTreeMap, convert::Infallible, sync::Arc},
     utoipa::{
-        openapi::{RefOr, Response, ResponseBuilder, ResponsesBuilder},
+        openapi::{Content, Ref, RefOr, Response, ResponseBuilder, ResponsesBuilder},
         IntoResponses,
     },
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
@@ -262,7 +262,12 @@ impl IntoResponses for AddOrderError {
         ResponsesBuilder::new()
             .response(
                 "400",
-                ResponseBuilder::new().description("Error during order validation."),
+                ResponseBuilder::new()
+                    .description("Error during order validation.")
+                    .content(
+                        "application/json",
+                        Content::new(Ref::from_schema_name("Error")),
+                    ),
             )
             .response(
                 "403",
