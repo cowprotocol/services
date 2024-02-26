@@ -7,7 +7,7 @@ use {
     },
     crate::{
         db_order_conversions::order_kind_from,
-        fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
+        fee::FeeParameters,
         order_validation::PreOrderData,
         price_estimation::Verification,
     },
@@ -84,13 +84,9 @@ pub struct Quote {
     /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
     /// scaled down to account for the computed `fee_amount`).
     pub buy_amount: U256,
-    /// The final minimum subsidized fee amount for any order created for this
-    /// quote. The fee is denoted in the sell token.
+    /// The fee amount for any order created for this quote. The fee is
+    /// denoted in the sell token.
     pub fee_amount: U256,
-    /// The actual fee amount that is esimated to be required in order to settle
-    /// the order on chain. This is the fee in full without any subsidies. The
-    /// fee is denoted in the sell token.
-    pub full_fee_amount: U256,
 }
 
 impl Quote {
@@ -100,30 +96,20 @@ impl Quote {
             id,
             sell_amount: data.quoted_sell_amount,
             buy_amount: data.quoted_buy_amount,
-            fee_amount: data.fee_parameters.unsubsidized(),
-            full_fee_amount: data.fee_parameters.unsubsidized(),
+            fee_amount: data.fee_parameters.fee(),
             data,
         }
     }
 
-    /// Applies a subsidy to the quote **with** the
-    /// `QuoteSigningScheme.verification_gas_limit`
-    pub fn with_subsidy_and_additional_cost(
-        mut self,
-        subsidy: &Subsidy,
-        additional_cost: u64,
-    ) -> Self {
+    /// Adjusts the quote fee to include arbitrary additional costs.
+    pub fn with_additional_cost(mut self, additional_cost: u64) -> Self {
         // Be careful not to modify `self.data` as this represents the actual
         // quote data that is stored in the database. Instead, update the
         // computed fee fields.
         self.fee_amount = self
             .data
             .fee_parameters
-            .subsidized_with_additional_cost(subsidy, additional_cost);
-        self.full_fee_amount = self
-            .data
-            .fee_parameters
-            .unsubsidized_with_additional_cost(additional_cost);
+            .fee_with_additional_cost(additional_cost);
 
         self
     }
@@ -180,6 +166,8 @@ pub struct QuoteData {
     pub quote_kind: QuoteKind,
     /// The address of the solver that provided the quote.
     pub solver: H160,
+    /// Were we able to verify that this quote is accurate?
+    pub verified: bool,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -202,6 +190,9 @@ impl TryFrom<QuoteRow> for QuoteData {
             expiration: row.expiration_timestamp,
             quote_kind: row.quote_kind,
             solver: H160(row.solver.0),
+            // Even if the quote was verified at the time of creation
+            // it might no longer be accurate.
+            verified: false,
         })
     }
 }
@@ -357,7 +348,6 @@ pub struct OrderQuoter {
     price_estimator: Arc<dyn PriceEstimating>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
-    fee_subsidy: Arc<dyn FeeSubsidizing>,
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
     validity: Validity,
@@ -368,7 +358,6 @@ impl OrderQuoter {
         price_estimator: Arc<dyn PriceEstimating>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
-        fee_subsidy: Arc<dyn FeeSubsidizing>,
         storage: Arc<dyn QuoteStoring>,
         validity: Validity,
     ) -> Self {
@@ -376,7 +365,6 @@ impl OrderQuoter {
             price_estimator,
             native_price_estimator,
             gas_estimator,
-            fee_subsidy,
             storage,
             now: Arc::new(Utc::now),
             validity,
@@ -441,6 +429,7 @@ impl OrderQuoter {
             expiration,
             quote_kind,
             solver: trade_estimate.solver,
+            verified: trade_estimate.verified,
         };
 
         Ok(quote)
@@ -453,21 +442,9 @@ impl OrderQuoting for OrderQuoter {
         &self,
         parameters: QuoteParameters,
     ) -> Result<Quote, CalculateQuoteError> {
-        let (data, subsidy) = futures::try_join!(
-            self.compute_quote_data(&parameters),
-            self.fee_subsidy
-                .subsidy(SubsidyParameters {
-                    from: parameters
-                        .verification
-                        .as_ref()
-                        .map(|v| v.from)
-                        .unwrap_or_default(),
-                })
-                .map_err(From::from),
-        )?;
-
-        let mut quote = Quote::new(Default::default(), data)
-            .with_subsidy_and_additional_cost(&subsidy, parameters.additional_cost());
+        let data = self.compute_quote_data(&parameters).await?;
+        let mut quote =
+            Quote::new(Default::default(), data).with_additional_cost(parameters.additional_cost());
 
         // Make sure to scale the sell and buy amounts for quotes for sell
         // amounts before fees.
@@ -490,7 +467,7 @@ impl OrderQuoting for OrderQuoter {
             quote = quote.with_scaled_sell_amount(sell_amount);
         }
 
-        tracing::debug!(?quote, ?subsidy, "computed quote");
+        tracing::debug!(?quote, "computed quote");
         Ok(quote)
     }
 
@@ -510,14 +487,6 @@ impl OrderQuoting for OrderQuoter {
         let scaled_sell_amount = match parameters.kind {
             OrderKind::Sell => Some(parameters.sell_amount),
             OrderKind::Buy => None,
-        };
-
-        let subsidy = SubsidyParameters {
-            from: parameters
-                .verification
-                .as_ref()
-                .map(|v| v.from)
-                .unwrap_or_default(),
         };
 
         let now = self.now.now();
@@ -547,22 +516,16 @@ impl OrderQuoting for OrderQuoter {
                     .ok_or(FindQuoteError::NotFound(None))?,
             };
             Ok(Quote::new(Some(id), data))
-        };
+        }
+        .await?
+        .with_additional_cost(additional_cost);
 
-        let (quote, subsidy) = futures::try_join!(
-            quote,
-            self.fee_subsidy
-                .subsidy(subsidy)
-                .map_err(FindQuoteError::from)
-        )?;
-
-        let quote = quote.with_subsidy_and_additional_cost(&subsidy, additional_cost);
         let quote = match scaled_sell_amount {
             Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
             None => quote,
         };
 
-        tracing::debug!(?quote, ?subsidy, "found quote");
+        tracing::debug!(?quote, "found quote");
         Ok(quote)
     }
 }
@@ -576,7 +539,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             buy_token: quote_request.buy_token,
             receiver: quote_request.receiver.unwrap_or(owner),
             valid_to: quote_request.validity.actual_valid_to(),
-            partially_fillable: quote_request.partially_fillable,
+            partially_fillable: false,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
@@ -603,7 +566,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            fee_subsidy::Subsidy,
             gas_price_estimation::FakeGasPriceEstimator,
             price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
         },
@@ -729,6 +691,7 @@ mod tests {
                 expiration: now + Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
             .returning(|_| Ok(1337));
 
@@ -736,7 +699,6 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: super::Validity::default(),
@@ -763,11 +725,11 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
                 fee_amount: 30.into(),
-                full_fee_amount: 30.into(),
             }
         );
     }
@@ -862,6 +824,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
             .returning(|_| Ok(1337));
 
@@ -869,10 +832,6 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            fee_subsidy: Arc::new(Subsidy {
-                factor: 0.5,
-                ..Default::default()
-            }),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
@@ -899,11 +858,11 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
-                fee_amount: 30.into(),
-                full_fee_amount: 60.into(),
+                fee_amount: 60.into(),
             }
         );
     }
@@ -993,6 +952,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
             .returning(|_| Ok(1337));
 
@@ -1000,11 +960,6 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            fee_subsidy: Arc::new(Subsidy {
-                discount: 5.,
-                min_discounted: 2.,
-                factor: 0.9,
-            }),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
@@ -1031,11 +986,11 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
-                fee_amount: 9.into(),
-                full_fee_amount: 30.into(),
+                fee_amount: 30.into(),
             }
         );
     }
@@ -1098,7 +1053,6 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
@@ -1168,7 +1122,6 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
@@ -1215,6 +1168,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
         });
 
@@ -1222,10 +1176,6 @@ mod tests {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
-            fee_subsidy: Arc::new(Subsidy {
-                factor: 0.25,
-                ..Default::default()
-            }),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
@@ -1249,18 +1199,14 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
                 // be used for providing liquidity at a premium over current
                 // market price.
                 buy_amount: 35.into(),
-                // Allows for different subsidized fee amounts. This means that
-                // order created with legacy APIs or incomplete quote data (for
-                // example `from` is specified as a random address) can still
-                // create orders with fees that aren't fully subsidized.
-                fee_amount: 8.into(),
-                full_fee_amount: 30.into(),
+                fee_amount: 30.into(),
             }
         );
     }
@@ -1300,6 +1246,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
         });
 
@@ -1307,7 +1254,6 @@ mod tests {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
@@ -1331,11 +1277,11 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 30.into(),
-                full_fee_amount: 30.into(),
             }
         );
     }
@@ -1379,6 +1325,7 @@ mod tests {
                         expiration: now + chrono::Duration::seconds(10),
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
+                        verified: false,
                     },
                 )))
             });
@@ -1387,7 +1334,6 @@ mod tests {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
@@ -1411,11 +1357,11 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 30.into(),
-                full_fee_amount: 30.into(),
             }
         );
     }
@@ -1457,7 +1403,6 @@ mod tests {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
@@ -1486,7 +1431,6 @@ mod tests {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
-            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(Utc::now),
             validity: Validity::default(),

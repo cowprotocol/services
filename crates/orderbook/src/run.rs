@@ -26,7 +26,6 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::ServiceMaintenance,
@@ -408,18 +407,6 @@ pub async fn run(args: Arguments) {
         )
         .unwrap();
 
-    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.order_quoting.fee_discount,
-        min_discounted_fee: args.order_quoting.min_discounted_fee,
-        fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: args
-            .order_quoting
-            .liquidity_order_owners
-            .iter()
-            .copied()
-            .collect(),
-    }) as Arc<dyn FeeSubsidizing>;
-
     let validity_configuration = OrderValidPeriodConfiguration {
         min: args.min_order_validity_period,
         max_market: args.max_order_validity_period,
@@ -431,7 +418,6 @@ pub async fn run(args: Arguments) {
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
-            fee_subsidy.clone(),
             Arc::new(postgres.clone()),
             order_quoting::Validity {
                 eip1271_onchain_quote: chrono::Duration::from_std(
@@ -457,11 +443,6 @@ pub async fn run(args: Arguments) {
         OrderValidator::new(
             native_token.clone(),
             args.banned_users.iter().copied().collect(),
-            args.order_quoting
-                .liquidity_order_owners
-                .iter()
-                .copied()
-                .collect(),
             validity_configuration,
             args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),

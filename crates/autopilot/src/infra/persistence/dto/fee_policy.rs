@@ -36,6 +36,18 @@ impl FeePolicy {
                 max_volume_factor: None,
                 volume_factor: Some(factor),
             },
+            domain::fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                ..
+            } => Self {
+                auction_id,
+                order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
+                kind: FeePolicyKind::PriceImprovement,
+                surplus_factor: Some(factor),
+                max_volume_factor: Some(max_volume_factor),
+                volume_factor: None,
+            },
         }
     }
 }
@@ -50,6 +62,7 @@ impl From<FeePolicy> for domain::fee::Policy {
             FeePolicyKind::Volume => domain::fee::Policy::Volume {
                 factor: row.volume_factor.expect("missing volume factor"),
             },
+            FeePolicyKind::PriceImprovement => todo!(),
         }
     }
 }
@@ -59,4 +72,5 @@ impl From<FeePolicy> for domain::fee::Policy {
 pub enum FeePolicyKind {
     Surplus,
     Volume,
+    PriceImprovement,
 }

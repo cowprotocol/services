@@ -10,19 +10,22 @@ use {
 
 fn request(
     max_size: usize,
-) -> impl Filter<Extract = (AppDataHash, AppDataDocument), Error = Rejection> + Clone {
-    warp::path!("v1" / "app_data" / AppDataHash)
+) -> impl Filter<Extract = (Option<AppDataHash>, AppDataDocument), Error = Rejection> + Clone {
+    let opt = warp::path::param::<AppDataHash>()
+        .map(Some)
+        .or_else(|_| async { Ok::<(Option<AppDataHash>,), std::convert::Infallible>((None,)) });
+    warp::path!("v1" / "app_data" / ..)
+        .and(opt)
         .and(warp::put())
         .and(body::content_length_limit(max_size as _))
         .and(body::json())
 }
 
 fn response(
-    hash: AppDataHash,
-    result: Result<app_data::Registered, app_data::RegisterError>,
+    result: Result<(app_data::Registered, AppDataHash), app_data::RegisterError>,
 ) -> super::ApiReply {
     match result {
-        Ok(registered) => {
+        Ok((registered, hash)) => {
             let status = match registered {
                 app_data::Registered::New => StatusCode::CREATED,
                 app_data::Registered::AlreadyExisted => StatusCode::OK,
@@ -42,7 +45,7 @@ pub fn filter(
             let result = registry
                 .register(hash, document.full_app_data.as_bytes())
                 .await;
-            Result::<_, Infallible>::Ok(response(hash, result))
+            Result::<_, Infallible>::Ok(response(result))
         }
     })
 }

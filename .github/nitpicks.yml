@@ -1,0 +1,4 @@
+- markdown: |
+    Reminder: Please update the DB Readme.
+  pathFilter:
+    - "database/sql/**"

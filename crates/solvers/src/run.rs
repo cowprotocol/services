@@ -30,11 +30,11 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
 
     let solver = match args.command {
         cli::Command::Baseline { config } => {
-            let config = config::baseline::file::load(&config).await;
+            let config = config::baseline::load(&config).await;
             Solver::Baseline(solver::Baseline::new(config))
         }
         cli::Command::Naive { config } => {
-            let config = config::naive::file::load(&config).await;
+            let config = config::naive::load(&config).await;
             Solver::Naive(solver::Naive::new(config))
         }
         cli::Command::Legacy { config } => {

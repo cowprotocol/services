@@ -43,7 +43,7 @@ async fn solver_competition(web3: Web3) {
         onchain.contracts(),
         vec![
             SolverEngine {
-                name: "solver1".into(),
+                name: "test_solver".into(),
                 account: solver.clone(),
                 endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
                     .await,
@@ -61,11 +61,14 @@ async fn solver_competition(web3: Web3) {
     services.start_autopilot(
         None,
         vec![
-        "--drivers=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2"
-            .to_string(),
-    ],
+            "--drivers=test_solver|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2"
+                .to_string(),
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
+        ],
     );
-    services.start_api(vec![]).await;
+    services.start_api(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
+    ]).await;
 
     // Place Order
     let order = OrderCreation {
@@ -89,8 +92,6 @@ async fn solver_competition(web3: Web3) {
     let trade_happened =
         || async { token_a.balance_of(trader.address()).call().await.unwrap() == U256::zero() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-
-    onchain.mint_blocks_past_reorg_threshold().await;
 
     let indexed_trades = || async {
         onchain.mint_block().await;

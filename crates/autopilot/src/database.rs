@@ -8,12 +8,11 @@ mod auction;
 pub mod auction_prices;
 pub mod competition;
 pub mod ethflow_events;
-mod events;
+pub mod events;
 pub mod fee_policies;
 pub mod on_settlement_event_updater;
 pub mod onchain_order_events;
 pub mod order_events;
-pub mod orders;
 mod quotes;
 pub mod recent_settlements;
 

@@ -69,17 +69,16 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let params = {
-            let verification = match request.price_quality {
-                PriceQuality::Verified => Some(Verification {
-                    from: request.from,
-                    receiver: request.receiver.unwrap_or(request.from),
-                    sell_token_source: request.sell_token_balance,
-                    buy_token_destination: request.buy_token_balance,
-                    pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
-                    post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
-                }),
-                PriceQuality::Fast | PriceQuality::Optimal => None,
-            };
+            let try_verification =
+                request.price_quality != PriceQuality::Fast && !request.from.is_zero();
+            let verification = try_verification.then(|| Verification {
+                from: request.from,
+                receiver: request.receiver.unwrap_or(request.from),
+                sell_token_source: request.sell_token_balance,
+                buy_token_destination: request.buy_token_balance,
+                pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
+                post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
+            });
 
             QuoteParameters {
                 sell_token: request.sell_token,
@@ -126,7 +125,7 @@ impl QuoteHandler {
                 },
                 fee_amount: quote.fee_amount,
                 kind: quote.data.kind,
-                partially_fillable: request.partially_fillable,
+                partially_fillable: false,
                 sell_token_balance: request.sell_token_balance,
                 buy_token_balance: request.buy_token_balance,
                 signing_scheme: request.signing_scheme.into(),
@@ -134,6 +133,7 @@ impl QuoteHandler {
             from: request.from,
             expiration: quote.data.expiration,
             id: quote.id,
+            verified: quote.data.verified,
         };
 
         tracing::debug!(?response, "finished computing quote");

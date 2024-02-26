@@ -1,5 +1,5 @@
 use {
-    crate::{domain, infra},
+    crate::infra,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -349,6 +349,12 @@ pub struct FeePolicy {
     /// - Surplus with cap:
     /// surplus:0.5:0.06
     ///
+    /// - Price improvement without cap:
+    /// price_improvement:0.5:1.0
+    ///
+    /// - Price improvement with cap:
+    /// price_improvement:0.5:0.06
+    ///
     /// - Volume based:
     /// volume:0.1
     #[clap(long, env, default_value = "surplus:0.0:1.0")]
@@ -361,25 +367,14 @@ pub struct FeePolicy {
     pub fee_policy_skip_market_orders: bool,
 }
 
-impl FeePolicy {
-    pub fn to_domain(self) -> domain::fee::Policy {
-        match self.fee_policy_kind {
-            FeePolicyKind::Surplus {
-                factor,
-                max_volume_factor,
-            } => domain::fee::Policy::Surplus {
-                factor,
-                max_volume_factor,
-            },
-            FeePolicyKind::Volume { factor } => domain::fee::Policy::Volume { factor },
-        }
-    }
-}
-
 #[derive(clap::Parser, Debug, Clone)]
 pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
 }
@@ -403,6 +398,22 @@ impl FromStr for FeePolicyKind {
                     .parse::<f64>()
                     .map_err(|e| format!("invalid max volume factor: {}", e))?;
                 Ok(Self::Surplus {
+                    factor,
+                    max_volume_factor,
+                })
+            }
+            "priceImprovement" => {
+                let factor = parts
+                    .next()
+                    .ok_or("missing price improvement factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid price improvement factor: {}", e))?;
+                let max_volume_factor = parts
+                    .next()
+                    .ok_or("missing price improvement max volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid price improvement max volume factor: {}", e))?;
+                Ok(Self::PriceImprovement {
                     factor,
                     max_volume_factor,
                 })

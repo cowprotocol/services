@@ -9,10 +9,13 @@ async fn separate_deadline() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
-        .solver(test_solver().name("second").solving_time_share(0.5))
+        .solvers(vec![
+            test_solver().name("first"),
+            test_solver().name("second").solving_time_share(0.5),
+        ])
         .done()
         .await;
 
-    test.solve().await.ok();
+    test.solve_with_solver("first").await.ok();
     test.solve_with_solver("second").await.ok();
 }

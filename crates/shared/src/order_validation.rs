@@ -1,7 +1,7 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::{ProtocolAppData, ValidatedAppData},
+        app_data::ValidatedAppData,
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -238,7 +238,6 @@ pub struct OrderValidator {
     /// when only part of the order data is available
     native_token: WETH9,
     banned_users: HashSet<H160>,
-    liquidity_order_owners: HashSet<H160>,
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -282,7 +281,6 @@ impl PreOrderData {
         owner: H160,
         order: &OrderData,
         signing_scheme: SigningScheme,
-        liquidity_owner: bool,
     ) -> Self {
         Self {
             owner,
@@ -294,10 +292,9 @@ impl PreOrderData {
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
             signing_scheme,
-            class: match (liquidity_owner, order.fee_amount.is_zero()) {
-                (false, false) => OrderClass::Market,
-                (false, true) => OrderClass::Limit,
-                (true, _) => OrderClass::Liquidity,
+            class: match order.fee_amount.is_zero() {
+                true => OrderClass::Limit,
+                false => OrderClass::Market,
             },
         }
     }
@@ -313,7 +310,6 @@ impl OrderValidator {
     pub fn new(
         native_token: WETH9,
         banned_users: HashSet<H160>,
-        liquidity_order_owners: HashSet<H160>,
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -329,7 +325,6 @@ impl OrderValidator {
         Self {
             native_token,
             banned_users,
-            liquidity_order_owners,
             validity_configuration,
             eip1271_skip_creation_validation,
             bad_token_detector,
@@ -483,8 +478,10 @@ impl OrderValidating for OrderValidator {
                 let protocol = if let Some(full) = full_app_data_override {
                     validate(full)?.protocol
                 } else {
-                    tracing::warn!(hash = hex::encode(hash.0), "Unknown appData pre-image");
-                    ProtocolAppData::default()
+                    return Err(AppDataValidationError::Invalid(anyhow!(
+                        "Unknown pre-image for app data hash {:?}",
+                        hash,
+                    )));
                 };
 
                 ValidatedAppData {
@@ -555,12 +552,7 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let pre_order = PreOrderData::from_order_creation(
-            owner,
-            &data,
-            signing_scheme,
-            self.liquidity_order_owners.contains(&owner),
-        );
+        let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
@@ -605,16 +597,6 @@ impl OrderValidating for OrderValidator {
                 Some(quote)
             }
             OrderClass::Liquidity => None,
-        };
-
-        let full_fee_amount = match class {
-            OrderClass::Market | OrderClass::Liquidity => quote
-                .as_ref()
-                .map(|quote| quote.full_fee_amount)
-                // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
-                // subsidies). This only makes a difference for liquidity orders.
-                .unwrap_or(data.fee_amount),
-            OrderClass::Limit => 0.into(), // limit orders have a solver determined fee
         };
 
         let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
@@ -665,6 +647,12 @@ impl OrderValidating for OrderValidator {
             },
         }
 
+        tracing::debug!(
+            ?uid,
+            ?order,
+            ?quote,
+            "checking if order is outside market price"
+        );
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
         // <https://github.com/cowprotocol/services/pull/301>.
@@ -697,7 +685,7 @@ impl OrderValidating for OrderValidator {
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract,
-                full_fee_amount,
+                full_fee_amount: data.fee_amount,
                 class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
@@ -1005,7 +993,6 @@ mod tests {
         let validator = OrderValidator::new(
             native_token,
             banned_users,
-            hashset!(),
             validity_configuration,
             false,
             Arc::new(MockBadTokenDetecting::new()),
@@ -1131,7 +1118,6 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_ok() {
-        let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1153,7 +1139,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(liquidity_order_owner),
             validity_configuration,
             false,
             Arc::new(bad_token_detector),
@@ -1187,7 +1172,7 @@ mod tests {
         assert!(validator
             .partial_validate(PreOrderData {
                 class: OrderClass::Limit,
-                owner: liquidity_order_owner,
+                owner: H160::from_low_u64_be(0x42),
                 valid_to: time::now_in_epoch_seconds()
                     + validity_configuration.max_market.as_secs() as u32
                     + 2,
@@ -1199,7 +1184,7 @@ mod tests {
             .partial_validate(PreOrderData {
                 partially_fillable: true,
                 class: OrderClass::Liquidity,
-                owner: liquidity_order_owner,
+                owner: H160::from_low_u64_be(0x42),
                 valid_to: u32::MAX,
                 ..order()
             })
@@ -1237,7 +1222,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
@@ -1263,6 +1247,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         validator
@@ -1388,7 +1375,9 @@ mod tests {
         let creation_ = OrderCreation {
             fee_amount: U256::zero(),
             partially_fillable: true,
-            app_data: OrderCreationAppData::default(),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..creation
         };
         let (order, quote) = validator
@@ -1430,7 +1419,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1451,6 +1439,9 @@ mod tests {
             buy_amount: U256::from(1),
             sell_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let res = validator
@@ -1486,7 +1477,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1507,6 +1497,9 @@ mod tests {
             sell_amount: U256::from(0),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1541,7 +1534,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1563,6 +1555,9 @@ mod tests {
             fee_amount: U256::from(1),
             kind: OrderKind::Sell,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let (order, quote) = validator
@@ -1595,7 +1590,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1617,6 +1611,9 @@ mod tests {
             fee_amount: U256::from(1),
             from: Some(Default::default()),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1644,7 +1641,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1665,6 +1661,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1695,7 +1694,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1716,6 +1714,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1750,7 +1751,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1771,6 +1771,9 @@ mod tests {
             sell_amount: U256::MAX,
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1799,7 +1802,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1820,6 +1822,9 @@ mod tests {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let result = validator
@@ -1852,7 +1857,6 @@ mod tests {
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1875,6 +1879,9 @@ mod tests {
             fee_amount: U256::from(1),
             from: Some(H160([1; 20])),
             signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
             ..Default::default()
         };
         let domain = DomainSeparator::default();
@@ -1912,7 +1919,6 @@ mod tests {
             let validator = OrderValidator::new(
                 dummy_contract!(WETH9, [0xef; 20]),
                 hashset!(),
-                hashset!(),
                 OrderValidPeriodConfiguration::any(),
                 false,
                 Arc::new(bad_token_detector),
@@ -1933,6 +1939,9 @@ mod tests {
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: 1.into(),
                 fee_amount: 1.into(),
+                app_data: OrderCreationAppData::Full {
+                    full: "{}".to_string(),
+                },
                 ..Default::default()
             };
 

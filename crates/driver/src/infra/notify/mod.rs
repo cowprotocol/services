@@ -116,7 +116,7 @@ pub fn executed(
         Ok(hash) => notification::Settlement::Success(hash.clone()),
         Err(Error::Revert(hash)) => notification::Settlement::Revert(hash.clone()),
         Err(Error::SimulationRevert) => notification::Settlement::SimulationRevert,
-        Err(Error::Other(_) | Error::Expired) => notification::Settlement::Fail,
+        Err(Error::Other(_) | Error::Expired | Error::Disabled) => notification::Settlement::Fail,
     };
 
     solver.notify(

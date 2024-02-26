@@ -19,14 +19,14 @@ async fn local_node_refunder_tx() {
 async fn refunder_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(None, vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     // Get quote id for order placement
     let buy_token = token.address();

@@ -69,6 +69,7 @@ impl super::Postgres {
                     ex,
                     &ByteArray(order.0),
                     settlement_update.auction_id,
+                    settlement_update.block_number,
                     &u256_to_big_decimal(&executed_fee),
                 )
                 .await

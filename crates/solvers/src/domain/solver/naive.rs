@@ -9,10 +9,13 @@ use {
     crate::{
         boundary,
         domain::{self, auction, eth, liquidity, order, solution},
-        infra::config,
     },
     std::collections::HashMap,
 };
+
+pub struct Config {
+    pub risk: domain::Risk,
+}
 
 pub struct Naive {
     /// Parameters used to calculate the revert risk of a solution.
@@ -21,7 +24,7 @@ pub struct Naive {
 
 impl Naive {
     /// Creates a new naive solver for the specified configuration.
-    pub fn new(config: config::naive::Config) -> Self {
+    pub fn new(config: Config) -> Self {
         Self { risk: config.risk }
     }
 

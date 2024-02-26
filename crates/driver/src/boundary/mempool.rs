@@ -149,7 +149,7 @@ impl Mempool {
             .transaction_count(solver.address().into(), None)
             .await
             .map_err(anyhow::Error::from)?;
-        let max_fee_per_gas = eth::U256::from(settlement.gas.price.max).to_f64_lossy();
+        let max_fee_per_gas = eth::U256::from(settlement.gas.price.max()).to_f64_lossy();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap.to_f64_lossy()),

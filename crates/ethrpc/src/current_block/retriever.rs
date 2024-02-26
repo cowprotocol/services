@@ -78,6 +78,7 @@ impl BlockRetrieving for BlockRetriever {
                 hash: fetch.parent_hash,
                 timestamp: fetch.timestamp,
                 parent_hash: call.hash,
+                gas_limit: fetch.gas_limit,
             })
         } else {
             bail!("large differential between eth_getBlock {fetch:?} and eth_call {call:?}");
@@ -94,19 +95,21 @@ impl BlockRetrieving for BlockRetriever {
 }
 
 /// Decodes the return data from the `FetchBlock` contract.
-fn decode(return_data: [u8; 128]) -> Result<BlockInfo> {
+fn decode(return_data: [u8; 160]) -> Result<BlockInfo> {
     let number = u64::try_from(U256::from_big_endian(&return_data[0..32]))
         .ok()
         .context("block number overflows u64")?;
     let hash = H256::from_slice(&return_data[32..64]);
     let parent_hash = H256::from_slice(&return_data[64..96]);
     let timestamp = U256::from_big_endian(&return_data[96..128]).as_u64();
+    let gas_limit = U256::from_big_endian(&return_data[128..160]);
 
     Ok(BlockInfo {
         number,
         hash,
         parent_hash,
         timestamp,
+        gas_limit,
     })
 }
 

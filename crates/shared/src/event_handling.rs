@@ -174,10 +174,11 @@ where
         let current_block_hash = current_block.hash;
         let (last_handled_block_number, last_handled_block_hash) = *handled_blocks.last().unwrap();
         tracing::debug!(
-            "current block: {} - {:?}, handled_blocks: {:?}",
+            "current block: {} - {:?}, handled_blocks: ({:?} - {:?})",
             current_block_number,
             current_block_hash,
-            handled_blocks,
+            handled_blocks.first().map(|b| b.0),
+            handled_blocks.last().map(|b| b.0),
         );
 
         // handle special case which happens most of the time (no reorg, just one new

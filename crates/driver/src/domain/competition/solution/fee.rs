@@ -78,21 +78,59 @@ impl Fulfillment {
             Some(FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
+            }) => self.calculate_fee(
+                self.order().sell.amount.0,
+                self.order().buy.amount.0,
+                prices,
+                *factor,
+                *max_volume_factor,
+            ),
+            Some(FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
             }) => {
-                let fee_from_surplus = self.fee_from_surplus(prices, *factor)?;
-                let fee_from_volume = self.fee_from_volume(prices, *max_volume_factor)?;
-                // take the smaller of the two
-                tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
-                Ok(std::cmp::min(fee_from_surplus, fee_from_volume))
+                let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
+                    self.order().sell.amount.0,
+                    self.order().buy.amount.0,
+                    self.order().side,
+                    quote.sell.amount.0,
+                    quote.buy.amount.0,
+                    quote.fee.amount.0,
+                )?;
+                self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
             }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
         }
     }
 
-    fn fee_from_surplus(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
-        let sell_amount = self.order().sell.amount.0;
-        let buy_amount = self.order().buy.amount.0;
+    /// Computes protocol fee compared to the given reference amounts taken from
+    /// the order or a quote.
+    fn calculate_fee(
+        &self,
+        reference_sell_amount: eth::U256,
+        reference_buy_amount: eth::U256,
+        prices: ClearingPrices,
+        factor: f64,
+        max_volume_factor: f64,
+    ) -> Result<eth::U256, Error> {
+        let fee_from_surplus =
+            self.fee_from_surplus(reference_sell_amount, reference_buy_amount, prices, factor)?;
+        let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
+        // take the smaller of the two
+        let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
+        tracing::debug!(uid=?self.order().uid, ?fee_from_surplus, ?fee_from_volume, ?protocol_fee, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+        Ok(protocol_fee)
+    }
+
+    fn fee_from_surplus(
+        &self,
+        sell_amount: eth::U256,
+        buy_amount: eth::U256,
+        prices: ClearingPrices,
+        factor: f64,
+    ) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
@@ -192,6 +230,40 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
         / 10000)
 }
 
+fn adjusted_price_improvement_amounts(
+    order_sell_amount: eth::U256,
+    order_buy_amount: eth::U256,
+    order_side: Side,
+    quote_sell_amount: eth::U256,
+    quote_buy_amount: eth::U256,
+    quote_fee_amount: eth::U256,
+) -> Result<(eth::U256, eth::U256), Error> {
+    let quote_sell_amount = quote_sell_amount
+        .checked_add(quote_fee_amount)
+        .ok_or(Error::Overflow)?;
+
+    match order_side {
+        Side::Sell => {
+            let scaled_buy_amount = quote_buy_amount
+                .checked_mul(order_sell_amount)
+                .ok_or(Error::Overflow)?
+                .checked_div(quote_sell_amount)
+                .ok_or(Error::DivisionByZero)?;
+            let buy_amount = order_buy_amount.max(scaled_buy_amount);
+            Ok((order_sell_amount, buy_amount))
+        }
+        Side::Buy => {
+            let scaled_sell_amount = quote_sell_amount
+                .checked_mul(order_buy_amount)
+                .ok_or(Error::Overflow)?
+                .checked_div(quote_buy_amount)
+                .ok_or(Error::DivisionByZero)?;
+            let sell_amount = order_sell_amount.min(scaled_sell_amount);
+            Ok((sell_amount, order_buy_amount))
+        }
+    }
+}
+
 /// Uniform clearing prices at which the trade was executed.
 #[derive(Debug, Clone, Copy)]
 pub struct ClearingPrices {
@@ -211,4 +283,120 @@ pub enum Error {
     DivisionByZero,
     #[error(transparent)]
     InvalidExecutedAmount(#[from] InvalidExecutedAmount),
+}
+
+// todo: should be removed once integration tests are implemented
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_adjusted_price_improvement_amounts_for_sell_order() {
+        let order_sell_amount = to_wei(20);
+        let order_buy_amount = to_wei(19);
+        let quote_sell_amount = to_wei(21);
+        let quote_buy_amount = to_wei(18);
+        let quote_fee_amount = to_wei(1);
+
+        let (sell_amount, _) = adjusted_price_improvement_amounts(
+            order_sell_amount,
+            order_buy_amount,
+            Side::Sell,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sell_amount, order_sell_amount,
+            "Sell amount should match order sell amount for sell orders."
+        );
+    }
+
+    #[test]
+    fn test_adjusted_price_improvement_amounts_for_buy_order() {
+        let order_sell_amount = to_wei(20);
+        let order_buy_amount = to_wei(19);
+        let quote_sell_amount = to_wei(21);
+        let quote_buy_amount = to_wei(18);
+        let quote_fee_amount = to_wei(1);
+
+        let (_, buy_amount) = adjusted_price_improvement_amounts(
+            order_sell_amount,
+            order_buy_amount,
+            Side::Buy,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
+        )
+        .unwrap();
+
+        assert_eq!(
+            buy_amount, order_buy_amount,
+            "Buy amount should match order buy amount for buy orders."
+        );
+    }
+
+    #[test]
+    fn test_sell_order_with_quote_in_market_price() {
+        let order_sell_amount = to_wei(10);
+        let order_buy_amount = to_wei(20);
+        let quote_sell_amount = to_wei(9);
+        let quote_buy_amount = to_wei(25);
+        let quote_fee_amount = to_wei(1);
+
+        let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
+            order_sell_amount,
+            order_buy_amount,
+            Side::Sell,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sell_amount, order_sell_amount,
+            "Sell amount should be taken from the quote for sell orders in market price."
+        );
+        assert_eq!(
+            buy_amount, quote_buy_amount,
+            "Buy amount should reflect the improved market condition from the quote."
+        );
+    }
+
+    #[test]
+    fn test_buy_order_with_quote_in_market_price() {
+        let order_sell_amount = to_wei(20);
+        let order_buy_amount = to_wei(10);
+        let quote_sell_amount = to_wei(17);
+        let quote_buy_amount = to_wei(10);
+        let quote_fee_amount = to_wei(1);
+
+        let (sell_amount, buy_amount) = adjusted_price_improvement_amounts(
+            order_sell_amount,
+            order_buy_amount,
+            Side::Buy,
+            quote_sell_amount,
+            quote_buy_amount,
+            quote_fee_amount,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sell_amount,
+            quote_sell_amount + quote_fee_amount,
+            "Sell amount should reflect the improved market condition from the quote for buy \
+             orders."
+        );
+        assert_eq!(
+            buy_amount, order_buy_amount,
+            "Buy amount should be taken from the quote for buy orders in market price."
+        );
+    }
+
+    pub fn to_wei(base: u32) -> eth::U256 {
+        eth::U256::from(base) * eth::U256::exp10(18)
+    }
 }

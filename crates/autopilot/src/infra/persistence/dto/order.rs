@@ -268,7 +268,22 @@ pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee: U256,
 }
 
 impl From<domain::fee::Policy> for FeePolicy {
@@ -280,6 +295,19 @@ impl From<domain::fee::Policy> for FeePolicy {
             } => Self::Surplus {
                 factor,
                 max_volume_factor,
+            },
+            domain::fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => Self::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume { factor },
         }
@@ -295,6 +323,19 @@ impl From<FeePolicy> for domain::fee::Policy {
             } => Self::Surplus {
                 factor,
                 max_volume_factor,
+            },
+            FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => Self::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: domain::fee::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                },
             },
             FeePolicy::Volume { factor } => Self::Volume { factor },
         }

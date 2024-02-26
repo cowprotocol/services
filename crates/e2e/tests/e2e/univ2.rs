@@ -105,8 +105,6 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
-    onchain.mint_blocks_past_reorg_threshold().await;
-
     let cip_20_data_updated = || async {
         onchain.mint_block().await;
         let data = match crate::database::most_recent_cip_20_data(services.db()).await {

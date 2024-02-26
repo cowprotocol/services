@@ -1,6 +1,7 @@
 use {
     crate::{
         arguments::Arguments,
+        boundary,
         database::{
             ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
@@ -11,7 +12,7 @@ use {
             Postgres,
         },
         domain,
-        event_updater::{EventUpdater, GPv2SettlementContract},
+        event_updater::EventUpdater,
         infra::{self},
         run_loop::RunLoop,
         shadow,
@@ -33,7 +34,6 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -56,7 +56,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -447,32 +446,23 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+
+    let on_settlement_event_updater =
+        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(eth.clone(), db.clone());
     let event_updater = Arc::new(EventUpdater::new(
-        GPv2SettlementContract::new(eth.contracts().settlement().clone()),
-        db.clone(),
+        boundary::events::settlement::GPv2SettlementContract::new(
+            eth.contracts().settlement().clone(),
+        ),
+        boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater),
         block_retriever.clone(),
         skip_event_sync_start,
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let liquidity_order_owners: HashSet<_> = args
-        .order_quoting
-        .liquidity_order_owners
-        .iter()
-        .copied()
-        .collect();
-    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.order_quoting.fee_discount,
-        min_discounted_fee: args.order_quoting.min_discounted_fee,
-        fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: liquidity_order_owners.clone(),
-    }) as Arc<dyn FeeSubsidizing>;
-
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         native_price_estimator.clone(),
         gas_price_estimator,
-        fee_subsidy,
         Arc::new(db.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
@@ -521,7 +511,6 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
-            liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(
@@ -564,10 +553,7 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFee::new(
-            args.fee_policy.clone().to_domain(),
-            args.fee_policy.fee_policy_skip_market_orders,
-        ),
+        domain::ProtocolFee::new(args.fee_policy.clone()),
     );
     solvable_orders_cache
         .update(block)
@@ -576,17 +562,6 @@ pub async fn run(args: Arguments) {
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
-
-    let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater {
-            eth: eth.clone(),
-            db: db.clone(),
-        };
-    tokio::task::spawn(
-        on_settlement_event_updater
-            .run_forever()
-            .instrument(tracing::info_span!("on_settlement_event_updater")),
-    );
 
     let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
         args.order_events_cleanup_interval,

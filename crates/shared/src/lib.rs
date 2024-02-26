@@ -20,7 +20,7 @@ pub mod ethrpc;
 pub mod event_handling;
 pub mod event_storing_helpers;
 pub mod external_prices;
-pub mod fee_subsidy;
+pub mod fee;
 pub mod gas_price;
 pub mod gas_price_estimation;
 pub mod http_client;

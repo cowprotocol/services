@@ -282,20 +282,18 @@ impl Blockchain {
             )
             .await
             .unwrap();
-            if config.funded {
-                wait_for(
-                    &web3,
-                    web3.eth()
-                        .send_transaction(web3::types::TransactionRequest {
-                            from: primary_address(&web3).await,
-                            to: Some(config.address()),
-                            value: Some(balance / 5),
-                            ..Default::default()
-                        }),
-                )
-                .await
-                .unwrap();
-            }
+            wait_for(
+                &web3,
+                web3.eth()
+                    .send_transaction(web3::types::TransactionRequest {
+                        from: primary_address(&web3).await,
+                        to: Some(config.address()),
+                        value: Some(config.balance),
+                        ..Default::default()
+                    }),
+            )
+            .await
+            .unwrap();
         }
 
         let domain_separator =
@@ -726,6 +724,8 @@ impl Node {
             .arg("0") // use 0 to let `anvil` use any open port
             .arg("--balance")
             .arg("1000000")
+            .arg("--gas-limit")
+            .arg("30000000")
             .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();

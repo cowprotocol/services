@@ -177,6 +177,10 @@ impl Ethereum {
         self.gas.estimate().await
     }
 
+    pub fn gas_limit(&self) -> eth::Gas {
+        self.current_block.borrow().gas_limit.into()
+    }
+
     /// Returns the current [`eth::Ether`] balance of the specified account.
     pub async fn balance(&self, address: eth::Address) -> Result<eth::Ether, Error> {
         self.web3

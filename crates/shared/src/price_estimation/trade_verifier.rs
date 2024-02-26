@@ -16,7 +16,7 @@ use {
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::extensions::StateOverride,
+    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride},
     maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
@@ -63,6 +63,7 @@ impl From<VerifiedEstimate> for Estimate {
 pub struct TradeVerifier {
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
+    block_stream: CurrentBlockStream,
     settlement: H160,
     native_token: H160,
 }
@@ -74,12 +75,14 @@ impl TradeVerifier {
     pub fn new(
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
+        block_stream: CurrentBlockStream,
         settlement: H160,
         native_token: H160,
     ) -> Self {
         Self {
             simulator,
             code_fetcher,
+            block_stream,
             settlement,
             native_token,
         }
@@ -94,6 +97,7 @@ impl TradeVerifying for TradeVerifier {
         verification: &Verification,
         trade: Trade,
     ) -> Result<VerifiedEstimate> {
+        let start = std::time::Instant::now();
         let solver = dummy_contract!(Solver, trade.solver);
 
         let settlement = encode_settlement(query, verification, &trade, self.native_token);
@@ -166,9 +170,10 @@ impl TradeVerifying for TradeVerifier {
             );
         }
 
+        let block = self.block_stream.borrow().number;
         let output = self
             .simulator
-            .simulate(call, overrides)
+            .simulate(call, overrides, Some(block))
             .await
             .context("failed to simulate quote")?;
         let summary =
@@ -181,12 +186,15 @@ impl TradeVerifying for TradeVerifier {
             solver: trade.solver,
         };
         tracing::debug!(
+            out_diff = ?trade.out_amount.abs_diff(verified.out_amount),
+            gas_diff = ?trade.gas_estimate.abs_diff(verified.gas),
+            time = ?start.elapsed(),
+            promised_out_amount = ?trade.out_amount,
+            promised_gas = trade.gas_estimate,
+            ?verified,
             ?query,
             ?verification,
-            promised_gas = trade.gas_estimate,
-            promised_out_amount =? trade.out_amount,
-            ?verified,
-            "verified quote"
+            "verified quote",
         );
         Ok(verified)
     }

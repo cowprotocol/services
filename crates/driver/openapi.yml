@@ -413,6 +413,7 @@ components:
       type: object
       oneOf:
         - $ref: "#/components/schemas/SurplusFee"
+        - $ref: "#/components/schemas/PriceImprovement"
         - $ref: "#/components/schemas/VolumeFee"
     SurplusFee:
       description: |
@@ -430,6 +431,24 @@ components:
           description: The factor of the user surplus that the protocol will request from the solver after settling the order
           type: number
           example: 0.5
+    PriceImprovement:
+      description: |
+        A cut from the price improvement over the best quote is taken as a protocol fee.
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [ "priceImprovement" ]
+        maxVolumeFactor:
+          description: Never charge more than that percentage of the order volume.
+          type: number
+          example: 0.01
+        factor:
+          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          type: number
+          example: 0.5
+        quote:
+          $ref: "#/components/schemas/Quote"
     VolumeFee:
       type: object
       properties:
@@ -440,6 +459,13 @@ components:
           description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
           type: number
           example: 0.5
+    Quote:
+      type: object
+      properties:
+        sell_amount:
+          $ref: "#/components/schemas/TokenAmount"
+        buy_amount:
+          $ref: "#/components/schemas/TokenAmount"
     Error:
       description: Response on API errors.
       type: object

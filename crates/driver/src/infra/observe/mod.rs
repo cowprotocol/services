@@ -339,6 +339,7 @@ pub fn mempool_executed(
         Err(mempools::Error::Revert(_) | mempools::Error::SimulationRevert) => "Revert",
         Err(mempools::Error::Expired) => "Expired",
         Err(mempools::Error::Other(_)) => "Other",
+        Err(mempools::Error::Disabled) => "Disabled",
     };
     metrics::get()
         .mempool_submission
