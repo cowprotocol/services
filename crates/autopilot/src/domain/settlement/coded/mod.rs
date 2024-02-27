@@ -8,7 +8,7 @@ use {
             eth,
         },
     },
-    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
+    ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
 };
 
 pub mod tokenized;
@@ -16,16 +16,12 @@ pub mod trade;
 
 pub use trade::{ClearingPrices, Trade};
 
-/// Settlement in an encoded format, as expected by the settlement contract
-/// `settle` function.
-///
-/// Type safe representation of the settlement transaction calldata.
+/// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
 pub struct Settlement {
     trades: Vec<Trade>,
-    _interactions: [Vec<Interaction>; 3],
     /// Data that was appended to the regular call data of the `settle()` call
-    /// as a form of on-chain meta data. This gets used to associated a
+    /// as a form of on-chain meta data. This is used to associate a
     /// settlement with an auction.
     auction_id: auction::Id,
 }
@@ -61,7 +57,7 @@ impl Settlement {
         let tokenized = <tokenized::Settlement>::from_token(web3::ethabi::Token::Tuple(tokenized))
             .map_err(|err| EncodingError::Tokenizing(err).with(auction_id))?;
 
-        let (tokens, clearing_prices, decoded_trades, interactions) = tokenized;
+        let (tokens, clearing_prices, decoded_trades, _interactions) = tokenized;
 
         let mut trades = Vec::with_capacity(decoded_trades.len());
         for trade in decoded_trades {
@@ -115,13 +111,8 @@ impl Settlement {
                 },
             })
         }
-        let _interactions = interactions.map(|inner| inner.into_iter().map(Into::into).collect());
 
-        Ok(Self {
-            trades,
-            _interactions,
-            auction_id,
-        })
+        Ok(Self { trades, auction_id })
     }
 
     pub fn auction_id(&self) -> auction::Id {
@@ -188,23 +179,6 @@ impl TradeFlags {
 impl From<U256> for TradeFlags {
     fn from(value: U256) -> Self {
         Self(value)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Interaction {
-    pub target: Address,
-    pub value: U256,
-    pub call_data: Bytes<Vec<u8>>,
-}
-
-impl From<(Address, U256, Bytes<Vec<u8>>)> for Interaction {
-    fn from((target, value, call_data): (Address, U256, Bytes<Vec<u8>>)) -> Self {
-        Self {
-            target,
-            value,
-            call_data,
-        }
     }
 }
 
