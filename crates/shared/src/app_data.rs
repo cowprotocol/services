@@ -1,6 +1,9 @@
 use {
     anyhow::{anyhow, Context, Result},
-    model::{app_data::AppDataHash, order::Hooks},
+    model::{
+        app_data::AppDataHash,
+        order::{Hooks, OrderUid},
+    },
     primitive_types::H160,
     serde::Deserialize,
 };
@@ -18,10 +21,17 @@ pub struct ValidatedAppData {
 }
 
 #[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
     pub signer: Option<H160>,
+    pub replaced_order: Option<ReplacedOrder>,
+}
+
+#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct ReplacedOrder {
+    pub uid: OrderUid,
 }
 
 #[derive(Clone)]
