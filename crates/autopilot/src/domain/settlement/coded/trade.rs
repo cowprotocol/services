@@ -70,8 +70,8 @@ impl Trade {
     /// [ Denominated in sell token ]
     pub fn fee_in_sell_token(&self) -> Option<eth::Asset> {
         match self.flags.order_kind() {
-            order::Kind::Sell => self.fee(),
-            order::Kind::Buy => self.fee().map(|fee| eth::Asset {
+            order::Kind::Buy => self.fee(),
+            order::Kind::Sell => self.fee().map(|fee| eth::Asset {
                 token: self.sell.token,
                 amount: (*fee.amount * self.prices.uniform.buy / self.prices.uniform.sell).into(),
             }),
