@@ -95,8 +95,6 @@ weth = "{:?}"
 
 [liquidity]
 base-tokens = []
-uniswap-v3-graph-url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
-balancer-v2-graph-url = "https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2"
 
 [[liquidity.uniswap-v2]]
 router = "{:?}"
