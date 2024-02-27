@@ -6,6 +6,7 @@
 // Each of the following modules contains tests.
 mod app_data;
 mod app_data_signer;
+mod banned_users;
 mod buffers;
 mod database;
 mod eth_integration;
