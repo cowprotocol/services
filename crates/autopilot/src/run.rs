@@ -195,12 +195,7 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network = web3
-        .net()
-        .version()
-        .await
-        .expect("Failed to retrieve network version ID");
-    let network_name = shared::network::network_name(&network, chain_id);
+    let network_name = shared::network::network_name(chain_id);
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -241,7 +236,7 @@ pub async fn run(args: Arguments) {
     let univ2_sources = baseline_sources
         .iter()
         .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
         })
         .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
     let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
@@ -552,7 +547,6 @@ pub async fn run(args: Arguments) {
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFee::new(args.fee_policy.clone()),
-        args.cow_amms.into_iter().collect(),
     );
     solvable_orders_cache
         .update(block)

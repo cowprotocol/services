@@ -7,20 +7,19 @@ use crate::tests::{
 #[tokio::test]
 #[ignore]
 async fn possible() {
+    let ab_order = ab_order();
+    let cd_order = cd_order();
     let test = setup()
         .pool(cd_pool())
         .pool(ab_pool())
-        .order(ab_order())
-        .order(cd_order())
+        .order(ab_order.clone())
+        .order(cd_order.clone())
         .solution(cd_solution())
         .solution(ab_solution())
         .done()
         .await;
 
-    test.solve()
-        .await
-        .ok()
-        .orders(&[ab_order().name, cd_order().name]);
+    test.solve().await.ok().orders(&[ab_order, cd_order]);
     test.reveal().await.ok().calldata();
     test.settle()
         .await
@@ -38,10 +37,11 @@ async fn possible() {
 #[tokio::test]
 #[ignore]
 async fn impossible() {
+    let order = ab_order();
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order())
-        .order(ab_order().rename("reduced order").reduce_amount(1000000000000000u128.into()))
+        .order(order.clone())
+        .order(order.clone().rename("reduced order").reduce_amount(1000000000000000u128.into()))
         // These two solutions result in different clearing prices (due to different surplus),
         // so they can't be merged.
         .solution(ab_solution())
@@ -54,7 +54,7 @@ async fn impossible() {
 
     // Only the first A-B order gets settled.
 
-    test.solve().await.ok().orders(&[ab_order().name]);
+    test.solve().await.ok().orders(&[order]);
     test.reveal().await.ok().calldata();
     test.settle().await.ok().await.ab_order_executed().await;
 }

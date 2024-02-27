@@ -271,6 +271,7 @@ impl UniswapV3PoolFetcher {
         block_retriever: Arc<dyn BlockRetrieving>,
         max_pools_to_initialize: usize,
     ) -> Result<Self> {
+        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "uniswapV3".into());
         let checkpoint =
             PoolsCheckpointHandler::new(subgraph_url, client, max_pools_to_initialize).await?;
 

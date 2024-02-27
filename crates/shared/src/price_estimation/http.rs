@@ -798,7 +798,8 @@ mod tests {
             "main".into(),
         );
         let web3 = Web3::new(DynTransport::new(transport));
-        let version = web3.net().version().await.unwrap();
+        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+        let version = chain_id.to_string();
 
         let pools = Arc::new(
             PoolCache::new(

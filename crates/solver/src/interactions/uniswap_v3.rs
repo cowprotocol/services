@@ -24,7 +24,7 @@ pub struct ExactOutputSingleParams {
     pub sqrt_price_limit_x96: U256,
 }
 impl Interaction for UniswapV3Interaction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
+    fn encode(&self) -> EncodedInteraction {
         let method = self.router.exact_output_single((
             self.params.token_amount_in_max.token,
             self.params.token_amount_out.token,
@@ -36,7 +36,7 @@ impl Interaction for UniswapV3Interaction {
             self.params.sqrt_price_limit_x96,
         ));
         let calldata = method.tx.data.expect("no calldata").0;
-        vec![(self.router.address(), 0.into(), Bytes(calldata))]
+        (self.router.address(), 0.into(), Bytes(calldata))
     }
 }
 
@@ -81,13 +81,9 @@ mod tests {
                 sqrt_price_limit_x96: U256::zero(),
             },
         };
-        let interactions = interaction.encode();
-
-        // Single interaction
-        assert_eq!(interactions.len(), 1);
+        let swap_call = interaction.encode();
 
         // Verify Swap
-        let swap_call = &interactions[0];
         assert_eq!(swap_call.0, router.address());
         let call = &swap_call.2 .0;
         let swap_signature = hex!("db3e2198");

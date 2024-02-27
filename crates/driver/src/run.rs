@@ -47,7 +47,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let ethrpc = ethrpc(&args).await;
     let web3 = ethrpc.web3().clone();
-    let config = config::file::load(ethrpc.network(), &args.config).await;
+    let config = config::file::load(ethrpc.chain(), &args.config).await;
     tracing::info!("running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
@@ -110,7 +110,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
                 save: tenderly.save,
                 save_if_fails: tenderly.save_if_fails,
             },
-            eth.network().id.clone(),
+            eth.network(),
             eth.to_owned(),
         ),
         Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
@@ -143,7 +143,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts.clone(), gas).await
+    Ethereum::new(ethrpc, config.contracts, gas).await
 }
 
 fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
