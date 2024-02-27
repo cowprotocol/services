@@ -481,7 +481,7 @@ mod balancer_v2 {
 
     pub fn default_balancer_v2_graph_url() -> Url {
             Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
-                .expect("invalid default balancer-v3 Graph API URL")
+                .expect("invalid default balancer-v2 Graph API URL")
     }
 }
 
