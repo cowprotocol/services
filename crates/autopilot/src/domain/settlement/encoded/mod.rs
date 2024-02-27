@@ -4,7 +4,6 @@ use {
     crate::{
         boundary,
         domain::{
-            self,
             auction::{self, order},
             eth,
         },
@@ -13,6 +12,9 @@ use {
 };
 
 pub mod tokenized;
+pub mod trade;
+
+pub use trade::Trade;
 
 /// Settlement in an encoded format, as expected by the settlement contract
 /// `settle` function.
@@ -92,15 +94,21 @@ impl Encoded {
                 receiver: trade.2.into(),
                 valid_to: trade.5,
                 app_data: order::AppDataHash(trade.6 .0),
+                executed: eth::Asset {
+                    token: match flags.order_kind() {
+                        order::Kind::Sell => sell_token.into(),
+                        order::Kind::Buy => buy_token.into(),
+                    },
+                    amount: trade.9.into(),
+                },
                 flags,
-                executed: trade.9.into(),
                 signature: signature.into(),
-                prices: Price {
-                    uniform: ClearingPrices {
+                prices: trade::Price {
+                    uniform: trade::ClearingPrices {
                         sell: clearing_prices[uniform_sell_token_index],
                         buy: clearing_prices[uniform_buy_token_index],
                     },
-                    custom: ClearingPrices {
+                    custom: trade::ClearingPrices {
                         sell: clearing_prices[sell_token_index],
                         buy: clearing_prices[buy_token_index],
                     },
@@ -123,65 +131,6 @@ impl Encoded {
     pub fn trades(&self) -> &[Trade] {
         &self.trades
     }
-}
-
-#[derive(Debug)]
-pub struct Trade {
-    pub sell: eth::Asset,
-    pub buy: eth::Asset,
-    pub receiver: eth::Address,
-    pub valid_to: u32,
-    pub app_data: order::AppDataHash,
-    pub flags: TradeFlags,
-    pub executed: eth::TargetAmount,
-    pub signature: order::Signature,
-
-    /// [ Additional derived fields ]
-    ///
-    /// The order uid of the order associated with this trade.
-    pub order_uid: domain::OrderUid,
-    /// Derived from the settlement "clearing_prices" vector
-    pub prices: Price,
-}
-
-impl Trade {
-    /// Surplus based on uniform clearing prices returns the surplus without any
-    /// fees applied.
-    pub fn surplus_before_fee(&self) -> Option<eth::Asset> {
-        super::surplus::trade_surplus(
-            self.flags.order_kind(),
-            self.executed,
-            self.sell,
-            self.buy,
-            &self.prices.uniform,
-        )
-    }
-
-    /// Surplus based on custom clearing prices returns the surplus after fees
-    /// have been applied.
-    pub fn surplus(&self) -> Option<eth::Asset> {
-        super::surplus::trade_surplus(
-            self.flags.order_kind(),
-            self.executed,
-            self.sell,
-            self.buy,
-            &self.prices.custom,
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct Price {
-    pub uniform: ClearingPrices,
-    /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
-    pub custom: ClearingPrices,
-}
-
-/// Uniform clearing prices at which the trade was executed.
-#[derive(Debug, Clone, Copy)]
-pub struct ClearingPrices {
-    pub sell: eth::U256,
-    pub buy: eth::U256,
 }
 
 /// Trade flags are encoded in a 256-bit integer field. For more information on

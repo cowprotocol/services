@@ -63,28 +63,35 @@ pub type NormalizedSurplus = eth::TokenAmount; // eth::Ether?
 /// Main logic for surplus calculation
 pub fn trade_surplus(
     kind: order::Kind,
-    executed: eth::TargetAmount,
+    executed: eth::Asset,
     sell: eth::Asset,
     buy: eth::Asset,
-    prices: &encoded::ClearingPrices,
+    prices: &encoded::trade::ClearingPrices,
 ) -> Option<eth::Asset> {
     match kind {
         order::Kind::Buy => {
             // scale limit sell to support partially fillable orders
             let limit_sell = sell
                 .amount
-                .checked_mul(*executed)?
+                .checked_mul(*executed.amount)?
                 .checked_div(*buy.amount)?;
             // difference between limit sell and executed amount converted to sell token
-            limit_sell.checked_sub(executed.checked_mul(prices.buy)?.checked_div(prices.sell)?)
+            limit_sell.checked_sub(
+                executed
+                    .amount
+                    .checked_mul(prices.buy)?
+                    .checked_div(prices.sell)?,
+            )
         }
         order::Kind::Sell => {
             // scale limit buy to support partially fillable orders
             let limit_buy = executed
+                .amount
                 .checked_mul(*buy.amount)?
                 .checked_div(*sell.amount)?;
             // difference between executed amount converted to buy token and limit buy
             executed
+                .amount
                 .checked_mul(prices.sell)?
                 .checked_div(prices.buy)?
                 .checked_sub(limit_buy)

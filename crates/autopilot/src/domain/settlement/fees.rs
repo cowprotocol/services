@@ -34,34 +34,14 @@ impl Fees {
         let fees = trades
             .iter()
             .map(|trade| {
-                let surplus_before_fee = trade.surplus_before_fee();
-                let surplus_after_fee = trade.surplus();
-
-                let diff = surplus_before_fee
-                    .zip(surplus_after_fee)
-                    .map(|(before, after)| {
-                        let diff = before.amount.saturating_sub(*after.amount);
-
-                        // convert to the sell token
-                        match trade.flags.order_kind() {
-                            auction::order::Kind::Buy => diff,
-                            auction::order::Kind::Sell => {
-                                diff * trade.prices.uniform.buy / trade.prices.uniform.sell
-                            }
-                        }
-                    })
-                    .unwrap_or_else(|| {
-                        tracing::warn!("surplus failed for trade {:?}", trade);
-                        Default::default()
-                    });
-
-                (
-                    trade.order_uid,
+                let fee = trade.fee_in_sell_token().unwrap_or_else(|| {
+                    tracing::warn!("fee failed for trade {:?}", trade.order_uid);
                     eth::Asset {
                         token: trade.sell.token,
-                        amount: diff.into(),
-                    },
-                )
+                        amount: Default::default(),
+                    }
+                });
+                (trade.order_uid, fee)
             })
             .collect();
         Self(fees)
