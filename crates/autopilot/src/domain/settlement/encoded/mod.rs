@@ -20,10 +20,8 @@ pub mod tokenized;
 /// Type safe representation of the settlement transaction calldata.
 #[derive(Debug)]
 pub struct Encoded {
-    tokens: Vec<eth::Address>,
-    clearing_prices: Vec<eth::U256>,
     trades: Vec<Trade>,
-    interactions: [Vec<Interaction>; 3],
+    _interactions: [Vec<Interaction>; 3],
     /// Data that was appended to the regular call data of the `settle()` call
     /// as a form of on-chain meta data. This gets used to associated a
     /// settlement with an auction.
@@ -70,30 +68,50 @@ impl Encoded {
                 .map_err(boundary::order::Error::Signature)
                 .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?;
 
+            let sell_token_index = trade.0.as_usize();
+            let buy_token_index = trade.1.as_usize();
+            let sell_token = tokens[sell_token_index];
+            let buy_token = tokens[buy_token_index];
+            let uniform_sell_token_index = tokens
+                .iter()
+                .position(|token| token == &sell_token)
+                .unwrap();
+            let uniform_buy_token_index =
+                tokens.iter().position(|token| token == &buy_token).unwrap();
             trades.push(Trade {
-                order_uid: boundary::order::order_uid(&trade, &tokens, &domain_separator)
+                order_uid: boundary::order::order_uid(&trade, &tokens, domain_separator)
                     .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?,
-                sell_token_index: trade.0.as_usize(),
-                buy_token_index: trade.1.as_usize(),
+                sell: eth::Asset {
+                    token: sell_token.into(),
+                    amount: trade.3.into(),
+                },
+                buy: eth::Asset {
+                    token: buy_token.into(),
+                    amount: trade.4.into(),
+                },
                 receiver: trade.2.into(),
-                sell_amount: trade.3.into(),
-                buy_amount: trade.4.into(),
                 valid_to: trade.5,
                 app_data: order::AppDataHash(trade.6 .0),
-                fee_amount: trade.7.into(),
                 flags,
                 executed: trade.9.into(),
                 signature: signature.into(),
+                prices: Price {
+                    uniform: ClearingPrices {
+                        sell: clearing_prices[uniform_sell_token_index],
+                        buy: clearing_prices[uniform_buy_token_index],
+                    },
+                    custom: ClearingPrices {
+                        sell: clearing_prices[sell_token_index],
+                        buy: clearing_prices[buy_token_index],
+                    },
+                },
             })
         }
-        let tokens: Vec<eth::Address> = tokens.into_iter().map(Into::into).collect();
-        let interactions = interactions.map(|inner| inner.into_iter().map(Into::into).collect());
+        let _interactions = interactions.map(|inner| inner.into_iter().map(Into::into).collect());
 
         Ok(Self {
-            tokens,
-            clearing_prices,
             trades,
-            interactions,
+            _interactions,
             auction_id,
         })
     }
@@ -105,26 +123,15 @@ impl Encoded {
     pub fn trades(&self) -> &[Trade] {
         &self.trades
     }
-
-    pub fn tokens(&self) -> &[eth::Address] {
-        &self.tokens
-    }
-
-    pub fn clearing_prices(&self) -> &[eth::U256] {
-        &self.clearing_prices
-    }
 }
 
 #[derive(Debug)]
 pub struct Trade {
-    pub sell_token_index: usize,
-    pub buy_token_index: usize,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
     pub receiver: eth::Address,
-    pub sell_amount: eth::TokenAmount,
-    pub buy_amount: eth::TokenAmount,
     pub valid_to: u32,
     pub app_data: order::AppDataHash,
-    pub fee_amount: eth::TokenAmount,
     pub flags: TradeFlags,
     pub executed: eth::TargetAmount,
     pub signature: order::Signature,
@@ -133,6 +140,48 @@ pub struct Trade {
     ///
     /// The order uid of the order associated with this trade.
     pub order_uid: domain::OrderUid,
+    /// Derived from the settlement "clearing_prices" vector
+    pub prices: Price,
+}
+
+impl Trade {
+    /// Surplus based on uniform clearing prices returns the surplus without any
+    /// fees applied.
+    pub fn surplus_before_fee(&self) -> Option<eth::Asset> {
+        super::surplus::trade_surplus(
+            self.flags.order_kind(),
+            self.executed,
+            self.sell,
+            self.buy,
+            &self.prices.uniform,
+        )
+    }
+
+    /// Surplus based on custom clearing prices returns the surplus after fees
+    /// have been applied.
+    pub fn surplus(&self) -> Option<eth::Asset> {
+        super::surplus::trade_surplus(
+            self.flags.order_kind(),
+            self.executed,
+            self.sell,
+            self.buy,
+            &self.prices.custom,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct Price {
+    pub uniform: ClearingPrices,
+    /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
+    pub custom: ClearingPrices,
+}
+
+/// Uniform clearing prices at which the trade was executed.
+#[derive(Debug, Clone, Copy)]
+pub struct ClearingPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
 }
 
 /// Trade flags are encoded in a 256-bit integer field. For more information on

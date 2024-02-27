@@ -108,26 +108,24 @@ impl Ethereum {
         &self,
         hash: eth::TxId,
     ) -> Result<Option<domain::settlement::Transaction>, Error> {
-        Ok(self
-            .web3
+        self.web3
             .eth()
             .transaction((*hash).into())
             .await?
             .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
-            .transpose()?)
+            .transpose()
     }
 
     pub async fn transaction_receipt(
         &self,
         hash: eth::TxId,
     ) -> Result<Option<domain::settlement::transaction::Receipt>, Error> {
-        Ok(self
-            .web3
+        self.web3
             .eth()
-            .transaction_receipt((*hash).into())
+            .transaction_receipt(*hash)
             .await?
             .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
-            .transpose()?)
+            .transpose()
     }
 }
 

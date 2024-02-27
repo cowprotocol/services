@@ -2,6 +2,7 @@ use {
     super::{auction, eth},
     crate::infra,
     anyhow::Result,
+    std::collections::HashMap,
 };
 
 pub mod encoded;
@@ -12,7 +13,8 @@ pub mod transaction;
 
 pub use {
     encoded::Encoded,
-    fees::Fees,
+    fees::{Fees, NormalizedFee},
+    observation::Observation,
     surplus::{NormalizedSurplus, Surplus},
     transaction::Transaction,
 };
@@ -48,16 +50,25 @@ impl Settlement {
         self.encoded.auction_id()
     }
 
-    pub fn transaction(&self) -> &transaction::Transaction {
-        &self.transaction
+    pub fn solver(&self) -> eth::Address {
+        self.transaction.solver()
     }
 
-    pub fn transaction_receipt(&self) -> &transaction::Receipt {
-        &self.receipt
-    }
-
-    pub fn encoded(&self) -> &Encoded {
-        &self.encoded
+    pub fn observation(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> observation::Observation {
+        observation::Observation {
+            gas: self.receipt.gas(),
+            effective_gas_price: self.receipt.effective_gas_price(),
+            surplus: super::settlement::Surplus::new(self.encoded.trades())
+                .normalized_with(prices)
+                .unwrap_or_default(),
+            fee: super::settlement::Fees::new(self.encoded.trades())
+                .normalized_with(prices)
+                .unwrap_or_default(),
+            order_fees: super::settlement::Fees::new(self.encoded.trades()),
+        }
     }
 }
 

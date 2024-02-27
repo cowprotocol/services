@@ -1,4 +1,5 @@
 use {
+    crate::domain,
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, settlement_observations::Observation},
     ethcontract::U256,
@@ -26,7 +27,7 @@ pub struct SettlementUpdate {
     pub log_index: i64,
     pub auction_id: AuctionId,
     /// Only set if the auction is for this environment.
-    pub auction_data: Option<AuctionData>,
+    pub observation: Option<domain::settlement::Observation>,
 }
 
 impl super::Postgres {
@@ -49,7 +50,19 @@ impl super::Postgres {
         .await
         .context("insert_settlement_tx_info")?;
 
-        if let Some(auction_data) = settlement_update.auction_data {
+        if let Some(observation) = settlement_update.observation {
+            let auction_data = AuctionData {
+                gas_used: observation.gas,
+                effective_gas_price: observation.effective_gas_price,
+                surplus: *observation.surplus,
+                fee: *observation.fee,
+                order_executions: observation
+                    .order_fees
+                    .get()
+                    .iter()
+                    .map(|(order, fee)| ((*order).into(), *fee.amount))
+                    .collect(),
+            };
             database::settlement_observations::upsert(
                 ex,
                 Observation {

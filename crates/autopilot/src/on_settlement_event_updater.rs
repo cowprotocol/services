@@ -29,17 +29,14 @@
 
 use {
     crate::{
-        database::{
-            on_settlement_event_updater::{AuctionData, SettlementUpdate},
-            Postgres,
-        },
-        domain::{self, auction, eth},
+        database::{on_settlement_event_updater::SettlementUpdate, Postgres},
+        domain::{self},
         infra,
     },
     anyhow::{Context, Result},
     database::PgTransaction,
     primitive_types::H256,
-    std::{collections::HashMap, sync::Arc},
+    std::sync::Arc,
     tokio::sync::Notify,
 };
 
@@ -144,7 +141,7 @@ impl Inner {
                     block_number: event.block_number,
                     log_index: event.log_index,
                     auction_id: settlement.auction_id(),
-                    auction_data: Some(self.fetch_auction_data(settlement, &prices)?),
+                    observation: Some(settlement.observation(&prices)),
                 }
             }
             Err(domain::settlement::Error::Blockchain(err)) => return Err(err.into()),
@@ -158,7 +155,7 @@ impl Inner {
                     block_number: event.block_number,
                     log_index: event.log_index,
                     auction_id: err.auction_id().unwrap_or_default(),
-                    auction_data: None,
+                    observation: None,
                 }
             }
         };
@@ -170,42 +167,5 @@ impl Inner {
             .with_context(|| format!("insert_settlement_details: {update:?}"))?;
         ex.commit().await?;
         Ok(true)
-    }
-
-    fn fetch_auction_data(
-        &self,
-        settlement: domain::Settlement,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Result<AuctionData> {
-        // surplus and fees calculation
-        let _normalized_surplus =
-            domain::settlement::Surplus::new(&settlement.encoded()).normalized_with(prices);
-        // surplus and fees calculation
-        // let surplus = settlement.total_surplus(&external_prices);
-        // let (fee, order_executions) = {
-        //     let domain_separator =
-        // self.eth.contracts().settlement_domain_separator();     let all_fees
-        // = settlement.all_fees(&external_prices, domain_separator);     // total
-        // fee used for CIP20 rewards     let fee = all_fees
-        //         .iter()
-        //         .fold(0.into(), |acc, fees| acc + fees.native);
-        //     // executed surplus fees for each order execution
-        //     let order_executions = all_fees
-        //         .into_iter()
-        //         .map(|fee| (fee.order,
-        // fee.executed_surplus_fee().unwrap_or(0.into())))         .collect();
-        //     (fee, order_executions)
-        // };
-
-        // Ok(AuctionData {
-        //     surplus,
-        //     fee,
-        //     gas_used: settlement.transaction_receipt().gas(),
-        //     effective_gas_price:
-        // settlement.transaction_receipt().effective_gas_price(),
-        //     order_executions,
-        // })
-
-        Ok(Default::default())
     }
 }

@@ -41,7 +41,7 @@ pub fn to_domain(
 /// Recover order uid from order data and signature
 pub fn order_uid(
     trade: &domain::settlement::encoded::tokenized::Trade,
-    tokens: &Vec<domain::settlement::encoded::tokenized::Token>,
+    tokens: &[domain::settlement::encoded::tokenized::Token],
     domain_separator: &domain::eth::DomainSeparator,
 ) -> Result<domain::OrderUid, Error> {
     let flags = domain::settlement::encoded::TradeFlags(trade.8);
@@ -49,8 +49,8 @@ pub fn order_uid(
         .map_err(Error::Signature)?;
 
     let order = model::order::OrderData {
-        sell_token: tokens[trade.0.as_u64() as usize].into(),
-        buy_token: tokens[trade.1.as_u64() as usize].into(),
+        sell_token: tokens[trade.0.as_u64() as usize],
+        buy_token: tokens[trade.1.as_u64() as usize],
         sell_amount: trade.3,
         buy_amount: trade.4,
         valid_to: trade.5,
