@@ -260,6 +260,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "order-validation",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -2708,6 +2709,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "linked-hash-map"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3126,6 +3133,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "order-validation"
+version = "0.1.0"
+dependencies = [
+ "contracts",
+ "ethcontract",
+ "ethrpc",
+ "thiserror",
+ "tracing",
+ "ttl_cache",
+]
+
+[[package]]
 name = "orderbook"
 version = "0.1.0"
 dependencies = [
@@ -3152,6 +3171,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "order-validation",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -4058,6 +4078,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "order-validation",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -4931,6 +4952,15 @@ name = "try-lock"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
+
+[[package]]
+name = "ttl_cache"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4189890526f0168710b6ee65ceaedf1460c48a14318ceec933cb26baa492096a"
+dependencies = [
+ "linked-hash-map",
+]
 
 [[package]]
 name = "typenum"

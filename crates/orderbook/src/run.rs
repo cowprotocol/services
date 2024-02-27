@@ -15,6 +15,7 @@ use {
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    order_validation,
     shared::{
         account_balances,
         bad_token::{
@@ -437,7 +438,13 @@ pub async fn run(args: Arguments) {
     let order_validator = Arc::new(
         OrderValidator::new(
             native_token.clone(),
-            args.banned_users.iter().copied().collect(),
+            Arc::new(
+                order_validation::banned::Users::new(
+                    &web3,
+                    args.banned_users.iter().copied().collect(),
+                )
+                .await,
+            ),
             validity_configuration,
             args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),
