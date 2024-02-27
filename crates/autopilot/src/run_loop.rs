@@ -448,7 +448,7 @@ impl RunLoop {
         let tx_receipt = self.eth.transaction_receipt(in_flight.tx_hash.into()).await;
 
         let prev_settlement_block = match tx_receipt {
-            Ok(Some(receipt)) => receipt.block(),
+            Ok(Some(receipt)) => receipt.block,
             // Could not find the block of the previous settlement, let's be
             // conservative and assume all orders are still in-flight.
             _ => u64::MAX.into(),

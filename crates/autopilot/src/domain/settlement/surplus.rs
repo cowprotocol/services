@@ -1,8 +1,11 @@
 //! Settlement surplus calculation
 
 use {
-    super::encoded,
-    crate::domain::{auction, auction::order, eth},
+    crate::domain::{
+        auction::{self, order},
+        eth,
+        settlement,
+    },
     num::BigRational,
     number::conversions::big_rational_to_u256,
     shared::conversions::U256Ext,
@@ -16,7 +19,7 @@ use {
 pub struct Surplus(HashMap<auction::order::OrderUid, eth::Asset>);
 
 impl Surplus {
-    pub fn new(trades: &[encoded::Trade]) -> Self {
+    pub fn new(trades: &[settlement::Trade]) -> Self {
         let surplus = trades
             .iter()
             .map(|trade| {
@@ -66,7 +69,7 @@ pub fn trade_surplus(
     executed: eth::Asset,
     sell: eth::Asset,
     buy: eth::Asset,
-    prices: &encoded::trade::ClearingPrices,
+    prices: &settlement::ClearingPrices,
 ) -> Option<eth::Asset> {
     match kind {
         order::Kind::Buy => {

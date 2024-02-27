@@ -125,7 +125,7 @@ impl Inner {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let settlement = domain::Settlement::new(hash.into(), self.eth.clone()).await;
+        let settlement = domain::SettlementTx::new(hash.into(), self.eth.clone()).await;
         let update = match settlement {
             Ok(settlement) => {
                 let prices = self
@@ -144,12 +144,12 @@ impl Inner {
                     observation: Some(settlement.observation(&prices)),
                 }
             }
-            Err(domain::settlement::Error::Blockchain(err)) => return Err(err.into()),
-            Err(domain::settlement::Error::TransactionNotFound) => {
+            Err(domain::settlement::transaction::Error::Blockchain(err)) => return Err(err.into()),
+            Err(domain::settlement::transaction::Error::TransactionNotFound) => {
                 tracing::warn!(?hash, "settlement tx not found, reorg happened");
                 return Ok(false);
             }
-            Err(domain::settlement::Error::Encoded(err)) => {
+            Err(domain::settlement::transaction::Error::Encoded(err)) => {
                 tracing::warn!(?hash, ?err, "could not decode settlement tx");
                 SettlementUpdate {
                     block_number: event.block_number,

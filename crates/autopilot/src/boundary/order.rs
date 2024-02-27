@@ -40,11 +40,11 @@ pub fn to_domain(
 
 /// Recover order uid from order data and signature
 pub fn order_uid(
-    trade: &domain::settlement::encoded::tokenized::Trade,
-    tokens: &[domain::settlement::encoded::tokenized::Token],
+    trade: &domain::settlement::coded::tokenized::Trade,
+    tokens: &[domain::settlement::coded::tokenized::Token],
     domain_separator: &domain::eth::DomainSeparator,
 ) -> Result<domain::OrderUid, Error> {
-    let flags = domain::settlement::encoded::TradeFlags(trade.8);
+    let flags = domain::settlement::coded::TradeFlags(trade.8);
     let signature = crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
         .map_err(Error::Signature)?;
 

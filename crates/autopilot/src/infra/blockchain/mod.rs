@@ -9,6 +9,7 @@ use {
 };
 
 pub mod contracts;
+pub mod dto;
 
 use crate::domain::{self, eth};
 

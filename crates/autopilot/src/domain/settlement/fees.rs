@@ -12,8 +12,7 @@
 // TODO
 
 use {
-    super::encoded,
-    crate::domain::{auction, eth},
+    crate::domain::{auction, eth, settlement},
     num::BigRational,
     number::conversions::big_rational_to_u256,
     shared::conversions::U256Ext,
@@ -30,7 +29,7 @@ use {
 pub struct Fees(HashMap<auction::order::OrderUid, eth::Asset>);
 
 impl Fees {
-    pub fn new(trades: &[encoded::Trade]) -> Self {
+    pub fn new(trades: &[settlement::Trade]) -> Self {
         let fees = trades
             .iter()
             .map(|trade| {

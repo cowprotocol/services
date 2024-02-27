@@ -14,14 +14,14 @@ use {
 pub mod tokenized;
 pub mod trade;
 
-pub use trade::Trade;
+pub use trade::{ClearingPrices, Trade};
 
 /// Settlement in an encoded format, as expected by the settlement contract
 /// `settle` function.
 ///
 /// Type safe representation of the settlement transaction calldata.
 #[derive(Debug)]
-pub struct Encoded {
+pub struct Settlement {
     trades: Vec<Trade>,
     _interactions: [Vec<Interaction>; 3],
     /// Data that was appended to the regular call data of the `settle()` call
@@ -30,7 +30,7 @@ pub struct Encoded {
     auction_id: auction::Id,
 }
 
-impl Encoded {
+impl Settlement {
     /// Number of bytes that may be appended to the calldata to store an auction
     /// id.
     pub const META_DATA_LEN: usize = 8;
