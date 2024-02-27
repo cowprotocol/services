@@ -395,6 +395,7 @@ enum UniswapV3Config {
         max_pools_to_initialize: usize,
 
         /// The URL used to connect to uniswap v3 subgraph client.
+        #[serde(default = "uniswap_v3::default_uniswap_v3_graph_url")]
         graph_url: Url,
     },
 }
@@ -467,6 +468,7 @@ enum BalancerV2Config {
         pool_deny_list: Vec<eth::H256>,
 
         /// The URL used to connect to balancer v2 subgraph client.
+        #[serde(default = "balancer_v2::default_balancer_v2_graph_url")]
         graph_url: Url,
     },
 }
