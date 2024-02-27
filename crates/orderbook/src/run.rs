@@ -438,13 +438,7 @@ pub async fn run(args: Arguments) {
     let order_validator = Arc::new(
         OrderValidator::new(
             native_token.clone(),
-            Arc::new(
-                order_validation::banned::Users::new(
-                    &web3,
-                    args.banned_users.iter().copied().collect(),
-                )
-                .await,
-            ),
+            Arc::new(order_validation::banned::Users::new(&web3, args.banned_users).await),
             validity_configuration,
             args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),

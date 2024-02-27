@@ -537,7 +537,7 @@ pub async fn run(args: Arguments) {
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         persistence.clone(),
-        infra::banned::Users::new(&web3, args.banned_users.iter().copied().collect()).await,
+        infra::banned::Users::new(&web3, args.banned_users).await,
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         eth.current_block().clone(),
