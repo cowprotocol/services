@@ -73,6 +73,8 @@ impl Trade {
             order::Kind::Buy => self.fee(),
             order::Kind::Sell => self.fee().map(|fee| eth::Asset {
                 token: self.sell.token,
+                // use uniform prices since the fee (which is determined by solvers) is expressed in
+                // terms of uniform clearing prices
                 amount: (*fee.amount * self.prices.uniform.buy / self.prices.uniform.sell).into(),
             }),
         }
@@ -98,13 +100,25 @@ impl Trade {
                 },
                 amount: std::cmp::min(
                     {
-                        let original_surplus = apply_factor(*self.fee()?.amount, 1.0 - factor)?;
-                        apply_factor(original_surplus, *factor)?
+                        // If the surplus after all fees is X, then the original surplus before
+                        // protocol fee is X / (1 - factor)
+                        apply_factor(*self.surplus()?.amount, factor / (1.0 - factor))?
                     },
-                    apply_factor(*self.executed.amount, *max_volume_factor)?, /* todo convert
-                                                                               * executed amount
-                                                                               * to surplus
-                                                                               * token */
+                    {
+                        // Convert the executed amount to surplus token so it can be compared with
+                        // the surplus
+                        let executed_in_surplus_token = match self.flags.order_kind() {
+                            order::Kind::Sell => {
+                                *self.executed.amount * self.prices.custom.sell
+                                    / self.prices.custom.buy
+                            }
+                            order::Kind::Buy => {
+                                *self.executed.amount * self.prices.custom.buy
+                                    / self.prices.custom.sell
+                            }
+                        };
+                        apply_factor(executed_in_surplus_token, *max_volume_factor)?
+                    },
                 )
                 .into(),
             }),
