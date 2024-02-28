@@ -22,8 +22,8 @@ use {
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
-    num::ToPrimitive,
-    number::{conversions::u256_to_big_int, nonzero::U256 as NonZeroU256},
+    num::BigRational,
+    number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -39,24 +39,6 @@ pub trait TradeVerifying: Send + Sync + 'static {
     ) -> Result<Estimate>;
 }
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub struct VerifiedEstimate {
-    pub out_amount: U256,
-    pub gas: u64,
-    pub solver: H160,
-}
-
-impl From<VerifiedEstimate> for Estimate {
-    fn from(estimate: VerifiedEstimate) -> Self {
-        Self {
-            out_amount: estimate.out_amount,
-            gas: estimate.gas,
-            solver: estimate.solver,
-            verified: true,
-        }
-    }
-}
-
 /// Component that verifies a trade is actually executable by simulating it
 /// and determines a price estimate based off of that simulation.
 #[derive(Clone)]
@@ -66,7 +48,7 @@ pub struct TradeVerifier {
     block_stream: CurrentBlockStream,
     settlement: H160,
     native_token: H160,
-    quote_inaccuracy_limit: f64,
+    quote_inaccuracy_limit: BigRational,
 }
 
 impl TradeVerifier {
@@ -87,7 +69,8 @@ impl TradeVerifier {
             block_stream,
             settlement,
             native_token,
-            quote_inaccuracy_limit,
+            quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
+                .expect("can represent all finite values"),
         }
     }
 
@@ -197,7 +180,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        ensure_quote_accuracy(self.quote_inaccuracy_limit, query, trade.solver, &summary)
+        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade.solver, &summary)
     }
 }
 
@@ -349,10 +332,10 @@ struct SettleOutput {
     out_amount: U256,
     /// Difference in buy tokens of the settlement contract before and after the
     /// trade.
-    buy_tokens_diff: num::BigInt,
+    buy_tokens_diff: BigRational,
     /// Difference in sell tokens of the settlement contract before and after
     /// the trade.
-    sell_tokens_diff: num::BigInt,
+    sell_tokens_diff: BigRational,
 }
 
 impl SettleOutput {
@@ -361,14 +344,14 @@ impl SettleOutput {
         let tokens = function.decode_output(output).context("decode")?;
         let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
 
-        let settlement_sell_balance_before = u256_to_big_int(&balances[0]);
-        let settlement_buy_balance_before = u256_to_big_int(&balances[1]);
+        let settlement_sell_balance_before = u256_to_big_rational(&balances[0]);
+        let settlement_buy_balance_before = u256_to_big_rational(&balances[1]);
 
         let trader_balance_before = balances[2];
         let trader_balance_after = balances[3];
 
-        let settlement_sell_balance_after = u256_to_big_int(&balances[4]);
-        let settlement_buy_balance_after = u256_to_big_int(&balances[5]);
+        let settlement_sell_balance_after = u256_to_big_rational(&balances[4]);
+        let settlement_buy_balance_after = u256_to_big_rational(&balances[5]);
 
         let out_amount = match kind {
             // for sell orders we track the buy_token amount which increases during the settlement
@@ -390,7 +373,7 @@ impl SettleOutput {
 /// Returns an error if settling the quote would require using too much of the
 /// settlement contract buffers.
 fn ensure_quote_accuracy(
-    inaccuracy_limit: f64,
+    inaccuracy_limit: &BigRational,
     query: &PriceQuery,
     solver: H160,
     summary: &SettleOutput,
@@ -401,8 +384,8 @@ fn ensure_quote_accuracy(
         OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
     };
 
-    if summary.sell_tokens_diff.to_f64().unwrap() >= inaccuracy_limit * sell_amount.to_f64_lossy()
-        || summary.buy_tokens_diff.to_f64().unwrap() >= inaccuracy_limit * buy_amount.to_f64_lossy()
+    if summary.sell_tokens_diff >= inaccuracy_limit * u256_to_big_rational(&sell_amount)
+        || summary.buy_tokens_diff >= inaccuracy_limit * u256_to_big_rational(&buy_amount)
     {
         return Err(Error::TooInaccurate);
     }
@@ -441,6 +424,11 @@ mod tests {
 
     #[test]
     fn discards_inaccurate_quotes() {
+        // let's use 0.5 as the base case to avoid rounding issues introduced by float
+        // conversion
+        let low_threshold = BigRational::from_float(0.5).unwrap();
+        let high_threshold = BigRational::from_float(0.51).unwrap();
+
         let query = PriceQuery {
             in_amount: 1_000.try_into().unwrap(),
             kind: OrderKind::Sell,
@@ -451,49 +439,49 @@ mod tests {
         let sell_more = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: 0.into(),
-            sell_tokens_diff: 10.into(),
+            buy_tokens_diff: BigRational::from_integer(0.into()),
+            sell_tokens_diff: BigRational::from_integer(500.into()),
         };
 
-        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &sell_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(0.011, &query, H160::zero(), &sell_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &sell_more);
         assert!(estimate.is_ok());
 
         let pay_out_more = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: 20.into(),
-            sell_tokens_diff: 0.into(),
+            buy_tokens_diff: BigRational::from_integer(1_000.into()),
+            sell_tokens_diff: BigRational::from_integer(0.into()),
         };
 
-        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &pay_out_more);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
         assert!(matches!(estimate, Err(Error::TooInaccurate)));
 
         // passes with slightly higher tolerance
-        let estimate = ensure_quote_accuracy(0.011, &query, H160::zero(), &pay_out_more);
+        let estimate = ensure_quote_accuracy(&high_threshold, &query, H160::zero(), &pay_out_more);
         assert!(estimate.is_ok());
 
         let sell_less = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: 0.into(),
-            sell_tokens_diff: (-10).into(),
+            buy_tokens_diff: BigRational::from_integer(0.into()),
+            sell_tokens_diff: BigRational::from_integer((-500).into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &sell_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
         assert!(estimate.is_ok());
 
         let pay_out_less = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: (-20).into(),
-            sell_tokens_diff: 0.into(),
+            buy_tokens_diff: BigRational::from_integer((-1_000).into()),
+            sell_tokens_diff: BigRational::from_integer(0.into()),
         };
         // Ending up with surplus in the buffers is always fine
-        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &pay_out_less);
+        let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
         assert!(estimate.is_ok());
     }
 }
