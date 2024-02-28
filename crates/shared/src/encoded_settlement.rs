@@ -1,5 +1,6 @@
 use {
     crate::interaction::EncodedInteraction,
+    anyhow::Result,
     ethcontract::Bytes,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -82,6 +83,64 @@ pub struct EncodedSettlement {
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<EncodedTrade>,
     pub interactions: [Vec<EncodedInteraction>; 3],
+}
+
+impl EncodedSettlement {
+    /// Order uids for all trades in the settlement.
+    ///
+    /// Returns all order uids or none.
+    pub fn uids(
+        &self,
+        domain_separator: model::DomainSeparator,
+    ) -> Result<Vec<model::order::OrderUid>> {
+        self.trades
+            .iter()
+            .map(|trade| {
+                let order = model::order::OrderData {
+                    sell_token: self.tokens[trade.0.as_u64() as usize],
+                    buy_token: self.tokens[trade.1.as_u64() as usize],
+                    sell_amount: trade.3,
+                    buy_amount: trade.4,
+                    valid_to: trade.5,
+                    app_data: model::app_data::AppDataHash(trade.6 .0),
+                    fee_amount: trade.7,
+                    kind: if trade.8.byte(0) & 0b1 == 0 {
+                        model::order::OrderKind::Sell
+                    } else {
+                        model::order::OrderKind::Buy
+                    },
+                    partially_fillable: trade.8.byte(0) & 0b10 != 0,
+                    receiver: Some(trade.2),
+                    sell_token_balance: if trade.8.byte(0) & 0x08 == 0 {
+                        model::order::SellTokenSource::Erc20
+                    } else if trade.8.byte(0) & 0x04 == 0 {
+                        model::order::SellTokenSource::External
+                    } else {
+                        model::order::SellTokenSource::Internal
+                    },
+                    buy_token_balance: if trade.8.byte(0) & 0x10 == 0 {
+                        model::order::BuyTokenDestination::Erc20
+                    } else {
+                        model::order::BuyTokenDestination::Internal
+                    },
+                };
+                let signing_scheme = match trade.8.byte(0) >> 5 {
+                    0b00 => model::signature::SigningScheme::Eip712,
+                    0b01 => model::signature::SigningScheme::EthSign,
+                    0b10 => model::signature::SigningScheme::Eip1271,
+                    0b11 => model::signature::SigningScheme::PreSign,
+                    _ => unreachable!(),
+                };
+                let signature = Signature::from_bytes(signing_scheme, &trade.10 .0)?;
+                let owner = signature.recover_owner(
+                    &signature.to_bytes(),
+                    &domain_separator,
+                    &order.hash_struct(),
+                )?;
+                Ok(order.uid(&domain_separator, &owner))
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

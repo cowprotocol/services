@@ -25,6 +25,7 @@ use {
 pub mod auction;
 pub mod order;
 pub mod score;
+pub mod settled;
 pub mod solution;
 
 pub use {

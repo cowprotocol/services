@@ -15,7 +15,7 @@ use {
         infra::Ethereum,
         util::conv::u256::U256Ext,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{anyhow, Context, Ok, Result},
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -34,6 +34,7 @@ use {
         DomainSeparator,
     },
     shared::{
+        encoded_settlement::EncodedSettlement,
         external_prices::ExternalPrices,
         http_solver::{
             self,
@@ -175,6 +176,12 @@ impl Settlement {
         })
     }
 
+    pub fn encoded_settlement(&self) -> EncodedSettlement {
+        self.inner
+            .clone()
+            .encode(InternalizationStrategy::EncodeAllInteractions)
+    }
+
     pub fn tx(
         &self,
         auction_id: auction::Id,
@@ -238,6 +245,37 @@ impl Settlement {
         let quality = surplus + scoring_fees;
 
         Ok(eth::U256::from_big_rational(&quality)?.into())
+    }
+
+    /// Normalized token prices.
+    pub fn prices(
+        &self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+    ) -> Result<HashMap<eth::TokenAddress, auction::NormalizedPrice>, boundary::Error> {
+        let external_prices = ExternalPrices::try_from_auction_prices(
+            eth.contracts().weth().address(),
+            auction
+                .tokens()
+                .iter()
+                .filter_map(|token| {
+                    token
+                        .price
+                        .map(|price| (token.address.into(), price.into()))
+                })
+                .collect(),
+        )?;
+
+        let prices = auction
+            .tokens()
+            .iter()
+            .fold(HashMap::new(), |mut prices, token| {
+                if let Some(price) = external_prices.price(&token.address.0 .0) {
+                    prices.insert(token.address, price.clone().into());
+                }
+                prices
+            });
+        Ok(prices)
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
@@ -462,6 +500,77 @@ pub fn to_boundary_interaction(
             })
         }
     }
+}
+
+pub fn to_domain_settled_settlement(
+    settlement: &EncodedSettlement,
+    policies: &HashMap<competition::order::Uid, Vec<order::FeePolicy>>,
+    normalized_prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    domain_separator: &eth::DomainSeparator,
+) -> Option<competition::settled::Settlement> {
+    let order_uids = settlement
+        .uids(model::DomainSeparator(domain_separator.0))
+        .ok()?;
+    let trades = settlement
+        .trades
+        .iter()
+        .zip(order_uids.iter())
+        .map(|(trade, uid)| {
+            let uid = uid.0.into();
+            let side = if trade.8.byte(0) & 0b1 == 0 {
+                order::Side::Sell
+            } else {
+                order::Side::Buy
+            };
+            let sell_token_index = trade.0.as_usize();
+            let buy_token_index = trade.1.as_usize();
+            let sell_token = settlement.tokens[sell_token_index];
+            let buy_token = settlement.tokens[buy_token_index];
+            let uniform_sell_token_index = settlement
+                .tokens
+                .iter()
+                .position(|token| token == &sell_token)
+                .unwrap();
+            let uniform_buy_token_index = settlement
+                .tokens
+                .iter()
+                .position(|token| token == &buy_token)
+                .unwrap();
+            let sell = eth::Asset {
+                token: sell_token.into(),
+                amount: trade.3.into(),
+            };
+            let buy = eth::Asset {
+                token: buy_token.into(),
+                amount: trade.4.into(),
+            };
+            let executed = eth::Asset {
+                token: match side {
+                    order::Side::Sell => sell.token,
+                    order::Side::Buy => buy.token,
+                },
+                amount: trade.9.into(),
+            };
+            let prices = competition::settled::Prices {
+                uniform: competition::settled::ClearingPrices {
+                    sell: settlement.clearing_prices[uniform_sell_token_index],
+                    buy: settlement.clearing_prices[uniform_buy_token_index],
+                },
+                custom: competition::settled::ClearingPrices {
+                    sell: settlement.clearing_prices[sell_token_index],
+                    buy: settlement.clearing_prices[buy_token_index],
+                },
+                native: competition::settled::NormalizedPrices {
+                    sell: normalized_prices[&sell_token.into()].clone(),
+                    buy: normalized_prices[&buy_token.into()].clone(),
+                },
+            };
+            let policies = policies.get(&uid).cloned().unwrap_or_default();
+            competition::settled::Trade::new(sell, buy, side, executed, prices, policies)
+        })
+        .collect();
+
+    Some(competition::settled::Settlement::new(trades))
 }
 
 fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {

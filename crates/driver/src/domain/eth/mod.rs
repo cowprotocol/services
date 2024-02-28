@@ -195,6 +195,14 @@ impl From<u128> for TokenAmount {
     }
 }
 
+impl std::ops::Add for TokenAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
 impl std::fmt::Display for TokenAmount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)

@@ -248,6 +248,22 @@ impl Settlement {
             }
         };
 
+        {
+            // For testing purposes, always calculate CIP38 score, even if the score is not
+            // used.
+            match self
+                .settled(&eth, auction)
+                .and_then(|settled| settled.score())
+            {
+                Some(score) => {
+                    tracing::info!(?score, "CIP38 score");
+                }
+                None => {
+                    tracing::warn!("could not calculate CIP38 score");
+                }
+            }
+        }
+
         if score > quality {
             return Err(score::Error::ScoreHigherThanQuality(score, quality));
         }
@@ -340,6 +356,28 @@ impl Settlement {
             1 => self.solutions.keys().next().copied(),
             _ => None,
         }
+    }
+
+    /// Settlement built from the settlement transaction calldata
+    fn settled(
+        &self,
+        eth: &Ethereum,
+        auction: &competition::Auction,
+    ) -> Option<competition::settled::Settlement> {
+        boundary::settlement::to_domain_settled_settlement(
+            &self.boundary.encoded_settlement(),
+            &self
+                .solutions
+                .values()
+                .flat_map(|solution| {
+                    solution
+                        .user_trades()
+                        .map(|trade| (trade.order().uid, trade.order().protocol_fees.clone()))
+                })
+                .collect(),
+            &self.boundary.prices(eth, auction).ok()?,
+            eth.contracts().settlement_domain_separator(),
+        )
     }
 }
 

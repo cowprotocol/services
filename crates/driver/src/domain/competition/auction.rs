@@ -12,6 +12,7 @@ use {
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
+    num::BigRational,
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -415,6 +416,16 @@ impl From<Price> for eth::U256 {
 impl From<eth::U256> for Price {
     fn from(value: eth::U256) -> Self {
         Self(value.into())
+    }
+}
+
+/// The price of a token in ETH. Price normalized to native token.
+#[derive(Debug, Clone)]
+pub struct NormalizedPrice(pub BigRational);
+
+impl From<BigRational> for NormalizedPrice {
+    fn from(value: BigRational) -> Self {
+        Self(value)
     }
 }
 
