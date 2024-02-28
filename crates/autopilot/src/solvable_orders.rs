@@ -7,7 +7,6 @@ use {
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::current_block::CurrentBlockStream,
-    futures::future::join_all,
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -277,19 +276,18 @@ async fn filter_banned_user_orders(
     mut orders: Vec<Order>,
     banned_users: &banned::Users,
 ) -> Vec<Order> {
-    let futures = orders.drain(..).map(|order| async move {
-        (
-            order.clone(),
-            banned_users.is_banned(order.metadata.owner).await,
-        )
+    let banned = banned_users
+        .banned(orders.iter().flat_map(|order| {
+            [
+                order.metadata.owner,
+                order.data.receiver.unwrap_or_default(),
+            ]
+        }))
+        .await;
+    orders.retain(|order| {
+        !banned.contains(&order.metadata.owner)
+            && !banned.contains(&order.data.receiver.unwrap_or_default())
     });
-
-    for (order, banned) in join_all(futures).await {
-        // If the user is not banned or the check failed, keep the order.
-        if banned.is_err() || banned.is_ok_and(|banned| !banned) {
-            orders.push(order)
-        }
-    }
     orders
 }
 

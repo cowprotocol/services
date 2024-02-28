@@ -403,23 +403,12 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        let owner_banned = self
+        if !self
             .banned_users
-            .is_banned(order.owner)
+            .banned([order.receiver, order.owner].into_iter())
             .await
-            .unwrap_or_else(|err| {
-                tracing::warn!(?err, "failed to check if order owner is banned");
-                false
-            });
-        let receiver_banned = self
-            .banned_users
-            .is_banned(order.receiver)
-            .await
-            .unwrap_or_else(|err| {
-                tracing::warn!(?err, "failed to check if order receiver is banned");
-                false
-            });
-        if owner_banned || receiver_banned {
+            .is_empty()
+        {
             return Err(PartialValidationError::Forbidden);
         }
 

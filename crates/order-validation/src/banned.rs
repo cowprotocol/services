@@ -1,7 +1,7 @@
 use {
     cached::{Cached, TimedCache},
     contracts::ChainalysisOracle,
-    ethcontract::{errors::MethodError, H160},
+    ethcontract::{errors::MethodError, futures::future::join_all, H160},
     ethrpc::Web3,
     std::{collections::HashSet, sync::RwLock},
 };
@@ -53,33 +53,60 @@ impl Users {
         }
     }
 
-    /// Returns `true` if the given address is banned or an error if the result
-    /// cannot be determined.
-    pub async fn is_banned(&self, address: H160) -> Result<bool, Error> {
-        if self.list.contains(&address) {
-            return Ok(true);
-        }
+    /// Returns a subset of addresses from the input iterator which are banned.
+    pub async fn banned(&self, addresses: impl Iterator<Item = H160>) -> HashSet<H160> {
+        let mut banned = HashSet::new();
+
+        let need_lookup = addresses
+            .filter(|address| {
+                if self.list.contains(address) {
+                    banned.insert(*address);
+                    false
+                } else {
+                    true
+                }
+            })
+            // Need to collect here to make sure filter gets executed and we insert addresses
+            .collect::<HashSet<_>>();
 
         if let Some(onchain) = &self.onchain {
-            if let Some(result) = onchain
-                .cache
-                .write()
-                .expect("unpoisoned")
-                .cache_get(&address)
-            {
-                return Ok(*result);
-            }
+            let need_lookup: Vec<_> = {
+                // Scope here to release the lock before the async lookups
+                let mut cache = onchain.cache.write().expect("unpoisoned");
+                need_lookup
+                    .into_iter()
+                    .filter(|address| {
+                        if let Some(is_banned) = cache.cache_get(&address) {
+                            is_banned.then(|| banned.insert(*address));
+                            false
+                        } else {
+                            true
+                        }
+                    })
+                    .collect()
+            };
 
-            let result = onchain.fetch(address).await?;
-            onchain
-                .cache
-                .write()
-                .expect("unpoisoned")
-                .cache_set(address, result);
-            Ok(result)
-        } else {
-            Ok(false)
+            let to_cache = join_all(
+                need_lookup
+                    .into_iter()
+                    .map(|address| async move { (address, onchain.fetch(address).await) }),
+            )
+            .await;
+
+            let mut cache = onchain.cache.write().expect("unpoisoned");
+            for (address, result) in to_cache {
+                match result {
+                    Ok(is_banned) => {
+                        cache.cache_set(address, is_banned);
+                        is_banned.then(|| banned.insert(address));
+                    }
+                    Err(err) => {
+                        tracing::warn!("failed to fetch banned status for {}: {}", address, err);
+                    }
+                }
+            }
         }
+        banned
     }
 }
 
