@@ -1,9 +1,9 @@
 use {
+    cached::{Cached, TimedCache},
     contracts::ChainalysisOracle,
     ethcontract::{errors::MethodError, H160},
     ethrpc::Web3,
-    std::{collections::HashSet, sync::RwLock, time::Duration},
-    ttl_cache::TtlCache,
+    std::{collections::HashSet, sync::RwLock},
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
@@ -14,10 +14,10 @@ pub struct Users {
 
 struct Onchain {
     contract: ChainalysisOracle,
-    cache: RwLock<TtlCache<H160, bool>>,
+    cache: RwLock<TimedCache<H160, bool>>,
 }
 
-const TTL: Duration = Duration::from_secs(60 * 60); // 1 hour
+const TTL: u64 = 60 * 60; // 1 hour
 
 impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
@@ -30,7 +30,7 @@ impl Users {
                 .await
                 .map(|contract| Onchain {
                     contract,
-                    cache: RwLock::new(TtlCache::new(usize::MAX)),
+                    cache: RwLock::new(TimedCache::with_lifespan(TTL)),
                 })
                 .ok(),
         }
@@ -61,7 +61,12 @@ impl Users {
         }
 
         if let Some(onchain) = &self.onchain {
-            if let Some(result) = onchain.cache.read().expect("unpoisoned").get(&address) {
+            if let Some(result) = onchain
+                .cache
+                .write()
+                .expect("unpoisoned")
+                .cache_get(&address)
+            {
                 return Ok(*result);
             }
 
@@ -70,7 +75,7 @@ impl Users {
                 .cache
                 .write()
                 .expect("unpoisoned")
-                .insert(address, result, TTL);
+                .cache_set(address, result);
             Ok(result)
         } else {
             Ok(false)

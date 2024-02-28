@@ -42,7 +42,6 @@ thiserror = "1"
 tokio = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-ttl_cache = "0.5"
 url = "2"
 warp = { git = 'https://github.com/cowprotocol/warp.git', rev = "87a91e2", default-features = false }
 web3 = { version = "0.19", default-features = false }

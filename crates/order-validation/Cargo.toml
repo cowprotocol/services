@@ -6,9 +6,9 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+cached = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-ttl_cache = { workspace = true }
