@@ -197,26 +197,7 @@ impl TradeVerifier {
             "verified quote",
         );
 
-        // amounts verified by the simulation
-        let (sell_amount, buy_amount) = match query.kind {
-            OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
-            OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
-        };
-
-        if summary.sell_tokens_diff.to_f64().unwrap()
-            > self.quote_inaccuracy_limit * sell_amount.to_f64_lossy()
-            || summary.buy_tokens_diff.to_f64().unwrap()
-                > self.quote_inaccuracy_limit * buy_amount.to_f64_lossy()
-        {
-            return Err(Error::TooInaccurate);
-        }
-
-        Ok(Estimate {
-            out_amount: summary.out_amount,
-            gas: summary.gas_used.as_u64(),
-            solver: trade.solver,
-            verified: true,
-        })
+        ensure_quote_accuracy(self.quote_inaccuracy_limit, query, trade.solver, &summary)
     }
 }
 
@@ -406,6 +387,34 @@ impl SettleOutput {
     }
 }
 
+/// Returns an error if settling the quote would require using too much of the
+/// settlement contract buffers.
+fn ensure_quote_accuracy(
+    inaccuracy_limit: f64,
+    query: &PriceQuery,
+    solver: H160,
+    summary: &SettleOutput,
+) -> Result<Estimate, Error> {
+    // amounts verified by the simulation
+    let (sell_amount, buy_amount) = match query.kind {
+        OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
+        OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
+    };
+
+    if summary.sell_tokens_diff.to_f64().unwrap() >= inaccuracy_limit * sell_amount.to_f64_lossy()
+        || summary.buy_tokens_diff.to_f64().unwrap() >= inaccuracy_limit * buy_amount.to_f64_lossy()
+    {
+        return Err(Error::TooInaccurate);
+    }
+
+    Ok(Estimate {
+        out_amount: summary.out_amount,
+        gas: summary.gas_used.as_u64(),
+        solver,
+        verified: true,
+    })
+}
+
 #[derive(Debug)]
 pub struct PriceQuery {
     pub sell_token: H160,
@@ -424,4 +433,67 @@ enum Error {
     /// Some error caused the simulation to not finish successfully.
     #[error("quote could not be simulated")]
     SimulationFailed(#[from] anyhow::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discards_inaccurate_quotes() {
+        let query = PriceQuery {
+            in_amount: 1_000.try_into().unwrap(),
+            kind: OrderKind::Sell,
+            sell_token: H160::zero(),
+            buy_token: H160::zero(),
+        };
+
+        let sell_more = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            buy_tokens_diff: 0.into(),
+            sell_tokens_diff: 10.into(),
+        };
+
+        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &sell_more);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // passes with slightly higher tolerance
+        let estimate = ensure_quote_accuracy(0.011, &query, H160::zero(), &sell_more);
+        assert!(estimate.is_ok());
+
+        let pay_out_more = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            buy_tokens_diff: 20.into(),
+            sell_tokens_diff: 0.into(),
+        };
+
+        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &pay_out_more);
+        assert!(matches!(estimate, Err(Error::TooInaccurate)));
+
+        // passes with slightly higher tolerance
+        let estimate = ensure_quote_accuracy(0.011, &query, H160::zero(), &pay_out_more);
+        assert!(estimate.is_ok());
+
+        let sell_less = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            buy_tokens_diff: 0.into(),
+            sell_tokens_diff: (-10).into(),
+        };
+        // Ending up with surplus in the buffers is always fine
+        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &sell_less);
+        assert!(estimate.is_ok());
+
+        let pay_out_less = SettleOutput {
+            gas_used: 0.into(),
+            out_amount: 2_000.into(),
+            buy_tokens_diff: (-20).into(),
+            sell_tokens_diff: 0.into(),
+        };
+        // Ending up with surplus in the buffers is always fine
+        let estimate = ensure_quote_accuracy(0.01, &query, H160::zero(), &pay_out_less);
+        assert!(estimate.is_ok());
+    }
 }
