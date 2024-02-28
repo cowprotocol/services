@@ -13,6 +13,7 @@ use {
         infra::blockchain::Ethereum,
         util,
     },
+    solvers::legacy_adapter,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -97,6 +98,7 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
+    pub use_legacy_interface: bool,
 }
 
 impl Solver {
@@ -159,15 +161,26 @@ impl Solver {
         let body = serde_json::to_string(&dto::Auction::new(auction, liquidity, weth)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
-        let mut req = self
-            .client
-            .post(url.clone())
-            .body(body)
-            .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
-        if let Some(id) = observe::request_id::get_task_local_storage() {
-            req = req.header("X-REQUEST-ID", id);
-        }
-        let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+
+        let res = if self.config.use_legacy_interface {
+            legacy_adapter::legacy_solve(self.legacy_config(), &body)
+                .await
+                .map_err(|_| util::http::Error::NotOk {
+                    code: 500,
+                    body: "fake error".into(),
+                })
+        } else {
+            let mut req = self
+                .client
+                .post(url.clone())
+                .body(body)
+                .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
+            if let Some(id) = observe::request_id::get_task_local_storage() {
+                req = req.header("X-REQUEST-ID", id);
+            }
+            util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await
+        };
+
         super::observe::solver_response(&url, res.as_deref());
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
@@ -189,16 +202,32 @@ impl Solver {
             serde_json::to_string(&dto::Notification::new(auction_id, solution_id, kind)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
-        let mut req = self.client.post(url).body(body);
-        if let Some(id) = observe::request_id::get_task_local_storage() {
-            req = req.header("X-REQUEST-ID", id);
-        }
-        let future = async move {
-            if let Err(error) = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await {
-                tracing::warn!(?error, "failed to notify solver");
+
+        if self.config.use_legacy_interface {
+            legacy_adapter::legacy_notify(self.legacy_config(), &body);
+        } else {
+            let mut req = self.client.post(url).body(body);
+            if let Some(id) = observe::request_id::get_task_local_storage() {
+                req = req.header("X-REQUEST-ID", id);
             }
-        };
-        tokio::task::spawn(future.in_current_span());
+            let future = async move {
+                if let Err(error) = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await {
+                    tracing::warn!(?error, "failed to notify solver");
+                }
+            };
+            tokio::task::spawn(future.in_current_span());
+        }
+    }
+
+    fn legacy_config(&self) -> legacy_adapter::Config {
+        legacy_adapter::Config {
+            weth: legacy_adapter::WethAddress(self.eth.contracts().weth().address()),
+            solver_name: self.config.name.to_string(),
+            chain_id: legacy_adapter::ChainId::new(self.eth.network().0.into()).unwrap(),
+            endpoint: self.config.endpoint.clone(),
+            gzip_requests: true,
+            persistence: None,
+        }
     }
 }
 

@@ -185,6 +185,11 @@ struct SolverConfig {
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
+
+    /// If enabled requests get converted to the legacy format
+    /// and responses back to the current format.
+    #[serde(default)]
+    use_legacy_interface: bool,
 }
 
 #[serde_as]

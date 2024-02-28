@@ -8,7 +8,7 @@ use {
             notification::{self, Kind, ScoreKind, Settlement},
             order,
             solution,
-            solver::legacy::Error,
+            solver::legacy::{Config, Error},
         },
         infra,
     },
@@ -61,7 +61,7 @@ pub struct Legacy {
 }
 
 impl Legacy {
-    pub fn new(config: crate::domain::solver::legacy::Config) -> Self {
+    pub fn new(config: Config) -> Self {
         let (base, solve_path) = shared::url::split_at_path(&config.endpoint).unwrap();
 
         Self {
@@ -120,8 +120,8 @@ impl From<shared::http_solver::Error> for Error {
 }
 
 /// Mapping state used for marshalling domain auctions and solutions to and from
-/// their legacy HTTP solver DTO representations. This is needed because the
-/// legacy HTTP solver API uses arbitrary indices for identifying orders and
+/// their legacy HTTP solver dto_auction representations. This is needed because
+/// the legacy HTTP solver API uses arbitrary indices for identifying orders and
 /// AMMs that need to be back-referenced to auction domain values.
 #[derive(Default)]
 struct Mapping<'a> {
@@ -705,4 +705,25 @@ impl From<model::signature::Signature> for order::Signature {
             Signature::PreSign => order::Signature::PreSign,
         }
     }
+}
+
+/// Forwards the driver request to the legacy solver and converts back the
+/// response.
+pub async fn legacy_solve(config: Config, request: &str) -> Result<String, anyhow::Error> {
+    let dto_auction: crate::api::routes::solve::dto::Auction =
+        serde_json::from_str(request).unwrap();
+    let domain_auction = dto_auction
+        .to_domain()
+        .map_err(|err| anyhow::anyhow!(err.message))?;
+    let result = Legacy::new(config).solve(&domain_auction).await?;
+    let dto_solutions = crate::api::routes::solve::dto::Solutions::from_domain(&[result]);
+    Ok(serde_json::to_string(&dto_solutions)?)
+}
+
+/// Takes the stringified driver request and sends it to the legacy solver.
+pub fn legacy_notify(config: Config, request: &str) {
+    let dto_notification: crate::api::routes::notify::dto::Notification =
+        serde_json::from_str(request).unwrap();
+    let domain_auction = dto_notification.to_domain();
+    Legacy::new(config).notify(domain_auction);
 }

@@ -86,6 +86,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         .try_into()
                         .unwrap(),
                 },
+                use_legacy_interface: config.use_legacy_interface,
             }
         }))
         .await,

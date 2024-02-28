@@ -12,3 +12,13 @@ mod tests;
 mod util;
 
 pub use self::run::{run, start};
+
+pub mod legacy_adapter {
+    pub use super::{
+        boundary::legacy::{legacy_notify, legacy_solve},
+        domain::{
+            eth::{ChainId, WethAddress},
+            solver::legacy::Config,
+        },
+    };
+}

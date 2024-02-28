@@ -6,7 +6,7 @@ use {
     tokio::sync::oneshot,
 };
 
-mod routes;
+pub(crate) mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 

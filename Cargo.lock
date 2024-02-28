@@ -1668,6 +1668,7 @@ dependencies = [
  "serde_with",
  "shared",
  "solver",
+ "solvers",
  "tap",
  "tempfile",
  "thiserror",

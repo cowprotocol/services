@@ -1,6 +1,6 @@
 use {crate::domain::solver::Solver, std::sync::Arc, tracing::Instrument};
 
-mod dto;
+pub(crate) mod dto;
 
 pub async fn notify(
     state: axum::extract::State<Arc<Solver>>,

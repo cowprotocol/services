@@ -66,6 +66,7 @@ gas-estimation = { workspace = true }
 model = { path = "../model" }
 observe = { path = "../observe" }
 shared = { path = "../shared" }
+solvers = { path = "../solvers" }
 solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
