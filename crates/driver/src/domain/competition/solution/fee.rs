@@ -170,9 +170,9 @@ impl Fulfillment {
 
 fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
     Ok(amount
-        .checked_mul(eth::U256::from_f64_lossy(factor * 10000.))
+        .checked_mul(eth::U256::from_f64_lossy(factor * 1000000000000000000.))
         .ok_or(trade::Error::Overflow)?
-        / 10000)
+        / 1000000000000000000u128)
 }
 
 /// This function adjusts quote amounts to directly compare them with the
