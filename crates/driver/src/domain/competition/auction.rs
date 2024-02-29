@@ -419,7 +419,7 @@ impl From<eth::U256> for Price {
     }
 }
 
-/// The price of a token in ETH. Price normalized to native token.
+/// The price of a token normalized to native token.
 #[derive(Debug, Clone)]
 pub struct NormalizedPrice(pub BigRational);
 

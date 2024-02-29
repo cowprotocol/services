@@ -34,7 +34,6 @@ use {
         DomainSeparator,
     },
     shared::{
-        encoded_settlement::EncodedSettlement,
         external_prices::ExternalPrices,
         http_solver::{
             self,
