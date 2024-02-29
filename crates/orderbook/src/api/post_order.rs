@@ -16,7 +16,12 @@ use {
         },
     },
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
+    warp::{
+        hyper::StatusCode,
+        reply::{self, with_status},
+        Filter,
+        Rejection,
+    },
 };
 
 pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
@@ -250,6 +255,15 @@ impl IntoWarpReply for AddOrderError {
                 );
                 shared::api::internal_error_reply()
             }
+            AddOrderError::OrderNotFound(err) => err.into_warp_reply(),
+            AddOrderError::InvalidAppData(err) => reply::with_status(
+                super::error("InvalidAppData", err.to_string()),
+                StatusCode::BAD_REQUEST,
+            ),
+            err @ AddOrderError::InvalidReplacement => reply::with_status(
+                super::error("InvalidReplacement", err.to_string()),
+                StatusCode::UNAUTHORIZED,
+            ),
         }
     }
 }
