@@ -1254,6 +1254,7 @@ mod test {
             domain_separator,
             settlement_contract: H160::zero(),
             metrics: Metrics::get(),
+            market_orders_deprecation_date: None,
         };
         let result = onchain_order_parser
             .extract_custom_and_general_order_data(vec![event_data_1.clone(), event_data_2.clone()])

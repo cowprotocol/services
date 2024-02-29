@@ -1016,6 +1016,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1162,6 +1163,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1249,6 +1251,7 @@ mod tests {
             max_limit_orders_per_user,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1442,6 +1445,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1500,6 +1504,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1557,6 +1562,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1613,6 +1619,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1664,6 +1671,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1717,6 +1725,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1774,6 +1783,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1825,6 +1835,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1880,6 +1891,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1942,6 +1954,7 @@ mod tests {
                 0,
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
+                None,
             );
 
             let order = OrderCreation {
