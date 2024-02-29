@@ -176,12 +176,6 @@ impl Settlement {
         })
     }
 
-    pub fn encoded_settlement(&self) -> EncodedSettlement {
-        self.inner
-            .clone()
-            .encode(InternalizationStrategy::EncodeAllInteractions)
-    }
-
     pub fn tx(
         &self,
         auction_id: auction::Id,
@@ -245,37 +239,6 @@ impl Settlement {
         let quality = surplus + scoring_fees;
 
         Ok(eth::U256::from_big_rational(&quality)?.into())
-    }
-
-    /// Normalized token prices.
-    pub fn prices(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-    ) -> Result<HashMap<eth::TokenAddress, auction::NormalizedPrice>, boundary::Error> {
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            eth.contracts().weth().address(),
-            auction
-                .tokens()
-                .iter()
-                .filter_map(|token| {
-                    token
-                        .price
-                        .map(|price| (token.address.into(), price.into()))
-                })
-                .collect(),
-        )?;
-
-        let prices = auction
-            .tokens()
-            .iter()
-            .fold(HashMap::new(), |mut prices, token| {
-                if let Some(price) = external_prices.price(&token.address.0 .0) {
-                    prices.insert(token.address, price.clone().into());
-                }
-                prices
-            });
-        Ok(prices)
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
