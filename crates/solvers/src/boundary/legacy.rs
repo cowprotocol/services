@@ -711,19 +711,22 @@ impl From<model::signature::Signature> for order::Signature {
 /// response.
 pub async fn legacy_solve(config: Config, request: &str) -> Result<String, anyhow::Error> {
     let dto_auction: crate::api::routes::solve::dto::Auction =
-        serde_json::from_str(request).unwrap();
+        serde_json::from_str(request).context("could not deserialize request")?;
     let domain_auction = dto_auction
         .to_domain()
         .map_err(|err| anyhow::anyhow!(err.message))?;
     let result = Legacy::new(config).solve(&domain_auction).await?;
     let dto_solutions = crate::api::routes::solve::dto::Solutions::from_domain(&[result]);
-    Ok(serde_json::to_string(&dto_solutions)?)
+    serde_json::to_string(&dto_solutions).context("could not serialize response")
 }
 
 /// Takes the stringified driver request and sends it to the legacy solver.
 pub fn legacy_notify(config: Config, request: &str) {
-    let dto_notification: crate::api::routes::notify::dto::Notification =
-        serde_json::from_str(request).unwrap();
-    let domain_auction = dto_notification.to_domain();
-    Legacy::new(config).notify(domain_auction);
+    let dto_notification =
+        serde_json::from_str::<crate::api::routes::notify::dto::Notification>(request);
+
+    match dto_notification {
+        Err(err) => tracing::warn!(?err, "could not deserialize request"),
+        Ok(notification) => Legacy::new(config).notify(notification.to_domain()),
+    }
 }
