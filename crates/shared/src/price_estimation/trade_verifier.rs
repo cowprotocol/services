@@ -297,7 +297,7 @@ fn add_balance_queries(
         // track how much `sell_token` the settlement contract actually spent
         OrderKind::Buy => (query.sell_token, settlement_contract),
     };
-    let query_balance = solver.methods().store_balance(token, owner);
+    let query_balance = solver.methods().store_balance(token, owner, true);
     let query_balance = Bytes(query_balance.tx.data.unwrap().0);
     let interaction = (solver.address(), 0.into(), query_balance);
     // query balance right after we receive all `sell_token`
