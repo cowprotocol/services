@@ -271,7 +271,8 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Filters all orders whose owners are in the set of "banned" users.
+/// Filters all orders whose owners or receivers are in the set of "banned"
+/// users.
 async fn filter_banned_user_orders(
     mut orders: Vec<Order>,
     banned_users: &banned::Users,

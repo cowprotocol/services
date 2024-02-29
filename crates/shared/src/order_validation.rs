@@ -405,7 +405,7 @@ impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         if !self
             .banned_users
-            .banned([order.receiver, order.owner].into_iter())
+            .banned([order.receiver, order.owner])
             .await
             .is_empty()
         {
