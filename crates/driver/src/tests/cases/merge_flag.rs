@@ -6,12 +6,27 @@ use crate::tests::{
 // tests that flagging for settlement merge is possible
 #[tokio::test]
 async fn possible() {
-    todo!()
+        let ab_order = ab_order();
+        let cd_order = cd_order();
+        let test = setup()
+        .pool(cd_pool())
+        .pool(ab_pool())
+        .order(ab_order.clone())
+        .order(cd_order.clone())
+        .solution(cd_solution())
+        .solution(ab_solution())
+        .done()
+        .await;
+    test.solve().await.ok().orders(&[ab_order, cd_order]);
+    test.reveal().await.ok().calldata();
+
+
+
 }
 
 
-// tests that flagging is not valid when solution is only one order
-#[tokio::test]
+// tests that flag is not valid when solver already solved for multiple settlements
+// [tokio::test]
 async fn impossible() {
     todo!()
 }

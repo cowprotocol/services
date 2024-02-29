@@ -182,10 +182,19 @@ struct SolverConfig {
     /// The account which should be used to sign settlements for this solver.
     account: Account,
 
+    /// Wheter or not to skip merging the solutions from this solver.
+    #[serde(default = "default_skip_merge_flag")]
+    skip_merge: bool, 
+
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
 }
+
+fn default_skip_merge_flag() -> bool {
+    false
+}
+
 
 #[serde_as]
 #[derive(Debug, Deserialize)]

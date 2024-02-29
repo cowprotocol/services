@@ -77,6 +77,11 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     solver::Liquidity::Fetch
                 },
                 account,
+                merging: if config.skip_merge {
+                    solver::Merging::Skip
+                } else {
+                    solver::Merging::Fetch
+                },
                 timeouts: solver::Timeouts {
                     http_delay: chrono::Duration::from_std(config.timeouts.http_time_buffer)
                         .unwrap(),

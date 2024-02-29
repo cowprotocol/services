@@ -65,6 +65,15 @@ pub enum Liquidity {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum Merging {
+    /// Merged solutions from this solver should be fetched  
+    Fetch,
+    /// The solver already solves for merged settlements, so merging multiple
+    /// solutions from this solver can be skipped.
+    Skip,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Timeouts {
     /// Maximum time allocated for http request/reponse to propagate through
     /// network.
@@ -93,6 +102,8 @@ pub struct Config {
     pub slippage: Slippage,
     /// Whether or not liquidity is used by this solver.
     pub liquidity: Liquidity,
+    /// Whether or not to skip merging for this solver.
+    pub merging: Merging,
     /// The private key of this solver, used for settlement submission.
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
