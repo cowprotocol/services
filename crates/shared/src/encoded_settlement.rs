@@ -88,7 +88,8 @@ pub struct EncodedSettlement {
 impl EncodedSettlement {
     /// Order uids for all trades in the settlement.
     ///
-    /// Returns all order uids or none.
+    /// Returns order uids for all trades in the settlement in the same order as
+    /// the trades.
     pub fn uids(
         &self,
         domain_separator: model::DomainSeparator,

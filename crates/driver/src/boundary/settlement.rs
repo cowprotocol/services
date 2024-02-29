@@ -296,6 +296,7 @@ impl Settlement {
             .clone()
             .encode(InternalizationStrategy::EncodeAllInteractions);
 
+        // Same length and order as in the `settlement.trades`
         let order_uids = settlement
             .uids(model::DomainSeparator(
                 eth.contracts().settlement_domain_separator().0,
