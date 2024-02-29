@@ -172,7 +172,10 @@ impl Trade {
                         };
                         apply_factor(
                             executed_in_surplus_token,
-                            max_volume_factor / (1.0 - max_volume_factor),
+                            match self.side {
+                                Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
+                                Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
+                            },
                         )?
                     },
                 )

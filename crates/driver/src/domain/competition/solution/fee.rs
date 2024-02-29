@@ -155,15 +155,18 @@ impl Fulfillment {
             }
             Side::Sell => executed,
         };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
-        let executed_sell_amount_with_fee = executed_sell_amount
+        //Sell slightly more `sell_token` to capture the `surplus_fee`
+        let executed_sell_amount_with_fee = match self.order().side {
+            Side::Buy => executed_sell_amount
             .checked_add(
                 // surplus_fee is always expressed in sell token
                 self.surplus_fee()
                     .map(|fee| fee.0)
                     .ok_or(trade::Error::ProtocolFeeOnStaticOrder)?,
             )
-            .ok_or(trade::Error::Overflow)?;
+            .ok_or(trade::Error::Overflow)?,
+            Side::Sell => executed_sell_amount,
+        };
         apply_factor(executed_sell_amount_with_fee, factor)
     }
 }
