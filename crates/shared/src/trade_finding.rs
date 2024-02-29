@@ -10,11 +10,11 @@ use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
     contracts::{dummy_contract, ERC20},
+    derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::interaction::InteractionData,
     serde::Serialize,
     thiserror::Error,
-    derivative::Derivative,
 };
 
 /// Returns the default time limit used for quoting with external co-located
