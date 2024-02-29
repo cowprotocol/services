@@ -157,18 +157,17 @@ impl Solver {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
         let body = serde_json::to_string(&dto::Auction::new(auction, liquidity, weth)).unwrap();
-        let url = shared::url::join(&self.config.endpoint, "solve");
-        super::observe::solver_request(&url, &body);
+        super::observe::solver_request(&self.config.endpoint, &body);
         let mut req = self
             .client
-            .post(url.clone())
+            .post(self.config.endpoint.clone())
             .body(body)
             .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        super::observe::solver_response(&url, res.as_deref());
+        super::observe::solver_response(&self.config.endpoint, res.as_deref());
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
@@ -187,7 +186,15 @@ impl Solver {
     ) {
         let body =
             serde_json::to_string(&dto::Notification::new(auction_id, solution_id, kind)).unwrap();
-        let url = shared::url::join(&self.config.endpoint, "notify");
+
+        let url = match shared::url::replace_endpoint(self.config.endpoint.clone(), "notify") {
+            Ok(replaced) => replaced,
+            Err(err) => {
+                tracing::warn!(?err, "can't construct `/notify` URL");
+                return;
+            }
+        };
+
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body);
         if let Some(id) = observe::request_id::get_task_local_storage() {
