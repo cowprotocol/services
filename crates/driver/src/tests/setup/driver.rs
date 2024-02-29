@@ -219,7 +219,7 @@ async fn create_config_file(
             file,
             r#"[[solver]]
                name = "{}"
-               endpoint = "http://{}"
+               endpoint = "http://{}/solve"
                absolute-slippage = "{}"
                relative-slippage = "{}"
                account = "0x{}"

@@ -52,7 +52,7 @@ async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
     });
 
     let solver_addr = bind_receiver.await.unwrap();
-    format!("http://{solver_addr}").parse().unwrap()
+    format!("http://{solver_addr}/solve").parse().unwrap()
 }
 
 pub struct SolverEngine {
