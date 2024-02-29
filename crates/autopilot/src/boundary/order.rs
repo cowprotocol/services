@@ -67,11 +67,7 @@ pub fn order_uid(
     };
     let domain_separator = crate::boundary::DomainSeparator(domain_separator.0);
     let owner = signature
-        .recover_owner(
-            &signature.to_bytes(),
-            &domain_separator,
-            &order.hash_struct(),
-        )
+        .recover_owner(&trade.10 .0, &domain_separator, &order.hash_struct())
         .map_err(Error::RecoverOwner)?;
     Ok(order.uid(&domain_separator, &owner).into())
 }
