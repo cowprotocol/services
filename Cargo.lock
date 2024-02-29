@@ -3133,7 +3133,6 @@ dependencies = [
  "cached",
  "contracts",
  "ethcontract",
- "ethrpc",
  "thiserror",
  "tracing",
 ]

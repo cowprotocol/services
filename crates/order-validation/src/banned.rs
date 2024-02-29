@@ -2,7 +2,6 @@ use {
     cached::{Cached, TimedCache},
     contracts::ChainalysisOracle,
     ethcontract::{errors::MethodError, futures::future::join_all, H160},
-    ethrpc::Web3,
     std::{collections::HashSet, sync::Mutex},
 };
 
@@ -23,16 +22,13 @@ impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
     /// the given `web3` instance to determine whether an onchain registry of
     /// banned addresses is available.
-    pub async fn new(web3: &Web3, banned_users: Vec<H160>) -> Self {
+    pub fn new(contract: Option<ChainalysisOracle>, banned_users: Vec<H160>) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
-            onchain: ChainalysisOracle::deployed(web3)
-                .await
-                .map(|contract| Onchain {
-                    contract,
-                    cache: Mutex::new(TimedCache::with_lifespan(TTL)),
-                })
-                .ok(),
+            onchain: contract.map(|contract| Onchain {
+                contract,
+                cache: Mutex::new(TimedCache::with_lifespan(TTL)),
+            }),
         }
     }
 

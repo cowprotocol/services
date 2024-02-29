@@ -435,10 +435,14 @@ pub async fn run(args: Arguments) {
     let fast_quoter = create_quoter(fast_price_estimator.clone());
 
     let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
+    let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
     let order_validator = Arc::new(
         OrderValidator::new(
             native_token.clone(),
-            Arc::new(order_validation::banned::Users::new(&web3, args.banned_users).await),
+            Arc::new(order_validation::banned::Users::new(
+                chainalysis_oracle,
+                args.banned_users,
+            )),
             validity_configuration,
             args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),
