@@ -212,7 +212,7 @@ impl Orderbook {
             )
             .await?;
 
-        // Check if it has to replace an current order
+        // Check if it has to replace an existing order
         if let Some(old_order) = replaced_order {
             self.replace_order(order, old_order, quote).await
         } else {

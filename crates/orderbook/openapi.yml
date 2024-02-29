@@ -25,7 +25,9 @@ paths:
   /api/v1/orders:
     post:
       summary: Create a new order.
-        If the appData contains a valid replacement order UID, then the indicated order is cancelled. 
+        In order to replace an existing order with a new one, the appData must contain a
+        [valid replacement order UID](https://github.com/cowprotocol/app-data/blob/main/src/schemas/v1.1.0.json#L62),
+        then the indicated order is cancelled, and a new one placed.
         This allows an old order to be cancelled AND a new order to be created in an atomic operation with a single signature.
         This may be useful for replacing orders when on-chain prices move outside of the original order's limit price.
       responses:
