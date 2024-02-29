@@ -1,4 +1,4 @@
-use model::order::QuoteAmounts;
+use {bigdecimal::Zero, model::order::QuoteAmounts};
 
 pub mod ethflow_events;
 pub mod event_retriever;
@@ -63,6 +63,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
+    market_orders_deprecation_date: Option<chrono::DateTime<Utc>>,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -77,6 +78,7 @@ where
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
+        market_orders_deprecation_date: Option<chrono::DateTime<Utc>>,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -86,6 +88,7 @@ where
             domain_separator,
             settlement_contract,
             metrics: Metrics::get(),
+            market_orders_deprecation_date,
         }
     }
 }
@@ -347,7 +350,15 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             self.settlement_contract,
             self.metrics,
         )
-        .await;
+        .await
+        .into_iter()
+        .filter(|(_, _, _, order)| {
+            if let Some(market_orders_deprecation_date) = self.market_orders_deprecation_date {
+                chrono::Utc::now() < market_orders_deprecation_date || order.fee_amount.is_zero()
+            } else {
+                true
+            }
+        });
 
         let data_tuple = onchain_order_data.into_iter().map(
             |(event_index, quote, onchain_order_placement, order)| {

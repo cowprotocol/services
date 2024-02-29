@@ -251,6 +251,7 @@ pub struct OrderValidator {
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: crate::app_data::Validator,
     request_verified_quotes: bool,
+    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -321,6 +322,7 @@ impl OrderValidator {
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: crate::app_data::Validator,
+        market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Self {
         Self {
             native_token,
@@ -337,6 +339,7 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             request_verified_quotes: false,
+            market_orders_deprecation_date,
         }
     }
 
@@ -508,6 +511,15 @@ impl OrderValidating for OrderValidator {
         settlement_contract: H160,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
+        // Orders with positive signed fee amount are deprecated
+        if let Some(market_orders_deprecation_date) = self.market_orders_deprecation_date {
+            if !order.fee_amount.is_zero() && chrono::Utc::now() > market_orders_deprecation_date {
+                return Err(ValidationError::Partial(
+                    PartialValidationError::UnsupportedOrderType,
+                ));
+            }
+        }
+
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
