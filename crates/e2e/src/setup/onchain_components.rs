@@ -93,6 +93,13 @@ impl TestAccount {
             SecretKeyRef::from(&SecretKey::from_slice(self.private_key()).unwrap()),
         )
     }
+
+    pub async fn nonce(&self, web3: &Web3) -> U256 {
+        web3.eth()
+            .transaction_count(self.address(), None)
+            .await
+            .unwrap()
+    }
 }
 
 #[derive(Default)]

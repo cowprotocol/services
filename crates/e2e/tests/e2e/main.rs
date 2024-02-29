@@ -23,6 +23,7 @@ mod quoting;
 mod refunder;
 mod smart_contract_orders;
 mod solver_competition;
+mod submission;
 mod tracking_insufficient_funds;
 mod univ2;
 mod vault_balances;

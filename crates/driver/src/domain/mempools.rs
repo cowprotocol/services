@@ -112,9 +112,10 @@ impl Mempools {
         block_stream.next().await;
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
+        let deadline = mempool.config().deadline();
         loop {
             // Wait for the next block to be mined or we time out.
-            if tokio::time::timeout_at(mempool.config().deadline(), block_stream.next())
+            if tokio::time::timeout_at(deadline, block_stream.next())
                 .await
                 .is_err()
             {
