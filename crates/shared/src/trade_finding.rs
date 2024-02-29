@@ -14,6 +14,7 @@ use {
     model::interaction::InteractionData,
     serde::Serialize,
     thiserror::Error,
+    derivative::Derivative,
 };
 
 /// Returns the default time limit used for quoting with external co-located
@@ -89,10 +90,12 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Default, Serialize, Derivative)]
+#[derivative(Debug)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     pub data: Vec<u8>,
 }
 
