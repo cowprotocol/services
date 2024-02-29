@@ -172,7 +172,10 @@ impl Trade {
                         };
                         apply_factor(
                             executed_in_surplus_token,
-                            max_volume_factor / (1.0 - max_volume_factor),
+                            match self.side {
+                                Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
+                                Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
+                            },
                         )?
                     },
                 )
@@ -183,7 +186,34 @@ impl Trade {
                 max_volume_factor: _,
                 quote: _,
             } => todo!(),
-            order::FeePolicy::Volume { factor: _ } => todo!(),
+            order::FeePolicy::Volume { factor } => Some(eth::Asset {
+                token: match self.side {
+                    Side::Sell => self.buy.token,
+                    Side::Buy => self.sell.token,
+                },
+                amount: {
+                    // Convert the executed amount to surplus token so it can be compared with
+                    // the surplus
+                    let executed_in_surplus_token = match self.side {
+                        Side::Sell => {
+                            self.executed.amount.0 * self.prices.custom.sell
+                                / self.prices.custom.buy
+                        }
+                        Side::Buy => {
+                            self.executed.amount.0 * self.prices.custom.buy
+                                / self.prices.custom.sell
+                        }
+                    };
+                    apply_factor(
+                        executed_in_surplus_token,
+                        match self.side {
+                            Side::Sell => factor / (1.0 - factor),
+                            Side::Buy => factor / (1.0 + factor),
+                        },
+                    )?
+                }
+                .into(),
+            }),
         }
     }
 

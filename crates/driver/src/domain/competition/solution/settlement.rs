@@ -364,20 +364,16 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Option<competition::settled::Settlement> {
-        boundary::settlement::to_domain_settlement(
-            &self.boundary.encoded_settlement(),
-            &self.boundary.prices(eth, auction).ok()?,
-            eth.contracts().settlement_domain_separator(),
-            &self
-                .solutions
-                .values()
-                .flat_map(|solution| {
-                    solution
-                        .user_trades()
-                        .map(|trade| (trade.order().uid, trade.order().protocol_fees.clone()))
-                })
-                .collect(),
-        )
+        let policies = &self
+            .solutions
+            .values()
+            .flat_map(|solution| {
+                solution
+                    .user_trades()
+                    .map(|trade| (trade.order().uid, trade.order().protocol_fees.clone()))
+            })
+            .collect();
+        self.boundary.settled(eth, auction, policies)
     }
 }
 
