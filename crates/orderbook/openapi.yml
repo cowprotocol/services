@@ -1222,38 +1222,6 @@ components:
       required:
         - errorType
         - description
-    ReplaceOrderError:
-      type: object
-      properties:
-        errorType:
-          type: string
-          enum:
-            [
-              AlreadyCancelled,
-              OrderFullyExecuted,
-              OrderExpired,
-              OnChainOrder,
-              DuplicatedOrder,
-              InsufficientFee,
-              InsufficientAllowance,
-              InsufficientBalance,
-              InsufficientValidTo,
-              ExcessiveValidTo,
-              InvalidSignature,
-              TransferSimulationFailed,
-              UnsupportedToken,
-              WrongOwner,
-              SameBuyAndSellToken,
-              ZeroAmount,
-              UnsupportedBuyTokenDestination,
-              UnsupportedSellTokenSource,
-              UnsupportedOrderType,
-            ]
-        description:
-          type: string
-      required:
-        - errorType
-        - description
     PriceEstimationError:
       type: object
       properties:

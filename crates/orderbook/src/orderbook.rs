@@ -162,30 +162,6 @@ pub enum OrderCancellationError {
     Other(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Error)]
-pub enum ReplaceOrderError {
-    #[error("unable to cancel existing order: {0}")]
-    Cancellation(#[from] OrderCancellationError),
-    #[error("unable to add new order: {0}")]
-    Add(#[from] AddOrderError),
-    #[error("the new order is not a valid replacement for the old one")]
-    InvalidReplacement,
-    #[error("invalid appData hash")]
-    InvalidAppDataHash,
-    #[error("unable to find the appData")]
-    FindAppData(#[source] anyhow::Error),
-    #[error("invalid appData format")]
-    InvalidAppData(#[source] anyhow::Error),
-    #[error("missing replaced order UID")]
-    MissingReplacedOrderUid,
-}
-
-impl From<ValidationError> for ReplaceOrderError {
-    fn from(err: ValidationError) -> Self {
-        Self::Add(err.into())
-    }
-}
-
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
@@ -577,8 +553,7 @@ mod tests {
                 signature: Signature::Eip712(Default::default()),
                 app_data: OrderCreationAppData::Full {
                     full: format!(
-                        r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"
-        }}}}}}"#,
+                        r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
                         old_order.metadata.uid
                     ),
                 },
