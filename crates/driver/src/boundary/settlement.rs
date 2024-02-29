@@ -502,11 +502,11 @@ pub fn to_boundary_interaction(
     }
 }
 
-pub fn to_domain_settled_settlement(
+pub fn to_domain_settlement(
     settlement: &EncodedSettlement,
-    policies: &HashMap<competition::order::Uid, Vec<order::FeePolicy>>,
     normalized_prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
     domain_separator: &eth::DomainSeparator,
+    policies: &HashMap<competition::order::Uid, Vec<order::FeePolicy>>,
 ) -> Option<competition::settled::Settlement> {
     let order_uids = settlement
         .uids(model::DomainSeparator(domain_separator.0))

@@ -364,8 +364,10 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
     ) -> Option<competition::settled::Settlement> {
-        boundary::settlement::to_domain_settled_settlement(
+        boundary::settlement::to_domain_settlement(
             &self.boundary.encoded_settlement(),
+            &self.boundary.prices(eth, auction).ok()?,
+            eth.contracts().settlement_domain_separator(),
             &self
                 .solutions
                 .values()
@@ -375,8 +377,6 @@ impl Settlement {
                         .map(|trade| (trade.order().uid, trade.order().protocol_fees.clone()))
                 })
                 .collect(),
-            &self.boundary.prices(eth, auction).ok()?,
-            eth.contracts().settlement_domain_separator(),
         )
     }
 }
