@@ -134,7 +134,7 @@ impl EncodedSettlement {
                 };
                 let signature = Signature::from_bytes(signing_scheme, &trade.10 .0)?;
                 let owner = signature.recover_owner(
-                    &signature.to_bytes(),
+                    &trade.10 .0,
                     &domain_separator,
                     &order.hash_struct(),
                 )?;
