@@ -1,5 +1,6 @@
 use {
     self::trade::ClearingPrices,
+    super::settled,
     crate::{
         boundary,
         domain::{
@@ -117,6 +118,55 @@ impl Solution {
 
     pub fn score(&self) -> &SolverScore {
         &self.score
+    }
+
+    /// Trade in a settled form and semantics.
+    pub fn settled(&self) -> Vec<settled::Trade> {
+        self.trades
+            .iter()
+            .filter_map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => {
+                    let executed = match fulfillment.order().side {
+                        order::Side::Sell => {
+                            (fulfillment.executed().0 + fulfillment.fee().0).into()
+                        }
+                        order::Side::Buy => fulfillment.executed(),
+                    };
+                    let uniform_prices = settled::ClearingPrices {
+                        sell: self.prices[&fulfillment.order().sell.token],
+                        buy: self.prices[&fulfillment.order().buy.token],
+                    };
+                    let custom_prices = settled::ClearingPrices {
+                        sell: match fulfillment.order().side {
+                            order::Side::Sell => {
+                                fulfillment.executed().0 * uniform_prices.sell / uniform_prices.buy
+                            }
+                            order::Side::Buy => fulfillment.executed().0,
+                        },
+                        buy: match fulfillment.order().side {
+                            order::Side::Sell => fulfillment.executed().0 + fulfillment.fee().0,
+                            order::Side::Buy => {
+                                (fulfillment.executed().0) * uniform_prices.buy
+                                    / uniform_prices.sell
+                                    + fulfillment.fee().0
+                            }
+                        },
+                    };
+                    Some(settled::Trade::new(
+                        fulfillment.order().sell,
+                        fulfillment.order().buy,
+                        fulfillment.order().side,
+                        executed,
+                        settled::Prices {
+                            uniform: uniform_prices,
+                            custom: custom_prices,
+                        },
+                        fulfillment.order().protocol_fees.clone(),
+                    ))
+                }
+                Trade::Jit(_) => None,
+            })
+            .collect()
     }
 
     /// Approval interactions necessary for encoding the settlement.

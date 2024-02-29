@@ -8,7 +8,7 @@ use {
             time,
         },
         infra::{self, blockchain, observe, Ethereum},
-        util,
+        util::{self, conv::u256::U256Ext},
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
@@ -112,6 +112,24 @@ impl Auction {
 
     pub fn score_cap(&self) -> Score {
         self.score_cap
+    }
+
+    pub fn normalized_prices(&self) -> HashMap<eth::TokenAddress, auction::NormalizedPrice> {
+        self.tokens
+            .0
+            .iter()
+            .filter_map(|(address, token)| {
+                token.price.map(|price| {
+                    (
+                        *address,
+                        auction::NormalizedPrice(
+                            price.0 .0.to_big_rational()
+                                / BigRational::from_integer(1_000_000_000_000_000_000_u128.into()), // TODO polish
+                        ),
+                    )
+                })
+            })
+            .collect()
     }
 }
 

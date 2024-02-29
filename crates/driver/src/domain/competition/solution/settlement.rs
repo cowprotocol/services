@@ -251,17 +251,14 @@ impl Settlement {
         {
             // For testing purposes, always calculate CIP38 score, even if the score is not
             // used.
-            match self
-                .settled(&eth, auction)
-                .and_then(|settled| settled.score())
-            {
-                Some(score) => {
-                    tracing::info!(?score, "CIP38 score");
-                }
-                None => {
-                    tracing::warn!("could not calculate CIP38 score");
-                }
-            }
+            let settlement = competition::settled::Settlement::new(
+                self.solutions
+                    .values()
+                    .flat_map(|solution| solution.settled())
+                    .collect(),
+            );
+            let score = settlement.score(&auction.normalized_prices());
+            println!("CIP38 score: {:?}", score);
         }
 
         if score > quality {
@@ -356,24 +353,6 @@ impl Settlement {
             1 => self.solutions.keys().next().copied(),
             _ => None,
         }
-    }
-
-    /// Settlement built from the settlement transaction calldata
-    fn settled(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-    ) -> Option<competition::settled::Settlement> {
-        let policies = &self
-            .solutions
-            .values()
-            .flat_map(|solution| {
-                solution
-                    .user_trades()
-                    .map(|trade| (trade.order().uid, trade.order().protocol_fees.clone()))
-            })
-            .collect();
-        self.boundary.settled(eth, auction, policies)
     }
 }
 

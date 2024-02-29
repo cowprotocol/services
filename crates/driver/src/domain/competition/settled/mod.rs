@@ -5,6 +5,7 @@ use {
     },
     crate::{domain::eth, util::conv::u256::U256Ext},
     number::conversions::big_rational_to_u256,
+    std::collections::HashMap,
 };
 
 /// Settlement built from onchain calldata.
@@ -21,10 +22,13 @@ impl Settlement {
     /// Score of a settlement as per CIP38
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self) -> Option<eth::TokenAmount> {
+    pub fn score(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> Option<eth::TokenAmount> {
         self.trades
             .iter()
-            .map(Trade::score)
+            .map(|t| t.score(prices))
             .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
                 score.map(|score| acc + score)
             })
@@ -36,7 +40,7 @@ pub struct Trade {
     sell: eth::Asset,
     buy: eth::Asset,
     side: Side,
-    executed: eth::Asset,
+    executed: order::TargetAmount,
     prices: Prices,
     policies: Vec<order::FeePolicy>,
 }
@@ -46,7 +50,7 @@ impl Trade {
         sell: eth::Asset,
         buy: eth::Asset,
         side: Side,
-        executed: eth::Asset,
+        executed: order::TargetAmount,
         prices: Prices,
         policies: Vec<order::FeePolicy>,
     ) -> Self {
@@ -63,9 +67,12 @@ impl Trade {
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self) -> Option<eth::TokenAmount> {
-        self.native_surplus()
-            .zip(self.native_protocol_fee())
+    pub fn score(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> Option<eth::TokenAmount> {
+        self.native_surplus(prices)
+            .zip(self.native_protocol_fee(prices))
             .map(|(surplus, fee)| surplus + fee)
     }
 
@@ -81,12 +88,11 @@ impl Trade {
                     .sell
                     .amount
                     .0
-                    .checked_mul(self.executed.amount.into())?
+                    .checked_mul(self.executed.into())?
                     .checked_div(self.buy.amount.into())?;
                 // difference between limit sell and executed amount converted to sell token
                 limit_sell.checked_sub(
                     self.executed
-                        .amount
                         .0
                         .checked_mul(self.prices.custom.buy)?
                         .checked_div(self.prices.custom.sell)?,
@@ -96,13 +102,11 @@ impl Trade {
                 // scale limit buy to support partially fillable orders
                 let limit_buy = self
                     .executed
-                    .amount
                     .0
                     .checked_mul(self.buy.amount.into())?
                     .checked_div(self.sell.amount.into())?;
                 // difference between executed amount converted to buy token and limit buy
                 self.executed
-                    .amount
                     .0
                     .checked_mul(self.prices.custom.sell)?
                     .checked_div(self.prices.custom.buy)?
@@ -125,9 +129,12 @@ impl Trade {
     /// fees have been applied.
     ///
     /// Denominated in NATIVE token
-    fn native_surplus(&self) -> Option<eth::TokenAmount> {
+    fn native_surplus(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> Option<eth::TokenAmount> {
         big_rational_to_u256(
-            &(self.surplus()?.amount.0.to_big_rational() * self.surplus_token_price().0),
+            &(self.surplus()?.amount.0.to_big_rational() * self.surplus_token_price(prices).0),
         )
         .map(Into::into)
         .ok()
@@ -162,12 +169,10 @@ impl Trade {
                         // the surplus
                         let executed_in_surplus_token = match self.side {
                             Side::Sell => {
-                                self.executed.amount.0 * self.prices.custom.sell
-                                    / self.prices.custom.buy
+                                self.executed.0 * self.prices.custom.sell / self.prices.custom.buy
                             }
                             Side::Buy => {
-                                self.executed.amount.0 * self.prices.custom.buy
-                                    / self.prices.custom.sell
+                                self.executed.0 * self.prices.custom.buy / self.prices.custom.sell
                             }
                         };
                         apply_factor(
@@ -196,12 +201,10 @@ impl Trade {
                     // the surplus
                     let executed_in_surplus_token = match self.side {
                         Side::Sell => {
-                            self.executed.amount.0 * self.prices.custom.sell
-                                / self.prices.custom.buy
+                            self.executed.0 * self.prices.custom.sell / self.prices.custom.buy
                         }
                         Side::Buy => {
-                            self.executed.amount.0 * self.prices.custom.buy
-                                / self.prices.custom.sell
+                            self.executed.0 * self.prices.custom.buy / self.prices.custom.sell
                         }
                     };
                     apply_factor(
@@ -220,19 +223,25 @@ impl Trade {
     /// Protocol fee is defined by fee policies attached to the order.
     ///
     /// Denominated in NATIVE token
-    fn native_protocol_fee(&self) -> Option<eth::TokenAmount> {
+    fn native_protocol_fee(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> Option<eth::TokenAmount> {
         big_rational_to_u256(
-            &(self.protocol_fee()?.amount.0.to_big_rational() * self.surplus_token_price().0),
+            &(self.protocol_fee()?.amount.0.to_big_rational() * self.surplus_token_price(prices).0),
         )
         .map(Into::into)
         .ok()
     }
 
     /// Returns the normalized price of the trade surplus token
-    fn surplus_token_price(&self) -> auction::NormalizedPrice {
+    fn surplus_token_price(
+        &self,
+        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    ) -> auction::NormalizedPrice {
         match self.side {
-            Side::Buy => self.prices.native.sell.clone(),
-            Side::Sell => self.prices.native.buy.clone(),
+            Side::Buy => prices[&self.sell.token].clone(),
+            Side::Sell => prices[&self.buy.token].clone(),
         }
     }
 }
@@ -249,8 +258,6 @@ pub struct Prices {
     pub uniform: ClearingPrices,
     /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
     pub custom: ClearingPrices,
-    /// Prices normalized to the same native token (ETH)
-    pub native: NormalizedPrices,
 }
 
 /// Uniform clearing prices at which the trade was executed.
@@ -258,11 +265,4 @@ pub struct Prices {
 pub struct ClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
-}
-
-/// Normalized prices to the same native token (ETH)
-#[derive(Debug, Clone)]
-pub struct NormalizedPrices {
-    pub sell: auction::NormalizedPrice,
-    pub buy: auction::NormalizedPrice,
 }
