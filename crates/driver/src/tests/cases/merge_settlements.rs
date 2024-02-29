@@ -5,7 +5,6 @@ use crate::tests::{
 
 /// Test that settlements can be merged.
 #[tokio::test]
-#[ignore]
 async fn possible() {
     let ab_order = ab_order();
     let cd_order = cd_order();
@@ -35,7 +34,6 @@ async fn possible() {
 
 /// Test that settlements are not merged if the clearing prices don't permit it.
 #[tokio::test]
-#[ignore]
 async fn impossible() {
     let order = ab_order();
     let test = setup()

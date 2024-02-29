@@ -6,7 +6,6 @@ use crate::tests::{
 /// Test that the best-scoring solution is picked when the /solve endpoint
 /// returns multiple valid solutions.
 #[tokio::test]
-#[ignore]
 async fn valid() {
     let order = ab_order();
     let test = setup()
@@ -24,7 +23,6 @@ async fn valid() {
 /// Test that the invalid solution is discarded when the /solve endpoint
 /// returns multiple solutions.
 #[tokio::test]
-#[ignore]
 async fn invalid() {
     let order = ab_order();
     let test = setup()
