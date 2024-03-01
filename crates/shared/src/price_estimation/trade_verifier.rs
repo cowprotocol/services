@@ -166,8 +166,8 @@ impl TradeVerifier {
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
         tracing::debug!(
-            lost_buy_amount = ?summary.buy_tokens_diff,
-            lost_sell_amount = ?summary.sell_tokens_diff,
+            lost_buy_amount = %summary.buy_tokens_diff,
+            lost_sell_amount = %summary.sell_tokens_diff,
             gas_diff = ?trade.gas_estimate.abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
             promised_out_amount = ?trade.out_amount,
