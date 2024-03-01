@@ -1,20 +1,20 @@
 use {
-    super::{
-        auction,
-        order::{self, Side},
+    super::order::{self, Side},
+    crate::{
+        domain::{competition::auction, eth},
+        util::conv::u256::U256Ext,
     },
-    crate::{domain::eth, util::conv::u256::U256Ext},
     number::conversions::big_rational_to_u256,
 };
 
-/// Settlement in an onchain settleable form and semantics, aligned with what
-/// the settlement contract expects.
+/// Scoring contains trades in an onchain settleable form and semantics, aligned
+/// with what the settlement contract expects.
 #[derive(Debug, Clone)]
-pub struct Settlement {
+pub struct Scoring {
     trades: Vec<Trade>,
 }
 
-impl Settlement {
+impl Scoring {
     pub fn new(trades: Vec<Trade>) -> Self {
         Self { trades }
     }
@@ -167,16 +167,16 @@ impl Trade {
                                 .executed
                                 .0
                                 .checked_mul(self.custom_price.sell)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(super::Math::Overflow)?
                                 .checked_div(self.custom_price.buy)
-                                .ok_or(Error::DivisionByZero)?,
+                                .ok_or(super::Math::DivisionByZero)?,
                             Side::Buy => self
                                 .executed
                                 .0
                                 .checked_mul(self.custom_price.buy)
-                                .ok_or(Error::Overflow)?
+                                .ok_or(super::Math::Overflow)?
                                 .checked_div(self.custom_price.sell)
-                                .ok_or(Error::DivisionByZero)?,
+                                .ok_or(super::Math::DivisionByZero)?,
                         };
                         let factor = match self.side {
                             Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
@@ -268,8 +268,6 @@ pub enum Error {
     UnsupportedFeePolicy,
     #[error("factor {1} multiplication with {0} failed")]
     Factor(eth::U256, f64),
-    #[error("overflow error while calculating protocol fee")]
-    Overflow,
-    #[error("division by zero error while calculating protocol fee")]
-    DivisionByZero,
+    #[error(transparent)]
+    Math(#[from] super::Math),
 }
