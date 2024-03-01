@@ -1,13 +1,15 @@
 use {
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
-    ethcontract::{dyns::DynTransport, H160, U256},
+    ethcontract::{BlockId, H160, H256, U256},
+    futures::{Stream, StreamExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::{api::Txpool, signing::SecretKeyRef},
+    std::time::Duration,
+    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -69,6 +71,14 @@ async fn test_cancel_on_expiry(web3: Web3) {
     );
     services.create_order(&order).await.unwrap();
 
+    // Start tracking confirmed blocks so we can find the transaction later
+    let block_stream = web3
+        .eth_filter()
+        .create_blocks_filter()
+        .await
+        .expect("must be able to create blocks filter")
+        .stream(Duration::from_millis(50));
+
     // Wait for settlement tx to appear in txpool
     wait_for_condition(TIMEOUT, || async {
         get_pending_tx(solver.account().address(), &web3)
@@ -92,13 +102,44 @@ async fn test_cancel_on_expiry(web3: Web3) {
     wait_for_condition(TIMEOUT, || async { solver.nonce(&web3).await == nonce + 1 })
         .await
         .unwrap();
+
+    // Check that it's actually a cancellation
+    let tx = tokio::time::timeout(
+        TIMEOUT,
+        get_confirmed_transaction(solver.account().address(), &web3, block_stream),
+    )
+    .await
+    .unwrap();
+    assert_eq!(tx.to, Some(solver.account().address()))
 }
 
 async fn get_pending_tx(account: H160, web3: &Web3) -> Option<web3::types::Transaction> {
     let txpool = web3
-        .api::<Txpool<DynTransport>>()
+        .txpool()
         .content()
         .await
         .expect("must be able to inspect mempool");
     txpool.pending.get(&account)?.values().next().cloned()
+}
+
+async fn get_confirmed_transaction(
+    account: H160,
+    web3: &Web3,
+    block_stream: impl Stream<Item = Result<H256, web3::Error>>,
+) -> web3::types::Transaction {
+    let mut block_stream = Box::pin(block_stream);
+    loop {
+        let block_hash = block_stream.next().await.unwrap().unwrap();
+        let block = web3
+            .eth()
+            .block_with_txs(BlockId::Hash(block_hash))
+            .await
+            .expect("must be able to get block by hash")
+            .expect("block not found");
+        for tx in block.transactions {
+            if tx.from == Some(account) {
+                return tx;
+            }
+        }
+    }
 }
