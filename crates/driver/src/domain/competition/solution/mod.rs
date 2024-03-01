@@ -133,8 +133,8 @@ impl Solution {
                         order::Side::Buy => fulfillment.executed(),
                     };
                     let uniform_prices = settled::ClearingPrices {
-                        sell: self.prices[&fulfillment.order().sell.token],
-                        buy: self.prices[&fulfillment.order().buy.token],
+                        sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
+                        buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
                     };
                     let custom_prices = settled::ClearingPrices {
                         sell: match fulfillment.order().side {
