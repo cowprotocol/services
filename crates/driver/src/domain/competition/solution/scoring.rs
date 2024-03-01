@@ -1,10 +1,6 @@
 use {
     super::order::{self, Side},
-    crate::{
-        domain::{competition::auction, eth},
-        util::conv::u256::U256Ext,
-    },
-    number::conversions::big_rational_to_u256,
+    crate::domain::{competition::auction, eth},
 };
 
 /// Scoring contains trades in an onchain settleable form and semantics, aligned
@@ -27,7 +23,7 @@ impl Scoring {
     /// Settlement score is valid only if all trade scores are valid.
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self, prices: &auction::NormalizedPrices) -> Result<eth::TokenAmount, Error> {
+    pub fn score(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
         self.trades
             .iter()
             .map(|trade| trade.score(prices))
@@ -69,7 +65,7 @@ impl Trade {
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self, prices: &auction::NormalizedPrices) -> Result<eth::TokenAmount, Error> {
+    pub fn score(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
@@ -120,18 +116,14 @@ impl Trade {
     /// fees have been applied.
     ///
     /// Denominated in NATIVE token
-    fn native_surplus(
-        &self,
-        prices: &auction::NormalizedPrices,
-    ) -> Result<eth::TokenAmount, Error> {
-        let surplus = self
-            .surplus()
-            .ok_or(Error::Surplus(self.sell, self.buy))?
-            .amount;
-        let native_price = self.surplus_token_price(prices)?;
-        big_rational_to_u256(&(surplus.0.to_big_rational() * native_price.0))
-            .map(Into::into)
-            .map_err(Into::into)
+    fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+        let surplus = self.surplus_token_price(prices)?.apply(
+            self.surplus()
+                .ok_or(Error::Surplus(self.sell, self.buy))?
+                .amount,
+        );
+        // normalize
+        Ok((surplus.0 / &*UNIT).into())
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
@@ -205,15 +197,12 @@ impl Trade {
     /// Protocol fee is defined by fee policies attached to the order.
     ///
     /// Denominated in NATIVE token
-    fn native_protocol_fee(
-        &self,
-        prices: &auction::NormalizedPrices,
-    ) -> Result<eth::TokenAmount, Error> {
-        let protocol_fee = self.protocol_fee()?.amount;
-        let native_price = self.surplus_token_price(prices)?;
-        big_rational_to_u256(&(protocol_fee.0.to_big_rational() * native_price.0))
-            .map(Into::into)
-            .map_err(Into::into)
+    fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+        let protocol_fee = self
+            .surplus_token_price(prices)?
+            .apply(self.protocol_fee()?.amount);
+        // normalize
+        Ok((protocol_fee.0 / &*UNIT).into())
     }
 
     fn surplus_token(&self) -> eth::TokenAddress {
@@ -223,11 +212,8 @@ impl Trade {
         }
     }
 
-    /// Returns the normalized price of the trade surplus token
-    fn surplus_token_price(
-        &self,
-        prices: &auction::NormalizedPrices,
-    ) -> Result<auction::NormalizedPrice, Error> {
+    /// Returns the price of the trade surplus token
+    fn surplus_token_price(&self, prices: &auction::Prices) -> Result<auction::Price, Error> {
         prices
             .get(&self.surplus_token())
             .cloned()
@@ -270,4 +256,8 @@ pub enum Error {
     Factor(eth::U256, f64),
     #[error(transparent)]
     Math(#[from] super::Math),
+}
+
+lazy_static::lazy_static! {
+    static ref UNIT: eth::U256 = eth::U256::from(1_000_000_000_000_000_000_u128);
 }

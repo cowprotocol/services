@@ -219,12 +219,13 @@ impl Settlement {
         &self,
         auction: &competition::Auction,
     ) -> Result<eth::TokenAmount, solution::Scoring> {
-        let prices = auction.normalized_prices();
+        let prices = auction.prices();
 
         let mut score = eth::TokenAmount(eth::U256::zero());
         for solution in self.solutions.values() {
             score += solution.scoring()?.score(&prices)?;
         }
+
         Ok(score)
     }
 

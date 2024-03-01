@@ -8,11 +8,10 @@ use {
             time,
         },
         infra::{self, blockchain, observe, Ethereum},
-        util::{self, conv::u256::U256Ext},
+        util::{self},
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
-    num::BigRational,
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -114,30 +113,16 @@ impl Auction {
         self.score_cap
     }
 
-    /// All auction prices normalized to native token price.
-    ///
-    /// WEI to ETHER conversion
-    pub fn normalized_prices(&self) -> NormalizedPrices {
-        let mut prices = self
-            .tokens
+    pub fn prices(&self) -> Prices {
+        self.tokens
             .0
             .iter()
-            .filter_map(|(address, token)| {
-                token.price.map(|price| {
-                    (
-                        *address,
-                        auction::NormalizedPrice(price.0 .0.to_big_rational() / &*UNIT),
-                    )
-                })
-            })
-            .collect::<HashMap<_, _>>();
-
-        // Add the buy eth address
-        prices.insert(
-            eth::ETH_TOKEN,
-            auction::NormalizedPrice(BigRational::from_integer(1.into())),
-        );
-        prices
+            .filter_map(|(address, token)| token.price.map(|price| (*address, price)))
+            .chain(std::iter::once((
+                eth::ETH_TOKEN,
+                eth::U256::from(1_000_000_000_000_000_000u128).into(),
+            )))
+            .collect()
     }
 }
 
@@ -445,25 +430,8 @@ impl From<eth::U256> for Price {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref UNIT: num::BigInt = num::BigInt::from(1_000_000_000_000_000_000_u128);
-}
-
-/// The price of a token normalized to native token price.
-#[derive(Debug, Clone)]
-pub struct NormalizedPrice(pub BigRational);
-
-impl From<BigRational> for NormalizedPrice {
-    fn from(value: BigRational) -> Self {
-        Self(value)
-    }
-}
-
-/// All auction prices normalized to native token price.
-///
-/// For example, auction price of 1ETH is 1e18, while normalized price of 1ETH
-/// is 1.
-pub type NormalizedPrices = HashMap<eth::TokenAddress, NormalizedPrice>;
+/// All auction prices
+pub type Prices = HashMap<eth::TokenAddress, Price>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub i64);
