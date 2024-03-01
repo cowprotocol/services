@@ -121,7 +121,7 @@ impl Solution {
         &self.score
     }
 
-    /// Converts the solution into scoring form
+    /// JIT score calculation as per CIP38
     pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, ScoringError> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.user_trades() {
