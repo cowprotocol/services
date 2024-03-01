@@ -221,12 +221,12 @@ impl Settlement {
     ) -> Result<eth::TokenAmount, solution::ScoringError> {
         let prices = auction.prices();
 
-        let mut score = eth::TokenAmount(eth::U256::zero());
-        for solution in self.solutions.values() {
-            score += solution.scoring(&prices)?;
-        }
-
-        Ok(score)
+        self.solutions
+            .values()
+            .map(|solution| solution.scoring(&prices))
+            .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
+                score.map(|score| acc + score)
+            })
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
