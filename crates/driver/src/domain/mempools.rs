@@ -95,6 +95,7 @@ impl Mempools {
             return Err(Error::Disabled);
         }
 
+        let deadline = mempool.config().deadline();
         let tx = eth::Tx {
             // boundary.tx() does not populate the access list
             access_list: settlement.access_list.clone(),
@@ -112,7 +113,6 @@ impl Mempools {
         block_stream.next().await;
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
-        let deadline = mempool.config().deadline();
         loop {
             // Wait for the next block to be mined or we time out.
             if tokio::time::timeout_at(deadline, block_stream.next())
