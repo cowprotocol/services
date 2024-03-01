@@ -251,14 +251,21 @@ impl Settlement {
         {
             // For testing purposes, always calculate CIP38 score, even if the score is not
             // used.
-            let settlement = competition::settled::Settlement::new(
-                self.solutions
-                    .values()
-                    .flat_map(|solution| solution.settled())
-                    .collect(),
-            );
+            let trades = self
+                .solutions
+                .iter()
+                .filter_map(|(id, solution)| match solution.scorable_trades() {
+                    Ok(trades) => Some(trades),
+                    Err(err) => {
+                        tracing::debug!(?id, ?err, "could not prepare scorable settlement");
+                        None
+                    }
+                })
+                .flatten()
+                .collect();
+            let settlement = competition::settled::Settlement::new(trades);
             let score = settlement.score(&auction.normalized_prices());
-            println!("CIP38 score: {:?}", score);
+            tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solutions());
         }
 
         if score > quality {

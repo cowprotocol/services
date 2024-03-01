@@ -205,6 +205,9 @@ impl Solutions {
                     competition::solution::SolutionError::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
                     }
+                    competition::solution::SolutionError::Fulfillment(err) => {
+                        super::Error(format!("fulfillment: {err}"))
+                    }
                 })
             })
             .collect()

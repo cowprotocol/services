@@ -120,53 +120,62 @@ impl Solution {
         &self.score
     }
 
-    /// Trade in a settled form and semantics.
-    pub fn settled(&self) -> Vec<settled::Trade> {
-        self.trades
-            .iter()
-            .filter_map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => {
-                    let executed = match fulfillment.order().side {
-                        order::Side::Sell => {
-                            (fulfillment.executed().0 + fulfillment.fee().0).into()
-                        }
-                        order::Side::Buy => fulfillment.executed(),
-                    };
-                    let uniform_prices = settled::ClearingPrices {
-                        sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
-                        buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
-                    };
-                    let custom_prices = settled::ClearingPrices {
-                        sell: match fulfillment.order().side {
-                            order::Side::Sell => {
-                                fulfillment.executed().0 * uniform_prices.sell / uniform_prices.buy
-                            }
-                            order::Side::Buy => fulfillment.executed().0,
-                        },
-                        buy: match fulfillment.order().side {
-                            order::Side::Sell => fulfillment.executed().0 + fulfillment.fee().0,
-                            order::Side::Buy => {
-                                (fulfillment.executed().0) * uniform_prices.buy
-                                    / uniform_prices.sell
-                                    + fulfillment.fee().0
-                            }
-                        },
-                    };
-                    Some(settled::Trade::new(
-                        fulfillment.order().sell,
-                        fulfillment.order().buy,
-                        fulfillment.order().side,
-                        executed,
-                        settled::Prices {
-                            uniform: uniform_prices,
-                            custom: custom_prices,
-                        },
-                        fulfillment.order().protocol_fees.clone(),
-                    ))
-                }
-                Trade::Jit(_) => None,
-            })
-            .collect()
+    /// Converts the solution into an onchain settleable form and semantic, as
+    /// expected by the settlement contract.
+    ///
+    /// Skips JIT orders.
+    pub fn scorable_trades(&self) -> Result<Vec<settled::Trade>, SolutionError> {
+        let mut trades = Vec::with_capacity(self.trades.len());
+        for trade in self.user_trades() {
+            // Solver generated fulfillment does not include the fee in the executed amount
+            // for sell orders.
+            let executed = match trade.order().side {
+                order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                order::Side::Buy => trade.executed(),
+            };
+            let uniform_prices = settled::CustomClearingPrices {
+                sell: *self
+                    .prices
+                    .get(&trade.order().sell.token.wrap(self.weth))
+                    .ok_or(SolutionError::InvalidClearingPrices)?,
+                buy: *self
+                    .prices
+                    .get(&trade.order().buy.token.wrap(self.weth))
+                    .ok_or(SolutionError::InvalidClearingPrices)?,
+            };
+            let custom_prices = settled::CustomClearingPrices {
+                sell: match trade.order().side {
+                    order::Side::Sell => trade
+                        .executed()
+                        .0
+                        .checked_mul(uniform_prices.sell)
+                        .ok_or(trade::Error::Overflow)?
+                        .checked_div(uniform_prices.buy)
+                        .ok_or(trade::Error::DivisionByZero)?,
+                    order::Side::Buy => trade.executed().0,
+                },
+                buy: match trade.order().side {
+                    order::Side::Sell => trade.executed().0 + trade.fee().0,
+                    order::Side::Buy => {
+                        (trade.executed().0)
+                            .checked_mul(uniform_prices.buy)
+                            .ok_or(trade::Error::Overflow)?
+                            .checked_div(uniform_prices.sell)
+                            .ok_or(trade::Error::DivisionByZero)?
+                            + trade.fee().0
+                    }
+                },
+            };
+            trades.push(settled::Trade::new(
+                trade.order().sell,
+                trade.order().buy,
+                trade.order().side,
+                executed,
+                custom_prices,
+                trade.order().protocol_fees.clone(),
+            ))
+        }
+        Ok(trades)
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -371,4 +380,6 @@ pub enum SolutionError {
     InvalidClearingPrices,
     #[error(transparent)]
     ProtocolFee(#[from] fee::Error),
+    #[error(transparent)]
+    Fulfillment(#[from] trade::Error),
 }

@@ -8,7 +8,8 @@ use {
     std::collections::HashMap,
 };
 
-/// Settlement built from onchain calldata.
+/// Settlement in a settleable form and semantics, aligned with what the
+/// settlement contract expects.
 #[derive(Debug, Clone)]
 pub struct Settlement {
     trades: Vec<Trade>,
@@ -21,14 +22,19 @@ impl Settlement {
 
     /// Score of a settlement as per CIP38
     ///
+    /// Score of a settlement is the sum of scores of all user trades in the
+    /// settlement.
+    ///
+    /// Settlement score is valid only if all trade scores are valid.
+    ///
     /// Denominated in NATIVE token
     pub fn score(
         &self,
         prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Option<eth::TokenAmount> {
+    ) -> Result<eth::TokenAmount, Error> {
         self.trades
             .iter()
-            .map(|t| t.score(prices))
+            .map(|trade| trade.score(prices))
             .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
                 score.map(|score| acc + score)
             })
@@ -41,7 +47,7 @@ pub struct Trade {
     buy: eth::Asset,
     side: Side,
     executed: order::TargetAmount,
-    prices: Prices,
+    custom_price: CustomClearingPrices,
     policies: Vec<order::FeePolicy>,
 }
 
@@ -51,7 +57,7 @@ impl Trade {
         buy: eth::Asset,
         side: Side,
         executed: order::TargetAmount,
-        prices: Prices,
+        custom_price: CustomClearingPrices,
         policies: Vec<order::FeePolicy>,
     ) -> Self {
         Self {
@@ -59,7 +65,7 @@ impl Trade {
             buy,
             side,
             executed,
-            prices,
+            custom_price,
             policies,
         }
     }
@@ -70,10 +76,8 @@ impl Trade {
     pub fn score(
         &self,
         prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Option<eth::TokenAmount> {
-        self.native_surplus(prices)
-            .zip(self.native_protocol_fee(prices))
-            .map(|(surplus, fee)| surplus + fee)
+    ) -> Result<eth::TokenAmount, Error> {
+        Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
     /// Surplus based on custom clearing prices returns the surplus after all
@@ -94,8 +98,8 @@ impl Trade {
                 limit_sell.checked_sub(
                     self.executed
                         .0
-                        .checked_mul(self.prices.custom.buy)?
-                        .checked_div(self.prices.custom.sell)?,
+                        .checked_mul(self.custom_price.buy)?
+                        .checked_div(self.custom_price.sell)?,
                 )
             }
             Side::Sell => {
@@ -108,20 +112,14 @@ impl Trade {
                 // difference between executed amount converted to buy token and limit buy
                 self.executed
                     .0
-                    .checked_mul(self.prices.custom.sell)?
-                    .checked_div(self.prices.custom.buy)?
+                    .checked_mul(self.custom_price.sell)?
+                    .checked_div(self.custom_price.buy)?
                     .checked_sub(limit_buy)
             }
         }
-        .map(|surplus| match self.side {
-            Side::Buy => eth::Asset {
-                amount: surplus.into(),
-                token: self.sell.token,
-            },
-            Side::Sell => eth::Asset {
-                amount: surplus.into(),
-                token: self.buy.token,
-            },
+        .map(|surplus| eth::Asset {
+            token: self.surplus_token(),
+            amount: surplus.into(),
         })
     }
 
@@ -132,92 +130,75 @@ impl Trade {
     fn native_surplus(
         &self,
         prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Option<eth::TokenAmount> {
-        big_rational_to_u256(
-            &(self.surplus()?.amount.0.to_big_rational() * self.surplus_token_price(prices).0),
-        )
-        .map(Into::into)
-        .ok()
+    ) -> Result<eth::TokenAmount, Error> {
+        let surplus = self
+            .surplus()
+            .ok_or(Error::Surplus(self.sell, self.buy))?
+            .amount;
+        let native_price = self.surplus_token_price(prices)?;
+        big_rational_to_u256(&(surplus.0.to_big_rational() * native_price.0))
+            .map(Into::into)
+            .map_err(Into::into)
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fee(&self) -> Option<eth::Asset> {
+    fn protocol_fee(&self) -> Result<eth::Asset, Error> {
         // TODO: support multiple fee policies
         if self.policies.len() > 1 {
-            return None;
+            return Err(Error::MultipleFeePolicies);
         }
 
-        match self.policies.first()? {
-            order::FeePolicy::Surplus {
-                factor,
-                max_volume_factor,
-            } => Some(eth::Asset {
-                token: match self.side {
-                    Side::Sell => self.buy.token,
-                    Side::Buy => self.sell.token,
-                },
-                amount: std::cmp::min(
+        let protocol_fee = |policy: &order::FeePolicy| {
+            match policy {
+                order::FeePolicy::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => Ok(std::cmp::min(
                     {
-                        // If the surplus after all fees is X, then the original
-                        // surplus before protocol fee is X / (1 - factor)
-                        apply_factor(self.surplus()?.amount.into(), factor / (1.0 - factor))?
+                        // If the surplus after all fees is X, then the original surplus before
+                        // protocol fee is X / (1 - factor)
+                        let surplus = self
+                            .surplus()
+                            .ok_or(Error::Surplus(self.sell, self.buy))?
+                            .amount;
+                        apply_factor(surplus.into(), factor / (1.0 - factor))
+                            .ok_or(Error::Factor(surplus.0, *factor))?
                     },
                     {
-                        // Convert the executed amount to surplus token so it can be compared with
-                        // the surplus
+                        // Convert the executed amount to surplus token so it can be compared
+                        // with the surplus
                         let executed_in_surplus_token = match self.side {
                             Side::Sell => {
-                                self.executed.0 * self.prices.custom.sell / self.prices.custom.buy
+                                self.executed.0 * self.custom_price.sell / self.custom_price.buy
                             }
                             Side::Buy => {
-                                self.executed.0 * self.prices.custom.buy / self.prices.custom.sell
+                                self.executed.0 * self.custom_price.buy / self.custom_price.sell
                             }
                         };
-                        apply_factor(
-                            executed_in_surplus_token,
-                            match self.side {
-                                Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
-                                Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
-                            },
-                        )?
+                        let factor = match self.side {
+                            Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
+                            Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
+                        };
+                        apply_factor(executed_in_surplus_token, factor)
+                            .ok_or(Error::Factor(executed_in_surplus_token, factor))?
                     },
-                )
-                .into(),
-            }),
-            order::FeePolicy::PriceImprovement {
-                factor: _,
-                max_volume_factor: _,
-                quote: _,
-            } => todo!(),
-            order::FeePolicy::Volume { factor } => Some(eth::Asset {
-                token: match self.side {
-                    Side::Sell => self.buy.token,
-                    Side::Buy => self.sell.token,
-                },
-                amount: {
-                    // Convert the executed amount to surplus token so it can be compared with
-                    // the surplus
-                    let executed_in_surplus_token = match self.side {
-                        Side::Sell => {
-                            self.executed.0 * self.prices.custom.sell / self.prices.custom.buy
-                        }
-                        Side::Buy => {
-                            self.executed.0 * self.prices.custom.buy / self.prices.custom.sell
-                        }
-                    };
-                    apply_factor(
-                        executed_in_surplus_token,
-                        match self.side {
-                            Side::Sell => factor / (1.0 - factor),
-                            Side::Buy => factor / (1.0 + factor),
-                        },
-                    )?
-                }
-                .into(),
-            }),
-        }
+                )),
+                order::FeePolicy::PriceImprovement {
+                    factor: _,
+                    max_volume_factor: _,
+                    quote: _,
+                } => Err(Error::UnsupportedFeePolicy),
+                order::FeePolicy::Volume { factor: _ } => Err(Error::UnsupportedFeePolicy),
+            }
+        };
+
+        let protocol_fee = self.policies.first().map(protocol_fee).transpose();
+        Ok(eth::Asset {
+            token: self.surplus_token(),
+            amount: protocol_fee?.unwrap_or(0.into()).into(),
+        })
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
@@ -226,23 +207,30 @@ impl Trade {
     fn native_protocol_fee(
         &self,
         prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Option<eth::TokenAmount> {
-        big_rational_to_u256(
-            &(self.protocol_fee()?.amount.0.to_big_rational() * self.surplus_token_price(prices).0),
-        )
-        .map(Into::into)
-        .ok()
+    ) -> Result<eth::TokenAmount, Error> {
+        let protocol_fee = self.protocol_fee()?.amount;
+        let native_price = self.surplus_token_price(prices)?;
+        big_rational_to_u256(&(protocol_fee.0.to_big_rational() * native_price.0))
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
+    fn surplus_token(&self) -> eth::TokenAddress {
+        match self.side {
+            Side::Buy => self.sell.token,
+            Side::Sell => self.buy.token,
+        }
     }
 
     /// Returns the normalized price of the trade surplus token
     fn surplus_token_price(
         &self,
         prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> auction::NormalizedPrice {
-        match self.side {
-            Side::Buy => prices[&self.sell.token].clone(),
-            Side::Sell => prices[&self.buy.token].clone(),
-        }
+    ) -> Result<auction::NormalizedPrice, Error> {
+        prices
+            .get(&self.surplus_token())
+            .cloned()
+            .ok_or(Error::MissingPrice(self.surplus_token()))
     }
 }
 
@@ -253,16 +241,30 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Option<eth::U256> {
     )
 }
 
+/// Custom clearing prices at which the trade was executed.
+///
+/// These prices differ from uniform clearing prices, in that they are adjusted
+/// to account for all fees (gas cost and protocol fees).
+///
+/// These prices determine the actual traded amounts from the user perspective.
 #[derive(Debug, Clone)]
-pub struct Prices {
-    pub uniform: ClearingPrices,
-    /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
-    pub custom: ClearingPrices,
-}
-
-/// Uniform clearing prices at which the trade was executed.
-#[derive(Debug, Clone)]
-pub struct ClearingPrices {
+pub struct CustomClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("multiple fee policies are not supported yet")]
+    MultipleFeePolicies,
+    #[error("failed to calculate surplus for trade sell {0:?} buy {1:?}")]
+    Surplus(eth::Asset, eth::Asset),
+    #[error("missing native price for token {0:?}")]
+    MissingPrice(eth::TokenAddress),
+    #[error("type conversion error")]
+    TypeConversion(#[from] anyhow::Error),
+    #[error("fee policy not supported")]
+    UnsupportedFeePolicy,
+    #[error("factor {1} multiplication with {0} failed")]
+    Factor(eth::U256, f64),
 }
