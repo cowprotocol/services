@@ -1,10 +1,13 @@
-use crate::{
-    domain::competition::order,
-    tests::{
-        self,
-        cases::DEFAULT_SOLVER_FEE,
-        setup::{ab_order, ab_pool, ab_solution},
+use {
+    crate::{
+        domain::competition::order,
+        tests::{
+            self,
+            cases::DEFAULT_SOLVER_FEE,
+            setup::{ab_order, ab_pool, ab_solution},
+        },
     },
+    web3::Transport,
 };
 
 /// Run a matrix of tests for all meaningful combinations of order kind and
@@ -86,6 +89,20 @@ async fn high_gas_limit() {
         .done()
         .await;
 
+    // Set to 30M for solving purposes
+    test.web3()
+        .transport()
+        .execute("evm_setBlockGasLimit", vec![serde_json::json!(30_000_000)])
+        .await
+        .unwrap();
+
     test.solve().await.ok();
+
+    // Assume validators downvoted gas limit to 29M, solution still passes
+    test.web3()
+        .transport()
+        .execute("evm_setBlockGasLimit", vec![serde_json::json!(29_000_000)])
+        .await
+        .unwrap();
     test.settle().await.ok().await;
 }
