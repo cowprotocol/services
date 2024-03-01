@@ -123,7 +123,7 @@ impl Trade {
                 .amount,
         );
         // normalize
-        Ok((surplus.0 / &*UNIT).into())
+        Ok((surplus.0 / *UNIT).into())
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
@@ -202,7 +202,7 @@ impl Trade {
             .surplus_token_price(prices)?
             .apply(self.protocol_fee()?.amount);
         // normalize
-        Ok((protocol_fee.0 / &*UNIT).into())
+        Ok((protocol_fee.0 / *UNIT).into())
     }
 
     fn surplus_token(&self) -> eth::TokenAddress {

@@ -1,5 +1,6 @@
 use {
     self::trade::ClearingPrices,
+    super::auction,
     crate::{
         boundary,
         domain::{
@@ -121,7 +122,7 @@ impl Solution {
     }
 
     /// Converts the solution into scoring form
-    pub fn scoring(&self) -> Result<scoring::Scoring, SolutionError> {
+    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, ScoringError> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.user_trades() {
             // Solver generated fulfillment does not include the fee in the executed amount
@@ -172,7 +173,9 @@ impl Solution {
                 trade.order().protocol_fees.clone(),
             ))
         }
-        Ok(scoring::Scoring::new(trades))
+
+        let scoring = scoring::Scoring::new(trades);
+        Ok(scoring.score(prices)?)
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -378,16 +381,16 @@ pub enum SolutionError {
     InvalidClearingPrices,
     #[error(transparent)]
     ProtocolFee(#[from] fee::Error),
-    #[error(transparent)]
-    Math(#[from] Math),
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Scoring {
+pub enum ScoringError {
     #[error(transparent)]
     Solution(#[from] SolutionError),
     #[error(transparent)]
     Score(#[from] scoring::Error),
+    #[error(transparent)]
+    Math(#[from] Math),
 }
 
 #[derive(Debug, thiserror::Error)]

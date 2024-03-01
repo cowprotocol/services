@@ -67,7 +67,7 @@ pub enum Error {
     #[error(transparent)]
     RiskAdjusted(#[from] risk::Error),
     #[error(transparent)]
-    Scoring(#[from] super::solution::Scoring),
+    Scoring(#[from] super::solution::ScoringError),
     #[error(transparent)]
     Boundary(#[from] boundary::Error),
 }
