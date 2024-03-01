@@ -115,6 +115,8 @@ impl Auction {
     }
 
     /// All auction prices normalized to native token price.
+    ///
+    /// WEI to ETHER conversion
     pub fn normalized_prices(&self) -> NormalizedPrices {
         let mut prices = self
             .tokens
@@ -448,9 +450,6 @@ lazy_static::lazy_static! {
 }
 
 /// The price of a token normalized to native token price.
-///
-/// For example, auction price of 1ETH is 1e18, while normalized price of 1ETH
-/// is 1.
 #[derive(Debug, Clone)]
 pub struct NormalizedPrice(pub BigRational);
 
@@ -460,7 +459,10 @@ impl From<BigRational> for NormalizedPrice {
     }
 }
 
-/// /// All auction prices normalized to native token price.
+/// All auction prices normalized to native token price.
+///
+/// For example, auction price of 1ETH is 1e18, while normalized price of 1ETH
+/// is 1.
 pub type NormalizedPrices = HashMap<eth::TokenAddress, NormalizedPrice>;
 
 #[derive(Debug, Clone, Copy)]
