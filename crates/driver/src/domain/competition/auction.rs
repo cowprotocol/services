@@ -115,7 +115,8 @@ impl Auction {
     }
 
     pub fn normalized_prices(&self) -> HashMap<eth::TokenAddress, auction::NormalizedPrice> {
-        self.tokens
+        let mut prices = self
+            .tokens
             .0
             .iter()
             .filter_map(|(address, token)| {
@@ -123,13 +124,18 @@ impl Auction {
                     (
                         *address,
                         auction::NormalizedPrice(
-                            price.0 .0.to_big_rational()
-                                / BigRational::from_integer(1_000_000_000_000_000_000_u128.into()), // TODO polish
+                            price.0 .0.to_big_rational() / BigRational::from_integer(1_000_000_000_000_000_000_u128.into()), // TODO polish                 
                         ),
                     )
                 })
             })
-            .collect()
+            .collect::<HashMap<_, _>>();
+        // Add the buy eth address
+        prices.insert(
+            eth::ETH_TOKEN,
+            auction::NormalizedPrice(BigRational::from_integer(1.into())),
+        );
+        prices
     }
 }
 
