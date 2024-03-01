@@ -66,7 +66,7 @@ impl Trade {
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+    fn score(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
