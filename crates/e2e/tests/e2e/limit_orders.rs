@@ -1,5 +1,6 @@
 use {
     contracts::ERC20,
+    driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{prelude::U256, H160},
     model::{
@@ -28,6 +29,12 @@ async fn local_node_two_limit_orders() {
 #[ignore]
 async fn local_node_too_many_limit_orders() {
     run_test(too_many_limit_orders_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
+    run_test(limit_does_not_apply_to_in_market_orders_test).await;
 }
 
 #[tokio::test]
@@ -483,9 +490,94 @@ async fn too_many_limit_orders_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+
     let (status, body) = services.create_order(&order).await.unwrap_err();
     assert_eq!(status, 400);
     assert!(body.contains("TooManyLimitOrders"));
+}
+
+async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token_a] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+    token_a.mint(trader.address(), to_wei(100)).await;
+
+    // Approve GPv2 for trading
+    tx!(
+        trader.account(),
+        token_a.approve(onchain.contracts().allowance, to_wei(101))
+    );
+
+    // Place Orders
+    let services = Services::new(onchain.contracts()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![colocation::SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
+    services
+        .start_api(vec![
+            "--max-limit-orders-per-user=1".into(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    let quote_request = OrderQuoteRequest {
+        from: trader.address(),
+        sell_token: token_a.address(),
+        buy_token: onchain.contracts().weth.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(to_wei(5)).unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: quote.quote.sell_amount,
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(1)),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert!(limit_order.metadata.class.is_limit());
+
+    // Place another "in-market" order in order to check it is not limited
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: quote.quote.sell_amount,
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2)),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    assert!(services.create_order(&order).await.is_ok());
 }
 
 async fn forked_mainnet_single_limit_order_test(web3: Web3) {
