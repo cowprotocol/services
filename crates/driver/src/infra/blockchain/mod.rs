@@ -186,7 +186,7 @@ impl Ethereum {
         self.inner.gas.estimate().await
     }
 
-    pub fn gas_limit(&self) -> eth::Gas {
+    pub fn block_gas_limit(&self) -> eth::Gas {
         self.inner.current_block.borrow().gas_limit.into()
     }
 
