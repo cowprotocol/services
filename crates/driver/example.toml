@@ -1,6 +1,6 @@
 [[solver]]
 name = "mysolver1" # Arbitrary name given to this solver, must be unique
-endpoint = "https://sepolia.infura.io/v3/9d410fb4c1864d22afa37cf8797aa417"
+endpoint = "http://0.0.0.0:7872"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
@@ -22,7 +22,7 @@ revert-protection = true
 
 [[submission.mempool]]
 mempool = "mev-blocker"
-url = "https://sepolia.infura.io/v3/9d410fb4c1864d22afa37cf8797aa417"
+url = "https://your.custom.rpc.endpoint"
 max-additional-tip = "5000000000"
 additional-tip-percentage = 0.05
 use-soft-cancellations = true

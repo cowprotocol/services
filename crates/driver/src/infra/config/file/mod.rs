@@ -152,6 +152,10 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
+fn default_skip_merge_flag() -> bool {
+    false
+}
+
 pub fn default_http_time_buffer() -> Duration {
     Duration::from_millis(500)
 }
@@ -189,10 +193,6 @@ struct SolverConfig {
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
-}
-
-fn default_skip_merge_flag() -> bool {
-    false
 }
 
 #[serde_as]

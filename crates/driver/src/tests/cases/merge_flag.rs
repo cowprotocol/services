@@ -6,9 +6,11 @@ use crate::tests::{
 // tests that flagging for settlement merge is possible
 #[tokio::test]
 async fn possible() {
+        let skipping_config_file = std::env::current_dir().unwrap().join("example.toml");
         let ab_order = ab_order();
         let cd_order = cd_order();
         let test = setup()
+        .config_file(example_config_file)
         .pool(cd_pool())
         .pool(ab_pool())
         .order(ab_order.clone())
@@ -36,6 +38,7 @@ async fn possible() {
 // TODO: config has to be changed to fetch to pass
 #[tokio::test]
 async fn impossible() {
+    let fetching_config_file = std::env::current_dir().unwrap().join("example.toml");
     let order = ab_order();
     let test = setup()
         .pool(ab_pool())
