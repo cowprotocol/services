@@ -4,7 +4,7 @@ use crate::domain::eth;
 pub struct Contracts {
     pub weth: eth::WethAddress,
     pub settlement: eth::ContractAddress,
-    pub authenticator: eth::ContractAddress,
+    authenticator: eth::ContractAddress,
     pub balancer_vault: eth::ContractAddress,
 }
 
