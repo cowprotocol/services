@@ -388,8 +388,10 @@ impl Gas {
 
         // The block gas limit may fluctuate between blocks (validators trying to
         // upvote/downvote the limit), thus add a bit margin to not run into
-        // GasLimitExceeded errors.
-        let block_limit = eth::Gas(block_limit.0 * 90 / 100);
+        // GasLimitExceeded errors. The maximum deviation per block is 1/1024 so using
+        // 1% buffer will make that even with 10 consecutive blocks in which the gas
+        // limit decreased maximally will not exceed the limit.
+        let block_limit = eth::Gas(block_limit.0 * 99 / 100);
 
         Self {
             estimate,

@@ -98,10 +98,10 @@ async fn high_gas_limit() {
 
     test.solve().await.ok();
 
-    // Assume validators downvoted gas limit to 29M, solution still settles
+    // Assume validators downvoted gas limit to 29.9M, solution still settles
     test.web3()
         .transport()
-        .execute("evm_setBlockGasLimit", vec![serde_json::json!(29_000_000)])
+        .execute("evm_setBlockGasLimit", vec![serde_json::json!(29_900_000)])
         .await
         .unwrap();
     test.settle().await.ok().await;
