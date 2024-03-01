@@ -114,7 +114,8 @@ impl Auction {
         self.score_cap
     }
 
-    pub fn normalized_prices(&self) -> HashMap<eth::TokenAddress, auction::NormalizedPrice> {
+    /// All auction prices normalized to native token price.
+    pub fn normalized_prices(&self) -> NormalizedPrices {
         let mut prices = self
             .tokens
             .0
@@ -123,13 +124,12 @@ impl Auction {
                 token.price.map(|price| {
                     (
                         *address,
-                        auction::NormalizedPrice(
-                            price.0 .0.to_big_rational() / BigRational::from_integer(1_000_000_000_000_000_000_u128.into()), // TODO polish                 
-                        ),
+                        auction::NormalizedPrice(price.0 .0.to_big_rational() / &*UNIT),
                     )
                 })
             })
             .collect::<HashMap<_, _>>();
+        
         // Add the buy eth address
         prices.insert(
             eth::ETH_TOKEN,
@@ -443,7 +443,14 @@ impl From<eth::U256> for Price {
     }
 }
 
-/// The price of a token normalized to native token.
+lazy_static::lazy_static! {
+    static ref UNIT: num::BigInt = num::BigInt::from(1_000_000_000_000_000_000_u128);
+}
+
+/// The price of a token normalized to native token price.
+///
+/// For example, auction price of 1ETH is 1e18, while normalized price of 1ETH
+/// is 1.
 #[derive(Debug, Clone)]
 pub struct NormalizedPrice(pub BigRational);
 
@@ -452,6 +459,9 @@ impl From<BigRational> for NormalizedPrice {
         Self(value)
     }
 }
+
+/// /// All auction prices normalized to native token price.
+pub type NormalizedPrices = HashMap<eth::TokenAddress, NormalizedPrice>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub i64);

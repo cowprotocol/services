@@ -5,11 +5,10 @@ use {
     },
     crate::{domain::eth, util::conv::u256::U256Ext},
     number::conversions::big_rational_to_u256,
-    std::collections::HashMap,
 };
 
-/// Settlement in a settleable form and semantics, aligned with what the
-/// settlement contract expects.
+/// Settlement in an onchain settleable form and semantics, aligned with what
+/// the settlement contract expects.
 #[derive(Debug, Clone)]
 pub struct Settlement {
     trades: Vec<Trade>,
@@ -22,16 +21,13 @@ impl Settlement {
 
     /// Score of a settlement as per CIP38
     ///
-    /// Score of a settlement is the sum of scores of all user trades in the
+    /// Score of a settlement is a sum of scores of all user trades in the
     /// settlement.
     ///
     /// Settlement score is valid only if all trade scores are valid.
     ///
     /// Denominated in NATIVE token
-    pub fn score(
-        &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Result<eth::TokenAmount, Error> {
+    pub fn score(&self, prices: &auction::NormalizedPrices) -> Result<eth::TokenAmount, Error> {
         self.trades
             .iter()
             .map(|trade| trade.score(prices))
@@ -73,10 +69,7 @@ impl Trade {
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(
-        &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Result<eth::TokenAmount, Error> {
+    pub fn score(&self, prices: &auction::NormalizedPrices) -> Result<eth::TokenAmount, Error> {
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
@@ -129,7 +122,7 @@ impl Trade {
     /// Denominated in NATIVE token
     fn native_surplus(
         &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+        prices: &auction::NormalizedPrices,
     ) -> Result<eth::TokenAmount, Error> {
         let surplus = self
             .surplus()
@@ -206,7 +199,7 @@ impl Trade {
     /// Denominated in NATIVE token
     fn native_protocol_fee(
         &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+        prices: &auction::NormalizedPrices,
     ) -> Result<eth::TokenAmount, Error> {
         let protocol_fee = self.protocol_fee()?.amount;
         let native_price = self.surplus_token_price(prices)?;
@@ -225,7 +218,7 @@ impl Trade {
     /// Returns the normalized price of the trade surplus token
     fn surplus_token_price(
         &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+        prices: &auction::NormalizedPrices,
     ) -> Result<auction::NormalizedPrice, Error> {
         prices
             .get(&self.surplus_token())
