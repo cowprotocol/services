@@ -46,7 +46,7 @@ use {
         time,
         DomainSeparator,
     },
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{sync::Arc, time::Duration},
 };
 
 #[mockall::automock]
@@ -237,7 +237,7 @@ pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
     native_token: WETH9,
-    banned_users: HashSet<H160>,
+    banned_users: Arc<order_validation::banned::Users>,
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -309,7 +309,7 @@ impl OrderValidator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         native_token: WETH9,
-        banned_users: HashSet<H160>,
+        banned_users: Arc<order_validation::banned::Users>,
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -403,7 +403,12 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        if self.banned_users.contains(&order.owner) || self.banned_users.contains(&order.receiver) {
+        if !self
+            .banned_users
+            .banned([order.receiver, order.owner])
+            .await
+            .is_empty()
+        {
             return Err(PartialValidationError::Forbidden);
         }
 
@@ -992,7 +997,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             native_token,
-            banned_users,
+            Arc::new(order_validation::banned::Users::from_set(banned_users)),
             validity_configuration,
             false,
             Arc::new(MockBadTokenDetecting::new()),
@@ -1138,7 +1143,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             validity_configuration,
             false,
             Arc::new(bad_token_detector),
@@ -1221,7 +1226,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
                 max_market: Duration::from_secs(100),
@@ -1418,7 +1423,7 @@ mod tests {
 
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1476,7 +1481,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1533,7 +1538,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1589,7 +1594,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1640,7 +1645,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1693,7 +1698,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1750,7 +1755,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1801,7 +1806,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1856,7 +1861,7 @@ mod tests {
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
+            Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
             Arc::new(bad_token_detector),
@@ -1918,7 +1923,7 @@ mod tests {
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
             let validator = OrderValidator::new(
                 dummy_contract!(WETH9, [0xef; 20]),
-                hashset!(),
+                Arc::new(order_validation::banned::Users::none()),
                 OrderValidPeriodConfiguration::any(),
                 false,
                 Arc::new(bad_token_detector),

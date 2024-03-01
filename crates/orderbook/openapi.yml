@@ -25,6 +25,11 @@ paths:
   /api/v1/orders:
     post:
       summary: Create a new order.
+        In order to replace an existing order with a new one, the appData must contain a
+        [valid replacement order UID](https://github.com/cowprotocol/app-data/blob/main/src/schemas/v1.1.0.json#L62),
+        then the indicated order is cancelled, and a new one placed.
+        This allows an old order to be cancelled AND a new order to be created in an atomic operation with a single signature.
+        This may be useful for replacing orders when on-chain prices move outside of the original order's limit price.
       responses:
         201:
           description: Order has been accepted.
@@ -131,50 +136,6 @@ paths:
                 $ref: "#/components/schemas/OrderCancellationError"
         401:
           description: Invalid signature.
-        404:
-          description: Order was not found.
-    patch:
-      summary: Cancel an order and replace it with a new one
-      description: |
-        Cancel an order by providing a replacement order where the app data field
-        is the [EIP-712](https://eips.ethereum.org/EIPS/eip-712) `hashStruct` of a
-        cancellation for the original order. This allows an old order to be cancelled
-        AND a new order to be created in an atomic operation with a single signature.
-        This may be useful for replacing orders when on-chain prices move outside of
-        the original order's limit price.
-      parameters:
-        - in: path
-          name: UID
-          schema:
-            $ref: "#/components/schemas/UID"
-          required: true
-      requestBody:
-        description: Replacement order.
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/OrderCreation"
-      responses:
-        201:
-          description: Previous order was cancelled and the new replacement order was created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UID"
-        400:
-          description: Error cancelling and replacing new order with an old one.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReplaceOrderError"
-        401:
-          description: |
-            Invalid replacement order. This can happen if the old and new orders have
-            different signers, the new order's `appData` is not an encoded cancellation of
-            the old order, or the new order is based on `presign` or `eip1271` signatures.
-        403:
-          description: Forbidden
         404:
           description: Order was not found.
   /api/v1/transactions/{txHash}/orders:
@@ -1257,38 +1218,6 @@ components:
               OrderFullyExecuted,
               OrderExpired,
               OnChainOrder,
-            ]
-        description:
-          type: string
-      required:
-        - errorType
-        - description
-    ReplaceOrderError:
-      type: object
-      properties:
-        errorType:
-          type: string
-          enum:
-            [
-              AlreadyCancelled,
-              OrderFullyExecuted,
-              OrderExpired,
-              OnChainOrder,
-              DuplicatedOrder,
-              InsufficientFee,
-              InsufficientAllowance,
-              InsufficientBalance,
-              InsufficientValidTo,
-              ExcessiveValidTo,
-              InvalidSignature,
-              TransferSimulationFailed,
-              UnsupportedToken,
-              WrongOwner,
-              SameBuyAndSellToken,
-              ZeroAmount,
-              UnsupportedBuyTokenDestination,
-              UnsupportedSellTokenSource,
-              UnsupportedOrderType,
             ]
         description:
           type: string
