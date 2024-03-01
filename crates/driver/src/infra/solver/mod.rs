@@ -6,8 +6,7 @@ use {
                 auction::{self, Auction},
                 solution::{self, Solution},
             },
-            eth,
-            liquidity,
+            eth, liquidity,
             time::Remaining,
         },
         infra::blockchain::Ethereum,
@@ -141,6 +140,11 @@ impl Solver {
     /// The liquidity configuration of this solver
     pub fn liquidity(&self) -> Liquidity {
         self.config.liquidity
+    }
+
+    /// The merging configuration of this solver
+    pub fn merging(&self) -> Merging {
+        self.config.merging
     }
 
     /// The blockchain address of this solver.

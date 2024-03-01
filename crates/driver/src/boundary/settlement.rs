@@ -3,14 +3,10 @@ use {
         boundary,
         domain::{
             competition::{
-                self,
-                auction,
-                order,
-                score,
+                self, auction, order, score,
                 solution::settlement::{self, Internalization},
             },
-            eth,
-            liquidity,
+            eth, liquidity,
         },
         infra::Ethereum,
         util::conv::u256::U256Ext,
@@ -20,15 +16,8 @@ use {
         app_data::AppDataHash,
         interaction::InteractionData,
         order::{
-            BuyTokenDestination,
-            Interactions,
-            Order,
-            OrderClass,
-            OrderData,
-            OrderKind,
-            OrderMetadata,
-            OrderUid,
-            SellTokenSource,
+            BuyTokenDestination, Interactions, Order, OrderClass, OrderData, OrderKind,
+            OrderMetadata, OrderUid, SellTokenSource,
         },
         signature::EcdsaSignature,
         DomainSeparator,
@@ -45,9 +34,9 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
-            AmmOrderExecution,
-            LimitOrderExecution,
+            AmmOrderExecution, LimitOrderExecution,
         },
+        settlement::MergeSkippable,
         settlement::Revertable,
         settlement_simulation::settle_method_builder,
     },
@@ -241,12 +230,18 @@ impl Settlement {
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
-        self.inner.merge(other.inner).map(|inner| Self {
-            inner,
-            solver: self.solver,
-        })
+        
+        match self.inner.encoder.is_merged() {
+            false => self.inner.merge(other.inner).map(|inner| Self {
+                inner,
+                solver: self.solver,
+            }),
+            true => Ok(Self {
+                inner: self.inner,
+                solver: self.solver,
+            }),
+        }
     }
-
     pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.inner
             .clearing_prices()
@@ -255,6 +250,9 @@ impl Settlement {
             .collect()
     }
 
+    pub fn merge_skippable(&self) -> bool {
+        self.inner.merge_skippable() != MergeSkippable::NotSkippable
+    }
     pub fn revertable(&self) -> bool {
         self.inner.revertable() != Revertable::NoRisk
     }

@@ -184,7 +184,7 @@ struct SolverConfig {
 
     /// Wheter or not to skip merging the solutions from this solver.
     #[serde(default = "default_skip_merge_flag")]
-    skip_merge: bool, 
+    skip_merge: bool,
 
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
@@ -194,7 +194,6 @@ struct SolverConfig {
 fn default_skip_merge_flag() -> bool {
     false
 }
-
 
 #[serde_as]
 #[derive(Debug, Deserialize)]

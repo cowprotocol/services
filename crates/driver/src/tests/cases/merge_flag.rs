@@ -19,14 +19,39 @@ async fn possible() {
         .await;
     test.solve().await.ok().orders(&[ab_order, cd_order]);
     test.reveal().await.ok().calldata();
-
-
-
+       test.settle()
+        .await
+        // Even though the solver returned two solutions, the executed settlement is a
+        // combination of the two, meaning the settlements were merged successfully.
+        .ok()
+        .await
+        .ab_order_executed()
+        .await
+        .cd_order_executed()
+        .await; 
 }
 
 
-// tests that flag is not valid when solver already solved for multiple settlements
-// [tokio::test]
+// tests that skipping is not valid when flag is fetching merged settlement
+// TODO: config has to be changed to fetch to pass
+#[tokio::test]
 async fn impossible() {
-    todo!()
+    let order = ab_order();
+    let test = setup()
+        .pool(ab_pool())
+        .order(order.clone())
+        .order(order.clone().rename("reduced order").reduce_amount(1000000000000000u128.into()))
+        .solution(ab_solution())
+        .solution(Solution {
+            orders: vec!["reduced order"],
+            ..ab_solution().reduce_score()
+        })
+        .done()
+        .await;
+
+    // Only the first A-B order gets settled.
+
+    test.solve().await.ok().orders(&[order]);
+    test.reveal().await.ok().calldata();
+    test.settle().await.ok().await.ab_order_executed().await;
 }

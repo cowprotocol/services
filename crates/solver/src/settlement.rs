@@ -222,6 +222,12 @@ pub struct Settlement {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub enum MergeSkippable {
+    Skippable,
+    NotSkippable,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum Revertable {
     NoRisk,
     HighRisk,
@@ -461,6 +467,15 @@ impl Settlement {
             Revertable::HighRisk
         } else {
             Revertable::NoRisk
+        }
+    }
+
+    // Calculates if settlement should merge multiple solutions  
+    pub fn merge_skippable(&self) -> MergeSkippable {
+        if self.encoder.has_interactions() {
+            MergeSkippable::NotSkippable
+        } else {
+            MergeSkippable::Skippable
         }
     }
 

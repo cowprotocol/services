@@ -49,6 +49,7 @@ pub struct SettlementEncoder {
     execution_plan: Vec<MaybeInternalizableInteraction>,
     pre_interactions: Vec<InteractionData>,
     post_interactions: Vec<InteractionData>,
+    merges: Vec<InteractionData>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -121,6 +122,7 @@ impl SettlementEncoder {
             execution_plan: Vec::new(),
             pre_interactions: Vec::new(),
             post_interactions: Vec::new(),
+            merges: Vec::new(),
             unwraps: Vec::new(),
         }
     }
@@ -151,6 +153,7 @@ impl SettlementEncoder {
                 .collect(),
             pre_interactions: self.pre_interactions.clone(),
             post_interactions: self.post_interactions.clone(),
+            merges: self.merges.clone(),
             unwraps: self.unwraps.clone(),
         }
     }
@@ -198,6 +201,13 @@ impl SettlementEncoder {
         self.execution_plan
             .iter()
             .any(|(_, internalizable)| !internalizable)
+    }
+    // or has_merges??
+    pub fn is_merged(&self) -> bool {
+        self.execution_plan
+            .iter()
+            .any(|(_, mergable)| !mergable)
+
     }
 
     /// Adds an order trade using the uniform clearing prices for sell and buy
