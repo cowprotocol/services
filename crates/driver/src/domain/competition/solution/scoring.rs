@@ -18,7 +18,8 @@ impl Scoring {
     /// Score of a settlement as per CIP38
     ///
     /// Score of a settlement is a sum of scores of all user trades in the
-    /// settlement.
+    /// settlement. Score is defined as an order's surplus plus its protocol
+    /// fee.
     ///
     /// Settlement score is valid only if all trade scores are valid.
     ///
@@ -182,8 +183,8 @@ impl Trade {
                     factor: _,
                     max_volume_factor: _,
                     quote: _,
-                } => Err(Error::UnsupportedFeePolicy),
-                order::FeePolicy::Volume { factor: _ } => Err(Error::UnsupportedFeePolicy),
+                } => Err(Error::UnimplementedFeePolicy),
+                order::FeePolicy::Volume { factor: _ } => Err(Error::UnimplementedFeePolicy),
             }
         };
 
@@ -244,14 +245,12 @@ pub struct CustomClearingPrices {
 pub enum Error {
     #[error("multiple fee policies are not supported yet")]
     MultipleFeePolicies,
+    #[error("fee policy not implemented yet")]
+    UnimplementedFeePolicy,
     #[error("failed to calculate surplus for trade sell {0:?} buy {1:?}")]
     Surplus(eth::Asset, eth::Asset),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
-    #[error("type conversion error")]
-    TypeConversion(#[from] anyhow::Error),
-    #[error("fee policy not supported")]
-    UnsupportedFeePolicy,
     #[error("factor {1} multiplication with {0} failed")]
     Factor(eth::U256, f64),
     #[error(transparent)]
