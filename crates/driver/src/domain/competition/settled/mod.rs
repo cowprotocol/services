@@ -163,12 +163,20 @@ impl Trade {
                         // Convert the executed amount to surplus token so it can be compared
                         // with the surplus
                         let executed_in_surplus_token = match self.side {
-                            Side::Sell => {
-                                self.executed.0 * self.custom_price.sell / self.custom_price.buy
-                            }
-                            Side::Buy => {
-                                self.executed.0 * self.custom_price.buy / self.custom_price.sell
-                            }
+                            Side::Sell => self
+                                .executed
+                                .0
+                                .checked_mul(self.custom_price.sell)
+                                .ok_or(Error::Overflow)?
+                                .checked_div(self.custom_price.buy)
+                                .ok_or(Error::DivisionByZero)?,
+                            Side::Buy => self
+                                .executed
+                                .0
+                                .checked_mul(self.custom_price.buy)
+                                .ok_or(Error::Overflow)?
+                                .checked_div(self.custom_price.sell)
+                                .ok_or(Error::DivisionByZero)?,
                         };
                         let factor = match self.side {
                             Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
@@ -260,4 +268,8 @@ pub enum Error {
     UnsupportedFeePolicy,
     #[error("factor {1} multiplication with {0} failed")]
     Factor(eth::U256, f64),
+    #[error("overflow error while calculating protocol fee")]
+    Overflow,
+    #[error("division by zero error while calculating protocol fee")]
+    DivisionByZero,
 }

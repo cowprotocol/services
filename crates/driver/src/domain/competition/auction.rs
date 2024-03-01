@@ -129,7 +129,7 @@ impl Auction {
                 })
             })
             .collect::<HashMap<_, _>>();
-        
+
         // Add the buy eth address
         prices.insert(
             eth::ETH_TOKEN,
