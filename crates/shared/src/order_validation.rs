@@ -2057,6 +2057,7 @@ mod tests {
             &quote_search_parameters,
             quote_id,
             Some(fee_amount),
+            None,
         )
         .await
         .unwrap();
@@ -2128,6 +2129,7 @@ mod tests {
             &quote_search_parameters,
             None,
             Some(fee_amount),
+            None,
         )
         .await
         .unwrap();
@@ -2158,6 +2160,7 @@ mod tests {
             &quote_search_parameters,
             Some(0),
             Some(U256::zero()),
+            None,
         )
         .await
         .unwrap_err();
@@ -2180,6 +2183,7 @@ mod tests {
             &Default::default(),
             Default::default(),
             Some(U256::one()),
+            None,
         )
         .await
         .unwrap_err();
@@ -2204,6 +2208,7 @@ mod tests {
                     },
                     Default::default(),
                     Default::default(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -2240,6 +2245,7 @@ mod tests {
                     },
                     Default::default(),
                     Some(U256::zero()),
+                    None,
                 )
                 .await
                 .unwrap_err();

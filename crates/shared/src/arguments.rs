@@ -298,8 +298,6 @@ pub struct Arguments {
 
     /// Deprecate market orders (orders with positive signed fee) starting from
     /// date
-    ///
-    /// TODO: remove this option after the deprecation date
     #[clap(long, env)]
     pub market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 }
