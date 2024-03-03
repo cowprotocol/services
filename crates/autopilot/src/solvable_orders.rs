@@ -77,7 +77,6 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fee: domain::ProtocolFee,
-    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -102,7 +101,6 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
-        market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -120,7 +118,6 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fee,
-            market_orders_deprecation_date,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -150,18 +147,6 @@ impl SolvableOrdersCache {
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
         invalid_order_uids.extend(removed);
-
-        let orders = if self
-            .market_orders_deprecation_date
-            .is_some_and(|date| date < chrono::Utc::now())
-        {
-            let orders = filter_orders_with_positive_signed_fee(orders);
-            let removed = counter.checkpoint("positive signed fee", &orders);
-            invalid_order_uids.extend(removed);
-            orders
-        } else {
-            orders
-        };
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
@@ -286,12 +271,6 @@ impl SolvableOrdersCache {
 /// Filters all orders whose owners are in the set of "banned" users.
 fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
     orders.retain(|order| !banned_users.contains(&order.metadata.owner));
-    orders
-}
-
-/// Filters all orders with positive signed fee.
-fn filter_orders_with_positive_signed_fee(mut orders: Vec<Order>) -> Vec<Order> {
-    orders.retain(|order| order.data.fee_amount.is_zero());
     orders
 }
 

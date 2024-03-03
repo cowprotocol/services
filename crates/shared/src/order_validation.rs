@@ -18,6 +18,7 @@ use {
     },
     anyhow::{anyhow, Result},
     async_trait::async_trait,
+    chrono::Utc,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
@@ -142,6 +143,8 @@ pub enum ValidationError {
     /// Unable to compute quote because of a price estimation error.
     PriceForQuote(PriceEstimationError),
     InsufficientFee,
+    /// Orders with positive signed fee amount are deprecated
+    NonZeroFee,
     InsufficientBalance,
     InsufficientAllowance,
     InvalidSignature,
@@ -511,15 +514,6 @@ impl OrderValidating for OrderValidator {
         settlement_contract: H160,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
-        // Orders with positive signed fee amount are deprecated
-        if let Some(market_orders_deprecation_date) = self.market_orders_deprecation_date {
-            if !order.fee_amount.is_zero() && chrono::Utc::now() > market_orders_deprecation_date {
-                return Err(ValidationError::Partial(
-                    PartialValidationError::UnsupportedOrderType,
-                ));
-            }
-        }
-
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
@@ -597,15 +591,25 @@ impl OrderValidating for OrderValidator {
         let quote = match class {
             OrderClass::Market => {
                 let fee = Some(data.fee_amount);
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, fee)
-                        .await?;
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    fee,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
                 Some(quote)
             }
             OrderClass::Limit => {
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
-                        .await?;
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    None,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
                 Some(quote)
             }
             OrderClass::Liquidity => None,
@@ -799,11 +803,18 @@ pub async fn get_quote_and_check_fee(
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
     fee_amount: Option<U256>,
+    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<Quote, ValidationError> {
     let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
 
-    if fee_amount.is_some_and(|fee| fee < quote.fee_amount) {
-        return Err(ValidationError::InsufficientFee);
+    match market_orders_deprecation_date {
+        Some(date) if Utc::now() > date && fee_amount.is_some_and(|fee| !fee.is_zero()) => {
+            return Err(ValidationError::NonZeroFee);
+        }
+        None if fee_amount.is_some_and(|fee| fee < quote.fee_amount) => {
+            return Err(ValidationError::InsufficientFee);
+        }
+        _ => (),
     }
 
     Ok(quote)
