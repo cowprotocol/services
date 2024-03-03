@@ -144,7 +144,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 35000000000000000000u128.into(),
+        executed_buy_amount: 36000000000000000000u128.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -182,7 +182,7 @@ async fn volume_protocol_fee_sell_order() {
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 15000000000000000000u128.into(),
+        executed_buy_amount: 20000000000000000000u128.into(),
     };
 
     protocol_fee_test_case(test_case).await;
