@@ -166,8 +166,8 @@ impl TradeVerifier {
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
         tracing::debug!(
-            lost_buy_amount = ?summary.buy_tokens_diff,
-            lost_sell_amount = ?summary.sell_tokens_diff,
+            lost_buy_amount = %summary.buy_tokens_diff,
+            lost_sell_amount = %summary.sell_tokens_diff,
             gas_diff = ?trade.gas_estimate.abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
             promised_out_amount = ?trade.out_amount,
@@ -312,7 +312,7 @@ fn add_balance_queries(
         // track how much `sell_token` the settlement contract actually spent
         OrderKind::Buy => (query.sell_token, settlement_contract),
     };
-    let query_balance = solver.methods().store_balance(token, owner);
+    let query_balance = solver.methods().store_balance(token, owner, true);
     let query_balance = Bytes(query_balance.tx.data.unwrap().0);
     let interaction = (solver.address(), 0.into(), query_balance);
     // query balance right after we receive all `sell_token`
