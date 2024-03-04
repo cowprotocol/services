@@ -18,6 +18,7 @@ use {
     },
     anyhow::{anyhow, Result},
     async_trait::async_trait,
+    chrono::Utc,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
@@ -142,6 +143,8 @@ pub enum ValidationError {
     /// Unable to compute quote because of a price estimation error.
     PriceForQuote(PriceEstimationError),
     InsufficientFee,
+    /// Orders with positive signed fee amount are deprecated
+    NonZeroFee,
     InsufficientBalance,
     InsufficientAllowance,
     InvalidSignature,
@@ -251,6 +254,7 @@ pub struct OrderValidator {
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: crate::app_data::Validator,
     request_verified_quotes: bool,
+    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -321,6 +325,7 @@ impl OrderValidator {
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: crate::app_data::Validator,
+        market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Self {
         Self {
             native_token,
@@ -337,6 +342,7 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             request_verified_quotes: false,
+            market_orders_deprecation_date,
         }
     }
 
@@ -590,15 +596,25 @@ impl OrderValidating for OrderValidator {
         let quote = match class {
             OrderClass::Market => {
                 let fee = Some(data.fee_amount);
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, fee)
-                        .await?;
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    fee,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
                 Some(quote)
             }
             OrderClass::Limit => {
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
-                        .await?;
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    None,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
                 Some(quote)
             }
             OrderClass::Liquidity => None,
@@ -792,11 +808,18 @@ pub async fn get_quote_and_check_fee(
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
     fee_amount: Option<U256>,
+    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<Quote, ValidationError> {
     let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
 
-    if fee_amount.is_some_and(|fee| fee < quote.fee_amount) {
-        return Err(ValidationError::InsufficientFee);
+    match market_orders_deprecation_date {
+        Some(date) if Utc::now() > date && fee_amount.is_some_and(|fee| !fee.is_zero()) => {
+            return Err(ValidationError::NonZeroFee);
+        }
+        None if fee_amount.is_some_and(|fee| fee < quote.fee_amount) => {
+            return Err(ValidationError::InsufficientFee);
+        }
+        _ => (),
     }
 
     Ok(quote)
@@ -1009,6 +1032,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1155,6 +1179,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1242,6 +1267,7 @@ mod tests {
             max_limit_orders_per_user,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1435,6 +1461,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1493,6 +1520,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1550,6 +1578,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1606,6 +1635,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1657,6 +1687,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1710,6 +1741,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1767,6 +1799,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1818,6 +1851,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1873,6 +1907,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1935,6 +1970,7 @@ mod tests {
                 0,
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
+                None,
             );
 
             let order = OrderCreation {
@@ -2026,6 +2062,7 @@ mod tests {
             &quote_search_parameters,
             quote_id,
             Some(fee_amount),
+            None,
         )
         .await
         .unwrap();
@@ -2097,6 +2134,7 @@ mod tests {
             &quote_search_parameters,
             None,
             Some(fee_amount),
+            None,
         )
         .await
         .unwrap();
@@ -2127,6 +2165,7 @@ mod tests {
             &quote_search_parameters,
             Some(0),
             Some(U256::zero()),
+            None,
         )
         .await
         .unwrap_err();
@@ -2149,6 +2188,7 @@ mod tests {
             &Default::default(),
             Default::default(),
             Some(U256::one()),
+            None,
         )
         .await
         .unwrap_err();
@@ -2173,6 +2213,7 @@ mod tests {
                     },
                     Default::default(),
                     Default::default(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -2209,6 +2250,7 @@ mod tests {
                     },
                     Default::default(),
                     Some(U256::zero()),
+                    None,
                 )
                 .await
                 .unwrap_err();
