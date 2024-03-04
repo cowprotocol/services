@@ -353,7 +353,7 @@ impl SettlementEncoder {
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)
                     .context("buy_amount computation failed")?
-                    .checked_div(uniform_buy_price)
+                    .checked_ceil_div(&uniform_buy_price)
                     .context("buy_amount computation failed")?;
                 (executed_amount, buy_amount)
             }
