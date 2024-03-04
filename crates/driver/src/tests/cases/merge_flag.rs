@@ -10,7 +10,8 @@ async fn possible() {
         let ab_order = ab_order();
         let cd_order = cd_order();
         let test = setup()
-        .config_file(example_config_file)
+        .config(skipping_config_file)
+        .settlement_address("0x9008D19f58AAbD9eD0D60971565AA8510560ab41")
         .pool(cd_pool())
         .pool(ab_pool())
         .order(ab_order.clone())

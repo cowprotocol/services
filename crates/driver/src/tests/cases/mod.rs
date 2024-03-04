@@ -4,6 +4,7 @@ pub mod buy_eth;
 pub mod example_config;
 pub mod fees;
 pub mod internalization;
+pub mod merge_flag;
 pub mod merge_settlements;
 pub mod multiple_drivers;
 pub mod multiple_solutions;
