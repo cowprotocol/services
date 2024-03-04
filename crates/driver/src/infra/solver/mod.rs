@@ -97,6 +97,8 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
+    /// Whether or not the CIP38 rank by surplus rules should be activated.
+    pub rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Solver {
@@ -172,7 +174,13 @@ impl Solver {
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
+        let solutions = res.into_domain(
+            auction,
+            liquidity,
+            weth,
+            self.clone(),
+            self.config.rank_by_surplus_date,
+        )?;
 
         super::observe::solutions(&solutions);
         Ok(solutions)

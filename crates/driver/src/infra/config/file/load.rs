@@ -86,6 +86,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         .try_into()
                         .unwrap(),
                 },
+                rank_by_surplus_date: config.rank_by_surplus_date,
             }
         }))
         .await,
