@@ -101,7 +101,7 @@ pub struct Config {
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
-    pub request_headers: HashMap<String, String>
+    pub request_headers: HashMap<String, String>,
 }
 
 impl Solver {
@@ -118,16 +118,14 @@ impl Solver {
             headers.insert(header_name, val.parse()?);
         }
 
-        Ok(
-            Self {
+        Ok(Self {
                 client: reqwest::ClientBuilder::new()
                     .default_headers(headers)
                     .build()
                     .unwrap(),
                 config,
                 eth,
-            }
-        )
+        })
     }
 
     pub fn name(&self) -> &Name {
