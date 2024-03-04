@@ -506,6 +506,7 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
+            args.shared.market_orders_deprecation_date,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(
