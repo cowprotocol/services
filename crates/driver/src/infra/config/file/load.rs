@@ -86,7 +86,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         .try_into()
                         .unwrap(),
                 },  
-                request_headers: config.request_headers
+                request_headers: config.request_headers,
             }
         }))
         .await,

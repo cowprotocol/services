@@ -5,8 +5,7 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     solver::solver::Arn,
-    std::time::Duration,
-    std::collections::HashMap
+    std::{collections::HashMap, time::Duration},
 };
 
 mod load;
@@ -188,7 +187,7 @@ struct SolverConfig {
     timeouts: Timeouts,
 
     #[serde(default)]
-    request_headers: HashMap<String, String>
+    request_headers: HashMap<String, String>,
 }
 
 #[serde_as]
