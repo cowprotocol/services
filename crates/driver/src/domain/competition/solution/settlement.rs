@@ -215,7 +215,7 @@ impl Settlement {
             .into()
     }
 
-    fn scoring(
+    fn cip38_score(
         &self,
         auction: &competition::Auction,
     ) -> Result<eth::TokenAmount, solution::ScoringError> {
@@ -238,7 +238,7 @@ impl Settlement {
         revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, score::Error> {
         // For testing purposes, calculate CIP38 even before activation
-        let score = self.scoring(auction);
+        let score = self.cip38_score(auction);
         tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solutions());
 
         let score = match self.boundary.score() {

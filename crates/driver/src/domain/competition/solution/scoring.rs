@@ -9,8 +9,11 @@ use {
     number::conversions::big_rational_to_u256,
 };
 
-/// Scoring contains trades in an onchain settleable form and semantics, aligned
-/// with what the settlement contract expects.
+/// Scoring contains trades with values as they are expected by the settlement
+/// contracts. This means that executed amounts and custom clearing prices have
+/// the same values here and after being mined onchain. This allows us to use
+/// the same math for calculating surplus and fees in the driver and in the
+/// autopilot.
 #[derive(Debug, Clone)]
 pub struct Scoring {
     trades: Vec<Trade>,
@@ -40,6 +43,11 @@ impl Scoring {
     }
 }
 
+// Trade represents a single trade in a settlement.
+//
+// It contains values as expected by the settlement contract. That means that
+// clearing prices are adjusted to account for all fees (gas cost and protocol
+// fees). Also, executed amount contains the fees for sell order.
 #[derive(Debug, Clone)]
 pub struct Trade {
     sell: eth::Asset,
