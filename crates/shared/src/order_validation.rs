@@ -669,7 +669,7 @@ impl OrderValidating for OrderValidator {
                     },
                 ) {
                     tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                    (OrderClass::Liquidity, Some(quote))
+                    (OrderClass::Limit, Some(quote))
                 } else {
                     (class, Some(quote))
                 }
@@ -700,7 +700,7 @@ impl OrderValidating for OrderValidator {
                 }
                 (class, Some(quote))
             }
-            OrderClass::Liquidity => (class, None),
+            OrderClass::Liquidity => (OrderClass::Limit, None),
         };
 
         let order = Order {
@@ -1458,8 +1458,12 @@ mod tests {
 
         let validator = OrderValidator::new(
             dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
-            OrderValidPeriodConfiguration::any(),
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
             false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
@@ -1470,6 +1474,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            None,
         );
 
         let creation = OrderCreation {
@@ -1677,7 +1682,7 @@ mod tests {
 
         // Out-of-price orders are intentionally marked as liquidity
         // orders!
-        assert_eq!(order.metadata.class, OrderClass::Liquidity);
+        assert_eq!(order.metadata.class, OrderClass::Limit);
         assert!(quote.is_some());
     }
 

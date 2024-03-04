@@ -716,6 +716,45 @@ pub async fn count_limit_orders_by_owner(
         .await
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct OrderWithQuote {
+    pub order_buy_amount: BigDecimal,
+    pub order_sell_amount: BigDecimal,
+    pub order_fee_amount: BigDecimal,
+    pub quote_buy_amount: BigDecimal,
+    pub quote_sell_amount: BigDecimal,
+    pub quote_gas_amount: f64,
+    pub quote_gas_price: f64,
+    pub quote_sell_token_price: f64,
+}
+
+pub async fn user_orders_with_quote(
+    ex: &mut PgConnection,
+    min_valid_to: i64,
+    owner: &Address,
+) -> Result<Vec<OrderWithQuote>, sqlx::Error> {
+    #[rustfmt::skip]
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT o_quotes.sell_amount as quote_sell_amount, o.sell_amount as order_sell_amount,",
+        " o_quotes.buy_amount as quote_buy_amount, o.buy_amount as order_buy_amount,",
+        " o.fee_amount as order_fee_amount, o_quotes.gas_amount as quote_gas_amount,",
+        " o_quotes.gas_price as quote_gas_price, o_quotes.sell_token_price as quote_sell_token_price",
+        " FROM order_quotes o_quotes",
+        " LEFT JOIN (",
+            " SELECT *",
+            " FROM (", OPEN_ORDERS,
+            " AND owner = $2",
+            " AND class = 'limit'",
+            " ) AS subquery",
+        " ) AS o ON o_quotes.order_uid = o.uid"
+    );
+    sqlx::query_as::<_, OrderWithQuote>(QUERY)
+        .bind(min_valid_to)
+        .bind(owner)
+        .fetch_all(ex)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use {

@@ -44,8 +44,9 @@ use {
             signing_scheme_from,
             signing_scheme_into,
         },
+        fee::FeeParameters,
         order_quoting::Quote,
-        order_validation::LimitOrderCounting,
+        order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
     std::convert::TryInto,
@@ -374,12 +375,33 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::count_limit_orders_by_owner(
+        Ok(database::orders::user_orders_with_quote(
             &mut ex,
             now_in_epoch_seconds().into(),
             &ByteArray(owner.0),
         )
         .await?
+        .into_iter()
+        .filter(|order_with_quote| {
+            is_order_outside_market_price(
+                &Amounts {
+                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
+                    fee: big_decimal_to_u256(&order_with_quote.order_fee_amount).unwrap(),
+                },
+                &Amounts {
+                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
+                    fee: FeeParameters {
+                        gas_amount: order_with_quote.quote_gas_amount,
+                        gas_price: order_with_quote.quote_gas_price,
+                        sell_token_price: order_with_quote.quote_sell_token_price,
+                    }
+                    .fee(),
+                },
+            )
+        })
+        .count()
         .try_into()
         .unwrap())
     }

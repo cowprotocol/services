@@ -544,11 +544,29 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     };
     let quote = services.submit_quote(&quote_request).await.unwrap();
 
+    // Place "in-market" order
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: quote.quote.sell_amount,
         buy_token: onchain.contracts().weth.address(),
-        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(1)),
+        buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4)),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    assert!(services.create_order(&order).await.is_ok());
+
+    // Place a "limit" order
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(1),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -578,6 +596,26 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     assert!(services.create_order(&order).await.is_ok());
+
+    // Place a "limit" order in order to see if fails
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(1),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(2),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    let (status, body) = services.create_order(&order).await.unwrap_err();
+    assert_eq!(status, 400);
+    assert!(body.contains("TooManyLimitOrders"));
 }
 
 async fn forked_mainnet_single_limit_order_test(web3: Web3) {
