@@ -53,7 +53,7 @@ pub async fn create_priority_estimator(
     blocknative_api_key: Option<String>,
 ) -> Result<impl GasPriceEstimating> {
     let client = || Client(http_factory.create());
-    let network_id = web3.net().version().await?;
+    let network_id = web3.eth().chain_id().await?.to_string();
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
 
     for estimator_type in estimator_types {

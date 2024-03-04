@@ -21,8 +21,9 @@ pub struct Validator {
 
 impl Validator {
     pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Self {
+        let web3 = ethrpc::instrumented::instrument_with_label(web3, "signatureValidation".into());
         Self {
-            signatures: contracts::support::Signatures::at(web3, settlement),
+            signatures: contracts::support::Signatures::at(&web3, settlement),
             settlement,
             vault_relayer,
         }

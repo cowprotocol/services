@@ -199,10 +199,11 @@ impl SubmissionNode {
 
 pub async fn validate_submission_node(node: &Web3, expected_network_id: &String) -> Result<()> {
     let node_network_id = node
-        .net()
-        .version()
+        .eth()
+        .chain_id()
         .await
-        .context("Unable to retrieve network id on startup")?;
+        .context("Unable to retrieve network id on startup")?
+        .to_string();
     ensure!(
         &node_network_id == expected_network_id,
         "Network id doesn't match expected network id"

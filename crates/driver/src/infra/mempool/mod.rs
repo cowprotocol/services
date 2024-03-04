@@ -57,6 +57,8 @@ impl Inner {
         Self { config, transport }
     }
 
+    /// Submits a transaction to the mempool. Returns optimistically as soon as
+    /// the transaction is pending.
     pub async fn submit(
         &self,
         tx: eth::Tx,
@@ -74,6 +76,7 @@ impl Inner {
             .value(tx.value.0)
             .gas(gas.limit.0)
             .access_list(web3::types::AccessList::from(tx.access_list))
+            .resolve(ethcontract::transaction::ResolveCondition::Pending)
             .send()
             .await
             .map(|result| eth::TxId(result.hash()))

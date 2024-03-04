@@ -1,5 +1,8 @@
 use {
-    crate::{domain, infra},
+    crate::{
+        domain,
+        infra::{self, banned},
+    },
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -13,7 +16,6 @@ use {
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
-    rand::seq::SliceRandom,
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -68,7 +70,7 @@ pub struct Metrics {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
-    banned_users: HashSet<H160>,
+    banned_users: banned::Users,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Inner>,
@@ -78,9 +80,6 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fee: domain::ProtocolFee,
-    // TODO: remove ASAP since this we only use this for a mitigation that
-    // should be implemented on a smart contract level.
-    cow_amms: HashSet<H160>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -95,7 +94,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
-        banned_users: HashSet<H160>,
+        banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
@@ -105,7 +104,6 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
-        cow_amms: HashSet<H160>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -123,7 +121,6 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fee,
-            cow_amms,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -150,17 +147,13 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = Vec::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
+        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
         let removed = counter.checkpoint("banned_user", &orders);
         invalid_order_uids.extend(removed);
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        invalid_order_uids.extend(removed);
-
-        let orders = filter_duplicate_cow_amm_orders(orders, &self.cow_amms);
-        let removed = counter.checkpoint("duplicate_cow_amm_order", &orders);
         invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
@@ -278,9 +271,24 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Filters all orders whose owners are in the set of "banned" users.
-fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
-    orders.retain(|order| !banned_users.contains(&order.metadata.owner));
+/// Filters all orders whose owners or receivers are in the set of "banned"
+/// users.
+async fn filter_banned_user_orders(
+    mut orders: Vec<Order>,
+    banned_users: &banned::Users,
+) -> Vec<Order> {
+    let banned = banned_users
+        .banned(orders.iter().flat_map(|order| {
+            [
+                order.metadata.owner,
+                order.data.receiver.unwrap_or_default(),
+            ]
+        }))
+        .await;
+    orders.retain(|order| {
+        !banned.contains(&order.metadata.owner)
+            && !banned.contains(&order.data.receiver.unwrap_or_default())
+    });
     orders
 }
 
@@ -527,43 +535,6 @@ async fn filter_unsupported_tokens(
         index += 1;
     }
     Ok(orders)
-}
-
-/// Enforces that for all CoW AMMs at most 1 order is in the auction.
-/// This is needed to protect against a known attack vector.
-fn filter_duplicate_cow_amm_orders(mut orders: Vec<Order>, cow_amms: &HashSet<H160>) -> Vec<Order> {
-    let mut amm_orders = HashMap::<H160, Vec<&Order>>::new();
-    for order in &orders {
-        let owner = order.metadata.owner;
-        if cow_amms.contains(&owner) {
-            amm_orders.entry(owner).or_default().push(order);
-        }
-    }
-    let canonical_amm_orders: HashSet<OrderUid> = amm_orders
-        .into_iter()
-        .map(|(owner, orders)| {
-            let uid = orders
-                .choose(&mut rand::thread_rng())
-                .expect("every group contains at least 1 order")
-                .metadata
-                .uid;
-            if orders.len() > 1 {
-                // TODO: find better heuristic to pick "canonical" order
-                tracing::warn!(
-                    num = orders.len(),
-                    amm = ?owner,
-                    order = ?uid,
-                    "multiple orders for the same CoW AMM; picked random order"
-                );
-            }
-            uid
-        })
-        .collect();
-
-    orders.retain(|o| {
-        !cow_amms.contains(&o.metadata.owner) || canonical_amm_orders.contains(&o.metadata.uid)
-    });
-    orders
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
@@ -825,8 +796,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn filters_banned_users() {
+    #[tokio::test]
+    async fn filters_banned_users() {
         let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
         let orders = [
             H160([1; 20]),
@@ -852,7 +823,11 @@ mod tests {
         })
         .collect();
 
-        let filtered_orders = filter_banned_user_orders(orders, &banned_users);
+        let filtered_orders = filter_banned_user_orders(
+            orders,
+            &order_validation::banned::Users::from_set(banned_users),
+        )
+        .await;
         let filtered_owners = filtered_orders
             .iter()
             .map(|order| order.metadata.owner)

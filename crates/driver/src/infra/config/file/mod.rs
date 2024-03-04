@@ -19,7 +19,7 @@ struct Config {
     /// Note that the actual chain ID is fetched from the configured Ethereum
     /// RPC endpoint, and the driver will exit if it does not match this
     /// value.
-    chain_id: Option<eth::U256>,
+    chain_id: Option<u64>,
 
     /// Disable access list simulation, useful for environments that don't
     /// support this, such as less popular blockchains.
@@ -246,8 +246,6 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
-
-    cow_amms: Option<Vec<eth::H160>>,
 }
 
 #[derive(Debug, Deserialize)]

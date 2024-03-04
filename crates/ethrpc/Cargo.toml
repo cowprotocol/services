@@ -23,7 +23,7 @@ observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["cookies"] }
 scopeguard = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
