@@ -76,9 +76,24 @@ pub enum Score {
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
+pub struct PriceImprovementQuote {
+    pub buy_amount: eth::U256,
+    pub sell_amount: eth::U256,
+    pub fee: eth::U256,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: PriceImprovementQuote,
+    },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }
@@ -93,6 +108,21 @@ impl FeePolicy {
                 "surplus": {
                     "factor": factor,
                     "maxVolumeFactor": max_volume_factor
+                }
+            }),
+            FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => json!({
+                "priceImprovement": {
+                    "factor": factor,
+                    "maxVolumeFactor": max_volume_factor,
+                    "quote": {
+                        "sellAmount": quote.sell_amount,
+                        "buyAmount": quote.buy_amount,
+                        "fee": quote.fee,
+                    }
                 }
             }),
             FeePolicy::Volume { factor } => json!({
