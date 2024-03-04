@@ -120,7 +120,7 @@ impl Auction {
             .filter_map(|(address, token)| token.price.map(|price| (*address, price)))
             .chain(std::iter::once((
                 eth::ETH_TOKEN,
-                eth::U256::from(1_000_000_000_000_000_000u128).into(),
+                eth::U256::exp10(18).into(),
             )))
             .collect()
     }
