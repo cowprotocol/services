@@ -55,14 +55,14 @@ contract Solver {
         // Prepare the trade in the context of the trader so we are allowed
         // to set approvals and things like that.
         Trader(trader).prepareSwap(settlementContract, sellToken, sellAmount, nativeToken, receiver);
-        this.storeBalance(sellToken, address(settlementContract));
-        this.storeBalance(buyToken, address(settlementContract));
+        this.storeBalance(sellToken, address(settlementContract), false);
+        this.storeBalance(buyToken, address(settlementContract), false);
         uint256 gasStart = gasleft();
         // TODO can we assume the overhead of this function call to be negligible due to inlining?
         address(settlementContract).doCall(settlementCall);
         gasUsed = gasStart - gasleft() - _simulationOverhead;
-        this.storeBalance(sellToken, address(settlementContract));
-        this.storeBalance(buyToken, address(settlementContract));
+        this.storeBalance(sellToken, address(settlementContract), false);
+        this.storeBalance(buyToken, address(settlementContract), false);
         queriedBalances = _queriedBalances;
     }
 
@@ -71,14 +71,17 @@ contract Solver {
     /// `Summary`.
     /// @param token - which token's we read the balance from
     /// @param owner - whos balance we are reading
-    function storeBalance(address token, address owner) external {
+    /// @param countGas - controls whether this gas cost should be discounted from the settlement gas.
+    function storeBalance(address token, address owner, bool countGas) external {
         uint256 gasStart = gasleft();
         _queriedBalances.push(
             token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
                 ? owner.balance
                 : IERC20(token).balanceOf(owner)
         );
-        // Account for costs of gas used outside of metered section.
-        _simulationOverhead += gasStart - gasleft() + 4460;
+        if (countGas) {
+            // Account for costs of gas used outside of metered section.
+            _simulationOverhead += gasStart - gasleft() + 4460;
+        }
     }
 }

@@ -58,6 +58,7 @@ include_contracts! {
     IUniswapV3Factory;
     IZeroEx;
     PancakeRouter;
+    ChainalysisOracle;
     SushiSwapRouter;
     SwaprRouter;
     TestnetUniswapV2Router02;
