@@ -77,13 +77,13 @@ impl From<H160> for WethAddress {
 
 impl From<H160> for TokenAddress {
     fn from(value: H160) -> Self {
-        Self(value.into())
+        Self(value)
     }
 }
 
 impl From<TokenAddress> for H160 {
     fn from(value: TokenAddress) -> Self {
-        value.0.into()
+        value.0
     }
 }
 

@@ -3,7 +3,6 @@ use crate::domain::{
     auction::{self, order},
     eth,
     fee,
-    settlement::surplus,
 };
 
 #[derive(Debug)]
@@ -50,7 +49,7 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     fn surplus_before_fee(&self) -> Option<eth::Asset> {
-        surplus::trade_surplus(
+        trade_surplus(
             self.side,
             self.executed,
             self.sell,
@@ -64,7 +63,7 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     pub fn surplus(&self) -> Option<eth::Asset> {
-        surplus::trade_surplus(
+        trade_surplus(
             self.side,
             self.executed,
             self.sell,
@@ -217,6 +216,55 @@ pub struct Price {
 pub struct ClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
+}
+
+pub fn trade_surplus(
+    kind: order::Side,
+    executed: order::TargetAmount,
+    sell: eth::Asset,
+    buy: eth::Asset,
+    prices: &ClearingPrices,
+) -> Option<eth::Asset> {
+    match kind {
+        order::Side::Buy => {
+            // scale limit sell to support partially fillable orders
+            let limit_sell = sell
+                .amount
+                .0
+                .checked_mul(executed.0)?
+                .checked_div(buy.amount.0)?;
+            // difference between limit sell and executed amount converted to sell token
+            limit_sell.checked_sub(
+                executed
+                    .0
+                    .checked_mul(prices.buy)?
+                    .checked_div(prices.sell)?,
+            )
+        }
+        order::Side::Sell => {
+            // scale limit buy to support partially fillable orders
+            let limit_buy = executed
+                .0
+                .checked_mul(buy.amount.0)?
+                .checked_div(sell.amount.0)?;
+            // difference between executed amount converted to buy token and limit buy
+            executed
+                .0
+                .checked_mul(prices.sell)?
+                .checked_div(prices.buy)?
+                .checked_sub(limit_buy)
+        }
+    }
+    .map(|surplus| match kind {
+        order::Side::Buy => eth::Asset {
+            amount: surplus.into(),
+            token: sell.token,
+        },
+        order::Side::Sell => eth::Asset {
+            amount: surplus.into(),
+            token: buy.token,
+        },
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
