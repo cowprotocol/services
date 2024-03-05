@@ -192,7 +192,7 @@ async fn volume_protocol_fee_sell_order() {
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_buy_out_market_order() {
+async fn price_improvement_fee_buy_out_of_market_order() {
     let quote_sell_amount = 50000000000000000000u128;
     let quote_buy_amount = 45000000000000000000u128;
     let fee_policy = FeePolicy::PriceImprovement {
