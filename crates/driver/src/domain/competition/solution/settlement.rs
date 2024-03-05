@@ -1,5 +1,5 @@
 use {
-    super::{Error, Solution},
+    super::{trade::ClearingPrices, Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -310,16 +310,22 @@ impl Settlement {
             .fold(Default::default(), |mut acc, solution| {
                 for trade in solution.user_trades() {
                     let order = acc.entry(trade.order().uid).or_default();
-                    order.sell = trade.sell_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                    let prices = ClearingPrices {
+                        sell: solution.prices
+                            [&trade.order().sell.token.wrap(solution.weth)],
+                        buy: solution.prices
+                            [&trade.order().buy.token.wrap(solution.weth)],
+                    };
+                    order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, "could not compute sell_amount");
+                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute sell_amount");
                         0.into()
                     });
-                    order.buy = trade.buy_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                    order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, "could not compute buy_amount");
+                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute buy_amount");
                         0.into()
                     });
                 }

@@ -322,3 +322,11 @@ pub enum SolutionError {
     #[error(transparent)]
     ProtocolFee(#[from] fee::Error),
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum MathError {
+    #[error("overflow")]
+    Overflow,
+    #[error("division by zero")]
+    DivisionByZero,
+}

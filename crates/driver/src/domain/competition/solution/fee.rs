@@ -24,8 +24,8 @@
 
 use {
     super::{
-        trade,
-        trade::{ClearingPrices, Fee, Fulfillment},
+        trade::{self, ClearingPrices, Fee, Fulfillment},
+        MathError,
     },
     crate::domain::{
         competition::{
@@ -48,16 +48,13 @@ impl Fulfillment {
         let fee = match self.surplus_fee() {
             None => {
                 if !protocol_fee.is_zero() {
-                    return Err(trade::Error::ProtocolFeeOnStaticOrder.into());
+                    return Err(Error::ProtocolFeeOnStaticOrder);
                 }
                 Fee::Static
             }
-            Some(fee) => Fee::Dynamic(
-                (fee.0
-                    .checked_add(protocol_fee)
-                    .ok_or(trade::Error::Overflow)?)
-                .into(),
-            ),
+            Some(fee) => {
+                Fee::Dynamic((fee.0.checked_add(protocol_fee).ok_or(MathError::Overflow)?).into())
+            }
         };
 
         // Reduce the executed amount by the protocol fee. This is because solvers are
@@ -70,7 +67,7 @@ impl Fulfillment {
                 self.executed()
                     .0
                     .checked_sub(protocol_fee)
-                    .ok_or(trade::Error::Overflow)?,
+                    .ok_or(MathError::Overflow)?,
             ),
         };
 
@@ -150,36 +147,14 @@ impl Fulfillment {
 
     /// Computes the volume based fee in surplus token
     ///
-    /// The volume is defined as a full sell amount (including fees) conversion
-    /// to the full buy amount (user point of view)
+    /// The volume is defined as a full sell amount (including fees) for buy
+    /// order, or a full buy amount for sell order.
     fn fee_from_volume(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
-        let executed = self.executed().0;
-        let executed_in_surplus_token = match self.order().side {
-            Side::Buy => {
-                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                executed
-                    .checked_mul(prices.buy)
-                    .ok_or(trade::Error::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(trade::Error::DivisionByZero)?
-                    .checked_add(
-                        // surplus_fee is always expressed in sell token
-                        self.surplus_fee()
-                            .map(|fee| fee.0)
-                            .ok_or(trade::Error::ProtocolFeeOnStaticOrder)?,
-                    )
-                    .ok_or(trade::Error::Overflow)?
-            }
-            Side::Sell => {
-                // How much `buy_token` we get when we sell `executed` amount of `sell_token`
-                executed
-                    .checked_mul(prices.sell)
-                    .ok_or(trade::Error::Overflow)?
-                    .checked_div(prices.buy)
-                    .ok_or(trade::Error::DivisionByZero)?
-            }
+        let volume = match self.order().side {
+            Side::Buy => self.sell_amount(&prices)?,
+            Side::Sell => self.buy_amount(&prices)?,
         };
-        apply_factor(executed_in_surplus_token, factor)
+        apply_factor(volume.0, factor)
     }
 
     /// Returns the fee denominated in the sell token.
@@ -192,9 +167,9 @@ impl Fulfillment {
             Side::Buy => fee,
             Side::Sell => fee
                 .checked_mul(prices.buy)
-                .ok_or(trade::Error::Overflow)?
+                .ok_or(MathError::Overflow)?
                 .checked_div(prices.sell)
-                .ok_or(trade::Error::DivisionByZero)?,
+                .ok_or(MathError::DivisionByZero)?,
         };
         Ok(fee_in_sell_token)
     }
@@ -203,7 +178,7 @@ impl Fulfillment {
 fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
     Ok(amount
         .checked_mul(eth::U256::from_f64_lossy(factor * 10000.))
-        .ok_or(trade::Error::Overflow)?
+        .ok_or(MathError::Overflow)?
         / 10000)
 }
 
@@ -236,24 +211,24 @@ fn adjust_quote_to_order_limits(
 ) -> Result<(eth::U256, eth::U256), Error> {
     let quote_sell_amount = quote_sell_amount
         .checked_add(quote_fee_amount)
-        .ok_or(trade::Error::Overflow)?;
+        .ok_or(MathError::Overflow)?;
 
     match order_side {
         Side::Sell => {
             let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order_sell_amount)
-                .ok_or(trade::Error::Overflow)?
+                .ok_or(MathError::Overflow)?
                 .checked_div(quote_sell_amount)
-                .ok_or(trade::Error::DivisionByZero)?;
+                .ok_or(MathError::DivisionByZero)?;
             let buy_amount = order_buy_amount.max(scaled_buy_amount);
             Ok((order_sell_amount, buy_amount))
         }
         Side::Buy => {
             let scaled_sell_amount = quote_sell_amount
                 .checked_mul(order_buy_amount)
-                .ok_or(trade::Error::Overflow)?
+                .ok_or(MathError::Overflow)?
                 .checked_div(quote_buy_amount)
-                .ok_or(trade::Error::DivisionByZero)?;
+                .ok_or(MathError::DivisionByZero)?;
             let sell_amount = order_sell_amount.min(scaled_sell_amount);
             Ok((sell_amount, order_buy_amount))
         }
@@ -264,6 +239,10 @@ fn adjust_quote_to_order_limits(
 pub enum Error {
     #[error("multiple fee policies are not supported yet")]
     MultipleFeePolicies,
+    #[error("orders with non solver determined gas cost fees are not supported")]
+    ProtocolFeeOnStaticOrder,
+    #[error(transparent)]
+    Math(#[from] super::MathError),
     #[error(transparent)]
     Fulfillment(#[from] trade::Error),
 }
