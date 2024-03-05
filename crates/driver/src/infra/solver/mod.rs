@@ -121,8 +121,7 @@ impl Solver {
         Ok(Self {
                 client: reqwest::ClientBuilder::new()
                     .default_headers(headers)
-                    .build()
-                    .unwrap(),
+                    .build()?,
                 config,
                 eth,
         })
