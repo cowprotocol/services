@@ -19,7 +19,7 @@ struct TestCase {
     order_side: order::Side,
     fee_policy: FeePolicy,
     order_sell_amount: eth::U256,
-    solver_fee: Option<eth::U256>,
+    network_fee: Option<eth::U256>,
     quote_sell_amount: eth::U256,
     quote_buy_amount: eth::U256,
     executed: eth::U256,
@@ -44,7 +44,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .kind(order::Kind::Limit)
         .sell_amount(test_case.order_sell_amount)
         .side(test_case.order_side)
-        .solver_fee(test_case.solver_fee)
+        .solver_fee(test_case.network_fee)
         .fee_policy(test_case.fee_policy)
         .executed(test_case.executed)
         .expected_amounts(expected_amounts);
@@ -71,7 +71,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
@@ -94,7 +94,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
@@ -117,7 +117,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
@@ -140,7 +140,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
         order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
@@ -159,7 +159,7 @@ async fn volume_protocol_fee_buy_order() {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
@@ -178,7 +178,7 @@ async fn volume_protocol_fee_sell_order() {
         order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: 50000000000000000000u128.into(),
         quote_buy_amount: 40000000000000000000u128.into(),
         executed: 40000000000000000000u128.into(),
@@ -192,16 +192,13 @@ async fn volume_protocol_fee_sell_order() {
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_buy_out_of_market_order() {
-    let quote_sell_amount = 50000000000000000000u128.into();
-    let quote_buy_amount = 35000000000000000000u128.into();
-    let fee: eth::U256 = 1000000000000000000u128.into();
     let fee_policy = FeePolicy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            sell_amount: quote_sell_amount,
-            buy_amount: quote_buy_amount,
-            fee,
+            sell_amount: 50000000000000000000u128.into(),
+            buy_amount: 35000000000000000000u128.into(),
+            fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount = 50000000000000000000u128.into();
@@ -210,7 +207,7 @@ async fn price_improvement_fee_buy_out_of_market_order() {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount,
-        solver_fee: Some(fee),
+        network_fee: Some(2000000000000000000u128.into()),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_buy_amount,
@@ -224,28 +221,26 @@ async fn price_improvement_fee_buy_out_of_market_order() {
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_sell_out_of_market_order() {
-    let quote_sell_amount = 50000000000000000000u128.into();
-    let quote_buy_amount = 35000000000000000000u128.into();
-    let fee: eth::U256 = 1000000000000000000u128.into();
     let fee_policy = FeePolicy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            sell_amount: quote_sell_amount,
-            buy_amount: quote_buy_amount,
-            fee,
+            sell_amount: 50000000000000000000u128.into(),
+            buy_amount: 35000000000000000000u128.into(),
+            fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount = 50000000000000000000u128.into();
     let order_buy_amount = 40000000000000000000u128.into();
+    let network_fee = 2000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount,
-        solver_fee: Some(fee),
+        network_fee: Some(network_fee),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
-        executed: order_sell_amount - fee,
+        executed: order_sell_amount - network_fee,
         executed_sell_amount: order_sell_amount,
         executed_buy_amount: 37156862745098039215u128.into(),
     };
@@ -256,16 +251,13 @@ async fn price_improvement_fee_sell_out_of_market_order() {
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_buy_in_market_order() {
-    let quote_sell_amount: eth::U256 = 50000000000000000000u128.into();
-    let quote_buy_amount: eth::U256 = 40000000000000000000u128.into();
-    let fee = 1000000000000000000u128.into();
     let fee_policy = FeePolicy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            sell_amount: quote_sell_amount,
-            buy_amount: quote_buy_amount,
-            fee,
+            sell_amount: 50000000000000000000u128.into(),
+            buy_amount: 40000000000000000000u128.into(),
+            fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount = 50000000000000000000u128.into();
@@ -273,8 +265,8 @@ async fn price_improvement_fee_buy_in_market_order() {
     let test_case = TestCase {
         order_side: order::Side::Buy,
         fee_policy,
-        order_sell_amount: quote_sell_amount,
-        solver_fee: Some(fee),
+        order_sell_amount,
+        network_fee: Some(2000000000000000000u128.into()),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_buy_amount,
@@ -288,28 +280,26 @@ async fn price_improvement_fee_buy_in_market_order() {
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_sell_in_market_order() {
-    let quote_sell_amount: eth::U256 = 50000000000000000000u128.into();
-    let quote_buy_amount: eth::U256 = 40000000000000000000u128.into();
-    let fee = 1000000000000000000u128.into();
     let fee_policy = FeePolicy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            sell_amount: quote_sell_amount,
-            buy_amount: quote_buy_amount,
-            fee,
+            sell_amount: 50000000000000000000u128.into(),
+            buy_amount: 40000000000000000000u128.into(),
+            fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount: eth::U256 = 50000000000000000000u128.into();
     let order_buy_amount: eth::U256 = 35000000000000000000u128.into();
+    let network_fee = 20000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
         order_sell_amount,
-        solver_fee: Some(fee),
+        network_fee: Some(network_fee),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
-        executed: order_sell_amount - fee,
+        executed: order_sell_amount - network_fee,
         executed_sell_amount: order_sell_amount,
         executed_buy_amount: order_buy_amount,
     };
