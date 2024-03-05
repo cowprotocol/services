@@ -1,5 +1,7 @@
 //! Test cases.
 
+use crate::domain::eth;
+
 pub mod buy_eth;
 pub mod example_config;
 pub mod fees;
@@ -23,26 +25,49 @@ const SOLVER_NAME: &str = "test1";
 /// by default. Use a surplus factor of 1 if you want to test negative scores.
 pub const DEFAULT_SURPLUS_FACTOR: u64 = 10000000000u64;
 
-pub const DEFAULT_POOL_AMOUNT_A: u128 = 100000000000000000000000u128;
-pub const DEFAULT_POOL_AMOUNT_B: u128 = 6000000000000000000000u128;
-pub const DEFAULT_POOL_AMOUNT_C: u128 = 100000000000000000000000u128;
-pub const DEFAULT_POOL_AMOUNT_D: u128 = 6000000000000000000000u128;
+pub const DEFAULT_POOL_AMOUNT_A: u64 = 100000;
+pub const DEFAULT_POOL_AMOUNT_B: u64 = 6000;
+pub const DEFAULT_POOL_AMOUNT_C: u64 = 100000;
+pub const DEFAULT_POOL_AMOUNT_D: u64 = 6000;
 
 /// The order amount for orders selling token "A" for "B".
-pub const AB_ORDER_AMOUNT: u128 = 50000000000000000000u128;
+pub const AB_ORDER_AMOUNT: u64 = 50;
 
 /// The order amount for orders selling token "C" for "D".
-pub const CD_ORDER_AMOUNT: u128 = 40000000000000000000u128;
+pub const CD_ORDER_AMOUNT: u64 = 40;
 
-pub const ETH_ORDER_AMOUNT: u128 = 40000000000000000000u128;
+pub const ETH_ORDER_AMOUNT: u64 = 40;
 
 /// With the default amounts defined above, this is the expected score range for
 /// both buy and sell orders.
-pub const DEFAULT_SCORE_MIN: u128 = 2000000000000000000u128;
-pub const DEFAULT_SCORE_MAX: u128 = 500000000000000000000000000000u128;
+pub const DEFAULT_SCORE_MIN: u64 = 2;
+pub const DEFAULT_SCORE_MAX: u64 = 500000000000;
 
 /// The default solver fee for limit orders.
 pub const DEFAULT_SOLVER_FEE: u128 = 100u128;
 
 /// The default maximum value to be payout out to solver per solution
 pub const DEFAULT_SCORE_CAP: u128 = 10000000000000000u128;
+
+pub trait IntoWei {
+    fn into_wei(self) -> eth::U256;
+}
+
+impl IntoWei for f64 {
+    fn into_wei(self) -> eth::U256 {
+        let wei = self * 1e18;
+        eth::U256::from(wei as u64)
+    }
+}
+
+impl IntoWei for u64 {
+    fn into_wei(self) -> eth::U256 {
+        eth::U256::from(self) * eth::U256::exp10(18)
+    }
+}
+
+impl IntoWei for i32 {
+    fn into_wei(self) -> eth::U256 {
+        (self as u64).into_wei()
+    }
+}
