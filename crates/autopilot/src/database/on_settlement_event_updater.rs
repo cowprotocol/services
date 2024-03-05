@@ -54,13 +54,13 @@ impl super::Postgres {
             let auction_data = AuctionData {
                 gas_used: observation.gas,
                 effective_gas_price: observation.effective_gas_price,
-                surplus: *observation.surplus,
-                fee: *observation.fee,
+                surplus: observation.surplus.0,
+                fee: observation.fee.0,
                 order_executions: observation
                     .order_fees
                     .get()
                     .iter()
-                    .map(|(order, fee)| ((*order).into(), *fee.amount))
+                    .map(|(order, fee)| ((*order).into(), fee.amount.0))
                     .collect(),
             };
             database::settlement_observations::upsert(

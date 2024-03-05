@@ -47,17 +47,19 @@ impl SettlementTx {
 
     pub fn observation(
         &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+        _prices: &HashMap<eth::TokenAddress, auction::Price>,
     ) -> super::Observation {
         super::Observation {
             gas: self.receipt.gas,
             effective_gas_price: self.receipt.effective_gas_price,
-            surplus: super::Surplus::new(self.settlement.trades())
-                .normalized_with(prices)
-                .unwrap_or_default(),
-            fee: super::Fees::new(self.settlement.trades())
-                .normalized_with(prices)
-                .unwrap_or_default(),
+            surplus: todo!(),
+            // super::Surplus::new(self.settlement.trades())
+            //     .normalized_with(prices)
+            //     .unwrap_or_default(),
+            fee: todo!(),
+            // super::Fees::new(self.settlement.trades())
+            //     .normalized_with(prices)
+            //     .unwrap_or_default(),
             order_fees: super::Fees::new(self.settlement.trades()),
         }
     }

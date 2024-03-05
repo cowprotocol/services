@@ -1,5 +1,5 @@
 use {
-    crate::domain::fee,
+    crate::domain::{eth, fee},
     primitive_types::{H160, H256, U256},
     std::fmt::{self, Display},
 };
@@ -143,4 +143,21 @@ pub struct EcdsaSignature {
     pub r: H256,
     pub s: H256,
     pub v: u8,
+}
+
+/// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
+/// the buy token for [`Side::Buy`] [`Order`]s.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TargetAmount(pub eth::U256);
+
+impl From<eth::U256> for TargetAmount {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+impl From<TargetAmount> for eth::U256 {
+    fn from(value: TargetAmount) -> Self {
+        value.0
+    }
 }

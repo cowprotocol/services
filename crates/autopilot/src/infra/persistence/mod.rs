@@ -7,9 +7,7 @@ use {
     anyhow::Context,
     chrono::Utc,
     itertools::Itertools,
-    num::BigInt,
     number::conversions::big_decimal_to_u256,
-    shared::conversions::U256Ext,
     std::{collections::HashMap, sync::Arc},
     tokio::time::Instant,
     tracing::Instrument,
@@ -149,10 +147,10 @@ impl Persistence {
     }
 
     /// Get normalized token prices.
-    pub async fn normalized_auction_prices(
+    pub async fn native_auction_prices(
         &self,
         auction: domain::auction::Id,
-    ) -> Result<HashMap<eth::TokenAddress, domain::auction::NormalizedPrice>, Error> {
+    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, Error> {
         let mut ex = self
             .postgres
             .pool
@@ -161,17 +159,16 @@ impl Persistence {
             .context("begin")
             .map_err(Error::DbError)?;
 
-        let unit = BigInt::from(1_000_000_000_000_000_000_u128);
         let prices = database::auction_prices::fetch(&mut ex, auction)
             .await
             .context("fetch")
             .map_err(Error::DbError)?
             .into_iter()
             .map(|p| {
-                (eth::H160(p.token.0).into(), {
-                    let price = big_decimal_to_u256(&p.price).unwrap();
-                    (price.to_big_rational() / &unit).into()
-                })
+                (
+                    eth::H160(p.token.0).into(),
+                    big_decimal_to_u256(&p.price).unwrap().into(),
+                )
             })
             .collect();
 

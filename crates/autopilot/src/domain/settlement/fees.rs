@@ -13,9 +13,6 @@
 
 use {
     crate::domain::{auction, eth, settlement},
-    num::BigRational,
-    number::conversions::big_rational_to_u256,
-    shared::conversions::U256Ext,
     std::collections::HashMap,
 };
 
@@ -50,19 +47,19 @@ impl Fees {
         &self.0
     }
 
-    pub fn normalized_with(
-        &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Option<NormalizedFee> {
-        let mut fees = eth::TokenAmount::default();
-        for eth::Asset { token, amount } in self.0.values() {
-            let price = prices.get(token).cloned()?;
-            let amount: eth::SimpleValue<BigRational> = amount.to_big_rational().into();
-            let normalized_fee = big_rational_to_u256(&(amount * price)).ok()?.into();
-            fees += normalized_fee;
-        }
-        Some(fees)
-    }
+    // pub fn normalized_with(
+    //     &self,
+    //     prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    // ) -> Option<NormalizedFee> {
+    //     let mut fees = eth::TokenAmount::default();
+    //     for eth::Asset { token, amount } in self.0.values() {
+    //         let price = prices.get(token).cloned()?;
+    //         let amount: eth::SimpleValue<BigRational> =
+    // amount.to_big_rational().into();         let normalized_fee =
+    // big_rational_to_u256(&(amount * price)).ok()?.into();         fees +=
+    // normalized_fee;     }
+    //     Some(fees)
+    // }
 }
 
 /// Normalized fee

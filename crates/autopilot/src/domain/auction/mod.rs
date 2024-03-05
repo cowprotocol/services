@@ -1,6 +1,5 @@
 use {
-    super::{eth::SimpleValue, Order},
-    num::BigRational,
+    super::{eth, Order},
     primitive_types::{H160, U256},
     std::collections::BTreeMap,
 };
@@ -24,5 +23,19 @@ pub struct AuctionWithId {
     pub auction: Auction,
 }
 
-/// Auction price normalized to the same unit (ETH).
-pub type NormalizedPrice = SimpleValue<BigRational>;
+/// The price of a token in wei. This represents how much wei is needed to buy
+/// 10**18 of another token.
+#[derive(Debug, Clone, Copy)]
+pub struct Price(pub eth::Ether);
+
+impl From<Price> for eth::U256 {
+    fn from(value: Price) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<eth::U256> for Price {
+    fn from(value: eth::U256) -> Self {
+        Self(value.into())
+    }
+}

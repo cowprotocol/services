@@ -5,7 +5,7 @@ pub struct Trade {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub kind: order::Kind,
-    pub executed: eth::TargetAmount,
+    pub executed: order::TargetAmount,
     pub signature: order::Signature,
 
     /// [ Additional derived fields ]
@@ -54,7 +54,7 @@ impl Trade {
             .zip(self.surplus())
             .map(|(before, after)| eth::Asset {
                 token: before.token,
-                amount: before.amount.saturating_sub(*after.amount).into(),
+                amount: before.amount.0.saturating_sub(after.amount.0).into(),
             })
     }
 
@@ -69,7 +69,7 @@ impl Trade {
                 token: self.sell.token,
                 // use uniform prices since the fee (which is determined by solvers) is expressed in
                 // terms of uniform clearing prices
-                amount: (*fee.amount * self.prices.uniform.buy / self.prices.uniform.sell).into(),
+                amount: (fee.amount.0 * self.prices.uniform.buy / self.prices.uniform.sell).into(),
             }),
         }
     }
@@ -96,17 +96,17 @@ impl Trade {
                     {
                         // If the surplus after all fees is X, then the original surplus before
                         // protocol fee is X / (1 - factor)
-                        apply_factor(*self.surplus()?.amount, factor / (1.0 - factor))?
+                        apply_factor(self.surplus()?.amount.0, factor / (1.0 - factor))?
                     },
                     {
                         // Convert the executed amount to surplus token so it can be compared with
                         // the surplus
                         let executed_in_surplus_token = match self.kind {
                             order::Kind::Sell => {
-                                *self.executed * self.prices.custom.sell / self.prices.custom.buy
+                                self.executed.0 * self.prices.custom.sell / self.prices.custom.buy
                             }
                             order::Kind::Buy => {
-                                *self.executed * self.prices.custom.buy / self.prices.custom.sell
+                                self.executed.0 * self.prices.custom.buy / self.prices.custom.sell
                             }
                         };
                         apply_factor(executed_in_surplus_token, *max_volume_factor)?
@@ -136,7 +136,7 @@ impl Trade {
             .zip(self.protocol_fee(policies))
             .map(|(surplus, fee)| eth::Asset {
                 token: surplus.token,
-                amount: (*surplus.amount + *fee.amount).into(),
+                amount: (surplus.amount.0 + fee.amount.0).into(),
             })
     }
 }

@@ -130,7 +130,7 @@ impl Inner {
             Ok(settlement) => {
                 let prices = self
                     .persistence
-                    .normalized_auction_prices(settlement.auction_id())
+                    .native_auction_prices(settlement.auction_id())
                     .await?;
                 tracing::debug!(
                     ?prices,

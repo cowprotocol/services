@@ -6,9 +6,6 @@ use {
         eth,
         settlement,
     },
-    num::BigRational,
-    number::conversions::big_rational_to_u256,
-    shared::conversions::U256Ext,
     std::collections::HashMap,
 };
 
@@ -41,20 +38,20 @@ impl Surplus {
         Self(surplus)
     }
 
-    /// Surplus denominated in the native token (ETH)
-    pub fn normalized_with(
-        &self,
-        prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    ) -> Option<NormalizedSurplus> {
-        let mut surplus = eth::TokenAmount::default();
-        for eth::Asset { token, amount } in self.0.values() {
-            let price = prices.get(token).cloned()?;
-            let amount: eth::SimpleValue<BigRational> = amount.to_big_rational().into();
-            let normalized_surplus = big_rational_to_u256(&(amount * price)).ok()?.into();
-            surplus += normalized_surplus;
-        }
-        Some(surplus)
-    }
+    // /// Surplus denominated in the native token (ETH)
+    // pub fn normalized_with(
+    //     &self,
+    //     prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
+    // ) -> Option<NormalizedSurplus> {
+    //     let mut surplus = eth::TokenAmount::default();
+    //     for eth::Asset { token, amount } in self.0.values() {
+    //         let price = prices.get(token).cloned()?;
+    //         let amount: eth::SimpleValue<BigRational> =
+    // amount.to_big_rational().into();         let normalized_surplus =
+    // big_rational_to_u256(&(amount * price)).ok()?.into();         surplus +=
+    // normalized_surplus;     }
+    //     Some(surplus)
+    // }
 }
 
 /// Normalized settlement surplus
@@ -66,7 +63,7 @@ pub type NormalizedSurplus = eth::TokenAmount; // eth::Ether?
 /// Main logic for surplus calculation
 pub fn trade_surplus(
     kind: order::Kind,
-    executed: eth::TargetAmount,
+    executed: order::TargetAmount,
     sell: eth::Asset,
     buy: eth::Asset,
     prices: &settlement::ClearingPrices,
@@ -76,18 +73,26 @@ pub fn trade_surplus(
             // scale limit sell to support partially fillable orders
             let limit_sell = sell
                 .amount
-                .checked_mul(*executed)?
-                .checked_div(*buy.amount)?;
+                .0
+                .checked_mul(executed.0)?
+                .checked_div(buy.amount.0)?;
             // difference between limit sell and executed amount converted to sell token
-            limit_sell.checked_sub(executed.checked_mul(prices.buy)?.checked_div(prices.sell)?)
+            limit_sell.checked_sub(
+                executed
+                    .0
+                    .checked_mul(prices.buy)?
+                    .checked_div(prices.sell)?,
+            )
         }
         order::Kind::Sell => {
             // scale limit buy to support partially fillable orders
             let limit_buy = executed
-                .checked_mul(*buy.amount)?
-                .checked_div(*sell.amount)?;
+                .0
+                .checked_mul(buy.amount.0)?
+                .checked_div(sell.amount.0)?;
             // difference between executed amount converted to buy token and limit buy
             executed
+                .0
                 .checked_mul(prices.sell)?
                 .checked_div(prices.buy)?
                 .checked_sub(limit_buy)

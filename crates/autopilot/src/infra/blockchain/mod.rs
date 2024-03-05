@@ -111,7 +111,7 @@ impl Ethereum {
     ) -> Result<Option<domain::settlement::Transaction>, Error> {
         self.web3
             .eth()
-            .transaction((*hash).into())
+            .transaction(hash.0.into())
             .await?
             .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
             .transpose()
@@ -123,7 +123,7 @@ impl Ethereum {
     ) -> Result<Option<domain::settlement::transaction::Receipt>, Error> {
         self.web3
             .eth()
-            .transaction_receipt(*hash)
+            .transaction_receipt(hash.0)
             .await?
             .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
             .transpose()
