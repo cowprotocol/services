@@ -79,7 +79,7 @@ pub enum Score {
 pub struct PriceImprovementQuote {
     pub buy_amount: eth::U256,
     pub sell_amount: eth::U256,
-    pub fee: eth::U256,
+    pub network_fee: eth::U256,
 }
 
 #[serde_as]
@@ -121,7 +121,7 @@ impl FeePolicy {
                     "quote": {
                         "sellAmount": quote.sell_amount,
                         "buyAmount": quote.buy_amount,
-                        "fee": quote.fee,
+                        "fee": quote.network_fee,
                     }
                 }
             }),
