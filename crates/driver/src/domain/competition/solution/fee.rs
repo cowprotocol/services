@@ -39,10 +39,7 @@ use {
 impl Fulfillment {
     /// Applies the protocol fee to the existing fulfillment creating a new one.
     pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
-        let protocol_fee = {
-            let fee = self.protocol_fee(prices)?;
-            self.in_sell_token(fee, prices)?
-        };
+        let protocol_fee = self.protocol_fee_in_sell_token(prices)?;
 
         // Increase the fee by the protocol fee
         let fee = match self.surplus_fee() {
@@ -157,12 +154,9 @@ impl Fulfillment {
         apply_factor(volume.0, factor)
     }
 
-    /// Returns the fee denominated in the sell token.
-    pub fn in_sell_token(
-        &self,
-        fee: eth::U256,
-        prices: ClearingPrices,
-    ) -> Result<eth::U256, Error> {
+    /// Returns the protocol fee denominated in the sell token.
+    fn protocol_fee_in_sell_token(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+        let fee = self.protocol_fee(prices)?;
         let fee_in_sell_token = match self.order().side {
             Side::Buy => fee,
             Side::Sell => fee
