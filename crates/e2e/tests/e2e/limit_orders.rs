@@ -501,15 +501,15 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
-    let [token_a] = onchain
+    let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
-    token_a.mint(trader.address(), to_wei(100)).await;
+    token.mint(trader.address(), to_wei(100)).await;
 
     // Approve GPv2 for trading
     tx!(
         trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(101))
+        token.approve(onchain.contracts().allowance, to_wei(101))
     );
 
     // Place Orders
@@ -533,7 +533,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     let quote_request = OrderQuoteRequest {
         from: trader.address(),
-        sell_token: token_a.address(),
+        sell_token: token.address(),
         buy_token: onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::BeforeFee {
@@ -546,7 +546,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place "in-market" order
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token.address(),
         sell_amount: quote.quote.sell_amount,
         buy_token: onchain.contracts().weth.address(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(4)),
@@ -563,7 +563,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place a "limit" order
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token.address(),
         sell_amount: to_wei(1),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
@@ -582,7 +582,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place another "in-market" order in order to check it is not limited
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token.address(),
         sell_amount: quote.quote.sell_amount,
         buy_token: onchain.contracts().weth.address(),
         buy_amount: quote.quote.buy_amount.saturating_sub(to_wei(2)),
@@ -599,7 +599,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place a "limit" order in order to see if fails
     let order = OrderCreation {
-        sell_token: token_a.address(),
+        sell_token: token.address(),
         sell_amount: to_wei(1),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(2),

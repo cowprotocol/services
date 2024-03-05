@@ -700,7 +700,32 @@ impl OrderValidating for OrderValidator {
                 }
                 (class, Some(quote))
             }
-            OrderClass::Liquidity => (OrderClass::Limit, None),
+            OrderClass::Liquidity => {
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    None,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
+                // If the order is not "In-Market", check for the limit orders
+                if is_order_outside_market_price(
+                    &Amounts {
+                        sell: data.sell_amount,
+                        buy: data.buy_amount,
+                        fee: data.fee_amount,
+                    },
+                    &Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee_amount,
+                    },
+                ) {
+                    self.check_max_limit_orders(owner).await?;
+                }
+                (OrderClass::Limit, None)
+            }
         };
 
         let order = Order {
