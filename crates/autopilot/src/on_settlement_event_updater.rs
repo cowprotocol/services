@@ -215,7 +215,7 @@ impl Inner {
         let surplus = settlement.total_surplus(&external_prices);
         let (fee, order_executions) = {
             let domain_separator = self.eth.contracts().settlement_domain_separator();
-            let all_fees = settlement.all_fees(&external_prices, domain_separator);
+            let all_fees = settlement.all_fees(&external_prices, &model::DomainSeparator(domain_separator.0));
             // total fee used for CIP20 rewards
             let fee = all_fees
                 .iter()
