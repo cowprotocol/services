@@ -1,4 +1,5 @@
-//! This module defines Settlement in an onchain compatible format.
+//! This module defines Settlement as originated from a mined transaction
+//! calldata.
 
 use {
     crate::{
@@ -6,15 +7,15 @@ use {
         domain::{
             auction::{self, order},
             eth,
+            fee,
         },
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
+    std::collections::HashMap,
 };
 
 pub mod tokenized;
 pub mod trade;
-
-use std::collections::HashMap;
 
 pub use trade::{ClearingPrices, Trade};
 
@@ -58,17 +59,31 @@ impl Settlement {
         self.trades
             .iter()
             .map(|trade| {
-                let fee = match trade.fee_in_sell_token() {
-                    Ok(fee) => Some(fee),
-                    Err(err) => {
-                        tracing::warn!("fee failed for trade {:?}, err {}", trade.order_uid(), err);
-                        // return a zero fee since we want to return fees for all orders
-                        None
-                    }
-                };
+                let fee = trade
+                    .fee_in_sell_token()
+                    .map_err(|err| {
+                        tracing::warn!("fee failed for trade {:?}, err {}", trade.order_uid(), err)
+                    })
+                    .ok();
                 (trade.order_uid(), fee)
             })
             .collect()
+    }
+
+    /// CIP38 score defined as surplus + protocol fee
+    ///
+    /// Denominated in NATIVE token
+    pub fn score(
+        &self,
+        prices: &auction::Prices,
+        policies: &[fee::Policy],
+    ) -> Result<eth::TokenAmount, trade::Error> {
+        self.trades
+            .iter()
+            .map(|trade| trade.score(prices, policies))
+            .try_fold(num::Zero::zero(), |acc, score| {
+                score.map(|score| acc + score)
+            })
     }
 
     pub fn new(
