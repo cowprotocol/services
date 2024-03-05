@@ -2,7 +2,7 @@ use crate::{boundary, domain};
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct FeePolicy {
-    pub auction_id: domain::AuctionId,
+    pub auction_id: domain::auction::Id,
     pub order_uid: boundary::database::OrderUid,
     pub kind: FeePolicyKind,
     pub surplus_factor: Option<f64>,
@@ -12,7 +12,7 @@ pub struct FeePolicy {
 
 impl FeePolicy {
     pub fn from_domain(
-        auction_id: domain::AuctionId,
+        auction_id: domain::auction::Id,
         order_uid: domain::OrderUid,
         policy: domain::fee::Policy,
     ) -> Self {
