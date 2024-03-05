@@ -39,7 +39,10 @@ use {
 impl Fulfillment {
     /// Applies the protocol fee to the existing fulfillment creating a new one.
     pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
-        let protocol_fee = self.protocol_fee(prices)?;
+        let protocol_fee = {
+            let fee = self.protocol_fee(prices)?;
+            self.in_sell_token(fee, prices)?
+        };
 
         // Increase the fee by the protocol fee
         let fee = match self.surplus_fee() {
@@ -74,6 +77,7 @@ impl Fulfillment {
         Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
+    /// Computed protocol fee in surplus token.
     fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
         // TODO: support multiple fee policies
         if self.order().protocol_fees.len() > 1 {
@@ -113,6 +117,8 @@ impl Fulfillment {
 
     /// Computes protocol fee compared to the given limit amounts taken from
     /// the order or a quote.
+    ///
+    /// The protocol fee is computed in surplus token.
     fn calculate_fee(
         &self,
         limit_sell_amount: eth::U256,
@@ -130,6 +136,7 @@ impl Fulfillment {
         Ok(protocol_fee)
     }
 
+    /// Computes the surplus fee in the surplus token.
     fn fee_from_surplus(
         &self,
         sell_amount: eth::U256,
@@ -138,13 +145,16 @@ impl Fulfillment {
         factor: f64,
     ) -> Result<eth::U256, Error> {
         let surplus = self.surplus_over_reference_price(sell_amount, buy_amount, prices)?;
-        let surplus_in_sell_token = self.surplus_in_sell_token(surplus, prices)?;
-        apply_factor(surplus_in_sell_token, factor)
+        apply_factor(surplus, factor)
     }
 
+    /// Computes the volume based fee in surplus token
+    ///
+    /// The volume is defined as a full sell amount (including fees) conversion
+    /// to the full buy amount (user point of view)
     fn fee_from_volume(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
-        let executed_sell_amount = match self.order().side {
+        let executed_in_surplus_token = match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
                 executed
@@ -152,22 +162,41 @@ impl Fulfillment {
                     .ok_or(trade::Error::Overflow)?
                     .checked_div(prices.sell)
                     .ok_or(trade::Error::DivisionByZero)?
+                    .checked_add(
+                        // surplus_fee is always expressed in sell token
+                        self.surplus_fee()
+                            .map(|fee| fee.0)
+                            .ok_or(trade::Error::ProtocolFeeOnStaticOrder)?,
+                    )
+                    .ok_or(trade::Error::Overflow)?
             }
-            Side::Sell => executed,
+            Side::Sell => {
+                // How much `buy_token` we get when we sell `executed` amount of `sell_token`
+                executed
+                    .checked_mul(prices.sell)
+                    .ok_or(trade::Error::Overflow)?
+                    .checked_div(prices.buy)
+                    .ok_or(trade::Error::DivisionByZero)?
+            }
         };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
-        let executed_sell_amount_with_fee = match self.order().side {
-            Side::Buy => executed_sell_amount
-                .checked_add(
-                    // surplus_fee is always expressed in sell token
-                    self.surplus_fee()
-                        .map(|fee| fee.0)
-                        .ok_or(trade::Error::ProtocolFeeOnStaticOrder)?,
-                )
-                .ok_or(trade::Error::Overflow)?,
-            Side::Sell => executed_sell_amount,
+        apply_factor(executed_in_surplus_token, factor)
+    }
+
+    /// Returns the fee denominated in the sell token.
+    pub fn in_sell_token(
+        &self,
+        fee: eth::U256,
+        prices: ClearingPrices,
+    ) -> Result<eth::U256, Error> {
+        let fee_in_sell_token = match self.order().side {
+            Side::Buy => fee,
+            Side::Sell => fee
+                .checked_mul(prices.buy)
+                .ok_or(trade::Error::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(trade::Error::DivisionByZero)?,
         };
-        apply_factor(executed_sell_amount_with_fee, factor)
+        Ok(fee_in_sell_token)
     }
 }
 

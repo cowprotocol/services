@@ -204,23 +204,6 @@ impl Fulfillment {
         };
         Ok(surplus)
     }
-
-    /// Returns the surplus denominated in the sell token.
-    pub fn surplus_in_sell_token(
-        &self,
-        surplus: eth::U256,
-        prices: ClearingPrices,
-    ) -> Result<eth::U256, Error> {
-        let surplus_in_sell_token = match self.order().side {
-            Side::Buy => surplus,
-            Side::Sell => surplus
-                .checked_mul(prices.buy)
-                .ok_or(Error::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Error::DivisionByZero)?,
-        };
-        Ok(surplus_in_sell_token)
-    }
 }
 
 /// A fee that is charged for executing an order.
