@@ -13,7 +13,7 @@ pub struct Order {
     pub buy_amount: U256,
     pub user_fee: U256,
     pub protocol_fees: Vec<fee::Policy>,
-    pub kind: Side,
+    pub side: Side,
     pub class: Class,
     pub valid_to: u32,
     pub receiver: Option<H160>,

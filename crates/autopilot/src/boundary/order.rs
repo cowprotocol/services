@@ -16,7 +16,7 @@ pub fn to_domain(
         user_fee: order.data.fee_amount,
         protocol_fees,
         valid_to: order.data.valid_to,
-        kind: order.data.kind.into(),
+        side: order.data.kind.into(),
         receiver: order.data.receiver,
         owner: order.metadata.owner,
         partially_fillable: order.data.partially_fillable,
