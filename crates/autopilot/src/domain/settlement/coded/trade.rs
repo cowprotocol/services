@@ -7,8 +7,8 @@ use crate::domain::{
 
 #[derive(Debug)]
 pub struct Trade {
-    pub order_uid: domain::OrderUid, // todo order::Uid
-    pub sell: eth::Asset,
+    order_uid: domain::OrderUid, // todo order::Uid
+    sell: eth::Asset,
     buy: eth::Asset,
     side: order::Side,
     executed: order::TargetAmount,
@@ -32,6 +32,10 @@ impl Trade {
             executed,
             prices,
         }
+    }
+
+    pub fn order_uid(&self) -> domain::OrderUid {
+        self.order_uid
     }
 
     /// CIP38 score defined as surplus + protocol fee

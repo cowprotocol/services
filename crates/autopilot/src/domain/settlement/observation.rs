@@ -3,7 +3,10 @@
 //! It contains all important information about the mined settlement, including
 //! the surplus and fees.
 
-use crate::domain::{eth, settlement};
+use {
+    crate::domain::{auction::order, eth},
+    std::collections::HashMap,
+};
 
 #[derive(Debug, Clone)]
 pub struct Observation {
@@ -16,5 +19,6 @@ pub struct Observation {
     /// Total fees expressed in native token.
     pub fee: eth::TokenAmount,
     /// Per order fees denominated in sell token.
-    pub order_fees: settlement::Fees,
+    /// Contains all orders from the settlement
+    pub order_fees: HashMap<order::OrderUid, Option<eth::Asset>>,
 }

@@ -14,6 +14,8 @@ use {
 pub mod tokenized;
 pub mod trade;
 
+use std::collections::HashMap;
+
 pub use trade::{ClearingPrices, Trade};
 
 /// Settlement originated from a calldata of a settlement transaction.
@@ -50,6 +52,23 @@ impl Settlement {
             .try_fold(num::Zero::zero(), |acc, score| {
                 score.map(|score| acc + score)
             })
+    }
+
+    pub fn all_trade_fees(&self) -> HashMap<order::OrderUid, Option<eth::Asset>> {
+        self.trades
+            .iter()
+            .map(|trade| {
+                let fee = match trade.fee_in_sell_token() {
+                    Ok(fee) => Some(fee),
+                    Err(err) => {
+                        tracing::warn!("fee failed for trade {:?}, err {}", trade.order_uid(), err);
+                        // return a zero fee since we want to return fees for all orders
+                        None
+                    }
+                };
+                (trade.order_uid(), fee)
+            })
+            .collect()
     }
 
     pub fn new(

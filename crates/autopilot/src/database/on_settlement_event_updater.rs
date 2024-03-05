@@ -58,9 +58,13 @@ impl super::Postgres {
                 fee: observation.fee.0,
                 order_executions: observation
                     .order_fees
-                    .get()
                     .iter()
-                    .map(|(order, fee)| ((*order).into(), fee.amount.0))
+                    .map(|(order, fee)| {
+                        (
+                            (*order).into(),
+                            fee.map(|fee| fee.amount.0).unwrap_or_default(),
+                        )
+                    })
                     .collect(),
             };
             database::settlement_observations::upsert(

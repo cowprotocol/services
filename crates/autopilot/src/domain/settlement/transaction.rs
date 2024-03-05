@@ -59,7 +59,7 @@ impl SettlementTx {
                 tracing::warn!(?err, "failed to calculate native fee");
                 num::Zero::zero()
             }),
-            order_fees: super::Fees::new(self.settlement.trades()),
+            order_fees: self.settlement.all_trade_fees(),
         }
     }
 }
