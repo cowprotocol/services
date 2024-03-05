@@ -18,7 +18,7 @@ use {
 
 impl Request {
     pub fn new(
-        id: domain::AuctionId,
+        id: domain::auction::Id,
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         score_cap: U256,
