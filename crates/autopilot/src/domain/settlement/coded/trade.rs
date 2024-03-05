@@ -7,11 +7,8 @@ use {
 pub struct Trade {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub receiver: eth::Address,
-    pub valid_to: u32,
-    pub app_data: order::AppDataHash,
     pub flags: TradeFlags,
-    pub executed: eth::Asset,
+    pub executed: eth::TargetAmount,
     pub signature: order::Signature,
 
     /// [ Additional derived fields ]
@@ -27,7 +24,7 @@ impl Trade {
     /// fees applied.
     ///
     /// [ Denominated in surplus token ]
-    pub fn surplus_before_fee(&self) -> Option<eth::Asset> {
+    fn surplus_before_fee(&self) -> Option<eth::Asset> {
         surplus::trade_surplus(
             self.flags.order_kind(),
             self.executed,
@@ -109,11 +106,11 @@ impl Trade {
                         // the surplus
                         let executed_in_surplus_token = match self.flags.order_kind() {
                             order::Kind::Sell => {
-                                *self.executed.amount * self.prices.custom.sell
+                                *self.executed * self.prices.custom.sell
                                     / self.prices.custom.buy
                             }
                             order::Kind::Buy => {
-                                *self.executed.amount * self.prices.custom.buy
+                                *self.executed * self.prices.custom.buy
                                     / self.prices.custom.sell
                             }
                         };

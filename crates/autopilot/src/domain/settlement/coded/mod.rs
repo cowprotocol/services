@@ -87,16 +87,7 @@ impl Settlement {
                     token: buy_token.into(),
                     amount: trade.4.into(),
                 },
-                receiver: trade.2.into(),
-                valid_to: trade.5,
-                app_data: order::AppDataHash(trade.6 .0),
-                executed: eth::Asset {
-                    token: match flags.order_kind() {
-                        order::Kind::Sell => sell_token.into(),
-                        order::Kind::Buy => buy_token.into(),
-                    },
-                    amount: trade.9.into(),
-                },
+                executed: trade.9.into(),
                 flags,
                 signature: signature.into(),
                 prices: trade::Price {
