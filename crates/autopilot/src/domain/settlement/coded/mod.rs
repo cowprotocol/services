@@ -83,10 +83,6 @@ impl Settlement {
         let mut trades = Vec::with_capacity(decoded_trades.len());
         for trade in decoded_trades {
             let flags = TradeFlags(trade.8);
-            let signature = boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
-                .map_err(boundary::order::Error::Signature)
-                .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?;
-
             let sell_token_index = trade.0.as_usize();
             let buy_token_index = trade.1.as_usize();
             let sell_token = tokens[sell_token_index];
@@ -97,21 +93,20 @@ impl Settlement {
                 .unwrap();
             let uniform_buy_token_index =
                 tokens.iter().position(|token| token == &buy_token).unwrap();
-            trades.push(Trade {
-                order_uid: boundary::order::order_uid(&trade, &tokens, domain_separator)
+            trades.push(Trade::new(
+                boundary::order::order_uid(&trade, &tokens, domain_separator)
                     .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?,
-                sell: eth::Asset {
+                eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
                 },
-                buy: eth::Asset {
+                eth::Asset {
                     token: buy_token.into(),
                     amount: trade.4.into(),
                 },
-                side: flags.order_kind(),
-                executed: trade.9.into(),
-                signature: signature.into(),
-                prices: trade::Prices {
+                flags.order_kind(),
+                trade.9.into(),
+                trade::Prices {
                     uniform: trade::ClearingPrices {
                         sell: clearing_prices[uniform_sell_token_index],
                         buy: clearing_prices[uniform_buy_token_index],
@@ -121,7 +116,7 @@ impl Settlement {
                         buy: clearing_prices[buy_token_index],
                     },
                 },
-            })
+            ));
         }
 
         Ok(Self { trades, auction_id })

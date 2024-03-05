@@ -172,7 +172,6 @@ impl Persistence {
             })
             .collect();
 
-        let _ = ex.commit().await.context("commit");
         Ok(prices)
     }
 }

@@ -7,21 +7,33 @@ use crate::domain::{
 
 #[derive(Debug)]
 pub struct Trade {
+    pub order_uid: domain::OrderUid, // todo order::Uid
     pub sell: eth::Asset,
-    pub buy: eth::Asset,
-    pub side: order::Side,
-    pub executed: order::TargetAmount,
-    pub signature: order::Signature,
-
-    /// [ Additional derived fields ]
-    ///
-    /// The order uid of the order associated with this trade.
-    pub order_uid: domain::OrderUid, // todo order::Uid,
-    /// Derived from the settlement "clearing_prices" vector
-    pub prices: Prices,
+    buy: eth::Asset,
+    side: order::Side,
+    executed: order::TargetAmount,
+    prices: Prices,
 }
 
 impl Trade {
+    pub fn new(
+        order_uid: domain::OrderUid,
+        sell: eth::Asset,
+        buy: eth::Asset,
+        side: order::Side,
+        executed: order::TargetAmount,
+        prices: Prices,
+    ) -> Self {
+        Self {
+            order_uid,
+            sell,
+            buy,
+            side,
+            executed,
+            prices,
+        }
+    }
+
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
