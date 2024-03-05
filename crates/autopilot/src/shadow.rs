@@ -30,7 +30,7 @@ pub struct RunLoop {
     orderbook: infra::shadow::Orderbook,
     drivers: Vec<infra::Driver>,
     trusted_tokens: AutoUpdatingTokenList,
-    auction: domain::AuctionId,
+    auction: domain::auction::Id,
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
@@ -112,7 +112,7 @@ impl RunLoop {
         Some(auction)
     }
 
-    async fn single_run(&self, id: domain::AuctionId, auction: domain::Auction) {
+    async fn single_run(&self, id: domain::auction::Id, auction: domain::Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(id);
         Metrics::get().orders.set(auction.orders.len() as _);
@@ -186,7 +186,7 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(
         &self,
-        id: domain::AuctionId,
+        id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
         let request = solve::Request::new(

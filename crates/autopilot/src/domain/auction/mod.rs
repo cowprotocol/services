@@ -15,10 +15,10 @@ pub struct Auction {
     pub prices: BTreeMap<H160, U256>,
 }
 
-pub type AuctionId = i64;
+pub type Id = i64;
 
 #[derive(Clone, Debug)]
 pub struct AuctionWithId {
-    pub id: AuctionId,
+    pub id: Id,
     pub auction: Auction,
 }
