@@ -19,10 +19,6 @@ pub mod trade;
 
 pub use trade::{ClearingPrices, Trade};
 
-/// Number of bytes that may be appended to the calldata to store an auction
-/// id.
-pub const META_DATA_LEN: usize = 8;
-
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
 pub struct Settlement {
@@ -34,6 +30,10 @@ pub struct Settlement {
 }
 
 impl Settlement {
+    /// Number of bytes that may be appended to the calldata to store an auction
+    /// id.
+    pub const META_DATA_LEN: usize = 8;
+
     pub fn native_surplus(
         &self,
         prices: &auction::Prices,
