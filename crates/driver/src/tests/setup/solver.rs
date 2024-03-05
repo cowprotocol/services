@@ -292,6 +292,7 @@ pub mod dto {
     //! This module should be a copy of the solvers crate's
     //! `api/routes/*/dto.rs`. If you make changes here to satisfy the
     //! tests, make sure to also apply them to the solvers crate.
+    //! Changes also have to be applied to https://github.com/gnosis/solvers
 
     use {
         crate::util::serialize,
