@@ -38,7 +38,16 @@ impl Settlement {
         self.trades
             .iter()
             .map(|trade| trade.native_surplus(prices))
-            .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
+            .try_fold(num::Zero::zero(), |acc, score| {
+                score.map(|score| acc + score)
+            })
+    }
+
+    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, trade::Error> {
+        self.trades
+            .iter()
+            .map(|trade| trade.native_fee(prices))
+            .try_fold(num::Zero::zero(), |acc, score| {
                 score.map(|score| acc + score)
             })
     }

@@ -11,10 +11,10 @@ pub struct Observation {
     pub gas: eth::U256,
     /// The effective gas price at the time of settlement.
     pub effective_gas_price: eth::U256,
-    /// Total surplus normalized to the native token (ETH).
+    /// Total surplus expressed in native token.
     pub surplus: eth::TokenAmount,
-    /// Total fees normalized to the native token (ETH).
-    pub fee: settlement::NormalizedFee,
+    /// Total fees expressed in native token.
+    pub fee: eth::TokenAmount,
     /// Per order fees denominated in sell token.
     pub order_fees: settlement::Fees,
 }

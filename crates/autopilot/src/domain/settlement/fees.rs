@@ -9,8 +9,6 @@
 //! These fees are paid in the native token of the protocol and are determined
 //! by the protocol.
 
-// TODO
-
 use {
     crate::domain::{auction, eth, settlement},
     std::collections::HashMap,
@@ -30,8 +28,8 @@ impl Fees {
         let fees = trades
             .iter()
             .map(|trade| {
-                let fee = trade.fee_in_sell_token().unwrap_or_else(|| {
-                    tracing::warn!("fee failed for trade {:?}", trade.order_uid);
+                let fee = trade.fee_in_sell_token().unwrap_or_else(|err| {
+                    tracing::warn!("fee failed for trade {:?}, err {}", trade.order_uid, err);
                     eth::Asset {
                         token: trade.sell.token,
                         amount: Default::default(),
@@ -46,23 +44,4 @@ impl Fees {
     pub fn get(&self) -> &HashMap<auction::order::OrderUid, eth::Asset> {
         &self.0
     }
-
-    // pub fn normalized_with(
-    //     &self,
-    //     prices: &HashMap<eth::TokenAddress, auction::NormalizedPrice>,
-    // ) -> Option<NormalizedFee> {
-    //     let mut fees = eth::TokenAmount::default();
-    //     for eth::Asset { token, amount } in self.0.values() {
-    //         let price = prices.get(token).cloned()?;
-    //         let amount: eth::SimpleValue<BigRational> =
-    // amount.to_big_rational().into();         let normalized_fee =
-    // big_rational_to_u256(&(amount * price)).ok()?.into();         fees +=
-    // normalized_fee;     }
-    //     Some(fees)
-    // }
 }
-
-/// Normalized fee
-///
-/// Denominated in the native token (ETH)
-pub type NormalizedFee = eth::TokenAmount; // eth::Ether?

@@ -53,15 +53,12 @@ impl SettlementTx {
                 .native_surplus(prices)
                 .unwrap_or_else(|err| {
                     tracing::warn!(?err, "failed to calculate native surplus");
-                    eth::TokenAmount(eth::U256::zero())
+                    num::Zero::zero()
                 }),
-            // super::Surplus::new(self.settlement.trades())
-            //     .normalized_with(prices)
-            //     .unwrap_or_default(),
-            fee: todo!(),
-            // super::Fees::new(self.settlement.trades())
-            //     .normalized_with(prices)
-            //     .unwrap_or_default(),
+            fee: self.settlement.native_fee(prices).unwrap_or_else(|err| {
+                tracing::warn!(?err, "failed to calculate native fee");
+                num::Zero::zero()
+            }),
             order_fees: super::Fees::new(self.settlement.trades()),
         }
     }

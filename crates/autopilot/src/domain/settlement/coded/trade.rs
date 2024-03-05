@@ -44,6 +44,18 @@ impl Trade {
         Ok((surplus.0 / eth::U256::exp10(18)).into())
     }
 
+    /// Fee is the difference between the surplus over uniform clearing prices
+    /// and surplus over custom clearing prices.
+    ///
+    /// Denominated in NATIVE token
+    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+        let fee = self
+            .surplus_token_price(prices)?
+            .apply(self.fee_in_sell_token()?.amount);
+        // normalize
+        Ok((fee.0 / eth::U256::exp10(18)).into())
+    }
+
     /// Surplus based on uniform clearing prices returns the surplus without any
     /// fees applied.
     ///
@@ -76,20 +88,21 @@ impl Trade {
     /// and surplus over custom clearing prices.
     ///
     /// Denominated in SURPLUS token
-    fn fee(&self) -> Option<eth::Asset> {
+    fn fee(&self) -> Result<eth::Asset, Error> {
         self.surplus_before_fee()
             .zip(self.surplus())
             .map(|(before, after)| eth::Asset {
                 token: before.token,
                 amount: before.amount.0.saturating_sub(after.amount.0).into(),
             })
+            .ok_or(Error::Surplus(self.sell, self.buy))
     }
 
     /// Fee is the difference between the surplus over uniform clearing prices
     /// and surplus over custom clearing prices.
     ///
     /// Denominated in SELL token
-    pub fn fee_in_sell_token(&self) -> Option<eth::Asset> {
+    pub fn fee_in_sell_token(&self) -> Result<eth::Asset, Error> {
         match self.side {
             order::Side::Buy => self.fee(),
             order::Side::Sell => self.fee().map(|fee| eth::Asset {

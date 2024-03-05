@@ -5,7 +5,7 @@ pub mod transaction;
 
 pub use {
     coded::{ClearingPrices, Settlement, Trade},
-    fees::{Fees, NormalizedFee},
+    fees::Fees,
     observation::Observation,
     transaction::Transaction,
 };

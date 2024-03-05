@@ -119,6 +119,16 @@ impl std::ops::Add for TokenAmount {
     }
 }
 
+impl num::Zero for TokenAmount {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
