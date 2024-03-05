@@ -1,11 +1,10 @@
 use {
-    super::{blockchain, blockchain::Blockchain, Partial},
+    super::{
+        blockchain::{self, Blockchain},
+        Partial,
+    },
     crate::{
-        domain::{
-            competition::order,
-            eth,
-            time::{self},
-        },
+        domain::{competition::order, eth, time},
         infra::{self, blockchain::contracts::Addresses, Ethereum},
         tests::hex_address,
     },
@@ -31,6 +30,7 @@ pub struct Config<'a> {
     pub trusted: &'a HashSet<&'static str>,
     pub quoted_orders: &'a [super::blockchain::QuotedOrder],
     pub deadline: time::Deadline,
+    pub notifications: std::sync::mpsc::Sender<serde_json::Value>,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
 }
@@ -225,7 +225,10 @@ impl Solver {
         )
         .await;
 
-        let state = Arc::new(Mutex::new(StateInner { called: false }));
+        let state = Arc::new(Mutex::new(StateInner {
+            called: false,
+            notifications: config.notifications,
+        }));
         let app = axum::Router::new()
         .route(
             "/solve",
@@ -258,6 +261,10 @@ impl Solver {
                 },
             ),
         )
+        .route("/notify", axum::routing::post(move |axum::extract::State(state): axum::extract::State<State>, axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
+            state.0.lock().unwrap().notifications.send(req).unwrap();
+            axum::http::StatusCode::OK
+        }))
         .with_state(State(state));
         let server =
             axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
@@ -272,7 +279,103 @@ struct StateInner {
     /// Has this solver been called yet? If so, attempting to make another call
     /// will result in a failed test.
     called: bool,
+    /// Forwards the notifications received by the solver.
+    notifications: std::sync::mpsc::Sender<serde_json::Value>,
 }
 
 #[derive(Debug, Clone)]
 struct State(Arc<Mutex<StateInner>>);
+
+#[allow(dead_code)]
+pub mod dto {
+    //! Data transfer objects for the solver engine API.
+    //! This module should be a copy of the solvers crate's
+    //! `api/routes/*/dto.rs`. If you make changes here to satisfy the
+    //! tests, make sure to also apply them to the solvers crate.
+
+    use {
+        crate::util::serialize,
+        ethcontract::{H160, H256, U256},
+        serde::Deserialize,
+        serde_with::{serde_as, DisplayFromStr},
+        std::collections::BTreeSet,
+        web3::types::AccessList,
+    };
+
+    #[serde_as]
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Notification {
+        #[serde_as(as = "Option<DisplayFromStr>")]
+        auction_id: Option<i64>,
+        solution_id: Option<u64>,
+        #[serde(flatten)]
+        kind: Kind,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", tag = "kind")]
+    pub enum Kind {
+        Timeout,
+        EmptySolution,
+        DuplicatedSolutionId,
+        #[serde(rename_all = "camelCase")]
+        SimulationFailed {
+            block: BlockNo,
+            tx: Tx,
+            succeeded_once: bool,
+        },
+        ZeroScore,
+        ScoreHigherThanQuality {
+            #[serde_as(as = "serialize::U256")]
+            score: U256,
+            #[serde_as(as = "serialize::U256")]
+            quality: U256,
+        },
+        SuccessProbabilityOutOfRange {
+            probability: f64,
+        },
+        #[serde(rename_all = "camelCase")]
+        ObjectiveValueNonPositive {
+            #[serde_as(as = "serialize::U256")]
+            quality: U256,
+            #[serde_as(as = "serialize::U256")]
+            gas_cost: U256,
+        },
+        NonBufferableTokensUsed {
+            tokens: BTreeSet<H160>,
+        },
+        SolverAccountInsufficientBalance {
+            #[serde_as(as = "serialize::U256")]
+            required: U256,
+        },
+        Success {
+            transaction: H256,
+        },
+        Revert {
+            transaction: H256,
+        },
+        DriverError {
+            reason: String,
+        },
+        Cancelled,
+        Fail,
+        PostprocessingTimedOut,
+    }
+
+    type BlockNo = u64;
+
+    #[serde_as]
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Tx {
+        from: H160,
+        to: H160,
+        #[serde_as(as = "serialize::Hex")]
+        input: Vec<u8>,
+        #[serde_as(as = "serialize::U256")]
+        value: U256,
+        access_list: AccessList,
+    }
+}

@@ -25,6 +25,7 @@ use {
         },
         util::{self, serialize},
     },
+    anyhow::Context,
     bigdecimal::FromPrimitive,
     ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
@@ -803,6 +804,7 @@ impl Setup {
             let quote = blockchain.quote(&order).await;
             quotes.push(quote);
         }
+        let (tx, rx) = std::sync::mpsc::channel();
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
@@ -811,6 +813,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                notifications: tx.clone(),
             })
             .await;
 
@@ -838,6 +841,7 @@ impl Setup {
             deadline,
             quoted_orders: quotes,
             quote: self.quote,
+            notifications: rx,
         }
     }
 
@@ -863,6 +867,7 @@ pub struct Test {
     fulfillments: Vec<Fulfillment>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
+    notifications: std::sync::mpsc::Receiver<serde_json::Value>,
     /// Is this testing the /quote endpoint?
     quote: bool,
 }
@@ -1008,6 +1013,24 @@ impl Test {
 
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
+    }
+
+    pub fn notifications(&self) -> Vec<solver::dto::Notification> {
+        self.notifications
+            .try_iter()
+            .map(|value| {
+                serde_json::from_value(value.clone())
+                    .context(format!("Error parsing notification: {}", value))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+}
+
+impl Drop for Test {
+    fn drop(&mut self) {
+        // Make sure we were able to parse all notifications.
+        self.notifications();
     }
 }
 
