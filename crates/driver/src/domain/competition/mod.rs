@@ -108,7 +108,7 @@ impl Competition {
         for solution in solutions {
             let mut extension = vec![];
             for already_merged in merged.iter() {
-                match solution.merge(&already_merged) {
+                match solution.merge(already_merged) {
                     Ok(merged) => {
                         observe::merged(&solution, already_merged, &merged);
                         extension.push(merged);
@@ -149,14 +149,15 @@ impl Competition {
         // Merge settlements as they arrive until there are no more new settlements or
         // timeout is reached.
         let mut settlements = Vec::new();
+        let future = async {
+            let mut encoded = std::pin::pin!(encoded);
+            while let Some(settlement) = encoded.next().await {
+                settlements.push(settlement);
+            }
+        };
         if tokio::time::timeout(
             auction.deadline().driver().remaining().unwrap_or_default(),
-            async {
-                let mut encoded = std::pin::pin!(encoded);
-                while let Some(settlement) = encoded.next().await {
-                    settlements.push(settlement);
-                }
-            },
+            future,
         )
         .await
         .is_err()
