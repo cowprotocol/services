@@ -102,7 +102,7 @@ impl Settlement {
                 side: flags.order_kind(),
                 executed: trade.9.into(),
                 signature: signature.into(),
-                prices: trade::Price {
+                prices: trade::Prices {
                     uniform: trade::ClearingPrices {
                         sell: clearing_prices[uniform_sell_token_index],
                         buy: clearing_prices[uniform_buy_token_index],

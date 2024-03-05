@@ -18,7 +18,7 @@ pub struct Trade {
     /// The order uid of the order associated with this trade.
     pub order_uid: domain::OrderUid, // todo order::Uid,
     /// Derived from the settlement "clearing_prices" vector
-    pub prices: Price,
+    pub prices: Prices,
 }
 
 impl Trade {
@@ -205,7 +205,7 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Option<eth::U256> {
 }
 
 #[derive(Debug)]
-pub struct Price {
+pub struct Prices {
     pub uniform: ClearingPrices,
     /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
     pub custom: ClearingPrices,
