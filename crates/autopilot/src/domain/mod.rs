@@ -1,4 +1,5 @@
 pub mod auction;
+pub mod eth;
 pub mod fee;
 pub mod quote;
 
