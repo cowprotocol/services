@@ -111,16 +111,16 @@ impl From<domain::OrderUid> for boundary::OrderUid {
     }
 }
 
-impl From<domain::auction::order::Kind> for boundary::OrderKind {
-    fn from(kind: domain::auction::order::Kind) -> Self {
+impl From<domain::auction::order::Side> for boundary::OrderKind {
+    fn from(kind: domain::auction::order::Side) -> Self {
         match kind {
-            domain::auction::order::Kind::Buy => Self::Buy,
-            domain::auction::order::Kind::Sell => Self::Sell,
+            domain::auction::order::Side::Buy => Self::Buy,
+            domain::auction::order::Side::Sell => Self::Sell,
         }
     }
 }
 
-impl From<boundary::OrderKind> for domain::auction::order::Kind {
+impl From<boundary::OrderKind> for domain::auction::order::Side {
     fn from(kind: boundary::OrderKind) -> Self {
         match kind {
             boundary::OrderKind::Buy => Self::Buy,

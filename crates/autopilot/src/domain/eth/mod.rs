@@ -111,6 +111,14 @@ impl From<u128> for TokenAmount {
     }
 }
 
+impl std::ops::Add for TokenAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
+}
+
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

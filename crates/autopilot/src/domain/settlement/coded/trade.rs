@@ -1,29 +1,46 @@
-use crate::domain::{self, auction::order, eth, fee, settlement::surplus};
+use crate::domain::{
+    self,
+    auction::{self, order},
+    eth,
+    fee,
+    settlement::surplus,
+};
 
 #[derive(Debug)]
 pub struct Trade {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub kind: order::Kind,
+    pub side: order::Side,
     pub executed: order::TargetAmount,
     pub signature: order::Signature,
 
     /// [ Additional derived fields ]
     ///
     /// The order uid of the order associated with this trade.
-    pub order_uid: domain::OrderUid,
+    pub order_uid: domain::OrderUid, // todo order::Uid,
     /// Derived from the settlement "clearing_prices" vector
     pub prices: Price,
 }
 
 impl Trade {
+    /// [ Denominated in native token ]
+    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+        let surplus = self.surplus_token_price(prices)?.apply(
+            self.surplus()
+                .ok_or(Error::Surplus(self.sell, self.buy))?
+                .amount,
+        );
+        // normalize
+        Ok((surplus.0 / eth::U256::exp10(18)).into())
+    }
+
     /// Surplus based on uniform clearing prices returns the surplus without any
     /// fees applied.
     ///
     /// [ Denominated in surplus token ]
     fn surplus_before_fee(&self) -> Option<eth::Asset> {
         surplus::trade_surplus(
-            self.kind,
+            self.side,
             self.executed,
             self.sell,
             self.buy,
@@ -37,7 +54,7 @@ impl Trade {
     /// [ Denominated in surplus token ]
     pub fn surplus(&self) -> Option<eth::Asset> {
         surplus::trade_surplus(
-            self.kind,
+            self.side,
             self.executed,
             self.sell,
             self.buy,
@@ -63,9 +80,9 @@ impl Trade {
     ///
     /// [ Denominated in sell token ]
     pub fn fee_in_sell_token(&self) -> Option<eth::Asset> {
-        match self.kind {
-            order::Kind::Buy => self.fee(),
-            order::Kind::Sell => self.fee().map(|fee| eth::Asset {
+        match self.side {
+            order::Side::Buy => self.fee(),
+            order::Side::Sell => self.fee().map(|fee| eth::Asset {
                 token: self.sell.token,
                 // use uniform prices since the fee (which is determined by solvers) is expressed in
                 // terms of uniform clearing prices
@@ -88,9 +105,9 @@ impl Trade {
                 factor,
                 max_volume_factor,
             } => Some(eth::Asset {
-                token: match self.kind {
-                    order::Kind::Sell => self.buy.token,
-                    order::Kind::Buy => self.sell.token,
+                token: match self.side {
+                    order::Side::Sell => self.buy.token,
+                    order::Side::Buy => self.sell.token,
                 },
                 amount: std::cmp::min(
                     {
@@ -101,11 +118,11 @@ impl Trade {
                     {
                         // Convert the executed amount to surplus token so it can be compared with
                         // the surplus
-                        let executed_in_surplus_token = match self.kind {
-                            order::Kind::Sell => {
+                        let executed_in_surplus_token = match self.side {
+                            order::Side::Sell => {
                                 self.executed.0 * self.prices.custom.sell / self.prices.custom.buy
                             }
-                            order::Kind::Buy => {
+                            order::Side::Buy => {
                                 self.executed.0 * self.prices.custom.buy / self.prices.custom.sell
                             }
                         };
@@ -121,6 +138,21 @@ impl Trade {
             } => todo!(),
             fee::Policy::Volume { factor: _ } => todo!(),
         }
+    }
+
+    fn surplus_token(&self) -> eth::TokenAddress {
+        match self.side {
+            order::Side::Buy => self.sell.token,
+            order::Side::Sell => self.buy.token,
+        }
+    }
+
+    /// Returns the price of the trade surplus token
+    fn surplus_token_price(&self, prices: &auction::Prices) -> Result<auction::Price, Error> {
+        prices
+            .get(&self.surplus_token())
+            .cloned()
+            .ok_or(Error::MissingPrice(self.surplus_token()))
     }
 
     /// CIP38 score defined as surplus + protocol fee
@@ -157,4 +189,12 @@ pub struct Price {
 pub struct ClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("failed to calculate surplus for trade sell {0:?} buy {1:?}")]
+    Surplus(eth::Asset, eth::Asset),
+    #[error("missing native price for token {0:?}")]
+    MissingPrice(eth::TokenAddress),
 }

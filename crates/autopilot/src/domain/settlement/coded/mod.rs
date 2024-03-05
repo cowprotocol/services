@@ -31,6 +31,18 @@ impl Settlement {
     /// id.
     pub const META_DATA_LEN: usize = 8;
 
+    pub fn native_surplus(
+        &self,
+        prices: &auction::Prices,
+    ) -> Result<eth::TokenAmount, trade::Error> {
+        self.trades
+            .iter()
+            .map(|trade| trade.native_surplus(prices))
+            .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
+                score.map(|score| acc + score)
+            })
+    }
+
     pub fn new(
         calldata: &super::transaction::CallData,
         domain_separator: &eth::DomainSeparator,
@@ -87,7 +99,7 @@ impl Settlement {
                     token: buy_token.into(),
                     amount: trade.4.into(),
                 },
-                kind: flags.order_kind(),
+                side: flags.order_kind(),
                 executed: trade.9.into(),
                 signature: signature.into(),
                 prices: trade::Price {
@@ -126,11 +138,11 @@ impl TradeFlags {
         self.0.byte(0)
     }
 
-    pub fn order_kind(&self) -> order::Kind {
+    pub fn order_kind(&self) -> order::Side {
         if self.as_u8() & 0b1 == 0 {
-            order::Kind::Sell
+            order::Side::Sell
         } else {
-            order::Kind::Buy
+            order::Side::Buy
         }
     }
 

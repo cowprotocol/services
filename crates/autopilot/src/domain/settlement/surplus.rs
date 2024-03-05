@@ -62,14 +62,14 @@ pub type NormalizedSurplus = eth::TokenAmount; // eth::Ether?
 
 /// Main logic for surplus calculation
 pub fn trade_surplus(
-    kind: order::Kind,
+    kind: order::Side,
     executed: order::TargetAmount,
     sell: eth::Asset,
     buy: eth::Asset,
     prices: &settlement::ClearingPrices,
 ) -> Option<eth::Asset> {
     match kind {
-        order::Kind::Buy => {
+        order::Side::Buy => {
             // scale limit sell to support partially fillable orders
             let limit_sell = sell
                 .amount
@@ -84,7 +84,7 @@ pub fn trade_surplus(
                     .checked_div(prices.sell)?,
             )
         }
-        order::Kind::Sell => {
+        order::Side::Sell => {
             // scale limit buy to support partially fillable orders
             let limit_buy = executed
                 .0
@@ -99,11 +99,11 @@ pub fn trade_surplus(
         }
     }
     .map(|surplus| match kind {
-        order::Kind::Buy => eth::Asset {
+        order::Side::Buy => eth::Asset {
             amount: surplus.into(),
             token: sell.token,
         },
-        order::Kind::Sell => eth::Asset {
+        order::Side::Sell => eth::Asset {
             amount: surplus.into(),
             token: buy.token,
         },

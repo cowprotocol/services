@@ -7,7 +7,6 @@ use {
         infra,
         util,
     },
-    std::collections::HashMap,
 };
 
 /// A transaction that settles a settlement. Interacts with the settlement
@@ -45,14 +44,17 @@ impl SettlementTx {
         self.transaction.solver
     }
 
-    pub fn observation(
-        &self,
-        _prices: &HashMap<eth::TokenAddress, auction::Price>,
-    ) -> super::Observation {
+    pub fn observation(&self, prices: &auction::Prices) -> super::Observation {
         super::Observation {
             gas: self.receipt.gas,
             effective_gas_price: self.receipt.effective_gas_price,
-            surplus: todo!(),
+            surplus: self
+                .settlement
+                .native_surplus(prices)
+                .unwrap_or_else(|err| {
+                    tracing::warn!(?err, "failed to calculate native surplus");
+                    eth::TokenAmount(eth::U256::zero())
+                }),
             // super::Surplus::new(self.settlement.trades())
             //     .normalized_with(prices)
             //     .unwrap_or_default(),

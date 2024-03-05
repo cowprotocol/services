@@ -13,7 +13,7 @@ pub struct Order {
     pub buy_amount: U256,
     pub user_fee: U256,
     pub protocol_fees: Vec<fee::Policy>,
-    pub kind: Kind,
+    pub kind: Side,
     pub class: Class,
     pub valid_to: u32,
     pub receiver: Option<H160>,
@@ -65,7 +65,7 @@ impl fmt::Debug for OrderUid {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Kind {
+pub enum Side {
     Buy,
     Sell,
 }
