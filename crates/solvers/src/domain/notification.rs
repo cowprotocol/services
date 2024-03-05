@@ -19,8 +19,14 @@ pub type SimulationSucceededAtLeastOnce = bool;
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: auction::Id,
-    pub solution_id: Option<solution::Id>,
+    pub solution_id: Option<Id>,
     pub kind: Kind,
+}
+
+#[derive(Debug, Clone)]
+pub enum Id {
+    Single(solution::Id),
+    Merged(Vec<Id>),
 }
 
 /// All types of notifications solvers can be informed about.
