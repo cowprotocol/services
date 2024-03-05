@@ -23,7 +23,7 @@ const SOLVER_NAME: &str = "test1";
 
 /// The default surplus factor. Set to a high value to ensure a positive score
 /// by default. Use a surplus factor of 1 if you want to test negative scores.
-pub const DEFAULT_SURPLUS_FACTOR: u64 = 10000000000u64;
+pub const DEFAULT_SURPLUS_FACTOR: f64 = 1e-8;
 
 pub const DEFAULT_POOL_AMOUNT_A: u64 = 100000;
 pub const DEFAULT_POOL_AMOUNT_B: u64 = 6000;
@@ -44,10 +44,10 @@ pub const DEFAULT_SCORE_MIN: u64 = 2;
 pub const DEFAULT_SCORE_MAX: u64 = 500000000000;
 
 /// The default solver fee for limit orders.
-pub const DEFAULT_SOLVER_FEE: u128 = 100u128;
+pub const DEFAULT_SOLVER_FEE: f64 = 1e-16;
 
 /// The default maximum value to be payout out to solver per solution
-pub const DEFAULT_SCORE_CAP: u128 = 10000000000000000u128;
+pub const DEFAULT_SCORE_CAP: f64 = 1e-2;
 
 pub trait IntoWei {
     fn into_wei(self) -> eth::U256;

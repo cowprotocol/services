@@ -1,4 +1,5 @@
 use crate::tests::{
+    cases::IntoWei,
     setup,
     setup::{ab_order, ab_pool, ab_solution, cd_order, cd_pool, cd_solution, Solution},
 };
@@ -41,7 +42,7 @@ async fn impossible() {
     let test = setup()
         .pool(ab_pool())
         .order(order.clone())
-        .order(order.clone().rename("reduced order").reduce_amount(1000000000000000u128.into()))
+        .order(order.clone().rename("reduced order").reduce_amount(1e-3.into_wei()))
         // These two solutions result in different clearing prices (due to different surplus),
         // so they can't be merged.
         .solution(ab_solution())

@@ -303,7 +303,7 @@ impl Default for Order {
             user_fee: Default::default(),
             solver_fee: Default::default(),
             name: Default::default(),
-            surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
+            surplus_factor: DEFAULT_SURPLUS_FACTOR.into_wei(),
             executed: Default::default(),
             expected_amounts: Default::default(),
             filtered: Default::default(),
