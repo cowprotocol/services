@@ -85,7 +85,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         .solving_share_of_deadline
                         .try_into()
                         .unwrap(),
-                },  
+                },
                 request_headers: config.request_headers,
             }
         }))

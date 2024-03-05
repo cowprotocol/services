@@ -6,19 +6,18 @@ use {
                 auction::{self, Auction},
                 solution::{self, Solution},
             },
-            eth,
-            liquidity,
+            eth, liquidity,
             time::Remaining,
         },
         infra::blockchain::Ethereum,
         util,
     },
+    anyhow::Result,
+    reqwest::header::HeaderName,
+    std::collections::HashMap,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
-    reqwest::header::HeaderName,
-    std::collections::HashMap,
-    anyhow::{Result},
 };
 
 pub mod dto;
@@ -119,11 +118,11 @@ impl Solver {
         }
 
         Ok(Self {
-                client: reqwest::ClientBuilder::new()
-                    .default_headers(headers)
-                    .build()?,
-                config,
-                eth,
+            client: reqwest::ClientBuilder::new()
+                .default_headers(headers)
+                .build()?,
+            config,
+            eth,
         })
     }
 
