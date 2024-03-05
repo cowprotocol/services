@@ -10,6 +10,7 @@ use crate::{
             ab_solution,
             ExpectedOrderAmounts,
             FeePolicy,
+            PriceImprovementQuote,
             Test,
         },
     },
