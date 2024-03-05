@@ -1,3 +1,7 @@
+FROM docker.io/flyway/flyway:10.7.1 as migrations
+COPY database/ /flyway/
+CMD ["migrate"]
+
 FROM docker.io/rust:1-slim-bookworm as cargo-build
 WORKDIR /src/
 
@@ -14,9 +18,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     cp target/release/driver / && \
     cp target/release/orderbook / && \
     cp target/release/refunder / && \
-    cp target/release/solvers / && \
-    cp -r database/sql /sql && \
-    cp -r database/flyway.conf /flyway.conf
+    cp target/release/solvers /
 
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
@@ -47,11 +49,6 @@ ENTRYPOINT [ "refunder" ]
 FROM intermediate as solvers
 COPY --from=cargo-build /solvers /usr/local/bin/solvers
 ENTRYPOINT [ "solvers" ]
-
-FROM docker.io/flyway/flyway:10.7.1 as migrations
-COPY --from=cargo-build /sql /flyway/sql
-COPY --from=cargo-build /flyway.conf /flyway/conf/flyway.conf
-CMD ["migrate"]
 
 # Extract Binary
 FROM intermediate

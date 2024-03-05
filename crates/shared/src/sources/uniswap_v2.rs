@@ -104,7 +104,8 @@ impl UniV2BaselineSourceParameters {
     }
 
     pub async fn into_source(&self, web3: &Web3) -> Result<UniV2BaselineSource> {
-        let router = contracts::IUniswapLikeRouter::at(web3, self.router);
+        let web3 = ethrpc::instrumented::instrument_with_label(web3, "uniswapV2".into());
+        let router = contracts::IUniswapLikeRouter::at(&web3, self.router);
         let factory = router.factory().call().await.context("factory")?;
         let pair_provider = pair_provider::PairProvider {
             factory,

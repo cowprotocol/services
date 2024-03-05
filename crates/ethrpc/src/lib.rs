@@ -3,6 +3,7 @@ pub mod current_block;
 pub mod dummy;
 pub mod extensions;
 pub mod http;
+pub mod instrumented;
 pub mod mock;
 pub mod multicall;
 
@@ -75,20 +76,23 @@ pub fn web3(
         Some(config) => Web3Transport::new(BufferedTransport::with_config(http, config)),
         None => Web3Transport::new(http),
     };
-
-    Web3::new(transport)
+    let instrumented = instrumented::InstrumentedTransport::new(name.to_string(), transport);
+    Web3::new(Web3Transport::new(instrumented))
 }
 
 /// Convenience method to create a transport from a URL.
 pub fn create_test_transport(url: &str) -> Web3Transport {
-    Web3Transport::new(HttpTransport::new(
+    let http_transport = HttpTransport::new(
         Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap(),
         url.try_into().unwrap(),
-        "".to_string(),
-    ))
+        "test".into(),
+    );
+    let dyn_transport = Web3Transport::new(http_transport);
+    let instrumented = instrumented::InstrumentedTransport::new("test".into(), dyn_transport);
+    Web3Transport::new(instrumented)
 }
 
 /// Like above but takes url from the environment NODE_URL.

@@ -120,7 +120,7 @@ pub struct AuctionProcessor(Arc<Mutex<Inner>>);
 struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
-    eth: Arc<infra::Ethereum>,
+    eth: infra::Ethereum,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -294,6 +294,7 @@ impl AuctionProcessor {
 
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+        let ethereum = ethereum.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
@@ -342,7 +343,8 @@ impl AuctionProcessor {
         .collect()
     }
 
-    pub fn new(eth: Arc<infra::Ethereum>) -> Self {
+    pub fn new(eth: &infra::Ethereum) -> Self {
+        let eth = eth.with_metric_label("auctionPreProcessing".into());
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),

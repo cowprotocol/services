@@ -4,6 +4,7 @@ use {super::ChainId, crate::domain, ethcontract::dyns::DynWeb3, primitive_types:
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
+    chainalysis_oracle: Option<contracts::ChainalysisOracle>,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: domain::eth::DomainSeparator,
@@ -36,6 +37,8 @@ impl Contracts {
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
         );
 
+        let chainalysis_oracle = contracts::ChainalysisOracle::deployed(web3).await.ok();
+
         let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
                 .domain_separator()
@@ -48,6 +51,7 @@ impl Contracts {
         Self {
             settlement,
             weth,
+            chainalysis_oracle,
             settlement_domain_separator,
         }
     }
@@ -58,6 +62,10 @@ impl Contracts {
 
     pub fn settlement_domain_separator(&self) -> &domain::eth::DomainSeparator {
         &self.settlement_domain_separator
+    }
+
+    pub fn chainalysis_oracle(&self) -> &Option<contracts::ChainalysisOracle> {
+        &self.chainalysis_oracle
     }
 
     pub fn weth(&self) -> &contracts::WETH9 {

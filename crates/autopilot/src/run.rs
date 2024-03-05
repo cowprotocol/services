@@ -512,6 +512,7 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
+            args.shared.market_orders_deprecation_date,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(
@@ -540,7 +541,10 @@ pub async fn run(args: Arguments) {
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         persistence.clone(),
-        args.banned_users.iter().copied().collect(),
+        infra::banned::Users::new(
+            eth.contracts().chainalysis_oracle().clone(),
+            args.banned_users,
+        ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         eth.current_block().clone(),
@@ -552,7 +556,6 @@ pub async fn run(args: Arguments) {
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFee::new(args.fee_policy.clone()),
-        args.cow_amms.into_iter().collect(),
     );
     solvable_orders_cache
         .update(block)
