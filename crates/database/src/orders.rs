@@ -739,14 +739,14 @@ pub async fn user_orders_with_quote(
         " o_quotes.buy_amount as quote_buy_amount, o.buy_amount as order_buy_amount,",
         " o.fee_amount as order_fee_amount, o_quotes.gas_amount as quote_gas_amount,",
         " o_quotes.gas_price as quote_gas_price, o_quotes.sell_token_price as quote_sell_token_price",
-        " FROM order_quotes o_quotes",
-        " LEFT JOIN (",
+        " FROM (",
             " SELECT *",
             " FROM (", OPEN_ORDERS,
             " AND owner = $2",
             " AND class = 'limit'",
             " ) AS subquery",
-        " ) AS o ON o_quotes.order_uid = o.uid"
+        " ) AS o",
+        " INNER JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid"
     );
     sqlx::query_as::<_, OrderWithQuote>(QUERY)
         .bind(min_valid_to)
