@@ -10,7 +10,7 @@ pub async fn insert_batch(
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
          surplus_max_volume_factor, volume_factor, price_improvement_factor, \
-         price_improvement_volume_factor, price_improvement_quote_sell_amount, \
+         price_improvement_max_volume_factor, price_improvement_quote_sell_amount, \
          price_improvement_quote_buy_amount, price_improvement_quote_fee) ",
     );
 
@@ -22,7 +22,7 @@ pub async fn insert_batch(
             .push_bind(fee_policy.surplus_max_volume_factor)
             .push_bind(fee_policy.volume_factor)
             .push_bind(fee_policy.price_improvement_factor)
-            .push_bind(fee_policy.price_improvement_volume_factor)
+            .push_bind(fee_policy.price_improvement_max_volume_factor)
             .push_bind(fee_policy.price_improvement_quote_sell_amount)
             .push_bind(fee_policy.price_improvement_quote_buy_amount)
             .push_bind(fee_policy.price_improvement_quote_fee);
@@ -74,7 +74,7 @@ mod tests {
             surplus_max_volume_factor: Some(1.0),
             volume_factor: None,
             price_improvement_factor: None,
-            price_improvement_volume_factor: None,
+            price_improvement_max_volume_factor: None,
             price_improvement_quote_sell_amount: None,
             price_improvement_quote_buy_amount: None,
             price_improvement_quote_fee: None,
@@ -88,7 +88,7 @@ mod tests {
             surplus_max_volume_factor: Some(0.05),
             volume_factor: None,
             price_improvement_factor: None,
-            price_improvement_volume_factor: None,
+            price_improvement_max_volume_factor: None,
             price_improvement_quote_sell_amount: None,
             price_improvement_quote_buy_amount: None,
             price_improvement_quote_fee: None,
@@ -102,7 +102,7 @@ mod tests {
             surplus_max_volume_factor: None,
             volume_factor: Some(0.06),
             price_improvement_factor: None,
-            price_improvement_volume_factor: None,
+            price_improvement_max_volume_factor: None,
             price_improvement_quote_sell_amount: None,
             price_improvement_quote_buy_amount: None,
             price_improvement_quote_fee: None,
@@ -116,7 +116,7 @@ mod tests {
             surplus_max_volume_factor: None,
             volume_factor: None,
             price_improvement_factor: Some(0.1),
-            price_improvement_volume_factor: Some(1.0),
+            price_improvement_max_volume_factor: Some(1.0),
             price_improvement_quote_sell_amount: Some(10.into()),
             price_improvement_quote_buy_amount: Some(20.into()),
             price_improvement_quote_fee: Some(1.into()),
