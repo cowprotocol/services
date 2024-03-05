@@ -198,7 +198,7 @@ async fn price_improvement_fee_buy_out_of_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 35000000000000000000u128.into(),
-            fee: 1000000000000000000u128.into(),
+            network_fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount = 50000000000000000000u128.into();
@@ -227,7 +227,7 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 35000000000000000000u128.into(),
-            fee: 1000000000000000000u128.into(),
+            network_fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount = 50000000000000000000u128.into();
@@ -257,7 +257,7 @@ async fn price_improvement_fee_buy_in_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 40000000000000000000u128.into(),
-            fee: 1000000000000000000u128.into(),
+            network_fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount = 50000000000000000000u128.into();
@@ -286,7 +286,7 @@ async fn price_improvement_fee_sell_in_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 40000000000000000000u128.into(),
-            fee: 1000000000000000000u128.into(),
+            network_fee: 1000000000000000000u128.into(),
         },
     };
     let order_sell_amount: eth::U256 = 50000000000000000000u128.into();
