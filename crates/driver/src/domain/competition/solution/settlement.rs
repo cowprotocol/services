@@ -75,7 +75,7 @@ impl Settlement {
         let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
         Self::new(
             auction.id().unwrap(),
-            [(solution.id, solution)].into(),
+            [(solution.id.clone(), solution)].into(),
             boundary,
             eth,
             simulator,
@@ -281,47 +281,11 @@ impl Settlement {
         Ok(score)
     }
 
-    // TODO(#1478): merge() should be defined on Solution rather than Settlement.
-    /// Merge another settlement into this settlement.
-    ///
-    /// Merging settlements results in a score that can be anything due to the
-    /// fact that contracts can do basically anything, but in practice it can be
-    /// assumed that the score will be at least equal to the sum of the scores
-    /// of the merged settlements.
-    pub async fn merge(
-        &self,
-        other: &Self,
-        eth: &Ethereum,
-        simulator: &Simulator,
-    ) -> Result<Self, Error> {
-        // The solver must be the same for both settlements.
-        if self.boundary.solver != other.boundary.solver {
-            return Err(Error::DifferentSolvers);
-        }
-
-        // Merge the settlements.
-        let mut solutions = self.solutions.clone();
-        solutions.extend(
-            other
-                .solutions
-                .iter()
-                .map(|(id, solution)| (*id, solution.clone())),
-        );
-        Self::new(
-            self.auction_id,
-            solutions,
-            self.boundary.clone().merge(other.boundary.clone())?,
-            eth,
-            simulator,
-        )
-        .await
-    }
-
     /// The solutions encoded in this settlement. This is a [`HashSet`] because
     /// multiple solutions can be encoded in a single settlement due to
     /// merging. See [`Self::merge`].
     pub fn solutions(&self) -> HashSet<super::Id> {
-        self.solutions.keys().copied().collect()
+        self.solutions.keys().cloned().collect()
     }
 
     /// Address of the solver which generated this settlement.
@@ -369,7 +333,7 @@ impl Settlement {
     /// are sent, therefore, notify id is None.
     pub fn notify_id(&self) -> Option<super::Id> {
         match self.solutions.len() {
-            1 => self.solutions.keys().next().copied(),
+            1 => self.solutions.keys().next().cloned(),
             _ => None,
         }
     }

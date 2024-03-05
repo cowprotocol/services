@@ -13,7 +13,7 @@ use {
         },
         util::Bytes,
     },
-    futures::{stream::FuturesUnordered, Stream, StreamExt},
+    futures::{stream::FuturesUnordered, StreamExt},
     itertools::Itertools,
     std::{
         collections::{HashMap, HashSet},
@@ -103,11 +103,36 @@ impl Competition {
             }
         });
 
+        // Merge solutions
+        let mut merged: Vec<Solution> = Vec::new();
+        for solution in solutions {
+            let mut extension = vec![];
+            for already_merged in merged.iter() {
+                match solution.merge(&already_merged) {
+                    Ok(merged) => {
+                        observe::merged(&solution, already_merged, &merged);
+                        extension.push(merged);
+                        continue;
+                    }
+                    Err(err) => {
+                        observe::not_merged(&solution, already_merged, err);
+                    }
+                }
+            }
+            // At least insert the current solution
+            extension.push(solution);
+            merged.extend(extension);
+        }
+        // Sort by "simplest", ie least merged solution.
+        // Maybe we should sort by score instead?
+        merged.sort_by_key(|solution| std::cmp::Reverse(solution.id().count_merges()));
+
         // Encode solutions into settlements (streamed).
-        let encoded = solutions
+        let encoded = merged
+            .into_iter()
             .map(|solution| async move {
                 let id = solution.id();
-                observe::encoding(id);
+                observe::encoding(id.clone());
                 let settlement = solution.encode(auction, &self.eth, &self.simulator).await;
                 (id, settlement)
             })
@@ -115,7 +140,7 @@ impl Competition {
             .filter_map(|(id, result)| async move {
                 result
                     .tap_err(|err| {
-                        observe::encoding_failed(self.solver.name(), id, err);
+                        observe::encoding_failed(self.solver.name(), id.clone(), err);
                         notify::encoding_failed(&self.solver, auction.id(), id, err);
                     })
                     .ok()
@@ -126,7 +151,12 @@ impl Competition {
         let mut settlements = Vec::new();
         if tokio::time::timeout(
             auction.deadline().driver().remaining().unwrap_or_default(),
-            merge_settlements(&mut settlements, encoded, &self.eth, &self.simulator),
+            async {
+                let mut encoded = std::pin::pin!(encoded);
+                while let Some(settlement) = encoded.next().await {
+                    settlements.push(settlement);
+                }
+            },
         )
         .await
         .is_err()
@@ -318,36 +348,6 @@ impl Competition {
             })
             .await
             .map(|_| ())
-    }
-}
-
-/// Tries to merge the incoming stream of new settlements into existing ones.
-/// Always adds the new settlement by itself.
-async fn merge_settlements(
-    merged: &mut Vec<Settlement>,
-    new: impl Stream<Item = Settlement>,
-    eth: &Ethereum,
-    simulator: &Simulator,
-) {
-    let eth = eth.with_metric_label("mergeSettlements".into());
-    let mut new = std::pin::pin!(new);
-    while let Some(settlement) = new.next().await {
-        // Try to merge [`settlement`] into some settlements.
-        for other in merged.iter_mut() {
-            match other.merge(&settlement, &eth, simulator).await {
-                Ok(m) => {
-                    *other = m;
-                    observe::merged(&settlement, other);
-                    // could possibly break here if we want to avoid merging
-                    // into multiple settlements
-                }
-                Err(err) => {
-                    observe::not_merged(&settlement, other, err);
-                }
-            }
-        }
-        // add [`settlement`] by itself
-        merged.push(settlement);
     }
 }
 

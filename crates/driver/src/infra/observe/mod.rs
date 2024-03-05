@@ -121,22 +121,13 @@ pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::
 }
 
 /// Observe that two solutions were merged.
-pub fn merged(settlement: &Settlement, other: &Settlement) {
-    tracing::debug!(
-        settlement_1 = ?settlement.solutions(),
-        settlement_2 = ?other.solutions(),
-        "merged solutions"
-    );
+pub fn merged(first: &Solution, other: &Solution, result: &Solution) {
+    tracing::debug!(?first, ?other, ?result, "merged solutions");
 }
 
 /// Observe that it was not possible to merge two solutions.
-pub fn not_merged(settlement: &Settlement, other: &Settlement, err: solution::Error) {
-    tracing::debug!(
-        ?err,
-        settlement_1 = ?settlement.solutions(),
-        settlement_2 = ?other.solutions(),
-        "solutions can't be merged"
-    );
+pub fn not_merged(first: &Solution, other: &Solution, err: solution::MergeError) {
+    tracing::debug!(?err, ?first, ?other, "solutions can't be merged");
 }
 
 /// Observe that scoring is about to start.
