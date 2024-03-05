@@ -308,7 +308,15 @@ fn add_balance_queries(
 ) -> EncodedSettlement {
     let (token, owner) = match query.kind {
         // track how much `buy_token` the `receiver` actually got
-        OrderKind::Sell => (query.buy_token, verification.receiver),
+        OrderKind::Sell => {
+            let receiver = match verification.receiver == H160::zero() {
+                // Settlement contract sends fund to owner if receiver is the 0 address.
+                true => verification.from,
+                false => verification.receiver,
+            };
+
+            (query.buy_token, receiver)
+        }
         // track how much `sell_token` the settlement contract actually spent
         OrderKind::Buy => (query.sell_token, settlement_contract),
     };
