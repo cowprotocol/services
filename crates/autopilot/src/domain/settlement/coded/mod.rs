@@ -87,8 +87,8 @@ impl Settlement {
                     token: buy_token.into(),
                     amount: trade.4.into(),
                 },
+                kind: flags.order_kind(),
                 executed: trade.9.into(),
-                flags,
                 signature: signature.into(),
                 prices: trade::Price {
                     uniform: trade::ClearingPrices {

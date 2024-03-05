@@ -1,13 +1,10 @@
-use {
-    super::TradeFlags,
-    crate::domain::{self, auction::order, eth, fee, settlement::surplus},
-};
+use crate::domain::{self, auction::order, eth, fee, settlement::surplus};
 
 #[derive(Debug)]
 pub struct Trade {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub flags: TradeFlags,
+    pub kind: order::Kind,
     pub executed: eth::TargetAmount,
     pub signature: order::Signature,
 
@@ -26,7 +23,7 @@ impl Trade {
     /// [ Denominated in surplus token ]
     fn surplus_before_fee(&self) -> Option<eth::Asset> {
         surplus::trade_surplus(
-            self.flags.order_kind(),
+            self.kind,
             self.executed,
             self.sell,
             self.buy,
@@ -40,7 +37,7 @@ impl Trade {
     /// [ Denominated in surplus token ]
     pub fn surplus(&self) -> Option<eth::Asset> {
         surplus::trade_surplus(
-            self.flags.order_kind(),
+            self.kind,
             self.executed,
             self.sell,
             self.buy,
@@ -66,7 +63,7 @@ impl Trade {
     ///
     /// [ Denominated in sell token ]
     pub fn fee_in_sell_token(&self) -> Option<eth::Asset> {
-        match self.flags.order_kind() {
+        match self.kind {
             order::Kind::Buy => self.fee(),
             order::Kind::Sell => self.fee().map(|fee| eth::Asset {
                 token: self.sell.token,
@@ -91,7 +88,7 @@ impl Trade {
                 factor,
                 max_volume_factor,
             } => Some(eth::Asset {
-                token: match self.flags.order_kind() {
+                token: match self.kind {
                     order::Kind::Sell => self.buy.token,
                     order::Kind::Buy => self.sell.token,
                 },
@@ -104,14 +101,12 @@ impl Trade {
                     {
                         // Convert the executed amount to surplus token so it can be compared with
                         // the surplus
-                        let executed_in_surplus_token = match self.flags.order_kind() {
+                        let executed_in_surplus_token = match self.kind {
                             order::Kind::Sell => {
-                                *self.executed * self.prices.custom.sell
-                                    / self.prices.custom.buy
+                                *self.executed * self.prices.custom.sell / self.prices.custom.buy
                             }
                             order::Kind::Buy => {
-                                *self.executed * self.prices.custom.buy
-                                    / self.prices.custom.sell
+                                *self.executed * self.prices.custom.buy / self.prices.custom.sell
                             }
                         };
                         apply_factor(executed_in_surplus_token, *max_volume_factor)?

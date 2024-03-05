@@ -64,7 +64,7 @@ impl fmt::Debug for OrderUid {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
     Buy,
     Sell,
