@@ -1,9 +1,6 @@
 use {
-    crate::util::{conv::u256::U256Ext, Bytes},
-    bigdecimal::FromPrimitive,
+    crate::util::Bytes,
     itertools::Itertools,
-    num::CheckedMul,
-    number::conversions::big_rational_to_u256,
     std::collections::{HashMap, HashSet},
 };
 
@@ -182,11 +179,13 @@ pub struct TokenAmount(pub U256);
 
 impl TokenAmount {
     pub fn apply_factor(&self, factor: f64) -> Option<Self> {
-        let amount = self.0.to_big_rational();
-        let factor = num::BigRational::from_f64(factor)?;
-        big_rational_to_u256(&amount.checked_mul(&factor)?)
-            .ok()
-            .map(Self)
+        Some(
+            (self
+                .0
+                .checked_mul(U256::from_f64_lossy(factor * 1000000000000000000.))?
+                / 1000000000000000000u128)
+                .into(),
+        )
     }
 }
 
