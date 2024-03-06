@@ -198,20 +198,23 @@ async fn price_improvement_fee_buy_out_of_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 35000000000000000000u128.into(),
-            network_fee: 1000000000000000000u128.into(),
+            network_fee: 20000000000000000000u128.into(),
         },
     };
-    let order_sell_amount = 50000000000000000000u128.into();
-    let order_buy_amount = 40000000000000000000u128.into();
+    // (order.sell + order.fee) * quote.buy < (quote.sell + quote.fee) * order.buy
+    // (45 + 10) * 35 < (50 + 20) * 35
+    // 1925 < 2450
+    let order_sell_amount = 45000000000000000000u128.into();
+    let order_buy_amount = 35000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount,
-        network_fee: Some(2000000000000000000u128.into()),
+        network_fee: Some(10000000000000000000u128.into()),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_buy_amount,
-        executed_sell_amount: 54142857142857142857u128.into(),
+        executed_sell_amount: 57500000000000000000u128.into(),
         executed_buy_amount: order_buy_amount,
     };
 
@@ -227,12 +230,15 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 35000000000000000000u128.into(),
-            network_fee: 1000000000000000000u128.into(),
+            network_fee: 20000000000000000000u128.into(),
         },
     };
+    // (order.sell + order.fee) * quote.buy < (quote.sell + quote.fee) * order.buy
+    // (50 + 10) * 35 < (50 + 20) * 40
+    // 2100 < 2800
     let order_sell_amount = 50000000000000000000u128.into();
     let order_buy_amount = 40000000000000000000u128.into();
-    let network_fee = 2000000000000000000u128.into();
+    let network_fee = 10000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
@@ -242,7 +248,7 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         quote_buy_amount: order_buy_amount,
         executed: order_sell_amount - network_fee,
         executed_sell_amount: order_sell_amount,
-        executed_buy_amount: 37156862745098039215u128.into(),
+        executed_buy_amount: 32500000000000000000u128.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -255,22 +261,25 @@ async fn price_improvement_fee_buy_in_market_order() {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            sell_amount: 50000000000000000000u128.into(),
-            buy_amount: 40000000000000000000u128.into(),
-            network_fee: 1000000000000000000u128.into(),
+            sell_amount: 45000000000000000000u128.into(),
+            buy_amount: 35000000000000000000u128.into(),
+            network_fee: 10000000000000000000u128.into(),
         },
     };
+    // (order.sell + order.fee) * quote.buy < (quote.sell + quote.fee) * order.buy
+    // (50 + 15) * 35 < (45 + 10) * 35
+    // 2275 < 1925
     let order_sell_amount = 50000000000000000000u128.into();
     let order_buy_amount = 35000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount,
-        network_fee: Some(2000000000000000000u128.into()),
+        network_fee: Some(15000000000000000000u128.into()),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_buy_amount,
-        executed_sell_amount: order_sell_amount,
+        executed_sell_amount: 52500000000000000000u128.into(),
         executed_buy_amount: order_buy_amount,
     };
 
@@ -286,12 +295,15 @@ async fn price_improvement_fee_sell_in_market_order() {
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
             buy_amount: 40000000000000000000u128.into(),
-            network_fee: 1000000000000000000u128.into(),
+            network_fee: 10000000000000000000u128.into(),
         },
     };
+    // (order.sell + order.fee) * quote.buy < (quote.sell + quote.fee) * order.buy
+    // (50 + 15) * 40 < (50 + 10) * 35
+    // 2600 < 2100
     let order_sell_amount: eth::U256 = 50000000000000000000u128.into();
     let order_buy_amount: eth::U256 = 35000000000000000000u128.into();
-    let network_fee = 20000000000000000000u128.into();
+    let network_fee = 15000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
@@ -301,7 +313,7 @@ async fn price_improvement_fee_sell_in_market_order() {
         quote_buy_amount: order_buy_amount,
         executed: order_sell_amount - network_fee,
         executed_sell_amount: order_sell_amount,
-        executed_buy_amount: order_buy_amount,
+        executed_buy_amount: 34166666666666666667u128.into(),
     };
 
     protocol_fee_test_case(test_case).await;
