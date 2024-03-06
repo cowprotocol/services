@@ -1,4 +1,5 @@
 use {
+    super::serialize,
     number::serialization::HexOrDecimalU256,
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
@@ -76,7 +77,7 @@ type BlockNo = u64;
 pub struct Tx {
     pub from: H160,
     pub to: H160,
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,

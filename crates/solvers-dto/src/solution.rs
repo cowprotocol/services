@@ -1,4 +1,5 @@
 use {
+    super::serialize,
     number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_with::serde_as,
@@ -35,7 +36,7 @@ pub enum Trade {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fulfillment {
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub order: [u8; 56],
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
@@ -65,7 +66,7 @@ pub struct JitOrder {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub app_data: [u8; 32],
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
@@ -74,7 +75,7 @@ pub struct JitOrder {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signing_scheme: SigningScheme,
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub signature: Vec<u8>,
 }
 
@@ -115,7 +116,7 @@ pub struct CustomInteraction {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(rename = "callData")]
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub calldata: Vec<u8>,
     pub allowances: Vec<Allowance>,
     pub inputs: Vec<Asset>,
@@ -132,7 +133,7 @@ pub struct OrderInteraction {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[serde(rename = "callData")]
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub calldata: Vec<u8>,
 }
 

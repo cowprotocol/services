@@ -1,4 +1,5 @@
 use {
+    super::serialize,
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::Deserialize,
@@ -25,7 +26,7 @@ pub struct Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Order {
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub uid: [u8; 56],
     pub sell_token: H160,
     pub buy_token: H160,
@@ -178,7 +179,7 @@ pub struct ForeignLimitOrder {
     pub address: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
-    #[serde(with = "hex::serde")]
+    #[serde_as(as = "serialize::Hex")]
     pub hash: [u8; 32],
     pub maker_token: H160,
     pub taker_token: H160,
