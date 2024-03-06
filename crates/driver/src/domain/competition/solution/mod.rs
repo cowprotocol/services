@@ -219,7 +219,7 @@ impl Solution {
 
         // Solutions should not settle the same order twice
         let uids: HashSet<_> = self.user_trades().map(|t| t.order().uid).collect();
-        let other_uids: HashSet<_> = self.user_trades().map(|t| t.order().uid).collect();
+        let other_uids: HashSet<_> = other.user_trades().map(|t| t.order().uid).collect();
         if !uids.is_disjoint(&other_uids) {
             return Err(MergeError::DuplicateTrade);
         }
