@@ -24,8 +24,8 @@
 
 use {
     super::{
+        error::Math,
         trade::{self, ClearingPrices, Fee, Fulfillment},
-        MathError,
     },
     crate::domain::{
         competition::{
@@ -50,7 +50,7 @@ impl Fulfillment {
                 Fee::Static
             }
             Some(fee) => {
-                Fee::Dynamic((fee.0.checked_add(protocol_fee).ok_or(MathError::Overflow)?).into())
+                Fee::Dynamic((fee.0.checked_add(protocol_fee).ok_or(Math::Overflow)?).into())
             }
         };
 
@@ -64,7 +64,7 @@ impl Fulfillment {
                 self.executed()
                     .0
                     .checked_sub(protocol_fee)
-                    .ok_or(MathError::Overflow)?,
+                    .ok_or(Math::Overflow)?,
             ),
         };
 
@@ -161,9 +161,9 @@ impl Fulfillment {
             Side::Buy => fee,
             Side::Sell => fee
                 .checked_mul(prices.buy)
-                .ok_or(MathError::Overflow)?
+                .ok_or(Math::Overflow)?
                 .checked_div(prices.sell)
-                .ok_or(MathError::DivisionByZero)?,
+                .ok_or(Math::DivisionByZero)?,
         };
         Ok(fee_in_sell_token)
     }
@@ -172,7 +172,7 @@ impl Fulfillment {
 fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
     Ok(amount
         .checked_mul(eth::U256::from_f64_lossy(factor * 10000.))
-        .ok_or(MathError::Overflow)?
+        .ok_or(Math::Overflow)?
         / 10000)
 }
 
@@ -205,24 +205,24 @@ fn adjust_quote_to_order_limits(
 ) -> Result<(eth::U256, eth::U256), Error> {
     let quote_sell_amount = quote_sell_amount
         .checked_add(quote_fee_amount)
-        .ok_or(MathError::Overflow)?;
+        .ok_or(Math::Overflow)?;
 
     match order_side {
         Side::Sell => {
             let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order_sell_amount)
-                .ok_or(MathError::Overflow)?
+                .ok_or(Math::Overflow)?
                 .checked_div(quote_sell_amount)
-                .ok_or(MathError::DivisionByZero)?;
+                .ok_or(Math::DivisionByZero)?;
             let buy_amount = order_buy_amount.max(scaled_buy_amount);
             Ok((order_sell_amount, buy_amount))
         }
         Side::Buy => {
             let scaled_sell_amount = quote_sell_amount
                 .checked_mul(order_buy_amount)
-                .ok_or(MathError::Overflow)?
+                .ok_or(Math::Overflow)?
                 .checked_div(quote_buy_amount)
-                .ok_or(MathError::DivisionByZero)?;
+                .ok_or(Math::DivisionByZero)?;
             let sell_amount = order_sell_amount.min(scaled_sell_amount);
             Ok((sell_amount, order_buy_amount))
         }
@@ -236,7 +236,7 @@ pub enum Error {
     #[error("orders with non solver determined gas cost fees are not supported")]
     ProtocolFeeOnStaticOrder,
     #[error(transparent)]
-    Math(#[from] super::MathError),
+    Math(#[from] Math),
     #[error(transparent)]
     Fulfillment(#[from] trade::Error),
 }

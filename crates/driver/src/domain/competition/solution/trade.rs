@@ -1,5 +1,5 @@
 use {
-    super::MathError,
+    super::error::Math,
     crate::domain::{
         competition::{
             self,
@@ -109,14 +109,12 @@ impl Fulfillment {
                 .executed
                 .0
                 .checked_mul(prices.buy)
-                .ok_or(MathError::Overflow)?
+                .ok_or(Math::Overflow)?
                 .checked_div(prices.sell)
-                .ok_or(MathError::DivisionByZero)?,
+                .ok_or(Math::DivisionByZero)?,
         };
         Ok(eth::TokenAmount(
-            before_fee
-                .checked_add(self.fee().0)
-                .ok_or(MathError::Overflow)?,
+            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
         ))
     }
 
@@ -128,9 +126,9 @@ impl Fulfillment {
                 .executed
                 .0
                 .checked_mul(prices.sell)
-                .ok_or(MathError::Overflow)?
+                .ok_or(Math::Overflow)?
                 .checked_div(prices.buy)
-                .ok_or(MathError::DivisionByZero)?,
+                .ok_or(Math::DivisionByZero)?,
         };
         Ok(eth::TokenAmount(amount))
     }
@@ -151,9 +149,9 @@ impl Fulfillment {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
                 executed
                     .checked_mul(prices.buy)
-                    .ok_or(MathError::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(prices.sell)
-                    .ok_or(MathError::DivisionByZero)?
+                    .ok_or(Math::DivisionByZero)?
             }
             Side::Sell => executed,
         };
@@ -165,15 +163,15 @@ impl Fulfillment {
                     .map(|fee| fee.0)
                     .ok_or(Error::ProtocolFeeOnStaticOrder)?,
             )
-            .ok_or(MathError::Overflow)?;
+            .ok_or(Math::Overflow)?;
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
                 let limit_sell_amount = limit_sell
                     .checked_mul(executed)
-                    .ok_or(MathError::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(limit_buy)
-                    .ok_or(MathError::DivisionByZero)?;
+                    .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
                 // be caught by simulation
@@ -185,15 +183,15 @@ impl Fulfillment {
                 // Scale to support partially fillable orders
                 let limit_buy_amount = limit_buy
                     .checked_mul(executed_sell_amount_with_fee)
-                    .ok_or(MathError::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(limit_sell)
-                    .ok_or(MathError::DivisionByZero)?;
+                    .ok_or(Math::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
                 let executed_buy_amount = executed
                     .checked_mul(prices.sell)
-                    .ok_or(MathError::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(prices.buy)
-                    .ok_or(MathError::DivisionByZero)?;
+                    .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
                 // be caught by simulation
@@ -277,5 +275,5 @@ pub enum Error {
     #[error("invalid executed amount")]
     InvalidExecutedAmount,
     #[error(transparent)]
-    Math(#[from] super::MathError),
+    Math(#[from] Math),
 }
