@@ -83,7 +83,7 @@ impl Competition {
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
         let solutions = solutions.into_iter().filter(|solution| {
-            if !ids.insert(solution.id()) {
+            if !ids.insert(solution.id().clone()) {
                 observe::duplicated_solution_id(self.solver.name(), solution.id());
                 notify::duplicated_solution_id(&self.solver, auction.id(), solution.id());
                 false
@@ -96,43 +96,21 @@ impl Competition {
         let solutions = solutions.filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
-                notify::empty_solution(&self.solver, auction.id(), solution.id());
+                notify::empty_solution(&self.solver, auction.id(), solution.id().clone());
                 false
             } else {
                 true
             }
         });
 
-        // Merge solutions
-        let mut merged: Vec<Solution> = Vec::new();
-        for solution in solutions {
-            let mut extension = vec![];
-            for already_merged in merged.iter() {
-                match solution.merge(already_merged) {
-                    Ok(merged) => {
-                        observe::merged(&solution, already_merged, &merged);
-                        extension.push(merged);
-                        continue;
-                    }
-                    Err(err) => {
-                        observe::not_merged(&solution, already_merged, err);
-                    }
-                }
-            }
-            // At least insert the current solution
-            extension.push(solution);
-            merged.extend(extension);
-        }
-        // Sort by "simplest", ie least merged solution.
-        // Maybe we should sort by score instead?
-        merged.sort_by_key(|solution| std::cmp::Reverse(solution.id().count_merges()));
+        let merged = merge(solutions);
 
         // Encode solutions into settlements (streamed).
         let encoded = merged
             .into_iter()
             .map(|solution| async move {
-                let id = solution.id();
-                observe::encoding(id.clone());
+                let id = solution.id().clone();
+                observe::encoding(&id);
                 let settlement = solution.encode(auction, &self.eth, &self.simulator).await;
                 (id, settlement)
             })
@@ -140,7 +118,7 @@ impl Competition {
             .filter_map(|(id, result)| async move {
                 result
                     .tap_err(|err| {
-                        observe::encoding_failed(self.solver.name(), id.clone(), err);
+                        observe::encoding_failed(self.solver.name(), &id, err);
                         notify::encoding_failed(&self.solver, auction.id(), id, err);
                     })
                     .ok()
@@ -350,6 +328,34 @@ impl Competition {
             .await
             .map(|_| ())
     }
+}
+
+/// Creates a vector with all possible combinations of the given solutions.
+/// The result is sorted by the number of merges, so the first elements are the
+/// original solutions.
+fn merge(solutions: impl Iterator<Item = Solution>) -> Vec<Solution> {
+    let mut merged: Vec<Solution> = Vec::new();
+    for solution in solutions {
+        let mut extension = vec![];
+        for already_merged in merged.iter() {
+            match solution.merge(already_merged) {
+                Ok(merged) => {
+                    observe::merged(&solution, already_merged, &merged);
+                    extension.push(merged);
+                }
+                Err(err) => {
+                    observe::not_merged(&solution, already_merged, err);
+                }
+            }
+        }
+        // At least insert the current solution
+        extension.push(solution);
+        merged.extend(extension);
+    }
+    // Sort by "simplest", ie least merged solution.
+    // Maybe we should sort by score instead?
+    merged.sort_by_key(|solution| std::cmp::Reverse(solution.id().count_merges()));
+    merged
 }
 
 /// Solution information sent to the protocol by the driver before the solution

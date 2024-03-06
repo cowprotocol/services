@@ -62,7 +62,7 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
-pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
+pub fn duplicated_solution_id(solver: &solver::Name, id: &solution::Id) {
     tracing::debug!(?id, "discarded solution: duplicated id");
     metrics::get()
         .dropped_solutions
@@ -80,7 +80,7 @@ pub fn solutions(solutions: &[Solution]) {
 }
 
 /// Observe that a solution was discarded because it is empty.
-pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
+pub fn empty_solution(solver: &solver::Name, id: &solution::Id) {
     tracing::debug!(?id, "discarded solution: empty");
     metrics::get()
         .dropped_solutions
@@ -107,12 +107,12 @@ pub fn postprocessing_timed_out(completed: &[Settlement]) {
 }
 
 /// Observe that a solution is about to be encoded into a settlement.
-pub fn encoding(id: solution::Id) {
+pub fn encoding(id: &solution::Id) {
     tracing::trace!(?id, "encoding settlement");
 }
 
 /// Observe that settlement encoding failed.
-pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
+pub fn encoding_failed(solver: &solver::Name, id: &solution::Id, err: &solution::Error) {
     tracing::info!(?id, ?err, "discarded solution: settlement encoding");
     metrics::get()
         .dropped_solutions

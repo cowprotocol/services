@@ -130,11 +130,11 @@ pub fn executed(
 pub fn duplicated_solution_id(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
 ) {
     solver.notify(
         auction_id,
-        Some(solution_id),
+        Some(solution_id.clone()),
         notification::Kind::DuplicatedSolutionId,
     );
 }

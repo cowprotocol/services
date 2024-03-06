@@ -26,7 +26,7 @@ pub struct Notification {
 #[derive(Debug, Clone)]
 pub enum Id {
     Single(solution::Id),
-    Merged(Vec<Id>),
+    Merged(Vec<u64>),
 }
 
 /// All types of notifications solvers can be informed about.

@@ -99,16 +99,14 @@ pub struct Notification {
 #[serde(untagged)]
 pub enum SolutionId {
     Single(u64),
-    Merged(Vec<SolutionId>),
+    Merged(Vec<u64>),
 }
 
 impl SolutionId {
     pub fn from_domain(id: solution::Id) -> Self {
         match id {
             solution::Id::Single(id) => SolutionId::Single(id),
-            solution::Id::Merged(ids) => {
-                SolutionId::Merged(ids.into_iter().map(SolutionId::from_domain).collect())
-            }
+            solution::Id::Merged(ids) => SolutionId::Merged(ids),
         }
     }
 }

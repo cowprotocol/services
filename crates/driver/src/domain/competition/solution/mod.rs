@@ -101,8 +101,8 @@ impl Solution {
     }
 
     /// The ID of this solution.
-    pub fn id(&self) -> Id {
-        self.id.clone()
+    pub fn id(&self) -> &Id {
+        &self.id
     }
 
     /// Trades settled by this solution.
@@ -218,34 +218,16 @@ impl Solution {
         }
 
         // Solutions should not settle the same order twice
-        let uids = self
-            .trades()
-            .iter()
-            .filter_map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => Some(fulfillment.order().uid),
-                Trade::Jit(_) => None,
-            })
-            .collect::<HashSet<_>>();
-        if other
-            .trades()
-            .iter()
-            .filter_map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => Some(fulfillment.order().uid),
-                Trade::Jit(_) => None,
-            })
-            .any(|other_uid| uids.contains(&other_uid))
-        {
+        let uids: HashSet<_> = self.user_trades().map(|t| t.order().uid).collect();
+        let other_uids: HashSet<_> = self.user_trades().map(|t| t.order().uid).collect();
+        if !uids.is_disjoint(&other_uids) {
             return Err(MergeError::DuplicateTrade);
         }
 
-        // Solution prices need to congruent, i.e. there needs to be a unique factor to
-        // scale all common tokens from one solution into the other.
-        let scaling_factors = scaling_factors(&self.prices, &other.prices);
-        let factor = match scaling_factors.len() {
-            0 => BigRational::one(),
-            1 => scaling_factors.iter().next().unwrap().clone(),
-            _ => return Err(MergeError::IncongruentPrices),
-        };
+        // Solution prices need to be congruent, i.e. there needs to be a unique factor
+        // to scale all common tokens from one solution into the other.
+        let factor =
+            scaling_factor(&self.prices, &other.prices).ok_or(MergeError::IncongruentPrices)?;
 
         // To avoid precision issues, make sure we always scale up settlements
         if factor < BigRational::one() {
@@ -261,6 +243,8 @@ impl Solution {
             .map_err(MergeError::Math)?;
             match prices.entry(*token) {
                 Entry::Occupied(entry) => {
+                    // This shouldn't fail unless there are rounding errors given that the scaling
+                    // factor is unique
                     if *entry.get() != scaled {
                         return Err(MergeError::IncongruentPrices);
                     }
@@ -273,7 +257,7 @@ impl Solution {
 
         // Merge remaining fields
         Ok(Solution {
-            id: Id::Merged(vec![self.id.clone(), other.id.clone()]),
+            id: Id::Merged([self.id.ids(), other.id.ids()].concat()),
             trades: [self.trades.clone(), other.trades.clone()].concat(),
             prices,
             interactions: [self.interactions.clone(), other.interactions.clone()].concat(),
@@ -407,11 +391,14 @@ impl std::fmt::Debug for Solution {
     }
 }
 
-/// Given two solutions returns a set of factors with
+/// Given two solutions returns the factors with
 /// which prices of the second solution would have to be multiplied so that the
 /// given token would have the same price in both solutions.
-fn scaling_factors(first: &Prices, second: &Prices) -> HashSet<BigRational> {
-    first
+/// If the solutions have no prices in common any scaling factor is valid (we
+/// return 1). Returns None if the solutions have more than one price in common
+/// and the scaling factor is not unique.
+fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
+    let factors: HashSet<_> = first
         .keys()
         .collect::<HashSet<_>>()
         .intersection(&second.keys().collect::<HashSet<_>>())
@@ -423,7 +410,12 @@ fn scaling_factors(first: &Prices, second: &Prices) -> HashSet<BigRational> {
                 number::conversions::u256_to_big_int(&first_price),
             )
         })
-        .collect()
+        .collect();
+    match factors.len() {
+        0 => Some(BigRational::one()),
+        1 => factors.into_iter().next(),
+        _ => None,
+    }
 }
 
 /// Carries information how the score should be calculated.
@@ -453,7 +445,7 @@ impl SolverScore {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Id {
     Single(u64),
-    Merged(Vec<Id>),
+    Merged(Vec<u64>),
 }
 
 impl From<u64> for Id {
@@ -466,9 +458,13 @@ impl Id {
     /// Returns the number of solutions that has gone into merging this
     /// solution.
     pub fn count_merges(&self) -> usize {
+        self.ids().len()
+    }
+
+    pub fn ids(&self) -> Vec<u64> {
         match self {
-            Id::Single(_) => 1,
-            Id::Merged(ids) => ids.iter().map(|id| id.count_merges()).sum(),
+            Id::Single(id) => vec![*id],
+            Id::Merged(ids) => ids.clone(),
         }
     }
 }
