@@ -8,7 +8,7 @@ use {
             time,
         },
         infra::{self, blockchain, observe, Ethereum},
-        util,
+        util::{self},
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
@@ -111,6 +111,18 @@ impl Auction {
 
     pub fn score_cap(&self) -> Score {
         self.score_cap
+    }
+
+    pub fn prices(&self) -> Prices {
+        self.tokens
+            .0
+            .iter()
+            .filter_map(|(address, token)| token.price.map(|price| (*address, price)))
+            .chain(std::iter::once((
+                eth::ETH_TOKEN,
+                eth::U256::exp10(18).into(),
+            )))
+            .collect()
     }
 }
 
@@ -417,6 +429,9 @@ impl From<eth::U256> for Price {
         Self(value.into())
     }
 }
+
+/// All auction prices
+pub type Prices = HashMap<eth::TokenAddress, Price>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub i64);

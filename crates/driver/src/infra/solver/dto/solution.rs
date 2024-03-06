@@ -199,10 +199,10 @@ impl Solutions {
                     weth,
                 )
                 .map_err(|err| match err {
-                    competition::solution::SolutionError::InvalidClearingPrices => {
+                    competition::solution::error::Solution::InvalidClearingPrices => {
                         super::Error("invalid clearing prices".to_owned())
                     }
-                    competition::solution::SolutionError::ProtocolFee(err) => {
+                    competition::solution::error::Solution::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
                     }
                 })

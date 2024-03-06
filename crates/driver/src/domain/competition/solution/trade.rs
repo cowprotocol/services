@@ -142,7 +142,7 @@ impl Fulfillment {
         limit_sell: eth::U256,
         limit_buy: eth::U256,
         prices: ClearingPrices,
-    ) -> Result<eth::U256, Error> {
+    ) -> Result<eth::TokenAmount, Error> {
         let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
@@ -200,7 +200,7 @@ impl Fulfillment {
                     .unwrap_or(eth::U256::zero())
             }
         };
-        Ok(surplus)
+        Ok(surplus.into())
     }
 }
 

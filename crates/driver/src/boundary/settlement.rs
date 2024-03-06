@@ -15,7 +15,7 @@ use {
         infra::Ethereum,
         util::conv::u256::U256Ext,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{anyhow, Context, Ok, Result},
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -167,6 +167,7 @@ impl Settlement {
                     gas_amount: None,
                 }
             }
+            competition::SolverScore::Surplus => http_solver::model::Score::Surplus,
         };
 
         Ok(Self {
@@ -211,6 +212,7 @@ impl Settlement {
                 success_probability,
                 ..
             } => competition::SolverScore::RiskAdjusted(success_probability),
+            http_solver::model::Score::Surplus => competition::SolverScore::Surplus,
         }
     }
 
