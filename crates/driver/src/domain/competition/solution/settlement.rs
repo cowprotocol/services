@@ -218,13 +218,13 @@ impl Settlement {
     fn cip38_score(
         &self,
         auction: &competition::Auction,
-    ) -> Result<eth::TokenAmount, solution::error::Scoring> {
+    ) -> Result<eth::Ether, solution::error::Scoring> {
         let prices = auction.prices();
 
         self.solutions
             .values()
             .map(|solution| solution.scoring(&prices))
-            .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
+            .try_fold(eth::Ether(eth::U256::zero()), |acc, score| {
                 score.map(|score| acc + score)
             })
     }

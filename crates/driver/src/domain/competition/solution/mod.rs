@@ -122,7 +122,7 @@ impl Solution {
     }
 
     /// JIT score calculation as per CIP38
-    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, error::Scoring> {
+    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.user_trades() {
             // Solver generated fulfillment does not include the fee in the executed amount

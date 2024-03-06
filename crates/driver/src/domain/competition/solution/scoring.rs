@@ -36,11 +36,11 @@ impl Scoring {
     /// Settlement score is valid only if all trade scores are valid.
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+    pub fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         self.trades
             .iter()
             .map(|trade| trade.score(prices))
-            .try_fold(eth::TokenAmount(eth::U256::zero()), |acc, score| {
+            .try_fold(eth::Ether(eth::U256::zero()), |acc, score| {
                 score.map(|score| acc + score)
             })
     }
@@ -83,7 +83,7 @@ impl Trade {
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    fn score(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+    fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
@@ -134,7 +134,7 @@ impl Trade {
     /// fees have been applied.
     ///
     /// Denominated in NATIVE token
-    fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+    fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let surplus = self.surplus_token_price(prices)?.apply(
             self.surplus()
                 .ok_or(Error::Surplus(self.sell, self.buy))?
@@ -215,7 +215,7 @@ impl Trade {
     /// Protocol fee is defined by fee policies attached to the order.
     ///
     /// Denominated in NATIVE token
-    fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, Error> {
+    fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let protocol_fee = self
             .surplus_token_price(prices)?
             .apply(self.protocol_fee()?.amount);
