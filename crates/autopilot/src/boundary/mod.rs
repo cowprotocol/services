@@ -18,8 +18,7 @@ pub use {
             OrderUid,
             SellTokenSource,
         },
-        signature::{EcdsaSignature, Signature, SigningScheme},
-        DomainSeparator,
+        signature::{EcdsaSignature, Signature},
     },
     shared::order_validation::{is_order_outside_market_price, Amounts},
 };
