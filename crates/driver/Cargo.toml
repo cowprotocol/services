@@ -49,7 +49,7 @@ toml = "0.7"
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
 url = { version = "2.3", features = ["serde"] }
-web3 = { workspace = true }
+web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
@@ -73,4 +73,5 @@ warp = { workspace = true }
 [dev-dependencies]
 maplit = { workspace = true }
 mockall = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
+solvers-dto = { path = "../solvers-dto" }
+tokio = { workspace = true, features = ["test-util", "process"] }

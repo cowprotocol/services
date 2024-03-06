@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-bigdecimal = { workspace = true }
+bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 hex = { workspace = true, features = ["serde"] }
 number = { path = "../number"}
