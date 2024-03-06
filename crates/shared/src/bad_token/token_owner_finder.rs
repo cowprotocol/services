@@ -8,10 +8,7 @@ use {
     self::{
         blockscout::BlockscoutTokenOwnerFinder,
         liquidity::{
-            BalancerVaultFinder,
-            FeeValues,
-            UniswapLikePairProviderFinder,
-            UniswapV3Finder,
+            BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder,
         },
     },
     crate::{
@@ -19,14 +16,13 @@ use {
         bad_token::token_owner_finder::{
             ethplorer::EthplorerTokenOwnerFinder,
             solvers::{
-                solver_api::SolverConfiguration,
-                solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+                solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
             },
             token_owner_list::TokenOwnerList,
         },
         baseline_solver::BaseTokens,
         ethcontract_error::EthcontractErrorType,
-        ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+        ethrpc::{Web3, MAX_BATCH_SIZE},
         http_client::HttpClientFactory,
         sources::uniswap_v2::pair_provider::PairProvider,
     },
@@ -342,29 +338,22 @@ impl TokenOwnerFinding for TokenOwnerFinder {
         futures::pin_mut!(stream);
 
         while let Some(chunk) = stream.next().await {
-            let mut batch = Web3CallBatch::new(self.web3.transport().clone());
-            let futures = chunk
-                .iter()
-                .map(|&address| {
-                    let balance = instance.balance_of(address).batch_call(&mut batch);
-                    async move {
-                        let balance = match balance.await {
-                            Ok(balance) => Some(balance),
-                            Err(err) if EthcontractErrorType::is_contract_err(&err) => None,
-                            Err(err) => return Err(err),
-                        };
-
-                        Ok((address, balance))
+            let futures = chunk.into_iter().map(|owner| {
+                let call = instance.balance_of(owner).call();
+                async move {
+                    match call.await {
+                        Ok(balance) => Ok((owner, balance)),
+                        Err(err) if EthcontractErrorType::is_contract_err(&err) => {
+                            Ok((owner, 0.into()))
+                        }
+                        Err(err) => Err(err),
                     }
-                })
-                .collect::<Vec<_>>();
-
-            batch.execute_all(MAX_BATCH_SIZE).await;
+                }
+            });
             let balances = futures::future::try_join_all(futures).await?;
 
             if let Some(holder) = balances
                 .into_iter()
-                .filter_map(|(address, balance)| Some((address, balance?)))
                 .find(|(_, balance)| *balance >= min_balance)
             {
                 return Ok(Some(holder));
