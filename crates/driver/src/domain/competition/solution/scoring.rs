@@ -1,5 +1,8 @@
 use {
-    super::order::{self, Side},
+    super::{
+        error::Math,
+        order::{self, Side},
+    },
     crate::{
         domain::{competition::auction, eth},
         util::conv::u256::U256Ext,
@@ -174,16 +177,16 @@ impl Trade {
                                 .executed
                                 .0
                                 .checked_mul(self.custom_price.sell)
-                                .ok_or(super::Math::Overflow)?
+                                .ok_or(Math::Overflow)?
                                 .checked_div(self.custom_price.buy)
-                                .ok_or(super::Math::DivisionByZero)?,
+                                .ok_or(Math::DivisionByZero)?,
                             Side::Buy => self
                                 .executed
                                 .0
                                 .checked_mul(self.custom_price.buy)
-                                .ok_or(super::Math::Overflow)?
+                                .ok_or(Math::Overflow)?
                                 .checked_div(self.custom_price.sell)
-                                .ok_or(super::Math::DivisionByZero)?,
+                                .ok_or(Math::DivisionByZero)?,
                         };
                         let factor = match self.side {
                             Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
@@ -267,7 +270,7 @@ pub enum Error {
     #[error("factor {1} multiplication with {0} failed")]
     Factor(eth::U256, f64),
     #[error(transparent)]
-    Math(#[from] super::Math),
+    Math(#[from] Math),
 }
 
 lazy_static::lazy_static! {

@@ -53,7 +53,7 @@ impl Solution {
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
-    ) -> Result<Self, SolutionError> {
+    ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
             trades,
@@ -69,7 +69,7 @@ impl Solution {
             solution.clearing_price(trade.order().sell.token).is_none()
                 || solution.clearing_price(trade.order().buy.token).is_none()
         }) {
-            return Err(SolutionError::InvalidClearingPrices);
+            return Err(error::Solution::InvalidClearingPrices);
         }
 
         // Apply protocol fees
@@ -122,7 +122,7 @@ impl Solution {
     }
 
     /// JIT score calculation as per CIP38
-    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, ScoringError> {
+    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::TokenAmount, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.user_trades() {
             // Solver generated fulfillment does not include the fee in the executed amount
@@ -135,11 +135,11 @@ impl Solution {
                 sell: *self
                     .prices
                     .get(&trade.order().sell.token.wrap(self.weth))
-                    .ok_or(SolutionError::InvalidClearingPrices)?,
+                    .ok_or(error::Solution::InvalidClearingPrices)?,
                 buy: *self
                     .prices
                     .get(&trade.order().buy.token.wrap(self.weth))
-                    .ok_or(SolutionError::InvalidClearingPrices)?,
+                    .ok_or(error::Solution::InvalidClearingPrices)?,
             };
             let custom_prices = scoring::CustomClearingPrices {
                 sell: match trade.order().side {
@@ -147,9 +147,9 @@ impl Solution {
                         .executed()
                         .0
                         .checked_mul(uniform_prices.sell)
-                        .ok_or(Math::Overflow)?
+                        .ok_or(error::Math::Overflow)?
                         .checked_div(uniform_prices.buy)
-                        .ok_or(Math::DivisionByZero)?,
+                        .ok_or(error::Math::DivisionByZero)?,
                     order::Side::Buy => trade.executed().0,
                 },
                 buy: match trade.order().side {
@@ -157,9 +157,9 @@ impl Solution {
                     order::Side::Buy => {
                         (trade.executed().0)
                             .checked_mul(uniform_prices.buy)
-                            .ok_or(Math::Overflow)?
+                            .ok_or(error::Math::Overflow)?
                             .checked_div(uniform_prices.sell)
-                            .ok_or(Math::DivisionByZero)?
+                            .ok_or(error::Math::DivisionByZero)?
                             + trade.fee().0
                     }
                 },
@@ -386,30 +386,22 @@ pub mod error {
         #[error("division by zero")]
         DivisionByZero,
     }
-}
 
-#[derive(Debug, thiserror::Error)]
-pub enum SolutionError {
-    #[error("invalid clearing prices")]
-    InvalidClearingPrices,
-    #[error(transparent)]
-    ProtocolFee(#[from] fee::Error),
-}
+    #[derive(Debug, thiserror::Error)]
+    pub enum Solution {
+        #[error("invalid clearing prices")]
+        InvalidClearingPrices,
+        #[error(transparent)]
+        ProtocolFee(#[from] fee::Error),
+    }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ScoringError {
-    #[error(transparent)]
-    Solution(#[from] SolutionError),
-    #[error(transparent)]
-    Score(#[from] scoring::Error),
-    #[error(transparent)]
-    Math(#[from] Math),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Math {
-    #[error("overflow")]
-    Overflow,
-    #[error("division by zero")]
-    DivisionByZero,
+    #[derive(Debug, thiserror::Error)]
+    pub enum Scoring {
+        #[error(transparent)]
+        Solution(#[from] Solution),
+        #[error(transparent)]
+        Math(#[from] Math),
+        #[error(transparent)]
+        Score(#[from] scoring::Error),
+    }
 }

@@ -218,7 +218,7 @@ impl Settlement {
     fn cip38_score(
         &self,
         auction: &competition::Auction,
-    ) -> Result<eth::TokenAmount, solution::ScoringError> {
+    ) -> Result<eth::TokenAmount, solution::error::Scoring> {
         let prices = auction.prices();
 
         self.solutions
