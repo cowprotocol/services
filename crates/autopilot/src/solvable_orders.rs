@@ -7,6 +7,7 @@ use {
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::current_block::CurrentBlockStream,
+    indexmap::IndexSet,
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -449,7 +450,7 @@ async fn update_task(
 }
 
 fn get_orders_with_native_prices(
-    mut orders: Vec<Order>,
+    orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
@@ -469,21 +470,11 @@ fn get_orders_with_native_prices(
         })
         .collect();
 
-    let high_priority_tokens = orders
-        .iter()
-        .filter_map(|order| match order.metadata.class {
-            OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
-            OrderClass::Liquidity => None,
-            OrderClass::Limit => None,
-        })
-        .flatten();
-    native_price_estimator.replace_high_priority(high_priority_tokens.collect());
-
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.
     let mut filtered_market_orders = 0_i64;
     let mut used_prices = BTreeMap::new();
-    orders.retain(|order| {
+    let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -498,13 +489,53 @@ fn get_orders_with_native_prices(
         }
     });
 
+    let high_priority_tokens = prioritize_missing_prices(filtered);
+    native_price_estimator.replace_high_priority(high_priority_tokens);
+
     // Record separate metrics just for missing native token prices for market
     // orders, as they should be prioritized.
     metrics
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (orders, used_prices)
+    (usable, used_prices)
+}
+
+/// Computes which missing native prices are the most urgent to fetch.
+/// Prices for recent orders have the highest priority because those are most
+/// likely market orders which users expect to get settled ASAP.
+/// For the remaining orders we prioritize token prices that are needed the most
+/// often. That way we have the chance to make a majority of orders solvable
+/// with very few fetch requests.
+fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
+    // newer orders at the start
+    orders.sort_by_key(|o| std::cmp::Reverse(o.metadata.creation_date));
+    let now = chrono::Utc::now();
+    let market_order_age = chrono::Duration::minutes(30);
+
+    let mut high_priority_tokens = IndexSet::new();
+    let mut most_used_tokens = HashMap::<H160, usize>::new();
+    for order in orders {
+        let sell_token = order.data.sell_token;
+        let buy_token = order.data.buy_token;
+        let is_market = now.signed_duration_since(order.metadata.creation_date) <= market_order_age;
+
+        if is_market {
+            // already correct priority because orders were sorted by creation_date
+            high_priority_tokens.extend([sell_token, buy_token]);
+        } else {
+            // count how often tokens are used to prioritize popular tokens
+            *most_used_tokens.entry(sell_token).or_default() += 1;
+            *most_used_tokens.entry(buy_token).or_default() += 1;
+        }
+    }
+
+    // popular tokens at the start
+    let mut most_used_tokens = most_used_tokens.into_iter().collect::<Vec<_>>();
+    most_used_tokens.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+
+    high_priority_tokens.extend(most_used_tokens.into_iter().map(|(token, _)| token));
+    high_priority_tokens
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {

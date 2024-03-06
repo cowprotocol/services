@@ -20,6 +20,7 @@ hex = { version = "0.4", default-features = false }
 hex-literal = "0.4"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
+indexmap = "2.2.5"
 itertools = "0.11"
 lazy_static = "1"
 maplit = "1"
