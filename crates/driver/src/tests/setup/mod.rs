@@ -236,6 +236,13 @@ impl Order {
         }
     }
 
+    pub fn surplus(self, surplus_factor: eth::U256) -> Self {
+        Self {
+            surplus_factor,
+            ..self
+        }
+    }
+
     /// Mark this order as internalizable.
     pub fn internalize(self) -> Self {
         Self {
