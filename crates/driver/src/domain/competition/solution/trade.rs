@@ -1,4 +1,5 @@
 use {
+    super::error::Math,
     crate::domain::{
         competition::{
             self,
@@ -6,7 +7,6 @@ use {
         },
         eth,
     },
-    std::collections::HashMap,
 };
 
 /// A trade which executes an order as part of this solution.
@@ -102,37 +102,35 @@ impl Fulfillment {
     }
 
     /// The effective amount that left the user's wallet including all fees.
-    pub fn sell_amount(
-        &self,
-        prices: &HashMap<eth::TokenAddress, eth::U256>,
-        weth: eth::WethAddress,
-    ) -> Option<eth::TokenAmount> {
+    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Error> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
             order::Side::Buy => self
                 .executed
                 .0
-                .checked_mul(*prices.get(&self.order.buy.token.wrap(weth))?)?
-                .checked_div(*prices.get(&self.order.sell.token.wrap(weth))?)?,
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?,
         };
-        Some(eth::TokenAmount(before_fee.checked_add(self.fee().0)?))
+        Ok(eth::TokenAmount(
+            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
+        ))
     }
 
     /// The effective amount the user received after all fees.
-    pub fn buy_amount(
-        &self,
-        prices: &HashMap<eth::TokenAddress, eth::U256>,
-        weth: eth::WethAddress,
-    ) -> Option<eth::TokenAmount> {
+    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Error> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
             order::Side::Sell => self
                 .executed
                 .0
-                .checked_mul(*prices.get(&self.order.sell.token.wrap(weth))?)?
-                .checked_div(*prices.get(&self.order.buy.token.wrap(weth))?)?,
+                .checked_mul(prices.sell)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.buy)
+                .ok_or(Math::DivisionByZero)?,
         };
-        Some(eth::TokenAmount(amount))
+        Ok(eth::TokenAmount(amount))
     }
 
     /// Returns the surplus denominated in the surplus token.
@@ -151,9 +149,9 @@ impl Fulfillment {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
                 executed
                     .checked_mul(prices.buy)
-                    .ok_or(Error::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(prices.sell)
-                    .ok_or(Error::DivisionByZero)?
+                    .ok_or(Math::DivisionByZero)?
             }
             Side::Sell => executed,
         };
@@ -165,15 +163,15 @@ impl Fulfillment {
                     .map(|fee| fee.0)
                     .ok_or(Error::ProtocolFeeOnStaticOrder)?,
             )
-            .ok_or(Error::Overflow)?;
+            .ok_or(Math::Overflow)?;
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
                 let limit_sell_amount = limit_sell
                     .checked_mul(executed)
-                    .ok_or(Error::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(limit_buy)
-                    .ok_or(Error::DivisionByZero)?;
+                    .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
                 // be caught by simulation
@@ -185,15 +183,15 @@ impl Fulfillment {
                 // Scale to support partially fillable orders
                 let limit_buy_amount = limit_buy
                     .checked_mul(executed_sell_amount_with_fee)
-                    .ok_or(Error::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(limit_sell)
-                    .ok_or(Error::DivisionByZero)?;
+                    .ok_or(Math::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
                 let executed_buy_amount = executed
                     .checked_mul(prices.sell)
-                    .ok_or(Error::Overflow)?
+                    .ok_or(Math::Overflow)?
                     .checked_div(prices.buy)
-                    .ok_or(Error::DivisionByZero)?;
+                    .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will
                 // be caught by simulation
@@ -203,23 +201,6 @@ impl Fulfillment {
             }
         };
         Ok(surplus)
-    }
-
-    /// Returns the surplus denominated in the sell token.
-    pub fn surplus_in_sell_token(
-        &self,
-        surplus: eth::U256,
-        prices: ClearingPrices,
-    ) -> Result<eth::U256, Error> {
-        let surplus_in_sell_token = match self.order().side {
-            Side::Buy => surplus,
-            Side::Sell => surplus
-                .checked_mul(prices.buy)
-                .ok_or(Error::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Error::DivisionByZero)?,
-        };
-        Ok(surplus_in_sell_token)
     }
 }
 
@@ -291,10 +272,8 @@ pub struct Execution {
 pub enum Error {
     #[error("orders with non solver determined gas cost fees are not supported")]
     ProtocolFeeOnStaticOrder,
-    #[error("overflow error while calculating protocol fee")]
-    Overflow,
-    #[error("division by zero error while calculating protocol fee")]
-    DivisionByZero,
     #[error("invalid executed amount")]
     InvalidExecutedAmount,
+    #[error(transparent)]
+    Math(#[from] Math),
 }
