@@ -13,6 +13,9 @@ use {
         infra::blockchain::Ethereum,
         util,
     },
+    anyhow::Result,
+    reqwest::header::HeaderName,
+    std::collections::HashMap,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -97,25 +100,31 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
+    /// HTTP headers that should be added to every request.
+    pub request_headers: HashMap<String, String>,
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum) -> Self {
+    pub fn new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
             "application/json".parse().unwrap(),
         );
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
-        // TODO(#907) Also add an auth header
-        Self {
+
+        for (key, val) in config.request_headers.iter() {
+            let header_name = HeaderName::try_from(key)?;
+            headers.insert(header_name, val.parse()?);
+        }
+
+        Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
-                .build()
-                .unwrap(),
+                .build()?,
             config,
             eth,
-        }
+        })
     }
 
     pub fn name(&self) -> &Name {

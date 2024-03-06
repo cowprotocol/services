@@ -1,4 +1,4 @@
-use {super::ChainId, crate::boundary, ethcontract::dyns::DynWeb3, primitive_types::H160};
+use {super::ChainId, crate::domain, ethcontract::dyns::DynWeb3, primitive_types::H160};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
@@ -7,7 +7,7 @@ pub struct Contracts {
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
 
     /// The domain separator for settlement contract used for signing orders.
-    settlement_domain_separator: boundary::DomainSeparator,
+    settlement_domain_separator: domain::eth::DomainSeparator,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -39,7 +39,7 @@ impl Contracts {
 
         let chainalysis_oracle = contracts::ChainalysisOracle::deployed(web3).await.ok();
 
-        let settlement_domain_separator = boundary::DomainSeparator(
+        let settlement_domain_separator = domain::eth::DomainSeparator(
             settlement
                 .domain_separator()
                 .call()
@@ -60,7 +60,7 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn settlement_domain_separator(&self) -> &model::DomainSeparator {
+    pub fn settlement_domain_separator(&self) -> &domain::eth::DomainSeparator {
         &self.settlement_domain_separator
     }
 
