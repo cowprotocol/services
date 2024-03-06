@@ -1015,15 +1015,15 @@ impl Test {
         &self.blockchain.web3
     }
 
-    pub fn notifications(&self) -> Vec<solver::dto::Notification> {
+    pub fn notifications(&self) -> Vec<solvers_dto::notification::Notification> {
         self.notifications
             .try_iter()
             .map(|value| {
                 serde_json::from_value(value.clone())
                     .context(format!("Error parsing notification: {}", value))
+                    .unwrap()
             })
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap()
+            .collect()
     }
 }
 
