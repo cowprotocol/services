@@ -1,6 +1,9 @@
 use {
-    crate::util::Bytes,
+    crate::util::{conv::u256::U256Ext, Bytes},
+    bigdecimal::FromPrimitive,
     itertools::Itertools,
+    num::CheckedMul,
+    number::conversions::big_rational_to_u256,
     std::collections::{HashMap, HashSet},
 };
 
@@ -177,6 +180,16 @@ impl TokenAddress {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAmount(pub U256);
 
+impl TokenAmount {
+    pub fn apply_factor(&self, factor: f64) -> Option<Self> {
+        let amount = self.0.to_big_rational();
+        let factor = num::BigRational::from_f64(factor)?;
+        big_rational_to_u256(&amount.checked_mul(&factor)?)
+            .ok()
+            .map(Self)
+    }
+}
+
 impl From<U256> for TokenAmount {
     fn from(value: U256) -> Self {
         Self(value)
@@ -206,6 +219,16 @@ impl std::ops::Add for TokenAmount {
 impl std::ops::AddAssign for TokenAmount {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
+    }
+}
+
+impl num::Zero for TokenAmount {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 

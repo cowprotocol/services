@@ -224,7 +224,7 @@ impl Settlement {
         self.solutions
             .values()
             .map(|solution| solution.scoring(&prices))
-            .try_fold(eth::Ether(eth::U256::zero()), |acc, score| {
+            .try_fold(eth::Ether(0.into()), |acc, score| {
                 score.map(|score| acc + score)
             })
     }

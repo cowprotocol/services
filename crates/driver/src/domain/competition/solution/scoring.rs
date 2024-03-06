@@ -3,13 +3,7 @@ use {
         error::Math,
         order::{self, Side},
     },
-    crate::{
-        domain::{competition::auction, eth},
-        util::conv::u256::U256Ext,
-    },
-    bigdecimal::FromPrimitive,
-    num::CheckedMul,
-    number::conversions::big_rational_to_u256,
+    crate::domain::{competition::auction, eth},
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -40,7 +34,7 @@ impl Scoring {
         self.trades
             .iter()
             .map(|trade| trade.score(prices))
-            .try_fold(eth::Ether(eth::U256::zero()), |acc, score| {
+            .try_fold(eth::Ether(0.into()), |acc, score| {
                 score.map(|score| acc + score)
             })
     }
@@ -166,13 +160,14 @@ impl Trade {
                             .surplus()
                             .ok_or(Error::Surplus(self.sell, self.buy))?
                             .amount;
-                        apply_factor(surplus.into(), factor / (1.0 - factor))
-                            .ok_or(Error::Factor(surplus.0, *factor))?
+                        surplus
+                            .apply_factor(factor / (1.0 - factor))
+                            .ok_or(Error::Factor(surplus, *factor))?
                     },
                     {
                         // Convert the executed amount to surplus token so it can be compared
                         // with the surplus
-                        let executed_in_surplus_token = match self.side {
+                        let executed_in_surplus_token: eth::TokenAmount = match self.side {
                             Side::Sell => self
                                 .executed
                                 .0
@@ -187,12 +182,14 @@ impl Trade {
                                 .ok_or(Math::Overflow)?
                                 .checked_div(self.custom_price.sell)
                                 .ok_or(Math::DivisionByZero)?,
-                        };
+                        }
+                        .into();
                         let factor = match self.side {
                             Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
                             Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
                         };
-                        apply_factor(executed_in_surplus_token, factor)
+                        executed_in_surplus_token
+                            .apply_factor(factor)
                             .ok_or(Error::Factor(executed_in_surplus_token, factor))?
                     },
                 )),
@@ -208,7 +205,7 @@ impl Trade {
         let protocol_fee = self.policies.first().map(protocol_fee).transpose();
         Ok(eth::Asset {
             token: self.surplus_token(),
-            amount: protocol_fee?.unwrap_or(0.into()).into(),
+            amount: protocol_fee?.unwrap_or(0.into()),
         })
     }
 
@@ -239,12 +236,6 @@ impl Trade {
     }
 }
 
-fn apply_factor(amount: eth::U256, factor: f64) -> Option<eth::U256> {
-    let amount = amount.to_big_rational();
-    let factor = num::BigRational::from_f64(factor)?;
-    big_rational_to_u256(&amount.checked_mul(&factor)?).ok()
-}
-
 /// Custom clearing prices at which the trade was executed.
 ///
 /// These prices differ from uniform clearing prices, in that they are adjusted
@@ -268,7 +259,7 @@ pub enum Error {
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error("factor {1} multiplication with {0} failed")]
-    Factor(eth::U256, f64),
+    Factor(eth::TokenAmount, f64),
     #[error(transparent)]
     Math(#[from] Math),
 }
