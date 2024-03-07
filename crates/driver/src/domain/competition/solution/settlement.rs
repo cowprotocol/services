@@ -215,6 +215,20 @@ impl Settlement {
             .into()
     }
 
+    fn cip38_score(
+        &self,
+        auction: &competition::Auction,
+    ) -> Result<eth::Ether, solution::error::Scoring> {
+        let prices = auction.prices();
+
+        self.solutions
+            .values()
+            .map(|solution| solution.scoring(&prices))
+            .try_fold(eth::Ether(0.into()), |acc, score| {
+                score.map(|score| acc + score)
+            })
+    }
+
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
     /// Calculate the score for this settlement.
     pub fn score(
@@ -223,12 +237,23 @@ impl Settlement {
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, score::Error> {
-        let eth = eth.with_metric_label("scoringSolution".into());
-        let quality = self.boundary.quality(&eth, auction)?;
+        // For testing purposes, calculate CIP38 even before activation
+        let score = self.cip38_score(auction);
+        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solutions());
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => score.try_into()?,
+            competition::SolverScore::Solver(score) => {
+                let eth = eth.with_metric_label("scoringSolution".into());
+                let quality = self.boundary.quality(&eth, auction)?;
+                let score = score.try_into()?;
+                if score > quality {
+                    return Err(score::Error::ScoreHigherThanQuality(score, quality));
+                }
+                score
+            }
             competition::SolverScore::RiskAdjusted(success_probability) => {
+                let eth = eth.with_metric_label("scoringSolution".into());
+                let quality = self.boundary.quality(&eth, auction)?;
                 let gas_cost = self.gas.estimate * auction.gas_price().effective();
                 let success_probability = success_probability.try_into()?;
                 let objective_value = (quality - gas_cost)?;
@@ -239,18 +264,19 @@ impl Settlement {
                     mempools::RevertProtection::Enabled => GasCost::zero(),
                     mempools::RevertProtection::Disabled => gas_cost,
                 };
-                competition::Score::new(
+                let score = competition::Score::new(
                     auction.score_cap(),
                     objective_value,
                     success_probability,
                     failure_cost,
-                )?
+                )?;
+                if score > quality {
+                    return Err(score::Error::ScoreHigherThanQuality(score, quality));
+                }
+                score
             }
+            competition::SolverScore::Surplus => score?.0.try_into()?,
         };
-
-        if score > quality {
-            return Err(score::Error::ScoreHigherThanQuality(score, quality));
-        }
 
         Ok(score)
     }

@@ -575,6 +575,9 @@ fn to_domain_solution(
                 success_probability,
                 ..
             } => solution::Score::RiskAdjusted(solution::SuccessProbability(success_probability)),
+            Score::Surplus => {
+                return Err(anyhow::anyhow!("solvers not allowed to use surplus score"))
+            }
         },
     })
 }
