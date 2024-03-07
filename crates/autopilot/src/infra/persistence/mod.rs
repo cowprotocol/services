@@ -1,9 +1,14 @@
 use {
-    crate::{boundary, database::Postgres, domain},
+    crate::{
+        boundary,
+        database::Postgres,
+        domain::{self, eth},
+    },
     anyhow::Context,
     chrono::Utc,
     itertools::Itertools,
-    std::sync::Arc,
+    number::conversions::big_decimal_to_u256,
+    std::{collections::HashMap, sync::Arc},
     tokio::time::Instant,
     tracing::Instrument,
 };
@@ -139,6 +144,35 @@ impl Persistence {
         }
 
         ex.commit().await.context("commit")
+    }
+
+    /// Get normalized token prices.
+    pub async fn native_auction_prices(
+        &self,
+        auction: domain::auction::Id,
+    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, Error> {
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .context("begin")
+            .map_err(Error::DbError)?;
+
+        let prices = database::auction_prices::fetch(&mut ex, auction)
+            .await
+            .context("fetch")
+            .map_err(Error::DbError)?
+            .into_iter()
+            .map(|p| {
+                (
+                    eth::H160(p.token.0).into(),
+                    big_decimal_to_u256(&p.price).unwrap().into(),
+                )
+            })
+            .collect();
+
+        Ok(prices)
     }
 }
 

@@ -29,21 +29,15 @@
 
 use {
     crate::{
-        database::{
-            on_settlement_event_updater::{AuctionData, SettlementUpdate},
-            Postgres,
-        },
-        decoded_settlement::DecodedSettlement,
+        database::{on_settlement_event_updater::SettlementUpdate, Postgres},
+        domain::{self},
         infra,
     },
     anyhow::{Context, Result},
     database::PgTransaction,
     primitive_types::H256,
-    shared::external_prices::ExternalPrices,
-    sqlx::PgConnection,
     std::sync::Arc,
     tokio::sync::Notify,
-    web3::types::Transaction,
 };
 
 pub struct OnSettlementEventUpdater {
@@ -52,25 +46,18 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
+    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
-}
-
-enum AuctionIdRecoveryStatus {
-    /// The auction id was recovered and the auction data should be added.
-    AddAuctionData(i64, DecodedSettlement),
-    /// The auction id was recovered but the auction data should not be added.
-    DoNotAddAuctionData(i64),
-    /// The auction id was not recovered.
-    InvalidCalldata,
 }
 
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
         let inner = Arc::new(Inner {
             eth,
+            persistence,
             db,
             notify: Notify::new(),
         });
@@ -129,7 +116,7 @@ impl Inner {
             .context("acquire DB connection")?;
         let event = match database::settlements::get_settlement_without_auction(&mut ex)
             .await
-            .context("get_settlement_event_without_tx_info")?
+            .context("get_settlement_without_auction")?
         {
             Some(event) => event,
             None => return Ok(false),
@@ -138,33 +125,39 @@ impl Inner {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let Some(transaction) = self.eth.transaction(hash).await? else {
-            tracing::warn!(?hash, "no tx found, reorg happened");
-            return Ok(false);
-        };
-
-        let (auction_id, auction_data) =
-            match Self::recover_auction_id_from_calldata(&mut ex, &transaction).await? {
-                AuctionIdRecoveryStatus::InvalidCalldata => {
-                    // To not get stuck on indexing the same transaction over and over again, we
-                    // insert the default auction ID (0)
-                    (Default::default(), None)
+        let settlement = domain::SettlementTx::new(hash.into(), self.eth.clone()).await;
+        let update = match settlement {
+            Ok(settlement) => {
+                let prices = self
+                    .persistence
+                    .native_auction_prices(settlement.auction_id())
+                    .await?;
+                tracing::debug!(
+                    ?prices,
+                    "normalized auction prices for auction {}",
+                    settlement.auction_id(),
+                );
+                SettlementUpdate {
+                    block_number: event.block_number,
+                    log_index: event.log_index,
+                    auction_id: settlement.auction_id(),
+                    observation: Some(settlement.observation(&prices)),
                 }
-                AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
-                AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
-                    auction_id,
-                    Some(
-                        self.fetch_auction_data(hash, settlement, auction_id, &mut ex)
-                            .await?,
-                    ),
-                ),
-            };
-
-        let update = SettlementUpdate {
-            block_number: event.block_number,
-            log_index: event.log_index,
-            auction_id,
-            auction_data,
+            }
+            Err(domain::settlement::transaction::Error::Blockchain(err)) => return Err(err.into()),
+            Err(domain::settlement::transaction::Error::TransactionNotFound) => {
+                tracing::warn!(?hash, "settlement tx not found, reorg happened");
+                return Ok(false);
+            }
+            Err(domain::settlement::transaction::Error::Encoded(err)) => {
+                tracing::warn!(?hash, ?err, "could not decode settlement tx");
+                SettlementUpdate {
+                    block_number: event.block_number,
+                    log_index: event.log_index,
+                    auction_id: err.auction_id().unwrap_or_default(),
+                    observation: None,
+                }
+            }
         };
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
@@ -174,133 +167,5 @@ impl Inner {
             .with_context(|| format!("insert_settlement_details: {update:?}"))?;
         ex.commit().await?;
         Ok(true)
-    }
-
-    async fn fetch_auction_data(
-        &self,
-        hash: H256,
-        settlement: DecodedSettlement,
-        auction_id: i64,
-        ex: &mut PgConnection,
-    ) -> Result<AuctionData> {
-        let receipt = self
-            .eth
-            .transaction_receipt(hash)
-            .await?
-            .with_context(|| format!("no receipt {hash:?}"))?;
-        let gas_used = receipt
-            .gas_used
-            .with_context(|| format!("no gas used {hash:?}"))?;
-        let effective_gas_price = receipt
-            .effective_gas_price
-            .with_context(|| format!("no effective gas price {hash:?}"))?;
-        let auction_external_prices = Postgres::get_auction_prices(ex, auction_id)
-            .await
-            .with_context(|| {
-                format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?;
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.eth.contracts().weth().address(),
-            auction_external_prices.clone(),
-        )?;
-
-        tracing::debug!(
-            ?auction_id,
-            ?auction_external_prices,
-            ?external_prices,
-            "observations input"
-        );
-
-        // surplus and fees calculation
-        let surplus = settlement.total_surplus(&external_prices);
-        let (fee, order_executions) = {
-            let domain_separator = self.eth.contracts().settlement_domain_separator();
-            let all_fees = settlement.all_fees(
-                &external_prices,
-                &model::DomainSeparator(domain_separator.0),
-            );
-            // total fee used for CIP20 rewards
-            let fee = all_fees
-                .iter()
-                .fold(0.into(), |acc, fees| acc + fees.native);
-            // executed surplus fees for each order execution
-            let order_executions = all_fees
-                .into_iter()
-                .map(|fee| (fee.order, fee.executed_surplus_fee().unwrap_or(0.into())))
-                .collect();
-            (fee, order_executions)
-        };
-
-        Ok(AuctionData {
-            surplus,
-            fee,
-            gas_used,
-            effective_gas_price,
-            order_executions,
-        })
-    }
-
-    /// With solver driver colocation solvers are supposed to append the
-    /// `auction_id` to the settlement calldata. This function tries to
-    /// recover that `auction_id`. It also indicates whether the auction
-    /// should be indexed with its metadata. (ie. if it comes from this
-    /// environment and not from a different instance of the autopilot, e.g.
-    /// running in barn/prod). This function only returns an error
-    /// if retrying the operation makes sense.
-    async fn recover_auction_id_from_calldata(
-        ex: &mut PgConnection,
-        tx: &Transaction,
-    ) -> Result<AuctionIdRecoveryStatus> {
-        let tx_from = tx.from.context("tx is missing sender")?;
-        let settlement = match DecodedSettlement::new(&tx.input.0) {
-            Ok(settlement) => settlement,
-            Err(err) => {
-                tracing::warn!(
-                    ?tx,
-                    ?err,
-                    "could not decode settlement tx, unclear which auction it belongs to"
-                );
-                return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
-            }
-        };
-        let auction_id = match settlement.metadata {
-            Some(bytes) => i64::from_be_bytes(bytes.0),
-            None => {
-                tracing::warn!(?tx, "could not recover the auction_id from the calldata");
-                return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
-            }
-        };
-
-        let score = database::settlement_scores::fetch(ex, auction_id).await?;
-        let data_already_recorded =
-            database::settlements::already_processed(ex, auction_id).await?;
-        match (score, data_already_recorded) {
-            (None, _) => {
-                tracing::debug!(
-                    auction_id,
-                    "calldata claims to settle auction that has no competition"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(score), _) if score.winner.0 != tx_from.0 => {
-                tracing::warn!(
-                    auction_id,
-                    ?tx_from,
-                    winner = ?score.winner,
-                    "solution submitted by solver other than the winner"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), true) => {
-                tracing::warn!(
-                    auction_id,
-                    "settlement data already recorded for this auction"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), false) => Ok(AuctionIdRecoveryStatus::AddAuctionData(
-                auction_id, settlement,
-            )),
-        }
     }
 }
