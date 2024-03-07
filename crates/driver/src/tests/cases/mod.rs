@@ -94,7 +94,7 @@ impl IntoWei for Ether<u64> {
 
 impl IntoWei for Ether<i32> {
     fn into_wei(self) -> eth::U256 {
-        assert!(self >= 0, "IntoWei supports non-negative values only");
+        assert!(self.0 >= 0, "IntoWei supports non-negative values only");
         Ether(self.0 as u64).into_wei()
     }
 }
