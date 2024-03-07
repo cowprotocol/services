@@ -118,8 +118,10 @@ pub trait EtherExt {
         Self: Sized;
 }
 
-/// Since f64 has precision issues, a string can be converted into
-/// Ether<BigDecimal>
+/// Due to the precision limitations of f64, which may lead to inaccuracies when
+/// dealing with values having up to 17 decimal places, converting strings
+/// directly into Ether<BigDecimal> is recommended. This approach ensures
+/// precise representation and manipulation of such high-precision values.
 impl EtherExt for &str {
     type Output = BigDecimal;
 
