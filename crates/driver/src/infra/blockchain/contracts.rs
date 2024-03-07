@@ -10,6 +10,9 @@ pub struct Contracts {
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
     weth: contracts::WETH9,
+
+    /// The domain separator for settlement contract used for signing orders.
+    settlement_domain_separator: eth::DomainSeparator,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -48,11 +51,21 @@ impl Contracts {
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
         );
 
+        let settlement_domain_separator = eth::DomainSeparator(
+            settlement
+                .domain_separator()
+                .call()
+                .await
+                .expect("domain separator")
+                .0,
+        );
+
         Ok(Self {
             settlement,
             vault_relayer,
             vault,
             weth,
+            settlement_domain_separator,
         })
     }
 
@@ -74,6 +87,10 @@ impl Contracts {
 
     pub fn weth_address(&self) -> eth::WethAddress {
         self.weth.address().into()
+    }
+
+    pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
+        &self.settlement_domain_separator
     }
 }
 
