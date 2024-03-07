@@ -155,7 +155,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    assert_eq!(limit_order.metadata.class, OrderClass::Market);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -252,9 +252,8 @@ async fn two_limit_orders_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_id = services.create_order(&order_a).await.unwrap();
-
     let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    assert_eq!(limit_order.metadata.class, OrderClass::Market);
 
     let order_b = OrderCreation {
         sell_token: token_b.address(),
@@ -271,9 +270,8 @@ async fn two_limit_orders_test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
     let order_id = services.create_order(&order_b).await.unwrap();
-
     let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    assert_eq!(limit_order.metadata.class, OrderClass::Market);
 
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
         .await
@@ -364,9 +362,9 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
-        sell_amount: to_wei(10),
+        sell_amount: to_wei(1),
         buy_token: token_b.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -419,7 +417,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 
     let balance_after_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let balance_after_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    assert!(balance_after_a.checked_sub(balance_before_a).unwrap() >= to_wei(5));
+    assert!(balance_after_a.checked_sub(balance_before_a).unwrap() >= to_wei(1));
     assert!(balance_after_b.checked_sub(balance_before_b).unwrap() >= to_wei(2));
 }
 

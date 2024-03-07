@@ -96,7 +96,7 @@ async fn test(web3: Web3) {
     let auction = services.get_auction().await.auction;
     let order = auction.orders.into_iter().next().unwrap();
     assert!(order.partially_fillable);
-    assert!(matches!(order.class, OrderClass::Limit));
+    assert!(matches!(order.class, OrderClass::Market));
     assert_eq!(order.user_fee, 0.into());
 
     tracing::info!("Waiting for trade.");

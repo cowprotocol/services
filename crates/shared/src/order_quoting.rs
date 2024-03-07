@@ -8,7 +8,7 @@ use {
     crate::{
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
-        order_validation::PreOrderData,
+        order_validation::{PreOrderClass, PreOrderData},
         price_estimation::Verification,
     },
     anyhow::{Context, Result},
@@ -18,7 +18,7 @@ use {
     futures::TryFutureExt as _,
     gas_estimation::GasPriceEstimating,
     model::{
-        order::{OrderClass, OrderKind},
+        order::OrderKind,
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
     },
     number::conversions::big_decimal_to_u256,
@@ -543,7 +543,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
             signing_scheme: quote_request.signing_scheme.into(),
-            class: OrderClass::Market,
+            class: PreOrderClass::Market,
         }
     }
 }

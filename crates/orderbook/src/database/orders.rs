@@ -44,9 +44,8 @@ use {
             signing_scheme_from,
             signing_scheme_into,
         },
-        fee::FeeParameters,
         order_quoting::Quote,
-        order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
+        order_validation::LimitOrderCounting,
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
     std::convert::TryInto,
@@ -63,7 +62,7 @@ pub trait OrderStoring: Send + Sync {
         &self,
         old_order: &OrderUid,
         new_order: &Order,
-        new_quote: Option<Quote>,
+        new_quote: &Quote,
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
@@ -272,7 +271,7 @@ impl OrderStoring for Postgres {
         &self,
         old_order: &model::order::OrderUid,
         new_order: &model::order::Order,
-        new_quote: Option<Quote>,
+        new_quote: &Quote,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -281,6 +280,7 @@ impl OrderStoring for Postgres {
 
         let old_order = *old_order;
         let new_order = new_order.clone();
+        let new_quote = new_quote.clone();
         let mut connection = self.pool.acquire().await?;
         connection
             .transaction(move |ex| {
@@ -292,11 +292,8 @@ impl OrderStoring for Postgres {
                     )
                     .await?;
                     insert_order(&new_order, ex).await?;
-                    if let Some(quote) = new_quote {
-                        insert_quote(&new_order.metadata.uid, &quote, ex).await?;
-                    }
+                    insert_quote(&new_order.metadata.uid, &new_quote, ex).await?;
                     Self::insert_order_app_data(&new_order, ex).await?;
-
                     Ok(())
                 }
                 .boxed()
@@ -367,33 +364,12 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::user_orders_with_quote(
+        Ok(database::orders::count_limit_orders_by_owner(
             &mut ex,
             now_in_epoch_seconds().into(),
             &ByteArray(owner.0),
         )
         .await?
-        .into_iter()
-        .filter(|order_with_quote| {
-            is_order_outside_market_price(
-                &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
-                    fee: big_decimal_to_u256(&order_with_quote.order_fee_amount).unwrap(),
-                },
-                &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
-                    fee: FeeParameters {
-                        gas_amount: order_with_quote.quote_gas_amount,
-                        gas_price: order_with_quote.quote_gas_price,
-                        sell_token_price: order_with_quote.quote_sell_token_price,
-                    }
-                    .fee(),
-                },
-            )
-        })
-        .count()
         .try_into()
         .unwrap())
     }
@@ -797,7 +773,8 @@ mod tests {
             },
             ..Default::default()
         };
-        db.replace_order(&old_order.metadata.uid, &new_order, None)
+        let quote = Quote::default();
+        db.replace_order(&old_order.metadata.uid, &new_order, &quote)
             .await
             .unwrap();
 
@@ -858,8 +835,9 @@ mod tests {
         db.insert_order(&new_order, None).await.unwrap();
 
         // Attempt to replace an old order with one that already exists should fail.
+        let quote = Quote::default();
         let err = db
-            .replace_order(&old_order.metadata.uid, &new_order, None)
+            .replace_order(&old_order.metadata.uid, &new_order, &quote)
             .await
             .unwrap_err();
         assert!(matches!(err, InsertionError::DuplicatedRecord));

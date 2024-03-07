@@ -216,10 +216,10 @@ impl Orderbook {
         if let Some(old_order) = replaced_order {
             self.replace_order(order, old_order, quote).await
         } else {
-            let quote_id = quote.as_ref().and_then(|quote| quote.id);
+            let quote_id = quote.id;
 
             self.database
-                .insert_order(&order, quote)
+                .insert_order(&order, Some(quote))
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
             Metrics::on_order_operation(&order, OrderOperation::Created);
@@ -346,7 +346,7 @@ impl Orderbook {
         &self,
         validated_new_order: Order,
         old_order: Order,
-        quote: Option<Quote>,
+        quote: Quote,
     ) -> Result<(OrderUid, Option<i64>), AddOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
         // accept `PreSign` orders, otherwise anyone can cancel a user order by
@@ -363,10 +363,10 @@ impl Orderbook {
             return Err(AddOrderError::InvalidReplacement);
         }
 
-        let quote_id = quote.as_ref().and_then(|quote| quote.id);
+        let quote_id = quote.id;
 
         self.database
-            .replace_order(&old_order.metadata.uid, &validated_new_order, quote)
+            .replace_order(&old_order.metadata.uid, &validated_new_order, &quote)
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
