@@ -1,6 +1,10 @@
 //! Test cases.
 
-use crate::domain::eth;
+use {
+    crate::{domain::eth, util::conv::u256::U256Ext},
+    bigdecimal::{num_bigint::ToBigInt, BigDecimal},
+    std::{ops::Mul, str::FromStr},
+};
 
 pub mod buy_eth;
 pub mod example_config;
@@ -23,7 +27,7 @@ const SOLVER_NAME: &str = "test1";
 
 /// The default surplus factor. Set to a high value to ensure a positive score
 /// by default. Use a surplus factor of 1 if you want to test negative scores.
-pub const DEFAULT_SURPLUS_FACTOR: f64 = 1e-8;
+pub const DEFAULT_SURPLUS_FACTOR: &str = "1e-8";
 
 pub const DEFAULT_POOL_AMOUNT_A: u64 = 100000;
 pub const DEFAULT_POOL_AMOUNT_B: u64 = 6000;
@@ -44,30 +48,94 @@ pub const DEFAULT_SCORE_MIN: u64 = 2;
 pub const DEFAULT_SCORE_MAX: u64 = 500000000000;
 
 /// The default solver fee for limit orders.
-pub const DEFAULT_SOLVER_FEE: f64 = 1e-16;
+pub const DEFAULT_SOLVER_FEE: &str = "1e-16";
 
 /// The default maximum value to be payout out to solver per solution
-pub const DEFAULT_SCORE_CAP: f64 = 1e-2;
+pub const DEFAULT_SCORE_CAP: &str = "1e-2";
 
+/// A generic wrapper struct for representing amounts in Ether.
+///
+/// The `Ether` struct is designed to wrap numeric types, facilitating
+/// operations and conversions related to Ether values.
+pub struct Ether<T>(T);
+
+/// A trait for converting values into Wei, the smallest denomination of Ether.
+///
+/// This trait defines a method `into_wei` that converts the wrapped Ether value
+/// into Wei. It is implemented for the `Ether` struct with different numeric
+/// types.
+///
+/// # Examples
+///
+/// ```
+/// let wei = 1.ether().into_wei()
+/// ```
 pub trait IntoWei {
     fn into_wei(self) -> eth::U256;
 }
 
-impl IntoWei for f64 {
+impl IntoWei for Ether<BigDecimal> {
     fn into_wei(self) -> eth::U256 {
-        let wei = self * 1e18;
-        eth::U256::from(wei as u64)
+        let exp = BigDecimal::from_str("1e18").unwrap();
+        let wei = self.0.mul(exp).to_bigint().unwrap();
+        eth::U256::from_big_int(&wei).unwrap()
     }
 }
 
-impl IntoWei for u64 {
+impl IntoWei for Ether<u64> {
     fn into_wei(self) -> eth::U256 {
-        eth::U256::from(self) * eth::U256::exp10(18)
+        eth::U256::from(self.0) * eth::U256::exp10(18)
     }
 }
 
-impl IntoWei for i32 {
+impl IntoWei for Ether<i32> {
     fn into_wei(self) -> eth::U256 {
-        (self as u64).into_wei()
+        Ether(self.0 as u64).into_wei()
+    }
+}
+
+/// Extension trait for numeric types to conveniently wrap values in `Ether`.
+///
+/// This trait provides the `ether` method for native numeric types, allowing
+/// them to be easily wrapped in an `Ether` type for further conversion into Wei
+/// using the `IntoWei` trait.
+///
+/// # Examples
+///
+/// ```
+/// let ether = 1.0f64.ether(); // Wraps 1.0 (f64) in an Ether type
+/// ```
+pub trait EtherExt {
+    type Output;
+
+    fn ether(self) -> Ether<Self::Output>
+    where
+        Self: Sized;
+}
+
+/// Since f64 has precision issues, a string can be converted into
+/// Ether<BigDecimal>
+impl EtherExt for &str {
+    type Output = BigDecimal;
+
+    fn ether(self) -> Ether<BigDecimal> {
+        let value = BigDecimal::from_str(self).unwrap();
+        Ether(value)
+    }
+}
+
+impl EtherExt for u64 {
+    type Output = u64;
+
+    fn ether(self) -> Ether<u64> {
+        Ether(self)
+    }
+}
+
+impl EtherExt for i32 {
+    type Output = i32;
+
+    fn ether(self) -> Ether<i32> {
+        Ether(self)
     }
 }

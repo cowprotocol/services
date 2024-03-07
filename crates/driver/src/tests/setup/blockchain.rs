@@ -6,7 +6,11 @@ use {
             eth::{self, ContractAddress},
         },
         infra::time,
-        tests::{self, boundary, cases::IntoWei},
+        tests::{
+            self,
+            boundary,
+            cases::{EtherExt, IntoWei},
+        },
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
@@ -571,7 +575,7 @@ impl Blockchain {
                         .unwrap()
                         .mint(
                             self.trader_address,
-                            1e-7.into_wei() * quote.sell + order.user_fee,
+                            "1e-7".ether().into_wei() * quote.sell + order.user_fee,
                         )
                         .from(trader_account.clone())
                         .send(),

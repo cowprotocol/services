@@ -1,7 +1,7 @@
 //! Test that driver properly does competition.
 
 use crate::tests::{
-    cases::{IntoWei, DEFAULT_SCORE_MIN},
+    cases::{EtherExt, IntoWei, DEFAULT_SCORE_MIN},
     setup::{ab_order, ab_pool, ab_solution, setup, Score},
 };
 
@@ -12,13 +12,13 @@ async fn solver_score_winner() {
     let test = setup()
         .pool(ab_pool())
         .order(order.clone())
-        .solution(ab_solution().score(Score::Solver { score: 2902421280589416499u128.into()})) // higher than objective value
+        .solution(ab_solution().score(Score::Solver { score: "2.902421280589416499".ether().into_wei()})) // higher than objective value
         .solution(ab_solution().score(Score::RiskAdjusted{ success_probability: 0.4}))
         .done()
         .await;
 
     let solve = test.solve().await.ok();
-    assert_eq!(solve.score(), 2902421280589416499u128.into());
+    assert_eq!(solve.score(), "2.902421280589416499".ether().into_wei());
     solve.orders(&[order]);
     test.reveal().await.ok().calldata();
 }
@@ -31,7 +31,7 @@ async fn risk_adjusted_score_winner() {
         .pool(ab_pool())
         .order(order.clone())
         .solution(ab_solution().score(Score::Solver {
-            score: DEFAULT_SCORE_MIN.into_wei(),
+            score: DEFAULT_SCORE_MIN.ether().into_wei(),
         }))
         .solution(ab_solution().score(Score::RiskAdjusted {
             success_probability: 0.9,
@@ -40,7 +40,7 @@ async fn risk_adjusted_score_winner() {
         .await;
 
     let solve = test.solve().await.ok();
-    assert!(solve.score() != DEFAULT_SCORE_MIN.into_wei());
+    assert!(solve.score() != DEFAULT_SCORE_MIN.ether().into_wei());
     solve.orders(&[order]);
     test.reveal().await.ok().calldata();
 }

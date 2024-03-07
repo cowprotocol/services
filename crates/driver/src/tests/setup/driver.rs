@@ -4,7 +4,7 @@ use {
         domain::competition::order,
         infra::time,
         tests::{
-            cases::{self, IntoWei},
+            cases::{self, EtherExt, IntoWei},
             hex_address,
         },
     },
@@ -121,7 +121,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "scoreCap": cases::DEFAULT_SCORE_CAP.into_wei().to_string(),
+        "scoreCap": cases::DEFAULT_SCORE_CAP.ether().into_wei().to_string(),
     })
 }
 
