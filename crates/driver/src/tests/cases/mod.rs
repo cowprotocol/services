@@ -86,7 +86,9 @@ impl Ether {
 /// # Examples
 ///
 /// ```
-/// let ether = 1u64.ether(); // Wraps 1 (u64) in an Ether type
+/// let ether = 1.ether();
+/// let ether = 1u64.ether();
+/// let ether = "1e-18".ether();
 /// ```
 pub trait EtherExt {
     /// Converts a value into an `Ether` instance.
@@ -97,7 +99,7 @@ pub trait EtherExt {
 
 /// Due to the precision limitations of f64, which may lead to inaccuracies when
 /// dealing with values having up to 17 decimal places, converting strings
-/// directly into Ether<BigDecimal> is recommended. This approach ensures
+/// directly into Ether is recommended. This approach ensures
 /// precise representation and manipulation of such high-precision values.
 impl EtherExt for &str {
     fn ether(self) -> Ether {
