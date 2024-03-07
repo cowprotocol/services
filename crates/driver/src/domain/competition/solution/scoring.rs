@@ -129,13 +129,13 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let surplus = self.surplus_token_price(prices)?.apply(
-            self.surplus()
-                .ok_or(Error::Surplus(self.sell, self.buy))?
-                .amount,
-        );
+        let surplus = self.surplus().ok_or(Error::Surplus(self.sell, self.buy))?;
+        let price = prices
+            .get(&surplus.token)
+            .ok_or(Error::MissingPrice(surplus.token))?;
+
         // normalize
-        Ok((surplus.0 / *UNIT).into())
+        Ok((price.apply(surplus.amount).0 / *UNIT).into())
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
@@ -213,11 +213,13 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let protocol_fee = self
-            .surplus_token_price(prices)?
-            .apply(self.protocol_fee()?.amount);
+        let protocol_fee = self.protocol_fee()?;
+        let price = prices
+            .get(&protocol_fee.token)
+            .ok_or(Error::MissingPrice(protocol_fee.token))?;
+
         // normalize
-        Ok((protocol_fee.0 / *UNIT).into())
+        Ok((price.apply(protocol_fee.amount).0 / *UNIT).into())
     }
 
     fn surplus_token(&self) -> eth::TokenAddress {
@@ -225,14 +227,6 @@ impl Trade {
             Side::Buy => self.sell.token,
             Side::Sell => self.buy.token,
         }
-    }
-
-    /// Returns the price of the trade surplus token
-    fn surplus_token_price(&self, prices: &auction::Prices) -> Result<auction::Price, Error> {
-        prices
-            .get(&self.surplus_token())
-            .cloned()
-            .ok_or(Error::MissingPrice(self.surplus_token()))
     }
 }
 
