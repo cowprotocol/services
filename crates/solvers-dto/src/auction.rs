@@ -5,7 +5,7 @@ use {
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
     std::collections::HashMap,
-    web3::types::{H160, U256},
+    web3::types::{H160, H256, U256},
 };
 
 #[serde_as]
@@ -86,6 +86,7 @@ pub enum Liquidity {
 pub struct ConstantProductPool {
     pub id: String,
     pub address: H160,
+    pub router: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
     pub tokens: HashMap<H160, ConstantProductReserve>,
@@ -106,6 +107,7 @@ pub struct ConstantProductReserve {
 pub struct WeightedProductPool {
     pub id: String,
     pub address: H160,
+    pub balancer_pool_id: H256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
     pub tokens: HashMap<H160, WeightedProductReserve>,
@@ -136,6 +138,7 @@ pub enum WeightedProductVersion {
 pub struct StablePool {
     pub id: String,
     pub address: H160,
+    pub balancer_pool_id: H256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
     pub tokens: HashMap<H160, StableReserve>,
@@ -158,6 +161,7 @@ pub struct StableReserve {
 pub struct ConcentratedLiquidityPool {
     pub id: String,
     pub address: H160,
+    pub router: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
     pub tokens: Vec<H160>,
