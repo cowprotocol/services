@@ -1,11 +1,12 @@
 use {
-    crate::infra::persistence::dto,
+    crate::{domain, infra::persistence::dto},
     sqlx::{PgConnection, QueryBuilder},
 };
 
 pub async fn insert_batch(
     ex: &mut PgConnection,
-    fee_policies: impl IntoIterator<Item = dto::FeePolicy>,
+    auction_id: domain::AuctionId,
+    fee_policies: impl IntoIterator<Item = (domain::OrderUid, Vec<domain::fee::Policy>)>,
 ) -> Result<(), sqlx::Error> {
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
@@ -13,6 +14,12 @@ pub async fn insert_batch(
          price_improvement_max_volume_factor, price_improvement_quote_sell_amount, \
          price_improvement_quote_buy_amount, price_improvement_quote_fee) ",
     );
+
+    let fee_policies = fee_policies.into_iter().flat_map(|(order_uid, policies)| {
+        policies
+            .into_iter()
+            .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
+    });
 
     query_builder.push_values(fee_policies, |mut b, fee_policy| {
         b.push_bind(fee_policy.auction_id)
@@ -64,6 +71,38 @@ mod tests {
 
         // same primary key for all fee policies
         let (auction_id, order_uid) = (1, ByteArray([1; 56]));
+
+        // surplus fee policy without caps
+        let fee_policy_1 = domain::fee::Policy::Surplus {
+            factor: 0.1,
+            max_volume_factor: 1.0,
+        };
+        // surplus fee policy with caps
+        let fee_policy_2 = domain::fee::Policy::Surplus {
+            factor: 0.2,
+            max_volume_factor: 0.05,
+        };
+        // volume based fee policy
+        let fee_policy_3 = domain::fee::Policy::Volume { factor: 0.06 };
+        // price improvement fee policy
+        let fee_policy_4 = domain::fee::Policy::PriceImprovement {
+            factor: 0.1,
+            max_volume_factor: 1.0,
+            quote: domain::fee::Quote {
+                sell_amount: 10.into(),
+                buy_amount: 20.into(),
+                fee: 1.into(),
+            },
+        };
+        let input_policies = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
+
+        insert_batch(
+            &mut db,
+            auction_id,
+            vec![(domain::OrderUid(order_uid.0), input_policies)],
+        )
+        .await
+        .unwrap();
 
         // surplus fee policy without caps
         let fee_policy_1 = dto::FeePolicy {
@@ -121,22 +160,9 @@ mod tests {
             price_improvement_quote_buy_amount: Some(20.into()),
             price_improvement_quote_fee: Some(1.into()),
         };
-        insert_batch(
-            &mut db,
-            vec![
-                fee_policy_1.clone(),
-                fee_policy_2.clone(),
-                fee_policy_3.clone(),
-                fee_policy_4.clone(),
-            ],
-        )
-        .await
-        .unwrap();
+        let expected = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
 
         let output = fetch(&mut db, 1, order_uid).await.unwrap();
-        assert_eq!(
-            output,
-            vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4]
-        );
+        assert_eq!(output, expected);
     }
 }
