@@ -235,17 +235,7 @@ impl OrderStoring for Postgres {
         if let Some(quote) = quote {
             insert_quote(&order.metadata.uid, &quote, &mut ex).await?;
         }
-        if let Some(full_app_data) = order.metadata.full_app_data {
-            let contract_app_data = &ByteArray(order.data.app_data.0);
-            let full_app_data = full_app_data.as_bytes();
-            if let Some(existing) =
-                database::app_data::insert(&mut ex, contract_app_data, full_app_data).await?
-            {
-                if full_app_data != existing {
-                    return Err(InsertionError::AppDataMismatch(existing));
-                }
-            }
-        }
+        Self::insert_order_app_data(&order, &mut ex).await?;
 
         ex.commit().await?;
         Ok(())
@@ -305,6 +295,8 @@ impl OrderStoring for Postgres {
                     if let Some(quote) = new_quote {
                         insert_quote(&new_order.metadata.uid, &quote, ex).await?;
                     }
+                    Self::insert_order_app_data(&new_order, ex).await?;
+
                     Ok(())
                 }
                 .boxed()
