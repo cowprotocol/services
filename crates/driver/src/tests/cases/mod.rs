@@ -2,7 +2,7 @@
 
 use {
     crate::{domain::eth, util::conv::u256::U256Ext},
-    bigdecimal::{FromPrimitive, Signed},
+    bigdecimal::{num_traits::CheckedMul, FromPrimitive, Signed},
     num::BigRational,
     std::str::FromStr,
 };
@@ -64,7 +64,10 @@ pub struct Ether(BigRational);
 impl Ether {
     /// Converts the value into Wei, the smallest unit of Ethereum.
     pub fn into_wei(self) -> eth::U256 {
-        eth::U256::from_big_rational(&(self.0 * BigRational::from_f64(1e18).unwrap())).unwrap()
+        BigRational::from_f64(1e18)
+            .and_then(|exp| self.0.checked_mul(&exp))
+            .and_then(|wei| eth::U256::from_big_rational(&wei).ok())
+            .unwrap()
     }
 }
 
