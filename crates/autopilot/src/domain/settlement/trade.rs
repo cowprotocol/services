@@ -3,7 +3,7 @@ use crate::domain::{self, auction::order, eth};
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct Trade {
-    order_uid: domain::OrderUid, // todo order::Uid
+    order_uid: domain::OrderUid,
     sell: eth::Asset,
     buy: eth::Asset,
     side: order::Side,
