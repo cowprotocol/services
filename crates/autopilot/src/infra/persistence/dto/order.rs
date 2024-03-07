@@ -51,7 +51,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         user_fee: order.user_fee,
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
-        kind: order.kind.into(),
+        kind: order.side.into(),
         receiver: order.receiver,
         owner: order.owner,
         partially_fillable: order.partially_fillable,
@@ -80,7 +80,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         user_fee: order.user_fee,
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
-        kind: order.kind.into(),
+        side: order.kind.into(),
         receiver: order.receiver,
         owner: order.owner,
         partially_fillable: order.partially_fillable,
@@ -111,16 +111,16 @@ impl From<domain::OrderUid> for boundary::OrderUid {
     }
 }
 
-impl From<domain::auction::order::Kind> for boundary::OrderKind {
-    fn from(kind: domain::auction::order::Kind) -> Self {
+impl From<domain::auction::order::Side> for boundary::OrderKind {
+    fn from(kind: domain::auction::order::Side) -> Self {
         match kind {
-            domain::auction::order::Kind::Buy => Self::Buy,
-            domain::auction::order::Kind::Sell => Self::Sell,
+            domain::auction::order::Side::Buy => Self::Buy,
+            domain::auction::order::Side::Sell => Self::Sell,
         }
     }
 }
 
-impl From<boundary::OrderKind> for domain::auction::order::Kind {
+impl From<boundary::OrderKind> for domain::auction::order::Side {
     fn from(kind: boundary::OrderKind) -> Self {
         match kind {
             boundary::OrderKind::Buy => Self::Buy,

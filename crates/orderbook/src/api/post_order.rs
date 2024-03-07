@@ -196,6 +196,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("InsufficientFee", "Order does not include sufficient fee"),
                 StatusCode::BAD_REQUEST,
             ),
+            ValidationError::NonZeroFee => with_status(
+                error("NonZeroFee", "Fee must be zero"),
+                StatusCode::BAD_REQUEST,
+            ),
             ValidationError::SellAmountOverflow => with_status(
                 error(
                     "SellAmountOverflow",

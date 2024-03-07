@@ -260,6 +260,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "order-validation",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -3126,6 +3127,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "order-validation"
+version = "0.1.0"
+dependencies = [
+ "cached",
+ "contracts",
+ "ethcontract",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "orderbook"
 version = "0.1.0"
 dependencies = [
@@ -3152,6 +3164,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "order-validation",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -4058,6 +4071,7 @@ dependencies = [
  "num",
  "number",
  "observe",
+ "order-validation",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",

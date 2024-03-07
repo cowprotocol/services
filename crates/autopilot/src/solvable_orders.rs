@@ -1,5 +1,8 @@
 use {
-    crate::{domain, infra},
+    crate::{
+        domain,
+        infra::{self, banned},
+    },
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -67,7 +70,7 @@ pub struct Metrics {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
-    banned_users: HashSet<H160>,
+    banned_users: banned::Users,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Inner>,
@@ -91,7 +94,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
-        banned_users: HashSet<H160>,
+        banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
@@ -144,7 +147,7 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = Vec::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
+        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
         let removed = counter.checkpoint("banned_user", &orders);
         invalid_order_uids.extend(removed);
 
@@ -268,9 +271,24 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Filters all orders whose owners are in the set of "banned" users.
-fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
-    orders.retain(|order| !banned_users.contains(&order.metadata.owner));
+/// Filters all orders whose owners or receivers are in the set of "banned"
+/// users.
+async fn filter_banned_user_orders(
+    mut orders: Vec<Order>,
+    banned_users: &banned::Users,
+) -> Vec<Order> {
+    let banned = banned_users
+        .banned(orders.iter().flat_map(|order| {
+            [
+                order.metadata.owner,
+                order.data.receiver.unwrap_or_default(),
+            ]
+        }))
+        .await;
+    orders.retain(|order| {
+        !banned.contains(&order.metadata.owner)
+            && !banned.contains(&order.data.receiver.unwrap_or_default())
+    });
     orders
 }
 
@@ -778,8 +796,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn filters_banned_users() {
+    #[tokio::test]
+    async fn filters_banned_users() {
         let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
         let orders = [
             H160([1; 20]),
@@ -805,7 +823,11 @@ mod tests {
         })
         .collect();
 
-        let filtered_orders = filter_banned_user_orders(orders, &banned_users);
+        let filtered_orders = filter_banned_user_orders(
+            orders,
+            &order_validation::banned::Users::from_set(banned_users),
+        )
+        .await;
         let filtered_owners = filtered_orders
             .iter()
             .map(|order| order.metadata.owner)

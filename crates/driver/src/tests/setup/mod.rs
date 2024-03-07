@@ -26,7 +26,7 @@ use {
         util::{self, serialize},
     },
     bigdecimal::FromPrimitive,
-    ethcontract::BlockId,
+    ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
@@ -1004,6 +1004,10 @@ impl Test {
                 .unwrap(),
         );
         balances
+    }
+
+    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+        &self.blockchain.web3
     }
 }
 
