@@ -58,30 +58,6 @@ impl FeePolicy {
             },
         }
     }
-
-    #[allow(dead_code)]
-    pub fn into_domain(self, quote: Option<domain::fee::Quote>) -> domain::fee::Policy {
-        match self.kind {
-            FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
-                factor: self.surplus_factor.expect("missing surplus factor"),
-                max_volume_factor: self
-                    .surplus_max_volume_factor
-                    .expect("missing max volume factor"),
-            },
-            FeePolicyKind::Volume => domain::fee::Policy::Volume {
-                factor: self.volume_factor.expect("missing volume factor"),
-            },
-            FeePolicyKind::PriceImprovement => domain::fee::Policy::PriceImprovement {
-                factor: self
-                    .price_improvement_factor
-                    .expect("missing price improvement factor"),
-                max_volume_factor: self
-                    .surplus_max_volume_factor
-                    .expect("missing price improvement max volume factor"),
-                quote: quote.expect("quote is required for the PriceImprovement policy fee"),
-            },
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::Type)]
