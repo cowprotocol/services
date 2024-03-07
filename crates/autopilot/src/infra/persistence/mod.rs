@@ -35,7 +35,7 @@ impl Persistence {
     pub async fn replace_current_auction(
         &self,
         auction: domain::Auction,
-    ) -> Result<domain::AuctionId, Error> {
+    ) -> Result<domain::auction::Id, Error> {
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
             .replace_current_auction(&auction)
@@ -60,7 +60,7 @@ impl Persistence {
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, id: domain::AuctionId, instance: dto::auction::Auction) {
+    fn archive_auction(&self, id: domain::auction::Id, instance: dto::auction::Auction) {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
@@ -118,7 +118,7 @@ impl Persistence {
     /// Saves the given fee policies to the DB as a single batch.
     pub async fn store_fee_policies(
         &self,
-        auction_id: domain::AuctionId,
+        auction_id: domain::auction::Id,
         fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
     ) -> anyhow::Result<()> {
         let mut ex = self.postgres.pool.begin().await.context("begin")?;

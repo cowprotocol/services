@@ -5,7 +5,7 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     solver::solver::Arn,
-    std::time::Duration,
+    std::{collections::HashMap, time::Duration},
 };
 
 mod load;
@@ -185,6 +185,12 @@ struct SolverConfig {
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
+
+    #[serde(default)]
+    request_headers: HashMap<String, String>,
+
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[serde_as]

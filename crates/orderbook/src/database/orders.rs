@@ -44,8 +44,9 @@ use {
             signing_scheme_from,
             signing_scheme_into,
         },
+        fee::FeeParameters,
         order_quoting::Quote,
-        order_validation::LimitOrderCounting,
+        order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
     std::convert::TryInto,
@@ -234,17 +235,7 @@ impl OrderStoring for Postgres {
         if let Some(quote) = quote {
             insert_quote(&order.metadata.uid, &quote, &mut ex).await?;
         }
-        if let Some(full_app_data) = order.metadata.full_app_data {
-            let contract_app_data = &ByteArray(order.data.app_data.0);
-            let full_app_data = full_app_data.as_bytes();
-            if let Some(existing) =
-                database::app_data::insert(&mut ex, contract_app_data, full_app_data).await?
-            {
-                if full_app_data != existing {
-                    return Err(InsertionError::AppDataMismatch(existing));
-                }
-            }
-        }
+        Self::insert_order_app_data(&order, &mut ex).await?;
 
         ex.commit().await?;
         Ok(())
@@ -304,6 +295,8 @@ impl OrderStoring for Postgres {
                     if let Some(quote) = new_quote {
                         insert_quote(&new_order.metadata.uid, &quote, ex).await?;
                     }
+                    Self::insert_order_app_data(&new_order, ex).await?;
+
                     Ok(())
                 }
                 .boxed()
@@ -374,12 +367,33 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::count_limit_orders_by_owner(
+        Ok(database::orders::user_orders_with_quote(
             &mut ex,
             now_in_epoch_seconds().into(),
             &ByteArray(owner.0),
         )
         .await?
+        .into_iter()
+        .filter(|order_with_quote| {
+            is_order_outside_market_price(
+                &Amounts {
+                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
+                    fee: big_decimal_to_u256(&order_with_quote.order_fee_amount).unwrap(),
+                },
+                &Amounts {
+                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
+                    fee: FeeParameters {
+                        gas_amount: order_with_quote.quote_gas_amount,
+                        gas_price: order_with_quote.quote_gas_price,
+                        sell_token_price: order_with_quote.quote_sell_token_price,
+                    }
+                    .fee(),
+                },
+            )
+        })
+        .count()
         .try_into()
         .unwrap())
     }
