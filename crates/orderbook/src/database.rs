@@ -6,7 +6,13 @@ pub mod solver_competition;
 pub mod total_surplus;
 pub mod trades;
 
-use {anyhow::Result, sqlx::PgPool};
+use {
+    crate::database::orders::InsertionError,
+    anyhow::Result,
+    database::byte_array::ByteArray,
+    model::order::Order,
+    sqlx::{PgConnection, PgPool},
+};
 
 // TODO: There is remaining optimization potential by implementing sqlx encoding
 // and decoding for U256 directly instead of going through BigDecimal. This is
@@ -26,6 +32,24 @@ impl Postgres {
         Ok(Self {
             pool: PgPool::connect_lazy(uri)?,
         })
+    }
+
+    async fn insert_order_app_data(
+        order: &Order,
+        ex: &mut PgConnection,
+    ) -> Result<(), InsertionError> {
+        if let Some(full_app_data) = order.metadata.full_app_data.as_ref() {
+            let contract_app_data = &ByteArray(order.data.app_data.0);
+            let full_app_data = full_app_data.as_bytes();
+            if let Some(existing) =
+                database::app_data::insert(ex, contract_app_data, full_app_data).await?
+            {
+                if full_app_data != existing {
+                    return Err(InsertionError::AppDataMismatch(existing));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
