@@ -534,10 +534,12 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     }
 
     // popular tokens at the start
-    let mut most_used_tokens = most_used_tokens.into_iter().collect::<Vec<_>>();
-    most_used_tokens.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+    let most_used_tokens = most_used_tokens
+        .into_iter()
+        .sorted_by_key(|entry| std::cmp::Reverse(entry.1))
+        .map(|(token, _)| token);
 
-    high_priority_tokens.extend(most_used_tokens.into_iter().map(|(token, _)| token));
+    high_priority_tokens.extend(most_used_tokens);
     high_priority_tokens
 }
 
