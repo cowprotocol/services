@@ -2,8 +2,9 @@
 
 use {
     crate::{domain::eth, util::conv::u256::U256Ext},
-    bigdecimal::{num_bigint::ToBigInt, BigDecimal, Signed},
-    std::{ops::Mul, str::FromStr},
+    bigdecimal::{FromPrimitive, Signed},
+    num::BigRational,
+    std::str::FromStr,
 };
 
 pub mod buy_eth;
@@ -53,67 +54,34 @@ pub const DEFAULT_SOLVER_FEE: &str = "1e-16";
 /// The default maximum value to be payout out to solver per solution
 pub const DEFAULT_SCORE_CAP: &str = "1e-2";
 
-/// A generic wrapper struct for representing amounts in Ether.
+/// A generic wrapper struct for representing amounts in Ether using high
+/// precision.
 ///
-/// The `Ether` struct is designed to wrap numeric types, facilitating
+/// The `Ether` struct wraps numeric types in `BigRational` to facilitate
 /// operations and conversions related to Ether values.
-pub struct Ether<T>(T);
+pub struct Ether(BigRational);
 
-/// A trait for converting values into Wei, the smallest denomination of Ether.
-///
-/// This trait defines a method `into_wei` that converts the wrapped Ether value
-/// into Wei. It is implemented for the `Ether` struct with different numeric
-/// types.
-///
-/// # Examples
-///
-/// ```
-/// let wei = 1.ether().into_wei()
-/// ```
-pub trait IntoWei {
-    fn into_wei(self) -> eth::U256;
-}
-
-impl IntoWei for Ether<BigDecimal> {
-    fn into_wei(self) -> eth::U256 {
-        assert!(
-            !self.0.is_negative(),
-            "IntoWei supports non-negative values only"
-        );
-        let exp = BigDecimal::from_str("1e18").unwrap();
-        let wei = self.0.mul(exp).to_bigint().unwrap();
-        eth::U256::from_big_int(&wei).unwrap()
-    }
-}
-
-impl IntoWei for Ether<u64> {
-    fn into_wei(self) -> eth::U256 {
-        eth::U256::from(self.0) * eth::U256::exp10(18)
-    }
-}
-
-impl IntoWei for Ether<i32> {
-    fn into_wei(self) -> eth::U256 {
-        assert!(self.0 >= 0, "IntoWei supports non-negative values only");
-        Ether(self.0 as u64).into_wei()
+impl Ether {
+    /// Converts the value into Wei, the smallest unit of Ethereum.
+    pub fn into_wei(self) -> eth::U256 {
+        eth::U256::from_big_rational(&(self.0 * BigRational::from_f64(1e18).unwrap())).unwrap()
     }
 }
 
 /// Extension trait for numeric types to conveniently wrap values in `Ether`.
 ///
 /// This trait provides the `ether` method for native numeric types, allowing
-/// them to be easily wrapped in an `Ether` type for further conversion into Wei
-/// using the `IntoWei` trait.
+/// them to be easily wrapped in an `Ether` type for further conversion into
+/// Wei.
 ///
 /// # Examples
 ///
 /// ```
-/// let ether = 1.0f64.ether(); // Wraps 1.0 (f64) in an Ether type
+/// let ether = 1u64.ether(); // Wraps 1 (u64) in an Ether type
 /// ```
 pub trait EtherExt {
-    type Output;
-
-    fn ether(self) -> Ether<Self::Output>
+    /// Converts a value into an `Ether` instance.
+    fn ether(self) -> Ether
     where
         Self: Sized;
 }
@@ -123,10 +91,8 @@ pub trait EtherExt {
 /// directly into Ether<BigDecimal> is recommended. This approach ensures
 /// precise representation and manipulation of such high-precision values.
 impl EtherExt for &str {
-    type Output = BigDecimal;
-
-    fn ether(self) -> Ether<BigDecimal> {
-        let value = BigDecimal::from_str(self).unwrap();
+    fn ether(self) -> Ether {
+        let value = BigRational::from_str(self).unwrap();
         assert!(
             !value.is_negative(),
             "Ether supports non-negative values only"
@@ -136,18 +102,14 @@ impl EtherExt for &str {
 }
 
 impl EtherExt for u64 {
-    type Output = u64;
-
-    fn ether(self) -> Ether<u64> {
-        Ether(self)
+    fn ether(self) -> Ether {
+        Ether(BigRational::from_u64(self).unwrap())
     }
 }
 
 impl EtherExt for i32 {
-    type Output = i32;
-
-    fn ether(self) -> Ether<i32> {
+    fn ether(self) -> Ether {
         assert!(self >= 0, "Ether supports non-negative values only");
-        Ether(self)
+        Ether(BigRational::from_i32(self).unwrap())
     }
 }

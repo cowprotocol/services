@@ -1,7 +1,7 @@
 //! Test that driver properly does competition.
 
 use crate::tests::{
-    cases::{EtherExt, IntoWei, DEFAULT_SCORE_MIN},
+    cases::{EtherExt, DEFAULT_SCORE_MIN},
     setup::{ab_order, ab_pool, ab_solution, setup, Score},
 };
 

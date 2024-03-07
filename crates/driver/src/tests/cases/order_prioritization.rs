@@ -1,5 +1,5 @@
 use crate::tests::{
-    cases::{EtherExt, IntoWei},
+    cases::EtherExt,
     setup::{ab_order, ab_pool, ab_solution, setup, Order},
 };
 

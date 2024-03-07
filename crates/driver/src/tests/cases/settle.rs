@@ -3,7 +3,7 @@ use {
         domain::competition::order,
         tests::{
             self,
-            cases::{EtherExt, IntoWei, DEFAULT_SOLVER_FEE},
+            cases::{EtherExt, DEFAULT_SOLVER_FEE},
             setup::{ab_order, ab_pool, ab_solution},
         },
     },

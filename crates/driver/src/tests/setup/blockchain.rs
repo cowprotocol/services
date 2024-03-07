@@ -6,11 +6,7 @@ use {
             eth::{self, ContractAddress},
         },
         infra::time,
-        tests::{
-            self,
-            boundary,
-            cases::{EtherExt, IntoWei},
-        },
+        tests::{self, boundary, cases::EtherExt},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
