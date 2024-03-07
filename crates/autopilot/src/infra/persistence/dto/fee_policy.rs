@@ -1,8 +1,4 @@
-use {
-    crate::{boundary, domain},
-    bigdecimal::BigDecimal,
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
-};
+use crate::{boundary, domain};
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct FeePolicy {
@@ -14,9 +10,6 @@ pub struct FeePolicy {
     pub volume_factor: Option<f64>,
     pub price_improvement_factor: Option<f64>,
     pub price_improvement_max_volume_factor: Option<f64>,
-    pub price_improvement_quote_sell_amount: Option<BigDecimal>,
-    pub price_improvement_quote_buy_amount: Option<BigDecimal>,
-    pub price_improvement_quote_fee: Option<BigDecimal>,
 }
 
 impl FeePolicy {
@@ -38,9 +31,6 @@ impl FeePolicy {
                 volume_factor: None,
                 price_improvement_factor: None,
                 price_improvement_max_volume_factor: None,
-                price_improvement_quote_sell_amount: None,
-                price_improvement_quote_buy_amount: None,
-                price_improvement_quote_fee: None,
             },
             domain::fee::Policy::Volume { factor } => Self {
                 auction_id,
@@ -51,14 +41,11 @@ impl FeePolicy {
                 volume_factor: Some(factor),
                 price_improvement_factor: None,
                 price_improvement_max_volume_factor: None,
-                price_improvement_quote_sell_amount: None,
-                price_improvement_quote_buy_amount: None,
-                price_improvement_quote_fee: None,
             },
             domain::fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
-                quote,
+                quote: _,
             } => Self {
                 auction_id,
                 order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
@@ -68,50 +55,30 @@ impl FeePolicy {
                 volume_factor: None,
                 price_improvement_factor: Some(factor),
                 price_improvement_max_volume_factor: Some(max_volume_factor),
-                price_improvement_quote_sell_amount: Some(u256_to_big_decimal(&quote.sell_amount)),
-                price_improvement_quote_buy_amount: Some(u256_to_big_decimal(&quote.buy_amount)),
-                price_improvement_quote_fee: Some(u256_to_big_decimal(&quote.fee)),
             },
         }
     }
-}
 
-impl From<FeePolicy> for domain::fee::Policy {
-    fn from(row: FeePolicy) -> domain::fee::Policy {
-        match row.kind {
+    #[allow(dead_code)]
+    pub fn into_domain(self, quote: Option<domain::fee::Quote>) -> domain::fee::Policy {
+        match self.kind {
             FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
-                factor: row.surplus_factor.expect("missing surplus factor"),
-                max_volume_factor: row
+                factor: self.surplus_factor.expect("missing surplus factor"),
+                max_volume_factor: self
                     .surplus_max_volume_factor
                     .expect("missing max volume factor"),
             },
             FeePolicyKind::Volume => domain::fee::Policy::Volume {
-                factor: row.volume_factor.expect("missing volume factor"),
+                factor: self.volume_factor.expect("missing volume factor"),
             },
             FeePolicyKind::PriceImprovement => domain::fee::Policy::PriceImprovement {
-                factor: row
+                factor: self
                     .price_improvement_factor
                     .expect("missing price improvement factor"),
-                max_volume_factor: row
+                max_volume_factor: self
                     .surplus_max_volume_factor
                     .expect("missing price improvement max volume factor"),
-                quote: domain::fee::Quote {
-                    sell_amount: big_decimal_to_u256(
-                        &row.price_improvement_quote_sell_amount
-                            .expect("missing price improvement quote sell amount"),
-                    )
-                    .expect("price improvement quote sell amount is not a valid BigDecimal"),
-                    buy_amount: big_decimal_to_u256(
-                        &row.price_improvement_quote_buy_amount
-                            .expect("missing price improvement quote buy amount"),
-                    )
-                    .expect("price improvement quote buy amount is not a valid BigDecimal"),
-                    fee: big_decimal_to_u256(
-                        &row.price_improvement_quote_fee
-                            .expect("missing price improvement quote fee"),
-                    )
-                    .expect("price improvement quote fee is not a valid BigDecimal"),
-                },
+                quote: quote.expect("quote is required for the PriceImprovement policy fee"),
             },
         }
     }

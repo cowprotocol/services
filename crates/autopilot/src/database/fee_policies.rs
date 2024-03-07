@@ -11,8 +11,7 @@ pub async fn insert_batch(
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
          surplus_max_volume_factor, volume_factor, price_improvement_factor, \
-         price_improvement_max_volume_factor, price_improvement_quote_sell_amount, \
-         price_improvement_quote_buy_amount, price_improvement_quote_fee) ",
+         price_improvement_max_volume_factor)",
     );
 
     let fee_policies = fee_policies.into_iter().flat_map(|(order_uid, policies)| {
@@ -29,10 +28,7 @@ pub async fn insert_batch(
             .push_bind(fee_policy.surplus_max_volume_factor)
             .push_bind(fee_policy.volume_factor)
             .push_bind(fee_policy.price_improvement_factor)
-            .push_bind(fee_policy.price_improvement_max_volume_factor)
-            .push_bind(fee_policy.price_improvement_quote_sell_amount)
-            .push_bind(fee_policy.price_improvement_quote_buy_amount)
-            .push_bind(fee_policy.price_improvement_quote_fee);
+            .push_bind(fee_policy.price_improvement_max_volume_factor);
     });
 
     query_builder.build().execute(ex).await.map(|_| ())
@@ -114,9 +110,6 @@ mod tests {
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
-            price_improvement_quote_sell_amount: None,
-            price_improvement_quote_buy_amount: None,
-            price_improvement_quote_fee: None,
         };
         // surplus fee policy with caps
         let fee_policy_2 = dto::FeePolicy {
@@ -128,9 +121,6 @@ mod tests {
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
-            price_improvement_quote_sell_amount: None,
-            price_improvement_quote_buy_amount: None,
-            price_improvement_quote_fee: None,
         };
         // volume based fee policy
         let fee_policy_3 = dto::FeePolicy {
@@ -142,9 +132,6 @@ mod tests {
             volume_factor: Some(0.06),
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
-            price_improvement_quote_sell_amount: None,
-            price_improvement_quote_buy_amount: None,
-            price_improvement_quote_fee: None,
         };
         // price improvement fee policy
         let fee_policy_4 = dto::FeePolicy {
@@ -156,9 +143,6 @@ mod tests {
             volume_factor: None,
             price_improvement_factor: Some(0.1),
             price_improvement_max_volume_factor: Some(1.0),
-            price_improvement_quote_sell_amount: Some(10.into()),
-            price_improvement_quote_buy_amount: Some(20.into()),
-            price_improvement_quote_fee: Some(1.into()),
         };
         let expected = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
 

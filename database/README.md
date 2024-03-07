@@ -250,9 +250,6 @@ Column                               | Type                         | Nullable |
  volume_factor                       | double precision             |          | fee percentage of the order volume; value is between 0 and 1
  price_improvement_factor            | double precision             |          | percentage of the price improvement over the best quote received during order creation; value is between 0 and 1
  price_improvement_max_volume_factor | double precision             |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
- price_improvement_quote_sell_amount | numeric                      |          | sell token quote amount
- price_improvement_quote_buy_amount  | numeric                      |          | buy token quote amount
- price_improvement_quote_fee         | numeric                      |          | fee amount that needs to be paid, denominated in the sell token
 
 Indexes:
 - PRIMARY KEY: composite key(`auction_id`, `order_uid`, `application_order`)
