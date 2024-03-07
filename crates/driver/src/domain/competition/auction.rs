@@ -404,6 +404,9 @@ pub struct Token {
 pub struct Price(eth::Ether);
 
 impl Price {
+    /// The base Ether amount for pricing.
+    const BASE: u128 = 10_u128.pow(18);
+
     pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
@@ -413,8 +416,11 @@ impl Price {
     }
 
     /// Apply this price to some token amount, converting that token into ETH.
+    ///
+    /// # Example
+    /// 1e18 * 2e18 / 1e18 = 2e18
     pub fn apply(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0 .0).into()
+        (amount.0 * self.0 .0 / Self::BASE).into()
     }
 }
 
