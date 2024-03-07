@@ -508,10 +508,13 @@ fn get_orders_with_native_prices(
 /// often. That way we have the chance to make a majority of orders solvable
 /// with very few fetch requests.
 fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
+    /// How old an order can be at most to be considered a market order.
+    const MARKET_ORDER_AGE_MINUTES: i64 = 30;
+    let market_order_age = chrono::Duration::minutes(MARKET_ORDER_AGE_MINUTES);
+    let now = chrono::Utc::now();
+
     // newer orders at the start
     orders.sort_by_key(|o| std::cmp::Reverse(o.metadata.creation_date));
-    let now = chrono::Utc::now();
-    let market_order_age = chrono::Duration::minutes(30);
 
     let mut high_priority_tokens = IndexSet::new();
     let mut most_used_tokens = HashMap::<H160, usize>::new();
