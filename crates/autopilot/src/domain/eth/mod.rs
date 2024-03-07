@@ -37,3 +37,6 @@ pub struct Asset {
 /// https://eips.ethereum.org/EIPS/eip-712#definition-of-domainseparator
 #[derive(Debug, Clone, Copy)]
 pub struct DomainSeparator(pub [u8; 32]);
+
+/// Originated from the blockchain transaction input data.
+pub type Calldata = crate::util::Bytes<Vec<u8>>;

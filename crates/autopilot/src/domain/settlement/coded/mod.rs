@@ -33,7 +33,7 @@ impl Settlement {
     pub const META_DATA_LEN: usize = 8;
 
     pub fn new(
-        calldata: &super::transaction::CallData,
+        calldata: &eth::Calldata,
         domain_separator: &eth::DomainSeparator,
     ) -> Result<Self, Error> {
         let function = contracts::GPv2Settlement::raw_contract()
@@ -42,7 +42,6 @@ impl Settlement {
             .unwrap();
         let data = calldata
             .0
-             .0
             .strip_prefix(&function.selector())
             .ok_or(Error::InvalidSelector)?;
 
