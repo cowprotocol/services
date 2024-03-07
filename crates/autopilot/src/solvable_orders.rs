@@ -1136,4 +1136,40 @@ mod tests {
             assert!(found, "{}", index);
         }
     }
+
+    #[test]
+    fn prioritizes_missing_prices() {
+        let now = chrono::Utc::now();
+        let token = H160::from_low_u64_be;
+
+        let order = |sell_token, buy_token, age| Order {
+            metadata: OrderMetadata {
+                creation_date: now - chrono::Duration::minutes(age),
+                ..Default::default()
+            },
+            data: OrderData {
+                sell_token,
+                buy_token,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let orders = vec![
+            order(token(4), token(6), 31),
+            order(token(4), token(6), 31),
+            order(token(1), token(2), 29), // older market order
+            order(token(5), token(6), 31),
+            order(token(1), token(3), 1), // youngest market order
+        ];
+        let result = prioritize_missing_prices(orders);
+        assert!(result.into_iter().eq([
+            token(1), // coming from youngest market order
+            token(3), // coming from youngest market order
+            token(2), // coming from older market order
+            token(6), // coming from limit order (part of 3 orders)
+            token(4), // coming from limit order (part of 2 orders)
+            token(5), // coming from limit order (part of 1 orders)
+        ]));
+    }
 }
