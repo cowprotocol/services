@@ -29,10 +29,6 @@ impl Trade {
             prices,
         }
     }
-
-    pub fn order_uid(&self) -> domain::OrderUid {
-        self.order_uid
-    }
 }
 
 #[derive(Debug)]
