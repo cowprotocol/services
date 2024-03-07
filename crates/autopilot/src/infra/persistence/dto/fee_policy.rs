@@ -1,6 +1,5 @@
 use {
     crate::{boundary, domain},
-    anyhow::anyhow,
     bigdecimal::BigDecimal,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
 };
@@ -97,33 +96,21 @@ impl From<FeePolicy> for domain::fee::Policy {
                     .surplus_max_volume_factor
                     .expect("missing price improvement max volume factor"),
                 quote: domain::fee::Quote {
-                    sell_amount: row
-                        .price_improvement_quote_sell_amount
-                        .ok_or(anyhow!("missing price improvement quote sell amount"))
-                        .and_then(|sell_amount| {
-                            big_decimal_to_u256(&sell_amount).ok_or(anyhow!(
-                                "price improvement quote sell amount is not a valid BigDecimal"
-                            ))
-                        })
-                        .unwrap(),
-                    buy_amount: row
-                        .price_improvement_quote_buy_amount
-                        .ok_or(anyhow!("missing price improvement quote buy amount"))
-                        .and_then(|sell_amount| {
-                            big_decimal_to_u256(&sell_amount).ok_or(anyhow!(
-                                "price improvement quote buy amount is not a valid BigDecimal"
-                            ))
-                        })
-                        .unwrap(),
-                    fee: row
-                        .price_improvement_quote_fee
-                        .ok_or(anyhow!("missing price improvement quote fee"))
-                        .and_then(|sell_amount| {
-                            big_decimal_to_u256(&sell_amount).ok_or(anyhow!(
-                                "price improvement quote fee is not a valid BigDecimal"
-                            ))
-                        })
-                        .unwrap(),
+                    sell_amount: big_decimal_to_u256(
+                        &row.price_improvement_quote_sell_amount
+                            .expect("missing price improvement quote sell amount"),
+                    )
+                    .expect("price improvement quote sell amount is not a valid BigDecimal"),
+                    buy_amount: big_decimal_to_u256(
+                        &row.price_improvement_quote_buy_amount
+                            .expect("missing price improvement quote buy amount"),
+                    )
+                    .expect("price improvement quote buy amount is not a valid BigDecimal"),
+                    fee: big_decimal_to_u256(
+                        &row.price_improvement_quote_fee
+                            .expect("missing price improvement quote fee"),
+                    )
+                    .expect("price improvement quote fee is not a valid BigDecimal"),
                 },
             },
         }
