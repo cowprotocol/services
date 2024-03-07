@@ -2,7 +2,7 @@
 
 use {
     crate::{domain::eth, util::conv::u256::U256Ext},
-    bigdecimal::{num_bigint::ToBigInt, BigDecimal},
+    bigdecimal::{num_bigint::ToBigInt, BigDecimal, Signed},
     std::{ops::Mul, str::FromStr},
 };
 
@@ -76,6 +76,10 @@ pub trait IntoWei {
 
 impl IntoWei for Ether<BigDecimal> {
     fn into_wei(self) -> eth::U256 {
+        assert!(
+            !self.0.is_negative(),
+            "IntoWei supports non-negative values only"
+        );
         let exp = BigDecimal::from_str("1e18").unwrap();
         let wei = self.0.mul(exp).to_bigint().unwrap();
         eth::U256::from_big_int(&wei).unwrap()
@@ -90,6 +94,7 @@ impl IntoWei for Ether<u64> {
 
 impl IntoWei for Ether<i32> {
     fn into_wei(self) -> eth::U256 {
+        assert!(self >= 0, "IntoWei supports non-negative values only");
         Ether(self.0 as u64).into_wei()
     }
 }
@@ -120,6 +125,10 @@ impl EtherExt for &str {
 
     fn ether(self) -> Ether<BigDecimal> {
         let value = BigDecimal::from_str(self).unwrap();
+        assert!(
+            !value.is_negative(),
+            "Ether supports non-negative values only"
+        );
         Ether(value)
     }
 }
@@ -136,6 +145,7 @@ impl EtherExt for i32 {
     type Output = i32;
 
     fn ether(self) -> Ether<i32> {
+        assert!(self >= 0, "Ether supports non-negative values only");
         Ether(self)
     }
 }
