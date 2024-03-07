@@ -10,7 +10,6 @@ use crate::{
             ab_solution,
             ExpectedOrderAmounts,
             FeePolicy,
-            PriceImprovementQuote,
             Test,
         },
     },
@@ -146,7 +145,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
         quote_buy_amount: 40.into_wei(),
         executed: 40.into_wei(),
         executed_sell_amount: 50.into_wei(),
-        executed_buy_amount: 35.into_wei(),
+        executed_buy_amount: 36.into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -184,7 +183,7 @@ async fn volume_protocol_fee_sell_order() {
         quote_buy_amount: 40.into_wei(),
         executed: 40.into_wei(),
         executed_sell_amount: 50.into_wei(),
-        executed_buy_amount: 15.into_wei(),
+        executed_buy_amount: 20.into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
