@@ -129,7 +129,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let surplus = self.surplus_token_price(prices)?.apply(
+        let surplus = self.surplus_token_price(prices)?.in_eth(
             self.surplus()
                 .ok_or(Error::Surplus(self.sell, self.buy))?
                 .amount,
@@ -214,7 +214,7 @@ impl Trade {
     fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let protocol_fee = self
             .surplus_token_price(prices)?
-            .apply(self.protocol_fee()?.amount);
+            .in_eth(self.protocol_fee()?.amount);
         Ok(protocol_fee)
     }
 

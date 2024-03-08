@@ -417,17 +417,20 @@ impl Price {
 
     /// Apply this price to some token amount, converting that token into ETH.
     ///
-    /// # Example: converting 1 ETH as token amount to eth::Ether
+    /// # Examples
     ///
-    /// Price of 1 ETH = 1e18 (since denominated in wei)
-    /// Token amount for 1 ETH = 1e18 (since denominated in wei)
+    /// Converting 1 ETH expressed in `eth::TokenAmount` into `eth::Ether`
     ///
-    /// Normalized price which doesn't change the denominator of token amount is
-    /// a relative number and it has no unit. Normalized price = Price /
-    /// BASE = 1e18 / 1e18 = 1
+    /// ```
+    /// use driver::domain::{competition::auction::Price, eth};
     ///
-    /// Ether amount = Token amount * Normalized price = 1e18 * 1 = 1e18
-    pub fn apply(self, amount: eth::TokenAmount) -> eth::Ether {
+    /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
+    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(18))).unwrap();
+    ///
+    /// let eth = price.in_eth(amount);
+    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(18)));
+    /// ```
+    pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
         (amount.0 * self.0 .0 / Self::BASE).into()
     }
 }
