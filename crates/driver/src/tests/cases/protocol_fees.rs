@@ -300,7 +300,7 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         network_fee: Some(network_fee),
         executed: order_sell_amount - network_fee,
         executed_sell_amount: order_sell_amount,
-        // todo: the value is changed after merge
+        // todo: how to prove the value?
         executed_buy_amount: "34.285714285714285714".ether().into_wei(),
     };
 
