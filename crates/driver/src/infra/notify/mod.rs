@@ -53,6 +53,7 @@ pub fn scoring_failed(
         ),
         score::Error::RiskAdjusted(score::risk::Error::Boundary(_)) => return,
         score::Error::Boundary(_) => return,
+        score::Error::Scoring(_) => return, // TODO: should we notify?
     };
 
     solver.notify(auction_id, solution_id, notification);

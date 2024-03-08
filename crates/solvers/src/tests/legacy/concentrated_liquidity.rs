@@ -100,6 +100,7 @@ async fn test() {
                     "kind": "concentratedLiquidity",
                     "id": "0",
                     "address": "0x97b744df0b59d93A866304f97431D8EfAd29a08d",
+                    "router": "0xe592427a0aece92de3edee1f18e0157c05861564",
                     "gasEstimate": "110000",
                     "tokens": [
                         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
