@@ -1,6 +1,7 @@
 use {
     anyhow::Result,
     ethcontract::H160,
+    prometheus::IntCounterVec,
     reqwest::{Client, Url},
     serde::Deserialize,
     std::{
@@ -54,6 +55,8 @@ impl AutoUpdatingTokenList {
             }
         }));
 
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+
         // spawn a background task to regularly update token list
         {
             let tokens = tokens.clone();
@@ -63,10 +66,20 @@ impl AutoUpdatingTokenList {
 
                     match configuration.get_external_list().await {
                         Ok(new_tokens) => {
+                            metrics
+                                .token_list_updates
+                                .with_label_values(&["success"])
+                                .inc();
                             let mut w = tokens.write().unwrap();
                             *w = new_tokens;
                         }
-                        Err(err) => tracing::error!(?err, "failed to update token list"),
+                        Err(err) => {
+                            metrics
+                                .token_list_updates
+                                .with_label_values(&["failure"])
+                                .inc();
+                            tracing::warn!(?err, "failed to update token list")
+                        }
                     }
                 }
             };
@@ -104,6 +117,13 @@ struct TokenListModel {
 struct TokenModel {
     chain_id: u64,
     address: H160,
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+struct Metrics {
+    /// Tracks how often a token list update succeeded or failed.
+    #[metric(labels("result"))]
+    token_list_updates: IntCounterVec,
 }
 
 #[cfg(test)]
