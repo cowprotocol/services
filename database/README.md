@@ -261,7 +261,7 @@ Indexes:
 
     Values:
     - `surplus`: The fee is based on the surplus achieved in the trade.
-    - `price_improvement`: The fee is based on a better executed price than the top quote.
+    - `priceimprovement`: The fee is based on a better executed price than the top quote.
     - `volume`: The fee is based on the volume of the order.
 
 ### presignature\_events
