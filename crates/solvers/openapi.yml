@@ -68,7 +68,25 @@ paths:
                   description: |
                     The kind of notification.
                   type: string
-                  enum: [timeout, emptySolution, duplicatedSolutionId, simulationFailed, zeroScore, scoreHigherThanQuality, successProbabilityOutOfRange, objectiveValueNonPositive, nonBufferableTokensUsed, solverAccountInsufficientBalance, success, revert, driverError, cancelled, fail, postprocessingTimedOut]
+                  enum:
+                    [
+                      timeout,
+                      emptySolution,
+                      duplicatedSolutionId,
+                      simulationFailed,
+                      zeroScore,
+                      scoreHigherThanQuality,
+                      successProbabilityOutOfRange,
+                      objectiveValueNonPositive,
+                      nonBufferableTokensUsed,
+                      solverAccountInsufficientBalance,
+                      success,
+                      revert,
+                      driverError,
+                      cancelled,
+                      fail,
+                      postprocessingTimedOut,
+                    ]
       responses:
         200:
           description: notification successfully received.
@@ -116,6 +134,12 @@ components:
         32 bit signed integer in decimal notation.
       type: number
       example: -12345
+
+    BalancerPoolId:
+      description: |
+        A hex-encoded 32 byte string containing the pool address (0..20), the pool specialization (20..22) and the poolnonce (22..32).
+      type: string
+      example: "0xc88c76dd8b92408fe9bea1a54922a31e232d873c0002000000000000000005b2"
 
     BigInt:
       description: |
@@ -306,6 +330,7 @@ components:
         - kind
         - tokens
         - fee
+        - router
       properties:
         kind:
           type: string
@@ -318,6 +343,8 @@ components:
             $ref: "#/components/schemas/TokenReserve"
         fee:
           $ref: "#/components/schemas/Decimal"
+        router:
+          $ref: "#/components/schemas/Address"
 
     WeightedProductPool:
       description: |
@@ -327,6 +354,7 @@ components:
         - kind
         - tokens
         - fee
+        - balancer_pool_id
       properties:
         kind:
           type: string
@@ -351,6 +379,8 @@ components:
         version:
           type: string
           enum: ["v0", "v3Plus"]
+        balancer_pool_id:
+          $ref: "#/components/schemas/BalancerPoolId"
 
     StablePool:
       description: |
@@ -361,6 +391,7 @@ components:
         - tokens
         - amplificationParameter
         - fee
+        - balancer_pool_id
       properties:
         kind:
           type: string
@@ -382,6 +413,8 @@ components:
           $ref: "#/components/schemas/Decimal"
         fee:
           $ref: "#/components/schemas/Decimal"
+        balancer_pool_id:
+          $ref: "#/components/schemas/BalancerPoolId"
 
     ConcentratedLiquidityPool:
       description: |
@@ -395,6 +428,7 @@ components:
         - tick
         - liquidityNet
         - fee
+        - router
       properties:
         kind:
           type: string
@@ -417,6 +451,8 @@ components:
             $ref: "#/components/schemas/I128"
         fee:
           $ref: "#/components/schemas/Decimal"
+        router:
+          $ref: "#/components/schemas/Address"
 
     ForeignLimitOrder:
       description: |
@@ -782,12 +818,12 @@ components:
         score:
           description: |
             Information required by the driver to score the solution. 
-            
+
             Can either be a raw score or a success probability.
           oneOf:
             - type: object
               properties:
-                kind: 
+                kind:
                   type: string
                   enum: [solver]
                 score:
@@ -798,10 +834,10 @@ components:
                     - $ref: "#/components/schemas/Decimal"
             - type: object
               properties:
-                kind: 
+                kind:
                   type: string
                   enum: [riskAdjusted]
-                successProbability: 
+                successProbability:
                   description: |
                     The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
                   type: number
