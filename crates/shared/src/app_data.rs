@@ -27,11 +27,18 @@ pub struct ProtocolAppData {
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
+    pub partner_fee: Option<PartnerFee>,
 }
 
 #[derive(Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
+}
+
+#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct PartnerFee {
+    pub recipient: H160,
+    pub bps: u64,
 }
 
 #[derive(Clone)]
