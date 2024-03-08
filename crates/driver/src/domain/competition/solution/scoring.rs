@@ -237,9 +237,9 @@ impl Trade {
     ///
     /// So:
     /// case Sell: factor' = fee / (traded_buy_amount - fee) = fee / (fee /
-    /// factor - fee) = factor / (1 - factor) case Buy: factor' = fee /
-    /// (traded_sell_amount + fee) = fee / (fee / factor + fee) = factor / (1 +
-    /// factor)
+    /// factor - fee) = factor / (1 - factor)
+    /// case Buy: factor' = fee / (traded_sell_amount + fee) = fee / (fee /
+    /// factor + fee) = factor / (1 + factor)
     ///
     /// Finally:
     /// case Sell: fee = traded_buy_amount' * factor / (1 - factor)
