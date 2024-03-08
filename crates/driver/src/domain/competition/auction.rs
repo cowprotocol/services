@@ -417,8 +417,15 @@ impl Price {
 
     /// Apply this price to some token amount, converting that token into ETH.
     ///
-    /// # Example
-    /// 1e18 * 2e18 / 1e18 = 2e18
+    /// # Example: converting 1 ETH as token amount to eth::Ether
+    /// 
+    /// Price of 1 ETH = 1e18 (since denominated in wei)
+    /// Token amount for 1 ETH = 1e18 (since denominated in wei)
+    /// 
+    /// Normalized price which doesn't change the denominator of token amount is a relative number and it has no unit.
+    /// Normalized price = Price / BASE = 1e18 / 1e18 = 1
+    /// 
+    /// Ether amount = Token amount * Normalized price = 1e18 * 1 = 1e18
     pub fn apply(self, amount: eth::TokenAmount) -> eth::Ether {
         (amount.0 * self.0 .0 / Self::BASE).into()
     }
