@@ -2,14 +2,9 @@
 
 use {
     crate::{domain::eth, util::conv::u256::U256Ext},
-    bigdecimal::{
-        num_bigint::{BigInt, ToBigInt},
-        num_traits::CheckedMul,
-        BigDecimal,
-        FromPrimitive,
-        Signed,
-    },
+    bigdecimal::{num_traits::CheckedMul, BigDecimal, FromPrimitive, Signed},
     num::BigRational,
+    number::conversions::big_decimal_to_big_rational,
     std::str::FromStr,
 };
 
@@ -103,7 +98,7 @@ pub trait EtherExt {
 /// precise representation and manipulation of such high-precision values.
 impl EtherExt for &str {
     fn ether(self) -> Ether {
-        let value = big_decimal_to_big_rational(BigDecimal::from_str(self).unwrap());
+        let value = big_decimal_to_big_rational(&BigDecimal::from_str(self).unwrap());
         assert!(
             !value.is_negative(),
             "Ether supports non-negative values only"
@@ -123,19 +118,4 @@ impl EtherExt for i32 {
         assert!(self >= 0, "Ether supports non-negative values only");
         Ether(BigRational::from_i32(self).unwrap())
     }
-}
-
-fn big_decimal_to_big_rational(decimal: BigDecimal) -> BigRational {
-    let decimal_str = decimal.to_string();
-    let parts: Vec<&str> = decimal_str.split('.').collect();
-    let (numerator_str, scale) = if parts.len() == 2 {
-        let scale = parts[1].len() as u32;
-        (parts[0].to_string() + parts[1], scale)
-    } else {
-        (parts[0].to_string(), 0)
-    };
-
-    let numerator = BigInt::from_str(&numerator_str).unwrap();
-    let denominator = 10.to_bigint().unwrap().pow(scale);
-    BigRational::new(numerator, denominator)
 }

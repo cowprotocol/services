@@ -66,6 +66,11 @@ where
     BigDecimal::new(numer, 0) / BigDecimal::new(denom, 0)
 }
 
+pub fn big_decimal_to_big_rational(value: &BigDecimal) -> BigRational {
+    let (numer, denom) = value.as_bigint_and_exponent();
+    BigRational::new(numer, BigInt::from(denom))
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, num::One, std::str::FromStr};
@@ -85,6 +90,19 @@ mod tests {
         let v = Ratio::new(3u16, 1_000u16);
         let c = rational_to_big_decimal(&v);
         assert_eq!(c, BigDecimal::new(3.into(), 3));
+    }
+
+    #[test]
+    fn big_decimal_to_big_rational_() {
+        let v = BigDecimal::from_str("1234567890.0987654321234567890").unwrap();
+        let c = big_decimal_to_big_rational(&v);
+        assert_eq!(
+            c,
+            BigRational::new(
+                BigInt::from_str("12345678900987654321234567890").unwrap(),
+                BigInt::from_str("19").unwrap()
+            )
+        )
     }
 
     #[test]
