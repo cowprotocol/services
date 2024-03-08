@@ -32,6 +32,15 @@ impl Settlement {
     /// id.
     const META_DATA_LEN: usize = 8;
 
+    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
+        self.trades
+            .iter()
+            .map(|trade| trade.native_surplus(prices))
+            .try_fold(num::Zero::zero(), |acc, score| {
+                score.map(|score| acc + score)
+            })
+    }
+
     pub fn new(
         calldata: &eth::Calldata,
         domain_separator: &eth::DomainSeparator,

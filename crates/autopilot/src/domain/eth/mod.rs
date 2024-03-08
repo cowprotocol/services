@@ -24,12 +24,52 @@ impl From<U256> for TokenAmount {
     }
 }
 
+impl From<TokenAmount> for U256 {
+    fn from(value: TokenAmount) -> Self {
+        value.0
+    }
+}
+
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Asset {
     pub amount: TokenAmount,
     pub token: TokenAddress,
+}
+
+/// An amount of native Ether tokens denominated in wei.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Ether(pub U256);
+
+impl From<U256> for Ether {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Ether> for U256 {
+    fn from(value: Ether) -> Self {
+        value.0
+    }
+}
+
+impl std::ops::Add for Ether {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for Ether {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
 }
 
 /// Domain separator used for signing.
