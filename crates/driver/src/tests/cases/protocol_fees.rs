@@ -2,6 +2,7 @@ use crate::{
     domain::{competition::order, eth},
     tests::{
         self,
+        cases::EtherExt,
         setup::{
             ab_adjusted_pool,
             ab_liquidity_quote,
@@ -69,13 +70,13 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     let test_case = TestCase {
         order_side: order::Side::Buy,
         fee_policy,
-        order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
-        quote_sell_amount: 50000000000000000000u128.into(),
-        quote_buy_amount: 40000000000000000000u128.into(),
-        executed: 40000000000000000000u128.into(),
-        executed_sell_amount: 100000000000000000000u128.into(),
-        executed_buy_amount: 40000000000000000000u128.into(),
+        order_sell_amount: 50.ether().into_wei(),
+        solver_fee: Some(10.ether().into_wei()),
+        quote_sell_amount: 50.ether().into_wei(),
+        quote_buy_amount: 40.ether().into_wei(),
+        executed: 40.ether().into_wei(),
+        executed_sell_amount: 100.ether().into_wei(),
+        executed_buy_amount: 40.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -92,13 +93,13 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
-        order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
-        quote_sell_amount: 50000000000000000000u128.into(),
-        quote_buy_amount: 40000000000000000000u128.into(),
-        executed: 40000000000000000000u128.into(),
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 20000000002000000000u128.into(),
+        order_sell_amount: 50.ether().into_wei(),
+        solver_fee: Some(10.ether().into_wei()),
+        quote_sell_amount: 50.ether().into_wei(),
+        quote_buy_amount: 40.ether().into_wei(),
+        executed: 40.ether().into_wei(),
+        executed_sell_amount: 50.ether().into_wei(),
+        executed_buy_amount: "20.000000002".ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -115,13 +116,13 @@ async fn surplus_protocol_fee_buy_order_capped() {
     let test_case = TestCase {
         order_side: order::Side::Buy,
         fee_policy,
-        order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
-        quote_sell_amount: 50000000000000000000u128.into(),
-        quote_buy_amount: 40000000000000000000u128.into(),
-        executed: 40000000000000000000u128.into(),
-        executed_sell_amount: 55000000000000000000u128.into(),
-        executed_buy_amount: 40000000000000000000u128.into(),
+        order_sell_amount: 50.ether().into_wei(),
+        solver_fee: Some(10.ether().into_wei()),
+        quote_sell_amount: 50.ether().into_wei(),
+        quote_buy_amount: 40.ether().into_wei(),
+        executed: 40.ether().into_wei(),
+        executed_sell_amount: 55.ether().into_wei(),
+        executed_buy_amount: 40.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -138,13 +139,13 @@ async fn surplus_protocol_fee_sell_order_capped() {
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
-        order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
-        quote_sell_amount: 50000000000000000000u128.into(),
-        quote_buy_amount: 40000000000000000000u128.into(),
-        executed: 40000000000000000000u128.into(),
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 36000000000000000000u128.into(),
+        order_sell_amount: 50.ether().into_wei(),
+        solver_fee: Some(10.ether().into_wei()),
+        quote_sell_amount: 50.ether().into_wei(),
+        quote_buy_amount: 40.ether().into_wei(),
+        executed: 40.ether().into_wei(),
+        executed_sell_amount: 50.ether().into_wei(),
+        executed_buy_amount: 36.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -157,13 +158,13 @@ async fn volume_protocol_fee_buy_order() {
     let test_case = TestCase {
         order_side: order::Side::Buy,
         fee_policy,
-        order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
-        quote_sell_amount: 50000000000000000000u128.into(),
-        quote_buy_amount: 40000000000000000000u128.into(),
-        executed: 40000000000000000000u128.into(),
-        executed_sell_amount: 75000000000000000000u128.into(),
-        executed_buy_amount: 40000000000000000000u128.into(),
+        order_sell_amount: 50.ether().into_wei(),
+        solver_fee: Some(10.ether().into_wei()),
+        quote_sell_amount: 50.ether().into_wei(),
+        quote_buy_amount: 40.ether().into_wei(),
+        executed: 40.ether().into_wei(),
+        executed_sell_amount: 75.ether().into_wei(),
+        executed_buy_amount: 40.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -176,13 +177,13 @@ async fn volume_protocol_fee_sell_order() {
     let test_case = TestCase {
         order_side: order::Side::Sell,
         fee_policy,
-        order_sell_amount: 50000000000000000000u128.into(),
-        solver_fee: Some(10000000000000000000u128.into()),
-        quote_sell_amount: 50000000000000000000u128.into(),
-        quote_buy_amount: 40000000000000000000u128.into(),
-        executed: 40000000000000000000u128.into(),
-        executed_sell_amount: 50000000000000000000u128.into(),
-        executed_buy_amount: 20000000000000000000u128.into(),
+        order_sell_amount: 50.ether().into_wei(),
+        solver_fee: Some(10.ether().into_wei()),
+        quote_sell_amount: 50.ether().into_wei(),
+        quote_buy_amount: 40.ether().into_wei(),
+        executed: 40.ether().into_wei(),
+        executed_sell_amount: 50.ether().into_wei(),
+        executed_buy_amount: 20.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;

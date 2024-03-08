@@ -1,4 +1,7 @@
-use crate::tests::setup::{ab_order, ab_pool, ab_solution, setup, Order};
+use crate::tests::{
+    cases::EtherExt,
+    setup::{ab_order, ab_pool, ab_solution, setup, Order},
+};
 
 /// Test that orders are sorted correctly before being sent to the solver:
 /// market orders come before limit orders, and orders that are more likely to
@@ -11,14 +14,14 @@ async fn sorting() {
         .pool(ab_pool())
         // Orders with better price ratios come first.
         .order(ab_order())
-        .order(ab_order().reduce_amount(1000000000000000u128.into()).rename("second order"))
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
         // Limit orders come after market orders.
         .order(
             ab_order()
                 .rename("third order")
                 .limit()
         )
-        .order(ab_order().reduce_amount(1000000000000000u128.into()).rename("fourth order").limit())
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("fourth order").limit())
         .solution(ab_solution())
         .done()
         .await;
@@ -37,19 +40,19 @@ async fn filtering() {
         .pool(ab_pool())
         // Orders with better price ratios come first.
         .order(ab_order())
-        .order(ab_order().reduce_amount(1000000000000000u128.into()).rename("second order"))
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
         // Filter out the next order, because the trader doesn't have enough balance to cover it.
         .order(
             ab_order()
                 .rename("third order")
-                .multiply_amount(100000000000000000u128.into())
+                .multiply_amount("0.1".ether().into_wei())
                 .filtered()
         )
         // Filter out the next order. It can't be fulfilled due to the balance that is required to
         // fulfill the previous orders.
         .order(
             Order {
-                sell_amount: 4999999999900002000000000000000u128.into(),
+                sell_amount: "4999999999900.002".ether().into_wei(),
                 surplus_factor: 1.into(),
                 ..ab_order()
             }
