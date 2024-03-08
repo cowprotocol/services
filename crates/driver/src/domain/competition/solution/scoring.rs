@@ -223,8 +223,9 @@ impl Trade {
     ///
     /// The protocol fee before being applied is:
     /// case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
-    /// buy amount case Buy: fee = traded_sell_amount * factor, resulting in
-    /// the INCREASED sell amount
+    /// buy amount
+    /// case Buy: fee = traded_sell_amount * factor, resulting in the INCREASED
+    /// sell amount
     ///
     /// The protocol fee after being applied is:
     /// case Sell: fee = traded_buy_amount' * factor',
