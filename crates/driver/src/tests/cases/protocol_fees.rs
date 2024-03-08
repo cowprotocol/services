@@ -27,6 +27,7 @@ struct TestCase {
     executed: eth::U256,
     executed_sell_amount: eth::U256,
     executed_buy_amount: eth::U256,
+    surplus_factor: eth::U256,
 }
 
 async fn protocol_fee_test_case(test_case: TestCase) {
@@ -43,7 +44,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         buy: test_case.executed_buy_amount,
     };
     let order = ab_order()
-        .surplus(DEFAULT_SURPLUS_FACTOR.into())
+        .surplus(test_case.surplus_factor)
         .kind(order::Kind::Limit)
         .sell_amount(test_case.order_sell_amount)
         .side(test_case.order_side)
@@ -82,6 +83,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         executed: order_buy_amount,
         executed_sell_amount: 75000000000000000000u128.into(),
         executed_buy_amount: order_buy_amount,
+        surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -107,6 +109,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         executed: order_buy_amount,
         executed_sell_amount: order_sell_amount,
         executed_buy_amount: 30000000000000000000u128.into(),
+        surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -130,6 +133,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
         executed: 40000000000000000000u128.into(),
         executed_sell_amount: 55000000000000000000u128.into(),
         executed_buy_amount: 40000000000000000000u128.into(),
+        surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -153,6 +157,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
         executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
         executed_buy_amount: 35000000000000000000u128.into(),
+        surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -172,6 +177,7 @@ async fn volume_protocol_fee_buy_order() {
         executed: 40000000000000000000u128.into(),
         executed_sell_amount: 75000000000000000000u128.into(),
         executed_buy_amount: 40000000000000000000u128.into(),
+        surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -191,6 +197,7 @@ async fn volume_protocol_fee_sell_order() {
         executed: 40000000000000000000u128.into(),
         executed_sell_amount: 50000000000000000000u128.into(),
         executed_buy_amount: 15000000000000000000u128.into(),
+        surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -213,11 +220,7 @@ async fn price_improvement_fee_buy_out_of_market_order() {
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
             sell_amount: order_sell_amount,
-            // Since order surplus factor is 2.0, order's buy amount becomes x0.5 from the original
-            // value. Quote's buy amount is selected to be equal to the adjusted order's
-            // buy amount.
             buy_amount: order_buy_amount / DEFAULT_SURPLUS_FACTOR,
-            // Quote's fee is high enough to make the order's conditions better.
             network_fee: quote_network_fee,
         },
     };
@@ -225,14 +228,14 @@ async fn price_improvement_fee_buy_out_of_market_order() {
         order_side: order::Side::Buy,
         fee_policy,
         order_sell_amount,
-        network_fee: Some(10000000000000000000u128.into()),
+        network_fee: Some(1000000000000000000u128.into()),
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_buy_amount,
-        // Executed values should be the same as for the surplus policy fee.
-        // ???
-        executed_sell_amount: 75000000000000000000u128.into(),
+        // order sell amount + quote network fee * factor
+        executed_sell_amount: 60000000000000000000u128.into(),
         executed_buy_amount: order_buy_amount,
+        surplus_factor: 1.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -247,9 +250,6 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            // Since order surplus factor is 2.0, order's sell amount becomes x2 from the original
-            // value. Quote's sell amount is selected to be equal to the adjusted order's
-            // buy amount.
             sell_amount: order_sell_amount * DEFAULT_SURPLUS_FACTOR,
             buy_amount: order_buy_amount,
             network_fee: 20000000000000000000u128.into(),
@@ -265,9 +265,9 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         quote_buy_amount: order_buy_amount,
         executed: order_sell_amount - network_fee,
         executed_sell_amount: order_sell_amount,
-        // executed values should be the same as for the surplus policy fee
-        // ???
-        executed_buy_amount: 30000000000000000000u128.into(),
+        // order buy amount - quote network fee * factor (in sell token)
+        executed_buy_amount: 32000000000000000000u128.into(),
+        surplus_factor: 1.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -281,14 +281,11 @@ async fn price_improvement_fee_buy_in_market_order() {
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
             sell_amount: 50000000000000000000u128.into(),
-            // Since order surplus factor is 2.0, order's buy amount will be x0.5.
-            // To make it inside market price, the quote buy amount should be higher than the
-            // adjusted order's value.
             buy_amount: 40000000000000000000u128.into(),
             network_fee: 20000000000000000000u128.into(),
         },
     };
-    let order_sell_amount = 50000000000000000000u128.into();
+    let order_sell_amount = 100000000000000000000u128.into();
     let order_buy_amount = 40000000000000000000u128.into();
     let network_fee = 10000000000000000000u128.into();
     let test_case = TestCase {
@@ -299,10 +296,11 @@ async fn price_improvement_fee_buy_in_market_order() {
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_buy_amount,
-        // quote.sell_amount + factor * quote.network_fee
-        // ???
-        executed_sell_amount: 60000000000000000000u128.into(),
+        // todo: no price improvement since quote provides better conditions, but the fee isn't
+        // considered
+        executed_sell_amount: order_sell_amount,
         executed_buy_amount: order_buy_amount,
+        surplus_factor: 1.into(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -315,16 +313,13 @@ async fn price_improvement_fee_sell_in_market_order() {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
-            // Since order surplus factor is 2.0, order's sell amount will be x2.
-            // To make it inside market price, the quote sell amount should be lower than the
-            // adjusted order's value.
             sell_amount: 500000000000000000000u128.into(),
             buy_amount: 40000000000000000000u128.into(),
             network_fee: 20000000000000000000u128.into(),
         },
     };
     let order_sell_amount: eth::U256 = 50000000000000000000u128.into();
-    let order_buy_amount: eth::U256 = 40000000000000000000u128.into();
+    let order_buy_amount: eth::U256 = 10000000000000000000u128.into();
     let network_fee = 10000000000000000000u128.into();
     let test_case = TestCase {
         order_side: order::Side::Sell,
@@ -334,9 +329,10 @@ async fn price_improvement_fee_sell_in_market_order() {
         quote_sell_amount: order_sell_amount,
         quote_buy_amount: order_buy_amount,
         executed: order_sell_amount - network_fee,
-        executed_sell_amount: order_sell_amount,
-        // ???
-        executed_buy_amount: 30000000000000000000u128.into(),
+        // todo: explain values
+        executed_sell_amount: 80000000000000000000u128.into(),
+        executed_buy_amount: 36000000000000000000u128.into(),
+        surplus_factor: 1.into(),
     };
 
     protocol_fee_test_case(test_case).await;

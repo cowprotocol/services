@@ -6,7 +6,7 @@ use {
             eth::{self, ContractAddress},
         },
         infra::time,
-        tests::{self, boundary},
+        tests::{self, boundary, setup::FeePolicy},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
@@ -97,14 +97,34 @@ impl QuotedOrder {
     pub fn buy_amount(&self) -> eth::U256 {
         match self.order.side {
             order::Side::Buy => self.buy,
-            order::Side::Sell => self.buy / self.order.surplus_factor,
+            order::Side::Sell => {
+                let fee = match &self.order.fee_policy {
+                    FeePolicy::PriceImprovement {
+                        factor: _,
+                        max_volume_factor: _,
+                        quote,
+                    } => quote.network_fee,
+                    _ => eth::U256::zero(),
+                };
+                (self.buy * (self.sell - fee) / self.sell) / self.order.surplus_factor
+            }
         }
     }
 
     /// The sell amount with the surplus factor.
     pub fn sell_amount(&self) -> eth::U256 {
         match self.order.side {
-            order::Side::Buy => self.sell * self.order.surplus_factor,
+            order::Side::Buy => {
+                let fee = match &self.order.fee_policy {
+                    FeePolicy::PriceImprovement {
+                        factor: _,
+                        max_volume_factor: _,
+                        quote,
+                    } => quote.network_fee,
+                    _ => eth::U256::zero(),
+                };
+                (self.sell + fee) * self.order.surplus_factor
+            }
             order::Side::Sell => self.sell,
         }
     }
