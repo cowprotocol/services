@@ -137,7 +137,7 @@ mod tests {
         let fee_policy_4 = dto::FeePolicy {
             auction_id,
             order_uid,
-            kind: dto::fee_policy::FeePolicyKind::Surplus,
+            kind: dto::fee_policy::FeePolicyKind::PriceImprovement,
             surplus_factor: None,
             surplus_max_volume_factor: None,
             volume_factor: None,
