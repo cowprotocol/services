@@ -99,8 +99,8 @@ mod tests {
         assert_eq!(
             c,
             BigRational::new(
-                BigInt::from_str("12345678900987654321234567890").unwrap(),
-                BigInt::from_str("19").unwrap()
+                BigInt::from(12345678900987654321234567890u128),
+                BigInt::from(19)
             )
         )
     }
