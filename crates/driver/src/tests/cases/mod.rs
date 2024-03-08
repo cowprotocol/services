@@ -81,9 +81,9 @@ impl Ether {
 /// # Examples
 ///
 /// ```
-/// let ether = 1.ether();
-/// let ether = 1u64.ether();
-/// let ether = "1e-18".ether();
+/// assert_eq(1.ether().into_wei(), U256::exp10(18))
+/// assert_eq(1u64.ether().into_wei(), U256::exp10(18))
+/// assert_eq("1e-18".ether().into_wei(), U256::from(1)))
 /// ```
 pub trait EtherExt {
     /// Converts a value into an `Ether` instance.
