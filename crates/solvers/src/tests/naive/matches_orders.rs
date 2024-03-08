@@ -57,6 +57,7 @@ async fn sell_orders_on_both_sides() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0xffffffffffffffffffffffffffffffffffffffff",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "110000"
                 },
             ],
@@ -164,6 +165,7 @@ async fn sell_orders_on_one_side() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0xffffffffffffffffffffffffffffffffffffffff",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "110000"
                 },
             ],
@@ -271,6 +273,7 @@ async fn buy_orders_on_both_sides() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0xffffffffffffffffffffffffffffffffffffffff",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "110000"
                 },
             ],
@@ -378,6 +381,7 @@ async fn buy_and_sell_orders() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0xffffffffffffffffffffffffffffffffffffffff",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "110000"
                 },
             ],

@@ -2,6 +2,7 @@ use crate::{
     domain::{competition::order, eth},
     tests::{
         self,
+        cases::EtherExt,
         setup::{
             ab_adjusted_pool,
             ab_liquidity_quote,

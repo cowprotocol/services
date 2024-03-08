@@ -13,6 +13,9 @@ use {
         infra::blockchain::Ethereum,
         util,
     },
+    anyhow::Result,
+    reqwest::header::HeaderName,
+    std::collections::HashMap,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -97,25 +100,33 @@ pub struct Config {
     pub account: ethcontract::Account,
     /// How much time to spend for each step of the solving and competition.
     pub timeouts: Timeouts,
+    /// HTTP headers that should be added to every request.
+    pub request_headers: HashMap<String, String>,
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    pub rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum) -> Self {
+    pub fn new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
             "application/json".parse().unwrap(),
         );
         headers.insert(reqwest::header::ACCEPT, "application/json".parse().unwrap());
-        // TODO(#907) Also add an auth header
-        Self {
+
+        for (key, val) in config.request_headers.iter() {
+            let header_name = HeaderName::try_from(key)?;
+            headers.insert(header_name, val.parse()?);
+        }
+
+        Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
-                .build()
-                .unwrap(),
+                .build()?,
             config,
             eth,
-        }
+        })
     }
 
     pub fn name(&self) -> &Name {
@@ -172,7 +183,13 @@ impl Solver {
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
+        let solutions = res.into_domain(
+            auction,
+            liquidity,
+            weth,
+            self.clone(),
+            self.config.rank_by_surplus_date,
+        )?;
 
         super::observe::solutions(&solutions);
         Ok(solutions)
