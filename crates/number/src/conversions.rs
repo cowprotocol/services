@@ -67,9 +67,17 @@ where
 }
 
 pub fn big_decimal_to_big_rational(value: &BigDecimal) -> BigRational {
-    let (numer, exp) = value.as_bigint_and_exponent();
-    let denom = BigInt::from(10).pow(exp as u32);
-    BigRational::new(numer, denom)
+    let (numer, scale) = value.as_bigint_and_exponent();
+    let (adjusted_numer, denom) = match scale.cmp(&0) {
+        std::cmp::Ordering::Equal => (numer, BigInt::from(1)),
+        std::cmp::Ordering::Greater => (numer, BigInt::from(10).pow(scale as u32)),
+        std::cmp::Ordering::Less => (
+            numer * BigInt::from(10).pow((-scale) as u32),
+            BigInt::from(1),
+        ),
+    };
+
+    BigRational::new(adjusted_numer, denom)
 }
 
 #[cfg(test)]
@@ -103,7 +111,31 @@ mod tests {
                 BigInt::from(1234567890098765432123456789u128),
                 BigInt::from(1000000000000000000u64)
             )
-        )
+        );
+
+        let v = BigDecimal::from_str("0.0987654321234567890").unwrap();
+        let c = big_decimal_to_big_rational(&v);
+        assert_eq!(
+            c,
+            BigRational::new(
+                BigInt::from(98765432123456789u64),
+                BigInt::from(1000000000000000000u64)
+            )
+        );
+
+        let v = BigDecimal::from_str("1e-19").unwrap();
+        let c = big_decimal_to_big_rational(&v);
+        assert_eq!(
+            c,
+            BigRational::new(BigInt::from(1), BigInt::from(10000000000000000000u64))
+        );
+
+        let v = BigDecimal::new(BigInt::from(1000000), -4);
+        let c = big_decimal_to_big_rational(&v);
+        assert_eq!(
+            c,
+            BigRational::new(BigInt::from(10000000000u64), BigInt::from(1))
+        );
     }
 
     #[test]
