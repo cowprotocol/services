@@ -67,8 +67,9 @@ where
 }
 
 pub fn big_decimal_to_big_rational(value: &BigDecimal) -> BigRational {
-    let (numer, denom) = value.as_bigint_and_exponent();
-    BigRational::new(numer, BigInt::from(denom))
+    let (numer, exp) = value.as_bigint_and_exponent();
+    let denom = BigInt::from(10).pow(exp as u32);
+    BigRational::new(numer, denom)
 }
 
 #[cfg(test)]
@@ -99,8 +100,8 @@ mod tests {
         assert_eq!(
             c,
             BigRational::new(
-                BigInt::from(12345678900987654321234567890u128),
-                BigInt::from(19)
+                BigInt::from(1234567890098765432123456789u128),
+                BigInt::from(1000000000000000000u64)
             )
         )
     }
