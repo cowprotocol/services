@@ -30,7 +30,7 @@ pub struct Settlement {
 impl Settlement {
     /// Number of bytes that may be appended to the calldata to store an auction
     /// id.
-    pub const META_DATA_LEN: usize = 8;
+    const META_DATA_LEN: usize = 8;
 
     pub fn new(
         calldata: &eth::Calldata,

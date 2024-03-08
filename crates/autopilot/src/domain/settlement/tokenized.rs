@@ -41,6 +41,7 @@ pub fn order_uid(
     let order = model::order::OrderData {
         sell_token: tokens[trade.0.as_u64() as usize],
         buy_token: tokens[trade.1.as_u64() as usize],
+        receiver: Some(trade.2),
         sell_amount: trade.3,
         buy_amount: trade.4,
         valid_to: trade.5,
@@ -51,7 +52,6 @@ pub fn order_uid(
             domain::auction::order::Side::Sell => model::order::OrderKind::Sell,
         },
         partially_fillable: flags.partially_fillable(),
-        receiver: Some(trade.2),
         sell_token_balance: flags.sell_token_balance(),
         buy_token_balance: flags.buy_token_balance(),
     };
