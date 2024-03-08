@@ -179,7 +179,7 @@ impl Trade {
         let fee = surplus
             .amount
             .apply_factor(factor / (1.0 - factor))
-            .ok_or(Error::Factor(surplus.amount, factor))?;
+            .ok_or(Math::Overflow)?;
 
         Ok(eth::Asset {
             token: surplus.token,
@@ -216,7 +216,7 @@ impl Trade {
             amount: {
                 executed_in_surplus_token
                     .apply_factor(factor)
-                    .ok_or(Error::Factor(executed_in_surplus_token, factor))?
+                    .ok_or(Math::Overflow)?
             },
         })
     }
@@ -270,8 +270,6 @@ pub enum Error {
     Surplus(eth::Asset, eth::Asset),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
-    #[error("factor {1} multiplication with {0} failed")]
-    Factor(eth::TokenAmount, f64),
     #[error(transparent)]
     Math(#[from] Math),
 }
