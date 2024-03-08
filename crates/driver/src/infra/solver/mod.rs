@@ -102,6 +102,8 @@ pub struct Config {
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>,
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    pub rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Solver {
@@ -181,7 +183,13 @@ impl Solver {
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
+        let solutions = res.into_domain(
+            auction,
+            liquidity,
+            weth,
+            self.clone(),
+            self.config.rank_by_surplus_date,
+        )?;
 
         super::observe::solutions(&solutions);
         Ok(solutions)
