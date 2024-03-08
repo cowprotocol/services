@@ -404,6 +404,9 @@ pub struct Token {
 pub struct Price(eth::Ether);
 
 impl Price {
+    /// The base Ether amount for pricing.
+    const BASE: u128 = 10_u128.pow(18);
+
     pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
@@ -413,8 +416,22 @@ impl Price {
     }
 
     /// Apply this price to some token amount, converting that token into ETH.
-    pub fn apply(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0 .0).into()
+    ///
+    /// # Examples
+    ///
+    /// Converting 1 ETH expressed in `eth::TokenAmount` into `eth::Ether`
+    ///
+    /// ```
+    /// use driver::domain::{competition::auction::Price, eth};
+    ///
+    /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
+    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(18))).unwrap();
+    ///
+    /// let eth = price.in_eth(amount);
+    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(18)));
+    /// ```
+    pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
+        (amount.0 * self.0 .0 / Self::BASE).into()
     }
 }
 

@@ -134,8 +134,7 @@ impl Trade {
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
 
-        // normalize
-        Ok((price.apply(surplus.amount).0 / *UNIT).into())
+        Ok(price.in_eth(surplus.amount))
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
@@ -218,8 +217,7 @@ impl Trade {
             .get(&protocol_fee.token)
             .ok_or(Error::MissingPrice(protocol_fee.token))?;
 
-        // normalize
-        Ok((price.apply(protocol_fee.amount).0 / *UNIT).into())
+        Ok(price.in_eth(protocol_fee.amount))
     }
 
     fn surplus_token(&self) -> eth::TokenAddress {
@@ -256,8 +254,4 @@ pub enum Error {
     Factor(eth::TokenAmount, f64),
     #[error(transparent)]
     Math(#[from] Math),
-}
-
-lazy_static::lazy_static! {
-    static ref UNIT: eth::U256 = eth::U256::from(1_000_000_000_000_000_000_u128);
 }
