@@ -3,7 +3,7 @@ ALTER TABLE fee_policies
     RENAME COLUMN max_volume_factor TO surplus_max_volume_factor;
 
 -- Add `price_improvement` policy fee kind
-ALTER TYPE PolicyKind ADD VALUE 'price_improvement';
+ALTER TYPE PolicyKind ADD VALUE 'priceimprovement';
 
 -- Add price improvement fee columns
 ALTER TABLE fee_policies
