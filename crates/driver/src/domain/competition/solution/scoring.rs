@@ -1,3 +1,11 @@
+//! Scoring of a solution.
+//!
+//! Scoring is done on a solution that is identical to the one that will appear
+//! onchain. This means that all fees are already applied to the trades and the
+//! executed amounts are adjusted to account for all fees (gas cost and protocol
+//! fees). No further changes are expected to be done on solution by the driver
+//! after scoring.
+
 use {
     super::{
         error::Math,
@@ -174,6 +182,25 @@ impl Trade {
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
+    ///
+    /// Protocol fee calculation logic depends if the protocol fee
+    /// is already applied to the trade or not. Since scoring module works with
+    /// trades that already have the protocol fee applied, we need to calculate
+    /// the protocol fee as an observation of already applied protocol fee.
+    ///
+    /// The protocol fee before being applied is:
+    ///    fee = surplus_before_fee * factor
+    /// The protocol fee after being applied is:
+    ///    fee = surplus_after_fee * factor'
+    /// Also:
+    ///    surplus_after_fee = surplus_before_fee - fee
+    /// So:
+    ///    factor' = fee / surplus_after_fee = fee / (surplus_before_fee - fee)
+    /// = fee / ((fee / factor) - fee) = factor / (1 - factor)
+    ///
+    /// Finally:
+    ///     fee = surplus_after_fee * factor / (1 - factor)
+
     fn surplus_fee(&self, factor: f64) -> Result<eth::Asset, Error> {
         let surplus = self.surplus().ok_or(Error::Surplus(self.sell, self.buy))?;
         let fee = surplus
@@ -188,6 +215,34 @@ impl Trade {
     }
 
     /// Protocol fee as a cut of the trade volume, denominated in SURPLUS token
+    ///
+    /// Protocol fee calculation logic depends if the protocol fee
+    /// is already applied to the trade or not. Since scoring module works with
+    /// trades that already have the protocol fee applied, we need to calculate
+    /// the protocol fee as an observation of already applied protocol fee.
+    ///
+    /// The protocol fee before being applied is:
+    /// case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
+    /// buy amount case Buy: fee = traded_sell_amount * factor, resulting in
+    /// the INCREASED sell amount
+    ///
+    /// The protocol fee after being applied is:
+    /// case Sell: fee = traded_buy_amount' * factor',
+    /// case Buy: fee = traded_sell_amount' * factor',
+    ///
+    /// Also:
+    /// case Sell: traded_buy_amount' = traded_buy_amount - fee
+    /// case Buy: traded_sell_amount' = traded_sell_amount + fee
+    ///
+    /// So:
+    /// case Sell: factor' = fee / (traded_buy_amount - fee) = fee / (fee /
+    /// factor - fee) = factor / (1 - factor) case Buy: factor' = fee /
+    /// (traded_sell_amount + fee) = fee / (fee / factor + fee) = factor / (1 +
+    /// factor)
+    ///
+    /// Finally:
+    /// case Sell: fee = traded_buy_amount' * factor / (1 - factor)
+    /// case Buy: fee = traded_sell_amount' * factor / (1 + factor)
     fn volume_fee(&self, factor: f64) -> Result<eth::Asset, Error> {
         let executed_in_surplus_token: eth::TokenAmount = match self.side {
             Side::Sell => self
