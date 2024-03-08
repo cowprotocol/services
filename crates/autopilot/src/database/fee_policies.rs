@@ -5,7 +5,7 @@ use {
 
 pub async fn insert_batch(
     ex: &mut PgConnection,
-    auction_id: domain::AuctionId,
+    auction_id: domain::auction::Id,
     fee_policies: impl IntoIterator<Item = (domain::OrderUid, Vec<domain::fee::Policy>)>,
 ) -> Result<(), sqlx::Error> {
     let mut query_builder = QueryBuilder::new(
