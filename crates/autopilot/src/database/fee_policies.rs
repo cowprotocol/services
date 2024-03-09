@@ -8,30 +8,37 @@ pub async fn insert_batch(
     auction_id: domain::auction::Id,
     fee_policies: impl IntoIterator<Item = (domain::OrderUid, Vec<domain::fee::Policy>)>,
 ) -> Result<(), sqlx::Error> {
-    let mut query_builder = QueryBuilder::new(
-        "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
-         surplus_max_volume_factor, volume_factor, price_improvement_factor, \
-         price_improvement_max_volume_factor)",
-    );
+    let mut fee_policies = fee_policies
+        .into_iter()
+        .flat_map(|(order_uid, policies)| {
+            policies
+                .into_iter()
+                .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
+        })
+        .peekable();
 
-    let fee_policies = fee_policies.into_iter().flat_map(|(order_uid, policies)| {
-        policies
-            .into_iter()
-            .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
-    });
+    if fee_policies.peek().is_some() {
+        let mut query_builder = QueryBuilder::new(
+            "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
+             surplus_max_volume_factor, volume_factor, price_improvement_factor, \
+             price_improvement_max_volume_factor)",
+        );
 
-    query_builder.push_values(fee_policies, |mut b, fee_policy| {
-        b.push_bind(fee_policy.auction_id)
-            .push_bind(fee_policy.order_uid)
-            .push_bind(fee_policy.kind)
-            .push_bind(fee_policy.surplus_factor)
-            .push_bind(fee_policy.surplus_max_volume_factor)
-            .push_bind(fee_policy.volume_factor)
-            .push_bind(fee_policy.price_improvement_factor)
-            .push_bind(fee_policy.price_improvement_max_volume_factor);
-    });
+        query_builder.push_values(fee_policies, |mut b, fee_policy| {
+            b.push_bind(fee_policy.auction_id)
+                .push_bind(fee_policy.order_uid)
+                .push_bind(fee_policy.kind)
+                .push_bind(fee_policy.surplus_factor)
+                .push_bind(fee_policy.surplus_max_volume_factor)
+                .push_bind(fee_policy.volume_factor)
+                .push_bind(fee_policy.price_improvement_factor)
+                .push_bind(fee_policy.price_improvement_max_volume_factor);
+        });
 
-    query_builder.build().execute(ex).await.map(|_| ())
+        query_builder.build().execute(ex).await.map(|_| ())
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn fetch(
