@@ -62,38 +62,6 @@ mod tests {
         let (auction_id, order_uid) = (1, ByteArray([1; 56]));
 
         // surplus fee policy without caps
-        let fee_policy_1 = domain::fee::Policy::Surplus {
-            factor: 0.1,
-            max_volume_factor: 1.0,
-        };
-        // surplus fee policy with caps
-        let fee_policy_2 = domain::fee::Policy::Surplus {
-            factor: 0.2,
-            max_volume_factor: 0.05,
-        };
-        // volume based fee policy
-        let fee_policy_3 = domain::fee::Policy::Volume { factor: 0.06 };
-        // price improvement fee policy
-        let fee_policy_4 = domain::fee::Policy::PriceImprovement {
-            factor: 0.1,
-            max_volume_factor: 1.0,
-            quote: domain::fee::Quote {
-                sell_amount: 10.into(),
-                buy_amount: 20.into(),
-                fee: 1.into(),
-            },
-        };
-        let input_policies = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
-
-        insert_batch(
-            &mut db,
-            auction_id,
-            vec![(domain::OrderUid(order_uid.0), input_policies)],
-        )
-        .await
-        .unwrap();
-
-        // surplus fee policy without caps
         let fee_policy_1 = dto::FeePolicy {
             auction_id,
             order_uid,
@@ -137,9 +105,23 @@ mod tests {
             price_improvement_factor: Some(0.1),
             price_improvement_max_volume_factor: Some(1.0),
         };
-        let expected = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
+
+        insert_batch(
+            &mut db,
+            vec![
+                fee_policy_1.clone(),
+                fee_policy_2.clone(),
+                fee_policy_3.clone(),
+                fee_policy_4.clone(),
+            ],
+        )
+        .await
+        .unwrap();
 
         let output = fetch(&mut db, 1, order_uid).await.unwrap();
-        assert_eq!(output, expected);
+        assert_eq!(
+            output,
+            vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4]
+        );
     }
 }
