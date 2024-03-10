@@ -12,7 +12,7 @@ pub async fn solve(
     axum::response::Json<Response<dto::Solutions>>,
 ) {
     let handle_request = async {
-        let auction = match auction.to_domain() {
+        let auction = match dto::auction::to_domain(&auction) {
             Ok(value) => value,
             Err(err) => {
                 tracing::warn!(?err, "invalid auction");
@@ -31,7 +31,7 @@ pub async fn solve(
 
         tracing::trace!(?auction_id, ?solutions);
 
-        let solutions = dto::Solutions::from_domain(&solutions);
+        let solutions = dto::solution::from_domain(&solutions);
         (
             axum::http::StatusCode::OK,
             axum::response::Json(Response::Ok(solutions)),

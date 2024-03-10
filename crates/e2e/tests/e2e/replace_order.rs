@@ -225,6 +225,19 @@ async fn single_replace_order_test(web3: Web3) {
     );
     let order_id = services.create_order(&order).await.unwrap();
 
+    let app_data = format!(
+        r#"{{
+              "version":"1.1.0",
+                  "metadata":{{
+                      "replacedOrder":{{
+                          "uid":"{}"
+                      }},
+                      "customStuff": 20
+                  }}
+              }}"#,
+        order_id
+    );
+
     // Replace order
     let new_order = OrderCreation {
         sell_token: token_a.address(),
@@ -235,10 +248,7 @@ async fn single_replace_order_test(web3: Web3) {
         kind: OrderKind::Sell,
         partially_fillable: false,
         app_data: OrderCreationAppData::Full {
-            full: format!(
-                r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
-                order_id
-            ),
+            full: app_data.clone(),
         },
         ..Default::default()
     }
@@ -247,7 +257,7 @@ async fn single_replace_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    services.create_order(&new_order).await.unwrap();
+    let new_order_uid = services.create_order(&new_order).await.unwrap();
 
     // Check the previous order is cancelled
     let old_order = services.get_order(&order_id).await.unwrap();
@@ -268,5 +278,16 @@ async fn single_replace_order_test(web3: Web3) {
     assert_eq!(
         balance_before.checked_sub(balance_after).unwrap(),
         to_wei(3)
+    );
+
+    // Check the previous order is cancelled
+    let new_order = services.get_order(&new_order_uid).await.unwrap();
+
+    assert_eq!(
+        new_order
+            .metadata
+            .full_app_data
+            .expect("valid full appData"),
+        app_data
     );
 }

@@ -2,10 +2,11 @@ use {
     super::PriceEstimationError,
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
     futures::{FutureExt, StreamExt},
+    indexmap::IndexSet,
     primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     std::{
-        collections::{hash_map::Entry, HashMap, HashSet},
+        collections::{hash_map::Entry, HashMap},
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
@@ -42,7 +43,7 @@ pub struct CachingNativePriceEstimator(Arc<Inner>);
 
 struct Inner {
     cache: Mutex<HashMap<H160, CachedResult>>,
-    high_priority: Mutex<HashSet<H160>>,
+    high_priority: Mutex<IndexSet<H160>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
 }
@@ -147,7 +148,7 @@ impl Inner {
     }
 
     /// Tokens with highest priority first.
-    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<(H160, Instant)> {
+    fn sorted_tokens_to_update(&self, max_age: Duration, now: Instant) -> Vec<H160> {
         let mut outdated: Vec<_> = self
             .cache
             .lock()
@@ -156,15 +157,16 @@ impl Inner {
             .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > max_age)
             .map(|(token, cached)| (*token, cached.requested_at))
             .collect();
+
         let high_priority = self.high_priority.lock().unwrap().clone();
-        let priority = |token: &H160| high_priority.contains(token) as u8;
-        outdated.sort_unstable_by_key(|entry| {
+        let index = |token: &H160| high_priority.get_index_of(token).unwrap_or(usize::MAX);
+        outdated.sort_by_cached_key(|entry| {
             (
-                std::cmp::Reverse(priority(&entry.0)),
-                std::cmp::Reverse(entry.1),
+                index(&entry.0),            // important items have a low index
+                std::cmp::Reverse(entry.1), // important items have recent (i.e. "big") timestamp
             )
         });
-        outdated
+        outdated.into_iter().map(|(token, _)| token).collect()
     }
 }
 
@@ -193,28 +195,24 @@ impl UpdateTask {
             .set(inner.cache.lock().unwrap().len() as i64);
 
         let max_age = inner.max_age.saturating_sub(self.prefetch_time);
-        let outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
+        let mut outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
 
         metrics
             .native_price_cache_outdated_entries
             .set(outdated_entries.len() as i64);
 
-        let tokens_to_update: Vec<_> = outdated_entries
-            .iter()
-            .take(self.update_size.unwrap_or(outdated_entries.len()))
-            .map(|(token, _)| *token)
-            .collect();
+        outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 
-        if !tokens_to_update.is_empty() {
+        if !outdated_entries.is_empty() {
             let mut stream = inner.estimate_prices_and_update_cache(
-                &tokens_to_update,
+                &outdated_entries,
                 max_age,
                 self.concurrent_requests,
             );
             while stream.next().await.is_some() {}
             metrics
                 .native_price_cache_background_updates
-                .inc_by(tokens_to_update.len() as u64);
+                .inc_by(outdated_entries.len() as u64);
         }
     }
 
@@ -289,7 +287,7 @@ impl CachingNativePriceEstimator {
         results
     }
 
-    pub fn replace_high_priority(&self, tokens: HashSet<H160>) {
+    pub fn replace_high_priority(&self, tokens: IndexSet<H160>) {
         *self.0.high_priority.lock().unwrap() = tokens;
     }
 }
@@ -601,12 +599,12 @@ mod tests {
 
         *inner.high_priority.lock().unwrap() = std::iter::once(t0).collect();
         let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
-        assert_eq!(tokens[0].0, t0);
-        assert_eq!(tokens[1].0, t1);
+        assert_eq!(tokens[0], t0);
+        assert_eq!(tokens[1], t1);
 
         *inner.high_priority.lock().unwrap() = std::iter::once(t1).collect();
         let tokens = inner.sorted_tokens_to_update(Duration::from_secs(0), now);
-        assert_eq!(tokens[0].0, t1);
-        assert_eq!(tokens[1].0, t0);
+        assert_eq!(tokens[0], t1);
+        assert_eq!(tokens[1], t0);
     }
 }

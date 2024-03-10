@@ -208,8 +208,8 @@ impl Order {
             tokens.get(self.sell.token).price,
         ) {
             (Some(buy_price), Some(sell_price)) => {
-                let buy = buy_price.apply(self.buy.amount);
-                let sell = sell_price.apply(self.sell.amount);
+                let buy = buy_price.in_eth(self.buy.amount);
+                let sell = sell_price.in_eth(self.sell.amount);
                 sell.0
                     .to_big_rational()
                     .checked_div(&buy.0.to_big_rational())

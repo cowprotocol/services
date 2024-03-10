@@ -351,20 +351,14 @@ impl OrderValidator {
         self
     }
 
-    async fn check_max_limit_orders(
-        &self,
-        owner: H160,
-        class: &OrderClass,
-    ) -> Result<(), ValidationError> {
-        if class.is_limit() {
-            let num_limit_orders = self
-                .limit_order_counter
-                .count(owner)
-                .await
-                .map_err(ValidationError::Other)?;
-            if num_limit_orders >= self.max_limit_orders_per_user {
-                return Err(ValidationError::TooManyLimitOrders);
-            }
+    async fn check_max_limit_orders(&self, owner: H160) -> Result<(), ValidationError> {
+        let num_limit_orders = self
+            .limit_order_counter
+            .count(owner)
+            .await
+            .map_err(ValidationError::Other)?;
+        if num_limit_orders >= self.max_limit_orders_per_user {
+            return Err(ValidationError::TooManyLimitOrders);
         }
         Ok(())
     }
@@ -593,32 +587,6 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-        let quote = match class {
-            OrderClass::Market => {
-                let fee = Some(data.fee_amount);
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    fee,
-                    self.market_orders_deprecation_date,
-                )
-                .await?;
-                Some(quote)
-            }
-            OrderClass::Limit => {
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    None,
-                    self.market_orders_deprecation_date,
-                )
-                .await?;
-                Some(quote)
-            }
-            OrderClass::Liquidity => None,
-        };
 
         let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
 
@@ -668,17 +636,26 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        tracing::debug!(
-            ?uid,
-            ?order,
-            ?quote,
-            "checking if order is outside market price"
-        );
         // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
         // <https://github.com/cowprotocol/services/pull/301>.
-        let class = match (class, &quote) {
-            (OrderClass::Market, Some(quote))
+        let (class, quote) = match class {
+            // This has to be here in order to keep the previous behaviour
+            OrderClass::Market => {
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    Some(data.fee_amount),
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
+                tracing::debug!(
+                    ?uid,
+                    ?order,
+                    ?quote,
+                    "checking if order is outside market price"
+                );
                 if is_order_outside_market_price(
                     &Amounts {
                         sell: data.sell_amount,
@@ -690,15 +667,66 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
-                ) =>
-            {
-                tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                OrderClass::Liquidity
+                ) {
+                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
+                    (OrderClass::Limit, Some(quote))
+                } else {
+                    (class, Some(quote))
+                }
             }
-            (_, _) => class,
+            OrderClass::Limit => {
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    None,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
+                // If the order is not "In-Market", check for the limit orders
+                if is_order_outside_market_price(
+                    &Amounts {
+                        sell: data.sell_amount,
+                        buy: data.buy_amount,
+                        fee: data.fee_amount,
+                    },
+                    &Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee_amount,
+                    },
+                ) {
+                    self.check_max_limit_orders(owner).await?;
+                }
+                (class, Some(quote))
+            }
+            OrderClass::Liquidity => {
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    None,
+                    self.market_orders_deprecation_date,
+                )
+                .await?;
+                // If the order is not "In-Market", check for the limit orders
+                if is_order_outside_market_price(
+                    &Amounts {
+                        sell: data.sell_amount,
+                        buy: data.buy_amount,
+                        fee: data.fee_amount,
+                    },
+                    &Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee_amount,
+                    },
+                ) {
+                    self.check_max_limit_orders(owner).await?;
+                }
+                (OrderClass::Limit, None)
+            }
         };
-
-        self.check_max_limit_orders(owner, &class).await?;
 
         let order = Order {
             metadata: OrderMetadata {
@@ -1424,6 +1452,87 @@ mod tests {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
+        order_quoter.expect_find_quote().returning(|_, _| {
+            Ok(Quote {
+                id: None,
+                data: Default::default(),
+                sell_amount: U256::from(1),
+                buy_amount: U256::from(1),
+                fee_amount: Default::default(),
+            })
+        });
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+        let signature_validating = Arc::new(signature_validating);
+
+        const MAX_LIMIT_ORDERS_PER_USER: u64 = 2;
+
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter
+            .expect_count()
+            .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
+
+        let validator = OrderValidator::new(
+            dummy_contract!(WETH9, [0xef; 20]),
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(1),
+                max_market: Duration::from_secs(100),
+                max_limit: Duration::from_secs(200),
+            },
+            false,
+            Arc::new(bad_token_detector),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            signature_validating,
+            Arc::new(limit_order_counter),
+            MAX_LIMIT_ORDERS_PER_USER,
+            Arc::new(MockCodeFetching::new()),
+            Default::default(),
+            None,
+        );
+
+        let creation = OrderCreation {
+            valid_to: model::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(10),
+            sell_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        };
+        let res = validator
+            .validate_and_construct_order(
+                creation.clone(),
+                &Default::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        assert!(
+            matches!(res, Err(ValidationError::TooManyLimitOrders)),
+            "{res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn post_limit_does_not_apply_to_in_market_orders() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
             .returning(|_, _| Ok(Default::default()));
@@ -1476,18 +1585,15 @@ mod tests {
             },
             ..Default::default()
         };
-        let res = validator
+        assert!(validator
             .validate_and_construct_order(
                 creation.clone(),
                 &Default::default(),
                 Default::default(),
                 None,
             )
-            .await;
-        assert!(
-            matches!(res, Err(ValidationError::TooManyLimitOrders)),
-            "{res:?}"
-        );
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -1601,7 +1707,7 @@ mod tests {
 
         // Out-of-price orders are intentionally marked as liquidity
         // orders!
-        assert_eq!(order.metadata.class, OrderClass::Liquidity);
+        assert_eq!(order.metadata.class, OrderClass::Limit);
         assert!(quote.is_some());
     }
 

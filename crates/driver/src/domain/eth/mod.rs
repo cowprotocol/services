@@ -177,6 +177,26 @@ impl TokenAddress {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAmount(pub U256);
 
+impl TokenAmount {
+    /// Applies a factor to the token amount.
+    ///
+    /// The factor is first multiplied by 10^18 to convert it to integer, to
+    /// avoid rounding to 0. Then, the token amount is divided by 10^18 to
+    /// convert it back to the original scale.
+    ///
+    /// The higher the conversion factor (10^18) the precision is higher. E.g.
+    /// 0.123456789123456789 will be converted to 123456789123456789.
+    pub fn apply_factor(&self, factor: f64) -> Option<Self> {
+        Some(
+            (self
+                .0
+                .checked_mul(U256::from_f64_lossy(factor * 1000000000000000000.))?
+                / 1000000000000000000u128)
+                .into(),
+        )
+    }
+}
+
 impl From<U256> for TokenAmount {
     fn from(value: U256) -> Self {
         Self(value)
@@ -192,6 +212,30 @@ impl From<TokenAmount> for U256 {
 impl From<u128> for TokenAmount {
     fn from(value: u128) -> Self {
         Self(value.into())
+    }
+}
+
+impl std::ops::Add for TokenAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for TokenAmount {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl num::Zero for TokenAmount {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 
