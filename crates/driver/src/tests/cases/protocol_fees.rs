@@ -8,9 +8,8 @@ use crate::{
             ab_liquidity_quote,
             ab_order,
             ab_solution,
+            fee::{Policy, Quote},
             ExpectedOrderAmounts,
-            FeePolicy,
-            PriceImprovementQuote,
             Test,
         },
     },
@@ -22,14 +21,16 @@ struct Amounts {
 }
 
 struct Execution {
+    // The executed net-amounts (including network fee) reported by the solver
     solver: Amounts,
+    // The executed net-amounts (including network and protocol) reported by the driver
     driver: Amounts,
 }
 
 struct TestCase {
     order: Amounts,
     side: order::Side,
-    fee_policy: FeePolicy,
+    fee_policy: Policy,
     execution: Execution,
 }
 
@@ -54,8 +55,13 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     let order = ab_order()
         .kind(order::Kind::Limit)
         .sell_amount(test_case.order.sell)
+        .buy_amount(test_case.order.buy)
+        // Expected amounts already account for network fee, so it doesn't matter for the math.
+        // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
+        .solver_fee(Some(test_case.execution.driver.sell / 100))
         .side(test_case.side)
         .fee_policy(test_case.fee_policy)
+        .no_surplus()
         .expected_amounts(expected_amounts);
 
     let test: Test = tests::setup()
@@ -72,7 +78,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_buy_order_not_capped() {
-    let fee_policy = FeePolicy::Surplus {
+    let fee_policy = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
@@ -85,13 +91,13 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
             buy: 40.ether().into_wei(),
         },
         execution: Execution {
-            // 50 ETH surplus in sell token, half of which is kept by the driver
+            // 20 ETH surplus in sell token (after network fee), half of which is kept by the driver
             solver: Amounts {
-                sell: 100.ether().into_wei(),
+                sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 75.ether().into_wei(),
+                sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
         },
@@ -100,12 +106,10 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     protocol_fee_test_case(test_case).await;
 }
 
-/*
-
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_sell_order_not_capped() {
-    let fee_policy = FeePolicy::Surplus {
+    let fee_policy = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
@@ -113,29 +117,52 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     let test_case = TestCase {
         side: order::Side::Sell,
         fee_policy,
-        order: Amounts { sell: 50.ether().into_wei(),
-        buy: 40.ether().into_wei(),},
-        execution: Execution {solver: Amounts {sell: 50.ether().into_wei(),
-        buy: "20.000000002".ether().into_wei(),}, driver: Amounts { sell: U256::zero(), buy:U256.one()}}
+        order: Amounts {
+            sell: 50.ether().into_wei(),
+            buy: 40.ether().into_wei(),
+        },
+        execution: Execution {
+            // 20 ETH surplus, half of which gets captured by the settlement contract
+            solver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 60.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 50.ether().into_wei(),
+            },
+        },
     };
-        // low enough so we get capped by volume fee
-        max_volume_factor: 0.1,
-    };
+    protocol_fee_test_case(test_case).await;
+}
+/*
     let test_case = TestCase {
         side: order::Side::Buy,
         fee_policy,
-        order: Amounts { sell: 50.ether().into_wei(),
-        buy: 40.ether().into_wei(),},
-        execution: Execution {solver: Amounts {sell: 55.ether().into_wei(),
-        buy: 40.ether().into_wei(),}, driver: Amounts { sell: U256::zero(), buy:U256.one()}}
+        order: Amounts {
+            sell: 50.ether().into_wei(),
+            buy: 40.ether().into_wei(),
+        },
+        execution: Execution {
+            solver: Amounts {
+                sell: 55.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: U256::zero(),
+                buy: U256.one(),
+            },
+        },
     };
 
     protocol_fee_test_case(test_case).await;
+}
+
 
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_sell_order_capped() {
-    let fee_policy = FeePolicy::Surplus {
+    let fee_policy = Policy::Surplus {
         factor: 0.5,
         // low enough so we get capped by volume fee
         quote_buy_amount: 40.ether().into_wei(),
@@ -149,7 +176,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
 #[tokio::test]
 #[ignore]
 async fn volume_protocol_fee_buy_order() {
-    let fee_policy = FeePolicy::Volume { factor: 0.5 };
+    let fee_policy = Policy::Volume { factor: 0.5 };
     let test_case = TestCase {
         side: order::Side::Buy,
         fee_policy,
@@ -165,7 +192,7 @@ async fn volume_protocol_fee_buy_order() {
 #[tokio::test]
 #[ignore]
 async fn volume_protocol_fee_sell_order() {
-    let fee_policy = FeePolicy::Volume { factor: 0.5 };
+    let fee_policy = Policy::Volume { factor: 0.5 };
     let test_case = TestCase {
         side: order::Side::Sell,
         fee_policy,
@@ -181,7 +208,7 @@ async fn volume_protocol_fee_sell_order() {
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_buy_out_of_market_order() {
-    let fee_policy = FeePolicy::PriceImprovement {
+    let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
@@ -204,7 +231,7 @@ async fn price_improvement_fee_buy_out_of_market_order() {
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_sell_out_of_market_order() {
-    let fee_policy = FeePolicy::PriceImprovement {
+    let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
@@ -222,33 +249,47 @@ async fn price_improvement_fee_sell_out_of_market_order() {
 
     protocol_fee_test_case(test_case).await;
 }
-
+*/
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_buy_in_market_order() {
-    let fee_policy = FeePolicy::PriceImprovement {
-        factor: 0.5,
-        max_volume_factor: 1.0,
-        quote: PriceImprovementQuote {
-            sell_amount: 50000000000000000000u128.into(),
-            buy_amount: 40000000000000000000u128.into(),
-        },
-    };
-    let order_buy_amount = 35000000000000000000u128.into();
     let test_case = TestCase {
         side: order::Side::Buy,
-        fee_policy,
-        buy: order_buy_amount,},
-        buy: order_buy_amount,}, driver: Amounts { sell: U256::zero(), buy:U256.one()}}
+        fee_policy: Policy::PriceImprovement {
+            factor: 0.5,
+            max_volume_factor: 1.0,
+            quote: Quote {
+                sell: 49.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+                network_fee: 1.ether().into_wei(),
+            },
+        },
+        order: Amounts {
+            // Willing to sell more than quoted (in-market)
+            sell: 60.ether().into_wei(),
+            buy: 40.ether().into_wei(),
+        },
+        execution: Execution {
+            // Sell 10 ETH less than quoted, half of which is kept by the protocol
+            solver: Amounts {
+                sell: 40.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 45.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
     };
 
     protocol_fee_test_case(test_case).await;
 }
+/*
 
 #[tokio::test]
 #[ignore]
 async fn price_improvement_fee_sell_in_market_order() {
-    let fee_policy = FeePolicy::PriceImprovement {
+    let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: PriceImprovementQuote {
