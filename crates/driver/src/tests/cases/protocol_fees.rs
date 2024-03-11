@@ -62,9 +62,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .buy_amount(test_case.order.amounts.buy)
         // Expected amounts already account for network fee, so it doesn't matter for the math.
         // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
+        // todo: can be cleaned up after https://github.com/cowprotocol/services/issues/2507
         .solver_fee(Some(test_case.execution.driver.sell / 100))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
+        // Surplus is configured explicitly via executed/quoted amounts
         .no_surplus()
         .expected_amounts(expected_amounts);
 
@@ -311,8 +313,8 @@ async fn price_improvement_fee_sell_in_market_order() {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: Quote {
-            sell: 50.ether().into_wei(),
-            buy: 51.ether().into_wei(),
+            sell: 49.ether().into_wei(),
+            buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
         },
     };
@@ -387,8 +389,8 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         factor: 0.5,
         max_volume_factor: 1.0,
         quote: Quote {
-            sell: 50.ether().into_wei(),
-            buy: 41.ether().into_wei(),
+            sell: 49.ether().into_wei(),
+            buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
         },
     };
