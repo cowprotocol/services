@@ -669,7 +669,7 @@ impl Blockchain {
                 .unwrap()
                 .0;
             fulfillments.push(Fulfillment {
-                quoted_order: self.quote(&order),
+                quoted_order: self.quote(order),
                 execution: execution.clone(),
                 interactions: vec![
                     Interaction {
