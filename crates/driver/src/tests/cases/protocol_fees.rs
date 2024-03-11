@@ -398,7 +398,7 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         order: Order {
             amounts: Amounts {
                 sell: 50.ether().into_wei(),
-                // Willing to receive more than quoted (out-market)
+                // Demanding to receive more than quoted (out-market)
                 buy: 50.ether().into_wei(),
             },
             side: order::Side::Sell,
