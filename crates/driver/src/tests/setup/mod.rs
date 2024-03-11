@@ -535,6 +535,7 @@ impl Solution {
     }
 
     /// Increase the solution gas consumption by at least `units`.
+    #[allow(dead_code)]
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
         let additional_bytes = (units / 16) + 1;
@@ -1007,6 +1008,7 @@ impl Test {
         balances
     }
 
+    #[allow(dead_code)]
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
     }

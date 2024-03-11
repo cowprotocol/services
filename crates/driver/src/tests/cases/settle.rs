@@ -1,13 +1,10 @@
-use {
-    crate::{
-        domain::competition::order,
-        tests::{
-            self,
-            cases::{EtherExt, DEFAULT_SOLVER_FEE},
-            setup::{ab_order, ab_pool, ab_solution},
-        },
+use crate::{
+    domain::competition::order,
+    tests::{
+        self,
+        cases::{EtherExt, DEFAULT_SOLVER_FEE},
+        setup::{ab_order, ab_pool, ab_solution},
     },
-    web3::Transport,
 };
 
 /// Run a matrix of tests for all meaningful combinations of order kind and
