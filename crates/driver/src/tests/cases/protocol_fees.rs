@@ -99,7 +99,8 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the driver
+            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
+            // protocol
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -132,7 +133,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 20 ETH surplus, half of which gets captured by the settlement contract
+            // 20 ETH surplus, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -225,7 +226,7 @@ async fn volume_protocol_fee_buy_order() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Half of the solver proposed sell volume is kept in the driver
+            // Half of the solver proposed sell volume is kept by the protocol
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -254,7 +255,7 @@ async fn volume_protocol_fee_sell_order() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 10% of the solver proposed buy value is kept in the settlement contract
+            // 10% of the solver proposed buy value is kept by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 50.ether().into_wei(),
@@ -330,8 +331,7 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the settlement
-            // contract
+            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -408,8 +408,7 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the settlement
-            // contract
+            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
