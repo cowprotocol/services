@@ -195,8 +195,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 20 ETH surplus, half of which could be captured by the settlement contract, but it is
-            // capped buy a max volume factor applied to the buy amount
+            // Fee is capped at 10% of solver proposed buy volume
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -224,7 +223,7 @@ async fn volume_protocol_fee_buy_order() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Half of the volume(sell amount) is kept in the driver
+            // Half of the solver proposed sell volume is kept in the driver
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -253,7 +252,7 @@ async fn volume_protocol_fee_sell_order() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 0.1 of the volume(buy amount) is kept in the settlement contract
+            // 10% of the solver proposed buy value is kept in the settlement contract
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 50.ether().into_wei(),
