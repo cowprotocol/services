@@ -8,17 +8,24 @@ pub async fn insert_batch(
     auction_id: domain::auction::Id,
     fee_policies: impl IntoIterator<Item = (domain::OrderUid, Vec<domain::fee::Policy>)>,
 ) -> Result<(), sqlx::Error> {
+    let mut fee_policies = fee_policies
+        .into_iter()
+        .flat_map(|(order_uid, policies)| {
+            policies
+                .into_iter()
+                .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
+        })
+        .peekable();
+
+    if fee_policies.peek().is_none() {
+        return Ok(());
+    }
+
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
          surplus_max_volume_factor, volume_factor, price_improvement_factor, \
          price_improvement_max_volume_factor)",
     );
-
-    let fee_policies = fee_policies.into_iter().flat_map(|(order_uid, policies)| {
-        policies
-            .into_iter()
-            .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
-    });
 
     query_builder.push_values(fee_policies, |mut b, fee_policy| {
         b.push_bind(fee_policy.auction_id)
