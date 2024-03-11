@@ -27,9 +27,13 @@ struct Execution {
     driver: Amounts,
 }
 
-struct TestCase {
-    order: Amounts,
+struct Order {
+    amounts: Amounts,
     side: order::Side,
+}
+
+struct TestCase {
+    order: Order,
     fee_policy: Policy,
     execution: Execution,
 }
@@ -37,7 +41,7 @@ struct TestCase {
 async fn protocol_fee_test_case(test_case: TestCase) {
     let test_name = format!(
         "Protocol Fee: {:?} {:?}",
-        test_case.side, test_case.fee_policy
+        test_case.order.side, test_case.fee_policy
     );
     // Adjust liquidity pools so that the order is executable at the amounts
     // expected from the solver.
@@ -54,12 +58,12 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(test_case.order.sell)
-        .buy_amount(test_case.order.buy)
+        .sell_amount(test_case.order.amounts.sell)
+        .buy_amount(test_case.order.amounts.buy)
         // Expected amounts already account for network fee, so it doesn't matter for the math.
         // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
         .solver_fee(Some(test_case.execution.driver.sell / 100))
-        .side(test_case.side)
+        .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
         .no_surplus()
         .expected_amounts(expected_amounts);
@@ -84,11 +88,13 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        side: order::Side::Buy,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Buy,
         },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of which is kept by the driver
@@ -115,11 +121,13 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        side: order::Side::Sell,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Sell,
         },
         execution: Execution {
             // 20 ETH surplus, half of which gets captured by the settlement contract
@@ -145,11 +153,13 @@ async fn surplus_protocol_fee_buy_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        side: order::Side::Buy,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Buy,
         },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of it could be kept in driver,
@@ -177,11 +187,13 @@ async fn surplus_protocol_fee_sell_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        side: order::Side::Sell,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Sell,
         },
         execution: Execution {
             // 20 ETH surplus, half of which could be captured by the settlement contract, but it is
@@ -204,11 +216,13 @@ async fn surplus_protocol_fee_sell_order_capped() {
 async fn volume_protocol_fee_buy_order() {
     let fee_policy = Policy::Volume { factor: 0.5 };
     let test_case = TestCase {
-        side: order::Side::Buy,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Buy,
         },
         execution: Execution {
             // Half of the volume(sell amount) is kept in the driver
@@ -231,11 +245,13 @@ async fn volume_protocol_fee_buy_order() {
 async fn volume_protocol_fee_sell_order() {
     let fee_policy = Policy::Volume { factor: 0.1 };
     let test_case = TestCase {
-        side: order::Side::Sell,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Sell,
         },
         execution: Execution {
             // 0.1 of the volume(buy amount) is kept in the settlement contract
@@ -265,12 +281,14 @@ async fn price_improvement_fee_buy_in_market_order() {
         },
     };
     let test_case = TestCase {
-        side: order::Side::Buy,
         fee_policy,
-        order: Amounts {
-            // Willing to sell more than quoted (in-market)
-            sell: 60.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                // Willing to sell more than quoted (in-market)
+                sell: 60.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Buy,
         },
         execution: Execution {
             // Sell 10 ETH less than quoted, half of which is kept by the protocol
@@ -301,12 +319,14 @@ async fn price_improvement_fee_sell_in_market_order() {
         },
     };
     let test_case = TestCase {
-        side: order::Side::Sell,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            // Willing to receive less than quoted (in-market)
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                // Willing to receive less than quoted (in-market)
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Sell,
         },
         execution: Execution {
             // Receive 10 ETH more than quoted, half of which gets captured by the settlement
@@ -337,12 +357,14 @@ async fn price_improvement_fee_buy_out_of_market_order() {
         },
     };
     let test_case = TestCase {
-        side: order::Side::Buy,
         fee_policy,
-        order: Amounts {
-            // Willing to sell less than quoted (out-market)
-            sell: 50.ether().into_wei(),
-            buy: 40.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                // Willing to sell less than quoted (out-market)
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            side: order::Side::Buy,
         },
         execution: Execution {
             // Sell 10 ETH less than requested, half of which is kept by the protocol
@@ -373,12 +395,14 @@ async fn price_improvement_fee_sell_out_of_market_order() {
         },
     };
     let test_case = TestCase {
-        side: order::Side::Sell,
         fee_policy,
-        order: Amounts {
-            sell: 50.ether().into_wei(),
-            // Willing to receive more than quoted (out-market)
-            buy: 50.ether().into_wei(),
+        order: Order {
+            amounts: Amounts {
+                sell: 50.ether().into_wei(),
+                // Willing to receive more than quoted (out-market)
+                buy: 50.ether().into_wei(),
+            },
+            side: order::Side::Sell,
         },
         execution: Execution {
             // Receive 10 ETH more than quoted, half of which gets captured by the settlement
