@@ -162,8 +162,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of it could be kept in driver,
-            // but it is capped buy a max volume factor applied to the sell amount
+            // Fee is capped at 10% of solver proposed sell volume
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
