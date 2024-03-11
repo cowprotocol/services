@@ -28,7 +28,8 @@ struct Execution {
 }
 
 struct Order {
-    amounts: Amounts,
+    sell_amount: eth::U256,
+    buy_amount: eth::U256,
     side: order::Side,
 }
 
@@ -58,8 +59,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 
     let order = ab_order()
         .kind(order::Kind::Limit)
-        .sell_amount(test_case.order.amounts.sell)
-        .buy_amount(test_case.order.amounts.buy)
+        .sell_amount(test_case.order.sell_amount)
+        .buy_amount(test_case.order.buy_amount)
         // Expected amounts already account for network fee, so it doesn't matter for the math.
         // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
         // todo: can be cleaned up after https://github.com/cowprotocol/services/issues/2507
@@ -92,10 +93,8 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -126,10 +125,8 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -158,10 +155,8 @@ async fn surplus_protocol_fee_buy_order_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -191,10 +186,8 @@ async fn surplus_protocol_fee_sell_order_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -219,10 +212,8 @@ async fn volume_protocol_fee_buy_order() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -248,10 +239,8 @@ async fn volume_protocol_fee_sell_order() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -284,11 +273,9 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                // Willing to sell more than quoted (in-market)
-                sell: 60.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            // Demanding to sell more than quoted (in-market)
+            sell_amount: 60.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -323,11 +310,9 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                // Willing to receive less than quoted (in-market)
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            // Demanding to receive less than quoted (in-market)
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -361,11 +346,9 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                // Willing to sell less than quoted (out-market)
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            // Demanding to sell less than quoted (out-market)
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -400,11 +383,9 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                // Demanding to receive more than quoted (out-market)
-                buy: 50.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            // Demanding to receive more than quoted (out-market)
+            buy_amount: 50.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -438,11 +419,9 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                // Willing to sell more than quoted (in-market)
-                sell: 60.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            // Demanding to sell more than quoted (in-market)
+            sell_amount: 60.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -477,11 +456,9 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                // Willing to receive less than quoted (in-market)
-                buy: 40.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            // Demanding to receive less than quoted (in-market)
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -515,11 +492,9 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                // Willing to sell less than quoted (out-market)
-                sell: 50.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
+            // Demanding to sell less than quoted (out-market)
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
@@ -554,11 +529,9 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
     let test_case = TestCase {
         fee_policy,
         order: Order {
-            amounts: Amounts {
-                sell: 50.ether().into_wei(),
-                // Demanding to receive more than quoted (out-market)
-                buy: 50.ether().into_wei(),
-            },
+            sell_amount: 50.ether().into_wei(),
+            // Demanding to receive more than quoted (out-market)
+            buy_amount: 50.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
