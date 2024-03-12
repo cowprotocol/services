@@ -60,7 +60,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         sell: test_case.execution.driver.sell,
         buy: test_case.execution.driver.buy,
     };
-    let executed_target =
+    let _executed_target =
         test_case
             .order
             .partially_executed
@@ -80,7 +80,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .solver_fee(Some(test_case.execution.driver.sell / 100))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
-        .executed(executed_target)
+        // .executed(executed_target)
         .partial(match test_case.order.partially_executed {
             Some(executed) => Partial::Yes {executed_sell: executed.sell, executed_buy: executed.buy},
             None => Partial::No
