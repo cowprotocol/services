@@ -180,7 +180,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
 async fn surplus_protocol_fee_sell_order_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
-        // high enough so we don't get capped by volume fee
+        // log enough so we get capped by volume fee
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
