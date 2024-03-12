@@ -298,7 +298,7 @@ fn pools_vec_to_map(pools: Vec<Pool>) -> Pools {
 fn estimate_gas(path_len: usize) -> u64 {
     let hops = match path_len.checked_sub(1) {
         Some(len) => len,
-        None => return 0,
+        None => return gas::SETTLEMENT_SINGLE_TRADE,
     };
     // Can be reduced to one erc20 transfer when #675 is fixed.
     let per_hop = gas::ERC20_TRANSFER * 2 + 40_000;
