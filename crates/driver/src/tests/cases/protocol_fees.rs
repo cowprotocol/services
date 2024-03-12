@@ -60,7 +60,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         sell: test_case.execution.driver.sell,
         buy: test_case.execution.driver.buy,
     };
-    let executed =
+    let executed_target =
         test_case
             .order
             .partially_executed
@@ -80,7 +80,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .solver_fee(Some(test_case.execution.driver.sell / 100))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
-        .executed(executed)
+        .executed(executed_target)
         .partial(match test_case.order.partially_executed {
             Some(executed) => Partial::Yes {executed_sell: executed.sell, executed_buy: executed.buy},
             None => Partial::No
@@ -153,11 +153,11 @@ async fn surplus_protocol_fee_buy_partial_order() {
             }),
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
+            // 10 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
             solver: Amounts {
-                sell: 30.ether().into_wei(),
-                buy: 40.ether().into_wei(),
+                sell: 15.ether().into_wei(),
+                buy: 20.ether().into_wei(),
             },
             driver: Amounts {
                 sell: 20.ether().into_wei(),
