@@ -131,6 +131,36 @@ impl QuotedOrder {
         }
     }
 
+    pub fn driver_buy_amount(&self) -> eth::U256 {
+        let executed_buy = match self.order.partial {
+            Partial::Yes {
+                executed_sell: _,
+                executed_buy,
+            } => executed_buy,
+            Partial::No => eth::U256::zero(),
+        };
+        let buy_amount = match self.order.side {
+            order::Side::Buy => self.buy,
+            order::Side::Sell => self.buy / self.order.surplus_factor,
+        };
+        buy_amount.saturating_sub(executed_buy)
+    }
+
+    pub fn driver_sell_amount(&self) -> eth::U256 {
+        let executed_sell = match self.order.partial {
+            Partial::Yes {
+                executed_sell,
+                executed_buy: _,
+            } => executed_sell,
+            Partial::No => eth::U256::zero(),
+        };
+        let sell_amount = match self.order.side {
+            order::Side::Buy => self.sell * self.order.surplus_factor,
+            order::Side::Sell => self.sell,
+        };
+        sell_amount.saturating_sub(executed_sell)
+    }
+
     /// The UID of the order.
     pub fn order_uid(&self, blockchain: &Blockchain) -> tests::boundary::OrderUid {
         self.boundary(blockchain).uid()

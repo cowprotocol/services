@@ -57,7 +57,8 @@ pub enum Partial {
     #[default]
     No,
     Yes {
-        executed: eth::U256,
+        executed_sell: eth::U256,
+        executed_buy: eth::U256,
     },
 }
 
@@ -251,6 +252,14 @@ impl Order {
             buy_amount: Some(buy_amount),
             ..self
         }
+    }
+
+    pub fn partial(self, partial: Partial) -> Self {
+        Self { partial, ..self }
+    }
+
+    pub fn executed(self, executed: Option<eth::U256>) -> Self {
+        Self { executed, ..self }
     }
 
     fn surplus_fee(&self) -> eth::U256 {

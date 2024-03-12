@@ -69,6 +69,16 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut quotes = test.quoted_orders.clone();
     quotes.shuffle(&mut rand::thread_rng());
     for quote in quotes.iter() {
+        let executed = match quote.order.partial {
+            Partial::Yes {
+                executed_sell,
+                executed_buy,
+            } => match quote.order.side {
+                order::Side::Sell => executed_sell.to_string(),
+                order::Side::Buy => executed_buy.to_string(),
+            },
+            Partial::No => "0".to_owned(),
+        };
         orders_json.push(json!({
             "uid": quote.order_uid(&test.blockchain),
             "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
@@ -88,10 +98,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             },
             "owner": hex_address(test.trader_address),
             "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
-            "executed": match quote.order.partial {
-                Partial::Yes { executed } => executed.to_string(),
-                Partial::No => "0".to_owned(),
-            },
+            "executed": executed,
             "preInteractions": [],
             "postInteractions": [],
             "class": match quote.order.kind {

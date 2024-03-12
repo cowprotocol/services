@@ -10,11 +10,13 @@ use crate::{
             ab_solution,
             fee::{Policy, Quote},
             ExpectedOrderAmounts,
+            Partial,
             Test,
         },
     },
 };
 
+#[derive(Clone)]
 struct Amounts {
     sell: eth::U256,
     buy: eth::U256,
@@ -31,6 +33,8 @@ struct Order {
     sell_amount: eth::U256,
     buy_amount: eth::U256,
     side: order::Side,
+    // For partially fillable orders
+    partially_executed: Option<Amounts>,
 }
 
 struct TestCase {
@@ -56,6 +60,15 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         sell: test_case.execution.driver.sell,
         buy: test_case.execution.driver.buy,
     };
+    let executed =
+        test_case
+            .order
+            .partially_executed
+            .clone()
+            .map(|executed| match test_case.order.side {
+                order::Side::Sell => executed.sell,
+                order::Side::Buy => executed.buy,
+            });
 
     let order = ab_order()
         .kind(order::Kind::Limit)
@@ -67,6 +80,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .solver_fee(Some(test_case.execution.driver.sell / 100))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
+        .executed(executed)
+        .partial(match test_case.order.partially_executed {
+            Some(executed) => Partial::Yes {executed_sell: executed.sell, executed_buy: executed.buy},
+            None => Partial::No
+        })
         // Surplus is configured explicitly via executed/quoted amounts
         .no_surplus()
         .expected_amounts(expected_amounts);
@@ -96,6 +114,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of which is kept by the
@@ -107,6 +126,42 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
             driver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
+            },
+        },
+    };
+
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_buy_partial_order() {
+    let fee_policy = Policy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
+    };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+            partially_executed: Some(Amounts {
+                sell: 25.ether().into_wei(),
+                buy: 20.ether().into_wei(),
+            }),
+        },
+        execution: Execution {
+            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
+            // protocol
+            solver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 20.ether().into_wei(),
+                buy: 20.ether().into_wei(),
             },
         },
     };
@@ -128,6 +183,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // 20 ETH surplus, half of which gets captured by the protocol
@@ -158,6 +214,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // Fee is capped at 10% of solver proposed sell volume
@@ -189,6 +246,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // Fee is capped at 10% of solver proposed buy volume
@@ -215,6 +273,7 @@ async fn volume_protocol_fee_buy_order() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // Half of the solver proposed sell volume is kept by the protocol
@@ -242,6 +301,7 @@ async fn volume_protocol_fee_sell_order() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // 10% of the solver proposed buy value is kept by the protocol
@@ -278,6 +338,7 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
             sell_amount: 60.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // Sell 10 ETH less than quoted, half of which is kept by the protocol
@@ -315,6 +376,7 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
             // Demanding to receive less than quoted (in-market)
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // Receive 10 ETH more than quoted, half of which gets captured by the protocol
@@ -351,6 +413,7 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // Sell 10 ETH less than requested, half of which is kept by the protocol
@@ -388,6 +451,7 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
             // Demanding to receive more than quoted (out-market)
             buy_amount: 50.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // Receive 10 ETH more than quoted, half of which gets captured by the protocol
@@ -424,6 +488,7 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
             sell_amount: 60.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // Fee is capped at 5% of solver proposed sell volume
@@ -461,6 +526,7 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
             // Demanding to receive less than quoted (in-market)
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // Fee is capped at 5% of solver proposed buy volume
@@ -497,6 +563,7 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
+            partially_executed: None,
         },
         execution: Execution {
             // Fee is capped at 5% of solver proposed sell volume
@@ -534,6 +601,7 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
             // Demanding to receive more than quoted (out-market)
             buy_amount: 50.ether().into_wei(),
             side: order::Side::Sell,
+            partially_executed: None,
         },
         execution: Execution {
             // Fee is capped at 5% of solver proposed buy volume
