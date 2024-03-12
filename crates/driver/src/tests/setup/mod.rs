@@ -31,7 +31,6 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
-    serde_json::json,
     serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
@@ -43,6 +42,7 @@ use {
 
 mod blockchain;
 mod driver;
+pub mod fee;
 mod solver;
 
 #[derive(Debug, Clone, Copy)]
@@ -71,37 +71,6 @@ pub enum Score {
     },
     #[serde(rename_all = "camelCase")]
     RiskAdjusted { success_probability: f64 },
-}
-
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum FeePolicy {
-    #[serde(rename_all = "camelCase")]
-    Surplus { factor: f64, max_volume_factor: f64 },
-    #[serde(rename_all = "camelCase")]
-    Volume { factor: f64 },
-}
-
-impl FeePolicy {
-    pub fn to_json_value(&self) -> serde_json::Value {
-        match self {
-            FeePolicy::Surplus {
-                factor,
-                max_volume_factor,
-            } => json!({
-                "surplus": {
-                    "factor": factor,
-                    "maxVolumeFactor": max_volume_factor
-                }
-            }),
-            FeePolicy::Volume { factor } => json!({
-                "volume": {
-                    "factor": factor
-                }
-            }),
-        }
-    }
 }
 
 impl Default for Score {
@@ -138,6 +107,9 @@ pub struct Order {
     pub name: &'static str,
 
     pub sell_amount: eth::U256,
+    /// The explicit limit buy amount for the order. If None, it will be derived
+    /// from the order's quote.
+    pub buy_amount: Option<eth::U256>,
     pub sell_token: &'static str,
     pub buy_token: &'static str,
 
@@ -166,7 +138,7 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
-    pub fee_policy: FeePolicy,
+    pub fee_policy: fee::Policy,
 }
 
 impl Order {
@@ -256,15 +228,8 @@ impl Order {
         }
     }
 
-    pub fn fee_policy(self, fee_policy: FeePolicy) -> Self {
+    pub fn fee_policy(self, fee_policy: fee::Policy) -> Self {
         Self { fee_policy, ..self }
-    }
-
-    pub fn executed(self, executed_price: eth::U256) -> Self {
-        Self {
-            executed: Some(executed_price),
-            ..self
-        }
     }
 
     pub fn expected_amounts(self, expected_amounts: ExpectedOrderAmounts) -> Self {
@@ -281,6 +246,13 @@ impl Order {
         }
     }
 
+    pub fn buy_amount(self, buy_amount: eth::U256) -> Self {
+        Self {
+            buy_amount: Some(buy_amount),
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -293,6 +265,7 @@ impl Default for Order {
     fn default() -> Self {
         Self {
             sell_amount: Default::default(),
+            buy_amount: None,
             sell_token: Default::default(),
             buy_token: Default::default(),
             internalize: Default::default(),
@@ -308,7 +281,7 @@ impl Default for Order {
             expected_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
-            fee_policy: FeePolicy::Surplus {
+            fee_policy: fee::Policy::Surplus {
                 factor: 0.0,
                 max_volume_factor: 0.06,
             },
@@ -802,7 +775,7 @@ impl Setup {
         }
         let mut quotes = Vec::new();
         for order in orders {
-            let quote = blockchain.quote(&order).await;
+            let quote = blockchain.quote(&order);
             quotes.push(quote);
         }
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
