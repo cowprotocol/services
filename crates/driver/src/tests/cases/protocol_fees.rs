@@ -263,6 +263,7 @@ async fn volume_protocol_fee_sell_order() {
 async fn price_improvement_fee_buy_in_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
+        // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
         quote: Quote {
             sell: 49.ether().into_wei(),
