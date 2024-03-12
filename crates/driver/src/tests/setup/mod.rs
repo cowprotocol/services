@@ -57,8 +57,7 @@ pub enum Partial {
     #[default]
     No,
     Yes {
-        executed_sell: eth::U256,
-        executed_buy: eth::U256,
+        executed: eth::U256,
     },
 }
 

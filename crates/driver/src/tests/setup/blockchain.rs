@@ -132,33 +132,33 @@ impl QuotedOrder {
     }
 
     pub fn driver_buy_amount(&self) -> eth::U256 {
-        let executed_buy = match self.order.partial {
-            Partial::Yes {
-                executed_sell: _,
-                executed_buy,
-            } => executed_buy,
-            Partial::No => eth::U256::zero(),
+        let executed_buy = match self.order.side {
+            order::Side::Buy => self.order.executed.unwrap_or(self.buy),
+            order::Side::Sell => self
+                .order
+                .executed
+                .map(|executed_sell| self.buy * executed_sell / self.sell)
+                .unwrap_or(self.buy),
         };
-        let buy_amount = match self.order.side {
-            order::Side::Buy => self.buy,
-            order::Side::Sell => self.buy / self.order.surplus_factor,
-        };
-        buy_amount.saturating_sub(executed_buy)
+        match self.order.side {
+            order::Side::Buy => executed_buy,
+            order::Side::Sell => executed_buy / self.order.surplus_factor,
+        }
     }
 
     pub fn driver_sell_amount(&self) -> eth::U256 {
-        let executed_sell = match self.order.partial {
-            Partial::Yes {
-                executed_sell,
-                executed_buy: _,
-            } => executed_sell,
-            Partial::No => eth::U256::zero(),
+        let executed_sell = match self.order.side {
+            order::Side::Sell => self.order.executed.unwrap_or(self.sell),
+            order::Side::Buy => self
+                .order
+                .executed
+                .map(|executed_buy| self.sell * executed_buy / self.buy)
+                .unwrap_or(self.sell),
         };
-        let sell_amount = match self.order.side {
-            order::Side::Buy => self.sell * self.order.surplus_factor,
-            order::Side::Sell => self.sell,
-        };
-        sell_amount.saturating_sub(executed_sell)
+        match self.order.side {
+            order::Side::Buy => executed_sell * self.order.surplus_factor,
+            order::Side::Sell => executed_sell,
+        }
     }
 
     /// The UID of the order.
@@ -590,18 +590,8 @@ impl Blockchain {
 
     /// Compute the execution of an order given the available liquidity
     pub fn execution(&self, order: &Order) -> Execution {
-        let (oder_sell_amount, order_buy_amount) = match order.partial {
-            Partial::Yes {
-                executed_sell,
-                executed_buy,
-            } => (
-                order.sell_amount.saturating_sub(executed_sell),
-                order.buy_amount.map(|buy| buy.saturating_sub(executed_buy)),
-            ),
-            Partial::No => (order.sell_amount, order.buy_amount),
-        };
         let pair = self.find_pair(order);
-        let (sell, buy) = match (order.side, order_buy_amount) {
+        let (sell, buy) = match (order.side, order.executed.or(order.buy_amount)) {
             // For buy order with explicitly specified amounts, use the buy amount
             (order::Side::Buy, Some(buy_amount)) => (
                 pair.pool.in_given_out(Asset {
@@ -610,11 +600,22 @@ impl Blockchain {
                 }),
                 buy_amount,
             ),
+            // todo: simplify it
+            (order::Side::Sell, _) => {
+                let sell_amount = order.executed.unwrap_or(order.sell_amount);
+                (
+                    sell_amount,
+                    pair.pool.out_given_in(Asset {
+                        amount: sell_amount,
+                        token: order.sell_token,
+                    }),
+                )
+            }
             // Otherwise assume the full sell amount to compute the execution
             (_, _) => (
-                oder_sell_amount,
+                order.sell_amount,
                 pair.pool.out_given_in(Asset {
-                    amount: oder_sell_amount,
+                    amount: order.sell_amount,
                     token: order.sell_token,
                 }),
             ),
