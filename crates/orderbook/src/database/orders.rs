@@ -27,8 +27,13 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::H160,
+    number::{
+        conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+        serialization::HexOrDecimalU256,
+    },
+    primitive_types::{H160, U256},
+    serde::{Deserialize, Serialize},
+    serde_with::serde_as,
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -75,6 +80,7 @@ pub trait OrderStoring: Send + Sync {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
+    async fn order_status(&self, order_uid: &OrderUid) -> Result<Status>;
 }
 
 pub struct SolvableOrders {
@@ -356,6 +362,47 @@ impl OrderStoring for Postgres {
         .try_collect()
         .await
     }
+
+    async fn order_status(&self, order_uid: &OrderUid) -> Result<Status> {
+        let mut ex = self.pool.begin().await.context("could not init tx")?;
+        let competition = database::solver_competition::load_latest_competition(&mut ex)
+            .await
+            .context("could not fetch latest competition")?
+            .unwrap()
+            .json;
+        let competition: Competition = serde_json::from_value(competition).unwrap();
+
+        let solutions = competition
+            .solutions
+            .into_iter()
+            .filter_map(|solution| {
+                let order = solution.orders.iter().find(|o| o.id.0 == order_uid.0)?;
+
+                Some(Solution {
+                    solver: solution.solver,
+                    sell_amount: order.sell_amount,
+                    buy_amount: order.buy_amount,
+                })
+            })
+            .collect();
+
+        let status = database::order_events::get_label(&mut ex, &ByteArray(order_uid.0))
+            .await
+            .context("could not fetch status")?;
+
+        let status = match status.label {
+            OrderEventLabel::Ready => Status::Active,
+            OrderEventLabel::Created => Status::Scheduled,
+            OrderEventLabel::Considered => Status::Solved(solutions),
+            OrderEventLabel::Executing => Status::Executing(solutions),
+            OrderEventLabel::Traded => Status::Traded(solutions),
+            OrderEventLabel::Cancelled => Status::Cancelled,
+            OrderEventLabel::Filtered => Status::Open,
+            OrderEventLabel::Invalid => Status::Open,
+        };
+
+        Ok(status)
+    }
 }
 
 #[async_trait]
@@ -527,6 +574,50 @@ fn is_sell_order_filled(
 
 fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> bool {
     !executed_amount.is_zero() && *amount == *executed_amount
+}
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Solution {
+    pub solver: String,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+}
+
+#[derive(Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "camelCase", content = "value")]
+pub enum Status {
+    Open,
+    Scheduled,
+    Active,
+    Solved(Vec<Solution>),
+    Executing(Vec<Solution>),
+    Traded(Vec<Solution>),
+    Cancelled,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Competition {
+    solutions: Vec<CompetitionSolution>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompetitionSolution {
+    solver: String,
+    orders: Vec<CompetitionOrder>,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompetitionOrder {
+    id: OrderUid,
+    #[serde_as(as = "HexOrDecimalU256")]
+    sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    buy_amount: U256,
 }
 
 #[cfg(test)]

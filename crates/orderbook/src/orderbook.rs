@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::orders::{InsertionError, OrderStoring},
+        database::orders::{InsertionError, OrderStoring, Status},
         dto,
     },
     anyhow::{Context, Result},
@@ -402,6 +402,13 @@ impl Orderbook {
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
+    }
+
+    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<Status> {
+        self.database
+            .order_status(uid)
+            .await
+            .context("get_order_status error")
     }
 }
 

@@ -218,7 +218,16 @@ pub fn finalize_router(
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
-        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
+        .allow_headers(vec![
+            "Origin",
+            "Content-Type",
+            "X-Auth-Token",
+            "X-AppId",
+            "Access-Control-Allow-Origin",
+            "Allow-Origin",
+            "Baggage",
+            "Sentry-Trace",
+        ]);
 
     warp::path!("api" / ..)
         .and(instrumented)

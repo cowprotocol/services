@@ -2,7 +2,7 @@
 //! This information gets used to compuate service level indicators.
 
 use {
-    crate::OrderUid,
+    crate::{byte_array::ByteArray, OrderUid},
     chrono::Utc,
     sqlx::{types::chrono::DateTime, PgConnection, PgPool},
 };
@@ -90,6 +90,15 @@ pub async fn delete_order_events_before(
         .execute(pool)
         .await
         .map(|result| result.rows_affected())
+}
+
+pub async fn get_label(ex: &mut PgConnection, order: &OrderUid) -> Result<OrderEvent, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp DESC LIMIT 1"#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(order.0))
+        .fetch_one(ex)
+        .await
 }
 
 #[cfg(test)]
