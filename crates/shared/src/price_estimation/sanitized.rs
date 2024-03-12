@@ -61,16 +61,16 @@ impl PriceEstimating for SanitizedPriceEstimator {
             self.handle_bad_tokens(&query).await?;
 
             // buy_token == sell_token => 1 to 1 conversion
-            if query.buy_token == query.sell_token {
-                let estimation = Estimate {
-                    out_amount: query.in_amount.get(),
-                    gas: 0,
-                    solver: Default::default(),
-                    verified: true,
-                };
-                tracing::debug!(?query, ?estimation, "generate trivial price estimation");
-                return Ok(estimation);
-            }
+            //if query.buy_token == query.sell_token {
+            //    let estimation = Estimate {
+            //        out_amount: query.in_amount.get(),
+            //        gas: 0,
+            //        solver: Default::default(),
+            //        verified: true,
+            //    };
+            //    tracing::debug!(?query, ?estimation, "generate trivial price estimation");
+            //    return Ok(estimation);
+            //}
 
             // sell WETH for ETH => 1 to 1 conversion with cost for unwrapping
             if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {

@@ -72,13 +72,6 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::SameBuyAndSellToken => with_status(
-                error(
-                    "SameBuyAndSellToken",
-                    "Buy token is the same as the sell token.",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             PartialValidationError::UnsupportedToken { token, reason } => with_status(
                 error(
                     "UnsupportedToken",

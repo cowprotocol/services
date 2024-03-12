@@ -108,7 +108,6 @@ pub enum PartialValidationError {
     Forbidden,
     ValidTo(OrderValidToError),
     InvalidNativeSellToken,
-    SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
@@ -432,9 +431,6 @@ impl OrderValidating for OrderValidator {
 
         self.validity_configuration.validate_period(&order)?;
 
-        if has_same_buy_and_sell_token(&order, &self.native_token) {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
@@ -806,14 +802,6 @@ pub enum OrderValidToError {
     Excessive,
 }
 
-/// Returns true if the orders have same buy and sell tokens.
-///
-/// This also checks for orders selling wrapped native token for native token.
-fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bool {
-    order.sell_token == order.buy_token
-        || (order.sell_token == native_token.address() && order.buy_token == BUY_ETH_ADDRESS)
-}
-
 /// Min balance user must have in sell token for order to be accepted.
 ///
 /// None when addition overflows.
@@ -993,46 +981,6 @@ mod tests {
         assert_eq!(minimum_balance(&order), Some(U256::from(2)));
     }
 
-    #[test]
-    fn detects_orders_with_same_buy_and_sell_token() {
-        let native_token = dummy_contract!(WETH9, [0xef; 20]);
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x01; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: native_token.address(),
-                buy_token: BUY_ETH_ADDRESS,
-                ..Default::default()
-            },
-            &native_token,
-        ));
-
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x02; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        // Sell token set to 0xeee...eee has no special meaning, so it isn't
-        // considered buying and selling the same token.
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: BUY_ETH_ADDRESS,
-                buy_token: native_token.address(),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-    }
-
     #[tokio::test]
     async fn pre_validate_err() {
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
@@ -1149,17 +1097,6 @@ mod tests {
             Err(PartialValidationError::ValidTo(
                 OrderValidToError::Excessive,
             ))
-        ));
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to,
-                    buy_token: H160::from_low_u64_be(2),
-                    sell_token: H160::from_low_u64_be(2),
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::SameBuyAndSellToken)
         ));
         assert!(matches!(
             validator

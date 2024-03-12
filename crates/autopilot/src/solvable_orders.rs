@@ -562,7 +562,10 @@ async fn filter_unsupported_tokens(
     // async. So either this manual iteration or conversion to stream.
     let mut index = 0;
     'outer: while index < orders.len() {
-        for token in orders[index].data.token_pair().unwrap() {
+        for &token in [orders[index].data.buy_token, orders[index].data.sell_token]
+            .iter()
+            .dedup()
+        {
             if !bad_token.detect(token).await?.is_good() {
                 orders.swap_remove(index);
                 continue 'outer;

@@ -19,6 +19,7 @@ use {
     },
     ethereum_types::U256,
     std::{cmp, collections::HashSet, sync::Arc},
+    tracing::debug,
 };
 
 pub struct Baseline(Arc<Inner>);
@@ -148,7 +149,16 @@ impl Inner {
                 // can buy slightly more than intended. Fix this by
                 // capping the output amount to the order's buy amount
                 // for buy orders.
-                let mut output = route.output();
+                let mut output = if route.is_empty() {
+                    order.sell
+                } else {
+                    route.output()
+                };
+                let input = if route.is_empty() {
+                    order.sell
+                } else {
+                    route.input()
+                };
                 if let order::Side::Buy = order.side {
                     output.amount = cmp::min(output.amount, order.buy.amount);
                 }
@@ -158,10 +168,11 @@ impl Inner {
                         .success_probability(route.gas(), auction.gas_price, 1),
                 ));
 
+                tracing::trace!("before single solution");
                 Some(
                     solution::Single {
                         order: order.clone(),
-                        input: route.input(),
+                        input,
                         output,
                         interactions,
                         gas: route.gas(),
@@ -171,6 +182,7 @@ impl Inner {
                     .with_buffers_internalizations(&auction.tokens),
                 )
             });
+
             if let Some(solution) = solution {
                 if sender.send(solution).is_err() {
                     tracing::debug!("deadline hit, receiver dropped");
@@ -240,18 +252,25 @@ pub struct Segment<'a> {
 }
 
 impl<'a> Route<'a> {
-    pub fn new(segments: Vec<Segment<'a>>) -> Option<Self> {
-        if segments.is_empty() {
-            return None;
-        }
-        Some(Self { segments })
+    pub fn new(segments: Vec<Segment<'a>>) -> Self {
+        Self { segments }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.segments.is_empty()
     }
 
     fn input(&self) -> eth::Asset {
+        if self.is_empty() {
+            unreachable!("Input empty segment");
+        }
         self.segments[0].input
     }
 
     fn output(&self) -> eth::Asset {
+        if self.is_empty() {
+            unreachable!("Output empty segment");
+        }
         self.segments
             .last()
             .expect("route has at least one segment by construction")
