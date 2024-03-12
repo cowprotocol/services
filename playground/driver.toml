@@ -7,6 +7,7 @@ account = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6" #
 
 [submission]
 gas-price-cap = "1000000000000"
+#additional-tip-percentage = 0.05
 
 [[submission.mempool]]
 mempool = "public"

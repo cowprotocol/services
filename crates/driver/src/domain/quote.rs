@@ -95,11 +95,17 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
+        let pairs = self.liquidity_pairs();
+
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
-                liquidity
-                    .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
-                    .await
+                if pairs.is_none() {
+                    Default::default()
+                } else {
+                    liquidity
+                        .fetch(&pairs.unwrap(), infra::liquidity::AtBlock::Recent)
+                        .await
+                }
             }
             solver::Liquidity::Skip => Default::default(),
         };
@@ -233,10 +239,9 @@ impl Order {
     }
 
     /// Returns the token pairs to fetch liquidity for.
-    fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy())
-            .expect("sell != buy by construction");
-        iter::once(pair).collect()
+    fn liquidity_pairs(&self) -> Option<HashSet<liquidity::TokenPair>> {
+        let pair = liquidity::TokenPair::new(self.tokens.sell(), self.tokens.buy()).ok()?;
+        Some(iter::once(pair).collect())
     }
 }
 
@@ -251,11 +256,8 @@ pub struct Tokens {
 impl Tokens {
     /// Creates a new instance of [`Tokens`], verifying that the input buy and
     /// sell tokens are distinct.
-    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Result<Self, SameTokens> {
-        if sell == buy {
-            return Err(SameTokens);
-        }
-        Ok(Self { sell, buy })
+    pub fn new(sell: eth::TokenAddress, buy: eth::TokenAddress) -> Self {
+        Self { sell, buy }
     }
 
     pub fn sell(&self) -> eth::TokenAddress {

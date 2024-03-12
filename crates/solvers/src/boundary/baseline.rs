@@ -38,6 +38,9 @@ impl<'a> Solver<'a> {
         request: baseline::Request,
         max_hops: usize,
     ) -> Option<baseline::Route<'a>> {
+        if request.sell.token == request.buy.token {
+            return Some(baseline::Route::new(vec![]));
+        }
         let candidates = self.base_tokens.path_candidates_with_hops(
             request.sell.token.0,
             request.buy.token.0,
@@ -95,7 +98,7 @@ impl<'a> Solver<'a> {
                 .max_by_key(|(_, buy)| buy.value)?,
         };
 
-        baseline::Route::new(segments)
+        Some(baseline::Route::new(segments))
     }
 
     fn traverse_path(

@@ -17,7 +17,7 @@ use {
     anyhow::{anyhow, Result},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    contracts::{HooksTrampoline, WETH9},
+    contracts::HooksTrampoline,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
         interaction::InteractionData,
@@ -102,7 +102,6 @@ pub enum PartialValidationError {
     Forbidden,
     ValidTo(OrderValidToError),
     InvalidNativeSellToken,
-    SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
@@ -210,7 +209,6 @@ pub trait LimitOrderCounting: Send + Sync {
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
-    native_token: WETH9,
     banned_users: Arc<order_validation::banned::Users>,
     validity_configuration: OrderValidPeriodConfiguration,
     eip1271_skip_creation_validation: bool,
@@ -282,7 +280,6 @@ pub struct OrderAppData {
 impl OrderValidator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        native_token: WETH9,
         banned_users: Arc<order_validation::banned::Users>,
         validity_configuration: OrderValidPeriodConfiguration,
         eip1271_skip_creation_validation: bool,
@@ -298,7 +295,6 @@ impl OrderValidator {
         max_gas_per_order: u64,
     ) -> Self {
         Self {
-            native_token,
             banned_users,
             validity_configuration,
             eip1271_skip_creation_validation,
@@ -396,9 +392,6 @@ impl OrderValidating for OrderValidator {
 
         self.validity_configuration.validate_period(&order)?;
 
-        if has_same_buy_and_sell_token(&order, &self.native_token) {
-            return Err(PartialValidationError::SameBuyAndSellToken);
-        }
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
@@ -785,14 +778,6 @@ pub enum OrderValidToError {
     Excessive,
 }
 
-/// Returns true if the orders have same buy and sell tokens.
-///
-/// This also checks for orders selling wrapped native token for native token.
-fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bool {
-    order.sell_token == order.buy_token
-        || (order.sell_token == native_token.address() && order.buy_token == BUY_ETH_ADDRESS)
-}
-
 /// Min balance user must have in sell token for order to be accepted.
 // All orders can be placed without having the full sell balance.
 // A minimum, of 1 atom is still required as a spam protection measure.
@@ -961,49 +946,8 @@ mod tests {
         std::str::FromStr,
     };
 
-    #[test]
-    fn detects_orders_with_same_buy_and_sell_token() {
-        let native_token = dummy_contract!(WETH9, [0xef; 20]);
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x01; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        assert!(has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: native_token.address(),
-                buy_token: BUY_ETH_ADDRESS,
-                ..Default::default()
-            },
-            &native_token,
-        ));
-
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x02; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        // Sell token set to 0xeee...eee has no special meaning, so it isn't
-        // considered buying and selling the same token.
-        assert!(!has_same_buy_and_sell_token(
-            &PreOrderData {
-                sell_token: BUY_ETH_ADDRESS,
-                buy_token: native_token.address(),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-    }
-
     #[tokio::test]
     async fn pre_validate_err() {
-        let native_token = dummy_contract!(WETH9, [0xef; 20]);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
             max_market: Duration::from_secs(100),
@@ -1015,7 +959,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            native_token,
             Arc::new(order_validation::banned::Users::from_set(banned_users)),
             validity_configuration,
             false,
@@ -1122,17 +1065,6 @@ mod tests {
             validator
                 .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
-                    buy_token: H160::from_low_u64_be(2),
-                    sell_token: H160::from_low_u64_be(2),
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::SameBuyAndSellToken)
-        ));
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to,
                     sell_token: BUY_ETH_ADDRESS,
                     ..Default::default()
                 })
@@ -1162,7 +1094,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             validity_configuration,
             false,
@@ -1246,7 +1177,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
@@ -1450,7 +1380,6 @@ mod tests {
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
@@ -1525,7 +1454,6 @@ mod tests {
             .returning(|_| Ok(MAX_LIMIT_ORDERS_PER_USER));
 
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1581,7 +1509,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1632,7 +1559,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1686,7 +1612,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1743,7 +1668,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1799,7 +1723,6 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration::any(),
             false,
@@ -1862,7 +1785,6 @@ mod tests {
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
             let validator = OrderValidator::new(
-                dummy_contract!(WETH9, [0xef; 20]),
                 Arc::new(order_validation::banned::Users::none()),
                 OrderValidPeriodConfiguration::any(),
                 false,

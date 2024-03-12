@@ -1267,7 +1267,6 @@ components:
               InsufficientValidTo,
               ExcessiveValidTo,
               InvalidNativeSellToken,
-              SameBuyAndSellToken,
               UnsupportedToken,
               InvalidAppData,
               AppDataHashMismatch,
