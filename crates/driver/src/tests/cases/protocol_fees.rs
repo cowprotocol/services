@@ -265,7 +265,6 @@ async fn surplus_protocol_fee_buy_order_capped() {
             },
         },
     };
-
     protocol_fee_test_case(test_case).await;
 }
 
@@ -293,6 +292,66 @@ async fn surplus_protocol_fee_sell_order_capped() {
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 54.ether().into_wei(),
+            },
+        },
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_partial_buy_order_capped() {
+    let fee_policy = Policy::Surplus {
+        factor: 0.5,
+        // low enough so we get capped by volume fee
+        max_volume_factor: 0.2,
+    };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // Fee is capped at 20% of solver proposed sell volume
+            solver: Amounts {
+                sell: 25.ether().into_wei(),
+                buy: 28.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 28.ether().into_wei(),
+            },
+        },
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_partial_sell_order_capped() {
+    let fee_policy = Policy::Surplus {
+        factor: 0.5,
+        // log enough so we get capped by volume fee
+        max_volume_factor: 0.1,
+    };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Sell,
+        },
+        execution: Execution {
+            // Fee is capped at 10% of solver proposed buy volume
+            solver: Amounts {
+                sell: 25.ether().into_wei(),
+                buy: 26.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 25.ether().into_wei(),
+                buy: "23.4".ether().into_wei(),
             },
         },
     };
