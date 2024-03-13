@@ -71,12 +71,13 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         Some(executed) => Partial::Yes { executed },
         None => Partial::No,
     };
+    let solver_fee = test_case.execution.driver.sell / 100;
     // Target amount to be executed by the solver in case of partially fillable
     // order
     let executed = match partial {
         Partial::Yes { .. } => match test_case.order.side {
             order::Side::Buy => Some(test_case.execution.solver.buy),
-            order::Side::Sell => Some(test_case.execution.solver.sell),
+            order::Side::Sell => Some(test_case.execution.solver.sell - solver_fee),
         },
         Partial::No => None,
     };
@@ -93,7 +94,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         // Expected amounts already account for network fee, so it doesn't matter for the math.
         // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
         // todo: can be cleaned up after https://github.com/cowprotocol/services/issues/2507
-        .solver_fee(Some(test_case.execution.driver.sell / 100))
+        .solver_fee(Some(solver_fee))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
         .executed(executed)
@@ -147,7 +148,37 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
 
 #[tokio::test]
 #[ignore]
-async fn surplus_protocol_fee_buy_partial_order() {
+async fn surplus_protocol_fee_sell_order_not_capped() {
+    let fee_policy = Policy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
+    };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Sell,
+        },
+        execution: Execution {
+            // 20 ETH surplus, half of which gets captured by the protocol
+            solver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 60.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 50.ether().into_wei(),
+            },
+        },
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_partial_buy_order_not_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
@@ -179,7 +210,7 @@ async fn surplus_protocol_fee_buy_partial_order() {
 
 #[tokio::test]
 #[ignore]
-async fn surplus_protocol_fee_sell_order_not_capped() {
+async fn surplus_protocol_fee_partial_sell_order_not_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
@@ -193,14 +224,14 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 20 ETH surplus, half of which gets captured by the protocol
+            // 6 ETH surplus, half of which gets captured by the protocol
             solver: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 60.ether().into_wei(),
+                sell: 25.ether().into_wei(),
+                buy: 26.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 50.ether().into_wei(),
-                buy: 50.ether().into_wei(),
+                sell: 25.ether().into_wei(),
+                buy: 23.ether().into_wei(),
             },
         },
     };

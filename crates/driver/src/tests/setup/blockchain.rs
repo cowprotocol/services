@@ -139,7 +139,7 @@ impl QuotedOrder {
                 .order
                 .executed
                 // Since `executed` is a target amount
-                .map(|executed_sell| self.buy * executed_sell / self.sell)
+                .map(|executed_sell| self.buy * (executed_sell + self.order.solver_fee.unwrap_or_default()) / self.sell)
                 .unwrap_or(self.buy),
         };
         match self.order.side {
@@ -151,7 +151,11 @@ impl QuotedOrder {
     /// Calculates sell amount that should be received from a driver
     pub fn driver_sell_amount(&self) -> eth::U256 {
         let executed_sell = match self.order.side {
-            order::Side::Sell => self.order.executed.unwrap_or(self.sell),
+            order::Side::Sell => self
+                .order
+                .executed
+                .map(|sell| sell + self.order.solver_fee.unwrap_or_default())
+                .unwrap_or(self.sell),
             order::Side::Buy => self
                 .order
                 .executed
@@ -606,7 +610,10 @@ impl Blockchain {
             ),
             // todo: simplify it
             (order::Side::Sell, _) => {
-                let sell_amount = order.executed.unwrap_or(order.sell_amount);
+                let sell_amount = order
+                    .executed
+                    .map(|sell| sell + order.solver_fee.unwrap_or_default())
+                    .unwrap_or(order.sell_amount);
                 (
                     sell_amount,
                     pair.pool.out_given_in(Asset {
