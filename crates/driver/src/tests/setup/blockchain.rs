@@ -131,12 +131,14 @@ impl QuotedOrder {
         }
     }
 
+    /// Calculates buy amount that should be received from a driver
     pub fn driver_buy_amount(&self) -> eth::U256 {
         let executed_buy = match self.order.side {
             order::Side::Buy => self.order.executed.unwrap_or(self.buy),
             order::Side::Sell => self
                 .order
                 .executed
+                // Since `executed` is a target amount
                 .map(|executed_sell| self.buy * executed_sell / self.sell)
                 .unwrap_or(self.buy),
         };
@@ -146,12 +148,14 @@ impl QuotedOrder {
         }
     }
 
+    /// Calculates sell amount that should be received from a driver
     pub fn driver_sell_amount(&self) -> eth::U256 {
         let executed_sell = match self.order.side {
             order::Side::Sell => self.order.executed.unwrap_or(self.sell),
             order::Side::Buy => self
                 .order
                 .executed
+                // Since `executed` is a target amount
                 .map(|executed_buy| self.sell * executed_buy / self.buy)
                 .unwrap_or(self.sell),
         };

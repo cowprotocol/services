@@ -128,8 +128,9 @@ pub struct Order {
     /// buy amount is divided depends on the order side. This is necessary to
     /// keep the solution scores positive.
     pub surplus_factor: eth::U256,
-    /// Override the executed amount of the order. Useful for testing liquidity
-    /// orders. Otherwise [`execution_diff`] is probably more suitable.
+    /// Override the executed target amount of the order. Useful for testing
+    /// liquidity orders. Otherwise [`execution_diff`] is probably more
+    /// suitable.
     pub executed: Option<eth::U256>,
     /// Provides explicit expected order executed amounts.
     pub expected_amounts: Option<ExpectedOrderAmounts>,

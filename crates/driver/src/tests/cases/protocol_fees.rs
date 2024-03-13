@@ -52,6 +52,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.execution.solver.sell)
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
+    // Check if the order is expected to be partially filled by calculating a
+    // difference between solver's and order's target amounts
     let partially_executed = match test_case.order.side {
         order::Side::Sell => test_case
             .order
@@ -62,12 +64,15 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .buy_amount
             .saturating_sub(test_case.execution.solver.buy),
     };
+    // If there is a difference, the order is considered to be partially fillable
     let partially_executed: Option<eth::U256> =
         (!partially_executed.is_zero()).then_some(partially_executed);
     let partial = match partially_executed {
         Some(executed) => Partial::Yes { executed },
         None => Partial::No,
     };
+    // Target amount to be executed by the solver in case of partially fillable
+    // order
     let executed = match partial {
         Partial::Yes { .. } => match test_case.order.side {
             order::Side::Buy => Some(test_case.execution.solver.buy),
