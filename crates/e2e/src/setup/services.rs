@@ -193,7 +193,8 @@ impl<'a> Services<'a> {
     }
 
     /// Starts a basic version of the protocol with a single legacy solver and
-    /// quoter. Optionally starts a baseline solver and uses it for price estimation.
+    /// quoter. Optionally starts a baseline solver and uses it for price
+    /// estimation.
     pub async fn start_protocol_legacy_solver(
         &self,
         solver: TestAccount,
@@ -235,8 +236,8 @@ impl<'a> Services<'a> {
                 endpoint: baseline_solver_endpoint,
             });
 
-            // Here we call the baseline_solver "test_quoter" to make the native price estimation
-            // use the baseline_solver instead of the test_quoter
+            // Here we call the baseline_solver "test_quoter" to make the native price
+            // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,legacy_test_quoter|http://localhost:11088/test_quoter".to_string(),
@@ -265,33 +266,22 @@ impl<'a> Services<'a> {
         self.start_api(api_args).await;
     }
 
-    /// Starts a basic version of the protocol with a single external solver and
-    /// quoter. Optionally starts a baseline solver and uses it for price estimation.
+    /// Starts a basic version of the protocol with a single external solver.
+    /// Optionally starts a baseline solver and uses it for price estimation.
     pub async fn start_protocol_external_solver(
         &self,
         solver: TestAccount,
         solver_endpoint: Option<Url>,
-        quoter_endpoint: Option<Url>,
         run_baseline: bool,
     ) {
         let external_solver_endpoint =
-            solver_endpoint.unwrap_or("http://localhost:8000/solve".parse().unwrap());
+            solver_endpoint.unwrap_or("http://localhost:8000/".parse().unwrap());
 
-        let external_quoter_endpoint =
-            quoter_endpoint.unwrap_or("http://localhost:8000/quote".parse().unwrap());
-
-        let mut solvers = vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: external_solver_endpoint,
-            },
-            SolverEngine {
-                name: "test_quoter".into(),
-                account: solver.clone(),
-                endpoint: external_quoter_endpoint,
-            },
-        ];
+        let mut solvers = vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver.clone(),
+            endpoint: external_solver_endpoint,
+        }];
 
         let (autopilot_args, api_args) = if run_baseline {
             let baseline_solver_endpoint =
@@ -303,25 +293,25 @@ impl<'a> Services<'a> {
                 endpoint: baseline_solver_endpoint,
             });
 
-            // Here we call the baseline_solver "test_quoter" to make the native price estimation
-            // use the baseline_solver instead of the test_quoter
+            // Here we call the baseline_solver "test_quoter" to make the native price
+            // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,legacy_test_quoter|http://localhost:11088/test_quoter".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,legacy_test_quoter|http://localhost:11088/test_quoter".to_string(),
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 
             let api_args = vec![
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter"
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
             (autopilot_args, api_args)
