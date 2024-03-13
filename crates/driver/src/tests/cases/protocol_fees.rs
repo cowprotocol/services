@@ -65,11 +65,12 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .saturating_sub(test_case.execution.solver.buy),
     };
     // If there is a difference, the order is considered to be partially fillable
-    let partially_executed: Option<eth::U256> =
-        (!partially_executed.is_zero()).then_some(partially_executed);
-    let partial = match partially_executed {
-        Some(executed) => Partial::Yes { executed },
-        None => Partial::No,
+    let partial = if partially_executed <= eth::U256::zero() {
+        Partial::No
+    } else {
+        Partial::Yes {
+            executed: partially_executed,
+        }
     };
     let solver_fee = test_case.execution.driver.sell / 100;
     // Target amount to be executed by the solver in case of partially fillable
