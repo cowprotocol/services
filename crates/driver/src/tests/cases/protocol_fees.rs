@@ -164,11 +164,11 @@ async fn surplus_protocol_fee_buy_partial_order() {
             // 6 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
             solver: Amounts {
-                sell: 41.ether().into_wei(),
+                sell: 29.ether().into_wei(),
                 buy: 28.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 38.ether().into_wei(),
+                sell: 32.ether().into_wei(),
                 buy: 28.ether().into_wei(),
             },
         },
