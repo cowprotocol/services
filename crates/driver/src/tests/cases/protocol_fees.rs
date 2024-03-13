@@ -381,7 +381,6 @@ async fn volume_protocol_fee_buy_order() {
             },
         },
     };
-
     protocol_fee_test_case(test_case).await;
 }
 
@@ -405,6 +404,58 @@ async fn volume_protocol_fee_sell_order() {
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 45.ether().into_wei(),
+            },
+        },
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn volume_protocol_fee_partial_buy_order() {
+    let fee_policy = Policy::Volume { factor: 0.5 };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // Half of the solver proposed sell volume is kept by the protocol
+            solver: Amounts {
+                sell: 20.ether().into_wei(),
+                buy: 28.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 28.ether().into_wei(),
+            },
+        },
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn volume_protocol_fee_partial_sell_order() {
+    let fee_policy = Policy::Volume { factor: 0.1 };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Sell,
+        },
+        execution: Execution {
+            // 10% of the solver proposed buy value is kept by the protocol
+            solver: Amounts {
+                sell: 25.ether().into_wei(),
+                buy: 30.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 25.ether().into_wei(),
+                buy: 27.ether().into_wei(),
             },
         },
     };
