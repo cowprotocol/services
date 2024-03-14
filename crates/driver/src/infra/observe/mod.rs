@@ -114,9 +114,14 @@ pub fn encoding(id: solution::Id) {
 /// Observe that settlement encoding failed.
 pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
     tracing::info!(?id, ?err, "discarded solution: settlement encoding");
+    let reason = if err.to_string().contains("GPv2: order filled") {
+        "GPv2: order filled"
+    } else {
+        "SettlementEncoding"
+    };
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
+        .with_label_values(&[solver.as_str(), reason])
         .inc();
 }
 
