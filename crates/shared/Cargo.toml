@@ -31,6 +31,7 @@ observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 lazy_static = { workspace = true }
 maplit = { workspace = true }
@@ -38,6 +39,7 @@ mockall = { workspace = true }
 model = { path = "../model" }
 num = { workspace = true }
 number = { path = "../number" }
+order-validation = { path = "../order-validation" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

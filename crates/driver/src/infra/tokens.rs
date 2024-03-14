@@ -28,7 +28,8 @@ pub struct Metadata {
 pub struct Fetcher(Arc<Inner>);
 
 impl Fetcher {
-    pub fn new(eth: Ethereum) -> Self {
+    pub fn new(eth: &Ethereum) -> Self {
+        let eth = eth.with_metric_label("tokenInfos".into());
         let block_stream = eth.current_block().clone();
         let inner = Arc::new(Inner {
             eth,

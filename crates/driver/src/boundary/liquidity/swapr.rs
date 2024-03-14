@@ -43,8 +43,9 @@ pub async fn collector(
     blocks: &CurrentBlockStream,
     config: &infra::liquidity::config::Swapr,
 ) -> Result<Box<dyn LiquidityCollecting>> {
+    let eth = eth.with_metric_label("swapr".into());
     boundary::liquidity::uniswap::v2::collector_with_reader(
-        eth,
+        &eth,
         blocks,
         &infra::liquidity::config::UniswapV2 {
             router: config.router,

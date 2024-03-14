@@ -1,5 +1,6 @@
 use {
     self::trade::ClearingPrices,
+    super::auction,
     crate::{
         boundary,
         domain::{
@@ -21,10 +22,11 @@ use {
 
 pub mod fee;
 pub mod interaction;
+pub mod scoring;
 pub mod settlement;
 pub mod trade;
 
-pub use {interaction::Interaction, settlement::Settlement, trade::Trade};
+pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
 
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
@@ -51,7 +53,7 @@ impl Solution {
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
-    ) -> Result<Self, SolutionError> {
+    ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
             trades,
@@ -63,14 +65,36 @@ impl Solution {
         };
 
         // Check that the solution includes clearing prices for all user trades.
-        if solution.user_trades().all(|trade| {
-            solution.clearing_price(trade.order().sell.token).is_some()
-                && solution.clearing_price(trade.order().buy.token).is_some()
+        if solution.user_trades().any(|trade| {
+            solution.clearing_price(trade.order().sell.token).is_none()
+                || solution.clearing_price(trade.order().buy.token).is_none()
         }) {
-            Ok(solution.with_protocol_fees()?)
-        } else {
-            Err(SolutionError::InvalidClearingPrices)
+            return Err(error::Solution::InvalidClearingPrices);
         }
+
+        // Apply protocol fees
+        let mut trades = Vec::with_capacity(solution.trades.len());
+        for trade in solution.trades {
+            match &trade {
+                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                    order::Kind::Market | order::Kind::Limit { .. } => {
+                        let prices = ClearingPrices {
+                            sell: solution.prices
+                                [&fulfillment.order().sell.token.wrap(solution.weth)],
+                            buy: solution.prices
+                                [&fulfillment.order().buy.token.wrap(solution.weth)],
+                        };
+                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        trades.push(Trade::Fulfillment(fulfillment))
+                    }
+                    order::Kind::Liquidity => {
+                        trades.push(trade);
+                    }
+                },
+                Trade::Jit(_) => trades.push(trade),
+            }
+        }
+        Ok(Self { trades, ..solution })
     }
 
     /// The ID of this solution.
@@ -95,6 +119,63 @@ impl Solution {
 
     pub fn score(&self) -> &SolverScore {
         &self.score
+    }
+
+    /// JIT score calculation as per CIP38
+    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
+        let mut trades = Vec::with_capacity(self.trades.len());
+        for trade in self.user_trades() {
+            // Solver generated fulfillment does not include the fee in the executed amount
+            // for sell orders.
+            let executed = match trade.order().side {
+                order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                order::Side::Buy => trade.executed(),
+            };
+            let uniform_prices = ClearingPrices {
+                sell: *self
+                    .prices
+                    .get(&trade.order().sell.token.wrap(self.weth))
+                    .ok_or(error::Solution::InvalidClearingPrices)?,
+                buy: *self
+                    .prices
+                    .get(&trade.order().buy.token.wrap(self.weth))
+                    .ok_or(error::Solution::InvalidClearingPrices)?,
+            };
+            let custom_prices = scoring::CustomClearingPrices {
+                sell: match trade.order().side {
+                    order::Side::Sell => trade
+                        .executed()
+                        .0
+                        .checked_mul(uniform_prices.sell)
+                        .ok_or(error::Math::Overflow)?
+                        .checked_div(uniform_prices.buy)
+                        .ok_or(error::Math::DivisionByZero)?,
+                    order::Side::Buy => trade.executed().0,
+                },
+                buy: match trade.order().side {
+                    order::Side::Sell => trade.executed().0 + trade.fee().0,
+                    order::Side::Buy => {
+                        (trade.executed().0)
+                            .checked_mul(uniform_prices.buy)
+                            .ok_or(error::Math::Overflow)?
+                            .checked_div(uniform_prices.sell)
+                            .ok_or(error::Math::DivisionByZero)?
+                            + trade.fee().0
+                    }
+                },
+            };
+            trades.push(scoring::Trade::new(
+                trade.order().sell,
+                trade.order().buy,
+                trade.order().side,
+                executed,
+                custom_prices,
+                trade.order().protocol_fees.clone(),
+            ))
+        }
+
+        let scoring = scoring::Scoring::new(trades);
+        Ok(scoring.score(prices)?)
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -178,29 +259,6 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator).await
     }
 
-    pub fn with_protocol_fees(self) -> Result<Self, fee::Error> {
-        let mut trades = Vec::with_capacity(self.trades.len());
-        for trade in self.trades {
-            match &trade {
-                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                    order::Kind::Market | order::Kind::Limit { .. } => {
-                        let prices = ClearingPrices {
-                            sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
-                            buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
-                        };
-                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
-                        trades.push(Trade::Fulfillment(fulfillment))
-                    }
-                    order::Kind::Liquidity => {
-                        trades.push(trade);
-                    }
-                },
-                Trade::Jit(_) => trades.push(trade),
-            }
-        }
-        Ok(Self { trades, ..self })
-    }
-
     /// Token prices settled by this solution, expressed using an arbitrary
     /// reference unit chosen by the solver. These values are only
     /// meaningful in relation to each others.
@@ -276,6 +334,7 @@ impl std::fmt::Debug for Solution {
 pub enum SolverScore {
     Solver(eth::U256),
     RiskAdjusted(f64),
+    Surplus,
 }
 /// A unique solution ID. This ID is generated by the solver and only needs to
 /// be unique within a single round of competition. This ID is only important in
@@ -296,30 +355,53 @@ impl From<Id> for u64 {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("blockchain error: {0:?}")]
-    Blockchain(#[from] blockchain::Error),
-    #[error("boundary error: {0:?}")]
-    Boundary(#[from] boundary::Error),
-    #[error("simulation error: {0:?}")]
-    Simulation(#[from] simulator::Error),
-    #[error(
-        "non bufferable tokens used: solution attempts to internalize tokens which are not trusted"
-    )]
-    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    #[error("invalid internalization: uninternalized solution fails to simulate")]
-    FailingInternalization,
-    #[error("insufficient solver account Ether balance, required {0:?}")]
-    SolverAccountInsufficientBalance(eth::Ether),
-    #[error("attempted to merge settlements generated by different solvers")]
-    DifferentSolvers,
-}
+pub mod error {
+    use super::*;
 
-#[derive(Debug, thiserror::Error)]
-pub enum SolutionError {
-    #[error("invalid clearing prices")]
-    InvalidClearingPrices,
-    #[error(transparent)]
-    ProtocolFee(#[from] fee::Error),
+    #[derive(Debug, thiserror::Error)]
+    pub enum Error {
+        #[error("blockchain error: {0:?}")]
+        Blockchain(#[from] blockchain::Error),
+        #[error("boundary error: {0:?}")]
+        Boundary(#[from] boundary::Error),
+        #[error("simulation error: {0:?}")]
+        Simulation(#[from] simulator::Error),
+        #[error(
+            "non bufferable tokens used: solution attempts to internalize tokens which are not \
+             trusted"
+        )]
+        NonBufferableTokensUsed(BTreeSet<TokenAddress>),
+        #[error("invalid internalization: uninternalized solution fails to simulate")]
+        FailingInternalization,
+        #[error("insufficient solver account Ether balance, required {0:?}")]
+        SolverAccountInsufficientBalance(eth::Ether),
+        #[error("attempted to merge settlements generated by different solvers")]
+        DifferentSolvers,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Math {
+        #[error("overflow")]
+        Overflow,
+        #[error("division by zero")]
+        DivisionByZero,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Solution {
+        #[error("invalid clearing prices")]
+        InvalidClearingPrices,
+        #[error(transparent)]
+        ProtocolFee(#[from] fee::Error),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Scoring {
+        #[error(transparent)]
+        Solution(#[from] Solution),
+        #[error(transparent)]
+        Math(#[from] Math),
+        #[error(transparent)]
+        Score(#[from] scoring::Error),
+    }
 }

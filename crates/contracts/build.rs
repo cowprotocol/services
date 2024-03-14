@@ -665,6 +665,11 @@ fn main() {
         builder.add_network_str(SEPOLIA, "0x86dcd3293C53Cf8EFd7303B57beb2a3F671dDE98")
     });
 
+    // Chainalysis oracle for sanctions screening
+    generate_contract_with_config("ChainalysisOracle", |builder| {
+        builder.add_network_str(MAINNET, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
+    });
+
     // Support contracts used for trade and token simulations.
     generate_contract("Trader");
     generate_contract("Solver");

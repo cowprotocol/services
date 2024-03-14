@@ -29,7 +29,7 @@ pub use {gas_estimation::GasPriceEstimating, solver::settlement_submission::Glob
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub additional_tip_percentage: f64,
+    pub min_priority_fee: eth::U256,
     pub gas_price_cap: eth::U256,
     pub target_confirm_time: std::time::Duration,
     pub max_confirm_time: std::time::Duration,
@@ -52,6 +52,7 @@ pub enum Kind {
     MEVBlocker {
         url: reqwest::Url,
         max_additional_tip: eth::U256,
+        additional_tip_percentage: f64,
         use_soft_cancellations: bool,
     },
 }
@@ -152,7 +153,20 @@ impl Mempool {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap.to_f64_lossy()),
-            additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
+            additional_tip_percentage_of_max_fee: match (
+                &self.config.kind,
+                settlement.boundary.revertable(),
+            ) {
+                (
+                    Kind::MEVBlocker {
+                        additional_tip_percentage,
+                        ..
+                    },
+                    true,
+                ) => *additional_tip_percentage,
+                (Kind::MEVBlocker { .. }, false) => 0.,
+                (Kind::Public(_), _) => 0.,
+            },
             max_additional_tip: match (&self.config.kind, settlement.boundary.revertable()) {
                 (
                     Kind::MEVBlocker {
@@ -193,7 +207,7 @@ impl Mempool {
                     gas_estimate: settlement.gas.estimate.into(),
                     deadline: Some(std::time::Instant::now() + self.config.max_confirm_time),
                     retry_interval: self.config.retry_interval,
-                    network_id: self.eth.network().id.to_string(),
+                    network_id: self.eth.network().to_string(),
                     additional_call_data: settlement.auction_id.to_be_bytes().into_iter().collect(),
                     use_soft_cancellations,
                 },

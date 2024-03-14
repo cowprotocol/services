@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "web3::api::Net::version", reason = "Calling `eth().chain_id().await?.to_string()` is equivalent and is better supported." }
+]

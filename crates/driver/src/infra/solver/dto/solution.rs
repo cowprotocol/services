@@ -17,6 +17,7 @@ impl Solutions {
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
         solver: Solver,
+        rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
         self.solutions
             .into_iter()
@@ -188,21 +189,28 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    match solution.score {
-                        Score::Solver { score } => {
-                            competition::solution::SolverScore::Solver(score)
-                        }
-                        Score::RiskAdjusted {
-                            success_probability,
-                        } => competition::solution::SolverScore::RiskAdjusted(success_probability),
+                    match rank_by_surplus_date
+                        .is_some_and(|date| auction.deadline().driver() > date)
+                    {
+                        true => competition::solution::SolverScore::Surplus,
+                        false => match solution.score {
+                            Score::Solver { score } => {
+                                competition::solution::SolverScore::Solver(score)
+                            }
+                            Score::RiskAdjusted {
+                                success_probability,
+                            } => competition::solution::SolverScore::RiskAdjusted(
+                                success_probability,
+                            ),
+                        },
                     },
                     weth,
                 )
                 .map_err(|err| match err {
-                    competition::solution::SolutionError::InvalidClearingPrices => {
+                    competition::solution::error::Solution::InvalidClearingPrices => {
                         super::Error("invalid clearing prices".to_owned())
                     }
-                    competition::solution::SolutionError::ProtocolFee(err) => {
+                    competition::solution::error::Solution::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
                     }
                 })

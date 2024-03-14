@@ -83,22 +83,10 @@ impl Inner {
                 kind: query.kind,
             };
 
-            let verified_quote = verifier
+            return verifier
                 .verify(&price_query, verification, trade.clone())
-                .await;
-
-            return match verified_quote {
-                Ok(quote) => Ok(quote.into()),
-                Err(err) => {
-                    tracing::warn!(?err, "failed verification; returning unverified estimate");
-                    Ok(Estimate {
-                        out_amount: trade.out_amount,
-                        gas: trade.gas_estimate,
-                        solver: trade.solver,
-                        verified: false,
-                    })
-                }
-            };
+                .await
+                .map_err(PriceEstimationError::EstimatorInternal);
         }
 
         if query.verification.is_some() {

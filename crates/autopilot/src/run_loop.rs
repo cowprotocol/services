@@ -2,20 +2,16 @@ use {
     crate::{
         database::competition::Competition,
         domain::{self, auction::order::Class, OrderUid},
-        driver_model::{
-            reveal::{self, Request},
-            settle,
-            solve::{self, TradedAmounts},
+        infra::{
+            self,
+            solvers::dto::{reveal, settle, solve},
         },
-        infra::{self, persistence::dto},
         run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
     anyhow::Result,
-    chrono::Utc,
     database::order_events::OrderEventLabel,
-    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -115,7 +111,7 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: domain::AuctionId, auction: domain::Auction) {
+    async fn single_run(&self, auction_id: domain::auction::Id, auction: domain::Auction) {
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
@@ -305,10 +301,10 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(
         &self,
-        id: domain::AuctionId,
+        id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let request = solve_request(
+        let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
@@ -395,11 +391,11 @@ impl RunLoop {
     async fn reveal(
         &self,
         driver: &infra::Driver,
-        auction: domain::AuctionId,
+        auction: domain::auction::Id,
         solution_id: u64,
     ) -> Result<reveal::Response, RevealError> {
         let response = driver
-            .reveal(&Request { solution_id })
+            .reveal(&reveal::Request { solution_id })
             .await
             .map_err(RevealError::Failure)?;
         if !response
@@ -474,41 +470,6 @@ impl RunLoop {
     }
 }
 
-pub fn solve_request(
-    id: domain::AuctionId,
-    auction: &domain::Auction,
-    trusted_tokens: &HashSet<H160>,
-    score_cap: U256,
-    time_limit: Duration,
-) -> solve::Request {
-    solve::Request {
-        id,
-        orders: auction
-            .orders
-            .clone()
-            .into_iter()
-            .map(dto::order::from_domain)
-            .collect(),
-        tokens: auction
-            .prices
-            .iter()
-            .map(|(address, price)| solve::Token {
-                address: address.to_owned(),
-                price: Some(price.to_owned()),
-                trusted: trusted_tokens.contains(address),
-            })
-            .chain(trusted_tokens.iter().map(|&address| solve::Token {
-                address,
-                price: None,
-                trusted: true,
-            }))
-            .unique_by(|token| token.address)
-            .collect(),
-        deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-        score_cap,
-    }
-}
-
 /// Orders settled in the previous auction that might still be in-flight.
 #[derive(Default)]
 pub struct InFlightOrders {
@@ -526,7 +487,7 @@ struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
-    orders: HashMap<domain::OrderUid, TradedAmounts>,
+    orders: HashMap<domain::OrderUid, solve::TradedAmounts>,
     clearing_prices: HashMap<H160, U256>,
 }
 
@@ -535,7 +496,7 @@ impl Solution {
         self.orders.keys()
     }
 
-    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedAmounts> {
+    pub fn orders(&self) -> &HashMap<domain::OrderUid, solve::TradedAmounts> {
         &self.orders
     }
 }
@@ -610,7 +571,7 @@ impl Metrics {
         Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 
-    fn auction(auction_id: domain::AuctionId) {
+    fn auction(auction_id: domain::auction::Id) {
         Self::get().auction.set(auction_id)
     }
 
