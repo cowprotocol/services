@@ -586,7 +586,7 @@ impl Blockchain {
             order::Side::Sell => {
                 let executed = order
                     .executed
-                    .map(|amount| amount + order.solver_fee.unwrap_or_default())
+                    .map(|amount| amount + order.surplus_fee())
                     .unwrap_or(order.sell_amount);
                 Execution {
                     buy: pair.pool.out_given_in(Asset {

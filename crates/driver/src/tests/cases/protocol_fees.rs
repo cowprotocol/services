@@ -15,7 +15,6 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
 struct Amounts {
     sell: eth::U256,
     buy: eth::U256,
