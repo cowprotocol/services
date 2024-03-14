@@ -58,8 +58,20 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     };
 
     let executed = match test_case.order.side {
-        order::Side::Buy => test_case.execution.solver.buy,
-        order::Side::Sell => test_case.execution.solver.sell,
+        order::Side::Buy => {
+            if test_case.order.buy_amount > test_case.execution.solver.buy {
+                Some(test_case.execution.solver.buy)
+            } else {
+                None
+            }
+        }
+        order::Side::Sell => {
+            if test_case.order.sell_amount > test_case.execution.solver.sell {
+                Some(test_case.execution.solver.sell)
+            } else {
+                None
+            }
+        }
     };
 
     let order = ab_order()

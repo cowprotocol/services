@@ -561,34 +561,39 @@ impl Blockchain {
     /// Compute the execution of an order given the available liquidity
     pub fn execution(&self, order: &Order) -> Execution {
         let pair = self.find_pair(order);
-        let executed = order.executed.unwrap_or_else(|| match order.side {
-            // For buy order with explicitly specified amounts, use the buy amount,
-            // otherwise assume the full sell amount to compute the execution
-            order::Side::Buy => order.buy_amount.unwrap_or_else(|| {
-                pair.pool.out_given_in(Asset {
-                    amount: order.sell_amount,
-                    token: order.sell_token,
-                })
-            }),
-            order::Side::Sell => order.sell_amount,
-        });
-        let (sell, buy) = match order.side {
-            order::Side::Buy => (
-                pair.pool.in_given_out(Asset {
-                    amount: executed,
-                    token: order.buy_token,
-                }),
-                executed,
-            ),
-            order::Side::Sell => (
-                executed,
-                pair.pool.out_given_in(Asset {
-                    amount: executed,
-                    token: order.sell_token,
-                }),
-            ),
-        };
-        Execution { sell, buy }
+        match order.side {
+            order::Side::Buy => {
+                // For buy order with explicitly specified amounts, use the buy amount,
+                // otherwise assume the full sell amount to compute the execution
+                let executed = order.executed.or(order.buy_amount);
+                match executed {
+                    Some(executed) => Execution {
+                        buy: executed,
+                        sell: pair.pool.in_given_out(Asset {
+                            amount: executed,
+                            token: order.buy_token,
+                        }),
+                    },
+                    None => Execution {
+                        buy: pair.pool.out_given_in(Asset {
+                            amount: order.sell_amount,
+                            token: order.sell_token,
+                        }),
+                        sell: order.sell_amount,
+                    },
+                }
+            }
+            order::Side::Sell => {
+                let executed = order.executed.unwrap_or(order.sell_amount);
+                Execution {
+                    buy: pair.pool.out_given_in(Asset {
+                        amount: executed,
+                        token: order.sell_token,
+                    }),
+                    sell: executed,
+                }
+            }
+        }
     }
 
     /// Set up the blockchain context and return the interactions needed to

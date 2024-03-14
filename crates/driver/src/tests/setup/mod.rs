@@ -163,11 +163,8 @@ impl Order {
         }
     }
 
-    pub fn executed(self, executed: eth::U256) -> Self {
-        Self {
-            executed: Some(executed),
-            ..self
-        }
+    pub fn executed(self, executed: Option<eth::U256>) -> Self {
+        Self { executed, ..self }
     }
 
     pub fn partial(self, already_executed: eth::U256) -> Self {
