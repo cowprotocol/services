@@ -10,7 +10,6 @@ use crate::{
             ab_solution,
             fee::{Policy, Quote},
             ExpectedOrderAmounts,
-            Partial,
             Test,
         },
     },
@@ -52,37 +51,23 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .sell_amount(test_case.execution.solver.sell)
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
-    // Check if the order is expected to be partially filled by calculating a
-    // difference between solver's and order's target amounts
-    let partially_executed = match test_case.order.side {
-        order::Side::Sell => test_case
-            .order
-            .sell_amount
-            .saturating_sub(test_case.execution.solver.sell),
-        order::Side::Buy => test_case
-            .order
-            .buy_amount
-            .saturating_sub(test_case.execution.solver.buy),
-    };
-    // If there is a difference, the order is considered to be partially fillable
-    let partial = if partially_executed <= eth::U256::zero() {
-        Partial::No
-    } else {
-        Partial::Yes {
-            executed: eth::U256::zero(),
+    let solver_fee = test_case.execution.driver.sell / 100;
+    let executed = match test_case.order.side {
+        order::Side::Buy => {
+            if test_case.order.buy_amount > test_case.execution.solver.buy {
+                Some(test_case.execution.solver.buy)
+            } else {
+                None
+            }
+        }
+        order::Side::Sell => {
+            if test_case.order.sell_amount > test_case.execution.solver.sell {
+                Some(test_case.execution.solver.sell - solver_fee)
+            } else {
+                None
+            }
         }
     };
-    let solver_fee = test_case.execution.driver.sell / 100;
-    // Target amount to be executed by the solver in case of partially fillable
-    // order
-    let executed = match partial {
-        Partial::Yes { .. } => match test_case.order.side {
-            order::Side::Buy => Some(test_case.execution.solver.buy),
-            order::Side::Sell => Some(test_case.execution.solver.sell - solver_fee),
-        },
-        Partial::No => None,
-    };
-
     // Amounts expected to be returned by the driver after fee processing
     let expected_amounts = ExpectedOrderAmounts {
         sell: test_case.execution.driver.sell,
@@ -99,7 +84,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
         .executed(executed)
-        .partial(partial)
+        .partial(0.into())
         // Surplus is configured explicitly via executed/quoted amounts
         .no_surplus()
         .expected_amounts(expected_amounts);

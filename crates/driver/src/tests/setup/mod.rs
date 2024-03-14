@@ -254,8 +254,13 @@ impl Order {
         }
     }
 
-    pub fn partial(self, partial: Partial) -> Self {
-        Self { partial, ..self }
+    pub fn partial(self, already_executed: eth::U256) -> Self {
+        Self {
+            partial: Partial::Yes {
+                executed: already_executed,
+            },
+            ..self
+        }
     }
 
     pub fn executed(self, executed: Option<eth::U256>) -> Self {
