@@ -163,6 +163,22 @@ impl Order {
         }
     }
 
+    pub fn executed(self, executed: eth::U256) -> Self {
+        Self {
+            executed: Some(executed),
+            ..self
+        }
+    }
+
+    pub fn partial(self, already_executed: eth::U256) -> Self {
+        Self {
+            partial: Partial::Yes {
+                executed: already_executed,
+            },
+            ..self
+        }
+    }
+
     pub fn user_fee(self, amount: eth::U256) -> Self {
         Self {
             user_fee: amount,

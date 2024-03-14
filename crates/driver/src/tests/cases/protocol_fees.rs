@@ -57,6 +57,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         buy: test_case.execution.driver.buy,
     };
 
+    let executed = match test_case.order.side {
+        order::Side::Buy => test_case.execution.solver.buy,
+        order::Side::Sell => test_case.execution.solver.sell,
+    };
+
     let order = ab_order()
         .kind(order::Kind::Limit)
         .sell_amount(test_case.order.sell_amount)
@@ -69,6 +74,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .fee_policy(test_case.fee_policy)
         // Surplus is configured explicitly via executed/quoted amounts
         .no_surplus()
+        .executed(executed)
+        .partial(0.into())
         .expected_amounts(expected_amounts);
 
     let test: Test = tests::setup()
@@ -80,6 +87,38 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .await;
 
     test.solve().await.ok().orders(&[order]);
+}
+
+#[tokio::test]
+#[ignore]
+async fn surplus_protocol_fee_partial_buy_order_not_capped() {
+    let fee_policy = Policy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
+    };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 40.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // 6 ETH surplus in sell token (after network fee), half of which is kept by the
+            // protocol
+            solver: Amounts {
+                sell: 14.ether().into_wei(),
+                buy: 20.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 17.ether().into_wei(),
+                buy: 20.ether().into_wei(),
+            },
+        },
+    };
+
+    protocol_fee_test_case(test_case).await;
 }
 
 #[tokio::test]
