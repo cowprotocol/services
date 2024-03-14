@@ -59,11 +59,11 @@ impl Solver {
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
                 "sellAmount": match quote.order.side {
                     order::Side::Buy if config.quote => "22300745198530623141535718272648361505980416".to_owned(),
-                    _ => quote.driver_sell_amount().to_string(),
+                    _ => quote.sell_amount().to_string(),
                 },
                 "buyAmount": match quote.order.side {
                     order::Side::Sell if config.quote => "1".to_owned(),
-                    _ => quote.driver_buy_amount().to_string(),
+                    _ => quote.buy_amount().to_string(),
                 },
                 "feeAmount": quote.order.user_fee.to_string(),
                 "kind": match quote.order.side {

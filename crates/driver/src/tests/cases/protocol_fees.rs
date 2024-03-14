@@ -69,7 +69,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         Partial::No
     } else {
         Partial::Yes {
-            executed: partially_executed,
+            executed: eth::U256::zero(),
         }
     };
     let solver_fee = test_case.execution.driver.sell / 100;
