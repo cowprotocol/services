@@ -325,6 +325,12 @@ pub fn mempool_executed(
                 "sending transaction via mempool succeeded",
             );
         }
+        Err(mempools::Error::Disabled) => {
+            tracing::debug!(
+                %mempool,
+                "sending transaction via mempool disabled",
+            );
+        }
         Err(err) => {
             tracing::warn!(
                 ?err,
