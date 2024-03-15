@@ -4,7 +4,10 @@ use {
         order::{self, Side},
     },
     crate::domain::{
-        competition::{auction, solution::fee::adjust_quote_to_order_limits},
+        competition::{
+            auction,
+            solution::{fee, fee::adjust_quote_to_order_limits},
+        },
         eth::{self, TokenAmount},
     },
 };
@@ -135,12 +138,16 @@ impl Trade {
                 max_volume_factor: _,
                 quote,
             }) => adjust_quote_to_order_limits(
-                self.sell.amount.0,
-                self.buy.amount.0,
-                self.side,
-                quote.sell.amount.0,
-                quote.buy.amount.0,
-                quote.fee.amount.0,
+                fee::Order {
+                    sell_amount: self.sell.amount.0,
+                    buy_amount: self.buy.amount.0,
+                    side: self.side,
+                },
+                fee::Quote {
+                    sell_amount: quote.sell.amount.0,
+                    buy_amount: quote.buy.amount.0,
+                    fee_amount: quote.fee.amount.0,
+                },
             )
             .map_err(|e| e.into()),
             _ => Ok((self.sell.amount.0, self.buy.amount.0)),
