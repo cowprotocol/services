@@ -4,6 +4,7 @@ use {
         util,
     },
     ethereum_types::{Address, U256},
+    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::{collections::HashMap, slice},
 };
 
@@ -218,7 +219,7 @@ impl Single {
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
             score,
-            gas_used: Some(self.gas),
+            gas_used: Some(self.gas + eth::Gas(SETTLEMENT_OVERHEAD.into())),
         })
     }
 }
