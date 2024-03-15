@@ -205,6 +205,7 @@ impl Solutions {
                         },
                     },
                     weth,
+                    solution.gas_used.map(|gas| eth::Gas(gas.into())),
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
@@ -236,6 +237,7 @@ pub struct Solution {
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
     score: Score,
+    gas_used: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

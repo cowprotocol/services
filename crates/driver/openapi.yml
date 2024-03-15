@@ -292,6 +292,9 @@ components:
             solver:
               description: The address of the solver that quoted this order.
               $ref: "#/components/schemas/Address"
+            gasUsed:
+              type: integer
+              description: How many units of gas this trade is estimated to cost.
         - $ref: "#/components/schemas/Error"
     DateTime:
       description: An ISO 8601 UTC date time string.
@@ -379,6 +382,9 @@ components:
             type: object
             additionalProperties:
               $ref: "#/components/schemas/BigUint"
+          gasUsed:
+            type: integer
+            description: How many units of gas this solution is estimated to cost.
     Solution:
       description: Request to the settle and reveal endpoint.
       type: object

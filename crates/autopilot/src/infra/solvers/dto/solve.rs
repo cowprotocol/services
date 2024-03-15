@@ -103,6 +103,7 @@ pub struct Solution {
     pub orders: HashMap<boundary::OrderUid, TradedAmounts>,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
+    pub gas_used: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

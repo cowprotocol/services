@@ -24,6 +24,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub score: Score,
+    pub gas_used: eth::Gas,
 }
 
 impl Solution {
@@ -217,6 +218,7 @@ impl Single {
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
             score,
+            gas_used: self.gas,
         })
     }
 }

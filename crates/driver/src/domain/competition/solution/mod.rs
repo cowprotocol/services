@@ -42,9 +42,11 @@ pub struct Solution {
     solver: Solver,
     score: SolverScore,
     weth: eth::WethAddress,
+    gas_used: Option<eth::Gas>,
 }
 
 impl Solution {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
         trades: Vec<Trade>,
@@ -53,6 +55,7 @@ impl Solution {
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
+        gas_used: Option<eth::Gas>,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -62,6 +65,7 @@ impl Solution {
             solver,
             score,
             weth,
+            gas_used,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -119,6 +123,10 @@ impl Solution {
 
     pub fn score(&self) -> &SolverScore {
         &self.score
+    }
+
+    pub fn gas_used(&self) -> Option<eth::Gas> {
+        self.gas_used
     }
 
     /// JIT score calculation as per CIP38
