@@ -181,7 +181,7 @@ impl Competition {
                         score,
                         trades: settlement.orders(),
                         prices: settlement.prices(),
-                        gas_used: Some(settlement.gas.estimate),
+                        gas: Some(settlement.gas.estimate),
                     },
                     settlement,
                 )
@@ -359,7 +359,7 @@ pub struct Solved {
     pub score: Score,
     pub trades: HashMap<order::Uid, Amounts>,
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
-    pub gas_used: Option<eth::Gas>,
+    pub gas: Option<eth::Gas>,
 }
 
 #[derive(Debug, Default)]

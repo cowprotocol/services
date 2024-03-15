@@ -26,7 +26,7 @@ pub struct Quote {
     pub amount: eth::U256,
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
-    pub gas_used: Option<eth::Gas>,
+    pub gas: Option<eth::Gas>,
 }
 
 impl Quote {
@@ -51,7 +51,7 @@ impl Quote {
             amount,
             interactions: boundary::quote::encode_interactions(eth, solution.interactions())?,
             solver: solution.solver().address(),
-            gas_used: solution.gas_used(),
+            gas: solution.gas(),
         })
     }
 }

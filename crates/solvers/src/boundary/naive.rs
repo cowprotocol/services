@@ -138,7 +138,7 @@ pub fn solve(
                 )
             })
             .collect(),
-        gas_used: None,
+        gas: None,
         interactions: swap
             .into_iter()
             .map(|(input, output)| {

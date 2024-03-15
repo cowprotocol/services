@@ -112,7 +112,7 @@ impl From<dto::Quote> for Trade {
 
         Self {
             out_amount: quote.amount,
-            gas_estimate: quote.gas_used.unwrap_or(TRADE_GAS),
+            gas_estimate: quote.gas.unwrap_or(TRADE_GAS),
             interactions: quote
                 .interactions
                 .into_iter()
@@ -183,7 +183,7 @@ mod dto {
         pub amount: U256,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
-        pub gas_used: Option<u64>,
+        pub gas: Option<u64>,
     }
 
     #[serde_as]

@@ -292,7 +292,7 @@ components:
             solver:
               description: The address of the solver that quoted this order.
               $ref: "#/components/schemas/Address"
-            gasUsed:
+            gas:
               type: integer
               description: How many units of gas this trade is estimated to cost.
         - $ref: "#/components/schemas/Error"
@@ -382,7 +382,7 @@ components:
             type: object
             additionalProperties:
               $ref: "#/components/schemas/BigUint"
-          gasUsed:
+          gas:
             type: integer
             description: How many units of gas this solution is estimated to cost.
     Solution:

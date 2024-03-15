@@ -50,7 +50,7 @@ impl Solution {
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
-            gas_used: solved.gas_used.map(|gas| gas.0.as_u64()),
+            gas: solved.gas.map(|gas| gas.0.as_u64()),
         }
     }
 }
@@ -84,5 +84,5 @@ pub struct Solution {
     orders: HashMap<OrderId, TradedAmounts>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     clearing_prices: HashMap<eth::H160, eth::U256>,
-    gas_used: Option<u64>,
+    gas: Option<u64>,
 }

@@ -842,6 +842,6 @@ components:
                     The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
                   type: number
                   example: 0.9
-        gasUsed:
+        gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
