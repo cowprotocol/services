@@ -131,8 +131,12 @@ impl Trade {
         })
     }
 
-    fn adjusted_order_limits(&self) -> Result<(eth::U256, eth::U256), Error> {
-        match self.policies.first() {
+    /// Surplus based on custom clearing prices returns the surplus after all
+    /// fees have been applied.
+    ///
+    /// Denominated in NATIVE token
+    fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+        let (limit_sell_amount, limit_buy_amount) = match self.policies.first() {
             Some(order::FeePolicy::PriceImprovement {
                 factor: _,
                 max_volume_factor: _,
@@ -148,18 +152,9 @@ impl Trade {
                     buy_amount: quote.buy.amount.0,
                     fee_amount: quote.fee.amount.0,
                 },
-            )
-            .map_err(|e| e.into()),
-            _ => Ok((self.sell.amount.0, self.buy.amount.0)),
-        }
-    }
-
-    /// Surplus based on custom clearing prices returns the surplus after all
-    /// fees have been applied.
-    ///
-    /// Denominated in NATIVE token
-    fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let (limit_sell_amount, limit_buy_amount) = self.adjusted_order_limits()?;
+            )?,
+            _ => (self.sell.amount.0, self.buy.amount.0),
+        };
         let surplus = self
             .surplus_over_limit_price(limit_sell_amount, limit_buy_amount)
             .ok_or(Error::Surplus(self.sell, self.buy))?;
@@ -184,17 +179,31 @@ impl Trade {
                 factor,
                 max_volume_factor,
             } => Ok(std::cmp::min(
-                self.fee_from_surplus(factor)?,
+                self.fee_from_surplus(self.sell.amount.0, self.buy.amount.0, factor)?,
                 self.fee_from_volume(max_volume_factor)?,
             )),
             order::FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
-                quote: _,
-            } => Ok(std::cmp::min(
-                self.fee_from_surplus(factor)?,
-                self.fee_from_volume(max_volume_factor)?,
-            )),
+                quote,
+            } => {
+                let (limit_sell_amount, limit_buy_amount) = adjust_quote_to_order_limits(
+                    fee::Order {
+                        sell_amount: self.sell.amount.0,
+                        buy_amount: self.buy.amount.0,
+                        side: self.side,
+                    },
+                    fee::Quote {
+                        sell_amount: quote.sell.amount.0,
+                        buy_amount: quote.buy.amount.0,
+                        fee_amount: quote.fee.amount.0,
+                    },
+                )?;
+                Ok(std::cmp::min(
+                    self.fee_from_surplus(limit_sell_amount, limit_buy_amount, factor)?,
+                    self.fee_from_volume(max_volume_factor)?,
+                ))
+            }
             order::FeePolicy::Volume { factor: _ } => Err(Error::UnimplementedFeePolicy),
         };
 
@@ -234,10 +243,14 @@ impl Trade {
             .ok_or(Error::Factor(executed_in_surplus_token, factor))
     }
 
-    fn fee_from_surplus(&self, factor: &f64) -> Result<TokenAmount, Error> {
+    fn fee_from_surplus(
+        &self,
+        limit_sell_amount: eth::U256,
+        limit_buy_amount: eth::U256,
+        factor: &f64,
+    ) -> Result<TokenAmount, Error> {
         // If the surplus after all fees is X, then the original surplus before
         // protocol fee is X / (1 - factor)
-        let (limit_sell_amount, limit_buy_amount) = self.adjusted_order_limits()?;
         let surplus = self
             .surplus_over_limit_price(limit_sell_amount, limit_buy_amount)
             .ok_or(Error::Surplus(self.sell, self.buy))?
