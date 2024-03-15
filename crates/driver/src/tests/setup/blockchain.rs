@@ -6,7 +6,7 @@ use {
             eth::{self, ContractAddress},
         },
         infra::time,
-        tests::{self, boundary},
+        tests::{self, boundary, cases::EtherExt},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
@@ -61,7 +61,7 @@ pub struct Pool {
 impl Pool {
     /// Use the Uniswap constant AMM formula to calculate the output amount
     /// based on the input.
-    fn out(&self, input: Asset) -> eth::U256 {
+    pub fn out_given_in(&self, input: Asset) -> eth::U256 {
         let (input_reserve, output_reserve) = if input.token == self.reserve_a.token {
             (self.reserve_a.amount, self.reserve_b.amount)
         } else {
@@ -69,6 +69,20 @@ impl Pool {
         };
         output_reserve * input.amount * eth::U256::from(997)
             / (input_reserve * eth::U256::from(1000) + input.amount * eth::U256::from(997))
+    }
+
+    /// Use the Uniswap constant AMM formula to calculate the input amount
+    /// based on the output.
+    pub fn in_given_out(&self, output: Asset) -> eth::U256 {
+        let (input_reserve, output_reserve) = if output.token == self.reserve_b.token {
+            (self.reserve_a.amount, self.reserve_b.amount)
+        } else {
+            (self.reserve_b.amount, self.reserve_a.amount)
+        };
+
+        ((input_reserve * output.amount * eth::U256::from(1000))
+            / ((output_reserve - output.amount) * eth::U256::from(997)))
+            + 1
     }
 }
 
@@ -81,6 +95,7 @@ pub struct Solution {
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
     pub quoted_order: QuotedOrder,
+    pub execution: Execution,
     pub interactions: Vec<Interaction>,
 }
 
@@ -88,6 +103,13 @@ pub struct Fulfillment {
 #[derive(Debug, Clone)]
 pub struct QuotedOrder {
     pub order: Order,
+    pub buy: eth::U256,
+    pub sell: eth::U256,
+}
+
+/// An execution of a trade with buy and sell amounts
+#[derive(Debug, Clone)]
+pub struct Execution {
     pub buy: eth::U256,
     pub sell: eth::U256,
 }
@@ -523,20 +545,41 @@ impl Blockchain {
             .expect("could not find uniswap pair for order")
     }
 
-    /// Quote an order using a UniswapV2 pool. This determines the buy and sell
-    /// amount of the order.
-    pub async fn quote(&self, order: &Order) -> QuotedOrder {
-        let pair = self.find_pair(order);
+    /// Quote an order using a UniswapV2 pool unless it already has concrete
+    /// amounts. This determines the buy and sell amount of the
+    /// order in the auction.
+    pub fn quote(&self, order: &Order) -> QuotedOrder {
         let executed_sell = order.sell_amount;
-        let executed_buy = pair.pool.out(Asset {
-            amount: order.sell_amount,
-            token: order.sell_token,
-        });
+        let executed_buy = order.buy_amount.unwrap_or(self.execution(order).buy);
         QuotedOrder {
             order: order.clone(),
             buy: executed_buy,
             sell: executed_sell,
         }
+    }
+
+    /// Compute the execution of an order given the available liquidity
+    pub fn execution(&self, order: &Order) -> Execution {
+        let pair = self.find_pair(order);
+        let (sell, buy) = match (order.side, order.buy_amount) {
+            // For buy order with explicitly specified amounts, use the buy amount
+            (order::Side::Buy, Some(buy_amount)) => (
+                pair.pool.in_given_out(Asset {
+                    amount: buy_amount,
+                    token: order.buy_token,
+                }),
+                buy_amount,
+            ),
+            // Otherwise assume the full sell amount to compute the execution
+            (_, _) => (
+                order.sell_amount,
+                pair.pool.out_given_in(Asset {
+                    amount: order.sell_amount,
+                    token: order.sell_token,
+                }),
+            ),
+        };
+        Execution { sell, buy }
     }
 
     /// Set up the blockchain context and return the interactions needed to
@@ -554,7 +597,7 @@ impl Blockchain {
             let buy_token =
                 contracts::ERC20::at(&self.web3, self.get_token_wrapped(order.buy_token));
             let pair = self.find_pair(order);
-            let quote = self.quote(order).await;
+            let execution = self.execution(order);
 
             // Fund the trader account with tokens needed for the solution.
             let trader_account = ethcontract::Account::Offline(
@@ -571,7 +614,7 @@ impl Blockchain {
                         .unwrap()
                         .mint(
                             self.trader_address,
-                            eth::U256::from(100000000000u64) * quote.sell + order.user_fee,
+                            "1e-7".ether().into_wei() * execution.sell + order.user_fee,
                         )
                         .from(trader_account.clone())
                         .send(),
@@ -596,16 +639,16 @@ impl Blockchain {
 
             // Create the interactions fulfilling the order.
             let transfer_interaction = sell_token
-                .transfer(pair.contract.address(), quote.sell)
+                .transfer(pair.contract.address(), execution.sell)
                 .tx
                 .data
                 .unwrap()
                 .0;
             let (amount_a_out, amount_b_out) = if pair.token_a == order.sell_token {
-                (0.into(), quote.buy)
+                (0.into(), execution.buy)
             } else {
                 // Surplus fees stay in the contract.
-                (quote.sell - quote.order.surplus_fee(), 0.into())
+                (execution.sell - order.surplus_fee(), 0.into())
             };
             let (amount_0_out, amount_1_out) =
                 if self.get_token(pair.token_a) < self.get_token(pair.token_b) {
@@ -626,7 +669,8 @@ impl Blockchain {
                 .unwrap()
                 .0;
             fulfillments.push(Fulfillment {
-                quoted_order: quote.clone(),
+                quoted_order: self.quote(order),
+                execution: execution.clone(),
                 interactions: vec![
                     Interaction {
                         address: sell_token.address(),
@@ -652,11 +696,11 @@ impl Blockchain {
                         inputs: vec![eth::Asset {
                             token: sell_token.address().into(),
                             // Surplus fees stay in the contract.
-                            amount: (quote.sell - quote.order.surplus_fee()).into(),
+                            amount: (execution.sell - order.surplus_fee()).into(),
                         }],
                         outputs: vec![eth::Asset {
                             token: buy_token.address().into(),
-                            amount: quote.buy.into(),
+                            amount: execution.buy.into(),
                         }],
                         internalize: order.internalize,
                     },

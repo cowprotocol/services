@@ -1,6 +1,6 @@
 use crate::tests::{
-    setup,
-    setup::{ab_order, ab_pool, ab_solution, cd_order, cd_pool, cd_solution, Solution},
+    cases::EtherExt,
+    setup::{self, ab_order, ab_pool, ab_solution, cd_order, cd_pool, cd_solution, Solution, Test},
 };
 
 /// Test that settlements can be merged.
@@ -9,7 +9,7 @@ use crate::tests::{
 async fn possible() {
     let ab_order = ab_order();
     let cd_order = cd_order();
-    let test = setup()
+    let test: Test = setup::setup()
         .pool(cd_pool())
         .pool(ab_pool())
         .order(ab_order.clone())
@@ -38,10 +38,10 @@ async fn possible() {
 #[ignore]
 async fn impossible() {
     let order = ab_order();
-    let test = setup()
+    let test = setup::setup()
         .pool(ab_pool())
         .order(order.clone())
-        .order(order.clone().rename("reduced order").reduce_amount(1000000000000000u128.into()))
+        .order(order.clone().rename("reduced order").reduce_amount("1e-3".ether().into_wei()))
         // These two solutions result in different clearing prices (due to different surplus),
         // so they can't be merged.
         .solution(ab_solution())
