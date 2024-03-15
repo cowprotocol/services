@@ -81,14 +81,6 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        tracing::info!(
-            "newlog self.native_surplus(prices)={:?}",
-            self.native_surplus(prices)
-        );
-        tracing::info!(
-            "newlog self.native_protocol_fee(prices)={:?}",
-            self.native_protocol_fee(prices)
-        );
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
@@ -164,7 +156,6 @@ impl Trade {
         let surplus = self
             .surplus_over_limit_price(limit_sell_amount, limit_buy_amount)
             .ok_or(Error::Surplus(self.sell, self.buy))?;
-        tracing::info!("newlog surplus={:?}", surplus);
         let price = prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
