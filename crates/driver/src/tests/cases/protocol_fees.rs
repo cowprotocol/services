@@ -53,11 +53,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     let solver_fee = test_case.execution.driver.sell / 100;
     let executed = match test_case.order.side {
         order::Side::Buy => {
-            if test_case.order.buy_amount > test_case.execution.solver.buy {
-                Some(test_case.execution.solver.buy)
-            } else {
-                None
-            }
+            (test_case.order.buy_amount > test_case.execution.solver.buy).then_some(test_case.execution.solver.buy)
         }
         order::Side::Sell => {
             if test_case.order.sell_amount > test_case.execution.solver.sell {
