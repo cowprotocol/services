@@ -211,7 +211,7 @@ pub fn adjust_quote_to_order_limits(
     quote_sell_amount: eth::U256,
     quote_buy_amount: eth::U256,
     quote_fee_amount: eth::U256,
-) -> Result<(eth::U256, eth::U256), Error> {
+) -> Result<(eth::U256, eth::U256), Math> {
     let quote_sell_amount = quote_sell_amount
         .checked_add(quote_fee_amount)
         .ok_or(Math::Overflow)?;
