@@ -86,7 +86,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 #[ignore]
 async fn surplus_protocol_fee_buy_order_not_capped() {
     let fee_policy = Policy::Surplus {
-        factor: 0.5,
+        factor: 0.2,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
@@ -98,14 +98,14 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
+            // 10 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
             solver: Amounts {
-                sell: 30.ether().into_wei(),
+                sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 40.ether().into_wei(),
+                sell: 42.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
         },
@@ -118,7 +118,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
 #[ignore]
 async fn surplus_protocol_fee_sell_order_not_capped() {
     let fee_policy = Policy::Surplus {
-        factor: 0.5,
+        factor: 0.4,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
@@ -130,14 +130,14 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 20 ETH surplus, half of which gets captured by the protocol
+            // 10 ETH surplus, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
-                buy: 60.ether().into_wei(),
+                buy: 50.ether().into_wei(),
             },
             driver: Amounts {
                 sell: 50.ether().into_wei(),
-                buy: 50.ether().into_wei(),
+                buy: 46.ether().into_wei(),
             },
         },
     };
@@ -262,7 +262,7 @@ async fn volume_protocol_fee_sell_order() {
 #[ignore]
 async fn price_improvement_fee_buy_in_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
-        factor: 0.5,
+        factor: 0.2,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
         quote: Quote {
@@ -286,7 +286,7 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 45.ether().into_wei(),
+                sell: 42.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
         },
@@ -299,12 +299,12 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
 #[ignore]
 async fn price_improvement_fee_sell_in_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
-        factor: 0.5,
+        factor: 0.4,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
         quote: Quote {
             sell: 49.ether().into_wei(),
-            buy: 50.ether().into_wei(),
+            buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
         },
     };
@@ -313,18 +313,18 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
-            buy_amount: 40.ether().into_wei(),
+            buy_amount: 30.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
             // Receive 10 ETH more than quoted, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
-                buy: 60.ether().into_wei(),
+                buy: 50.ether().into_wei(),
             },
             driver: Amounts {
                 sell: 50.ether().into_wei(),
-                buy: 55.ether().into_wei(),
+                buy: 46.ether().into_wei(),
             },
         },
     };
