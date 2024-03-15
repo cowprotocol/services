@@ -579,7 +579,7 @@ fn to_domain_solution(
                 return Err(anyhow::anyhow!("solvers not allowed to use surplus score"))
             }
         },
-        gas_used: eth::Gas(290_000.into()),
+        gas_used: None,
     })
 }
 

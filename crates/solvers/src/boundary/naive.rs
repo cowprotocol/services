@@ -138,10 +138,7 @@ pub fn solve(
                 )
             })
             .collect(),
-        gas_used: match swap {
-            Some(_) => liquidity.gas,
-            None => eth::Gas(0.into()),
-        },
+        gas_used: None,
         interactions: swap
             .into_iter()
             .map(|(input, output)| {
