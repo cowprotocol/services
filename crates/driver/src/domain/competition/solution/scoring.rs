@@ -1,3 +1,11 @@
+//! Scoring of a solution.
+//!
+//! Scoring is done on a solution that is identical to the one that will appear
+//! onchain. This means that all fees are already applied to the trades and the
+//! executed amounts are adjusted to account for all fees (gas cost and protocol
+//! fees). No further changes are expected to be done on solution by the driver
+//! after scoring.
+
 use {
     super::{
         error::Math,
@@ -146,65 +154,122 @@ impl Trade {
             return Err(Error::MultipleFeePolicies);
         }
 
-        let protocol_fee = |policy: &order::FeePolicy| {
-            match policy {
-                order::FeePolicy::Surplus {
-                    factor,
-                    max_volume_factor,
-                } => Ok(std::cmp::min(
-                    {
-                        // If the surplus after all fees is X, then the original surplus before
-                        // protocol fee is X / (1 - factor)
-                        let surplus = self
-                            .surplus()
-                            .ok_or(Error::Surplus(self.sell, self.buy))?
-                            .amount;
-                        surplus
-                            .apply_factor(factor / (1.0 - factor))
-                            .ok_or(Error::Factor(surplus, *factor))?
-                    },
-                    {
-                        // Convert the executed amount to surplus token so it can be compared
-                        // with the surplus
-                        let executed_in_surplus_token: eth::TokenAmount = match self.side {
-                            Side::Sell => self
-                                .executed
-                                .0
-                                .checked_mul(self.custom_price.sell)
-                                .ok_or(Math::Overflow)?
-                                .checked_div(self.custom_price.buy)
-                                .ok_or(Math::DivisionByZero)?,
-                            Side::Buy => self
-                                .executed
-                                .0
-                                .checked_mul(self.custom_price.buy)
-                                .ok_or(Math::Overflow)?
-                                .checked_div(self.custom_price.sell)
-                                .ok_or(Math::DivisionByZero)?,
-                        }
-                        .into();
-                        let factor = match self.side {
-                            Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
-                            Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
-                        };
-                        executed_in_surplus_token
-                            .apply_factor(factor)
-                            .ok_or(Error::Factor(executed_in_surplus_token, factor))?
-                    },
-                )),
-                order::FeePolicy::PriceImprovement {
-                    factor: _,
-                    max_volume_factor: _,
-                    quote: _,
-                } => Err(Error::UnimplementedFeePolicy),
-                order::FeePolicy::Volume { factor: _ } => Err(Error::UnimplementedFeePolicy),
+        let protocol_fee = |policy: &order::FeePolicy| match policy {
+            order::FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => {
+                let fee = std::cmp::min(
+                    self.surplus_fee(*factor)?.amount,
+                    self.volume_fee(*max_volume_factor)?.amount,
+                );
+                Ok(fee)
             }
+            order::FeePolicy::PriceImprovement {
+                factor: _,
+                max_volume_factor: _,
+                quote: _,
+            } => Err(Error::UnimplementedFeePolicy),
+            order::FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
         };
 
         let protocol_fee = self.policies.first().map(protocol_fee).transpose();
         Ok(eth::Asset {
             token: self.surplus_token(),
             amount: protocol_fee?.unwrap_or(0.into()),
+        })
+    }
+
+    /// Protocol fee as a cut of surplus, denominated in SURPLUS token
+    fn surplus_fee(&self, factor: f64) -> Result<eth::Asset, Error> {
+        // Surplus fee is specified as a `factor` from raw surplus (before fee). Since
+        // this module works with trades that already have the protocol fee applied, we
+        // need to calculate the protocol fee as an observation of the eventually traded
+        // amounts using a different factor `factor'` .
+        //
+        // The protocol fee before being applied is:
+        //    fee = surplus_before_fee * factor
+        // The protocol fee after being applied is:
+        //    fee = surplus_after_fee * factor'
+        // Also:
+        //    surplus_after_fee = surplus_before_fee - fee
+        // So:
+        //    factor' = fee / surplus_after_fee = fee / (surplus_before_fee -
+        // fee) = fee / ((fee / factor) - fee) = factor / (1 - factor)
+        //
+        // Finally:
+        //     fee = surplus_after_fee * factor / (1 - factor)
+        let surplus = self.surplus().ok_or(Error::Surplus(self.sell, self.buy))?;
+        let fee = surplus
+            .amount
+            .apply_factor(factor / (1.0 - factor))
+            .ok_or(Math::Overflow)?;
+
+        Ok(eth::Asset {
+            token: surplus.token,
+            amount: fee,
+        })
+    }
+
+    /// Protocol fee as a cut of the trade volume, denominated in SURPLUS token
+    fn volume_fee(&self, factor: f64) -> Result<eth::Asset, Error> {
+        // Volume fee is specified as a `factor` from raw volume (before fee). Since
+        // this module works with trades that already have the protocol fee applied, we
+        // need to calculate the protocol fee as an observation of a the eventually
+        // traded amount using a different factor `factor'` .
+        //
+        // The protocol fee before being applied is:
+        // case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
+        // buy amount
+        // case Buy: fee = traded_sell_amount * factor, resulting in the INCREASED
+        // sell amount
+        //
+        // The protocol fee after being applied is:
+        // case Sell: fee = traded_buy_amount' * factor',
+        // case Buy: fee = traded_sell_amount' * factor',
+        //
+        // Also:
+        // case Sell: traded_buy_amount' = traded_buy_amount - fee
+        // case Buy: traded_sell_amount' = traded_sell_amount + fee
+        //
+        // So:
+        // case Sell: factor' = fee / (traded_buy_amount - fee) = fee / (fee /
+        // factor - fee) = factor / (1 - factor)
+        // case Buy: factor' = fee / (traded_sell_amount + fee) = fee / (fee /
+        // factor + fee) = factor / (1 + factor)
+        //
+        // Finally:
+        // case Sell: fee = traded_buy_amount' * factor / (1 - factor)
+        // case Buy: fee = traded_sell_amount' * factor / (1 + factor)
+        let executed_in_surplus_token: eth::TokenAmount = match self.side {
+            Side::Sell => self
+                .executed
+                .0
+                .checked_mul(self.custom_price.sell)
+                .ok_or(Math::Overflow)?
+                .checked_div(self.custom_price.buy)
+                .ok_or(Math::DivisionByZero)?,
+            Side::Buy => self
+                .executed
+                .0
+                .checked_mul(self.custom_price.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(self.custom_price.sell)
+                .ok_or(Math::DivisionByZero)?,
+        }
+        .into();
+        let factor = match self.side {
+            Side::Sell => factor / (1.0 - factor),
+            Side::Buy => factor / (1.0 + factor),
+        };
+
+        Ok(eth::Asset {
+            token: self.surplus_token(),
+            amount: {
+                executed_in_surplus_token
+                    .apply_factor(factor)
+                    .ok_or(Math::Overflow)?
+            },
         })
     }
 
@@ -250,8 +315,6 @@ pub enum Error {
     Surplus(eth::Asset, eth::Asset),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
-    #[error("factor {1} multiplication with {0} failed")]
-    Factor(eth::TokenAmount, f64),
     #[error(transparent)]
     Math(#[from] Math),
 }
