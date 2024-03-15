@@ -204,7 +204,7 @@ impl Fulfillment {
 /// - test_adjust_quote_to_out_market_buy_order_limits
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
-fn adjust_quote_to_order_limits(
+pub fn adjust_quote_to_order_limits(
     order_sell_amount: eth::U256,
     order_buy_amount: eth::U256,
     order_side: Side,

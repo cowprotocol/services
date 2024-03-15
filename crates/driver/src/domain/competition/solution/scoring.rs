@@ -3,7 +3,10 @@ use {
         error::Math,
         order::{self, Side},
     },
-    crate::domain::{competition::auction, eth},
+    crate::domain::{
+        competition::{auction, solution::fee::adjust_quote_to_order_limits},
+        eth,
+    },
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -86,15 +89,26 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     fn surplus(&self) -> Option<eth::Asset> {
+        let (sell_amount, buy_amount) = match self.policies.first() {
+            Some(order::FeePolicy::PriceImprovement {
+                factor: _,
+                max_volume_factor: _,
+                quote,
+            }) => adjust_quote_to_order_limits(
+                self.sell.amount.0,
+                self.buy.amount.0,
+                self.side,
+                quote.sell.amount.0,
+                quote.buy.amount.0,
+                quote.fee.amount.0,
+            )
+            .unwrap(),
+            _ => (self.sell.amount.0, self.buy.amount.0),
+        };
         match self.side {
             Side::Buy => {
                 // scale limit sell to support partially fillable orders
-                let limit_sell = self
-                    .sell
-                    .amount
-                    .0
-                    .checked_mul(self.executed.into())?
-                    .checked_div(self.buy.amount.into())?;
+                let limit_sell = sell_amount.checked_mul(self.executed.into())?.checked_div(buy_amount)?;
                 // difference between limit sell and executed amount converted to sell token
                 limit_sell.checked_sub(
                     self.executed
@@ -105,11 +119,7 @@ impl Trade {
             }
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
-                let limit_buy = self
-                    .executed
-                    .0
-                    .checked_mul(self.buy.amount.into())?
-                    .checked_div(self.sell.amount.into())?;
+                let limit_buy = self.executed.0.checked_mul(buy_amount)?.checked_div(sell_amount)?;
                 // difference between executed amount converted to buy token and limit buy
                 self.executed
                     .0
@@ -193,10 +203,50 @@ impl Trade {
                     },
                 )),
                 order::FeePolicy::PriceImprovement {
-                    factor: _,
-                    max_volume_factor: _,
+                    factor,
+                    max_volume_factor,
                     quote: _,
-                } => Err(Error::UnimplementedFeePolicy),
+                } => Ok(std::cmp::min(
+                    {
+                        // If the surplus after all fees is X, then the original surplus before
+                        // protocol fee is X / (1 - factor)
+                        let surplus = self
+                            .surplus()
+                            .ok_or(Error::Surplus(self.sell, self.buy))?
+                            .amount;
+                        surplus
+                            .apply_factor(factor / (1.0 - factor))
+                            .ok_or(Error::Factor(surplus, *factor))?
+                    },
+                    {
+                        // Convert the executed amount to surplus token so it can be compared
+                        // with the surplus
+                        let executed_in_surplus_token: eth::TokenAmount = match self.side {
+                            Side::Sell => self
+                                .executed
+                                .0
+                                .checked_mul(self.custom_price.sell)
+                                .ok_or(Math::Overflow)?
+                                .checked_div(self.custom_price.buy)
+                                .ok_or(Math::DivisionByZero)?,
+                            Side::Buy => self
+                                .executed
+                                .0
+                                .checked_mul(self.custom_price.buy)
+                                .ok_or(Math::Overflow)?
+                                .checked_div(self.custom_price.sell)
+                                .ok_or(Math::DivisionByZero)?,
+                        }
+                        .into();
+                        let factor = match self.side {
+                            Side::Sell => max_volume_factor / (1.0 - max_volume_factor),
+                            Side::Buy => max_volume_factor / (1.0 + max_volume_factor),
+                        };
+                        executed_in_surplus_token
+                            .apply_factor(factor)
+                            .ok_or(Error::Factor(executed_in_surplus_token, factor))?
+                    },
+                )),
                 order::FeePolicy::Volume { factor: _ } => Err(Error::UnimplementedFeePolicy),
             }
         };
