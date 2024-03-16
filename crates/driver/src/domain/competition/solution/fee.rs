@@ -31,6 +31,7 @@ use {
         competition::{
             order,
             order::{FeePolicy, Side},
+            Amounts,
         },
         eth,
     },
@@ -84,8 +85,10 @@ impl Fulfillment {
                 factor,
                 max_volume_factor,
             }) => self.calculate_fee(
-                self.order().sell.amount.0,
-                self.order().buy.amount.0,
+                Amounts {
+                    sell: self.order().sell.amount,
+                    buy: self.order().buy.amount,
+                },
                 prices,
                 *factor,
                 *max_volume_factor,
@@ -95,7 +98,7 @@ impl Fulfillment {
                 max_volume_factor,
                 quote,
             }) => {
-                let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
+                let limit = adjust_quote_to_order_limits(
                     Order {
                         sell_amount: self.order().sell.amount.0,
                         buy_amount: self.order().buy.amount.0,
@@ -107,7 +110,7 @@ impl Fulfillment {
                         fee_amount: quote.fee.amount.0,
                     },
                 )?;
-                self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
+                self.calculate_fee(limit, prices, *factor, *max_volume_factor)
             }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
@@ -120,14 +123,12 @@ impl Fulfillment {
     /// The protocol fee is computed in surplus token.
     fn calculate_fee(
         &self,
-        limit_sell_amount: eth::U256,
-        limit_buy_amount: eth::U256,
+        limit: Amounts,
         prices: ClearingPrices,
         factor: f64,
         max_volume_factor: f64,
     ) -> Result<eth::TokenAmount, Error> {
-        let fee_from_surplus =
-            self.fee_from_surplus(limit_sell_amount, limit_buy_amount, prices, factor)?;
+        let fee_from_surplus = self.fee_from_surplus(limit.sell.0, limit.buy.0, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
@@ -222,10 +223,7 @@ pub struct Quote {
 /// - test_adjust_quote_to_out_market_buy_order_limits
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
-pub fn adjust_quote_to_order_limits(
-    order: Order,
-    quote: Quote,
-) -> Result<(eth::U256, eth::U256), Math> {
+pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<Amounts, Math> {
     let quote_sell_amount = quote
         .sell_amount
         .checked_add(quote.fee_amount)
@@ -240,7 +238,10 @@ pub fn adjust_quote_to_order_limits(
                 .checked_div(quote_sell_amount)
                 .ok_or(Math::DivisionByZero)?;
             let buy_amount = order.buy_amount.max(scaled_buy_amount);
-            Ok((order.sell_amount, buy_amount))
+            Ok(Amounts {
+                sell: order.sell_amount.into(),
+                buy: buy_amount.into(),
+            })
         }
         Side::Buy => {
             let scaled_sell_amount = quote_sell_amount
@@ -249,7 +250,10 @@ pub fn adjust_quote_to_order_limits(
                 .checked_div(quote.buy_amount)
                 .ok_or(Math::DivisionByZero)?;
             let sell_amount = order.sell_amount.min(scaled_sell_amount);
-            Ok((sell_amount, order.buy_amount))
+            Ok(Amounts {
+                sell: sell_amount.into(),
+                buy: order.buy_amount.into(),
+            })
         }
     }
 }
@@ -283,10 +287,10 @@ mod tests {
             buy_amount: to_wei(18),
             fee_amount: to_wei(1),
         };
-        let (sell_amount, _) = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
 
         assert_eq!(
-            sell_amount, order.sell_amount,
+            limit.sell.0, order.sell_amount,
             "Sell amount should match order sell amount for sell orders."
         );
     }
@@ -304,10 +308,10 @@ mod tests {
             fee_amount: to_wei(1),
         };
 
-        let (_, buy_amount) = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
 
         assert_eq!(
-            buy_amount, order.buy_amount,
+            limit.buy.0, order.buy_amount,
             "Buy amount should match order buy amount for buy orders."
         );
     }
@@ -325,15 +329,14 @@ mod tests {
             fee_amount: to_wei(1),
         };
 
-        let (sell_amount, buy_amount) =
-            adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
-            sell_amount, order.sell_amount,
+            limit.sell.0, order.sell_amount,
             "Sell amount should be taken from the order for sell orders in market price."
         );
         assert_eq!(
-            buy_amount, quote.buy_amount,
+            limit.buy.0, quote.buy_amount,
             "Buy amount should reflect the improved market condition from the quote."
         );
     }
@@ -351,17 +354,16 @@ mod tests {
             fee_amount: to_wei(1),
         };
 
-        let (sell_amount, buy_amount) =
-            adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
-            sell_amount,
+            limit.sell.0,
             quote.sell_amount + quote.fee_amount,
             "Sell amount should reflect the improved market condition from the quote for buy \
              orders."
         );
         assert_eq!(
-            buy_amount, order.buy_amount,
+            limit.buy.0, order.buy_amount,
             "Buy amount should be taken from the order for buy orders in market price."
         );
     }
