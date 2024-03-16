@@ -17,7 +17,7 @@ use {
             solution::{fee, fee::adjust_quote_to_order_limits},
             Amounts,
         },
-        eth::{self, TokenAmount},
+        eth::{self},
     },
 };
 
@@ -193,10 +193,11 @@ impl Trade {
                     sell: self.sell.amount,
                     buy: self.buy.amount,
                 };
-                Ok(std::cmp::min(
-                    self.surplus_fee(limit, factor)?.amount,
-                    self.volume_fee(max_volume_factor)?.amount,
-                ))
+                let fee = std::cmp::min(
+                    self.surplus_fee(limit, *factor)?.amount,
+                    self.volume_fee(*max_volume_factor)?.amount,
+                );
+                Ok::<eth::TokenAmount, Error>(fee)
             }
             order::FeePolicy::PriceImprovement {
                 factor,
@@ -215,10 +216,11 @@ impl Trade {
                         fee_amount: quote.fee.amount.0,
                     },
                 )?;
-                Ok(std::cmp::min(
-                    self.surplus_fee(limit, factor)?.amount,
-                    self.volume_fee(max_volume_factor)?.amount,
-                ))
+                let fee = std::cmp::min(
+                    self.surplus_fee(limit, *factor)?.amount,
+                    self.volume_fee(*max_volume_factor)?.amount,
+                );
+                Ok(fee)
             }
             order::FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
         };
@@ -309,7 +311,7 @@ impl Trade {
                 .checked_div(self.custom_price.sell)
                 .ok_or(Math::DivisionByZero)?,
         }
-            .into();
+        .into();
         let factor = match self.side {
             Side::Sell => factor / (1.0 - factor),
             Side::Buy => factor / (1.0 + factor),
