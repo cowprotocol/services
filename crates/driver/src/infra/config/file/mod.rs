@@ -87,9 +87,6 @@ struct SubmissionConfig {
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
-
-    #[serde(default)]
-    logic: Logic,
 }
 
 #[serde_as]
