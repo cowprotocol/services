@@ -119,7 +119,7 @@ impl Competition {
                 result
                     .tap_err(|err| {
                         observe::encoding_failed(self.solver.name(), &id, err);
-                        notify::encoding_failed(&self.solver, auction.id(), id, err);
+                        notify::encoding_failed(&self.solver, auction.id(), &id, err);
                     })
                     .ok()
             });
@@ -166,7 +166,7 @@ impl Competition {
                         notify::scoring_failed(
                             &self.solver,
                             auction.id(),
-                            settlement.notify_id(),
+                            settlement.solution(),
                             err,
                         );
                     })
@@ -219,15 +219,13 @@ impl Competition {
                         observe::winner_voided(block, &err);
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
-                        if let Some(id) = settlement.notify_id() {
-                            notify::simulation_failed(
-                                &self.solver,
-                                auction.id(),
-                                id,
-                                &infra::simulator::Error::Revert(err),
-                                true,
-                            );
-                        }
+                        notify::simulation_failed(
+                            &self.solver,
+                            auction.id(),
+                            settlement.solution(),
+                            &infra::simulator::Error::Revert(err),
+                            true,
+                        );
                         return;
                     }
                 }
@@ -276,7 +274,7 @@ impl Competition {
         notify::executed(
             &self.solver,
             settlement.auction_id,
-            settlement.notify_id(),
+            settlement.solution(),
             &executed,
         );
 

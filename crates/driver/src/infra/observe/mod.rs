@@ -133,7 +133,7 @@ pub fn not_merged(first: &Solution, other: &Solution, err: solution::error::Merg
 /// Observe that scoring is about to start.
 pub fn scoring(settlement: &Settlement) {
     tracing::trace!(
-        solutions = ?settlement.solutions(),
+        solution = ?settlement.solution(),
         gas = ?settlement.gas,
         "scoring settlement"
     );
@@ -151,7 +151,7 @@ pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
 /// Observe the settlement score.
 pub fn score(settlement: &Settlement, score: &competition::Score) {
     tracing::info!(
-        solutions = ?settlement.solutions(),
+        solution = ?settlement.solution(),
         score = ?score,
         "scored settlement"
     );

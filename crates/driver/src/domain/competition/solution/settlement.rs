@@ -10,7 +10,7 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
     },
     futures::future::try_join_all,
-    std::collections::{BTreeSet, HashMap, HashSet},
+    std::collections::{BTreeSet, HashMap},
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -42,8 +42,7 @@ pub struct Settlement {
     pub access_list: eth::AccessList,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
-    /// See the [`Settlement::solutions`] method.
-    solutions: HashMap<solution::Id, Solution>,
+    solution: Solution,
 }
 
 impl Settlement {
@@ -73,20 +72,13 @@ impl Settlement {
 
         // Encode the solution into a settlement.
         let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-        Self::new(
-            auction.id().unwrap(),
-            [(solution.id.clone(), solution)].into(),
-            boundary,
-            eth,
-            simulator,
-        )
-        .await
+        Self::new(auction.id().unwrap(), solution, boundary, eth, simulator).await
     }
 
     /// Create a new settlement and ensure that it is valid.
     async fn new(
         auction_id: auction::Id,
-        solutions: HashMap<solution::Id, Solution>,
+        solution: Solution,
         settlement: boundary::Settlement,
         eth: &Ethereum,
         simulator: &Simulator,
@@ -102,10 +94,7 @@ impl Settlement {
         // The solution is to do access list estimation in two steps: first, simulate
         // moving 1 wei into every smart contract to get a partial access list, and then
         // use that partial access list to calculate the final access list.
-        let user_trades = solutions
-            .values()
-            .flat_map(|solution| solution.user_trades());
-        let partial_access_lists = try_join_all(user_trades.map(|trade| async {
+        let partial_access_lists = try_join_all(solution.user_trades().map(|trade| async {
             if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
                 return Ok(Default::default());
             }
@@ -144,9 +133,9 @@ impl Settlement {
         }
 
         // Is at least one interaction internalized?
-        if solutions
-            .values()
-            .flat_map(|solution| solution.interactions.iter())
+        if solution
+            .interactions()
+            .iter()
             .any(|interaction| interaction.internalize())
         {
             // Some rules which are enforced by the settlement contract for non-internalized
@@ -168,7 +157,7 @@ impl Settlement {
 
         Ok(Self {
             auction_id,
-            solutions,
+            solution,
             boundary: settlement,
             access_list,
             gas,
@@ -221,12 +210,7 @@ impl Settlement {
     ) -> Result<eth::Ether, solution::error::Scoring> {
         let prices = auction.prices();
 
-        self.solutions
-            .values()
-            .map(|solution| solution.scoring(&prices))
-            .try_fold(eth::Ether(0.into()), |acc, score| {
-                score.map(|score| acc + score)
-            })
+        self.solution.scoring(&prices)
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
@@ -239,7 +223,7 @@ impl Settlement {
     ) -> Result<competition::Score, score::Error> {
         // For testing purposes, calculate CIP38 even before activation
         let score = self.cip38_score(auction);
-        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solutions());
+        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solution);
 
         let score = match self.boundary.score() {
             competition::SolverScore::Solver(score) => {
@@ -281,11 +265,9 @@ impl Settlement {
         Ok(score)
     }
 
-    /// The solutions encoded in this settlement. This is a [`HashSet`] because
-    /// multiple solutions can be encoded in a single settlement due to
-    /// merging. See [`Self::merge`].
-    pub fn solutions(&self) -> HashSet<super::Id> {
-        self.solutions.keys().cloned().collect()
+    /// The solution encoded in this settlement.
+    pub fn solution(&self) -> &super::Id {
+        self.solution.id()
     }
 
     /// Address of the solver which generated this settlement.
@@ -295,47 +277,32 @@ impl Settlement {
 
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
-        self.solutions
-            .values()
-            .fold(Default::default(), |mut acc, solution| {
-                for trade in solution.user_trades() {
-                    let order = acc.entry(trade.order().uid).or_default();
-                    let prices = ClearingPrices {
-                        sell: solution.prices
-                            [&trade.order().sell.token.wrap(solution.weth)],
-                        buy: solution.prices
-                            [&trade.order().buy.token.wrap(solution.weth)],
-                    };
-                    order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
+        let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
+        for trade in self.solution.user_trades() {
+            let order = acc.entry(trade.order().uid).or_default();
+            let prices = ClearingPrices {
+                sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
+                buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
+            };
+            order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute sell_amount");
+                        tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
                         0.into()
                     });
-                    order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
+            order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute buy_amount");
+                        tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
                         0.into()
                     });
-                }
-                acc
-            })
+        }
+        acc
     }
 
     /// The uniform price vector this settlement proposes
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.boundary.clearing_prices()
-    }
-
-    /// Settlements have valid notify ID only if they are originated from a
-    /// single solution. Otherwise, for merged settlements, no notifications
-    /// are sent, therefore, notify id is None.
-    pub fn notify_id(&self) -> Option<super::Id> {
-        match self.solutions.len() {
-            1 => self.solutions.keys().next().cloned(),
-            _ => None,
-        }
     }
 }
 
