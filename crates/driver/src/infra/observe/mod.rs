@@ -126,7 +126,7 @@ pub fn merged(first: &Solution, other: &Solution, result: &Solution) {
 }
 
 /// Observe that it was not possible to merge two solutions.
-pub fn not_merged(first: &Solution, other: &Solution, err: solution::MergeError) {
+pub fn not_merged(first: &Solution, other: &Solution, err: solution::error::Merge) {
     tracing::debug!(?err, ?first, ?other, "solutions can't be merged");
 }
 

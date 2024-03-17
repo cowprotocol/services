@@ -211,23 +211,23 @@ impl Solution {
         self.user_trades().next().is_none()
     }
 
-    pub fn merge(&self, other: &Self) -> Result<Self, MergeError> {
+    pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
         // We can only merge solutions from the same solver
         if self.solver.account().address() != other.solver.account().address() {
-            return Err(MergeError::Incompatible("Solvers"));
+            return Err(error::Merge::Incompatible("Solvers"));
         }
 
         // Solutions should not settle the same order twice
         let uids: HashSet<_> = self.user_trades().map(|t| t.order().uid).collect();
         let other_uids: HashSet<_> = other.user_trades().map(|t| t.order().uid).collect();
         if !uids.is_disjoint(&other_uids) {
-            return Err(MergeError::DuplicateTrade);
+            return Err(error::Merge::DuplicateTrade);
         }
 
         // Solution prices need to be congruent, i.e. there needs to be a unique factor
         // to scale all common tokens from one solution into the other.
         let factor =
-            scaling_factor(&self.prices, &other.prices).ok_or(MergeError::IncongruentPrices)?;
+            scaling_factor(&self.prices, &other.prices).ok_or(error::Merge::IncongruentPrices)?;
 
         // To avoid precision issues, make sure we always scale up settlements
         if factor < BigRational::one() {
@@ -240,13 +240,13 @@ impl Solution {
             let scaled = number::conversions::big_rational_to_u256(
                 &(number::conversions::u256_to_big_rational(price) * &factor),
             )
-            .map_err(MergeError::Math)?;
+            .map_err(error::Merge::Math)?;
             match prices.entry(*token) {
                 Entry::Occupied(entry) => {
                     // This shouldn't fail unless there are rounding errors given that the scaling
                     // factor is unique
                     if *entry.get() != scaled {
-                        return Err(MergeError::IncongruentPrices);
+                        return Err(error::Merge::IncongruentPrices);
                     }
                 }
                 Entry::Vacant(entry) => {
@@ -264,7 +264,7 @@ impl Solution {
             solver: self.solver.clone(),
             score: match self.score.merge(&other.score) {
                 Some(score) => score,
-                None => return Err(MergeError::Incompatible("Scores")),
+                None => return Err(error::Merge::Incompatible("Scores")),
             },
             weth: self.weth,
         })
@@ -473,7 +473,7 @@ pub mod error {
     use super::*;
 
     #[derive(Debug, thiserror::Error)]
-    pub enum MergeError {
+    pub enum Merge {
         #[error("incompatible {0:?}")]
         Incompatible(&'static str),
         #[error("duplicate trade")]
