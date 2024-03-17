@@ -103,7 +103,7 @@ impl Competition {
             }
         });
 
-        let merged = merge(solutions);
+        let merged = merge(solutions, auction);
 
         // Encode solutions into settlements (streamed).
         let encoded = merged
@@ -331,7 +331,7 @@ impl Competition {
 /// Creates a vector with all possible combinations of the given solutions.
 /// The result is sorted by the number of merges, so the first elements are the
 /// original solutions.
-fn merge(solutions: impl Iterator<Item = Solution>) -> Vec<Solution> {
+fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
     for solution in solutions {
         let mut extension = vec![];
@@ -350,9 +350,14 @@ fn merge(solutions: impl Iterator<Item = Solution>) -> Vec<Solution> {
         extension.push(solution);
         merged.extend(extension);
     }
-    // Sort by "simplest", ie least merged solution.
-    // Maybe we should sort by score instead?
-    merged.sort_by_key(|solution| std::cmp::Reverse(solution.id().count_merges()));
+
+    // Sort merged solutions descending by score.
+    merged.sort_by_key(|solution| {
+        solution
+            .scoring(&auction.prices())
+            .map(|score| score.0)
+            .unwrap_or_default()
+    });
     merged
 }
 
