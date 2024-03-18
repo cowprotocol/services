@@ -23,6 +23,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub score: Score,
+    pub gas: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
