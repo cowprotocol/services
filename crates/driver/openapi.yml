@@ -382,9 +382,6 @@ components:
             type: object
             additionalProperties:
               $ref: "#/components/schemas/BigUint"
-          gas:
-            type: integer
-            description: How many units of gas this solution is estimated to cost.
     Solution:
       description: Request to the settle and reveal endpoint.
       type: object
