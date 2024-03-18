@@ -229,6 +229,12 @@ impl std::ops::AddAssign for TokenAmount {
     }
 }
 
+impl std::ops::SubAssign for TokenAmount {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 -= rhs.0;
+    }
+}
+
 impl num::Zero for TokenAmount {
     fn zero() -> Self {
         Self(U256::zero())
