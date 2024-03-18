@@ -34,6 +34,7 @@ pub struct Quote {
     amount: eth::U256,
     interactions: Vec<Interaction>,
     solver: eth::H160,
+    #[serde(skip_serializing_if = "Option::is_none")]
     gas: Option<u64>,
 }
 

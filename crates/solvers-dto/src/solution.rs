@@ -23,6 +23,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub score: Score,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
 }
 
