@@ -31,7 +31,7 @@ use {
         competition::{
             order,
             order::{FeePolicy, Side},
-            Amounts,
+            PriceLimits,
         },
         eth,
     },
@@ -85,7 +85,7 @@ impl Fulfillment {
                 factor,
                 max_volume_factor,
             }) => self.calculate_fee(
-                Amounts {
+                PriceLimits {
                     sell: self.order().sell.amount,
                     buy: self.order().buy.amount,
                 },
@@ -98,7 +98,7 @@ impl Fulfillment {
                 max_volume_factor,
                 quote,
             }) => {
-                let limit = adjust_quote_to_order_limits(
+                let price_limits = adjust_quote_to_order_limits(
                     Order {
                         sell_amount: self.order().sell.amount.0,
                         buy_amount: self.order().buy.amount.0,
@@ -110,7 +110,7 @@ impl Fulfillment {
                         fee_amount: quote.fee.amount.0,
                     },
                 )?;
-                self.calculate_fee(limit, prices, *factor, *max_volume_factor)
+                self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
@@ -123,12 +123,13 @@ impl Fulfillment {
     /// The protocol fee is computed in surplus token.
     fn calculate_fee(
         &self,
-        limit: Amounts,
+        price_limits: PriceLimits,
         prices: ClearingPrices,
         factor: f64,
         max_volume_factor: f64,
     ) -> Result<eth::TokenAmount, Error> {
-        let fee_from_surplus = self.fee_from_surplus(limit.sell.0, limit.buy.0, prices, factor)?;
+        let fee_from_surplus =
+            self.fee_from_surplus(price_limits.sell.0, price_limits.buy.0, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
@@ -223,7 +224,7 @@ pub struct Quote {
 /// - test_adjust_quote_to_out_market_buy_order_limits
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
-pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<Amounts, Math> {
+pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, Math> {
     let quote_sell_amount = quote
         .sell_amount
         .checked_add(quote.fee_amount)
@@ -238,7 +239,7 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<Amount
                 .checked_div(quote_sell_amount)
                 .ok_or(Math::DivisionByZero)?;
             let buy_amount = order.buy_amount.max(scaled_buy_amount);
-            Ok(Amounts {
+            Ok(PriceLimits {
                 sell: order.sell_amount.into(),
                 buy: buy_amount.into(),
             })
@@ -250,7 +251,7 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<Amount
                 .checked_div(quote.buy_amount)
                 .ok_or(Math::DivisionByZero)?;
             let sell_amount = order.sell_amount.min(scaled_sell_amount);
-            Ok(Amounts {
+            Ok(PriceLimits {
                 sell: sell_amount.into(),
                 buy: order.buy_amount.into(),
             })
