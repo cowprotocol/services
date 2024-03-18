@@ -1,7 +1,6 @@
 use {
     crate::{
         api,
-        app_data,
         arguments::Arguments,
         database::Postgres,
         ipfs::Ipfs,
@@ -10,6 +9,7 @@ use {
         quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
+    app_data::Validator,
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
@@ -434,7 +434,7 @@ pub async fn run(args: Arguments) {
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());
 
-    let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
+    let app_data_validator = Validator::new(args.app_data_size_limit);
     let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
     let order_validator = Arc::new(
         OrderValidator::new(
@@ -469,7 +469,7 @@ pub async fn run(args: Arguments) {
             )
         })
         .map(IpfsAppData::new);
-    let app_data = Arc::new(app_data::Registry::new(
+    let app_data = Arc::new(crate::app_data::Registry::new(
         app_data_validator,
         postgres.clone(),
         ipfs,
@@ -566,7 +566,7 @@ fn serve_api(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
-    app_data: Arc<app_data::Registry>,
+    app_data: Arc<crate::app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,

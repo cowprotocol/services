@@ -62,7 +62,6 @@ impl Driver {
             body=%serde_json::to_string_pretty(request).unwrap(),
             "solver request",
         );
-        let body = serde_json::to_string_pretty(request).unwrap();
         let mut request = self.client.post(url.clone()).json(request);
 
         if let Some(timeout) = timeout {

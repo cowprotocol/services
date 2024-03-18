@@ -7,7 +7,6 @@ use {
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    shared::app_data::Validator,
 };
 
 #[serde_as]
@@ -38,8 +37,6 @@ pub struct Order {
     #[serde(flatten)]
     pub class: boundary::OrderClass,
     pub app_data: boundary::AppDataHash,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub full_app_data: Option<String>,
     #[serde(flatten)]
     pub signature: boundary::Signature,
 }
@@ -69,9 +66,6 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_token_balance: order.buy_token_balance.into(),
         class: order.class.into(),
         app_data: order.app_data.into(),
-        full_app_data: order
-            .full_app_data
-            .map(|full_app_data| full_app_data.document),
         signature: order.signature.into(),
     }
 }
@@ -101,11 +95,6 @@ pub fn to_domain(order: Order) -> domain::Order {
         buy_token_balance: order.buy_token_balance.into(),
         class: order.class.into(),
         app_data: order.app_data.into(),
-        full_app_data: order.full_app_data.and_then(|full_app_data| {
-            Validator::new(usize::MAX)
-                .validate(full_app_data.as_bytes())
-                .ok()
-        }),
         signature: order.signature.into(),
     }
 }
