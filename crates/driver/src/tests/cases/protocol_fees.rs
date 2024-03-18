@@ -823,7 +823,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
-            buy_amount: 40.ether().into_wei(),
+            buy_amount: 25.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -837,7 +837,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
                 buy: 25.ether().into_wei(),
             },
         },
-        expected_score: 14.ether().into_wei(),
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -933,7 +933,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
         fee_policy,
         order: Order {
             // Demanding to sell more than quoted (in-market)
-            sell_amount: 60.ether().into_wei(),
+            sell_amount: 75.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
             side: order::Side::Buy,
         },
@@ -948,7 +948,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        expected_score: 14.ether().into_wei(),
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -971,7 +971,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
-            buy_amount: 40.ether().into_wei(),
+            buy_amount: 25.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
@@ -985,7 +985,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
-        expected_score: 14.ether().into_wei(),
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
