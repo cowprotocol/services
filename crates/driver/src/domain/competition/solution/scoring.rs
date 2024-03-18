@@ -143,30 +143,12 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let limit = match self.policies.first() {
-            Some(order::FeePolicy::PriceImprovement {
-                factor: _,
-                max_volume_factor: _,
-                quote,
-            }) => adjust_quote_to_order_limits(
-                fee::Order {
-                    sell_amount: self.sell.amount.0,
-                    buy_amount: self.buy.amount.0,
-                    side: self.side,
-                },
-                fee::Quote {
-                    sell_amount: quote.sell.amount.0,
-                    buy_amount: quote.buy.amount.0,
-                    fee_amount: quote.fee.amount.0,
-                },
-            )?,
-            _ => PriceLimits {
-                sell: self.sell.amount,
-                buy: self.buy.amount,
-            },
+        let price_limits = PriceLimits {
+            sell: self.sell.amount,
+            buy: self.buy.amount,
         };
         let surplus = self
-            .surplus(limit)
+            .surplus(price_limits)
             .ok_or(Error::Surplus(self.sell, self.buy))?;
         let price = prices
             .get(&surplus.token)
