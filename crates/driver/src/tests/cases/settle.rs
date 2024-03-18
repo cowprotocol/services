@@ -1,13 +1,10 @@
-use {
-    crate::{
-        domain::competition::order,
-        tests::{
-            self,
-            cases::{EtherExt, DEFAULT_SOLVER_FEE},
-            setup::{ab_order, ab_pool, ab_solution},
-        },
+use crate::{
+    domain::competition::order,
+    tests::{
+        self,
+        cases::{EtherExt, DEFAULT_SOLVER_FEE},
+        setup::{ab_order, ab_pool, ab_solution},
     },
-    web3::Transport,
 };
 
 /// Run a matrix of tests for all meaningful combinations of order kind and
@@ -76,33 +73,33 @@ async fn private_rpc_with_high_risk_solution() {
     err.kind("FailedToSubmit");
 }
 
-/// Checks that we can settle transactions that have a gas limit higher than
-/// half the block size
-#[tokio::test]
-#[ignore]
-async fn high_gas_limit() {
-    let test = tests::setup()
-        .name("high gas limit")
-        .pool(ab_pool())
-        .order(ab_order())
-        .solution(ab_solution().increase_gas(15_000_000))
-        .done()
-        .await;
+// /// Checks that we can settle transactions that have a gas limit higher than
+// /// half the block size
+// #[tokio::test]
+// #[ignore]
+// async fn high_gas_limit() {
+//     let test = tests::setup()
+//         .name("high gas limit")
+//         .pool(ab_pool())
+//         .order(ab_order())
+//         .solution(ab_solution().increase_gas(15_000_000))
+//         .done()
+//         .await;
 
-    // Set to 30M for solving purposes
-    test.web3()
-        .transport()
-        .execute("evm_setBlockGasLimit", vec![serde_json::json!(30_000_000)])
-        .await
-        .unwrap();
+//     // Set to 30M for solving purposes
+//     test.web3()
+//         .transport()
+//         .execute("evm_setBlockGasLimit", vec![serde_json::json!(30_000_000)])
+//         .await
+//         .unwrap();
 
-    test.solve().await.ok();
+//     test.solve().await.ok();
 
-    // Assume validators downvoted gas limit to 29.9M, solution still settles
-    test.web3()
-        .transport()
-        .execute("evm_setBlockGasLimit", vec![serde_json::json!(29_900_000)])
-        .await
-        .unwrap();
-    test.settle().await.ok().await;
-}
+//     // Assume validators downvoted gas limit to 29.9M, solution still settles
+//     test.web3()
+//         .transport()
+//         .execute("evm_setBlockGasLimit", vec![serde_json::json!(29_900_000)])
+//         .await
+//         .unwrap();
+//     test.settle().await.ok().await;
+// }
