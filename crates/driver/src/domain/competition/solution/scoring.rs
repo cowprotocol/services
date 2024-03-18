@@ -97,7 +97,7 @@ impl Trade {
     }
 
     /// Surplus based on custom clearing prices returns the surplus after all
-    /// fees have been applied.
+    /// fees have been applied and calculated over the price limits.
     ///
     /// Denominated in SURPLUS token
     fn surplus(&self, price_limits: PriceLimits) -> Option<eth::Asset> {
