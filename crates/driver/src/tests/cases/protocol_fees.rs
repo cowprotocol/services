@@ -54,13 +54,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     let executed = match test_case.order.side {
         order::Side::Buy => (test_case.order.buy_amount > test_case.execution.solver.buy)
             .then_some(test_case.execution.solver.buy),
-        order::Side::Sell => {
-            if test_case.order.sell_amount > test_case.execution.solver.sell {
-                Some(test_case.execution.solver.sell - solver_fee)
-            } else {
-                None
-            }
-        }
+        order::Side::Sell => (test_case.order.sell_amount > test_case.execution.solver.sell)
+            .then_some(test_case.execution.solver.sell - solver_fee),
     };
     // Amounts expected to be returned by the driver after fee processing
     let expected_amounts = ExpectedOrderAmounts {
