@@ -11,7 +11,14 @@ use {
         error::Math,
         order::{self, Side},
     },
-    crate::domain::{competition::auction, eth},
+    crate::domain::{
+        competition::{
+            auction,
+            solution::{fee, fee::adjust_quote_to_order_limits},
+            PriceLimits,
+        },
+        eth::{self},
+    },
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -90,19 +97,18 @@ impl Trade {
     }
 
     /// Surplus based on custom clearing prices returns the surplus after all
-    /// fees have been applied.
+    /// fees have been applied and calculated over the price limits.
     ///
     /// Denominated in SURPLUS token
-    fn surplus(&self) -> Option<eth::Asset> {
+    fn surplus(&self, price_limits: PriceLimits) -> Option<eth::Asset> {
         match self.side {
             Side::Buy => {
                 // scale limit sell to support partially fillable orders
-                let limit_sell = self
+                let limit_sell = price_limits
                     .sell
-                    .amount
                     .0
                     .checked_mul(self.executed.into())?
-                    .checked_div(self.buy.amount.into())?;
+                    .checked_div(price_limits.buy.0)?;
                 // difference between limit sell and executed amount converted to sell token
                 limit_sell.checked_sub(
                     self.executed
@@ -116,8 +122,8 @@ impl Trade {
                 let limit_buy = self
                     .executed
                     .0
-                    .checked_mul(self.buy.amount.into())?
-                    .checked_div(self.sell.amount.into())?;
+                    .checked_mul(price_limits.buy.0)?
+                    .checked_div(price_limits.sell.0)?;
                 // difference between executed amount converted to buy token and limit buy
                 self.executed
                     .0
@@ -137,7 +143,13 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let surplus = self.surplus().ok_or(Error::Surplus(self.sell, self.buy))?;
+        let price_limits = PriceLimits {
+            sell: self.sell.amount,
+            buy: self.buy.amount,
+        };
+        let surplus = self
+            .surplus(price_limits)
+            .ok_or(Error::Surplus(self.sell, self.buy))?;
         let price = prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
@@ -159,17 +171,39 @@ impl Trade {
                 factor,
                 max_volume_factor,
             } => {
+                let price_limits = PriceLimits {
+                    sell: self.sell.amount,
+                    buy: self.buy.amount,
+                };
                 let fee = std::cmp::min(
-                    self.surplus_fee(*factor)?.amount,
+                    self.surplus_fee(price_limits, *factor)?.amount,
+                    self.volume_fee(*max_volume_factor)?.amount,
+                );
+                Ok::<eth::TokenAmount, Error>(fee)
+            }
+            order::FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => {
+                let price_limits = adjust_quote_to_order_limits(
+                    fee::Order {
+                        sell_amount: self.sell.amount.0,
+                        buy_amount: self.buy.amount.0,
+                        side: self.side,
+                    },
+                    fee::Quote {
+                        sell_amount: quote.sell.amount.0,
+                        buy_amount: quote.buy.amount.0,
+                        fee_amount: quote.fee.amount.0,
+                    },
+                )?;
+                let fee = std::cmp::min(
+                    self.surplus_fee(price_limits, *factor)?.amount,
                     self.volume_fee(*max_volume_factor)?.amount,
                 );
                 Ok(fee)
             }
-            order::FeePolicy::PriceImprovement {
-                factor: _,
-                max_volume_factor: _,
-                quote: _,
-            } => Err(Error::UnimplementedFeePolicy),
             order::FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
         };
 
@@ -181,7 +215,7 @@ impl Trade {
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
-    fn surplus_fee(&self, factor: f64) -> Result<eth::Asset, Error> {
+    fn surplus_fee(&self, price_limits: PriceLimits, factor: f64) -> Result<eth::Asset, Error> {
         // Surplus fee is specified as a `factor` from raw surplus (before fee). Since
         // this module works with trades that already have the protocol fee applied, we
         // need to calculate the protocol fee as an observation of the eventually traded
@@ -199,7 +233,9 @@ impl Trade {
         //
         // Finally:
         //     fee = surplus_after_fee * factor / (1 - factor)
-        let surplus = self.surplus().ok_or(Error::Surplus(self.sell, self.buy))?;
+        let surplus = self
+            .surplus(price_limits)
+            .ok_or(Error::Surplus(self.sell, self.buy))?;
         let fee = surplus
             .amount
             .apply_factor(factor / (1.0 - factor))
