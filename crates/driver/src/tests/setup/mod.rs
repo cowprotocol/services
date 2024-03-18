@@ -1034,7 +1034,8 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 6);
+        // response contains 1 optional field
+        assert!((5..=6).contains(&solution.as_object().unwrap().len()));
         solution
     }
 
