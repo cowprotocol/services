@@ -1,18 +1,22 @@
-use crate::{
-    domain::{competition::order, eth},
-    tests::{
-        self,
-        cases::EtherExt,
-        setup::{
-            ab_adjusted_pool,
-            ab_liquidity_quote,
-            ab_order,
-            ab_solution,
-            fee::{Policy, Quote},
-            ExpectedOrderAmounts,
-            Test,
+use {
+    crate::{
+        domain::{competition::order, eth},
+        tests::{
+            self,
+            cases::EtherExt,
+            setup::{
+                ab_adjusted_pool,
+                ab_liquidity_quote,
+                ab_order,
+                ab_solution,
+                fee::{Policy, Quote},
+                test_solver,
+                ExpectedOrderAmounts,
+                Test,
+            },
         },
     },
+    chrono::{DateTime, Utc},
 };
 
 struct Amounts {
@@ -37,6 +41,17 @@ struct TestCase {
     order: Order,
     fee_policy: Policy,
     execution: Execution,
+    expected_score: eth::U256,
+}
+
+// because of rounding errors, it's good enough to check that the expected value
+// is within a very narrow range of the executed value
+fn is_approximately_equal(executed_value: eth::U256, expected_value: eth::U256) -> bool {
+    let lower =
+        expected_value * eth::U256::from(99999999999u128) / eth::U256::from(100000000000u128); // in percents = 99.999999999%
+    let upper =
+        expected_value * eth::U256::from(100000000001u128) / eth::U256::from(100000000000u128); // in percents = 100.000000001%
+    executed_value >= lower && executed_value <= upper
 }
 
 async fn protocol_fee_test_case(test_case: TestCase) {
@@ -83,10 +98,18 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .pool(pool)
         .order(order.clone())
         .solution(ab_solution())
+        .solvers(vec![
+            test_solver().rank_by_surplus_date(DateTime::<Utc>::MIN_UTC)
+        ])
         .done()
         .await;
 
-    test.solve().await.ok().orders(&[order]);
+    let result = test.solve().await.ok();
+    assert!(is_approximately_equal(
+        result.score(),
+        test_case.expected_score
+    ));
+    result.orders(&[order]);
 }
 
 #[tokio::test]
@@ -116,6 +139,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -127,7 +151,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     let test_case = TestCase {
         fee_policy,
@@ -147,6 +171,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
                 buy: 50.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -178,6 +203,7 @@ async fn surplus_protocol_fee_partial_buy_order_not_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
 
     protocol_fee_test_case(test_case).await;
@@ -189,7 +215,7 @@ async fn surplus_protocol_fee_partial_sell_order_not_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     let test_case = TestCase {
         fee_policy,
@@ -209,6 +235,7 @@ async fn surplus_protocol_fee_partial_sell_order_not_capped() {
                 buy: 25.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -239,6 +266,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -269,6 +297,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
                 buy: 54.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -299,6 +328,7 @@ async fn surplus_protocol_fee_partial_buy_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -329,6 +359,7 @@ async fn surplus_protocol_fee_partial_sell_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -355,6 +386,7 @@ async fn volume_protocol_fee_buy_order() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -381,6 +413,7 @@ async fn volume_protocol_fee_sell_order() {
                 buy: 45.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -407,6 +440,7 @@ async fn volume_protocol_fee_partial_buy_order() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -433,6 +467,7 @@ async fn volume_protocol_fee_partial_sell_order() {
                 buy: 27.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -469,6 +504,7 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -479,7 +515,7 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
         quote: Quote {
             sell: 49.ether().into_wei(),
             buy: 50.ether().into_wei(),
@@ -505,6 +541,7 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
                 buy: 55.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -541,6 +578,7 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -551,7 +589,7 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
         quote: Quote {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
@@ -577,6 +615,7 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
                 buy: 55.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -613,6 +652,7 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -649,6 +689,7 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
                 buy: 57.ether().into_wei(),
             },
         },
+        expected_score: 20.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -685,6 +726,7 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -721,6 +763,7 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
                 buy: 57.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -757,6 +800,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 15.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -767,7 +811,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
         quote: Quote {
             sell: 49.ether().into_wei(),
             buy: 50.ether().into_wei(),
@@ -793,6 +837,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
                 buy: 25.ether().into_wei(),
             },
         },
+        expected_score: 14.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -829,6 +874,7 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_not_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -839,7 +885,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
     let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
         quote: Quote {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
@@ -865,6 +911,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
                 buy: 25.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -901,6 +948,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 14.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -937,6 +985,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
+        expected_score: 14.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -973,6 +1022,7 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1009,6 +1059,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
                 buy: 27.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
