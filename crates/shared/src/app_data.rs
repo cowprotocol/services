@@ -13,25 +13,32 @@ mod compat;
 /// The minimum valid empty app data JSON string.
 pub const EMPTY: &str = "{}";
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
     pub document: String,
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
+    pub partner_fee: Option<PartnerFee>,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct PartnerFee {
+    pub bps: u64,
+    pub recipient: H160,
 }
 
 #[derive(Clone)]

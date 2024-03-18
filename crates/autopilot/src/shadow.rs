@@ -66,12 +66,13 @@ impl RunLoop {
                 continue;
             };
             observe::log_auction_delta(id, &previous, &auction);
-            previous = Some(auction.clone());
             self.liveness.auction();
 
-            self.single_run(id, auction)
+            self.single_run(id, &auction)
                 .instrument(tracing::info_span!("auction", id))
                 .await;
+
+            previous = Some(auction);
         }
     }
 
@@ -112,12 +113,12 @@ impl RunLoop {
         Some(auction)
     }
 
-    async fn single_run(&self, id: domain::auction::Id, auction: domain::Auction) {
+    async fn single_run(&self, id: domain::auction::Id, auction: &domain::Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(id);
         Metrics::get().orders.set(auction.orders.len() as _);
 
-        let mut participants = self.competition(id, &auction).await;
+        let mut participants = self.competition(id, auction).await;
 
         // Shuffle so that sorting randomly splits ties.
         participants.shuffle(&mut rand::thread_rng());

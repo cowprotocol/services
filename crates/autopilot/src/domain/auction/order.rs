@@ -1,6 +1,7 @@
 use {
     crate::domain::{eth, fee},
     primitive_types::{H160, H256, U256},
+    shared::app_data::ValidatedAppData,
     std::fmt::{self, Display},
 };
 
@@ -27,6 +28,7 @@ pub struct Order {
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
     pub app_data: AppDataHash,
+    pub full_app_data: Option<ValidatedAppData>,
     pub signature: Signature,
 }
 

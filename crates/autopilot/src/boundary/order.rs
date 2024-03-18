@@ -1,4 +1,7 @@
-use {crate::domain, shared::remaining_amounts};
+use {
+    crate::domain,
+    shared::{app_data::Validator, remaining_amounts},
+};
 
 pub fn to_domain(
     order: model::order::Order,
@@ -34,6 +37,11 @@ pub fn to_domain(
         buy_token_balance: order.data.buy_token_balance.into(),
         class: order.metadata.class.into(),
         app_data: order.data.app_data.into(),
+        full_app_data: order.metadata.full_app_data.and_then(|full_app_data| {
+            Validator::new(usize::MAX)
+                .validate(full_app_data.as_bytes())
+                .ok()
+        }),
         signature: order.signature.into(),
     }
 }
