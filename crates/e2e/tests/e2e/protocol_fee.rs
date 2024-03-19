@@ -168,7 +168,7 @@ async fn partner_fee_sell_order_test(web3: Web3) {
         fee_policy,
         OrderKind::Sell,
         Some(OrderCreationAppData::Full {
-            full: r#"{"version":"1.1.0","metadata":{"partnerFee":{"bps":10, "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9"}}}"#.to_string(),
+            full: r#"{"version":"1.1.0","metadata":{"partnerFee":{"bps":1000, "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9"}}}"#.to_string(),
         }),
         1000150353094783059u128.into(),
         987306456662572858u128.into(),
