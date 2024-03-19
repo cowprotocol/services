@@ -387,11 +387,13 @@ where
             {
                 match result {
                     Ok(e) => {
-                        tracing::debug!(
-                            "events fetched for block: {:?}, events: {}",
-                            blocks[i],
-                            e.len(),
-                        );
+                        if !e.is_empty() {
+                            tracing::debug!(
+                                "events fetched for block: {:?}, events: {}",
+                                blocks[i],
+                                e.len(),
+                            );
+                        }
                         blocks_filtered.push(blocks[i]);
                         events.extend(e);
                     }
