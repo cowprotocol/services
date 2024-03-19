@@ -63,8 +63,8 @@ impl Solver {
                 }
                 order::Side::Buy => match quote.order.fee_policy {
                     // For volume based fee, we artifially reduce the limit sell amount for buy
-                    // orders before sending to solvers. This allows driver to withhold volume based fee
-                    // and not violate original limit prices.
+                    // orders before sending to solvers. This allows driver to withhold volume based
+                    // fee and not violate original limit prices.
                     fee::Policy::Volume { factor } => eth::TokenAmount(quote.sell_amount())
                         .apply_factor(1.0 / (1.0 + factor))
                         .unwrap()
@@ -78,8 +78,8 @@ impl Solver {
                 order::Side::Sell if config.quote => "1".to_owned(),
                 order::Side::Sell => match quote.order.fee_policy {
                     // For volume based fee, we artifially increase the limit buy amount for sell
-                    // orders before sending to solvers. This allows driver to withhold volume based fee
-                    // and not violate original limit prices.
+                    // orders before sending to solvers. This allows driver to withhold volume based
+                    // fee and not violate original limit prices.
                     fee::Policy::Volume { factor } => eth::TokenAmount(quote.buy_amount())
                         .apply_factor(1.0 / (1.0 - factor))
                         .unwrap()
