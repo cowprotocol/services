@@ -199,16 +199,19 @@ impl Order {
             match self.side {
                 Side::Buy => {
                     // reduce sell amount by factor
-                    amounts.sell.amount -= amounts
+                    amounts.sell.amount = amounts
                         .sell
                         .amount
-                        .apply_factor(*factor)
+                        .apply_factor(1.0 / (1.0 + factor))
                         .unwrap_or_default();
                 }
                 Side::Sell => {
                     // increase buy amount by factor
-                    amounts.buy.amount +=
-                        amounts.buy.amount.apply_factor(*factor).unwrap_or_default();
+                    amounts.buy.amount = amounts
+                        .buy
+                        .amount
+                        .apply_factor(1.0 / (1.0 - factor))
+                        .unwrap_or_default();
                 }
             }
         }
