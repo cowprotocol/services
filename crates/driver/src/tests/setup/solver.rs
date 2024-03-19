@@ -109,6 +109,7 @@ impl Solver {
                     order::Kind::Limit { .. } => "limit",
                 },
                 "protocolFees": match quote.order.kind {
+                    _ if config.quote => json!([]),
                     order::Kind::Market => json!([]),
                     order::Kind::Liquidity => json!([]),
                     order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
