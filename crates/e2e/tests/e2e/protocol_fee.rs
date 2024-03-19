@@ -226,8 +226,8 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
-        205312824093250u128.into(),
-        202676203868401u128.into(),
+        1190443099243994360u128.into(),
+        1175155469911247241u128.into(),
     )
     .await;
 }
