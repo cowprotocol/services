@@ -47,8 +47,11 @@ pub struct Order {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
 }
 
