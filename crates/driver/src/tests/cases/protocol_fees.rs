@@ -46,6 +46,7 @@ struct TestCase {
 
 // because of rounding errors, it's good enough to check that the expected value
 // is within a very narrow range of the executed value
+#[cfg(test)]
 fn is_approximately_equal(executed_value: eth::U256, expected_value: eth::U256) -> bool {
     let lower =
         expected_value * eth::U256::from(99999999999u128) / eth::U256::from(100000000000u128); // in percents = 99.999999999%
@@ -54,6 +55,7 @@ fn is_approximately_equal(executed_value: eth::U256, expected_value: eth::U256) 
     executed_value >= lower && executed_value <= upper
 }
 
+#[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
     let test_name = format!(
         "Protocol Fee: {:?} {:?}",
