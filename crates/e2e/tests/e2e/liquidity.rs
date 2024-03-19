@@ -170,11 +170,14 @@ async fn zero_ex_liquidity(web3: Web3) {
     );
     services.start_autopilot(
         None,
-        vec!["--drivers=test_solver|http://localhost:11088/test_solver".to_string()],
+        vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ],
     );
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
     let order_id = services.create_order(&order_a).await.unwrap();
