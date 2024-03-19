@@ -46,9 +46,24 @@ pub struct Order {
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Quote {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee: U256,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
 }

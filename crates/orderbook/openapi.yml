@@ -1538,8 +1538,20 @@ components:
           type: number
       required:
         - factor
+    PriceImprovement:
+      description: The protocol fee is taken as a percent of the order price improvement which is a difference between the executed price and the best quote.
+      type: object
+      properties:
+        factor:
+          type: number
+        max_volume_factor:
+          type: number
+      required:
+        - factor
+        - max_volume_factor
     FeePolicy:
       description: Defines the ways to calculate the protocol fee.
       oneOf:
         - $ref: '#/components/schemas/Surplus'
         - $ref: '#/components/schemas/Volume'
+        - $ref: '#/components/schemas/PriceImprovement'
