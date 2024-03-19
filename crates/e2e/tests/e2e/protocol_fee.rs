@@ -49,6 +49,12 @@ async fn local_node_volume_fee_buy_order() {
     run_test(volume_fee_buy_order_test).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_price_improvement_fee_sell_order() {
+    run_test(price_improvement_fee_sell_order_test).await;
+}
+
 async fn surplus_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
@@ -211,6 +217,21 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     .await;
 }
 
+async fn price_improvement_fee_sell_order_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 0.3,
+        max_volume_factor: 0.9,
+    };
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Sell,
+        205312824093250u128.into(),
+        202676203868401u128.into(),
+    )
+    .await;
+}
+
 // because of rounding errors, it's good enough to check that the expected value
 // is within a very narrow range of the executed value
 fn is_approximately_equal(executed_value: U256, expected_value: U256) -> bool {
@@ -363,6 +384,10 @@ async fn execute_test(
 enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
 }
@@ -376,6 +401,14 @@ impl std::fmt::Display for FeePolicyKind {
             } => write!(
                 f,
                 "--fee-policy-kind=surplus:{}:{}",
+                factor, max_volume_factor
+            ),
+            FeePolicyKind::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => write!(
+                f,
+                "--fee-policy-kind=priceImprovement:{}:{}",
                 factor, max_volume_factor
             ),
             FeePolicyKind::Volume { factor } => {
