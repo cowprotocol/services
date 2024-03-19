@@ -69,7 +69,7 @@ impl Auction {
                 .map(|order| {
                     let mut available = order.available(weth);
                     // Solvers are unaware of the protocol fees. In case of volume based fees,
-                    // fee taken might be higher than the surplus of the solution. This
+                    // fee withheld by driver might be higher than the surplus of the solution. This
                     // would lead to violating limit prices when driver tries to withhold the
                     // volume based fee. To avoid this, we artifically adjust the order limit
                     // amounts (make then worse) before sending to solvers, to force solvers to only
