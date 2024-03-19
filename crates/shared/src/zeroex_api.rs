@@ -23,7 +23,7 @@ use {
         StatusCode,
         Url,
     },
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
     std::{
         collections::HashSet,
@@ -183,7 +183,7 @@ impl Default for OrdersQuery {
 }
 
 #[serde_as]
-#[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Derivative, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
@@ -195,7 +195,7 @@ pub struct OrderMetadata {
     pub remaining_fillable_taker_amount: u128,
 }
 
-#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZeroExSignature {
     pub r: H256,
@@ -205,7 +205,7 @@ pub struct ZeroExSignature {
 }
 
 #[serde_as]
-#[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Derivative, Clone, Deserialize, Serialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
@@ -257,7 +257,7 @@ pub struct Order {
     pub verifying_contract: H160,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub struct OrderRecord {
     #[serde(rename = "metaData")]
     pub metadata: OrderMetadata,
@@ -284,7 +284,7 @@ impl OrderRecord {
 }
 
 /// A Ox API `orders` response.
-#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrdersResponse {
     pub total: u64,

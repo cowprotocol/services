@@ -1717,6 +1717,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "warp",
  "web3",
 ]
 
