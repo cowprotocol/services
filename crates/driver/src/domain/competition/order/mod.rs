@@ -190,31 +190,6 @@ impl Order {
                 .unwrap_or_default()
                 .into();
 
-        // adjust ammounts if order has volume based protocol fee
-        // this is done because solvers are unaware of protocol fees and could solve for
-        // limit prices without considering the fee, which would potentially result
-        // in a failed settlement (due to violated limit prices) once the driver
-        // tries to withold the volume based fee
-        if let Some(FeePolicy::Volume { factor }) = self.protocol_fees.first() {
-            match self.side {
-                Side::Buy => {
-                    // reduce sell amount by factor
-                    amounts.sell.amount = amounts
-                        .sell
-                        .amount
-                        .apply_factor(1.0 / (1.0 + factor))
-                        .unwrap_or_default();
-                }
-                Side::Sell => {
-                    // increase buy amount by factor
-                    amounts.buy.amount = amounts
-                        .buy
-                        .amount
-                        .apply_factor(1.0 / (1.0 - factor))
-                        .unwrap_or_default();
-                }
-            }
-        }
         amounts
     }
 
