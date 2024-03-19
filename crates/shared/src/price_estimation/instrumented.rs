@@ -3,6 +3,7 @@ use {
     futures::future::FutureExt,
     prometheus::{HistogramVec, IntCounterVec},
     std::{sync::Arc, time::Instant},
+    tracing::Instrument,
 };
 
 /// An instrumented price estimator.
@@ -52,6 +53,7 @@ impl PriceEstimating for InstrumentedPriceEstimator {
 
             estimate
         }
+        .instrument(tracing::info_span!("estimator", name = &self.name,))
         .boxed()
     }
 }

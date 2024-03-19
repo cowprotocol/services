@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
@@ -37,6 +38,7 @@ model = { path = "../model" }
 multibase = "0.9"
 num = { workspace = true }
 number = { path = "../number" }
+order-validation = { path = "../order-validation" }
 observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }

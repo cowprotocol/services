@@ -57,6 +57,7 @@ async fn test() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0xffffffffffffffffffffffffffffffffffffffff",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "110000"
                 },
             ],
@@ -94,7 +95,8 @@ async fn test() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 259417,
             }]
         }),
     );

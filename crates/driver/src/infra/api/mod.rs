@@ -47,8 +47,8 @@ impl Api {
                 .layer(tower_http::trace::TraceLayer::new_for_http()),
         );
 
-        let tokens = tokens::Fetcher::new(self.eth.clone());
-        let pre_processor = domain::competition::AuctionProcessor::new(Arc::new(self.eth.clone()));
+        let tokens = tokens::Fetcher::new(&self.eth);
+        let pre_processor = domain::competition::AuctionProcessor::new(&self.eth);
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);

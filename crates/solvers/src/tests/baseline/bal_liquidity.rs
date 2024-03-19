@@ -78,6 +78,7 @@ async fn weighted() {
                     "fee": "0.005",
                     "id": "0",
                     "address": "0x92762b42a06dcdddc5b7362cfb01e631c4d44b40",
+                    "balancerPoolId": "0x5c78d05b8ecf97507d1cf70646082c54faa4da950000000000000000000005ca",
                     "gasEstimate": "88892",
                     "version": "v0",
                 },
@@ -119,7 +120,8 @@ async fn weighted() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 206391,
             }]
         }),
     );
@@ -194,6 +196,7 @@ async fn weighted_v3plus() {
                     "fee": "0.005",
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
+                    "balancerPoolId": "0x5c78d05b8ecf97507d1cf70646082c54faa4da950000000000000000000005ca",
                     "gasEstimate": "88892",
                     "version": "v3Plus",
                 },
@@ -235,7 +238,8 @@ async fn weighted_v3plus() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 206391,
             }]
         }),
     );
@@ -333,6 +337,7 @@ async fn stable() {
                     "amplificationParameter": "5000.0",
                     "id": "0",
                     "address": "0x06df3b2bbb68adc8b0e302443692037ed9f91b42",
+                    "balancerPoolId": "0x5c78d05b8ecf97507d1cf70646082c54faa4da950000000000000000000005ca",
                     "gasEstimate": "183520",
                 },
             ],
@@ -373,8 +378,9 @@ async fn stable() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas":  289911,
                 },
                 {
                     "id": 1,
@@ -404,8 +410,9 @@ async fn stable() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas":  289911,
                 },
             ]
         }),
@@ -498,6 +505,7 @@ async fn composable_stable_v4() {
                     "amplificationParameter": "100.0",
                     "id": "0",
                     "address": "0x5c78d05b8ecf97507d1cf70646082c54faa4da95",
+                    "balancerPoolId": "0x5c78d05b8ecf97507d1cf70646082c54faa4da950000000000000000000005ca",
                     "gasEstimate": "183520",
                 },
             ],
@@ -538,8 +546,9 @@ async fn composable_stable_v4() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas": 289911,
                 },
             ]
         }),

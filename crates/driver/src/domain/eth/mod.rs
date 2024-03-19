@@ -29,41 +29,23 @@ pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20]
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ChainId(pub U256);
+pub struct ChainId(pub u64);
+
+impl std::fmt::Display for ChainId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl From<U256> for ChainId {
     fn from(value: U256) -> Self {
-        Self(value)
+        Self(value.as_u64())
     }
 }
 
 impl From<ChainId> for u64 {
     fn from(value: ChainId) -> Self {
-        value.0.as_u64()
-    }
-}
-
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Debug, Clone)]
-pub struct NetworkId(pub String);
-
-impl NetworkId {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for NetworkId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl std::fmt::Display for NetworkId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        value.0
     }
 }
 
@@ -195,6 +177,26 @@ impl TokenAddress {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAmount(pub U256);
 
+impl TokenAmount {
+    /// Applies a factor to the token amount.
+    ///
+    /// The factor is first multiplied by 10^18 to convert it to integer, to
+    /// avoid rounding to 0. Then, the token amount is divided by 10^18 to
+    /// convert it back to the original scale.
+    ///
+    /// The higher the conversion factor (10^18) the precision is higher. E.g.
+    /// 0.123456789123456789 will be converted to 123456789123456789.
+    pub fn apply_factor(&self, factor: f64) -> Option<Self> {
+        Some(
+            (self
+                .0
+                .checked_mul(U256::from_f64_lossy(factor * 1000000000000000000.))?
+                / 1000000000000000000u128)
+                .into(),
+        )
+    }
+}
+
 impl From<U256> for TokenAmount {
     fn from(value: U256) -> Self {
         Self(value)
@@ -210,6 +212,30 @@ impl From<TokenAmount> for U256 {
 impl From<u128> for TokenAmount {
     fn from(value: u128) -> Self {
         Self(value.into())
+    }
+}
+
+impl std::ops::Add for TokenAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::AddAssign for TokenAmount {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl num::Zero for TokenAmount {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 

@@ -195,12 +195,7 @@ pub async fn run(args: Arguments) {
         other => Some(other.unwrap()),
     };
 
-    let network = web3
-        .net()
-        .version()
-        .await
-        .expect("Failed to retrieve network version ID");
-    let network_name = shared::network::network_name(&network, chain_id);
+    let network_name = shared::network::network_name(chain_id);
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -241,7 +236,7 @@ pub async fn run(args: Arguments) {
     let univ2_sources = baseline_sources
         .iter()
         .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
         })
         .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
     let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
@@ -511,6 +506,7 @@ pub async fn run(args: Arguments) {
             Box::new(custom_ethflow_order_parser),
             DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
             eth.contracts().settlement().address(),
+            args.shared.market_orders_deprecation_date,
         );
         let broadcaster_event_updater = Arc::new(
             EventUpdater::new_skip_blocks_before(
@@ -542,7 +538,10 @@ pub async fn run(args: Arguments) {
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         persistence.clone(),
-        args.banned_users.iter().copied().collect(),
+        infra::banned::Users::new(
+            eth.contracts().chainalysis_oracle().clone(),
+            args.banned_users,
+        ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         eth.current_block().clone(),
@@ -554,7 +553,6 @@ pub async fn run(args: Arguments) {
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
         domain::ProtocolFee::new(args.fee_policy.clone()),
-        args.cow_amms.into_iter().collect(),
     );
     solvable_orders_cache
         .update(block)

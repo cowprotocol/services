@@ -353,7 +353,7 @@ impl SettlementEncoder {
                 let buy_amount = sell_amount
                     .checked_mul(uniform_sell_price)
                     .context("buy_amount computation failed")?
-                    .checked_div(uniform_buy_price)
+                    .checked_ceil_div(&uniform_buy_price)
                     .context("buy_amount computation failed")?;
                 (executed_amount, buy_amount)
             }
@@ -583,7 +583,7 @@ impl SettlementEncoder {
             interactions: [
                 self.pre_interactions
                     .into_iter()
-                    .flat_map(|interaction| interaction.encode())
+                    .map(|interaction| interaction.encode())
                     .collect(),
                 iter::empty()
                     .chain(
@@ -601,13 +601,13 @@ impl SettlementEncoder {
                                     Some(interaction)
                                 }
                             })
-                            .flat_map(|interaction| interaction.encode()),
+                            .map(|interaction| interaction.encode()),
                     )
-                    .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
+                    .chain(self.unwraps.iter().map(|unwrap| unwrap.encode()))
                     .collect(),
                 self.post_interactions
                     .into_iter()
-                    .flat_map(|interaction| interaction.encode())
+                    .map(|interaction| interaction.encode())
                     .collect(),
             ],
         }
@@ -738,7 +738,6 @@ pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
 pub mod tests {
     use {
         super::*,
-        crate::settlement::NoopInteraction,
         contracts::{dummy_contract, WETH9},
         ethcontract::Bytes,
         maplit::hashmap,
@@ -798,11 +797,11 @@ pub mod tests {
             encoder
                 .finish(InternalizationStrategy::SkipInternalizableInteraction)
                 .interactions[1],
-            UnwrapWethInteraction {
+            [UnwrapWethInteraction {
                 weth,
                 amount: 3.into(),
             }
-            .encode(),
+            .encode()],
         );
     }
 
@@ -927,7 +926,7 @@ pub mod tests {
             encoder
                 .finish(InternalizationStrategy::SkipInternalizableInteraction)
                 .interactions[1],
-            [interaction.encode(), unwrap.encode()].concat(),
+            [interaction.encode(), unwrap.encode()],
         );
     }
 
@@ -1031,7 +1030,7 @@ pub mod tests {
         encoder0
             .add_trade(order12.clone(), 11.into(), 0.into())
             .unwrap();
-        encoder0.append_to_execution_plan(Arc::new(NoopInteraction {}));
+        encoder0.append_to_execution_plan(Arc::new(TestInteraction));
         encoder0.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
             amount: 1.into(),
@@ -1060,7 +1059,7 @@ pub mod tests {
         encoder1
             .add_trade(order23.clone(), 11.into(), 0.into())
             .unwrap();
-        encoder1.append_to_execution_plan(Arc::new(NoopInteraction {}));
+        encoder1.append_to_execution_plan(Arc::new(TestInteraction));
         encoder1.add_unwrap(UnwrapWethInteraction {
             weth,
             amount: 2.into(),
@@ -1424,8 +1423,8 @@ pub mod tests {
     #[derive(Debug)]
     pub struct TestInteraction;
     impl Interaction for TestInteraction {
-        fn encode(&self) -> Vec<EncodedInteraction> {
-            vec![(H160::zero(), U256::zero(), Bytes::default())]
+        fn encode(&self) -> EncodedInteraction {
+            (H160::zero(), U256::zero(), Bytes::default())
         }
     }
 

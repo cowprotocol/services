@@ -64,7 +64,7 @@ impl RunLoop {
                     observe::log_auction_delta(id, &previous, &auction);
                     self.liveness.auction();
 
-                    self.single_run(id, auction)
+                    self.single_run(id, &auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
@@ -82,11 +82,7 @@ impl RunLoop {
             }
         };
 
-        let id = match self
-            .persistence
-            .replace_current_auction(auction.clone())
-            .await
-        {
+        let id = match self.persistence.replace_current_auction(&auction).await {
             Ok(id) => {
                 Metrics::auction(id);
                 id
@@ -111,10 +107,10 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: domain::AuctionId, auction: domain::Auction) {
+    async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
         tracing::info!(?auction_id, "solving");
 
-        let auction = self.remove_in_flight_orders(auction).await;
+        let auction = self.remove_in_flight_orders(auction.clone()).await;
 
         let solutions = {
             let mut solutions = self.competition(auction_id, &auction).await;
@@ -301,7 +297,7 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(
         &self,
-        id: domain::AuctionId,
+        id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
         let request = solve::Request::new(
@@ -391,7 +387,7 @@ impl RunLoop {
     async fn reveal(
         &self,
         driver: &infra::Driver,
-        auction: domain::AuctionId,
+        auction: domain::auction::Id,
         solution_id: u64,
     ) -> Result<reveal::Response, RevealError> {
         let response = driver
@@ -571,7 +567,7 @@ impl Metrics {
         Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 
-    fn auction(auction_id: domain::AuctionId) {
+    fn auction(auction_id: domain::auction::Id) {
         Self::get().auction.set(auction_id)
     }
 

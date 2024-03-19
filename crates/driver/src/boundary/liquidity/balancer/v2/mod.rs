@@ -80,7 +80,7 @@ pub fn collector(
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
 ) -> Box<dyn LiquidityCollecting> {
-    let eth = Arc::new(eth.clone());
+    let eth = Arc::new(eth.with_metric_label("balancerV2".into()));
     let config = Arc::new(config.clone());
     let init = move || {
         let eth = eth.clone();
@@ -179,7 +179,7 @@ async fn init_liquidity(
     let balancer_pool_fetcher = Arc::new(
         BalancerPoolFetcher::new(
             &config.graph_api_base_url,
-            eth.network().chain.into(),
+            eth.network().0,
             block_retriever.clone(),
             token_info_fetcher.clone(),
             boundary::liquidity::cache_config(),

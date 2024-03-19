@@ -22,7 +22,6 @@ mod get_user_orders;
 mod post_order;
 mod post_quote;
 mod put_app_data;
-mod replace_order;
 mod version;
 
 pub fn handle_all_routes(
@@ -56,10 +55,6 @@ pub fn handle_all_routes(
         (
             "v1/cancel_orders",
             box_filter(cancel_orders::filter(orderbook.clone())),
-        ),
-        (
-            "v1/replace_order",
-            box_filter(replace_order::filter(orderbook.clone())),
         ),
         (
             "v1/get_user_orders",

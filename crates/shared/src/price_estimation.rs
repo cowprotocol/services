@@ -316,6 +316,13 @@ pub struct Arguments {
     /// The base URL for the 1Inch API.
     #[clap(long, env, default_value = "https://api.1inch.dev/")]
     pub one_inch_url: Url,
+
+    /// How inaccurate a quote must be before it gets discarded provided as a
+    /// factor.
+    /// E.g. a value of `0.01` means at most 1 percent of the sell or buy tokens
+    /// can be paid out of the settlement contract buffers.
+    #[clap(long, env, default_value = "1.")]
+    pub quote_inaccuracy_limit: f64,
 }
 
 impl Display for Arguments {
@@ -336,6 +343,7 @@ impl Display for Arguments {
             trade_simulator,
             prefer_verified_quotes,
             one_inch_url,
+            quote_inaccuracy_limit,
         } = self;
 
         display_option(
@@ -401,6 +409,7 @@ impl Display for Arguments {
         display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
         writeln!(f, "trade_simulator: {:?}", trade_simulator)?;
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
+        writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
 
         Ok(())
     }

@@ -1,9 +1,13 @@
 use {
-    crate::{domain, infra},
+    crate::{
+        domain,
+        infra::{self, banned},
+    },
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::current_block::CurrentBlockStream,
+    indexmap::IndexSet,
     itertools::Itertools,
     model::{
         order::{Order, OrderClass, OrderUid},
@@ -13,7 +17,6 @@ use {
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
-    rand::seq::SliceRandom,
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -68,7 +71,7 @@ pub struct Metrics {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
-    banned_users: HashSet<H160>,
+    banned_users: banned::Users,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Inner>,
@@ -78,9 +81,6 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fee: domain::ProtocolFee,
-    // TODO: remove ASAP since this we only use this for a mitigation that
-    // should be implemented on a smart contract level.
-    cow_amms: HashSet<H160>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -95,7 +95,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
-        banned_users: HashSet<H160>,
+        banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
@@ -105,7 +105,6 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
-        cow_amms: HashSet<H160>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -123,7 +122,6 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fee,
-            cow_amms,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -150,17 +148,13 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = Vec::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
+        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
         let removed = counter.checkpoint("banned_user", &orders);
         invalid_order_uids.extend(removed);
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        invalid_order_uids.extend(removed);
-
-        let orders = filter_duplicate_cow_amm_orders(orders, &self.cow_amms);
-        let removed = counter.checkpoint("duplicate_cow_amm_order", &orders);
         invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
@@ -278,9 +272,24 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Filters all orders whose owners are in the set of "banned" users.
-fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
-    orders.retain(|order| !banned_users.contains(&order.metadata.owner));
+/// Filters all orders whose owners or receivers are in the set of "banned"
+/// users.
+async fn filter_banned_user_orders(
+    mut orders: Vec<Order>,
+    banned_users: &banned::Users,
+) -> Vec<Order> {
+    let banned = banned_users
+        .banned(orders.iter().flat_map(|order| {
+            [
+                order.metadata.owner,
+                order.data.receiver.unwrap_or_default(),
+            ]
+        }))
+        .await;
+    orders.retain(|order| {
+        !banned.contains(&order.metadata.owner)
+            && !banned.contains(&order.data.receiver.unwrap_or_default())
+    });
     orders
 }
 
@@ -441,7 +450,7 @@ async fn update_task(
 }
 
 fn get_orders_with_native_prices(
-    mut orders: Vec<Order>,
+    orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
@@ -461,21 +470,11 @@ fn get_orders_with_native_prices(
         })
         .collect();
 
-    let high_priority_tokens = orders
-        .iter()
-        .filter_map(|order| match order.metadata.class {
-            OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
-            OrderClass::Liquidity => None,
-            OrderClass::Limit => None,
-        })
-        .flatten();
-    native_price_estimator.replace_high_priority(high_priority_tokens.collect());
-
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.
     let mut filtered_market_orders = 0_i64;
     let mut used_prices = BTreeMap::new();
-    orders.retain(|order| {
+    let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -490,13 +489,58 @@ fn get_orders_with_native_prices(
         }
     });
 
+    let tokens_by_priority = prioritize_missing_prices(filtered);
+    native_price_estimator.replace_high_priority(tokens_by_priority);
+
     // Record separate metrics just for missing native token prices for market
     // orders, as they should be prioritized.
     metrics
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (orders, used_prices)
+    (usable, used_prices)
+}
+
+/// Computes which missing native prices are the most urgent to fetch.
+/// Prices for recent orders have the highest priority because those are most
+/// likely market orders which users expect to get settled ASAP.
+/// For the remaining orders we prioritize token prices that are needed the most
+/// often. That way we have the chance to make a majority of orders solvable
+/// with very few fetch requests.
+fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
+    /// How old an order can be at most to be considered a market order.
+    const MARKET_ORDER_AGE_MINUTES: i64 = 30;
+    let market_order_age = chrono::Duration::minutes(MARKET_ORDER_AGE_MINUTES);
+    let now = chrono::Utc::now();
+
+    // newer orders at the start
+    orders.sort_by_key(|o| std::cmp::Reverse(o.metadata.creation_date));
+
+    let mut high_priority_tokens = IndexSet::new();
+    let mut most_used_tokens = HashMap::<H160, usize>::new();
+    for order in orders {
+        let sell_token = order.data.sell_token;
+        let buy_token = order.data.buy_token;
+        let is_market = now.signed_duration_since(order.metadata.creation_date) <= market_order_age;
+
+        if is_market {
+            // already correct priority because orders were sorted by creation_date
+            high_priority_tokens.extend([sell_token, buy_token]);
+        } else {
+            // count how often tokens are used to prioritize popular tokens
+            *most_used_tokens.entry(sell_token).or_default() += 1;
+            *most_used_tokens.entry(buy_token).or_default() += 1;
+        }
+    }
+
+    // popular tokens at the start
+    let most_used_tokens = most_used_tokens
+        .into_iter()
+        .sorted_by_key(|entry| std::cmp::Reverse(entry.1))
+        .map(|(token, _)| token);
+
+    high_priority_tokens.extend(most_used_tokens);
+    high_priority_tokens
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {
@@ -527,43 +571,6 @@ async fn filter_unsupported_tokens(
         index += 1;
     }
     Ok(orders)
-}
-
-/// Enforces that for all CoW AMMs at most 1 order is in the auction.
-/// This is needed to protect against a known attack vector.
-fn filter_duplicate_cow_amm_orders(mut orders: Vec<Order>, cow_amms: &HashSet<H160>) -> Vec<Order> {
-    let mut amm_orders = HashMap::<H160, Vec<&Order>>::new();
-    for order in &orders {
-        let owner = order.metadata.owner;
-        if cow_amms.contains(&owner) {
-            amm_orders.entry(owner).or_default().push(order);
-        }
-    }
-    let canonical_amm_orders: HashSet<OrderUid> = amm_orders
-        .into_iter()
-        .map(|(owner, orders)| {
-            let uid = orders
-                .choose(&mut rand::thread_rng())
-                .expect("every group contains at least 1 order")
-                .metadata
-                .uid;
-            if orders.len() > 1 {
-                // TODO: find better heuristic to pick "canonical" order
-                tracing::warn!(
-                    num = orders.len(),
-                    amm = ?owner,
-                    order = ?uid,
-                    "multiple orders for the same CoW AMM; picked random order"
-                );
-            }
-            uid
-        })
-        .collect();
-
-    orders.retain(|o| {
-        !cow_amms.contains(&o.metadata.owner) || canonical_amm_orders.contains(&o.metadata.uid)
-    });
-    orders
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
@@ -825,8 +832,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn filters_banned_users() {
+    #[tokio::test]
+    async fn filters_banned_users() {
         let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
         let orders = [
             H160([1; 20]),
@@ -852,7 +859,11 @@ mod tests {
         })
         .collect();
 
-        let filtered_orders = filter_banned_user_orders(orders, &banned_users);
+        let filtered_orders = filter_banned_user_orders(
+            orders,
+            &order_validation::banned::Users::from_set(banned_users),
+        )
+        .await;
         let filtered_owners = filtered_orders
             .iter()
             .map(|order| order.metadata.owner)
@@ -1126,5 +1137,41 @@ mod tests {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);
             assert!(found, "{}", index);
         }
+    }
+
+    #[test]
+    fn prioritizes_missing_prices() {
+        let now = chrono::Utc::now();
+        let token = H160::from_low_u64_be;
+
+        let order = |sell_token, buy_token, age| Order {
+            metadata: OrderMetadata {
+                creation_date: now - chrono::Duration::minutes(age),
+                ..Default::default()
+            },
+            data: OrderData {
+                sell_token,
+                buy_token,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let orders = vec![
+            order(token(4), token(6), 31),
+            order(token(4), token(6), 31),
+            order(token(1), token(2), 29), // older market order
+            order(token(5), token(6), 31),
+            order(token(1), token(3), 1), // youngest market order
+        ];
+        let result = prioritize_missing_prices(orders);
+        assert!(result.into_iter().eq([
+            token(1), // coming from youngest market order
+            token(3), // coming from youngest market order
+            token(2), // coming from older market order
+            token(6), // coming from limit order (part of 3 orders)
+            token(4), // coming from limit order (part of 2 orders)
+            token(5), // coming from limit order (part of 1 orders)
+        ]));
     }
 }

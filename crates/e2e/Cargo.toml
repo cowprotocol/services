@@ -6,6 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+app-data = { path = "../app-data" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }
@@ -30,9 +31,9 @@ solver = { path = "../solver" }
 solvers = { path = "../solvers" }
 sqlx = { workspace = true }
 tempfile = "3.3.0"
-tokio = { workspace = true, features = ["macros"] }
+tokio = { workspace = true, features = ["macros", "process"] }
 tracing = { workspace = true }
-web3 = { workspace = true }
+web3 = { workspace = true, features = ["http"] }
 
 [dev-dependencies]
 app-data-hash = { path = "../app-data-hash" }
