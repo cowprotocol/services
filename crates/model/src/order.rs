@@ -707,7 +707,6 @@ pub enum OnchainOrderPlacementError {
     // InvalidQuote error is return, if the quote and the order did not match
     // together
     InvalidQuote,
-    InsufficientFee,
     // In case order data is invalid - e.g. signature type EIP-712 for
     // onchain orders - this error is returned
     InvalidOrderData,

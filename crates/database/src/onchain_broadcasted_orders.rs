@@ -13,7 +13,6 @@ pub enum OnchainOrderPlacementError {
     DisabledOrderClass,
     ValidToTooFarInFuture,
     InvalidOrderData,
-    InsufficientFee,
     Other,
 }
 
@@ -26,7 +25,6 @@ impl OnchainOrderPlacementError {
             Self::DisabledOrderClass => "disabled_class",
             Self::ValidToTooFarInFuture => "expired",
             Self::InvalidOrderData => "invalid_data",
-            Self::InsufficientFee => "low_fee",
             Self::Other => "unspecified",
         }
     }
@@ -34,15 +32,14 @@ impl OnchainOrderPlacementError {
 
 #[cfg(test)]
 impl OnchainOrderPlacementError {
-    pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 8> {
-        const ERRORS: [OnchainOrderPlacementError; 8] = [
+    pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 7> {
+        const ERRORS: [OnchainOrderPlacementError; 7] = [
             OnchainOrderPlacementError::QuoteNotFound,
             OnchainOrderPlacementError::InvalidQuote,
             OnchainOrderPlacementError::PreValidationError,
             OnchainOrderPlacementError::DisabledOrderClass,
             OnchainOrderPlacementError::ValidToTooFarInFuture,
             OnchainOrderPlacementError::InvalidOrderData,
-            OnchainOrderPlacementError::InsufficientFee,
             OnchainOrderPlacementError::Other,
         ];
         ERRORS.into_iter()

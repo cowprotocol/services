@@ -200,9 +200,6 @@ pub fn onchain_order_placement_error_from(
         Some(DbOnchainOrderPlacementError::InvalidQuote) => {
             Some(OnchainOrderPlacementError::InvalidQuote)
         }
-        Some(DbOnchainOrderPlacementError::InsufficientFee) => {
-            Some(OnchainOrderPlacementError::InsufficientFee)
-        }
         Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
         None => None,
     }

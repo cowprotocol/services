@@ -454,7 +454,6 @@ pub async fn run(args: Arguments) {
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
             app_data_validator.clone(),
-            args.shared.market_orders_deprecation_date,
         )
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );

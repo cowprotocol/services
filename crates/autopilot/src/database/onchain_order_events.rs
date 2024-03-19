@@ -63,7 +63,6 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
-    market_orders_deprecation_date: Option<chrono::DateTime<Utc>>,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -78,7 +77,6 @@ where
         custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
-        market_orders_deprecation_date: Option<chrono::DateTime<Utc>>,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -88,7 +86,6 @@ where
             domain_separator,
             settlement_contract,
             metrics: Metrics::get(),
-            market_orders_deprecation_date,
         }
     }
 }
@@ -349,7 +346,6 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             self.domain_separator,
             self.settlement_contract,
             self.metrics,
-            self.market_orders_deprecation_date,
         )
         .await;
 
@@ -451,7 +447,6 @@ async fn parse_general_onchain_order_placement_data<'a>(
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     metrics: &'static Metrics,
-    market_orders_deprecation_date: Option<chrono::DateTime<Utc>>,
 ) -> Vec<GeneralOnchainOrderPlacementData> {
     let futures = order_placement_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, event_timestamp, quote_id)| async move {
@@ -477,14 +472,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
             }
             let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
 
-            let quote_result = get_quote(
-                quoter,
-                order_data,
-                signing_scheme,
-                &quote_id,
-                market_orders_deprecation_date,
-            )
-            .await;
+            let quote_result = get_quote(quoter, order_data, signing_scheme, &quote_id).await;
             let order_data = convert_onchain_order_placement(
                 &event,
                 event_timestamp,
@@ -543,7 +531,6 @@ async fn get_quote(
     order_data: OrderData,
     signing_scheme: SigningScheme,
     quote_id: &i64,
-    market_orders_deprecation_date: Option<chrono::DateTime<Utc>>,
 ) -> Result<Quote, OnchainOrderPlacementError> {
     let quote_signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
         signing_scheme,
@@ -582,15 +569,9 @@ async fn get_quote(
         true => None,
         false => Some(order_data.fee_amount),
     };
-    get_quote_and_check_fee(
-        quoter,
-        &parameters.clone(),
-        Some(*quote_id),
-        fee_amount,
-        market_orders_deprecation_date,
-    )
-    .await
-    .map_err(onchain_order_placement_error_from)
+    get_quote_and_check_fee(quoter, &parameters.clone(), Some(*quote_id), fee_amount)
+        .await
+        .map_err(onchain_order_placement_error_from)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1137,7 +1118,6 @@ mod test {
             domain_separator,
             settlement_contract,
             Metrics::get(),
-            None,
         )
         .await;
         assert_eq!(result_vec.len(), 2);
@@ -1263,7 +1243,6 @@ mod test {
             domain_separator,
             settlement_contract: H160::zero(),
             metrics: Metrics::get(),
-            market_orders_deprecation_date: None,
         };
         let result = onchain_order_parser
             .extract_custom_and_general_order_data(vec![event_data_1.clone(), event_data_2.clone()])
