@@ -148,7 +148,10 @@ async fn volume_fee_sell_order_test(web3: Web3) {
 
 async fn partner_fee_sell_order_test(web3: Web3) {
     // Fee policy to be overwritten by the partner fee
-    let fee_policy = FeePolicyKind::Volume { factor: 0.5 };
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 0.5,
+        max_volume_factor: 1.0,
+    };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
@@ -409,6 +412,10 @@ enum FeePolicyKind {
     Surplus { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
 }
 
 impl std::fmt::Display for FeePolicyKind {
@@ -424,6 +431,16 @@ impl std::fmt::Display for FeePolicyKind {
             ),
             FeePolicyKind::Volume { factor } => {
                 write!(f, "--fee-policy-kind=volume:{}", factor)
+            }
+            FeePolicyKind::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => {
+                write!(
+                    f,
+                    "--fee-policy-kind=priceImprovement:{}:{}",
+                    factor, max_volume_factor
+                )
             }
         }
     }
