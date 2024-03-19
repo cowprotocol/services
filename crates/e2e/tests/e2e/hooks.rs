@@ -74,7 +74,7 @@ async fn allowance(web3: Web3) {
     let order = OrderCreation {
         sell_token: cow.address(),
         sell_amount: to_wei(4),
-        fee_amount: to_wei(1),
+        fee_amount: 0.into(),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -245,7 +245,7 @@ async fn signature(web3: Web3) {
         from: Some(safe.address()),
         sell_token: token.address(),
         sell_amount: to_wei(4),
-        fee_amount: to_wei(1),
+        fee_amount: 0.into(),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,

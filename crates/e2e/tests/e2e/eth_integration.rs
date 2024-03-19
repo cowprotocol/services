@@ -75,7 +75,7 @@ async fn eth_integration(web3: Web3) {
         kind: OrderKind::Buy,
         sell_token: token.address(),
         sell_amount: to_wei(50),
-        fee_amount: to_wei(1),
+        fee_amount: 0.into(),
         buy_token: BUY_ETH_ADDRESS,
         buy_amount: to_wei(49),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -91,7 +91,7 @@ async fn eth_integration(web3: Web3) {
         kind: OrderKind::Sell,
         sell_token: token.address(),
         sell_amount: to_wei(50),
-        fee_amount: to_wei(1),
+        fee_amount: 0.into(),
         buy_token: BUY_ETH_ADDRESS,
         buy_amount: to_wei(49),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -125,6 +125,6 @@ async fn eth_integration(web3: Web3) {
     );
     assert_eq!(
         trader_b_eth_balance_after - trader_b_eth_balance_before,
-        49_776_284_258_574_379_601_u128.into()
+        49_776_118_111_704_762_174_u128.into()
     );
 }
