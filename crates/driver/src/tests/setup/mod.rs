@@ -128,8 +128,9 @@ pub struct Order {
     /// buy amount is divided depends on the order side. This is necessary to
     /// keep the solution scores positive.
     pub surplus_factor: eth::U256,
-    /// Override the executed amount of the order. Useful for testing liquidity
-    /// orders. Otherwise [`execution_diff`] is probably more suitable.
+    /// Override the executed target amount of the order. Useful for testing
+    /// liquidity orders. Otherwise [`execution_diff`] is probably more
+    /// suitable.
     pub executed: Option<eth::U256>,
     /// Provides explicit expected order executed amounts.
     pub expected_amounts: Option<ExpectedOrderAmounts>,
@@ -251,6 +252,19 @@ impl Order {
             buy_amount: Some(buy_amount),
             ..self
         }
+    }
+
+    pub fn partial(self, already_executed: eth::U256) -> Self {
+        Self {
+            partial: Partial::Yes {
+                executed: already_executed,
+            },
+            ..self
+        }
+    }
+
+    pub fn executed(self, executed: Option<eth::U256>) -> Self {
+        Self { executed, ..self }
     }
 
     fn surplus_fee(&self) -> eth::U256 {
@@ -1034,7 +1048,8 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 5);
+        // response contains 1 optional field
+        assert!((5..=6).contains(&solution.as_object().unwrap().len()));
         solution
     }
 

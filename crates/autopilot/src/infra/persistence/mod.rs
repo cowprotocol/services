@@ -34,7 +34,7 @@ impl Persistence {
     /// If the given auction is successfully saved, it is also archived.
     pub async fn replace_current_auction(
         &self,
-        auction: domain::Auction,
+        auction: &domain::Auction,
     ) -> Result<domain::auction::Id, Error> {
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
