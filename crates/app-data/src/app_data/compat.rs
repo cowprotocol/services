@@ -1,4 +1,4 @@
-use {super::ProtocolAppData, model::order::Hooks, serde::Deserialize};
+use {super::ProtocolAppData, crate::Hooks, serde::Deserialize};
 
 /// The legacy `backend` app data object.
 #[derive(Debug, Default, Deserialize)]

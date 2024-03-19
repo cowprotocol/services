@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
+app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }
 async-stream = "0.3"
 async-trait = { workspace = true }
@@ -63,4 +64,5 @@ web3 = { workspace = true }
 [dev-dependencies]
 regex = { workspace = true }
 testlib = { path = "../testlib" }
+app-data = { path = "../app-data", features = ["test_helpers"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

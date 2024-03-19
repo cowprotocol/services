@@ -4,6 +4,7 @@ use {
         util,
     },
     ethereum_types::{Address, U256},
+    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::{collections::HashMap, slice},
 };
 
@@ -24,6 +25,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub score: Score,
+    pub gas: Option<eth::Gas>,
 }
 
 impl Solution {
@@ -217,6 +219,7 @@ impl Single {
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
             score,
+            gas: Some(self.gas + eth::Gas(SETTLEMENT_OVERHEAD.into())),
         })
     }
 }

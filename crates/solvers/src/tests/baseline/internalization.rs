@@ -100,7 +100,8 @@ async fn trusted_token() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );
@@ -203,7 +204,8 @@ async fn untrusted_sell_token() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );
@@ -306,7 +308,8 @@ async fn insufficient_balance() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );

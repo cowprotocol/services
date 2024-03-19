@@ -372,7 +372,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(trade.out_amount, 808_069_760_400_778_577u128.into());
-        assert!(trade.gas_estimate > 189_386);
+        assert!(trade.gas_estimate.unwrap() > 189_386);
         assert_eq!(
             trade.interactions,
             vec![
@@ -547,7 +547,7 @@ mod tests {
 
         let trade = result.unwrap();
         println!(
-            "1 WETH buys {} GNO, costing {} gas",
+            "1 WETH buys {} GNO, costing {:?} gas",
             trade.out_amount.to_f64_lossy() / 1e18,
             trade.gas_estimate,
         );

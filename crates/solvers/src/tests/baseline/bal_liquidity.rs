@@ -120,7 +120,8 @@ async fn weighted() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 206391,
             }]
         }),
     );
@@ -237,7 +238,8 @@ async fn weighted_v3plus() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 206391,
             }]
         }),
     );
@@ -376,8 +378,9 @@ async fn stable() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas":  289911,
                 },
                 {
                     "id": 1,
@@ -407,8 +410,9 @@ async fn stable() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas":  289911,
                 },
             ]
         }),
@@ -542,8 +546,9 @@ async fn composable_stable_v4() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas": 289911,
                 },
             ]
         }),

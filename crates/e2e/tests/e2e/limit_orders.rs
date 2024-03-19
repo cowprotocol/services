@@ -4,7 +4,7 @@ use {
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{prelude::U256, H160},
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderClass, OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
@@ -263,6 +263,9 @@ async fn two_limit_orders_test(web3: Web3) {
         buy_amount: to_wei(2),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full {
+            full: r#"{"version":"1.1.0","metadata":{"partnerFee":{"bps":100, "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9"}}}"#.to_string(),
+        },
         ..Default::default()
     }
     .sign(
