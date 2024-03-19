@@ -1,7 +1,6 @@
 use {
     crate::{
         api,
-        app_data,
         arguments::Arguments,
         database::Postgres,
         ipfs::Ipfs,
@@ -10,11 +9,13 @@ use {
         quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
+    app_data::Validator,
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
     futures::{FutureExt, StreamExt},
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    order_validation,
     shared::{
         account_balances,
         bad_token::{
@@ -115,12 +116,7 @@ pub async fn run(args: Arguments) {
             .expect("load native token contract"),
     };
 
-    let network = web3
-        .net()
-        .version()
-        .await
-        .expect("Failed to retrieve network version ID");
-    let network_name = network_name(&network, chain_id);
+    let network_name = network_name(chain_id);
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -186,7 +182,7 @@ pub async fn run(args: Arguments) {
     let univ2_sources = baseline_sources
         .iter()
         .filter_map(|source: &BaselineSource| {
-            UniV2BaselineSourceParameters::from_baseline_source(*source, &network)
+            UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
         })
         .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
     let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
@@ -438,11 +434,15 @@ pub async fn run(args: Arguments) {
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());
 
-    let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
+    let app_data_validator = Validator::new(args.app_data_size_limit);
+    let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
     let order_validator = Arc::new(
         OrderValidator::new(
             native_token.clone(),
-            args.banned_users.iter().copied().collect(),
+            Arc::new(order_validation::banned::Users::new(
+                chainalysis_oracle,
+                args.banned_users,
+            )),
             validity_configuration,
             args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),
@@ -454,6 +454,7 @@ pub async fn run(args: Arguments) {
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
             app_data_validator.clone(),
+            args.shared.market_orders_deprecation_date,
         )
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
@@ -468,7 +469,7 @@ pub async fn run(args: Arguments) {
             )
         })
         .map(IpfsAppData::new);
-    let app_data = Arc::new(app_data::Registry::new(
+    let app_data = Arc::new(crate::app_data::Registry::new(
         app_data_validator,
         postgres.clone(),
         ipfs,
@@ -565,7 +566,7 @@ fn serve_api(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
-    app_data: Arc<app_data::Registry>,
+    app_data: Arc<crate::app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,

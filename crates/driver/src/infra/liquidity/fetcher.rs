@@ -33,7 +33,8 @@ impl Fetcher {
     /// Creates a new liquidity fetcher for the specified Ethereum instance and
     /// configuration.
     pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self, Error> {
-        let inner = boundary::liquidity::Fetcher::new(eth, config).await?;
+        let eth = eth.with_metric_label("liquidity".into());
+        let inner = boundary::liquidity::Fetcher::new(&eth, config).await?;
         Ok(Self {
             inner: Arc::new(inner),
         })

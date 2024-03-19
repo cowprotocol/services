@@ -58,6 +58,7 @@ include_contracts! {
     IUniswapV3Factory;
     IZeroEx;
     PancakeRouter;
+    ChainalysisOracle;
     SushiSwapRouter;
     SwaprRouter;
     TestnetUniswapV2Router02;
@@ -113,7 +114,7 @@ mod tests {
         type Out = Ready<Web3Result<Value>>;
 
         fn prepare(&self, method: &str, params: Vec<Value>) -> (RequestId, Call) {
-            assert_eq!(method, "net_version");
+            assert_eq!(method, "eth_chainId");
             assert_eq!(params.len(), 0);
             (
                 0,
@@ -128,7 +129,7 @@ mod tests {
         }
 
         fn send(&self, _id: RequestId, _request: Call) -> Self::Out {
-            future::ready(Ok(json!(format!("{}", self.0))))
+            future::ready(Ok(json!(format!("{:x}", self.0))))
         }
     }
 
@@ -141,7 +142,7 @@ mod tests {
         {
             future::ready(Ok(requests
                 .into_iter()
-                .map(|_| Ok(json!(format!("{}", self.0))))
+                .map(|_| Ok(json!(format!("{:x}", self.0))))
                 .collect()))
         }
     }

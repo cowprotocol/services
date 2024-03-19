@@ -29,20 +29,19 @@ async fn rejects_unwarranted_solver_fee() {
 #[ignore]
 async fn solver_fee() {
     for side in [order::Side::Buy, order::Side::Sell] {
+        let order = ab_order()
+            .kind(order::Kind::Limit)
+            .side(side)
+            .solver_fee(Some(500.into()));
         let test = tests::setup()
             .name(format!("Solver Fee: {side:?}"))
             .pool(ab_pool())
-            .order(
-                ab_order()
-                    .kind(order::Kind::Limit)
-                    .side(side)
-                    .solver_fee(Some(500.into())),
-            )
+            .order(order.clone())
             .solution(ab_solution())
             .done()
             .await;
 
-        test.solve().await.ok().orders(&[ab_order().name]);
+        test.solve().await.ok().orders(&[order]);
     }
 }
 
@@ -50,14 +49,15 @@ async fn solver_fee() {
 #[ignore]
 async fn user_fee() {
     for side in [order::Side::Buy, order::Side::Sell] {
+        let order = ab_order().side(side).user_fee(1000.into());
         let test = tests::setup()
             .name(format!("User Fee: {side:?}"))
             .pool(ab_pool())
-            .order(ab_order().side(side).user_fee(1000.into()))
+            .order(order.clone())
             .solution(ab_solution())
             .done()
             .await;
 
-        test.solve().await.ok().orders(&[ab_order().name]);
+        test.solve().await.ok().orders(&[order]);
     }
 }

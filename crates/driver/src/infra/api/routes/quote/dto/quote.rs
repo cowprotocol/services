@@ -21,6 +21,7 @@ impl Quote {
                 })
                 .collect(),
             solver: quote.solver.0,
+            gas: quote.gas.map(|gas| gas.0.as_u64()),
         }
     }
 }
@@ -33,6 +34,8 @@ pub struct Quote {
     amount: eth::U256,
     interactions: Vec<Interaction>,
     solver: eth::H160,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gas: Option<u64>,
 }
 
 #[serde_as]

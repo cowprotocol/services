@@ -10,6 +10,7 @@ use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
     contracts::{dummy_contract, ERC20},
+    derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::interaction::InteractionData,
     serde::Serialize,
@@ -45,7 +46,7 @@ pub struct Quote {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub out_amount: U256,
-    pub gas_estimate: u64,
+    pub gas_estimate: Option<u64>,
     pub interactions: Vec<Interaction>,
     pub solver: H160,
 }
@@ -76,7 +77,7 @@ impl Trade {
 
         Self {
             out_amount,
-            gas_estimate,
+            gas_estimate: Some(gas_estimate),
             interactions,
             solver,
         }
@@ -89,10 +90,12 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Default, Serialize, Derivative)]
+#[derivative(Debug)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     pub data: Vec<u8>,
 }
 
@@ -234,7 +237,7 @@ mod tests {
     fn encode_trade_to_interactions() {
         let trade = Trade {
             out_amount: Default::default(),
-            gas_estimate: 0,
+            gas_estimate: None,
             interactions: vec![
                 Interaction {
                     target: H160([0xaa; 20]),

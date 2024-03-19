@@ -1,5 +1,5 @@
 use {
-    super::{Error, Solution},
+    super::{trade::ClearingPrices, Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -134,7 +134,7 @@ impl Settlement {
         )
         .await?;
         let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, eth.gas_limit(), price);
+        let gas = Gas::new(gas, eth.block_gas_limit(), price);
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
@@ -215,6 +215,20 @@ impl Settlement {
             .into()
     }
 
+    fn cip38_score(
+        &self,
+        auction: &competition::Auction,
+    ) -> Result<eth::Ether, solution::error::Scoring> {
+        let prices = auction.prices();
+
+        self.solutions
+            .values()
+            .map(|solution| solution.scoring(&prices))
+            .try_fold(eth::Ether(0.into()), |acc, score| {
+                score.map(|score| acc + score)
+            })
+    }
+
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
     /// Calculate the score for this settlement.
     pub fn score(
@@ -223,11 +237,23 @@ impl Settlement {
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, score::Error> {
-        let quality = self.boundary.quality(eth, auction)?;
+        // For testing purposes, calculate CIP38 even before activation
+        let score = self.cip38_score(auction);
+        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solutions());
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => score.try_into()?,
+            competition::SolverScore::Solver(score) => {
+                let eth = eth.with_metric_label("scoringSolution".into());
+                let quality = self.boundary.quality(&eth, auction)?;
+                let score = score.try_into()?;
+                if score > quality {
+                    return Err(score::Error::ScoreHigherThanQuality(score, quality));
+                }
+                score
+            }
             competition::SolverScore::RiskAdjusted(success_probability) => {
+                let eth = eth.with_metric_label("scoringSolution".into());
+                let quality = self.boundary.quality(&eth, auction)?;
                 let gas_cost = self.gas.estimate * auction.gas_price().effective();
                 let success_probability = success_probability.try_into()?;
                 let objective_value = (quality - gas_cost)?;
@@ -238,18 +264,19 @@ impl Settlement {
                     mempools::RevertProtection::Enabled => GasCost::zero(),
                     mempools::RevertProtection::Disabled => gas_cost,
                 };
-                competition::Score::new(
+                let score = competition::Score::new(
                     auction.score_cap(),
                     objective_value,
                     success_probability,
                     failure_cost,
-                )?
+                )?;
+                if score > quality {
+                    return Err(score::Error::ScoreHigherThanQuality(score, quality));
+                }
+                score
             }
+            competition::SolverScore::Surplus => score?.0.try_into()?,
         };
-
-        if score > quality {
-            return Err(score::Error::ScoreHigherThanQuality(score, quality));
-        }
 
         Ok(score)
     }
@@ -309,16 +336,22 @@ impl Settlement {
             .fold(Default::default(), |mut acc, solution| {
                 for trade in solution.user_trades() {
                     let order = acc.entry(trade.order().uid).or_default();
-                    order.sell = trade.sell_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                    let prices = ClearingPrices {
+                        sell: solution.prices
+                            [&trade.order().sell.token.wrap(solution.weth)],
+                        buy: solution.prices
+                            [&trade.order().buy.token.wrap(solution.weth)],
+                    };
+                    order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, "could not compute sell_amount");
+                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute sell_amount");
                         0.into()
                     });
-                    order.buy = trade.buy_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                    order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, "could not compute buy_amount");
+                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute buy_amount");
                         0.into()
                     });
                 }
@@ -373,7 +406,7 @@ pub struct Gas {
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
-    pub fn new(estimate: eth::Gas, limit: eth::Gas, price: eth::GasPrice) -> Self {
+    pub fn new(estimate: eth::Gas, block_limit: eth::Gas, price: eth::GasPrice) -> Self {
         // Specify a different gas limit than the estimated gas when executing a
         // settlement transaction. This allows the transaction to be resilient
         // to small variations in actual gas usage.
@@ -385,9 +418,21 @@ impl Gas {
             eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
                 .into();
 
+        // We don't allow for solutions to take up more than half of the block's gas
+        // limit. This is to ensure that block producers attempt to include the
+        // settlement transaction in the next block as long as it is reasonably
+        // priced. If we were to allow for solutions very close to the block
+        // gas limit, validators may discard the settlement transaction unless it is
+        // paying a very high priority fee. This is because the default block
+        // building algorithm picks the highest paying transaction whose gas limit
+        // will not exceed the remaining space in the block next and ignore transactions
+        // whose gas limit exceed the remaining space (without simulating the actual
+        // gas required).
+        let max_gas = eth::Gas(block_limit.0 / 2);
+
         Self {
             estimate,
-            limit: std::cmp::min(limit, estimate_with_buffer),
+            limit: std::cmp::min(max_gas, estimate_with_buffer),
             price,
         }
     }

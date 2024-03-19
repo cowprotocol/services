@@ -104,7 +104,7 @@ mod tests {
     async fn fetch_swapr_pool() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
-        let version = web3.net().version().await.unwrap();
+        let version = web3.eth().chain_id().await.unwrap().to_string();
         let pool_fetcher = uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
             BaselineSource::Swapr,
             &version,

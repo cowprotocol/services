@@ -451,7 +451,7 @@ mod tests {
         // shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
-        let version = web3.net().version().await.unwrap();
+        let version = web3.eth().chain_id().await.unwrap().to_string();
 
         let base_tokens = &[
             testlib::tokens::WETH,

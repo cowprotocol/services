@@ -31,7 +31,12 @@ pub struct Contracts {
 
 impl Contracts {
     pub async fn deployed(web3: &Web3) -> Self {
-        let network_id = web3.net().version().await.expect("get network ID failed");
+        let network_id = web3
+            .eth()
+            .chain_id()
+            .await
+            .expect("get network ID failed")
+            .to_string();
         tracing::info!("connected to forked test network {}", network_id);
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
@@ -65,7 +70,12 @@ impl Contracts {
     }
 
     pub async fn deploy(web3: &Web3) -> Self {
-        let network_id = web3.net().version().await.expect("get network ID failed");
+        let network_id = web3
+            .eth()
+            .chain_id()
+            .await
+            .expect("get network ID failed")
+            .to_string();
         tracing::info!("connected to test network {}", network_id);
 
         let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");

@@ -201,7 +201,11 @@ fn run() -> Result<()> {
         .github(
             "ISwaprPair",
             "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/build/IDXswapPair.json",
-        )?;
+        )?
+        .manual(
+            "ChainalysisOracle",
+            "Chainalysis does not publish its code",
+        );
 
     Ok(())
 }

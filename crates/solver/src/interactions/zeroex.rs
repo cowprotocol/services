@@ -16,8 +16,8 @@ pub struct ZeroExInteraction {
 }
 
 impl Interaction for ZeroExInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        let method = self.zeroex.clone().fill_or_kill_limit_order(
+    fn encode(&self) -> EncodedInteraction {
+        let method = self.zeroex.fill_or_kill_limit_order(
             (
                 self.order.maker_token,
                 self.order.taker_token,
@@ -41,6 +41,6 @@ impl Interaction for ZeroExInteraction {
             self.taker_token_fill_amount,
         );
         let calldata = method.tx.data.expect("no calldata").0;
-        vec![(self.zeroex.address(), 0.into(), Bytes(calldata))]
+        (self.zeroex.address(), 0.into(), Bytes(calldata))
     }
 }

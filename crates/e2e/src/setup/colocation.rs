@@ -104,6 +104,8 @@ missing-pool-cache-time = "1h"
 
 [submission]
 gas-price-cap = "1000000000000"
+logic = "native"
+max-confirm-time= "2s"
 
 [[submission.mempool]]
 mempool = "public"

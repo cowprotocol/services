@@ -1,4 +1,5 @@
 use {
+    app_data::Hook,
     contracts::GnosisSafe,
     e2e::{
         setup::{safe::Safe, *},
@@ -7,7 +8,7 @@ use {
     },
     ethcontract::{Bytes, H160, U256},
     model::{
-        order::{Hook, OrderCreation, OrderCreationAppData, OrderKind},
+        order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::{hashed_eip712_message, EcdsaSigningScheme, Signature},
     },
     secp256k1::SecretKey,

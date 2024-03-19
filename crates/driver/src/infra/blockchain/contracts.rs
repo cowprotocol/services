@@ -1,7 +1,6 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     ethcontract::dyns::DynWeb3,
-    std::collections::HashSet,
     thiserror::Error,
 };
 
@@ -11,26 +10,27 @@ pub struct Contracts {
     vault_relayer: eth::ContractAddress,
     vault: contracts::BalancerV2Vault,
     weth: contracts::WETH9,
-    cow_amms: HashSet<eth::Address>,
+
+    /// The domain separator for settlement contract used for signing orders.
+    settlement_domain_separator: eth::DomainSeparator,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
-    pub cow_amms: Option<HashSet<eth::Address>>,
 }
 
 impl Contracts {
     pub(super) async fn new(
         web3: &DynWeb3,
-        network_id: &eth::NetworkId,
+        chain: eth::ChainId,
         addresses: Addresses,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
             address
-                .or_else(|| deployment_address(contract, network_id))
+                .or_else(|| deployment_address(contract, chain))
                 .unwrap()
                 .0
         };
@@ -51,12 +51,21 @@ impl Contracts {
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
         );
 
+        let settlement_domain_separator = eth::DomainSeparator(
+            settlement
+                .domain_separator()
+                .call()
+                .await
+                .expect("domain separator")
+                .0,
+        );
+
         Ok(Self {
             settlement,
             vault_relayer,
             vault,
             weth,
-            cow_amms: addresses.cow_amms.unwrap_or_default(),
+            settlement_domain_separator,
         })
     }
 
@@ -80,8 +89,8 @@ impl Contracts {
         self.weth.address().into()
     }
 
-    pub fn cow_amms(&self) -> &HashSet<eth::Address> {
-        &self.cow_amms
+    pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
+        &self.settlement_domain_separator
     }
 }
 
@@ -89,9 +98,15 @@ impl Contracts {
 /// there is no known deployment for the contract on that network.
 pub fn deployment_address(
     contract: &ethcontract::Contract,
-    network_id: &eth::NetworkId,
+    network_id: eth::ChainId,
 ) -> Option<eth::ContractAddress> {
-    Some(contract.networks.get(network_id.as_str())?.address.into())
+    Some(
+        contract
+            .networks
+            .get(&network_id.to_string())?
+            .address
+            .into(),
+    )
 }
 
 /// A trait for initializing contract instances with dynamic addresses.

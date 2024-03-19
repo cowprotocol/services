@@ -8,7 +8,7 @@ use {
             time,
         },
         infra::{self, blockchain, observe, Ethereum},
-        util,
+        util::{self},
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
@@ -112,6 +112,18 @@ impl Auction {
     pub fn score_cap(&self) -> Score {
         self.score_cap
     }
+
+    pub fn prices(&self) -> Prices {
+        self.tokens
+            .0
+            .iter()
+            .filter_map(|(address, token)| token.price.map(|price| (*address, price)))
+            .chain(std::iter::once((
+                eth::ETH_TOKEN,
+                eth::U256::exp10(18).into(),
+            )))
+            .collect()
+    }
 }
 
 #[derive(Clone)]
@@ -120,7 +132,7 @@ pub struct AuctionProcessor(Arc<Mutex<Inner>>);
 struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
-    eth: Arc<infra::Ethereum>,
+    eth: infra::Ethereum,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -294,6 +306,7 @@ impl AuctionProcessor {
 
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+        let ethereum = ethereum.with_metric_label("orderBalances".into());
         let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
@@ -342,7 +355,8 @@ impl AuctionProcessor {
         .collect()
     }
 
-    pub fn new(eth: Arc<infra::Ethereum>) -> Self {
+    pub fn new(eth: &infra::Ethereum) -> Self {
+        let eth = eth.with_metric_label("auctionPreProcessing".into());
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
@@ -390,6 +404,9 @@ pub struct Token {
 pub struct Price(eth::Ether);
 
 impl Price {
+    /// The base Ether amount for pricing.
+    const BASE: u128 = 10_u128.pow(18);
+
     pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
         if value.0.is_zero() {
             Err(InvalidPrice)
@@ -399,8 +416,22 @@ impl Price {
     }
 
     /// Apply this price to some token amount, converting that token into ETH.
-    pub fn apply(self, amount: eth::TokenAmount) -> eth::Ether {
-        (amount.0 * self.0 .0).into()
+    ///
+    /// # Examples
+    ///
+    /// Converting 1 ETH expressed in `eth::TokenAmount` into `eth::Ether`
+    ///
+    /// ```
+    /// use driver::domain::{competition::auction::Price, eth};
+    ///
+    /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
+    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(18))).unwrap();
+    ///
+    /// let eth = price.in_eth(amount);
+    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(18)));
+    /// ```
+    pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
+        (amount.0 * self.0 .0 / Self::BASE).into()
     }
 }
 
@@ -415,6 +446,9 @@ impl From<eth::U256> for Price {
         Self(value.into())
     }
 }
+
+/// All auction prices
+pub type Prices = HashMap<eth::TokenAddress, Price>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub i64);

@@ -27,9 +27,10 @@ impl Balances {
         // properly check if the `source` is not supported for the deployment
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
+        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
 
         Self {
-            balances: contracts::support::Balances::at(web3, settlement),
+            balances: contracts::support::Balances::at(&web3, settlement),
             settlement,
             vault_relayer,
             vault,

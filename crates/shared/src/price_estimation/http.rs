@@ -285,7 +285,7 @@ impl HttpTradeFinder {
                 OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
                 OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
             },
-            gas_estimate,
+            gas_estimate: Some(gas_estimate),
             interactions: settlement
                 .interaction_data
                 .into_iter()
@@ -446,9 +446,10 @@ impl HttpTradeFinder {
 impl TradeFinding for HttpTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
         let price_estimate = self.compute_trade(Arc::new(query.clone())).await?;
+        let gas_estimate = price_estimate.gas_estimate.context("no gas estimate")?;
         Ok(Quote {
             out_amount: price_estimate.out_amount,
-            gas_estimate: price_estimate.gas_estimate,
+            gas_estimate,
             solver: price_estimate.solver,
         })
     }
@@ -464,9 +465,13 @@ impl PriceEstimating for HttpTradeFinder {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async {
             let trade = self.compute_trade(query).await?;
+            let gas = trade
+                .gas_estimate
+                .context("no gas estimate")
+                .map_err(PriceEstimationError::EstimatorInternal)?;
             Ok(Estimate {
                 out_amount: trade.out_amount,
-                gas: trade.gas_estimate,
+                gas,
                 solver: trade.solver,
                 verified: false,
             })
@@ -799,7 +804,7 @@ mod tests {
         );
         let web3 = Web3::new(DynTransport::new(transport));
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let version = web3.net().version().await.unwrap();
+        let version = chain_id.to_string();
 
         let pools = Arc::new(
             PoolCache::new(

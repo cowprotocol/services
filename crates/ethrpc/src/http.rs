@@ -30,7 +30,6 @@ pub struct HttpTransport {
 struct Inner {
     url: Url,
     id: AtomicUsize,
-    metrics: &'static TransportMetrics,
     /// Name of the transport used in logs to distinguish different transports.
     name: String,
 }
@@ -42,8 +41,6 @@ impl HttpTransport {
             inner: Arc::new(Inner {
                 url,
                 id: AtomicUsize::new(0),
-                metrics: TransportMetrics::instance(observe::metrics::get_storage_registry())
-                    .unwrap(),
                 name,
             }),
         }
@@ -126,11 +123,7 @@ impl Transport for HttpTransport {
     fn send(&self, id: RequestId, call: Call) -> Self::Out {
         let (client, inner) = self.new_request();
 
-        let metrics = self.inner.metrics;
-
         async move {
-            let _guard = metrics.on_request_start(method_name(&call));
-
             let output = execute_rpc(client, inner, id, &Request::Single(call)).await?;
             helpers::to_result_from_output(output)
         }
@@ -151,17 +144,7 @@ impl BatchTransport for HttpTransport {
         let (client, inner) = self.new_request();
         let (ids, calls): (Vec<_>, Vec<_>) = requests.into_iter().unzip();
 
-        let metrics = self.inner.metrics;
-
         async move {
-            let _guard = metrics.on_request_start("batch");
-            calls.iter().for_each(|call| {
-                metrics
-                    .inner_batch_requests_initiated
-                    .with_label_values(&[method_name(call)])
-                    .inc()
-            });
-
             let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
         }
@@ -228,59 +211,9 @@ fn id_of_output(output: &Output) -> Result<RequestId, Web3Error> {
     }
 }
 
-fn method_name(call: &Call) -> &str {
-    match call {
-        Call::MethodCall(method) => &method.method,
-        Call::Notification(notification) => &notification.method,
-        Call::Invalid { .. } => "invalid",
-    }
-}
-
-#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "node_transport")]
-struct TransportMetrics {
-    /// Number of inflight RPC requests for ethereum node.
-    #[metric(labels("method"))]
-    requests_inflight: prometheus::IntGaugeVec,
-
-    /// Number of completed RPC requests for ethereum node.
-    #[metric(labels("method"))]
-    requests_complete: prometheus::IntCounterVec,
-
-    /// Execution time for each RPC request (batches are counted as one
-    /// request).
-    #[metric(labels("method"))]
-    requests_duration_seconds: prometheus::HistogramVec,
-
-    /// Number of RPC requests initiated within a batch request
-    #[metric(labels("method"))]
-    inner_batch_requests_initiated: prometheus::IntCounterVec,
-}
-
-impl TransportMetrics {
-    #[must_use]
-    fn on_request_start(&self, method: &str) -> impl Drop {
-        let requests_inflight = self.requests_inflight.with_label_values(&[method]);
-        let requests_complete = self.requests_complete.with_label_values(&[method]);
-        let requests_duration_seconds = self.requests_duration_seconds.with_label_values(&[method]);
-
-        requests_inflight.inc();
-        let timer = requests_duration_seconds.start_timer();
-
-        scopeguard::guard(timer, move |timer| {
-            requests_inflight.dec();
-            requests_complete.inc();
-            timer.stop_and_record();
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{create_env_test_transport, Web3},
-    };
+    use super::*;
 
     #[test]
     fn handles_batch_response_being_in_different_order_than_input() {
@@ -325,30 +258,5 @@ mod tests {
             vec![OutputOrString::String("there is no spoon".into())],
         )
         .is_err());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn inner_batch_requests_metrics_success() {
-        let http = create_env_test_transport();
-        let web3 = Web3::new(http);
-        let request = web3.transport().prepare("eth_blockNumber", Vec::default());
-        let request2 = web3.transport().prepare("eth_chainId", Vec::default());
-        web3.transport()
-            .send_batch([request, request2])
-            .await
-            .unwrap();
-        let metric_storage =
-            TransportMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
-        for method_name in ["eth_blockNumber", "eth_chainId"] {
-            let number_calls = metric_storage
-                .inner_batch_requests_initiated
-                .with_label_values(&[method_name]);
-            assert_eq!(number_calls.get(), 1);
-        }
-        let batch_calls = metric_storage
-            .requests_complete
-            .with_label_values(&["batch"]);
-        assert_eq!(batch_calls.get(), 1);
     }
 }

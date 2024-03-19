@@ -211,7 +211,7 @@ impl SolutionSubmitter {
             }
         }
 
-        let network_id = self.web3.net().version().await?;
+        let network_id = self.web3.eth().chain_id().await?.to_string();
         let mut futures = self
             .transaction_strategies
             .iter()

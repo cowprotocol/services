@@ -10,6 +10,7 @@ use {
         },
         tests::{
             cases::{
+                EtherExt,
                 AB_ORDER_AMOUNT,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,
@@ -26,7 +27,7 @@ use {
         util::{self, serialize},
     },
     bigdecimal::FromPrimitive,
-    ethcontract::BlockId,
+    ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
@@ -41,6 +42,7 @@ use {
 
 mod blockchain;
 mod driver;
+pub mod fee;
 mod solver;
 
 #[derive(Debug, Clone, Copy)]
@@ -79,11 +81,35 @@ impl Default for Score {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LiquidityQuote {
+    pub sell_token: &'static str,
+    pub buy_token: &'static str,
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
+}
+
+impl LiquidityQuote {
+    pub fn buy_amount(self, buy_amount: eth::U256) -> Self {
+        Self { buy_amount, ..self }
+    }
+
+    pub fn sell_amount(self, sell_amount: eth::U256) -> Self {
+        Self {
+            sell_amount,
+            ..self
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Order {
     pub name: &'static str,
 
     pub sell_amount: eth::U256,
+    /// The explicit limit buy amount for the order. If None, it will be derived
+    /// from the order's quote.
+    pub buy_amount: Option<eth::U256>,
     pub sell_token: &'static str,
     pub buy_token: &'static str,
 
@@ -102,15 +128,18 @@ pub struct Order {
     /// buy amount is divided depends on the order side. This is necessary to
     /// keep the solution scores positive.
     pub surplus_factor: eth::U256,
-    /// Override the executed amount of the order. Useful for testing liquidity
-    /// orders. Otherwise [`execution_diff`] is probably more suitable.
+    /// Override the executed target amount of the order. Useful for testing
+    /// liquidity orders. Otherwise [`execution_diff`] is probably more
+    /// suitable.
     pub executed: Option<eth::U256>,
-
+    /// Provides explicit expected order executed amounts.
+    pub expected_amounts: Option<ExpectedOrderAmounts>,
     /// Should this order be filtered out before being sent to the solver?
     pub filtered: bool,
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
+    pub fee_policy: fee::Policy,
 }
 
 impl Order {
@@ -200,6 +229,44 @@ impl Order {
         }
     }
 
+    pub fn fee_policy(self, fee_policy: fee::Policy) -> Self {
+        Self { fee_policy, ..self }
+    }
+
+    pub fn expected_amounts(self, expected_amounts: ExpectedOrderAmounts) -> Self {
+        Self {
+            expected_amounts: Some(expected_amounts),
+            ..self
+        }
+    }
+
+    pub fn sell_amount(self, sell_amount: eth::U256) -> Self {
+        Self {
+            sell_amount,
+            ..self
+        }
+    }
+
+    pub fn buy_amount(self, buy_amount: eth::U256) -> Self {
+        Self {
+            buy_amount: Some(buy_amount),
+            ..self
+        }
+    }
+
+    pub fn partial(self, already_executed: eth::U256) -> Self {
+        Self {
+            partial: Partial::Yes {
+                executed: already_executed,
+            },
+            ..self
+        }
+    }
+
+    pub fn executed(self, executed: Option<eth::U256>) -> Self {
+        Self { executed, ..self }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -212,6 +279,7 @@ impl Default for Order {
     fn default() -> Self {
         Self {
             sell_amount: Default::default(),
+            buy_amount: None,
             sell_token: Default::default(),
             buy_token: Default::default(),
             internalize: Default::default(),
@@ -222,10 +290,15 @@ impl Default for Order {
             user_fee: Default::default(),
             solver_fee: Default::default(),
             name: Default::default(),
-            surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
+            surplus_factor: DEFAULT_SURPLUS_FACTOR.ether().into_wei(),
             executed: Default::default(),
+            expected_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
+            fee_policy: fee::Policy::Surplus {
+                factor: 0.0,
+                max_volume_factor: 0.06,
+            },
         }
     }
 }
@@ -297,6 +370,74 @@ pub struct Pool {
     pub token_b: &'static str,
     pub amount_a: eth::U256,
     pub amount_b: eth::U256,
+}
+
+impl Pool {
+    /// Restores reserve_a value from the given reserve_b and the quote. Reverse
+    /// operation for the `blockchain::Pool::out` function.
+    /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
+    #[allow(dead_code)]
+    pub fn adjusted_reserve_a(self, quote: &LiquidityQuote) -> Self {
+        let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
+            (quote.sell_amount, quote.buy_amount)
+        } else {
+            (quote.buy_amount, quote.sell_amount)
+        };
+        let reserve_a_min = ceil_div(
+            eth::U256::from(997)
+                * quote_sell_amount
+                * (self.amount_b - quote_buy_amount - eth::U256::from(1)),
+            eth::U256::from(1000) * quote_buy_amount,
+        );
+        let reserve_a_max =
+            (eth::U256::from(997) * quote_sell_amount * (self.amount_b - quote_buy_amount))
+                / (eth::U256::from(1000) * quote_buy_amount);
+        if reserve_a_min > reserve_a_max {
+            panic!(
+                "Unexpected calculated reserves. min: {:?}, max: {:?}",
+                reserve_a_min, reserve_a_max
+            );
+        }
+        Self {
+            amount_a: reserve_a_min,
+            ..self
+        }
+    }
+
+    /// Restores reserve_b value from the given reserve_a and the quote. Reverse
+    /// operation for the `blockchain::Pool::out` function
+    /// <https://en.wikipedia.org/wiki/Floor_and_ceiling_functions>
+    pub fn adjusted_reserve_b(self, quote: &LiquidityQuote) -> Self {
+        let (quote_sell_amount, quote_buy_amount) = if quote.sell_token == self.token_a {
+            (quote.sell_amount, quote.buy_amount)
+        } else {
+            (quote.buy_amount, quote.sell_amount)
+        };
+        let reserve_b_min = ceil_div(
+            quote_buy_amount
+                * (eth::U256::from(1000) * self.amount_a
+                    + eth::U256::from(997) * quote_sell_amount),
+            eth::U256::from(997) * quote_sell_amount,
+        );
+        let reserve_b_max = ((quote_buy_amount + eth::U256::from(1))
+            * (eth::U256::from(1000) * self.amount_a + eth::U256::from(997) * quote_sell_amount)
+            - eth::U256::from(1))
+            / (eth::U256::from(997) * quote_sell_amount);
+        if reserve_b_min > reserve_b_max {
+            panic!(
+                "Unexpected calculated reserves. min: {:?}, max: {:?}",
+                reserve_b_min, reserve_b_max
+            );
+        }
+        Self {
+            amount_b: reserve_b_min,
+            ..self
+        }
+    }
+}
+
+fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
+    (x + y - eth::U256::from(1)) / y
 }
 
 #[derive(Debug)]
@@ -381,6 +522,7 @@ impl Solution {
     }
 
     /// Increase the solution gas consumption by at least `units`.
+    #[allow(dead_code)]
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
         let additional_bytes = (units / 16) + 1;
@@ -428,19 +570,32 @@ pub fn ab_pool() -> Pool {
     Pool {
         token_a: "A",
         token_b: "B",
-        amount_a: DEFAULT_POOL_AMOUNT_A.into(),
-        amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        amount_a: DEFAULT_POOL_AMOUNT_A.ether().into_wei(),
+        amount_b: DEFAULT_POOL_AMOUNT_B.ether().into_wei(),
     }
+}
+
+pub fn ab_adjusted_pool(quote: LiquidityQuote) -> Pool {
+    ab_pool().adjusted_reserve_b(&quote)
 }
 
 /// An example order which sells token "A" for token "B".
 pub fn ab_order() -> Order {
     Order {
         name: "A-B order",
-        sell_amount: AB_ORDER_AMOUNT.into(),
+        sell_amount: AB_ORDER_AMOUNT.ether().into_wei(),
         sell_token: "A",
         buy_token: "B",
         ..Default::default()
+    }
+}
+
+pub fn ab_liquidity_quote() -> LiquidityQuote {
+    LiquidityQuote {
+        sell_token: "A",
+        buy_token: "B",
+        sell_amount: AB_ORDER_AMOUNT.ether().into_wei(),
+        buy_amount: 40.ether().into_wei(),
     }
 }
 
@@ -460,8 +615,8 @@ pub fn cd_pool() -> Pool {
     Pool {
         token_a: "C",
         token_b: "D",
-        amount_a: DEFAULT_POOL_AMOUNT_C.into(),
-        amount_b: DEFAULT_POOL_AMOUNT_D.into(),
+        amount_a: DEFAULT_POOL_AMOUNT_C.ether().into_wei(),
+        amount_b: DEFAULT_POOL_AMOUNT_D.ether().into_wei(),
     }
 }
 
@@ -469,7 +624,7 @@ pub fn cd_pool() -> Pool {
 pub fn cd_order() -> Order {
     Order {
         name: "C-D order",
-        sell_amount: CD_ORDER_AMOUNT.into(),
+        sell_amount: CD_ORDER_AMOUNT.ether().into_wei(),
         sell_token: "C",
         buy_token: "D",
         ..Default::default()
@@ -492,8 +647,8 @@ pub fn weth_pool() -> Pool {
     Pool {
         token_a: "A",
         token_b: "WETH",
-        amount_a: DEFAULT_POOL_AMOUNT_A.into(),
-        amount_b: DEFAULT_POOL_AMOUNT_B.into(),
+        amount_a: DEFAULT_POOL_AMOUNT_A.ether().into_wei(),
+        amount_b: DEFAULT_POOL_AMOUNT_B.ether().into_wei(),
     }
 }
 
@@ -501,7 +656,7 @@ pub fn weth_pool() -> Pool {
 pub fn eth_order() -> Order {
     Order {
         name: "ETH order",
-        sell_amount: ETH_ORDER_AMOUNT.into(),
+        sell_amount: ETH_ORDER_AMOUNT.ether().into_wei(),
         sell_token: "A",
         buy_token: "ETH",
         ..Default::default()
@@ -634,7 +789,7 @@ impl Setup {
         }
         let mut quotes = Vec::new();
         for order in orders {
-            let quote = blockchain.quote(&order).await;
+            let quote = blockchain.quote(&order);
             quotes.push(quote);
         }
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
@@ -839,6 +994,11 @@ impl Test {
         );
         balances
     }
+
+    #[allow(dead_code)]
+    pub fn web3(&self) -> &web3::Web3<DynTransport> {
+        &self.blockchain.web3
+    }
 }
 
 /// A /solve response.
@@ -888,7 +1048,8 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 5);
+        // response contains 1 optional field
+        assert!((5..=6).contains(&solution.as_object().unwrap().len()));
         solution
     }
 
@@ -914,7 +1075,10 @@ impl<'a> SolveOk<'a> {
 
     /// Ensure that the score is within the default expected range.
     pub fn default_score(self) -> Self {
-        self.score_in_range(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
+        self.score_in_range(
+            DEFAULT_SCORE_MIN.ether().into_wei(),
+            DEFAULT_SCORE_MAX.ether().into_wei(),
+        )
     }
 
     /// Ensures that `/solve` returns no solutions.
@@ -923,7 +1087,7 @@ impl<'a> SolveOk<'a> {
     }
 
     /// Check that the solution contains the expected orders.
-    pub fn orders(self, order_names: &[&str]) -> Self {
+    pub fn orders(self, orders: &[Order]) -> Self {
         let solution = self.solution();
         assert!(solution.get("orders").is_some());
         let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
@@ -931,29 +1095,36 @@ impl<'a> SolveOk<'a> {
         )
         .unwrap();
 
-        for expected in order_names.iter().map(|name| {
-            self.fulfillments
+        for (expected, fulfillment) in orders.iter().map(|expected_order| {
+            let fulfillment = self
+                .fulfillments
                 .iter()
-                .find(|f| f.quoted_order.order.name == *name)
+                .find(|f| f.quoted_order.order.name == expected_order.name)
                 .unwrap_or_else(|| {
                     panic!(
-                        "unexpected orders {order_names:?}: fulfillment not found in {:?}",
-                        self.fulfillments,
+                        "unexpected order {:?}: fulfillment not found in {:?}",
+                        expected_order.name, self.fulfillments,
                     )
-                })
+                });
+            (expected_order, fulfillment)
         }) {
-            let uid = expected.quoted_order.order_uid(self.blockchain);
+            let uid = fulfillment.quoted_order.order_uid(self.blockchain);
             let trade = trades
                 .get(&uid.to_string())
                 .expect("Didn't find expected trade in solution");
             let u256 = |value: &serde_json::Value| {
                 eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
             };
-            assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
-            assert!(
-                u256(trade.get("sellAmount").unwrap())
-                    == expected.quoted_order.sell + expected.quoted_order.order.user_fee
-            );
+
+            let (expected_sell, expected_buy) = match &expected.expected_amounts {
+                Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
+                None => (
+                    fulfillment.quoted_order.sell + fulfillment.quoted_order.order.user_fee,
+                    fulfillment.quoted_order.buy,
+                ),
+            };
+            assert!(u256(trade.get("sellAmount").unwrap()) == expected_sell);
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected_buy);
         }
         self
     }
@@ -971,6 +1142,12 @@ impl Reveal {
         assert_eq!(self.status, hyper::StatusCode::OK);
         RevealOk { body: self.body }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExpectedOrderAmounts {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
 }
 
 pub struct RevealOk {
@@ -1188,7 +1365,7 @@ impl<'a> SettleOk<'a> {
     /// Ensure that the onchain balances changed in accordance with the
     /// [`ab_order`].
     pub async fn ab_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.into()))
+        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.ether().into_wei()))
             .await
             .balance("B", Balance::Greater)
             .await
@@ -1197,7 +1374,7 @@ impl<'a> SettleOk<'a> {
     /// Ensure that the onchain balances changed in accordance with the
     /// [`cd_order`].
     pub async fn cd_order_executed(self) -> SettleOk<'a> {
-        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.into()))
+        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.ether().into_wei()))
             .await
             .balance("D", Balance::Greater)
             .await
@@ -1206,7 +1383,7 @@ impl<'a> SettleOk<'a> {
     /// Ensure that the onchain balances changed in accordance with the
     /// [`eth_order`].
     pub async fn eth_order_executed(self) -> SettleOk<'a> {
-        self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.into()))
+        self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.ether().into_wei()))
             .await
             .balance("ETH", Balance::Greater)
             .await

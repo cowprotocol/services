@@ -16,8 +16,8 @@ pub struct UniswapInteraction {
 }
 
 impl Interaction for UniswapInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![self.encode_swap()]
+    fn encode(&self) -> EncodedInteraction {
+        self.encode_swap()
     }
 }
 
@@ -68,13 +68,9 @@ mod tests {
             token_in,
             token_out: H160::from_low_u64_be(token_out as u64),
         };
-        let interactions = interaction.encode();
-
-        // Single interaction
-        assert_eq!(interactions.len(), 1);
+        let swap_call = interaction.encode();
 
         // Verify Swap
-        let swap_call = &interactions[0];
         assert_eq!(swap_call.0, router.address());
         let call = &swap_call.2 .0;
         let swap_signature = hex!("8803dbee");

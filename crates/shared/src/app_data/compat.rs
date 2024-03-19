@@ -12,6 +12,8 @@ impl From<BackendAppData> for ProtocolAppData {
         Self {
             hooks: value.hooks,
             signer: None,
+            replaced_order: None,
+            partner_fee: None,
         }
     }
 }
