@@ -157,7 +157,6 @@ dependencies = [
  "app-data-hash",
  "ethcontract",
  "hex",
- "model",
  "primitive-types",
  "serde",
  "serde_json",
@@ -1632,6 +1631,7 @@ name = "driver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "async-trait",
  "axum",
  "bigdecimal",
@@ -2849,6 +2849,7 @@ name = "model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "app-data-hash",
  "bigdecimal",
  "chrono",

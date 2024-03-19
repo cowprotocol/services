@@ -1,5 +1,5 @@
 use {
-    crate::{bytes_hex, quote::QuoteSigningScheme, DomainSeparator},
+    crate::{quote::QuoteSigningScheme, DomainSeparator},
     anyhow::{ensure, Context as _, Result},
     primitive_types::{H160, H256},
     serde::{de, Deserialize, Serialize},
@@ -205,7 +205,7 @@ pub struct Recovered {
 #[serde(rename_all = "camelCase")]
 struct JsonSignature {
     signing_scheme: SigningScheme,
-    #[serde(with = "bytes_hex")]
+    #[serde(with = "app_data::bytes_hex")]
     signature: Vec<u8>,
 }
 

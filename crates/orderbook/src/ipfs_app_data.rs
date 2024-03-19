@@ -1,8 +1,8 @@
 use {
     crate::ipfs::Ipfs,
     anyhow::Result,
+    app_data::AppDataHash,
     cached::{Cached, TimedSizedCache},
-    model::app_data::AppDataHash,
     std::sync::Mutex,
 };
 

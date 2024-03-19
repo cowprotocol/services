@@ -435,7 +435,7 @@ pub struct Transaction {
     pub from: H160,
     pub to: H160,
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "app_data::bytes_hex")]
     pub data: Vec<u8>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,

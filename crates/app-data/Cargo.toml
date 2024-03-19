@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 app-data-hash = { path = "../app-data-hash" }
 anyhow = { workspace = true }
-model = { path = "../model" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

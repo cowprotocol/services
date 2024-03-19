@@ -16,14 +16,13 @@ use {
         trade_finding,
     },
     anyhow::{anyhow, Result},
-    app_data::{Hook, Hooks, ValidatedAppData, Validator},
+    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     chrono::Utc,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             AppdataFromMismatch,

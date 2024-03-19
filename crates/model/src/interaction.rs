@@ -13,7 +13,7 @@ pub struct InteractionData {
     pub target: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
-    #[serde(with = "crate::bytes_hex")]
+    #[serde(with = "app_data::bytes_hex")]
     pub call_data: Vec<u8>,
 }
 

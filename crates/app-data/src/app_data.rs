@@ -1,9 +1,9 @@
 use {
-    crate::Hooks,
+    crate::{AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
-    model::{app_data::AppDataHash, order::OrderUid},
     primitive_types::H160,
-    serde::Deserialize,
+    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    std::{fmt, fmt::Display},
 };
 
 mod compat;
@@ -132,6 +132,77 @@ struct Root {
     /// However, in order to not break existing integrations, we allow using the
     /// `backend` field for specifying hooks.
     backend: Option<compat::BackendAppData>,
+}
+
+// uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
+#[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct OrderUid(pub [u8; 56]);
+
+impl Display for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bytes = [0u8; 2 + 56 * 2];
+        bytes[..2].copy_from_slice(b"0x");
+        // Unwrap because the length is always correct.
+        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
+        // Unwrap because the string is always valid utf8.
+        let str = std::str::from_utf8(&bytes).unwrap();
+        f.write_str(str)
+    }
+}
+
+impl fmt::Debug for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Default for OrderUid {
+    fn default() -> Self {
+        Self([0u8; 56])
+    }
+}
+
+impl Serialize for OrderUid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderUid {
+    fn deserialize<D>(deserializer: D) -> Result<OrderUid, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor {}
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = OrderUid;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "an uid with orderDigest_owner_validTo")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.strip_prefix("0x").ok_or_else(|| {
+                    de::Error::custom(format!(
+                        "{s:?} can't be decoded as hex uid because it does not start with '0x'"
+                    ))
+                })?;
+                let mut value = [0u8; 56];
+                hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
+                    de::Error::custom(format!("failed to decode {s:?} as hex uid: {err}"))
+                })?;
+                Ok(OrderUid(value))
+            }
+        }
+
+        deserializer.deserialize_str(Visitor {})
+    }
 }
 
 #[cfg(test)]

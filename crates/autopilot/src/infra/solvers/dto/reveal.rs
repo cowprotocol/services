@@ -1,5 +1,5 @@
 use {
-    crate::boundary::bytes_hex,
+    app_data::bytes_hex,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };

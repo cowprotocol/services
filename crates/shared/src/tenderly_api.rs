@@ -6,8 +6,8 @@ use {
         http_client::HttpClientFactory,
     },
     anyhow::Result,
+    app_data::bytes_hex::BytesHex,
     clap::Parser,
-    model::bytes_hex::BytesHex,
     prometheus::IntGaugeVec,
     reqwest::{
         header::{HeaderMap, HeaderValue},
@@ -169,7 +169,7 @@ pub struct SimulationRequest {
     pub transaction_index: Option<u64>,
     pub from: H160,
     pub to: H160,
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "app_data::bytes_hex")]
     pub input: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,

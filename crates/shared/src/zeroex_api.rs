@@ -189,7 +189,7 @@ impl Default for OrdersQuery {
 pub struct OrderMetadata {
     #[derivative(Default(value = "DateTime::<Utc>::MIN_UTC"))]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "app_data::bytes_hex")]
     pub order_hash: Vec<u8>,
     #[serde_as(as = "DisplayFromStr")]
     pub remaining_fillable_taker_amount: u128,
@@ -320,7 +320,7 @@ pub struct SwapResponse {
     pub price: PriceResponse,
     pub to: H160,
     #[derivative(Debug(format_with = "debug_bytes"))]
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "app_data::bytes_hex")]
     pub data: Vec<u8>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
