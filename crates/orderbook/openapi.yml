@@ -1525,8 +1525,16 @@ components:
       properties:
         factor:
           type: number
+          minimum: 0.0
+          maximum: 1.0
+          exclusiveMinimum: true
+          exclusiveMaximum: true
         max_volume_factor:
           type: number
+          minimum: 0.0
+          maximum: 1.0
+          exclusiveMinimum: true
+          exclusiveMaximum: true
       required:
         - factor
         - max_volume_factor
@@ -1536,6 +1544,10 @@ components:
       properties:
         factor:
           type: number
+          minimum: 0.0
+          maximum: 1.0
+          exclusiveMinimum: true
+          exclusiveMaximum: true
       required:
         - factor
     PriceImprovement:
@@ -1544,8 +1556,16 @@ components:
       properties:
         factor:
           type: number
+          minimum: 0.0
+          maximum: 1.0
+          exclusiveMinimum: true
+          exclusiveMaximum: true
         max_volume_factor:
           type: number
+          minimum: 0.0
+          maximum: 1.0
+          exclusiveMinimum: true
+          exclusiveMaximum: true
       required:
         - factor
         - max_volume_factor
