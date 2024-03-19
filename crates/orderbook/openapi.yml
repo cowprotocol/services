@@ -1527,17 +1527,15 @@ components:
           type: number
           minimum: 0.0
           maximum: 1.0
-          exclusiveMinimum: true
           exclusiveMaximum: true
-        max_volume_factor:
+        maxVolumeFactor:
           type: number
           minimum: 0.0
           maximum: 1.0
-          exclusiveMinimum: true
           exclusiveMaximum: true
       required:
         - factor
-        - max_volume_factor
+        - maxVolumeFactor
     Volume:
       description: The protocol fee is taken as a percent of the order volume.
       type: object
@@ -1546,7 +1544,6 @@ components:
           type: number
           minimum: 0.0
           maximum: 1.0
-          exclusiveMinimum: true
           exclusiveMaximum: true
       required:
         - factor
@@ -1558,17 +1555,15 @@ components:
           type: number
           minimum: 0.0
           maximum: 1.0
-          exclusiveMinimum: true
           exclusiveMaximum: true
-        max_volume_factor:
+        maxVolumeFactor:
           type: number
           minimum: 0.0
           maximum: 1.0
-          exclusiveMinimum: true
           exclusiveMaximum: true
       required:
         - factor
-        - max_volume_factor
+        - maxVolumeFactor
     FeePolicy:
       description: Defines the ways to calculate the protocol fee.
       oneOf:
