@@ -48,7 +48,7 @@ const DAI_PER_ETH: u32 = 1_000;
 
 #[tokio::test]
 #[ignore]
-async fn local_node_eth_flow() {
+async fn local_node_eth_flow_tx() {
     run_test(eth_flow_tx).await;
 }
 
@@ -56,89 +56,6 @@ async fn local_node_eth_flow() {
 #[ignore]
 async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_eth_flow_zero_fee() {
-    run_test(eth_flow_tx_zero_fee).await;
-}
-
-/// Tests that eth flow orders can be created with 0 fee.
-async fn eth_flow_tx_zero_fee(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-    let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [trader] = onchain.make_accounts(to_wei(2)).await;
-
-    // Create token with Uniswap pool for price estimation
-    let [dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
-        .await;
-
-    // Get a quote from the services
-    let buy_token = dai.address();
-    let receiver = H160([0x42; 20]);
-    let sell_amount = to_wei(1);
-    let intent = EthFlowTradeIntent {
-        sell_amount,
-        buy_token,
-        receiver,
-    };
-
-    let services = Services::new(onchain.contracts()).await;
-    services.start_protocol(solver).await;
-
-    let quote: OrderQuoteResponse = test_submit_quote(
-        &services,
-        &intent.to_quote_request(trader.account().address(), &onchain.contracts().weth),
-    )
-    .await;
-
-    let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
-        + 3600;
-    let mut ethflow_order =
-        ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
-    // Set fee_amount to 0 to make it behave like a limit order instead of a market
-    // order.
-    ethflow_order.0.fee_amount = 0.into();
-
-    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
-
-    test_order_availability_in_api(
-        &services,
-        &ethflow_order,
-        &trader.address(),
-        onchain.contracts(),
-    )
-    .await;
-
-    tracing::info!("waiting for trade");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    test_order_was_settled(&services, &ethflow_order, &web3).await;
-
-    // make sure the fee was charged for zero fee limit orders
-    let fee_charged = || async {
-        onchain.mint_block().await;
-        let order = services
-            .get_order(&ethflow_order.uid(onchain.contracts()).await)
-            .await
-            .unwrap();
-        order.metadata.executed_surplus_fee > U256::zero()
-    };
-    wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
-
-    test_trade_availability_in_api(
-        services.client(),
-        &ethflow_order,
-        &trader.address(),
-        onchain.contracts(),
-    )
-    .await;
 }
 
 async fn eth_flow_tx(web3: Web3) {
@@ -193,6 +110,17 @@ async fn eth_flow_tx(web3: Web3) {
         .unwrap();
 
     test_order_was_settled(&services, &ethflow_order, &web3).await;
+
+    // make sure the fee was charged for zero fee limit orders
+    let fee_charged = || async {
+        onchain.mint_block().await;
+        let order = services
+            .get_order(&ethflow_order.uid(onchain.contracts()).await)
+            .await
+            .unwrap();
+        order.metadata.executed_surplus_fee > U256::zero()
+    };
+    wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
 
     test_trade_availability_in_api(
         services.client(),
@@ -481,16 +409,7 @@ async fn test_order_parameters(
             placement_error: None,
         })
     );
-
-    match order.0.fee_amount.is_zero() {
-        true => {
-            assert_eq!(response.metadata.class, OrderClass::Limit);
-        }
-        false => {
-            assert_eq!(response.metadata.class, OrderClass::Market);
-        }
-    }
-
+    assert_eq!(response.metadata.class, OrderClass::Limit);
     assert!(order
         .is_valid_cowswap_signature(&response.signature, contracts)
         .await
@@ -548,7 +467,7 @@ impl ExtendedEthFlowOrder {
             sell_amount: quote.sell_amount,
             buy_amount: quote.buy_amount,
             app_data: ethcontract::Bytes(quote.app_data.hash().0),
-            fee_amount: quote.fee_amount,
+            fee_amount: 0.into(),
             valid_to, // note: valid to in the quote is always unlimited
             partially_fillable: quote.partially_fillable,
             quote_id: quote_response.id.expect("No quote id"),
