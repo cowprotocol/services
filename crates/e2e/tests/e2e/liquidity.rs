@@ -51,7 +51,7 @@ pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC
 async fn forked_node_zero_ex_liquidity_mainnet() {
     run_forked_test_with_block_number(
         zero_ex_liquidity,
-        std::env::var("FORK_URL").expect("FORK_URL must be set to run forked tests"),
+        std::env::var("FORK_URL_MAINNET").expect("FORK_URL must be set to run forked tests"),
         FORK_BLOCK,
     )
     .await
