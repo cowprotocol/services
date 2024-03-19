@@ -68,11 +68,12 @@ impl Auction {
                 .iter()
                 .map(|order| {
                     let mut available = order.available(weth);
-                    // adjust ammounts if order has volume based protocol fee
-                    // this is done because solvers are unaware of protocol fees and could solve for
-                    // limit prices without considering the fee, which would potentially result
-                    // in a failed settlement (due to violated limit prices) once the driver
-                    // tries to withold the volume based fee
+                    // Solvers are unaware of the protocol fees. In case of volume based fees,
+                    // fee taken might be higher than the surplus of the solution. This
+                    // would lead to violating limit prices when driver tries to withhold the
+                    // volume based fee. To avoid this, we artifically adjust the order limit
+                    // amounts (make then worse) before sending to solvers, to force solvers to only
+                    // submit solutions with enough surplus to cover the fee.
                     //
                     // https://github.com/cowprotocol/services/issues/2440
                     if let Some(FeePolicy::Volume { factor }) = order.protocol_fees.first() {
