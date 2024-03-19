@@ -73,6 +73,8 @@ impl Auction {
                     // limit prices without considering the fee, which would potentially result
                     // in a failed settlement (due to violated limit prices) once the driver
                     // tries to withold the volume based fee
+                    //
+                    // https://github.com/cowprotocol/services/issues/2440
                     if let Some(FeePolicy::Volume { factor }) = order.protocol_fees.first() {
                         match order.side {
                             Side::Buy => {
