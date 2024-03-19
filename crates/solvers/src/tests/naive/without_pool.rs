@@ -28,6 +28,7 @@ async fn test() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "protocolFees": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -41,6 +42,7 @@ async fn test() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "protocolFees": [],
                 },
             ],
             "liquidity": [

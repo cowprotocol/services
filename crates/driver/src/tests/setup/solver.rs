@@ -108,6 +108,11 @@ impl Solver {
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
+                "protocolFees": match quote.order.kind {
+                    order::Kind::Market => json!([]),
+                    order::Kind::Liquidity => json!([]),
+                    order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
+                },
             }));
         }
         for (i, solution) in config.solutions.iter().enumerate() {

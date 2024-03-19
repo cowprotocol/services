@@ -39,6 +39,7 @@ pub struct Order {
     pub kind: Kind,
     pub partially_fillable: bool,
     pub class: Class,
+    pub protocol_fees: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +55,33 @@ pub enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Quote {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
 }
 
 #[serde_as]
