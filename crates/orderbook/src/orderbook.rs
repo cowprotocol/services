@@ -1,10 +1,10 @@
 use {
     crate::{
-        app_data,
         database::orders::{InsertionError, OrderStoring},
         dto,
     },
     anyhow::{Context, Result},
+    app_data::Validator,
     chrono::Utc,
     ethcontract::H256,
     model::{
@@ -24,7 +24,6 @@ use {
     },
     primitive_types::H160,
     shared::{
-        app_data::Validator,
         metrics::LivenessChecking,
         order_quoting::Quote,
         order_validation::{OrderValidating, ValidationError},
@@ -167,7 +166,7 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    app_data: Arc<app_data::Registry>,
+    app_data: Arc<crate::app_data::Registry>,
 }
 
 impl Orderbook {
@@ -177,7 +176,7 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        app_data: Arc<app_data::Registry>,
+        app_data: Arc<crate::app_data::Registry>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -477,8 +476,8 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
-        let app_data = Arc::new(app_data::Registry::new(
-            shared::app_data::Validator::new(8192),
+        let app_data = Arc::new(crate::app_data::Registry::new(
+            Validator::new(8192),
             database.clone(),
             None,
         ));

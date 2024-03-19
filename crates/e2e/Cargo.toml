@@ -6,6 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+app-data = { path = "../app-data" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }

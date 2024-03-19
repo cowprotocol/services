@@ -1,9 +1,7 @@
 use {
+    crate::Hooks,
     anyhow::{anyhow, Context, Result},
-    model::{
-        app_data::AppDataHash,
-        order::{Hooks, OrderUid},
-    },
+    model::{app_data::AppDataHash, order::OrderUid},
     primitive_types::H160,
     serde::Deserialize,
 };
@@ -13,25 +11,32 @@ mod compat;
 /// The minimum valid empty app data JSON string.
 pub const EMPTY: &str = "{}";
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
     pub document: String,
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
+    pub partner_fee: Option<PartnerFee>,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct PartnerFee {
+    pub bps: u64,
+    pub recipient: H160,
 }
 
 #[derive(Clone)]
@@ -39,7 +44,7 @@ pub struct Validator {
     size_limit: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test_helpers"))]
 impl Default for Validator {
     fn default() -> Self {
         Self { size_limit: 8192 }
@@ -131,7 +136,7 @@ struct Root {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::H160, model::order::Hook};
+    use {super::*, crate::Hook, ethcontract::H160};
 
     macro_rules! assert_app_data {
         ($s:expr, $e:expr $(,)?) => {{

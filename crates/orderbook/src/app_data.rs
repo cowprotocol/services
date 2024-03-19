@@ -5,7 +5,6 @@ use {
     },
     anyhow::{Context, Result},
     model::app_data::AppDataHash,
-    shared::app_data,
 };
 
 /// CoW Protocol API app-data registry.
