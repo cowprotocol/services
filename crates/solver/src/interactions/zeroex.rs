@@ -5,13 +5,14 @@ use {
         interaction::{EncodedInteraction, Interaction},
         zeroex_api::Order,
     },
+    std::sync::Arc,
 };
 
 #[derive(Clone, Debug)]
 pub struct ZeroExInteraction {
     pub order: Order,
     pub taker_token_fill_amount: u128,
-    pub zeroex: IZeroEx,
+    pub zeroex: Arc<IZeroEx>,
 }
 
 impl Interaction for ZeroExInteraction {

@@ -29,7 +29,7 @@ use {
 pub mod balancer;
 pub mod swapr;
 pub mod uniswap;
-mod zeroex;
+pub mod zeroex;
 
 /// The default poll interval for the block stream updating task.
 const BLOCK_POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -169,7 +169,7 @@ impl Fetcher {
                     }
                     Liquidity::BalancerWeighted(pool) => balancer::v2::weighted::to_domain(id, pool),
                     Liquidity::BalancerStable(pool) => balancer::v2::stable::to_domain(id, pool),
-                    Liquidity::LimitOrder(_) => unreachable!(),
+                    Liquidity::LimitOrder(pool) => zeroex::to_domain(id, pool),
                     Liquidity::Concentrated(pool) => uniswap::v3::to_domain(id, pool),
                 }
                 // Ignore "bad" liquidity - this allows the driver to continue
