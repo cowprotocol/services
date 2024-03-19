@@ -25,7 +25,7 @@
 use {
     super::{
         error::Math,
-        trade::{self, ClearingPrices, Fee, Fulfillment},
+        trade::{self, ClearingPrices, Fulfillment},
     },
     crate::domain::{
         competition::{
@@ -35,7 +35,6 @@ use {
         },
         eth,
     },
-    bigdecimal::Zero,
 };
 
 impl Fulfillment {
@@ -44,17 +43,12 @@ impl Fulfillment {
         let protocol_fee = self.protocol_fee_in_sell_token(prices)?;
 
         // Increase the fee by the protocol fee
-        let fee = match self.surplus_fee() {
-            None => {
-                if !protocol_fee.is_zero() {
-                    return Err(Error::ProtocolFeeOnStaticOrder);
-                }
-                Fee::Static
-            }
-            Some(fee) => {
-                Fee::Dynamic((fee.0.checked_add(protocol_fee.0).ok_or(Math::Overflow)?).into())
-            }
-        };
+        let fee = order::SellAmount(
+            self.fee()
+                .0
+                .checked_add(protocol_fee.0)
+                .ok_or(Math::Overflow)?,
+        );
 
         // Reduce the executed amount by the protocol fee. This is because solvers are
         // unaware of the protocol fee that driver introduces and they only account
@@ -133,7 +127,7 @@ impl Fulfillment {
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
-        tracing::debug!(uid=?self.order().uid, ?fee_from_surplus, ?fee_from_volume, ?protocol_fee, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+        tracing::debug!(uid=?self.order().uid, ?fee_from_surplus, ?fee_from_volume, ?protocol_fee, executed=?self.executed(), surplus_fee=?self.fee(), "calculated protocol fee");
         Ok(protocol_fee)
     }
 
@@ -263,8 +257,6 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
 pub enum Error {
     #[error("multiple fee policies are not supported yet")]
     MultipleFeePolicies,
-    #[error("orders with non solver determined gas cost fees are not supported")]
-    ProtocolFeeOnStaticOrder,
     #[error(transparent)]
     Math(#[from] Math),
     #[error(transparent)]

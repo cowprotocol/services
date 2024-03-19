@@ -25,7 +25,6 @@ pub struct Order {
     /// The maximum amount this order is allowed to sell when completely filled.
     pub sell: eth::Asset,
     pub side: Side,
-    pub user_fee: SellAmount,
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
@@ -118,8 +117,6 @@ pub struct Available {
     /// The available minimum buy amount for an order that gets passed to a
     /// solver engine.
     pub buy: eth::Asset,
-    /// The available fee amount.
-    pub user_fee: SellAmount,
 }
 
 impl Order {
@@ -172,7 +169,6 @@ impl Order {
                 token: self.buy.token.wrap(weth),
                 amount: self.buy.amount,
             },
-            user_fee: self.user_fee,
         };
 
         let available = match self.partial {
@@ -181,9 +177,10 @@ impl Order {
         };
         let target = self.target();
 
-        for amount in [&mut amounts.sell.amount.0, &mut amounts.user_fee.0] {
-            *amount = util::math::mul_ratio(*amount, available.0, target.0).unwrap_or_default();
-        }
+        amounts.sell.amount =
+            util::math::mul_ratio_ceil(amounts.sell.amount.0, available.0, target.0)
+                .unwrap_or_default()
+                .into();
 
         amounts.buy.amount =
             util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
@@ -191,12 +188,6 @@ impl Order {
                 .into();
 
         amounts
-    }
-
-    /// Should the order fee be determined by the solver? This is true for
-    /// partial limit orders.
-    pub fn solver_determines_fee(&self) -> bool {
-        matches!(self.kind, Kind::Limit { .. })
     }
 
     /// The likelihood that this order will be fulfilled, based on token prices.

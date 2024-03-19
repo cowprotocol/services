@@ -42,12 +42,7 @@ impl Solutions {
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
-                                    match fulfillment.fee {
-                                        Some(fee) => competition::solution::trade::Fee::Dynamic(
-                                            competition::order::SellAmount(fee),
-                                        ),
-                                        None => competition::solution::trade::Fee::Static,
-                                    },
+                                    competition::order::SellAmount(fulfillment.fee),
                                 )
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(|err| super::Error(format!("invalid fulfillment: {err}")))
@@ -253,8 +248,8 @@ struct Fulfillment {
     order: [u8; order::UID_LEN],
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
-    #[serde_as(as = "Option<serialize::U256>")]
-    fee: Option<eth::U256>,
+    #[serde_as(as = "serialize::U256")]
+    fee: eth::U256,
 }
 
 #[serde_as]
