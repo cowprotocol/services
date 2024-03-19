@@ -110,8 +110,6 @@ impl Fulfillment {
                         fee_amount: quote.fee.amount.0,
                     },
                 )?;
-                tracing::info!("newlog self.order()={:?}", self.order());
-                tracing::info!("newlog price_limits={:?}", &price_limits);
                 self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
@@ -133,11 +131,8 @@ impl Fulfillment {
         let fee_from_surplus =
             self.fee_from_surplus(price_limits.sell.0, price_limits.buy.0, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
-        tracing::info!("newlog fee_from_surplus={:?}", fee_from_surplus);
-        tracing::info!("newlog fee_from_volume={:?}", fee_from_volume);
-        let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
         // take the smaller of the two
-        tracing::info!("newlog protocol_fee={:?}", protocol_fee);
+        let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
         tracing::debug!(uid=?self.order().uid, ?fee_from_surplus, ?fee_from_volume, ?protocol_fee, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
         Ok(protocol_fee)
     }
@@ -196,14 +191,14 @@ impl Fulfillment {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Order {
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
     pub side: Side,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Quote {
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
@@ -230,8 +225,6 @@ pub struct Quote {
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
 pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, Math> {
-    tracing::info!("newlog order={:?}", order);
-    tracing::info!("newlog quote={:?}", quote);
     let quote_sell_amount = quote
         .sell_amount
         .checked_add(quote.fee_amount)

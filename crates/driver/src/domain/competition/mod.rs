@@ -366,7 +366,6 @@ pub struct Amounts {
     pub buy: eth::TokenAmount,
 }
 
-#[derive(Debug)]
 pub struct PriceLimits {
     pub sell: eth::TokenAmount,
     pub buy: eth::TokenAmount,
