@@ -1,4 +1,8 @@
-use crate::{arguments, boundary, domain};
+use {
+    crate::{arguments, boundary, domain},
+    app_data::Validator,
+    prometheus::core::Number,
+};
 
 pub enum Policy {
     Surplus(Surplus),
@@ -99,6 +103,23 @@ impl PriceImprovement {
 
 impl Volume {
     pub fn apply(&self, order: &boundary::Order) -> Option<domain::fee::Policy> {
+        // If the partner fee is specified, it overwrites the current volume fee policy
+        if let Some(validated_app_data) = order
+            .metadata
+            .full_app_data
+            .as_ref()
+            .map(|full_app_data| Validator::new(usize::MAX).validate(full_app_data.as_bytes()))
+            .transpose()
+            .ok()
+            .flatten()
+        {
+            if let Some(partner_fee) = validated_app_data.protocol.partner_fee {
+                return Some(domain::fee::Policy::Volume {
+                    factor: partner_fee.bps.into_f64() / 100.0,
+                });
+            }
+        }
+
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
