@@ -74,7 +74,7 @@ async fn gas_limit(web3: Web3) {
                         "pre": [Hook {
                             target: trader.address(),
                             call_data: Default::default(),
-                            gas_limit: 1_000_000,
+                            gas_limit: 10_000_000,
                         }],
                         "post": [],
                     },
