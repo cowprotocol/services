@@ -395,6 +395,35 @@ async fn volume_protocol_fee_buy_order() {
 
 #[tokio::test]
 #[ignore]
+async fn volume_protocol_fee_buy_order_at_limit_price() {
+    let fee_policy = Policy::Volume { factor: 0.25 };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // 25% of the solver proposed sell volume is kept by the protocol
+            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) = 40 )
+            solver: Amounts {
+                sell: 40.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            // driver executes at limit price
+            driver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
+        expected_score: 10.ether().into_wei(),
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn volume_protocol_fee_sell_order() {
     let fee_policy = Policy::Volume { factor: 0.1 };
     let test_case = TestCase {
@@ -413,6 +442,35 @@ async fn volume_protocol_fee_sell_order() {
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 45.ether().into_wei(),
+            },
+        },
+        expected_score: 10.ether().into_wei(),
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn volume_protocol_fee_sell_order_at_limit_price() {
+    let fee_policy = Policy::Volume { factor: 0.2 };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Sell,
+        },
+        execution: Execution {
+            // 20% of the solver proposed buy value is kept by the protocol
+            // solver executes at the adjusted limit price ( 40 / (1 - 0.2) = 50 )
+            solver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 50.ether().into_wei(),
+            },
+            // driver executes at limit price
+            driver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 40.ether().into_wei(),
             },
         },
         expected_score: 10.ether().into_wei(),
@@ -449,6 +507,36 @@ async fn volume_protocol_fee_partial_buy_order() {
 
 #[tokio::test]
 #[ignore]
+async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
+    let fee_policy = Policy::Volume { factor: 0.25 };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 50.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // 25% of the solver proposed sell volume is kept by the protocol
+            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) = 40 ), which scaled
+            // for partially fillable order gives 16
+            solver: Amounts {
+                sell: 16.ether().into_wei(),
+                buy: 20.ether().into_wei(),
+            },
+            // driver executes at limit price
+            driver: Amounts {
+                sell: 20.ether().into_wei(),
+                buy: 20.ether().into_wei(),
+            },
+        },
+        expected_score: 4.ether().into_wei(),
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn volume_protocol_fee_partial_sell_order() {
     let fee_policy = Policy::Volume { factor: 0.1 };
     let test_case = TestCase {
@@ -470,6 +558,36 @@ async fn volume_protocol_fee_partial_sell_order() {
             },
         },
         expected_score: 10.ether().into_wei(),
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn volume_protocol_fee_partial_sell_order_at_limit_price() {
+    let fee_policy = Policy::Volume { factor: 0.2 };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 50.ether().into_wei(),
+            side: order::Side::Sell,
+        },
+        execution: Execution {
+            // 20% of the solver proposed buy value is kept by the protocol
+            // solver executes at the adjusted limit price ( 50 / (1 - 0.2) = 62.5 ), which scaled
+            // for partially fillable order gives 25
+            solver: Amounts {
+                sell: 20.ether().into_wei(),
+                buy: 25.ether().into_wei(),
+            },
+            // driver executes at limit price
+            driver: Amounts {
+                sell: 20.ether().into_wei(),
+                buy: 20.ether().into_wei(),
+            },
+        },
+        expected_score: 5.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
