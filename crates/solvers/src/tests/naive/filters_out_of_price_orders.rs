@@ -125,7 +125,8 @@ async fn sell_orders_on_both_sides() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 259417,
             }]
         }),
     );

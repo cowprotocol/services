@@ -315,6 +315,8 @@ pub struct Solver {
     slippage: infra::solver::Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub fn test_solver() -> Solver {
@@ -334,6 +336,7 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
+        rank_by_surplus_date: None,
     }
 }
 
@@ -361,6 +364,13 @@ impl Solver {
 
     pub fn balance(self, balance: eth::U256) -> Self {
         Self { balance, ..self }
+    }
+
+    pub fn rank_by_surplus_date(self, rank_by_surplus_date: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            rank_by_surplus_date: Some(rank_by_surplus_date),
+            ..self
+        }
     }
 }
 
