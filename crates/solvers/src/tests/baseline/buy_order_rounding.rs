@@ -104,7 +104,8 @@ async fn uniswap() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );
@@ -273,7 +274,8 @@ async fn balancer_weighted() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 266391,
             }]
         }),
     );
@@ -390,7 +392,8 @@ async fn balancer_weighted_v3plus() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 206391,
             }]
         }),
     );
@@ -507,7 +510,8 @@ async fn distant_convergence() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 206391,
             }]
         }),
     );
@@ -660,7 +664,8 @@ async fn same_path() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );
@@ -800,8 +805,9 @@ async fn balancer_stable() {
                     ],
                     "score": {
                         "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                    }
+                        "successProbability": 0.5,
+                    },
+                    "gas": 289911,
                 },
             ]
         }),
