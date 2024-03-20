@@ -58,7 +58,7 @@ async fn local_node_volume_fee_buy_order() {
 async fn surplus_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -150,7 +150,7 @@ async fn partner_fee_sell_order_test(web3: Web3) {
     // Fee policy to be overwritten by the partner fee
     let fee_policy = FeePolicyKind::PriceImprovement {
         factor: 0.5,
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -182,7 +182,7 @@ async fn partner_fee_sell_order_test(web3: Web3) {
 async fn surplus_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,

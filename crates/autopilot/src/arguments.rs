@@ -357,7 +357,7 @@ pub struct FeePolicy {
     ///
     /// - Volume based:
     /// volume:0.1
-    #[clap(long, env, default_value = "surplus:0.0:1.0")]
+    #[clap(long, env, default_value = "surplus:0.0:0.9")]
     pub fee_policy_kind: FeePolicyKind,
 
     /// Should protocol fees be collected or skipped for orders whose
@@ -405,6 +405,7 @@ impl FromStr for FeePolicyKind {
                     .ok_or("missing max volume factor")?
                     .parse::<f64>()
                     .map_err(|e| format!("invalid max volume factor: {}", e))?;
+                validate_factor(max_volume_factor)?;
                 Ok(Self::Surplus {
                     factor,
                     max_volume_factor,
@@ -422,6 +423,7 @@ impl FromStr for FeePolicyKind {
                     .ok_or("missing price improvement max volume factor")?
                     .parse::<f64>()
                     .map_err(|e| format!("invalid price improvement max volume factor: {}", e))?;
+                validate_factor(max_volume_factor)?;
                 Ok(Self::PriceImprovement {
                     factor,
                     max_volume_factor,
@@ -446,25 +448,20 @@ mod test {
     use {super::*, rstest::rstest};
 
     #[rstest]
-    #[case("volume", 1.0, None)]
-    #[case("volume", -1.0, None)]
-    #[case("surplus", 1.0, Some(0.5))]
-    #[case("surplus", -1.0, Some(0.5))]
-    #[case("priceImprovement", 1.0, Some(0.5))]
-    #[case("priceImprovement", -1.0, Some(0.5))]
-    fn test_fee_factor_limits(
-        #[case] policy: &str,
-        #[case] factor: f64,
-        #[case] max_factor: Option<f64>,
-    ) {
-        let policy = if let Some(max_factor) = max_factor {
-            format!("{policy}:{factor}:{max_factor}")
-        } else {
-            format!("{policy}:{factor}")
-        };
-        assert_eq!(
-            FeePolicyKind::from_str(&policy).err().unwrap(),
-            format!("Factor must be in the range [0, 1), got {factor}")
-        )
+    #[case("volume:1.0")]
+    #[case("volume:-1.0")]
+    #[case("surplus:1.0:0.5")]
+    #[case("surplus:0.5:1.0")]
+    #[case("surplus:0.5:-1.0")]
+    #[case("surplus:-1.0:0.5")]
+    #[case("priceImprovement:1.0:0.5")]
+    #[case("priceImprovement:-1.0:0.5")]
+    #[case("priceImprovement:0.5:1.0")]
+    #[case("priceImprovement:0.5:-1.0")]
+    fn test_fee_factor_limits(#[case] policy: &str) {
+        assert!(FeePolicyKind::from_str(policy)
+            .err()
+            .unwrap()
+            .contains("Factor must be in the range [0, 1)"),)
     }
 }
