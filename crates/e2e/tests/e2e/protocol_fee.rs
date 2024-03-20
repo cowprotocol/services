@@ -285,6 +285,7 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
+        None,
         1190443099243994360u128.into(),
         1175155469911247241u128.into(),
     )
@@ -445,10 +446,6 @@ async fn execute_test(
 enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
-    /// How much of the order's price improvement should be taken as a protocol
-    /// fee where price improvement is a difference between the executed price
-    /// and the best quote.
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
     /// How much of the order's price improvement should be taken as a protocol
@@ -466,14 +463,6 @@ impl std::fmt::Display for FeePolicyKind {
             } => write!(
                 f,
                 "--fee-policy-kind=surplus:{}:{}",
-                factor, max_volume_factor
-            ),
-            FeePolicyKind::PriceImprovement {
-                factor,
-                max_volume_factor,
-            } => write!(
-                f,
-                "--fee-policy-kind=priceImprovement:{}:{}",
                 factor, max_volume_factor
             ),
             FeePolicyKind::Volume { factor } => {
