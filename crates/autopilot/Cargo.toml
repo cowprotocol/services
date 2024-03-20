@@ -15,6 +15,7 @@ name = "autopilot"
 path = "src/main.rs"
 
 [dependencies]
+app-data = { path = "../app-data" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
