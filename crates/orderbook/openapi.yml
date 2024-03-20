@@ -1187,6 +1187,7 @@ components:
               ZeroAmount,
               IncompatibleSigningScheme,
               TooManyLimitOrders,
+              TooMuchGas,
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
