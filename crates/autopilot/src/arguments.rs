@@ -379,6 +379,13 @@ pub enum FeePolicyKind {
     Volume { factor: f64 },
 }
 
+fn validate_factor(factor: f64) -> Result<(), String> {
+    if !(0.0..1.0).contains(&factor) {
+        return Err(format!("Factor must be in the range [0, 1), got {factor}",));
+    }
+    Ok(())
+}
+
 impl FromStr for FeePolicyKind {
     type Err = String;
 
@@ -392,6 +399,7 @@ impl FromStr for FeePolicyKind {
                     .ok_or("missing surplus factor")?
                     .parse::<f64>()
                     .map_err(|e| format!("invalid surplus factor: {}", e))?;
+                validate_factor(factor)?;
                 let max_volume_factor = parts
                     .next()
                     .ok_or("missing max volume factor")?
@@ -408,6 +416,7 @@ impl FromStr for FeePolicyKind {
                     .ok_or("missing price improvement factor")?
                     .parse::<f64>()
                     .map_err(|e| format!("invalid price improvement factor: {}", e))?;
+                validate_factor(factor)?;
                 let max_volume_factor = parts
                     .next()
                     .ok_or("missing price improvement max volume factor")?
@@ -424,9 +433,38 @@ impl FromStr for FeePolicyKind {
                     .ok_or("missing volume factor")?
                     .parse::<f64>()
                     .map_err(|e| format!("invalid volume factor: {}", e))?;
+                validate_factor(factor)?;
                 Ok(Self::Volume { factor })
             }
             _ => Err(format!("invalid fee policy kind: {}", kind)),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {super::*, rstest::rstest};
+
+    #[rstest]
+    #[case("volume", 1.0, None)]
+    #[case("volume", -1.0, None)]
+    #[case("surplus", 1.0, Some(0.5))]
+    #[case("surplus", -1.0, Some(0.5))]
+    #[case("priceImprovement", 1.0, Some(0.5))]
+    #[case("priceImprovement", -1.0, Some(0.5))]
+    fn test_fee_factor_limits(
+        #[case] policy: &str,
+        #[case] factor: f64,
+        #[case] max_factor: Option<f64>,
+    ) {
+        let policy = if let Some(max_factor) = max_factor {
+            format!("{policy}:{factor}:{max_factor}")
+        } else {
+            format!("{policy}:{factor}")
+        };
+        assert_eq!(
+            FeePolicyKind::from_str(&policy).err().unwrap(),
+            format!("Factor must be in the range [0, 1), got {factor}")
+        )
     }
 }

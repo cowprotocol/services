@@ -91,7 +91,7 @@ async fn surplus_fee_sell_order_test(web3: Web3) {
 
 async fn surplus_fee_sell_order_capped_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
-        factor: 1.0,
+        factor: 0.9,
         max_volume_factor: 0.1,
     };
     // Without protocol fee:
@@ -211,7 +211,7 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
 
 async fn surplus_fee_buy_order_capped_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
-        factor: 1.0,
+        factor: 0.9,
         max_volume_factor: 0.1,
     };
     // Without protocol fee:
