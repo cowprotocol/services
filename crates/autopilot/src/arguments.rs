@@ -449,24 +449,29 @@ impl FromStr for FeePolicyKind {
 
 #[cfg(test)]
 mod test {
-    use {super::*, rstest::rstest};
+    use super::*;
 
-    #[rstest]
-    #[case("volume:1.0")]
-    #[case("volume:-1.0")]
-    #[case("surplus:1.0:0.5")]
-    #[case("surplus:0.5:1.0")]
-    #[case("surplus:0.5:-1.0")]
-    #[case("surplus:-1.0:0.5")]
-    #[case("priceImprovement:1.0:0.5")]
-    #[case("priceImprovement:-1.0:0.5")]
-    #[case("priceImprovement:0.5:1.0")]
-    #[case("priceImprovement:0.5:-1.0")]
-    fn test_fee_factor_limits(#[case] policy: &str) {
-        assert!(FeePolicyKind::from_str(policy)
-            .err()
-            .unwrap()
-            .to_string()
-            .contains("Factor must be in the range [0, 1)"),)
+    #[test]
+    fn test_fee_factor_limits() {
+        let policies = vec![
+            "volume:1.0",
+            "volume:-1.0",
+            "surplus:1.0:0.5",
+            "surplus:0.5:1.0",
+            "surplus:0.5:-1.0",
+            "surplus:-1.0:0.5",
+            "priceImprovement:1.0:0.5",
+            "priceImprovement:-1.0:0.5",
+            "priceImprovement:0.5:1.0",
+            "priceImprovement:0.5:-1.0",
+        ];
+
+        for policy in policies {
+            assert!(FeePolicyKind::from_str(policy)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Factor must be in the range [0, 1)"),)
+        }
     }
 }
