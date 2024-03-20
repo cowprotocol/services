@@ -342,7 +342,7 @@ impl std::fmt::Display for Arguments {
 
 #[derive(clap::Parser, Debug, Clone)]
 pub struct FeePolicy {
-    /// Type of fee policy to use. Examples:
+    /// Type of fee policy to use for in-market orders. Examples:
     ///
     /// - Surplus without cap
     /// surplus:0.5:1.0
@@ -359,13 +359,11 @@ pub struct FeePolicy {
     /// - Volume based:
     /// volume:0.1
     #[clap(long, env, default_value = "surplus:0.0:0.9")]
-    pub fee_policy_kind: FeePolicyKind,
+    pub in_market_fee_policy_kind: FeePolicyKind,
 
-    /// Should protocol fees be collected or skipped for orders whose
-    /// limit price at order creation time suggests they can be immediately
-    /// filled.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub fee_policy_skip_market_orders: bool,
+    /// Type of fee policy to use for out of market orders.
+    #[clap(long, env, default_value = "surplus:0.0:0.9")]
+    pub out_of_market_fee_policy_kind: FeePolicyKind,
 }
 
 #[derive(clap::Parser, Debug, Clone)]

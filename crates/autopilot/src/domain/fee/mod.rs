@@ -20,13 +20,15 @@ use {
 
 /// Constructs fee policies based on the current configuration.
 pub struct ProtocolFee {
-    policy: policy::Policy,
+    in_market_orders_policy: policy::Policy,
+    out_of_market_orders_policy: policy::Policy,
 }
 
 impl ProtocolFee {
     pub fn new(fee_policy_args: arguments::FeePolicy) -> Self {
         Self {
-            policy: fee_policy_args.into(),
+            in_market_orders_policy: fee_policy_args.in_market_fee_policy_kind.into(),
+            out_of_market_orders_policy: fee_policy_args.out_of_market_fee_policy_kind.into(),
         }
     }
 
@@ -51,8 +53,23 @@ impl ProtocolFee {
             }
         }
 
-        let protocol_fees = match &self.policy {
-            policy::Policy::Surplus(variant) => variant.apply(&order, quote),
+        let order_ = boundary::Amounts {
+            sell: order.data.sell_amount,
+            buy: order.data.buy_amount,
+            fee: order.data.fee_amount,
+        };
+        let quote_ = boundary::Amounts {
+            sell: quote.sell_amount,
+            buy: quote.buy_amount,
+            fee: quote.fee,
+        };
+        let fee_policy = match boundary::is_order_outside_market_price(&order_, &quote_) {
+            true => &self.out_of_market_orders_policy,
+            false => &self.in_market_orders_policy,
+        };
+
+        let protocol_fees = match fee_policy {
+            policy::Policy::Surplus(variant) => variant.apply(&order),
             policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
             policy::Policy::Volume(variant) => variant.apply(&order),
         }
