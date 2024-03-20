@@ -417,6 +417,7 @@ async fn volume_protocol_fee_buy_order_at_limit_price() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -472,6 +473,7 @@ async fn volume_protocol_fee_sell_order_at_limit_price() {
                 buy: 40.ether().into_wei(),
             },
         },
+        expected_score: 10.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -528,6 +530,7 @@ async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 4.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -584,6 +587,7 @@ async fn volume_protocol_fee_partial_sell_order_at_limit_price() {
                 buy: 20.ether().into_wei(),
             },
         },
+        expected_score: 5.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
 }
