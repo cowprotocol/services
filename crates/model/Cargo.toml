@@ -18,7 +18,6 @@ hex = { workspace = true, default-features = false }
 hex-literal = { workspace = true }
 lazy_static = { workspace = true }
 number = { path = "../number" }
-maplit = { workspace = true }
 num = { workspace = true }
 primitive-types = { workspace = true }
 secp256k1 = { workspace = true }
@@ -29,3 +28,4 @@ web3 = { workspace = true, features = ["signing"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+maplit = { workspace = true }
