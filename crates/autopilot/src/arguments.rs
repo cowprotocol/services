@@ -1,5 +1,6 @@
 use {
     crate::infra,
+    anyhow::Context,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -379,32 +380,33 @@ pub enum FeePolicyKind {
     Volume { factor: f64 },
 }
 
-fn validate_factor(factor: f64) -> Result<(), String> {
-    if !(0.0..1.0).contains(&factor) {
-        return Err(format!("Factor must be in the range [0, 1), got {factor}",));
-    }
+fn validate_factor(factor: f64) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        (0.0..1.0).contains(&factor),
+        "Factor must be in the range [0, 1)"
+    );
     Ok(())
 }
 
 impl FromStr for FeePolicyKind {
-    type Err = String;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split(':');
-        let kind = parts.next().ok_or("missing fee policy kind")?;
+        let kind = parts.next().context("missing fee policy kind")?;
         match kind {
             "surplus" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing surplus factor")?
+                    .context("missing surplus factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid surplus factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid surplus factor: {}", e))?;
                 validate_factor(factor)?;
                 let max_volume_factor = parts
                     .next()
-                    .ok_or("missing max volume factor")?
+                    .context("missing max volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid max volume factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
                 validate_factor(max_volume_factor)?;
                 Ok(Self::Surplus {
                     factor,
@@ -414,15 +416,17 @@ impl FromStr for FeePolicyKind {
             "priceImprovement" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing price improvement factor")?
+                    .context("missing price improvement factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid price improvement factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid price improvement factor: {}", e))?;
                 validate_factor(factor)?;
                 let max_volume_factor = parts
                     .next()
-                    .ok_or("missing price improvement max volume factor")?
+                    .context("missing price improvement max volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid price improvement max volume factor: {}", e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
+                    })?;
                 validate_factor(max_volume_factor)?;
                 Ok(Self::PriceImprovement {
                     factor,
@@ -432,13 +436,13 @@ impl FromStr for FeePolicyKind {
             "volume" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing volume factor")?
+                    .context("missing volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid volume factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
                 validate_factor(factor)?;
                 Ok(Self::Volume { factor })
             }
-            _ => Err(format!("invalid fee policy kind: {}", kind)),
+            _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
         }
     }
 }
@@ -462,6 +466,7 @@ mod test {
         assert!(FeePolicyKind::from_str(policy)
             .err()
             .unwrap()
+            .to_string()
             .contains("Factor must be in the range [0, 1)"),)
     }
 }
