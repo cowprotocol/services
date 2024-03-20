@@ -1,4 +1,8 @@
-use crate::{arguments, boundary, domain};
+use crate::{
+    arguments,
+    boundary,
+    domain::{self, fee::Factor},
+};
 
 pub enum Policy {
     Surplus(Surplus),
@@ -28,18 +32,20 @@ impl From<arguments::FeePolicy> for Policy {
                 factor,
                 max_volume_factor,
             } => Policy::Surplus(Surplus {
-                factor,
-                max_volume_factor,
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
                 skip_market_orders: policy_arg.fee_policy_skip_market_orders,
             }),
             arguments::FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
             } => Policy::PriceImprovement(PriceImprovement {
-                factor,
-                max_volume_factor,
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
             }),
-            arguments::FeePolicyKind::Volume { factor } => Policy::Volume(Volume { factor }),
+            arguments::FeePolicyKind::Volume { factor } => Policy::Volume(Volume {
+                factor: factor.into(),
+            }),
         }
     }
 }
@@ -55,8 +61,8 @@ impl Surplus {
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => {
                 let policy = domain::fee::Policy::Surplus {
-                    factor: self.factor,
-                    max_volume_factor: self.max_volume_factor,
+                    factor: Factor::capped_from(self.factor),
+                    max_volume_factor: Factor::capped_from(self.max_volume_factor),
                 };
                 if !self.skip_market_orders {
                     Some(policy)
@@ -89,8 +95,8 @@ impl PriceImprovement {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
-                factor: self.factor,
-                max_volume_factor: self.max_volume_factor,
+                factor: Factor::capped_from(self.factor),
+                max_volume_factor: Factor::capped_from(self.max_volume_factor),
                 quote: quote.clone().into(),
             }),
         }
@@ -103,7 +109,7 @@ impl Volume {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => Some(domain::fee::Policy::Volume {
-                factor: self.factor,
+                factor: Factor::capped_from(self.factor),
             }),
         }
     }

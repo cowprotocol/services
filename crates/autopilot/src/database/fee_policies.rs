@@ -43,7 +43,7 @@ pub async fn insert_batch(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, database::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::domain::fee::Factor, database::byte_array::ByteArray, sqlx::Connection};
 
     pub async fn fetch(
         ex: &mut PgConnection,
@@ -77,20 +77,22 @@ mod tests {
 
         // surplus fee policy without caps
         let fee_policy_1 = domain::fee::Policy::Surplus {
-            factor: 0.1,
-            max_volume_factor: 1.0,
+            factor: Factor::capped_from(0.1),
+            max_volume_factor: Factor::capped_from(1.0),
         };
         // surplus fee policy with caps
         let fee_policy_2 = domain::fee::Policy::Surplus {
-            factor: 0.2,
-            max_volume_factor: 0.05,
+            factor: Factor::capped_from(0.2),
+            max_volume_factor: Factor::capped_from(0.05),
         };
         // volume based fee policy
-        let fee_policy_3 = domain::fee::Policy::Volume { factor: 0.06 };
+        let fee_policy_3 = domain::fee::Policy::Volume {
+            factor: Factor::capped_from(0.06),
+        };
         // price improvement fee policy
         let fee_policy_4 = domain::fee::Policy::PriceImprovement {
-            factor: 0.1,
-            max_volume_factor: 1.0,
+            factor: Factor::capped_from(0.1),
+            max_volume_factor: Factor::capped_from(1.0),
             quote: domain::fee::Quote {
                 sell_amount: 10.into(),
                 buy_amount: 20.into(),
@@ -113,7 +115,7 @@ mod tests {
             order_uid,
             kind: dto::fee_policy::FeePolicyKind::Surplus,
             surplus_factor: Some(0.1),
-            surplus_max_volume_factor: Some(1.0),
+            surplus_max_volume_factor: Some(0.99999),
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
@@ -149,7 +151,7 @@ mod tests {
             surplus_max_volume_factor: None,
             volume_factor: None,
             price_improvement_factor: Some(0.1),
-            price_improvement_max_volume_factor: Some(1.0),
+            price_improvement_max_volume_factor: Some(0.99999),
         };
         let expected = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
 
