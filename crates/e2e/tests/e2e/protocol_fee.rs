@@ -5,7 +5,7 @@ use {
     },
     ethcontract::prelude::U256,
     model::{
-        order::{OrderCreation, OrderKind},
+        order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -29,6 +29,12 @@ async fn local_node_surplus_fee_sell_order_capped() {
 #[ignore]
 async fn local_node_volume_fee_sell_order() {
     run_test(volume_fee_sell_order_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_partner_fee_sell_order() {
+    run_test(partner_fee_sell_order_test).await;
 }
 
 #[tokio::test]
@@ -58,7 +64,7 @@ async fn local_node_price_improvement_fee_sell_order() {
 async fn surplus_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -82,6 +88,7 @@ async fn surplus_fee_sell_order_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
+        None,
         1480603400674076736u128.into(),
         1461589542731026166u128.into(),
     )
@@ -90,7 +97,7 @@ async fn surplus_fee_sell_order_test(web3: Web3) {
 
 async fn surplus_fee_sell_order_capped_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
-        factor: 1.0,
+        factor: 0.9,
         max_volume_factor: 0.1,
     };
     // Without protocol fee:
@@ -111,6 +118,7 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
+        None,
         1000150353094783059u128.into(),
         987306456662572858u128.into(),
     )
@@ -137,6 +145,40 @@ async fn volume_fee_sell_order_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
+        None,
+        1000150353094783059u128.into(),
+        987306456662572858u128.into(),
+    )
+    .await;
+}
+
+async fn partner_fee_sell_order_test(web3: Web3) {
+    // Fee policy to be overwritten by the partner fee
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 0.5,
+        max_volume_factor: 0.9,
+    };
+    // Without protocol fee:
+    // Expected execution is 10000000000000000000 GNO for
+    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
+    //
+    // With protocol fee:
+    // Expected executed_surplus_fee is 167058994203399 +
+    // 0.1*(10000000000000000000 - 167058994203399) = 1000150353094783059
+    //
+    // Final execution is 10000000000000000000 GNO for 8884273887308040129 DAI, with
+    // executed_surplus_fee = 1000150353094783059 GNO
+    //
+    // Settlement contract balance after execution = 1000150353094783059 GNO =
+    // 1000150353094783059 GNO * 8884273887308040129 / (10000000000000000000 -
+    // 1000150353094783059) = 987306456662572858 DAI
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Sell,
+        Some(OrderCreationAppData::Full {
+            full: r#"{"version":"1.1.0","metadata":{"partnerFee":{"bps":1000, "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9"}}}"#.to_string(),
+        }),
         1000150353094783059u128.into(),
         987306456662572858u128.into(),
     )
@@ -146,7 +188,7 @@ async fn volume_fee_sell_order_test(web3: Web3) {
 async fn surplus_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
-        max_volume_factor: 1.0,
+        max_volume_factor: 0.9,
     };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
@@ -166,6 +208,7 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Buy,
+        None,
         1488043031123213136u128.into(),
         1488043031123213136u128.into(),
     )
@@ -174,7 +217,7 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
 
 async fn surplus_fee_buy_order_capped_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
-        factor: 1.0,
+        factor: 0.9,
         max_volume_factor: 0.1,
     };
     // Without protocol fee:
@@ -190,6 +233,7 @@ async fn surplus_fee_buy_order_capped_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Buy,
+        None,
         504208401617866820u128.into(),
         504208401617866820u128.into(),
     )
@@ -211,6 +255,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         web3.clone(),
         fee_policy,
         OrderKind::Buy,
+        None,
         504208401617866820u128.into(),
         504208401617866820u128.into(),
     )
@@ -258,6 +303,7 @@ async fn execute_test(
     web3: Web3,
     fee_policy: FeePolicyKind,
     order_kind: OrderKind,
+    app_data: Option<OrderCreationAppData>,
     expected_surplus_fee: U256,
     expected_settlement_contract_balance: U256,
 ) {
@@ -349,6 +395,7 @@ async fn execute_test(
         buy_token: token_dai.address(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
+        app_data: app_data.unwrap_or_default(),
         kind: order_kind,
         ..Default::default()
     }
@@ -404,6 +451,10 @@ enum FeePolicyKind {
     PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee where price improvement is a difference between the executed price
+    /// and the best quote.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
 }
 
 impl std::fmt::Display for FeePolicyKind {
@@ -427,6 +478,16 @@ impl std::fmt::Display for FeePolicyKind {
             ),
             FeePolicyKind::Volume { factor } => {
                 write!(f, "--fee-policy-kind=volume:{}", factor)
+            }
+            FeePolicyKind::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => {
+                write!(
+                    f,
+                    "--fee-policy-kind=priceImprovement:{}:{}",
+                    factor, max_volume_factor
+                )
             }
         }
     }

@@ -101,7 +101,8 @@ async fn test() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );

@@ -49,6 +49,14 @@ impl From<U256> for Ether {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
 
+impl std::ops::Add for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
 /// A 256-bit rational type.
 pub type Rational = num::rational::Ratio<U256>;
 
