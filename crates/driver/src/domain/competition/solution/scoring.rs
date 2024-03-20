@@ -149,7 +149,7 @@ impl Trade {
         };
         let surplus = self
             .surplus(price_limits)
-            .ok_or(Error::Surplus(self.sell, self.buy))?;
+            .ok_or(Error::Surplus(self.executed, self.custom_price.clone()))?;
         let price = prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
@@ -235,7 +235,7 @@ impl Trade {
         //     fee = surplus_after_fee * factor / (1 - factor)
         let surplus = self
             .surplus(price_limits)
-            .ok_or(Error::Surplus(self.sell, self.buy))?;
+            .ok_or(Error::Surplus(self.executed, self.custom_price.clone()))?;
         let fee = surplus
             .amount
             .apply_factor(factor / (1.0 - factor))
@@ -347,8 +347,8 @@ pub enum Error {
     MultipleFeePolicies,
     #[error("fee policy not implemented yet")]
     UnimplementedFeePolicy,
-    #[error("failed to calculate surplus for trade sell {0:?} buy {1:?}")]
-    Surplus(eth::Asset, eth::Asset),
+    #[error("failed to calculate surplus for trade executed {0:?}, custom price {1:?}")]
+    Surplus(order::TargetAmount, CustomClearingPrices),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]

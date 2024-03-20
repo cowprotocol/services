@@ -7,6 +7,7 @@ use {
         request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
         zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
     },
+    anyhow::Context,
     futures::FutureExt as _,
     model::order::OrderKind,
     primitive_types::H160,
@@ -104,9 +105,13 @@ impl Inner {
 impl TradeFinding for ZeroExTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
         let trade = self.shared_quote(query).await?;
+        let gas_estimate = trade
+            .gas_estimate
+            .context("no gas estimate")
+            .map_err(TradeError::Other)?;
         Ok(Quote {
             out_amount: trade.out_amount,
-            gas_estimate: trade.gas_estimate,
+            gas_estimate,
             solver: self.inner.solver,
         })
     }
@@ -191,7 +196,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(trade.out_amount, 1110165823572443613u64.into());
-        assert!(trade.gas_estimate > 111000);
+        assert!(trade.gas_estimate.unwrap() > 111000);
         assert_eq!(
             trade.interactions,
             vec![
@@ -270,7 +275,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(trade.out_amount, 8986186353137488u64.into());
-        assert!(trade.gas_estimate > 111000);
+        assert!(trade.gas_estimate.unwrap() > 111000);
         assert_eq!(trade.interactions.len(), 3);
         assert_eq!(trade.interactions[2].data, [5, 6, 7, 8]);
     }
@@ -317,7 +322,7 @@ mod tests {
 
         let gno = trade.out_amount.to_f64_lossy() / 1e18;
         println!("1.0 ETH buys {gno} GNO");
-        println!("gas:  {}", trade.gas_estimate);
+        println!("gas:  {:?}", trade.gas_estimate);
         for interaction in trade.interactions {
             println!("data: 0x{}", hex::encode(interaction.data));
         }

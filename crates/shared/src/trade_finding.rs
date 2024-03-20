@@ -46,7 +46,7 @@ pub struct Quote {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub out_amount: U256,
-    pub gas_estimate: u64,
+    pub gas_estimate: Option<u64>,
     pub interactions: Vec<Interaction>,
     pub solver: H160,
 }
@@ -77,7 +77,7 @@ impl Trade {
 
         Self {
             out_amount,
-            gas_estimate,
+            gas_estimate: Some(gas_estimate),
             interactions,
             solver,
         }
@@ -237,7 +237,7 @@ mod tests {
     fn encode_trade_to_interactions() {
         let trade = Trade {
             out_amount: Default::default(),
-            gas_estimate: 0,
+            gas_estimate: None,
             interactions: vec![
                 Interaction {
                     target: H160([0xaa; 20]),

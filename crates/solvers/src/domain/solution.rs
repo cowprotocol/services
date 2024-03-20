@@ -4,6 +4,7 @@ use {
         util,
     },
     ethereum_types::{Address, U256},
+    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::{collections::HashMap, slice},
 };
 
@@ -24,6 +25,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub score: Score,
+    pub gas: Option<eth::Gas>,
 }
 
 impl Solution {
@@ -37,6 +39,7 @@ impl Solution {
         Self { score, ..self }
     }
 
+    /// Sets the provided gas and computes the risk adjusted score accordingly.
     pub fn with_risk_adjusted_score(
         self,
         risk: &Risk,
@@ -44,9 +47,13 @@ impl Solution {
         gas_price: auction::GasPrice,
     ) -> Self {
         let nmb_orders = self.trades.len();
-        self.with_score(Score::RiskAdjusted(SuccessProbability(
+        let scored = self.with_score(Score::RiskAdjusted(SuccessProbability(
             risk.success_probability(gas, gas_price, nmb_orders),
-        )))
+        )));
+        Self {
+            gas: Some(gas),
+            ..scored
+        }
     }
 
     /// Returns `self` with eligible interactions internalized using the
@@ -217,6 +224,7 @@ impl Single {
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
             score,
+            gas: Some(self.gas + eth::Gas(SETTLEMENT_OVERHEAD.into())),
         })
     }
 }

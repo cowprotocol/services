@@ -12,8 +12,10 @@ use {
         boundary::{self},
         domain,
     },
+    app_data::Validator,
     itertools::Itertools,
     primitive_types::U256,
+    prometheus::core::Number,
 };
 
 /// Constructs fee policies based on the current configuration.
@@ -31,6 +33,24 @@ impl ProtocolFee {
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
     pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+        // If the partner fee is specified, it overwrites the current volume fee policy
+        if let Some(validated_app_data) = order
+            .metadata
+            .full_app_data
+            .as_ref()
+            .map(|full_app_data| Validator::new(usize::MAX).validate(full_app_data.as_bytes()))
+            .transpose()
+            .ok()
+            .flatten()
+        {
+            if let Some(partner_fee) = validated_app_data.protocol.partner_fee {
+                let fee_policy = vec![Policy::Volume {
+                    factor: partner_fee.bps.into_f64() / 10_000.0,
+                }];
+                return boundary::order::to_domain(order, fee_policy);
+            }
+        }
+
         let protocol_fees = match &self.policy {
             policy::Policy::Surplus(variant) => variant.apply(&order, quote),
             policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
