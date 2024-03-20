@@ -12,7 +12,6 @@ doctest = false
 anyhow = { workspace = true }
 app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }
-async-stream = "0.3"
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
@@ -23,7 +22,6 @@ database = { path = "../database" }
 delay_map = "0.3"
 derivative = { workspace = true }
 ethcontract = { workspace = true }
-ethcontract-mock = { workspace = true }
 ethrpc = { path = "../ethrpc"}
 flate2 = "1"
 futures = { workspace = true }
@@ -62,6 +60,9 @@ warp = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
+async-stream = "0.3"
+tempfile = "3.4"
+ethcontract-mock = { workspace = true }
 regex = { workspace = true }
 testlib = { path = "../testlib" }
 app-data = { path = "../app-data", features = ["test_helpers"] }
