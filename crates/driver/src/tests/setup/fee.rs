@@ -1,15 +1,23 @@
-use {crate::domain::eth, serde_json::json, serde_with::serde_as};
+use {
+    crate::domain::eth,
+    number::serialization::HexOrDecimalU256,
+    serde_json::json,
+    serde_with::serde_as,
+};
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub struct Quote {
     /// How much tokens the trader is expected to buy
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy: eth::U256,
     /// How much tokens the user is expected to sell (excluding network fee)
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell: eth::U256,
     /// The expected network fee, which is expected to be taken as
     /// additional sell amount.
+    #[serde_as(as = "HexOrDecimalU256")]
     pub network_fee: eth::U256,
 }
 
@@ -50,9 +58,9 @@ impl Policy {
                     "factor": factor,
                     "maxVolumeFactor": max_volume_factor,
                     "quote": {
-                        "sellAmount": quote.sell,
-                        "buyAmount": quote.buy,
-                        "fee": quote.network_fee,
+                        "sellAmount": quote.sell.to_string(),
+                        "buyAmount": quote.buy.to_string(),
+                        "fee": quote.network_fee.to_string(),
                     }
                 }
             }),

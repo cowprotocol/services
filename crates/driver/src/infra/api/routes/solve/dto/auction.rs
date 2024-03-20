@@ -324,11 +324,15 @@ enum FeePolicy {
     Volume { factor: f64 },
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Quote {
+    #[serde_as(as = "serialize::U256")]
     pub sell_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
     pub buy_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
     pub fee: eth::U256,
 }
 
