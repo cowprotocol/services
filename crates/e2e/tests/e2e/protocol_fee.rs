@@ -271,23 +271,23 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
     //
-    // protocol fee = 1174990556282901065 DAI =
-    // 1174990556282901065 DAI / 9871415430342266811 *
-    // (10000000000000000000 - 167058994203399) = 1190443099243994360 GNO
+    // protocol fee = 37762575522225 DAI =
+    // 37762575522225 DAI / 9871415430342266811 *
+    // (10000000000000000000 - 167058994203399) = 38253829889851 GNO
     //
-    // final execution is 10000000000000000000 GNO for 8696424874059365746 DAI, with
-    // executed_surplus_fee = 1190276040249790961 GNO
+    // final execution is 10000000000000000000 GNO for 9871377667766744586 DAI, with
+    // executed_surplus_fee = 205312824093250 GNO
     //
-    // Settlement contract balance after execution = 1190443099243994360 GNO =
-    // 1190443099243994360 GNO * 8696424874059365746 / (10000000000000000000 -
-    // 1190443099243994360) = 1175155469911247241 DAI
+    // Settlement contract balance after execution = 205312824093250 GNO =
+    // 205312824093250 GNO * 9871377667766744586 / (10000000000000000000 -
+    // 205312824093250) = 202676203868401 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
         None,
-        1190443099243994360u128.into(),
-        1175155469911247241u128.into(),
+        205312824093250u128.into(),
+        202676203868401u128.into(),
     )
     .await;
 }
