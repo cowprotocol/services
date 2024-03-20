@@ -177,6 +177,7 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
         ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,
+        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
     }
 }
