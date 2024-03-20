@@ -60,6 +60,10 @@ async fn surplus_fee_sell_order_test(web3: Web3) {
         factor: 0.3,
         max_volume_factor: 0.9,
     };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
+    };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
@@ -80,7 +84,7 @@ async fn surplus_fee_sell_order_test(web3: Web3) {
     // 1480603400674076736) = 1461589542731026166 DAI
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Sell,
         None,
         1480603400674076736u128.into(),
@@ -93,6 +97,10 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.9,
         max_volume_factor: 0.1,
+    };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -110,7 +118,7 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
     // 1000150353094783059) = 987306456662572858 DAI
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Sell,
         None,
         1000150353094783059u128.into(),
@@ -121,6 +129,10 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
 
 async fn volume_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
+    };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
@@ -137,7 +149,7 @@ async fn volume_fee_sell_order_test(web3: Web3) {
     // 1000150353094783059) = 987306456662572858 DAI
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Sell,
         None,
         1000150353094783059u128.into(),
@@ -152,6 +164,10 @@ async fn partner_fee_sell_order_test(web3: Web3) {
         factor: 0.5,
         max_volume_factor: 0.9,
     };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
+    };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
@@ -168,7 +184,7 @@ async fn partner_fee_sell_order_test(web3: Web3) {
     // 1000150353094783059) = 987306456662572858 DAI
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Sell,
         Some(OrderCreationAppData::Full {
             full: r#"{"version":"1.1.0","metadata":{"partnerFee":{"bps":1000, "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9"}}}"#.to_string(),
@@ -183,6 +199,10 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
         max_volume_factor: 0.9,
+    };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
     };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
@@ -200,7 +220,7 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
     // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Buy,
         None,
         1488043031123213136u128.into(),
@@ -214,6 +234,10 @@ async fn surplus_fee_buy_order_capped_test(web3: Web3) {
         factor: 0.9,
         max_volume_factor: 0.1,
     };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
+    };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
     // with executed_surplus_fee = 167058994203399 GNO
@@ -225,7 +249,7 @@ async fn surplus_fee_buy_order_capped_test(web3: Web3) {
     // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Buy,
         None,
         504208401617866820u128.into(),
@@ -236,6 +260,10 @@ async fn surplus_fee_buy_order_capped_test(web3: Web3) {
 
 async fn volume_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
+    let protocol_fee = ProtocolFee {
+        in_market_fee_policy_kind: Some(fee_policy.clone()),
+        out_of_market_fee_policy_kind: Some(fee_policy),
+    };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
     // with executed_surplus_fee = 167058994203399 GNO
@@ -247,7 +275,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
-        fee_policy,
+        protocol_fee,
         OrderKind::Buy,
         None,
         504208401617866820u128.into(),
@@ -266,7 +294,7 @@ fn is_approximately_equal(executed_value: U256, expected_value: U256) -> bool {
 
 async fn execute_test(
     web3: Web3,
-    fee_policy: FeePolicyKind,
+    fee_policy: ProtocolFee,
     order_kind: OrderKind,
     app_data: Option<OrderCreationAppData>,
     expected_surplus_fee: U256,
@@ -339,15 +367,12 @@ async fn execute_test(
             endpoint: solver_endpoint,
         }],
     );
-    services.start_autopilot(
-        None,
-        vec![
-            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-            "--fee-policy-skip-market-orders=false".to_string(),
-            fee_policy.to_string(),
-        ],
-    );
+    let mut autopilot_args = vec![
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+    ];
+    autopilot_args.extend(fee_policy.to_string());
+    services.start_autopilot(None, autopilot_args);
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
@@ -407,6 +432,42 @@ async fn execute_test(
     ));
 }
 
+struct ProtocolFee {
+    in_market_fee_policy_kind: Option<FeePolicyKind>,
+    out_of_market_fee_policy_kind: Option<FeePolicyKind>,
+}
+
+enum FeePolicyOrderClass {
+    InMarket,
+    OutOfMarket,
+}
+
+impl std::fmt::Display for FeePolicyOrderClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FeePolicyOrderClass::InMarket => write!(f, "in-market"),
+            FeePolicyOrderClass::OutOfMarket => write!(f, "out-of-market"),
+        }
+    }
+}
+
+impl ProtocolFee {
+    fn to_string(&self) -> Vec<String> {
+        let mut fee_args = vec![];
+        if let Some(in_market_policy) = &self.in_market_fee_policy_kind {
+            let in_market_str = in_market_policy.to_string(&FeePolicyOrderClass::InMarket);
+            fee_args.push(in_market_str);
+        }
+        if let Some(out_of_market_policy) = &self.out_of_market_fee_policy_kind {
+            let out_of_market_str =
+                out_of_market_policy.to_string(&FeePolicyOrderClass::OutOfMarket);
+            fee_args.push(out_of_market_str);
+        }
+        fee_args
+    }
+}
+
+#[derive(Clone)]
 enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
@@ -418,30 +479,27 @@ enum FeePolicyKind {
     PriceImprovement { factor: f64, max_volume_factor: f64 },
 }
 
-impl std::fmt::Display for FeePolicyKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl FeePolicyKind {
+    pub fn to_string(&self, order_class: &FeePolicyOrderClass) -> String {
+        let order_class_str = order_class.to_string();
         match self {
             FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
-            } => write!(
-                f,
-                "--fee-policy-kind=surplus:{}:{}",
-                factor, max_volume_factor
+            } => format!(
+                "--{}-fee-policy-kind=surplus:{}:{}",
+                order_class_str, factor, max_volume_factor
             ),
             FeePolicyKind::Volume { factor } => {
-                write!(f, "--fee-policy-kind=volume:{}", factor)
+                format!("--{}-fee-policy-kind=volume:{}", order_class_str, factor)
             }
             FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
-            } => {
-                write!(
-                    f,
-                    "--fee-policy-kind=priceImprovement:{}:{}",
-                    factor, max_volume_factor
-                )
-            }
+            } => format!(
+                "--{}-fee-policy-kind=priceImprovement:{}:{}",
+                order_class_str, factor, max_volume_factor
+            ),
         }
     }
 }
