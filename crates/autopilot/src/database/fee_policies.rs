@@ -43,7 +43,12 @@ pub async fn insert_batch(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::fee::Factor, database::byte_array::ByteArray, sqlx::Connection};
+    use {
+        super::*,
+        crate::domain::fee::FeeFactor,
+        database::byte_array::ByteArray,
+        sqlx::Connection,
+    };
 
     pub async fn fetch(
         ex: &mut PgConnection,
@@ -77,22 +82,22 @@ mod tests {
 
         // surplus fee policy without caps
         let fee_policy_1 = domain::fee::Policy::Surplus {
-            factor: Factor::try_from(0.1).unwrap(),
-            max_volume_factor: Factor::try_from(0.99999).unwrap(),
+            factor: FeeFactor::try_from(0.1).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.99999).unwrap(),
         };
         // surplus fee policy with caps
         let fee_policy_2 = domain::fee::Policy::Surplus {
-            factor: Factor::try_from(0.2).unwrap(),
-            max_volume_factor: Factor::try_from(0.05).unwrap(),
+            factor: FeeFactor::try_from(0.2).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.05).unwrap(),
         };
         // volume based fee policy
         let fee_policy_3 = domain::fee::Policy::Volume {
-            factor: Factor::try_from(0.06).unwrap(),
+            factor: FeeFactor::try_from(0.06).unwrap(),
         };
         // price improvement fee policy
         let fee_policy_4 = domain::fee::Policy::PriceImprovement {
-            factor: Factor::try_from(0.1).unwrap(),
-            max_volume_factor: Factor::try_from(0.99999).unwrap(),
+            factor: FeeFactor::try_from(0.1).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.99999).unwrap(),
             quote: domain::fee::Quote {
                 sell_amount: 10.into(),
                 buy_amount: 20.into(),

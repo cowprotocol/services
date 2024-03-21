@@ -1,5 +1,5 @@
 use {
-    crate::{domain::fee::Factor, infra},
+    crate::{domain::fee::FeeFactor, infra},
     anyhow::Context,
     primitive_types::{H160, U256},
     shared::{
@@ -372,18 +372,18 @@ pub struct FeePolicy {
 pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus {
-        factor: Factor,
-        max_volume_factor: Factor,
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
     },
     /// How much of the order's price improvement should be taken as a protocol
     /// fee where price improvement is a difference between the executed price
     /// and the best quote.
     PriceImprovement {
-        factor: Factor,
-        max_volume_factor: Factor,
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
     },
     /// How much of the order's volume should be taken as a protocol fee.
-    Volume { factor: Factor },
+    Volume { factor: FeeFactor },
 }
 
 impl FromStr for FeePolicyKind {

@@ -47,7 +47,9 @@ impl ProtocolFee {
         {
             if let Some(partner_fee) = validated_app_data.protocol.partner_fee {
                 let fee_policy = vec![Policy::Volume {
-                    factor: Factor::partner_fee_capped_from(partner_fee.bps.into_f64() / 10_000.0),
+                    factor: FeeFactor::partner_fee_capped_from(
+                        partner_fee.bps.into_f64() / 10_000.0,
+                    ),
                 }];
                 return boundary::order::to_domain(order, fee_policy);
             }
@@ -77,16 +79,16 @@ pub enum Policy {
         /// of 1990USDC, their surplus is 10USDC. A factor of 0.5
         /// requires the solver to pay 5USDC to the protocol for
         /// settling this order.
-        factor: Factor,
+        factor: FeeFactor,
         /// Cap protocol fee with a percentage of the order's volume.
-        max_volume_factor: Factor,
+        max_volume_factor: FeeFactor,
     },
     /// A price improvement corresponds to a situation where the order is
     /// executed at a better price than the top quote. The protocol fee in such
     /// case is calculated from a cut of this price improvement.
     PriceImprovement {
-        factor: Factor,
-        max_volume_factor: Factor,
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
         quote: Quote,
     },
     /// How much of the order's volume should be taken as a protocol fee.
@@ -95,14 +97,14 @@ pub enum Policy {
     Volume {
         /// Percentage of the order's volume should be taken as a protocol
         /// fee.
-        factor: Factor,
+        factor: FeeFactor,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Into)]
-pub struct Factor(f64);
+pub struct FeeFactor(f64);
 
-impl Factor {
+impl FeeFactor {
     /// Convert a partner fee into a `Factor` capping its value
     pub fn partner_fee_capped_from(value: f64) -> Self {
         Self(value.max(0.0).min(0.01))
@@ -110,7 +112,7 @@ impl Factor {
 }
 
 /// TryFrom implementation for the cases we want to enforce the constrain [0, 1)
-impl TryFrom<f64> for Factor {
+impl TryFrom<f64> for FeeFactor {
     type Error = anyhow::Error;
 
     fn try_from(value: f64) -> Result<Self, Self::Error> {
@@ -118,15 +120,15 @@ impl TryFrom<f64> for Factor {
             (0.0..1.0).contains(&value),
             "Factor must be in the range [0, 1)"
         );
-        Ok(Factor(value))
+        Ok(FeeFactor(value))
     }
 }
 
-impl FromStr for Factor {
+impl FromStr for FeeFactor {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(Factor::try_from)?
+        s.parse::<f64>().map(FeeFactor::try_from)?
     }
 }
 
@@ -164,7 +166,7 @@ mod test {
             (0.001, 0.001),
         ];
         for (from, result) in values {
-            assert_eq!(f64::from(Factor::partner_fee_capped_from(from)), result);
+            assert_eq!(f64::from(FeeFactor::partner_fee_capped_from(from)), result);
         }
     }
 }
