@@ -34,6 +34,7 @@ pin_project! {
 #[derive(Debug)]
 enum State {
     NeverPolled,
+    #[allow(dead_code)]
     Running(prometheus::HistogramTimer),
     Done,
 }
