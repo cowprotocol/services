@@ -326,16 +326,16 @@ impl From<FeePolicy> for domain::fee::Policy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor: Factor::capped_from(factor),
-                max_volume_factor: Factor::capped_from(max_volume_factor),
+                factor: Factor::try_from(factor).unwrap(),
+                max_volume_factor: Factor::try_from(max_volume_factor).unwrap(),
             },
             FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor: Factor::capped_from(factor),
-                max_volume_factor: Factor::capped_from(max_volume_factor),
+                factor: Factor::try_from(factor).unwrap(),
+                max_volume_factor: Factor::try_from(max_volume_factor).unwrap(),
                 quote: domain::fee::Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
@@ -343,7 +343,7 @@ impl From<FeePolicy> for domain::fee::Policy {
                 },
             },
             FeePolicy::Volume { factor } => Self::Volume {
-                factor: Factor::capped_from(factor),
+                factor: Factor::try_from(factor).unwrap(),
             },
         }
     }

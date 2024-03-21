@@ -61,8 +61,8 @@ impl Surplus {
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => {
                 let policy = domain::fee::Policy::Surplus {
-                    factor: Factor::capped_from(self.factor),
-                    max_volume_factor: Factor::capped_from(self.max_volume_factor),
+                    factor: Factor::try_from(self.factor).unwrap(),
+                    max_volume_factor: Factor::try_from(self.max_volume_factor).unwrap(),
                 };
                 if !self.skip_market_orders {
                     Some(policy)
@@ -95,8 +95,8 @@ impl PriceImprovement {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
-                factor: Factor::capped_from(self.factor),
-                max_volume_factor: Factor::capped_from(self.max_volume_factor),
+                factor: Factor::try_from(self.factor).unwrap(),
+                max_volume_factor: Factor::try_from(self.max_volume_factor).unwrap(),
                 quote: quote.clone().into(),
             }),
         }
@@ -109,7 +109,7 @@ impl Volume {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => Some(domain::fee::Policy::Volume {
-                factor: Factor::capped_from(self.factor),
+                factor: Factor::try_from(self.factor).unwrap(),
             }),
         }
     }

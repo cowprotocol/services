@@ -77,22 +77,22 @@ mod tests {
 
         // surplus fee policy without caps
         let fee_policy_1 = domain::fee::Policy::Surplus {
-            factor: Factor::capped_from(0.1),
-            max_volume_factor: Factor::capped_from(1.0),
+            factor: Factor::try_from(0.1).unwrap(),
+            max_volume_factor: Factor::try_from(0.99999).unwrap(),
         };
         // surplus fee policy with caps
         let fee_policy_2 = domain::fee::Policy::Surplus {
-            factor: Factor::capped_from(0.2),
-            max_volume_factor: Factor::capped_from(0.05),
+            factor: Factor::try_from(0.2).unwrap(),
+            max_volume_factor: Factor::try_from(0.05).unwrap(),
         };
         // volume based fee policy
         let fee_policy_3 = domain::fee::Policy::Volume {
-            factor: Factor::capped_from(0.06),
+            factor: Factor::try_from(0.06).unwrap(),
         };
         // price improvement fee policy
         let fee_policy_4 = domain::fee::Policy::PriceImprovement {
-            factor: Factor::capped_from(0.1),
-            max_volume_factor: Factor::capped_from(1.0),
+            factor: Factor::try_from(0.1).unwrap(),
+            max_volume_factor: Factor::try_from(0.99999).unwrap(),
             quote: domain::fee::Quote {
                 sell_amount: 10.into(),
                 buy_amount: 20.into(),

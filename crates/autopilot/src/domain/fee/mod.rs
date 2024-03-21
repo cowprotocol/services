@@ -17,7 +17,7 @@ use {
     itertools::Itertools,
     primitive_types::U256,
     prometheus::core::Number,
-    std::{num::ParseFloatError, str::FromStr},
+    std::str::FromStr,
 };
 
 /// Constructs fee policies based on the current configuration.
@@ -47,7 +47,7 @@ impl ProtocolFee {
         {
             if let Some(partner_fee) = validated_app_data.protocol.partner_fee {
                 let fee_policy = vec![Policy::Volume {
-                    factor: Factor::capped_from(partner_fee.bps.into_f64() / 10_000.0),
+                    factor: Factor::partner_fee_capped_from(partner_fee.bps.into_f64() / 10_000.0),
                 }];
                 return boundary::order::to_domain(order, fee_policy);
             }
@@ -103,9 +103,9 @@ pub enum Policy {
 pub struct Factor(f64);
 
 impl Factor {
-    /// Convert into a `Factor` capping the value to fit [0, 1)
-    pub fn capped_from(value: f64) -> Self {
-        Self(value.max(0.0).min(0.99999))
+    /// Convert a partner fee into a `Factor` capping its value
+    pub fn partner_fee_capped_from(value: f64) -> Self {
+        Self(value.max(0.0).min(0.01))
     }
 }
 
@@ -123,10 +123,10 @@ impl TryFrom<f64> for Factor {
 }
 
 impl FromStr for Factor {
-    type Err = ParseFloatError;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<f64>().map(Factor::capped_from)
+        s.parse::<f64>().map(Factor::try_from)?
     }
 }
 
@@ -157,14 +157,14 @@ mod test {
     #[test]
     fn test_factor() {
         let values = vec![
-            (1.0, 0.99999),
-            (2.0, 0.99999),
+            (1.0, 0.01),
+            (2.0, 0.01),
             (0.0, 0.0),
             (-1.0, 0.0),
-            (0.5, 0.5),
+            (0.001, 0.001),
         ];
         for (from, result) in values {
-            assert_eq!(f64::from(Factor::capped_from(from)), result);
+            assert_eq!(f64::from(Factor::partner_fee_capped_from(from)), result);
         }
     }
 }
