@@ -13,9 +13,11 @@ use {
         domain,
     },
     app_data::Validator,
+    derive_more::Into,
     itertools::Itertools,
     primitive_types::U256,
     prometheus::core::Number,
+    std::str::FromStr,
 };
 
 /// Constructs fee policies based on the current configuration.
@@ -45,7 +47,9 @@ impl ProtocolFee {
         {
             if let Some(partner_fee) = validated_app_data.protocol.partner_fee {
                 let fee_policy = vec![Policy::Volume {
-                    factor: partner_fee.bps.into_f64() / 10_000.0,
+                    factor: FeeFactor::partner_fee_capped_from(
+                        partner_fee.bps.into_f64() / 10_000.0,
+                    ),
                 }];
                 return boundary::order::to_domain(order, fee_policy);
             }
@@ -75,16 +79,16 @@ pub enum Policy {
         /// of 1990USDC, their surplus is 10USDC. A factor of 0.5
         /// requires the solver to pay 5USDC to the protocol for
         /// settling this order.
-        factor: f64,
+        factor: FeeFactor,
         /// Cap protocol fee with a percentage of the order's volume.
-        max_volume_factor: f64,
+        max_volume_factor: FeeFactor,
     },
     /// A price improvement corresponds to a situation where the order is
     /// executed at a better price than the top quote. The protocol fee in such
     /// case is calculated from a cut of this price improvement.
     PriceImprovement {
-        factor: f64,
-        max_volume_factor: f64,
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
         quote: Quote,
     },
     /// How much of the order's volume should be taken as a protocol fee.
@@ -93,8 +97,39 @@ pub enum Policy {
     Volume {
         /// Percentage of the order's volume should be taken as a protocol
         /// fee.
-        factor: f64,
+        factor: FeeFactor,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Into)]
+pub struct FeeFactor(f64);
+
+impl FeeFactor {
+    /// Convert a partner fee into a `Factor` capping its value
+    pub fn partner_fee_capped_from(value: f64) -> Self {
+        Self(value.max(0.0).min(0.01))
+    }
+}
+
+/// TryFrom implementation for the cases we want to enforce the constrain [0, 1)
+impl TryFrom<f64> for FeeFactor {
+    type Error = anyhow::Error;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        anyhow::ensure!(
+            (0.0..1.0).contains(&value),
+            "Factor must be in the range [0, 1)"
+        );
+        Ok(FeeFactor(value))
+    }
+}
+
+impl FromStr for FeeFactor {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<f64>().map(FeeFactor::try_from)?
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

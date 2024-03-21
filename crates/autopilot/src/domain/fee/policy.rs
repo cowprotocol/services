@@ -1,4 +1,8 @@
-use crate::{arguments, boundary, domain};
+use crate::{
+    arguments,
+    boundary,
+    domain::{self, fee::FeeFactor},
+};
 
 pub enum Policy {
     Surplus(Surplus),
@@ -7,18 +11,18 @@ pub enum Policy {
 }
 
 pub struct Surplus {
-    factor: f64,
-    max_volume_factor: f64,
+    factor: FeeFactor,
+    max_volume_factor: FeeFactor,
     skip_market_orders: bool,
 }
 
 pub struct PriceImprovement {
-    factor: f64,
-    max_volume_factor: f64,
+    factor: FeeFactor,
+    max_volume_factor: FeeFactor,
 }
 
 pub struct Volume {
-    factor: f64,
+    factor: FeeFactor,
 }
 
 impl From<arguments::FeePolicy> for Policy {

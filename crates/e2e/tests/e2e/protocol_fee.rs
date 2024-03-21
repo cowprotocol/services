@@ -9,6 +9,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
+    serde_json::json,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
@@ -153,7 +154,7 @@ async fn volume_fee_sell_order_test(web3: Web3) {
 }
 
 async fn partner_fee_sell_order_test(web3: Web3) {
-    // Fee policy to be overwritten by the partner fee
+    // Fee policy to be overwritten by the partner fee + capped to 0.01
     let fee_policy = FeePolicyKind::PriceImprovement {
         factor: 0.5,
         max_volume_factor: 0.9,
@@ -164,23 +165,32 @@ async fn partner_fee_sell_order_test(web3: Web3) {
     //
     // With protocol fee:
     // Expected executed_surplus_fee is 167058994203399 +
-    // 0.1*(10000000000000000000 - 167058994203399) = 1000150353094783059
+    // 0.01*(10000000000000000000 - 167058994203399) = 100165388404261365
     //
-    // Final execution is 10000000000000000000 GNO for 8884273887308040129 DAI, with
-    // executed_surplus_fee = 1000150353094783059 GNO
+    // Final execution is 10000000000000000000 GNO for 9772701276038844388 DAI, with
+    // executed_surplus_fee = 100165388404261365 GNO
     //
-    // Settlement contract balance after execution = 1000150353094783059 GNO =
-    // 1000150353094783059 GNO * 8884273887308040129 / (10000000000000000000 -
-    // 1000150353094783059) = 987306456662572858 DAI
+    // Settlement contract balance after execution = 100165388404261365 GNO =
+    // 100165388404261365 GNO * 9772701276038844388 / (10000000000000000000 -
+    // 100165388404261365) = 98879067931768848 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
         Some(OrderCreationAppData::Full {
-            full: r#"{"version":"1.1.0","metadata":{"partnerFee":{"bps":1000, "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9"}}}"#.to_string(),
+            full: json!({
+                "version": "1.1.0",
+                "metadata": {
+                    "partnerFee": {
+                        "bps":1000,
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    }
+                }
+            })
+            .to_string(),
         }),
-        1000150353094783059u128.into(),
-        987306456662572858u128.into(),
+        100165388404261365u128.into(),
+        98879067931768848u128.into(),
     )
     .await;
 }
