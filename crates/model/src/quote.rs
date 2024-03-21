@@ -495,7 +495,7 @@ mod tests {
                 *expected_quote_responses.get(i).unwrap()
             );
         }
-        let invalid_json = vec![
+        let invalid_json = [
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
                 "sellToken": "0x0000000000000000000000000000000000000001",
