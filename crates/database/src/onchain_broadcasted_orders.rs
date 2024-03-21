@@ -14,6 +14,7 @@ pub enum OnchainOrderPlacementError {
     ValidToTooFarInFuture,
     InvalidOrderData,
     InsufficientFee,
+    NonZeroFee,
     Other,
 }
 
@@ -27,6 +28,7 @@ impl OnchainOrderPlacementError {
             Self::ValidToTooFarInFuture => "expired",
             Self::InvalidOrderData => "invalid_data",
             Self::InsufficientFee => "low_fee",
+            Self::NonZeroFee => "non_zero_fee",
             Self::Other => "unspecified",
         }
     }
