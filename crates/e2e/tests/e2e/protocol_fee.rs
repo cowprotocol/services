@@ -55,6 +55,12 @@ async fn local_node_volume_fee_buy_order() {
     run_test(volume_fee_buy_order_test).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_price_improvement_fee_sell_order() {
+    run_test(price_improvement_fee_sell_order_test).await;
+}
+
 async fn surplus_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
@@ -252,6 +258,44 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         None,
         504208401617866820u128.into(),
         504208401617866820u128.into(),
+    )
+    .await;
+}
+
+async fn price_improvement_fee_sell_order_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::PriceImprovement {
+        factor: 0.3,
+        max_volume_factor: 0.9,
+    };
+    // Without protocol fee:
+    // Expected execution is 10000000000000000000 GNO for
+    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
+    //
+    // Quote: 10000000000000000000 GNO for 9871580343970612988 DAI with
+    // 294580438010728 GNO fee. Equivalent to: (10000000000000000000 +
+    // 294580438010728) GNO for 9871580343970612988 DAI, then scaled to sell amount
+    // gives 10000000000000000000 GNO for 9871289555090525964 DAI
+    //
+    // Price improvement over quote: 9871415430342266811 - 9871289555090525964 =
+    // 125875251741847 DAI. Protocol fee = 0.3 * 125875251741847 DAI =
+    // 37762575522554 DAI
+    //
+    // Protocol fee in sell token: 37762575522554 DAI / 9871415430342266811 *
+    // (10000000000000000000 - 167058994203399) = 38253829890184 GNO
+    //
+    // Final execution is 10000000000000000000 GNO for (9871415430342266811 -
+    // 37762575522554) = 9871377667766744257 DAI, with 205312824093583 GNO fee
+    //
+    // Settlement contract balance after execution = 205312824093583 GNO =
+    // 205312824093583 GNO * 9871377667766744257 / (10000000000000000000 -
+    // 205312824093583) = 202676203868731 DAI
+    execute_test(
+        web3.clone(),
+        fee_policy,
+        OrderKind::Sell,
+        None,
+        205312824093583u128.into(),
+        202676203868731u128.into(),
     )
     .await;
 }
