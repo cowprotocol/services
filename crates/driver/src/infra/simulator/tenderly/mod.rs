@@ -101,6 +101,7 @@ pub struct Simulation {
     pub access_list: eth::AccessList,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct SimulationId(String);
 

@@ -316,7 +316,7 @@ fn share_common_pool_state(
     let result = fut.inspect(|pool_result| {
         // We can't clone `anyhow::Error` so just clone the pool data and use
         // an empty `()` error.
-        let pool_result = pool_result.as_ref().map(Clone::clone).map_err(|_| ());
+        let pool_result = pool_result.as_ref().cloned().map_err(|_| ());
         // Ignore error if the shared future was dropped.
         let _ = pool_sender.send(pool_result);
     });
