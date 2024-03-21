@@ -287,7 +287,7 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     // 37762575522554) = 9871377667766744257 DAI, with 205312824093583 GNO fee
     //
     // Settlement contract balance after execution = 205312824093583 GNO =
-    // 205312824093583 GNO * 9871377667766744586 / (10000000000000000000 -
+    // 205312824093583 GNO * 9871377667766744257 / (10000000000000000000 -
     // 205312824093583) = 202676203868731 DAI
     execute_test(
         web3.clone(),
