@@ -6,7 +6,7 @@ use {
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
-    anyhow::anyhow,
+    anyhow::{anyhow, Context},
     ethrpc::current_block::CurrentBlockStream,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
@@ -101,18 +101,9 @@ impl ExternalTradeFinder {
 
 impl From<dto::Quote> for Trade {
     fn from(quote: dto::Quote) -> Self {
-        // TODO: We are currently deciding on whether or not we need indicative
-        // fee estimates for indicative price estimates. If they are needed,
-        // then this approximation is obviously inaccurate and should be
-        // improved, and would likely involve including gas estimates in quote
-        // responses from the driver or implementing this as a separate API.
-        //
-        // Value guessed from <https://dune.com/queries/1373225>
-        const TRADE_GAS: u64 = 290_000;
-
         Self {
             out_amount: quote.amount,
-            gas_estimate: TRADE_GAS,
+            gas_estimate: quote.gas,
             interactions: quote
                 .interactions
                 .into_iter()
@@ -142,9 +133,13 @@ impl TradeFinding for ExternalTradeFinder {
         // The driver only has a single endpoint to compute trades so we can simply
         // reuse the same logic here.
         let trade = self.get_trade(query).await?;
+        let gas_estimate = trade
+            .gas_estimate
+            .context("no gas estimate")
+            .map_err(TradeError::Other)?;
         Ok(Quote {
             out_amount: trade.out_amount,
-            gas_estimate: trade.gas_estimate,
+            gas_estimate,
             solver: trade.solver,
         })
     }
@@ -183,6 +178,7 @@ mod dto {
         pub amount: U256,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
+        pub gas: Option<u64>,
     }
 
     #[serde_as]

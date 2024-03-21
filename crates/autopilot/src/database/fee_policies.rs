@@ -41,29 +41,29 @@ pub async fn insert_batch(
     query_builder.build().execute(ex).await.map(|_| ())
 }
 
-pub async fn fetch(
-    ex: &mut PgConnection,
-    auction_id: dto::AuctionId,
-    order_uid: database::OrderUid,
-) -> Result<Vec<dto::FeePolicy>, sqlx::Error> {
-    const QUERY: &str = r#"
+#[cfg(test)]
+mod tests {
+    use {super::*, database::byte_array::ByteArray, sqlx::Connection};
+
+    pub async fn fetch(
+        ex: &mut PgConnection,
+        auction_id: dto::AuctionId,
+        order_uid: database::OrderUid,
+    ) -> Result<Vec<dto::FeePolicy>, sqlx::Error> {
+        const QUERY: &str = r#"
         SELECT * FROM fee_policies
         WHERE auction_id = $1 AND order_uid = $2
         ORDER BY application_order
     "#;
-    let rows = sqlx::query_as::<_, dto::FeePolicy>(QUERY)
-        .bind(auction_id)
-        .bind(order_uid)
-        .fetch_all(ex)
-        .await?
-        .into_iter()
-        .collect();
-    Ok(rows)
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, database::byte_array::ByteArray, sqlx::Connection};
+        let rows = sqlx::query_as::<_, dto::FeePolicy>(QUERY)
+            .bind(auction_id)
+            .bind(order_uid)
+            .fetch_all(ex)
+            .await?
+            .into_iter()
+            .collect();
+        Ok(rows)
+    }
 
     #[tokio::test]
     #[ignore]
