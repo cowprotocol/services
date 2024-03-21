@@ -24,6 +24,7 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 derivative = { workspace = true }
+derive_more = "0.99.17"
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }

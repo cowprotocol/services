@@ -314,9 +314,11 @@ fn share_common_pool_state(
     let (pool_sender, mut pool_receiver) = oneshot::channel();
 
     let result = fut.inspect(|pool_result| {
-        // We can't clone `anyhow::Error` so just clone the pool data and use
-        // an empty `()` error.
-        let pool_result = pool_result.as_ref().map(Clone::clone).map_err(|_| ());
+        let pool_result = match pool_result {
+            Ok(pool) => Ok(pool.clone()),
+            // We can't clone `anyhow::Error` so just use an empty `()` error.
+            Err(_) => Err(()),
+        };
         // Ignore error if the shared future was dropped.
         let _ = pool_sender.send(pool_result);
     });
