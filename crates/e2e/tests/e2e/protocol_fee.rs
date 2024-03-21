@@ -272,8 +272,9 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
     //
     // Quote: 10000000000000000000 GNO for 9871580343970612988 DAI with
-    // 294580438010728 GNO fee. Equivalent to: 10000000000000000000 GNO for
-    // 9871289555090525964 DAI
+    // 294580438010728 GNO fee. Equivalent to: (10000000000000000000 +
+    // 294580438010728) GNO for 9871580343970612988 DAI, then scaled to sell amount
+    // gives 10000000000000000000 GNO for 9871289555090525964 DAI
     //
     // Price improvement over quote: 9871415430342266811 - 9871289555090525964 =
     // 125875251741847 DAI. Protocol fee = 0.3 * 125875251741847 DAI =
