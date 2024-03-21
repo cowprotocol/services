@@ -828,7 +828,7 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
 // A minimum, of 1 atom is still required as a spam protection measure.
 // TODO: ideally, we should keep the full balance enforcement for SWAPs,
 // but given all orders are LIMIT now, this is harder to do.
-const MINIMUM_BALANCE: U256 = U256([1, 0, 0, 0]); // 1 atom of a token
+const MINIMUM_BALANCE: U256 = U256::one(); // 1 atom of a token
 
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
