@@ -168,9 +168,9 @@ async fn partner_fee_sell_order_test(web3: Web3) {
     // 0.01*(10000000000000000000 - 167058994203399) = 100165388404261365
     //
     // Final execution is 10000000000000000000 GNO for 9772701276038844388 DAI, with
-    // executed_surplus_fee = 1000150353094783059 GNO
+    // executed_surplus_fee = 100165388404261365 GNO
     //
-    // Settlement contract balance after execution = 1000150353094783059 GNO =
+    // Settlement contract balance after execution = 100165388404261365 GNO =
     // 100165388404261365 GNO * 9772701276038844388 / (10000000000000000000 -
     // 100165388404261365) = 98879067931768848 DAI
     execute_test(

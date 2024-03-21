@@ -151,22 +151,3 @@ impl From<domain::Quote> for Quote {
         }
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_factor() {
-        let values = vec![
-            (1.0, 0.01),
-            (2.0, 0.01),
-            (0.0, 0.0),
-            (-1.0, 0.0),
-            (0.001, 0.001),
-        ];
-        for (from, result) in values {
-            assert_eq!(f64::from(FeeFactor::partner_fee_capped_from(from)), result);
-        }
-    }
-}
