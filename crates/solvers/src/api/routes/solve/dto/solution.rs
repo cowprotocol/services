@@ -119,6 +119,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                         success_probability: score.0,
                     },
                 },
+                gas: solution.gas.map(|gas| gas.0.as_u64()),
             })
             .collect(),
     }
