@@ -419,7 +419,7 @@ mod uniswap_v3 {
 
     pub fn default_uniswap_v3_graph_url() -> Url {
         Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
-                .expect("invalid default uniswap-v3 Graph API URL")
+            .expect("invalid default uniswap-v3 Graph API URL")
     }
 }
 
@@ -486,8 +486,8 @@ mod balancer_v2 {
     use url::Url;
 
     pub fn default_balancer_v2_graph_url() -> Url {
-            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
-                .expect("invalid default balancer-v2 Graph API URL")
+        Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
+            .expect("invalid default balancer-v2 Graph API URL")
     }
 }
 

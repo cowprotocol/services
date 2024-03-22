@@ -284,8 +284,13 @@ pub async fn run(args: Arguments) {
             .clone()
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
+        let graph_url = args
+            .shared
+            .balancer_v2_graph_url
+            .as_ref()
+            .expect("provide a balancer subgraph url when enabling balancer liquidity");
         match BalancerPoolFetcher::new(
-            &args.shared.balancer_v2_graph_url,
+            graph_url,
             block_retriever.clone(),
             token_info_fetcher.clone(),
             cache_config,
@@ -312,8 +317,13 @@ pub async fn run(args: Arguments) {
         None
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let graph_url = args
+            .shared
+            .uniswap_v3_graph_url
+            .as_ref()
+            .expect("provide a uniswapV3 subgraph url when enabling balancer liquidity");
         match UniswapV3PoolFetcher::new(
-            &args.shared.uniswap_v3_graph_url,
+            graph_url,
             web3.clone(),
             http_factory.create(),
             block_retriever,

@@ -190,7 +190,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         pool_deny_list: pool_deny_list.clone(),
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
-                                liquidity::config::BalancerV2::balancer_v2( &graph_url, chain)
+                                liquidity::config::BalancerV2::balancer_v2(&graph_url, chain)
                             }
                         }
                         .expect("no Balancer V2 preset for current network")
