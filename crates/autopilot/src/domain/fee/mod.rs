@@ -19,22 +19,26 @@ use {
 };
 
 /// Constructs fee policies based on the current configuration.
-pub struct ProtocolFee {
-    in_market_orders_policy: policy::Policy,
-    out_of_market_orders_policy: policy::Policy,
+pub enum ProtocolFee {
+    Market(policy::Policy),
+    Limit(policy::Policy),
 }
 
 impl ProtocolFee {
     pub fn new(fee_policy_args: arguments::FeePolicy) -> Self {
-        Self {
-            in_market_orders_policy: fee_policy_args.in_market_fee_policy_kind.into(),
-            out_of_market_orders_policy: fee_policy_args.out_of_market_fee_policy_kind.into(),
+        match fee_policy_args {
+            arguments::FeePolicy::Market(policy) => Self::Market(policy.into()),
+            arguments::FeePolicy::Limit(policy) => Self::Limit(policy.into()),
         }
     }
 
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
-    pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+    pub fn apply(
+        protocol_fees: &[ProtocolFee],
+        order: boundary::Order,
+        quote: &domain::Quote,
+    ) -> domain::Order {
         // If the partner fee is specified, it overwrites the current volume fee policy
         if let Some(validated_app_data) = order
             .metadata
@@ -63,18 +67,24 @@ impl ProtocolFee {
             buy: quote.buy_amount,
             fee: quote.fee,
         };
-        let fee_policy = match boundary::is_order_outside_market_price(&order_, &quote_) {
-            true => &self.out_of_market_orders_policy,
-            false => &self.in_market_orders_policy,
-        };
-
-        let protocol_fees = match fee_policy {
-            policy::Policy::Surplus(variant) => variant.apply(&order),
-            policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
-            policy::Policy::Volume(variant) => variant.apply(&order),
-        }
-        .into_iter()
-        .collect_vec();
+        let protocol_fees = protocol_fees
+            .iter()
+            // TODO: support multiple fee policies
+            .find_map(|fee_policy| {
+                let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_);
+                match (outside_market_price, fee_policy) {
+                    (true, ProtocolFee::Limit(policy)) => Some(policy),
+                    (false, ProtocolFee::Market(policy)) => Some(policy),
+                    _ => None,
+                }
+            })
+            .and_then(|policy| match policy {
+                policy::Policy::Surplus(variant) => variant.apply(&order),
+                policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
+                policy::Policy::Volume(variant) => variant.apply(&order),
+            })
+            .into_iter()
+            .collect_vec();
         boundary::order::to_domain(order, protocol_fees)
     }
 }
