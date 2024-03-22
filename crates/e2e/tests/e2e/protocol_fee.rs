@@ -449,7 +449,7 @@ impl std::fmt::Display for FeePolicyOrderClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FeePolicyOrderClass::Market => write!(f, "market"),
-            FeePolicyOrderClass::Limit => write!(f, "market"),
+            FeePolicyOrderClass::Limit => write!(f, "limit"),
         }
     }
 }
