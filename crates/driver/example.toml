@@ -37,8 +37,6 @@ base-tokens = [
     "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
     "0x6B175474E89094C44Da98b954EedeAC495271d0F",
 ]
-graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
-
 # [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 # preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
 
@@ -62,6 +60,7 @@ graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 # [[liquidity.balancer-v2]] # Balancer V2 configuration
 # preset = "balancer-v2"
+# graph-url = "http://localhost:1234" # which subgraph url to fetch the data from
 # pool-deny-list = [] # optional
 
 # [[liquidity.balancer-v2]] # Custom Balancer V2 configuration
@@ -73,6 +72,7 @@ graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 # [[liquidity.uniswap-v3]] # Uniswap V3 configuration
 # preset = "uniswap-v3"
+# graph-url = "http://localhost:1234" # which subgraph url to fetch the data from
 # max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
 
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
