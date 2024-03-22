@@ -1,5 +1,5 @@
 use {
-    crate::infra,
+    crate::{domain::fee::FeeFactor, infra},
     anyhow::Context,
     clap::ValueEnum,
     primitive_types::{H160, U256},
@@ -368,13 +368,19 @@ pub enum FeePolicy {
 #[derive(clap::Parser, Debug, Clone)]
 pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
-    Surplus { factor: f64, max_volume_factor: f64 },
+    Surplus {
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
+    },
     /// How much of the order's price improvement should be taken as a protocol
     /// fee where price improvement is a difference between the executed price
     /// and the best quote.
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    PriceImprovement {
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
+    },
     /// How much of the order's volume should be taken as a protocol fee.
-    Volume { factor: f64 },
+    Volume { factor: FeeFactor },
 }
 
 #[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
@@ -383,14 +389,6 @@ enum FeePolicyOrderClass {
     Market,
     /// If a fee policy needs to be applied to limit orders.
     Limit,
-}
-
-fn validate_factor(factor: f64) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        (0.0..1.0).contains(&factor),
-        "Factor must be in the range [0, 1)"
-    );
-    Ok(())
 }
 
 impl FeePolicy {
@@ -415,16 +413,14 @@ impl FromStr for FeePolicy {
                     .context("missing surplus factor")?
                     .parse::<f64>()
                     .map_err(|e| anyhow::anyhow!("invalid surplus factor: {}", e))?;
-                validate_factor(factor)?;
                 let max_volume_factor = parts
                     .next()
                     .context("missing max volume factor")?
                     .parse::<f64>()
                     .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
-                validate_factor(max_volume_factor)?;
                 Ok(FeePolicyKind::Surplus {
-                    factor,
-                    max_volume_factor,
+                    factor: factor.try_into()?,
+                    max_volume_factor: max_volume_factor.try_into()?,
                 })
             }
             "priceImprovement" => {
@@ -433,7 +429,6 @@ impl FromStr for FeePolicy {
                     .context("missing price improvement factor")?
                     .parse::<f64>()
                     .map_err(|e| anyhow::anyhow!("invalid price improvement factor: {}", e))?;
-                validate_factor(factor)?;
                 let max_volume_factor = parts
                     .next()
                     .context("missing price improvement max volume factor")?
@@ -441,10 +436,9 @@ impl FromStr for FeePolicy {
                     .map_err(|e| {
                         anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
                     })?;
-                validate_factor(max_volume_factor)?;
                 Ok(FeePolicyKind::PriceImprovement {
-                    factor,
-                    max_volume_factor,
+                    factor: factor.try_into()?,
+                    max_volume_factor: max_volume_factor.try_into()?,
                 })
             }
             "volume" => {
@@ -453,8 +447,9 @@ impl FromStr for FeePolicy {
                     .context("missing volume factor")?
                     .parse::<f64>()
                     .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
-                validate_factor(factor)?;
-                Ok(FeePolicyKind::Volume { factor })
+                Ok(FeePolicyKind::Volume {
+                    factor: factor.try_into()?,
+                })
             }
             _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
         }?;

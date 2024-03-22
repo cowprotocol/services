@@ -263,6 +263,7 @@ dependencies = [
  "contracts",
  "database",
  "derivative",
+ "derive_more",
  "ethcontract",
  "ethrpc",
  "futures",

@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self},
-        domain,
+        domain::{self, fee::FeeFactor},
     },
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
@@ -296,23 +296,25 @@ impl From<domain::fee::Policy> for FeePolicy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor,
-                max_volume_factor,
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
             },
             domain::fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor,
-                max_volume_factor,
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
                 quote: Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
                 },
             },
-            domain::fee::Policy::Volume { factor } => Self::Volume { factor },
+            domain::fee::Policy::Volume { factor } => Self::Volume {
+                factor: factor.into(),
+            },
         }
     }
 }
@@ -324,23 +326,25 @@ impl From<FeePolicy> for domain::fee::Policy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor,
-                max_volume_factor,
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
             },
             FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor,
-                max_volume_factor,
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
                 quote: domain::fee::Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
                 },
             },
-            FeePolicy::Volume { factor } => Self::Volume { factor },
+            FeePolicy::Volume { factor } => Self::Volume {
+                factor: FeeFactor::try_from(factor).unwrap(),
+            },
         }
     }
 }
