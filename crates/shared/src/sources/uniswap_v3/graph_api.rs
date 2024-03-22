@@ -307,18 +307,7 @@ mod block_number_query {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::subgraph::{Data, QUERY_PAGE_SIZE},
-        serde_json::json,
-        std::str::FromStr,
-    };
-
-    pub fn default(client: Client) -> Result<UniV3SubgraphClient> {
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
-            .expect("invalid url");
-        UniV3SubgraphClient::from_subgraph_url(&subgraph_url, client)
-    }
+    use {super::*, crate::subgraph::Data, serde_json::json, std::str::FromStr};
 
     #[test]
     fn decode_pools_data() {
@@ -469,73 +458,5 @@ mod tests {
                 }
             }
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_registered_pools_test() {
-        let client = default(Client::new()).unwrap();
-        let result = client.get_registered_pools().await.unwrap();
-        println!(
-            "Retrieved {} total pools at block {}",
-            result.pools.len(),
-            result.fetched_block_number,
-        );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_pools_by_pool_ids_test() {
-        let client = default(Client::new()).unwrap();
-        let registered_pools = client.get_registered_pools().await.unwrap();
-        let pool_ids = registered_pools
-            .pools
-            .into_iter()
-            .map(|pool| pool.id)
-            .take(QUERY_PAGE_SIZE + 10)
-            .collect::<Vec<_>>();
-
-        let block_number = registered_pools.fetched_block_number;
-        let result = client
-            .get_pools_by_pool_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        assert_eq!(result.len(), QUERY_PAGE_SIZE + 10);
-        assert_eq!(&result.last().unwrap().id, pool_ids.last().unwrap());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_ticks_by_pools_ids_test() {
-        let client = default(Client::new()).unwrap();
-        let block_number = client.get_safe_block().await.unwrap();
-        let pool_ids = vec![
-            H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
-            H160::from_str("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8").unwrap(),
-        ];
-        let result = client
-            .get_ticks_by_pools_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        dbg!(result);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_pools_with_ticks_by_ids_test() {
-        let client = default(Client::new()).unwrap();
-        let block_number = client.get_safe_block().await.unwrap();
-        let pool_ids = vec![
-            H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
-            H160::from_str("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8").unwrap(),
-        ];
-        let result = client
-            .get_pools_with_ticks_by_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(result[0].ticks.is_some());
-        assert!(result[1].ticks.is_some());
-        dbg!(result);
     }
 }

@@ -493,11 +493,10 @@ impl Maintaining for UniswapV3PoolFetcher {
 mod tests {
     use {
         super::*,
-        crate::ethrpc,
         contracts::uniswap_v3_pool::event_data::{Burn, Mint, Swap},
         ethcontract::EventMetadata,
         serde_json::json,
-        std::{ops::Sub, str::FromStr},
+        std::str::FromStr,
     };
 
     #[test]
@@ -716,115 +715,5 @@ mod tests {
                 (BigInt::from(110_000), BigInt::from(-66666))
             ])
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn uniswap_v3_pool_fetcher_constructor_test() {
-        let transport = ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let block_retriever = Arc::new(web3.clone());
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
-            .expect("invalid url");
-
-        let fetcher =
-            UniswapV3PoolFetcher::new(&subgraph_url, web3, Client::new(), block_retriever, 100)
-                .await
-                .unwrap();
-
-        assert!(!fetcher.checkpoint.pools_by_token_pair.is_empty());
-        assert!(!fetcher
-            .checkpoint
-            .pools_checkpoint
-            .lock()
-            .unwrap()
-            .pools
-            .is_empty());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn fetch_test() {
-        let transport = ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let block_retriever = Arc::new(web3.clone());
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
-            .expect("invalid url");
-        let fetcher = UniswapV3PoolFetcher::new(
-            &subgraph_url,
-            web3.clone(),
-            Client::new(),
-            block_retriever,
-            100,
-        )
-        .await
-        .unwrap();
-        fetcher.run_maintenance().await.unwrap();
-        let token_pairs = HashSet::from([
-            TokenPair::new(
-                H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
-                H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
-            )
-            .unwrap(),
-            TokenPair::new(
-                H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
-                H160::from_str("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap(),
-            )
-            .unwrap(),
-        ]);
-
-        // get pools through the pool fetcher at the latest_block
-        let latest_block = web3.eth().block_number().await.unwrap().as_u64().sub(5); //sub5 to avoid searching subgraph for still not indexed block
-        let mut pools = fetcher
-            .fetch(&token_pairs, Block::Number(latest_block))
-            .await
-            .unwrap();
-        pools.sort_by(|a, b| a.address.cmp(&b.address));
-
-        // get the same pools using direct call to subgraph
-        let subgraph_url = Url::parse("https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3")
-            .expect("invalid url");
-        let graph_api =
-            UniV3SubgraphClient::from_subgraph_url(&subgraph_url, Client::new()).unwrap();
-        let pool_ids = pools.iter().map(|pool| pool.address).collect::<Vec<_>>();
-
-        // first get at the block in history
-        let block_number = fetcher
-            .checkpoint
-            .pools_checkpoint
-            .lock()
-            .unwrap()
-            .block_number;
-        let pools_history = graph_api
-            .get_pools_with_ticks_by_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        let mut pools_history = pools_history
-            .into_iter()
-            .flat_map(TryInto::try_into)
-            .collect::<Vec<PoolInfo>>();
-        pools_history.sort_by(|a, b| a.address.cmp(&b.address));
-
-        // second get at the latest_block
-        let pools2 = graph_api
-            .get_pools_with_ticks_by_ids(&pool_ids, latest_block)
-            .await
-            .unwrap();
-        let mut pools2 = pools2
-            .into_iter()
-            .flat_map(TryInto::try_into)
-            .collect::<Vec<PoolInfo>>();
-        pools2.sort_by(|a, b| a.address.cmp(&b.address));
-
-        // observe results
-        for pool in pools {
-            dbg!("first address {} : {}", pool.address, pool.state);
-        }
-        for pool in pools2 {
-            dbg!("second address {} : {}", pool.address, pool.state);
-        }
-        for pool in pools_history {
-            dbg!("history address {} : {}", pool.address, pool.state);
-        }
     }
 }

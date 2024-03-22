@@ -242,15 +242,7 @@ mod tests {
         crate::sources::balancer_v2::swap::fixed_point::Bfp,
         ethcontract::{H160, H256},
         maplit::hashmap,
-        std::collections::HashMap,
     };
-
-    pub fn default(client: Client) -> Result<BalancerSubgraphClient> {
-        let subgraph_url =
-            Url::parse("https://api.thegraph.com/subgraphs/name/balancer-labs/balancer-v2")
-                .expect("invalid url");
-        BalancerSubgraphClient::from_subgraph_url(&subgraph_url, client)
-    }
 
     #[test]
     fn decode_pools_data() {
@@ -476,39 +468,5 @@ mod tests {
                 },
             }
         )
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn balancer_subgraph_query() {
-        for network_name in ["Mainnet", "Goerli"] {
-            println!("### {network_name}");
-            let client = default(Client::new()).unwrap();
-            let result = client.get_registered_pools().await.unwrap();
-            println!(
-                "Retrieved {} total pools at block {}",
-                result.pools.len(),
-                result.fetched_block_number,
-            );
-
-            let grouped_by_factory = result.pools.into_iter().fold(
-                HashMap::<_, Vec<_>>::new(),
-                |mut factories, pool| {
-                    factories
-                        .entry((pool.pool_type, pool.factory))
-                        .or_default()
-                        .push(pool);
-                    factories
-                },
-            );
-            for ((pool_type, factory), pools) in grouped_by_factory {
-                println!(
-                    "- {} {:?} pools from factory {:?}",
-                    pools.len(),
-                    pool_type,
-                    factory,
-                );
-            }
-        }
     }
 }
