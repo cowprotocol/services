@@ -305,6 +305,10 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
         factor: 0.3,
         max_volume_factor: 0.9,
     };
+    let protocol_fee = ProtocolFee {
+        policy: fee_policy,
+        policy_order_class: FeePolicyOrderClass::Limit,
+    };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
@@ -329,7 +333,7 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     // 205312824093583) = 202676203868731 DAI
     execute_test(
         web3.clone(),
-        fee_policy,
+        vec![protocol_fee],
         OrderKind::Sell,
         None,
         205312824093583u128.into(),
