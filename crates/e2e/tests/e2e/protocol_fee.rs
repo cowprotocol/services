@@ -105,10 +105,18 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
         factor: 0.9,
         max_volume_factor: 0.1,
     };
-    let protocol_fee = ProtocolFee {
-        policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
-    };
+    let protocol_fees = vec![
+        ProtocolFee {
+            policy: fee_policy.clone(),
+            policy_order_class: FeePolicyOrderClass::Market,
+        },
+        // Tests ability of providing multiple fees in the config. In fact, the Market one is used
+        // only since the order is in-market.
+        ProtocolFee {
+            policy: fee_policy,
+            policy_order_class: FeePolicyOrderClass::Limit,
+        },
+    ];
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
@@ -125,7 +133,7 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
     // 1000150353094783059) = 987306456662572858 DAI
     execute_test(
         web3.clone(),
-        vec![protocol_fee],
+        protocol_fees,
         OrderKind::Sell,
         None,
         1000150353094783059u128.into(),
@@ -558,7 +566,7 @@ impl std::fmt::Display for ProtocolFeesConfig {
             .iter()
             .map(|fee| fee.to_string())
             .collect::<Vec<_>>()
-            .join("|");
+            .join(",");
         write!(f, "--fee-policies={}", fees_str)
     }
 }
