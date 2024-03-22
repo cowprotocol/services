@@ -6,7 +6,7 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         subgraph::{ContainsId, SubgraphClient},
     },
-    anyhow::{bail, Result},
+    anyhow::Result,
     ethcontract::{H160, U256},
     num::BigInt,
     number::serialization::HexOrDecimalU256,
@@ -106,18 +106,9 @@ const TICKS_BY_POOL_IDS_QUERY: &str = r#"
 pub struct UniV3SubgraphClient(SubgraphClient);
 
 impl UniV3SubgraphClient {
-    /// Creates a new Uniswap V3 subgraph client for the specified chain ID.
-    pub fn for_chain(base_url: &Url, chain_id: u64, client: Client) -> Result<Self> {
-        let subgraph_name = match chain_id {
-            1 => "uniswap-v3",
-            _ => bail!("unsupported chain {}", chain_id),
-        };
-        Ok(Self(SubgraphClient::new(
-            base_url,
-            "uniswap",
-            subgraph_name,
-            client,
-        )?))
+    /// Creates a new Uniswap V3 subgraph client from the specified URL.
+    pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
+        Ok(Self(SubgraphClient::new(subgraph_url.clone(), client)?))
     }
 
     async fn get_pools(&self, query: &str, variables: Map<String, Value>) -> Result<Vec<PoolData>> {
@@ -316,17 +307,7 @@ mod block_number_query {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::subgraph::{Data, QUERY_PAGE_SIZE},
-        serde_json::json,
-        std::str::FromStr,
-    };
-
-    pub fn default_for_chain(chain_id: u64, client: Client) -> Result<UniV3SubgraphClient> {
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        UniV3SubgraphClient::for_chain(&base_url, chain_id, client)
-    }
+    use {super::*, crate::subgraph::Data, serde_json::json, std::str::FromStr};
 
     #[test]
     fn decode_pools_data() {
@@ -477,73 +458,5 @@ mod tests {
                 }
             }
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_registered_pools_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
-        let result = client.get_registered_pools().await.unwrap();
-        println!(
-            "Retrieved {} total pools at block {}",
-            result.pools.len(),
-            result.fetched_block_number,
-        );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_pools_by_pool_ids_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
-        let registered_pools = client.get_registered_pools().await.unwrap();
-        let pool_ids = registered_pools
-            .pools
-            .into_iter()
-            .map(|pool| pool.id)
-            .take(QUERY_PAGE_SIZE + 10)
-            .collect::<Vec<_>>();
-
-        let block_number = registered_pools.fetched_block_number;
-        let result = client
-            .get_pools_by_pool_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        assert_eq!(result.len(), QUERY_PAGE_SIZE + 10);
-        assert_eq!(&result.last().unwrap().id, pool_ids.last().unwrap());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_ticks_by_pools_ids_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
-        let block_number = client.get_safe_block().await.unwrap();
-        let pool_ids = vec![
-            H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
-            H160::from_str("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8").unwrap(),
-        ];
-        let result = client
-            .get_ticks_by_pools_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        dbg!(result);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_pools_with_ticks_by_ids_test() {
-        let client = default_for_chain(1, Client::new()).unwrap();
-        let block_number = client.get_safe_block().await.unwrap();
-        let pool_ids = vec![
-            H160::from_str("0x9db9e0e53058c89e5b94e29621a205198648425b").unwrap(),
-            H160::from_str("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8").unwrap(),
-        ];
-        let result = client
-            .get_pools_with_ticks_by_ids(&pool_ids, block_number)
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(result[0].ticks.is_some());
-        assert!(result[1].ticks.is_some());
-        dbg!(result);
     }
 }
