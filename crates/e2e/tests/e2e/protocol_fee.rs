@@ -69,7 +69,7 @@ async fn surplus_fee_sell_order_test(web3: Web3) {
     };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -107,7 +107,7 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
     };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -138,7 +138,7 @@ async fn volume_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -173,7 +173,7 @@ async fn partner_fee_sell_order_test(web3: Web3) {
     };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -218,7 +218,7 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
     };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
@@ -252,7 +252,7 @@ async fn surplus_fee_buy_order_capped_test(web3: Web3) {
     };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
@@ -278,7 +278,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
@@ -307,7 +307,7 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     };
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Limit,
+        policy_order_class: FeePolicyOrderClass::Market,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -498,8 +498,8 @@ struct ProtocolFee {
 }
 
 enum FeePolicyOrderClass {
-    #[allow(dead_code)]
     Market,
+    #[allow(dead_code)]
     Limit,
 }
 
