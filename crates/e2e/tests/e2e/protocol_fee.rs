@@ -352,7 +352,7 @@ fn is_approximately_equal(executed_value: U256, expected_value: U256) -> bool {
 
 async fn execute_test(
     web3: Web3,
-    fee_policies: Vec<ProtocolFee>,
+    protocol_fees: Vec<ProtocolFee>,
     order_kind: OrderKind,
     app_data: Option<OrderCreationAppData>,
     expected_surplus_fee: U256,
@@ -428,7 +428,7 @@ async fn execute_test(
     let autopilot_args = vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ProtocolFeesConfig(fee_policies).to_string(),
+        ProtocolFeesConfig(protocol_fees).to_string(),
     ];
     services.start_autopilot(None, autopilot_args);
     services
