@@ -14,7 +14,10 @@ use {
     crate::domain::{
         competition::{
             auction,
-            solution::{fee, fee::adjust_quote_to_order_limits},
+            solution::{
+                fee::{self, adjust_quote_to_order_limits},
+                trade::CustomClearingPrices,
+            },
             PriceLimits,
         },
         eth::{self},
@@ -329,17 +332,17 @@ impl Trade {
     }
 }
 
-/// Custom clearing prices at which the trade was executed.
-///
-/// These prices differ from uniform clearing prices, in that they are adjusted
-/// to account for all fees (gas cost and protocol fees).
-///
-/// These prices determine the actual traded amounts from the user perspective.
-#[derive(Debug, Clone)]
-pub struct CustomClearingPrices {
-    pub sell: eth::U256,
-    pub buy: eth::U256,
-}
+// /// Custom clearing prices at which the trade was executed.
+// ///
+// /// These prices differ from uniform clearing prices, in that they are
+// adjusted /// to account for all fees (gas cost and protocol fees).
+// ///
+// /// These prices determine the actual traded amounts from the user
+// perspective. #[derive(Debug, Clone)]
+// pub struct CustomClearingPrices {
+//     pub sell: eth::U256,
+//     pub buy: eth::U256,
+// }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

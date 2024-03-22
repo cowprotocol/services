@@ -88,7 +88,8 @@ impl Solution {
                             buy: solution.prices
                                 [&fulfillment.order().buy.token.wrap(solution.weth)],
                         };
-                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        let custom_prices = fulfillment.custom_prices(&prices)?;
+                        let fulfillment = fulfillment.with_protocol_fee(&custom_prices)?;
                         trades.push(Trade::Fulfillment(fulfillment))
                     }
                     order::Kind::Liquidity => {
@@ -149,29 +150,7 @@ impl Solution {
                     .get(&trade.order().buy.token.wrap(self.weth))
                     .ok_or(error::Solution::InvalidClearingPrices)?,
             };
-            let custom_prices = scoring::CustomClearingPrices {
-                sell: match trade.order().side {
-                    order::Side::Sell => trade
-                        .executed()
-                        .0
-                        .checked_mul(uniform_prices.sell)
-                        .ok_or(error::Math::Overflow)?
-                        .checked_div(uniform_prices.buy)
-                        .ok_or(error::Math::DivisionByZero)?,
-                    order::Side::Buy => trade.executed().0,
-                },
-                buy: match trade.order().side {
-                    order::Side::Sell => trade.executed().0 + trade.fee().0,
-                    order::Side::Buy => {
-                        (trade.executed().0)
-                            .checked_mul(uniform_prices.buy)
-                            .ok_or(error::Math::Overflow)?
-                            .checked_div(uniform_prices.sell)
-                            .ok_or(error::Math::DivisionByZero)?
-                            + trade.fee().0
-                    }
-                },
-            };
+            let custom_prices = trade.custom_prices(&uniform_prices)?;
             trades.push(scoring::Trade::new(
                 trade.order().sell,
                 trade.order().buy,
@@ -401,6 +380,8 @@ pub mod error {
         InvalidClearingPrices,
         #[error(transparent)]
         ProtocolFee(#[from] fee::Error),
+        #[error(transparent)]
+        Math(#[from] Math),
     }
 
     #[derive(Debug, thiserror::Error)]

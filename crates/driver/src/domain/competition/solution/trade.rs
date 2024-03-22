@@ -102,27 +102,10 @@ impl Fulfillment {
     }
 
     /// The effective amount that left the user's wallet including all fees.
-    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Error> {
-        let before_fee = match self.order.side {
-            order::Side::Sell => self.executed.0,
-            order::Side::Buy => self
-                .executed
-                .0
-                .checked_mul(prices.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(prices.sell)
-                .ok_or(Math::DivisionByZero)?,
-        };
-        Ok(eth::TokenAmount(
-            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
-        ))
-    }
-
-    /// The effective amount the user received after all fees.
-    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Error> {
+    pub fn sell_amount(&self, prices: &CustomClearingPrices) -> Result<eth::TokenAmount, Error> {
         let amount = match self.order.side {
-            order::Side::Buy => self.executed.0,
-            order::Side::Sell => self
+            order::Side::Sell => self.executed.0 + self.fee().0,
+            order::Side::Buy => self
                 .executed
                 .0
                 .checked_mul(prices.sell)
@@ -133,6 +116,47 @@ impl Fulfillment {
         Ok(eth::TokenAmount(amount))
     }
 
+    /// The effective amount the user received after all fees.
+    pub fn buy_amount(&self, prices: &CustomClearingPrices) -> Result<eth::TokenAmount, Error> {
+        let amount = match self.order.side {
+            order::Side::Buy => self.executed.0,
+            order::Side::Sell => (self.executed.0 + self.fee().0)
+                .checked_mul(prices.sell)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.buy)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(amount))
+    }
+
+    /// Returns the adjusted clearing prices which account for the fee.
+    pub fn custom_prices(&self, uniform: &ClearingPrices) -> Result<CustomClearingPrices, Math> {
+        let custom_prices = CustomClearingPrices {
+            sell: match self.order.side {
+                order::Side::Sell => self
+                    .executed
+                    .0
+                    .checked_mul(uniform.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(uniform.buy)
+                    .ok_or(Math::DivisionByZero)?,
+                order::Side::Buy => self.executed.0,
+            },
+            buy: match self.order.side {
+                order::Side::Sell => self.executed.0 + self.fee().0,
+                order::Side::Buy => {
+                    (self.executed.0)
+                        .checked_mul(uniform.buy)
+                        .ok_or(Math::Overflow)?
+                        .checked_div(uniform.sell)
+                        .ok_or(Math::DivisionByZero)?
+                        + self.fee().0
+                }
+            },
+        };
+        Ok(custom_prices)
+    }
+
     /// Returns the surplus denominated in the surplus token.
     ///
     /// The surplus token is the buy token for a sell order and sell token for a
@@ -141,34 +165,15 @@ impl Fulfillment {
         &self,
         limit_sell: eth::U256,
         limit_buy: eth::U256,
-        prices: ClearingPrices,
+        prices: &CustomClearingPrices,
     ) -> Result<eth::TokenAmount, Error> {
-        let executed = self.executed().0;
-        let executed_sell_amount = match self.order().side {
-            Side::Buy => {
-                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                executed
-                    .checked_mul(prices.buy)
-                    .ok_or(Math::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(Math::DivisionByZero)?
-            }
-            Side::Sell => executed,
-        };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
-        let executed_sell_amount_with_fee = executed_sell_amount
-            .checked_add(
-                // surplus_fee is always expressed in sell token
-                self.surplus_fee()
-                    .map(|fee| fee.0)
-                    .ok_or(Error::ProtocolFeeOnStaticOrder)?,
-            )
-            .ok_or(Math::Overflow)?;
+        let sell_amount = self.sell_amount(prices)?;
+        let buy_amount = self.buy_amount(prices)?;
         let surplus = match self.order().side {
             Side::Buy => {
                 // Scale to support partially fillable orders
                 let limit_sell_amount = limit_sell
-                    .checked_mul(executed)
+                    .checked_mul(buy_amount.0)
                     .ok_or(Math::Overflow)?
                     .checked_div(limit_buy)
                     .ok_or(Math::DivisionByZero)?;
@@ -176,18 +181,19 @@ impl Fulfillment {
                 // Do not return error if `checked_sub` fails because violated limit prices will
                 // be caught by simulation
                 limit_sell_amount
-                    .checked_sub(executed_sell_amount_with_fee)
+                    .checked_sub(sell_amount.0)
                     .unwrap_or(eth::U256::zero())
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
                 let limit_buy_amount = limit_buy
-                    .checked_mul(executed_sell_amount_with_fee)
+                    .checked_mul(sell_amount.0)
                     .ok_or(Math::Overflow)?
                     .checked_div(limit_sell)
                     .ok_or(Math::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
-                let executed_buy_amount = executed
+                let executed_buy_amount = sell_amount
+                    .0
                     .checked_mul(prices.sell)
                     .ok_or(Math::Overflow)?
                     .checked_div(prices.buy)
@@ -218,6 +224,18 @@ pub enum Fee {
 /// Uniform clearing prices at which the trade was executed.
 #[derive(Debug, Clone, Copy)]
 pub struct ClearingPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
+}
+
+/// Custom clearing prices at which the trade was executed.
+///
+/// These prices differ from uniform clearing prices, in that they are adjusted
+/// to account for fee.
+///
+/// These prices determine the actual traded amounts from the user perspective.
+#[derive(Debug, Clone)]
+pub struct CustomClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
 }

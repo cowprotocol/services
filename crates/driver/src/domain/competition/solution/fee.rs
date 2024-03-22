@@ -25,12 +25,13 @@
 use {
     super::{
         error::Math,
-        trade::{self, ClearingPrices, Fee, Fulfillment},
+        trade::{self, Fee, Fulfillment},
     },
     crate::domain::{
         competition::{
             order,
             order::{FeePolicy, Side},
+            solution::trade::CustomClearingPrices,
             PriceLimits,
         },
         eth,
@@ -40,7 +41,7 @@ use {
 
 impl Fulfillment {
     /// Applies the protocol fee to the existing fulfillment creating a new one.
-    pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
+    pub fn with_protocol_fee(&self, prices: &CustomClearingPrices) -> Result<Self, Error> {
         let protocol_fee = self.protocol_fee_in_sell_token(prices)?;
 
         // Increase the fee by the protocol fee
@@ -74,7 +75,7 @@ impl Fulfillment {
     }
 
     /// Computed protocol fee in surplus token.
-    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::TokenAmount, Error> {
+    fn protocol_fee(&self, prices: &CustomClearingPrices) -> Result<eth::TokenAmount, Error> {
         // TODO: support multiple fee policies
         if self.order().protocol_fees.len() > 1 {
             return Err(Error::MultipleFeePolicies);
@@ -124,7 +125,7 @@ impl Fulfillment {
     fn calculate_fee(
         &self,
         price_limits: PriceLimits,
-        prices: ClearingPrices,
+        prices: &CustomClearingPrices,
         factor: f64,
         max_volume_factor: f64,
     ) -> Result<eth::TokenAmount, Error> {
@@ -142,7 +143,7 @@ impl Fulfillment {
         &self,
         sell_amount: eth::U256,
         buy_amount: eth::U256,
-        prices: ClearingPrices,
+        prices: &CustomClearingPrices,
         factor: f64,
     ) -> Result<eth::TokenAmount, Error> {
         let surplus = self.surplus_over_reference_price(sell_amount, buy_amount, prices)?;
@@ -158,12 +159,12 @@ impl Fulfillment {
     /// order, or a full buy amount for sell order.
     fn fee_from_volume(
         &self,
-        prices: ClearingPrices,
+        prices: &CustomClearingPrices,
         factor: f64,
     ) -> Result<eth::TokenAmount, Error> {
         let volume = match self.order().side {
-            Side::Buy => self.sell_amount(&prices)?,
-            Side::Sell => self.buy_amount(&prices)?,
+            Side::Buy => self.sell_amount(prices)?,
+            Side::Sell => self.buy_amount(prices)?,
         };
         volume
             .apply_factor(factor)
@@ -174,7 +175,7 @@ impl Fulfillment {
     /// Returns the protocol fee denominated in the sell token.
     fn protocol_fee_in_sell_token(
         &self,
-        prices: ClearingPrices,
+        prices: &CustomClearingPrices,
     ) -> Result<eth::TokenAmount, Error> {
         let fee_in_sell_token = match self.order().side {
             Side::Buy => self.protocol_fee(prices)?,
