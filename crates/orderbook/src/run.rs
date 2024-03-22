@@ -321,7 +321,7 @@ pub async fn run(args: Arguments) {
             .shared
             .uniswap_v3_graph_url
             .as_ref()
-            .expect("provide a uniswapV3 subgraph url when enabling balancer liquidity");
+            .expect("provide a uniswapV3 subgraph url when enabling uniswapV3 liquidity");
         match UniswapV3PoolFetcher::new(
             graph_url,
             web3.clone(),
