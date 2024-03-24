@@ -1,5 +1,5 @@
 use {
-    super::{colocation::start_legacy_solver, TestAccount},
+    super::TestAccount,
     crate::setup::{
         colocation::{self, SolverEngine},
         wait_for_condition,
@@ -8,7 +8,7 @@ use {
     },
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::{H256, U256},
+    ethcontract::H256,
     model::{
         app_data::{AppDataDocument, AppDataHash},
         order::{Order, OrderCreation, OrderUid},
