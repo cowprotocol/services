@@ -161,6 +161,7 @@ impl Mempools {
             // Do one last attempt to see if the transaction was confirmed (in case of race
             // conditions or misclassified errors like `OrderFilled` simulation failures).
             if let Ok(TxStatus::Executed) = self.ethereum.transaction_status(&hash).await {
+                tracing::info!(?hash, "Found confirmed transaction, ignoring error");
                 return Ok(hash);
             }
         }
