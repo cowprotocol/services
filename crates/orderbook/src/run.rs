@@ -463,6 +463,7 @@ pub async fn run(args: Arguments) {
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
             app_data_validator.clone(),
             args.shared.market_orders_deprecation_date,
+            args.max_gas_per_order,
         )
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );

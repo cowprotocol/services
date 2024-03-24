@@ -143,6 +143,10 @@ pub struct Arguments {
     /// Set the maximum size in bytes of order app data.
     #[clap(long, env, default_value = "8192")]
     pub app_data_size_limit: usize,
+
+    /// The maximum gas amount a single order can use for getting settled.
+    #[clap(long, env, default_value = "8000000")]
+    pub max_gas_per_order: u64,
 }
 
 impl std::fmt::Display for Arguments {
@@ -173,6 +177,7 @@ impl std::fmt::Display for Arguments {
             hooks_contract_address,
             app_data_size_limit,
             db_url,
+            max_gas_per_order,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -237,6 +242,7 @@ impl std::fmt::Display for Arguments {
             &hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
+        writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
 
         Ok(())
     }

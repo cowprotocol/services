@@ -162,6 +162,7 @@ pub enum ValidationError {
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
+    TooMuchGas,
     Other(anyhow::Error),
 }
 
@@ -254,6 +255,7 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     request_verified_quotes: bool,
     market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
+    max_gas_per_order: u64,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -325,6 +327,7 @@ impl OrderValidator {
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: Validator,
         market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
+        max_gas_per_order: u64,
     ) -> Self {
         Self {
             native_token,
@@ -342,6 +345,7 @@ impl OrderValidator {
             app_data_validator,
             request_verified_quotes: false,
             market_orders_deprecation_date,
+            max_gas_per_order,
         }
     }
 
@@ -727,6 +731,14 @@ impl OrderValidating for OrderValidator {
             }
         };
 
+        if quote.as_ref().is_some_and(|quote| {
+            // Quoted gas does not include additional gas for hooks nor ERC1271 signatures
+            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
+                > self.max_gas_per_order
+        }) {
+            return Err(ValidationError::TooMuchGas);
+        }
+
         let order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -1060,6 +1072,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1207,6 +1220,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1295,6 +1309,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1499,6 +1514,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1570,6 +1586,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1626,6 +1643,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1684,6 +1702,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1741,6 +1760,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1793,6 +1813,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1847,6 +1868,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1905,6 +1927,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1957,6 +1980,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2013,6 +2037,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -2076,6 +2101,7 @@ mod tests {
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
                 None,
+                u64::MAX,
             );
 
             let order = OrderCreation {
