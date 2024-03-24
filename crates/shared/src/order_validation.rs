@@ -733,8 +733,8 @@ impl OrderValidating for OrderValidator {
         };
 
         if quote.as_ref().is_some_and(|quote| {
-            // Quoted gas does not include additional gas for hooks
-            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_gas
+            // Quoted gas does not include additional gas for hooks nor ERC1271 signatures
+            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
                 > self.max_gas_per_order
         }) {
             return Err(ValidationError::TooMuchGas);
