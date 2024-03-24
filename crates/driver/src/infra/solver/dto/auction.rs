@@ -1,6 +1,14 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth, liquidity},
+        domain::{
+            competition,
+            competition::{
+                order,
+                order::{FeePolicy, Side},
+            },
+            eth,
+            liquidity,
+        },
         util::{
             conv::{rational_to_big_decimal, u256::U256Ext},
             serialize,
@@ -59,7 +67,35 @@ impl Auction {
                 .orders()
                 .iter()
                 .map(|order| {
-                    let available = order.available(weth);
+                    let mut available = order.available(weth);
+                    // Solvers are unaware of the protocol fees. In case of volume based fees,
+                    // fee withheld by driver might be higher than the surplus of the solution. This
+                    // would lead to violating limit prices when driver tries to withhold the
+                    // volume based fee. To avoid this, we artifically adjust the order limit
+                    // amounts (make then worse) before sending to solvers, to force solvers to only
+                    // submit solutions with enough surplus to cover the fee.
+                    //
+                    // https://github.com/cowprotocol/services/issues/2440
+                    if let Some(FeePolicy::Volume { factor }) = order.protocol_fees.first() {
+                        match order.side {
+                            Side::Buy => {
+                                // reduce sell amount by factor
+                                available.sell.amount = available
+                                    .sell
+                                    .amount
+                                    .apply_factor(1.0 / (1.0 + factor))
+                                    .unwrap_or_default();
+                            }
+                            Side::Sell => {
+                                // increase buy amount by factor
+                                available.buy.amount = available
+                                    .buy
+                                    .amount
+                                    .apply_factor(1.0 / (1.0 - factor))
+                                    .unwrap_or_default();
+                            }
+                        }
+                    }
                     Order {
                         uid: order.uid.into(),
                         sell_token: available.sell.token.into(),

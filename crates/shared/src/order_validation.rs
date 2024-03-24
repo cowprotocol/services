@@ -1,7 +1,6 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::ValidatedAppData,
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -17,6 +16,7 @@ use {
         trade_finding,
     },
     anyhow::{anyhow, Result},
+    app_data::{Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     chrono::Utc,
     contracts::{HooksTrampoline, WETH9},
@@ -28,8 +28,6 @@ use {
         order::{
             AppdataFromMismatch,
             BuyTokenDestination,
-            Hook,
-            Hooks,
             Interactions,
             Order,
             OrderClass,
@@ -180,6 +178,7 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
         ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,
+        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
     }
 }
@@ -253,7 +252,7 @@ pub struct OrderValidator {
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
-    app_data_validator: crate::app_data::Validator,
+    app_data_validator: Validator,
     request_verified_quotes: bool,
     market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
     max_gas_per_order: u64,
@@ -326,7 +325,7 @@ impl OrderValidator {
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
-        app_data_validator: crate::app_data::Validator,
+        app_data_validator: Validator,
         market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
         max_gas_per_order: u64,
     ) -> Self {

@@ -21,7 +21,6 @@ ethereum-types = "0.14"
 ethrpc = { path = "../ethrpc" }
 futures = "0.3"
 hex = "0.4"
-humantime-serde = { workspace = true }
 hyper = "0.14"
 itertools = "0.11"
 num = "0.4"

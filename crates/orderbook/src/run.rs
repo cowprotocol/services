@@ -1,7 +1,6 @@
 use {
     crate::{
         api,
-        app_data,
         arguments::Arguments,
         database::Postgres,
         ipfs::Ipfs,
@@ -10,6 +9,7 @@ use {
         quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
+    app_data::Validator,
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
@@ -284,9 +284,13 @@ pub async fn run(args: Arguments) {
             .clone()
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
+        let graph_url = args
+            .shared
+            .balancer_v2_graph_url
+            .as_ref()
+            .expect("provide a balancer subgraph url when enabling balancer liquidity");
         match BalancerPoolFetcher::new(
-            &args.shared.graph_api_base_url,
-            chain_id,
+            graph_url,
             block_retriever.clone(),
             token_info_fetcher.clone(),
             cache_config,
@@ -313,9 +317,13 @@ pub async fn run(args: Arguments) {
         None
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let graph_url = args
+            .shared
+            .uniswap_v3_graph_url
+            .as_ref()
+            .expect("provide a uniswapV3 subgraph url when enabling uniswapV3 liquidity");
         match UniswapV3PoolFetcher::new(
-            &args.shared.graph_api_base_url,
-            chain_id,
+            graph_url,
             web3.clone(),
             http_factory.create(),
             block_retriever,
@@ -434,7 +442,7 @@ pub async fn run(args: Arguments) {
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());
 
-    let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
+    let app_data_validator = Validator::new(args.app_data_size_limit);
     let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
     let order_validator = Arc::new(
         OrderValidator::new(
@@ -470,7 +478,7 @@ pub async fn run(args: Arguments) {
             )
         })
         .map(IpfsAppData::new);
-    let app_data = Arc::new(app_data::Registry::new(
+    let app_data = Arc::new(crate::app_data::Registry::new(
         app_data_validator,
         postgres.clone(),
         ipfs,
@@ -567,7 +575,7 @@ fn serve_api(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
-    app_data: Arc<app_data::Registry>,
+    app_data: Arc<crate::app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,

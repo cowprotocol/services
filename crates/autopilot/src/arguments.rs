@@ -1,5 +1,6 @@
 use {
-    crate::infra,
+    crate::{domain::fee::FeeFactor, infra},
+    anyhow::Context,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -357,7 +358,7 @@ pub struct FeePolicy {
     ///
     /// - Volume based:
     /// volume:0.1
-    #[clap(long, env, default_value = "surplus:0.0:1.0")]
+    #[clap(long, env, default_value = "surplus:0.0:0.9")]
     pub fee_policy_kind: FeePolicyKind,
 
     /// Should protocol fees be collected or skipped for orders whose
@@ -370,63 +371,102 @@ pub struct FeePolicy {
 #[derive(clap::Parser, Debug, Clone)]
 pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
-    Surplus { factor: f64, max_volume_factor: f64 },
+    Surplus {
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
+    },
     /// How much of the order's price improvement should be taken as a protocol
     /// fee where price improvement is a difference between the executed price
     /// and the best quote.
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    PriceImprovement {
+        factor: FeeFactor,
+        max_volume_factor: FeeFactor,
+    },
     /// How much of the order's volume should be taken as a protocol fee.
-    Volume { factor: f64 },
+    Volume { factor: FeeFactor },
 }
 
 impl FromStr for FeePolicyKind {
-    type Err = String;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split(':');
-        let kind = parts.next().ok_or("missing fee policy kind")?;
+        let kind = parts.next().context("missing fee policy kind")?;
         match kind {
             "surplus" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing surplus factor")?
+                    .context("missing surplus factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid surplus factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid surplus factor: {}", e))?;
                 let max_volume_factor = parts
                     .next()
-                    .ok_or("missing max volume factor")?
+                    .context("missing max volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid max volume factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
                 Ok(Self::Surplus {
-                    factor,
-                    max_volume_factor,
+                    factor: factor.try_into()?,
+                    max_volume_factor: max_volume_factor.try_into()?,
                 })
             }
             "priceImprovement" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing price improvement factor")?
+                    .context("missing price improvement factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid price improvement factor: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("invalid price improvement factor: {}", e))?;
                 let max_volume_factor = parts
                     .next()
-                    .ok_or("missing price improvement max volume factor")?
+                    .context("missing price improvement max volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid price improvement max volume factor: {}", e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
+                    })?;
                 Ok(Self::PriceImprovement {
-                    factor,
-                    max_volume_factor,
+                    factor: factor.try_into()?,
+                    max_volume_factor: max_volume_factor.try_into()?,
                 })
             }
             "volume" => {
                 let factor = parts
                     .next()
-                    .ok_or("missing volume factor")?
+                    .context("missing volume factor")?
                     .parse::<f64>()
-                    .map_err(|e| format!("invalid volume factor: {}", e))?;
-                Ok(Self::Volume { factor })
+                    .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
+                Ok(Self::Volume {
+                    factor: factor.try_into()?,
+                })
             }
-            _ => Err(format!("invalid fee policy kind: {}", kind)),
+            _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_fee_factor_limits() {
+        let policies = vec![
+            "volume:1.0",
+            "volume:-1.0",
+            "surplus:1.0:0.5",
+            "surplus:0.5:1.0",
+            "surplus:0.5:-1.0",
+            "surplus:-1.0:0.5",
+            "priceImprovement:1.0:0.5",
+            "priceImprovement:-1.0:0.5",
+            "priceImprovement:0.5:1.0",
+            "priceImprovement:0.5:-1.0",
+        ];
+
+        for policy in policies {
+            assert!(FeePolicyKind::from_str(policy)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Factor must be in the range [0, 1)"),)
         }
     }
 }
