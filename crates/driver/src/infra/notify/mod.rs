@@ -80,6 +80,10 @@ pub fn encoding_failed(
         }
         solution::Error::FailingInternalization => return,
         solution::Error::DifferentSolvers => return,
+        solution::Error::GasLimitExceeded(used, limit) => notification::Kind::DriverError(format!(
+            "Settlement gas limit exceeded: used {}, limit {}",
+            used.0, limit.0
+        )),
     };
 
     solver.notify(auction_id, Some(solution_id), notification);
