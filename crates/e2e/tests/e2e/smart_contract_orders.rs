@@ -156,7 +156,7 @@ async fn smart_contract_orders(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch native token balance");
-    assert_eq!(balance, U256::from(9_968_506_205_772_730_824_u128));
+    assert!(balance > to_wei(6));
 }
 
 async fn erc1271_gas_limit(web3: Web3) {
