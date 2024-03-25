@@ -144,9 +144,11 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
 
 async fn volume_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
+    // Tests ability of providing `any` fee policy order class config. In fact, the
+    // Market config could be used since the order is in-market.
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
+        policy_order_class: FeePolicyOrderClass::Any,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -507,8 +509,8 @@ struct ProtocolFee {
 
 enum FeePolicyOrderClass {
     Market,
-    #[allow(dead_code)]
     Limit,
+    Any,
 }
 
 impl std::fmt::Display for FeePolicyOrderClass {
@@ -516,6 +518,7 @@ impl std::fmt::Display for FeePolicyOrderClass {
         match self {
             FeePolicyOrderClass::Market => write!(f, "market"),
             FeePolicyOrderClass::Limit => write!(f, "limit"),
+            FeePolicyOrderClass::Any => write!(f, "any"),
         }
     }
 }

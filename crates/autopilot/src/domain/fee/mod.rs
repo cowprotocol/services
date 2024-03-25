@@ -24,6 +24,7 @@ use {
 pub enum ProtocolFee {
     Market(policy::Policy),
     Limit(policy::Policy),
+    Any(policy::Policy),
 }
 
 impl ProtocolFee {
@@ -31,6 +32,7 @@ impl ProtocolFee {
         match fee_policy_args {
             arguments::FeePolicy::Market(policy) => Self::Market(policy.into()),
             arguments::FeePolicy::Limit(policy) => Self::Limit(policy.into()),
+            arguments::FeePolicy::Any(policy) => Self::Any(policy.into()),
         }
     }
 
@@ -77,6 +79,7 @@ impl ProtocolFee {
             .find_map(|fee_policy| {
                 let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_);
                 match (outside_market_price, fee_policy) {
+                    (_, ProtocolFee::Any(policy)) => Some(policy),
                     (true, ProtocolFee::Limit(policy)) => Some(policy),
                     (false, ProtocolFee::Market(policy)) => Some(policy),
                     _ => None,

@@ -349,20 +349,22 @@ impl std::fmt::Display for Arguments {
 /// - Surplus with cap for market orders:
 /// surplus:0.5:0.06:market
 ///
-/// - Price improvement with a high enough cap for market orders:
-/// price_improvement:0.5:0.9:market
+/// - Price improvement with a high enough cap for any order class
+/// price_improvement:0.5:0.9:any
 ///
 /// - Price improvement with cap for limit orders:
 /// price_improvement:0.5:0.06:limit
 ///
-/// - Volume based fee for market orders:
-/// volume:0.1:market
+/// - Volume based fee for any order class:
+/// volume:0.1:any
 #[derive(Debug, Clone)]
 pub enum FeePolicy {
     /// Type of fee policy to use for in-market orders.
     Market(FeePolicyKind),
     /// Type of fee policy to use for out-of-market orders.
     Limit(FeePolicyKind),
+    /// Type of fee policy to use for all order classes.
+    Any(FeePolicyKind),
 }
 
 #[derive(clap::Parser, Debug, Clone)]
@@ -389,6 +391,8 @@ enum FeePolicyOrderClass {
     Market,
     /// If a fee policy needs to be applied to limit orders.
     Limit,
+    /// If a fee policy needs to be applied regardless of the order class.
+    Any,
 }
 
 impl FeePolicy {
@@ -396,6 +400,7 @@ impl FeePolicy {
         match fee_policy_order_class {
             FeePolicyOrderClass::Market => FeePolicy::Market(fee_policy_kind),
             FeePolicyOrderClass::Limit => FeePolicy::Limit(fee_policy_kind),
+            FeePolicyOrderClass::Any => FeePolicy::Any(fee_policy_kind),
         }
     }
 }
@@ -472,12 +477,12 @@ mod test {
         let policies = vec![
             "volume:1.0:market",
             "volume:-1.0:limit",
-            "surplus:1.0:0.5:market",
+            "surplus:1.0:0.5:any",
             "surplus:0.5:1.0:limit",
             "surplus:0.5:-1.0:market",
             "surplus:-1.0:0.5:limit",
             "priceImprovement:1.0:0.5:market",
-            "priceImprovement:-1.0:0.5:limit",
+            "priceImprovement:-1.0:0.5:any",
             "priceImprovement:0.5:1.0:market",
             "priceImprovement:0.5:-1.0:limit",
         ];
