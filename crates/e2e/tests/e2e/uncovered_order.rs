@@ -12,7 +12,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_test() {
+async fn local_node_uncovered_order() {
     run_test(test).await;
 }
 
