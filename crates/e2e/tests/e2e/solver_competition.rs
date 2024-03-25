@@ -74,7 +74,6 @@ async fn solver_competition(web3: Web3) {
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(9),
-        fee_amount: 0.into(),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,

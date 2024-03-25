@@ -50,7 +50,6 @@ async fn vault_balances(web3: Web3) {
         sell_token: token.address(),
         sell_amount: to_wei(9),
         sell_token_balance: SellTokenSource::External,
-        fee_amount: 0.into(),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(8),
         valid_to: model::time::now_in_epoch_seconds() + 300,

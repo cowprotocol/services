@@ -107,7 +107,6 @@ async fn onchain_settlement(web3: Web3) {
     let order_a = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(100),
-        fee_amount: 0.into(),
         buy_token: token_b.address(),
         buy_amount: to_wei(80),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -124,7 +123,6 @@ async fn onchain_settlement(web3: Web3) {
     let order_b = OrderCreation {
         sell_token: token_b.address(),
         sell_amount: to_wei(50),
-        fee_amount: 0.into(),
         buy_token: token_a.address(),
         buy_amount: to_wei(40),
         valid_to: model::time::now_in_epoch_seconds() + 300,

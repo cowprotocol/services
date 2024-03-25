@@ -2008,7 +2008,6 @@ mod tests {
                 sell_amount: 1.into(),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: 1.into(),
-                fee_amount: 0.into(),
                 app_data: OrderCreationAppData::Full {
                     full: "{}".to_string(),
                 },
