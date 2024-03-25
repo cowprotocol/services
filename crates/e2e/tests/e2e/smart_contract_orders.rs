@@ -47,7 +47,7 @@ async fn smart_contract_orders(web3: Web3) {
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: token.address(),
-        sell_amount: to_wei(4),
+        sell_amount: to_wei(5),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -156,7 +156,7 @@ async fn smart_contract_orders(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch native token balance");
-    assert_eq!(balance, U256::from(7_975_363_406_512_003_608_u128));
+    assert_eq!(balance, U256::from(9_968_506_205_772_730_824_u128));
 }
 
 async fn erc1271_gas_limit(web3: Web3) {
