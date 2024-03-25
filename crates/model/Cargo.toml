@@ -12,6 +12,7 @@ doctest = false
 anyhow = { workspace = true }
 app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }
+bytes-hex = { path = "../bytes-hex" }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
 derivative = { workspace = true }

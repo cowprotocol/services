@@ -155,6 +155,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "app-data-hash",
+ "bytes-hex",
  "ethcontract",
  "hex",
  "primitive-types",
@@ -257,6 +258,7 @@ dependencies = [
  "app-data",
  "async-trait",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "clap",
  "contracts",
@@ -1173,6 +1175,16 @@ name = "bytes"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89b2fd2a0dcf38d7971e2194b6b6eebab45ae01067456a7fd93d5547a61b70be"
+
+[[package]]
+name = "bytes-hex"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
 
 [[package]]
 name = "bytes-utils"
@@ -2852,6 +2864,7 @@ dependencies = [
  "app-data",
  "app-data-hash",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "derivative",
  "hex",
@@ -4043,6 +4056,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bigdecimal",
+ "bytes-hex",
  "cached",
  "chrono",
  "clap",

@@ -151,7 +151,7 @@ impl TradeFinding for ExternalTradeFinder {
 
 mod dto {
     use {
-        app_data::bytes_hex::BytesHex,
+        bytes_hex::BytesHex,
         ethcontract::{H160, U256},
         model::order::OrderKind,
         number::serialization::HexOrDecimalU256,

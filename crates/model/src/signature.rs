@@ -205,7 +205,7 @@ pub struct Recovered {
 #[serde(rename_all = "camelCase")]
 struct JsonSignature {
     signing_scheme: SigningScheme,
-    #[serde(with = "app_data::bytes_hex")]
+    #[serde(with = "bytes_hex")]
     signature: Vec<u8>,
 }
 

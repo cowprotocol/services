@@ -148,7 +148,7 @@ pub struct Swap {
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
     /// Additional user data to pass to the pool.
-    #[serde(with = "app_data::bytes_hex")]
+    #[serde(with = "bytes_hex")]
     pub user_data: Vec<u8>,
 }
 

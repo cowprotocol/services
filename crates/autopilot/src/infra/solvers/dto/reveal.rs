@@ -1,5 +1,4 @@
 use {
-    app_data::bytes_hex,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
 };

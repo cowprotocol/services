@@ -377,7 +377,7 @@ pub struct TransactionBuilderResponse {
     pub value: U256,
     /// the calldata for the transaction
     #[derivative(Debug(format_with = "debug_bytes"))]
-    #[serde(with = "app_data::bytes_hex")]
+    #[serde(with = "bytes_hex")]
     pub data: Vec<u8>,
     /// the suggested gas price
     #[serde_as(as = "HexOrDecimalU256")]
