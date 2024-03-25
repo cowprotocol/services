@@ -1,6 +1,7 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
     anyhow::Context,
+    clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -201,9 +202,9 @@ pub struct Arguments {
     )]
     pub solve_deadline: Duration,
 
-    /// Describes how the protocol fee should be calculated.
-    #[clap(flatten)]
-    pub fee_policy: FeePolicy,
+    /// Describes how the protocol fees should be calculated.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub fee_policies: Vec<FeePolicy>,
 
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
@@ -251,7 +252,7 @@ impl std::fmt::Display for Arguments {
             score_cap,
             shadow,
             solve_deadline,
-            fee_policy,
+            fee_policies,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
@@ -312,7 +313,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "score_cap: {}", score_cap)?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
-        writeln!(f, "fee_policy: {:?}", fee_policy)?;
+        writeln!(f, "fee_policies: {:?}", fee_policies)?;
         writeln!(
             f,
             "order_events_cleanup_interval: {:?}",
@@ -340,32 +341,26 @@ impl std::fmt::Display for Arguments {
     }
 }
 
-#[derive(clap::Parser, Debug, Clone)]
+/// A fee policy to be used for orders base on it's class.
+/// Examples:
+/// - Surplus with a high enough cap for limit orders
+/// surplus:0.5:0.9:limit
+///
+/// - Surplus with cap for market orders:
+/// surplus:0.5:0.06:market
+///
+/// - Price improvement with a high enough cap for any order class
+/// price_improvement:0.5:0.9:any
+///
+/// - Price improvement with cap for limit orders:
+/// price_improvement:0.5:0.06:limit
+///
+/// - Volume based fee for any order class:
+/// volume:0.1:any
+#[derive(Debug, Clone)]
 pub struct FeePolicy {
-    /// Type of fee policy to use. Examples:
-    ///
-    /// - Surplus without cap
-    /// surplus:0.5:1.0
-    ///
-    /// - Surplus with cap:
-    /// surplus:0.5:0.06
-    ///
-    /// - Price improvement without cap:
-    /// price_improvement:0.5:1.0
-    ///
-    /// - Price improvement with cap:
-    /// price_improvement:0.5:0.06
-    ///
-    /// - Volume based:
-    /// volume:0.1
-    #[clap(long, env, default_value = "surplus:0.0:0.9")]
     pub fee_policy_kind: FeePolicyKind,
-
-    /// Should protocol fees be collected or skipped for orders whose
-    /// limit price at order creation time suggests they can be immediately
-    /// filled.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub fee_policy_skip_market_orders: bool,
+    pub fee_policy_order_class: FeePolicyOrderClass,
 }
 
 #[derive(clap::Parser, Debug, Clone)]
@@ -386,13 +381,23 @@ pub enum FeePolicyKind {
     Volume { factor: FeeFactor },
 }
 
-impl FromStr for FeePolicyKind {
+#[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
+pub enum FeePolicyOrderClass {
+    /// If a fee policy needs to be applied to in-market orders.
+    Market,
+    /// If a fee policy needs to be applied to limit orders.
+    Limit,
+    /// If a fee policy needs to be applied regardless of the order class.
+    Any,
+}
+
+impl FromStr for FeePolicy {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split(':');
         let kind = parts.next().context("missing fee policy kind")?;
-        match kind {
+        let fee_policy_kind = match kind {
             "surplus" => {
                 let factor = parts
                     .next()
@@ -404,7 +409,7 @@ impl FromStr for FeePolicyKind {
                     .context("missing max volume factor")?
                     .parse::<f64>()
                     .map_err(|e| anyhow::anyhow!("invalid max volume factor: {}", e))?;
-                Ok(Self::Surplus {
+                Ok(FeePolicyKind::Surplus {
                     factor: factor.try_into()?,
                     max_volume_factor: max_volume_factor.try_into()?,
                 })
@@ -422,7 +427,7 @@ impl FromStr for FeePolicyKind {
                     .map_err(|e| {
                         anyhow::anyhow!("invalid price improvement max volume factor: {}", e)
                     })?;
-                Ok(Self::PriceImprovement {
+                Ok(FeePolicyKind::PriceImprovement {
                     factor: factor.try_into()?,
                     max_volume_factor: max_volume_factor.try_into()?,
                 })
@@ -433,12 +438,22 @@ impl FromStr for FeePolicyKind {
                     .context("missing volume factor")?
                     .parse::<f64>()
                     .map_err(|e| anyhow::anyhow!("invalid volume factor: {}", e))?;
-                Ok(Self::Volume {
+                Ok(FeePolicyKind::Volume {
                     factor: factor.try_into()?,
                 })
             }
             _ => Err(anyhow::anyhow!("invalid fee policy kind: {}", kind)),
-        }
+        }?;
+        let fee_policy_order_class = FeePolicyOrderClass::from_str(
+            parts.next().context("missing fee policy order class")?,
+            true,
+        )
+        .map_err(|e| anyhow::anyhow!("invalid fee policy order class: {}", e))?;
+
+        Ok(FeePolicy {
+            fee_policy_kind,
+            fee_policy_order_class,
+        })
     }
 }
 
@@ -449,20 +464,20 @@ mod test {
     #[test]
     fn test_fee_factor_limits() {
         let policies = vec![
-            "volume:1.0",
-            "volume:-1.0",
-            "surplus:1.0:0.5",
-            "surplus:0.5:1.0",
-            "surplus:0.5:-1.0",
-            "surplus:-1.0:0.5",
-            "priceImprovement:1.0:0.5",
-            "priceImprovement:-1.0:0.5",
-            "priceImprovement:0.5:1.0",
-            "priceImprovement:0.5:-1.0",
+            "volume:1.0:market",
+            "volume:-1.0:limit",
+            "surplus:1.0:0.5:any",
+            "surplus:0.5:1.0:limit",
+            "surplus:0.5:-1.0:market",
+            "surplus:-1.0:0.5:limit",
+            "priceImprovement:1.0:0.5:market",
+            "priceImprovement:-1.0:0.5:any",
+            "priceImprovement:0.5:1.0:market",
+            "priceImprovement:0.5:-1.0:limit",
         ];
 
         for policy in policies {
-            assert!(FeePolicyKind::from_str(policy)
+            assert!(FeePolicy::from_str(policy)
                 .err()
                 .unwrap()
                 .to_string()
