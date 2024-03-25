@@ -94,8 +94,8 @@ impl ProtocolFee {
                 let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_);
                 match (outside_market_price, &fee_policy.order_class) {
                     (_, OrderClass::Any) => Some(&fee_policy.policy),
-                    (true, OrderClass::Market) => Some(&fee_policy.policy),
-                    (false, OrderClass::Limit) => Some(&fee_policy.policy),
+                    (true, OrderClass::Limit) => Some(&fee_policy.policy),
+                    (false, OrderClass::Market) => Some(&fee_policy.policy),
                     _ => None,
                 }
             })
