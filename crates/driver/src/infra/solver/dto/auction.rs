@@ -4,7 +4,7 @@ use {
             competition,
             competition::{
                 order,
-                order::{FeePolicy, Side},
+                order::{fees, FeePolicy, Side},
             },
             eth,
             liquidity,
@@ -113,33 +113,11 @@ impl Auction {
                             competition::order::Kind::Limit { .. } => Class::Limit,
                             competition::order::Kind::Liquidity => Class::Liquidity,
                         },
-                        protocol_fees: order
+                        fee_policy: order
                             .protocol_fees
                             .iter()
                             .cloned()
-                            .map(|fee| match fee {
-                                order::FeePolicy::Surplus {
-                                    factor,
-                                    max_volume_factor,
-                                } => FeePolicy::Surplus {
-                                    factor,
-                                    max_volume_factor,
-                                },
-                                order::FeePolicy::PriceImprovement {
-                                    factor,
-                                    max_volume_factor,
-                                    quote,
-                                } => FeePolicy::PriceImprovement {
-                                    factor,
-                                    max_volume_factor,
-                                    quote: Quote {
-                                        sell_amount: quote.sell.amount.into(),
-                                        buy_amount: quote.buy.amount.into(),
-                                        fee: quote.fee.amount.into(),
-                                    },
-                                },
-                                order::FeePolicy::Volume { factor } => FeePolicy::Volume { factor },
-                            })
+                            .map(Into::into)
                             .collect(),
                     }
                 })
@@ -303,7 +281,7 @@ struct Order {
     kind: Kind,
     partially_fillable: bool,
     class: Class,
-    protocol_fees: Vec<FeePolicy>,
+    fee_policy: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Serialize)]
@@ -335,6 +313,34 @@ pub enum FeePolicy {
     },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+}
+
+impl From<fees::FeePolicy> for FeePolicy {
+    fn from(value: order::FeePolicy) -> Self {
+        match value {
+            order::FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            },
+            order::FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell.amount.into(),
+                    buy_amount: quote.buy.amount.into(),
+                    fee: quote.fee.amount.into(),
+                },
+            },
+            order::FeePolicy::Volume { factor } => FeePolicy::Volume { factor },
+        }
+    }
 }
 
 #[serde_as]
