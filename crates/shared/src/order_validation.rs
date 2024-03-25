@@ -585,8 +585,6 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
-
         // Fast path to check if transfer is possible with a single node query.
         // If not, run extra queries for additional information.
         match self
@@ -598,7 +596,7 @@ impl OrderValidating for OrderValidator {
                     source: data.sell_token_balance,
                     interactions: app_data.interactions.pre.clone(),
                 },
-                min_balance,
+                MINIMUM_BALANCE,
             )
             .await
         {
@@ -809,17 +807,11 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
 }
 
 /// Min balance user must have in sell token for order to be accepted.
-///
-/// None when addition overflows.
-fn minimum_balance(order: &OrderData) -> Option<U256> {
-    // TODO: We might even want to allow 0 balance for partially fillable but we
-    // require balance for fok limit orders too so this make some sense and protects
-    // against accidentally creating order for token without balance.
-    if order.partially_fillable {
-        return Some(1.into());
-    }
-    order.sell_amount.checked_add(order.fee_amount)
-}
+// All orders can be placed without having the full sell balance.
+// A minimum, of 1 atom is still required as a spam protection measure.
+// TODO: ideally, we should keep the full balance enforcement for SWAPs,
+// but given all orders are LIMIT now, this is harder to do.
+const MINIMUM_BALANCE: U256 = U256::one(); // 1 atom of a token
 
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
@@ -963,22 +955,6 @@ mod tests {
         serde_json::json,
         std::str::FromStr,
     };
-
-    #[test]
-    fn minimum_balance_() {
-        let order = OrderData {
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
-            ..Default::default()
-        };
-        assert_eq!(minimum_balance(&order), None);
-        let order = OrderData {
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            ..Default::default()
-        };
-        assert_eq!(minimum_balance(&order), Some(U256::from(2)));
-    }
 
     #[test]
     fn detects_orders_with_same_buy_and_sell_token() {
@@ -1795,59 +1771,6 @@ mod tests {
                 PartialValidationError::UnsupportedToken { .. }
             ))
         ));
-    }
-
-    #[tokio::test]
-    async fn post_validate_err_sell_amount_overflow() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
-        order_quoter.expect_store_quote().returning(Ok);
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-            u64::MAX,
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            app_data: OrderCreationAppData::Full {
-                full: "{}".to_string(),
-            },
-            ..Default::default()
-        };
-        let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await;
-        dbg!(&result);
-        assert!(matches!(result, Err(ValidationError::SellAmountOverflow)));
     }
 
     #[tokio::test]
