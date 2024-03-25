@@ -4,7 +4,6 @@
 use {
     crate::{
         app_data::AppDataHash,
-        bytes_hex::BytesHex,
         interaction::InteractionData,
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
@@ -22,7 +21,7 @@ use {
     serde_with::{serde_as, DisplayFromStr},
     std::{
         collections::HashSet,
-        fmt::{self, Debug, Display, Formatter},
+        fmt::{self, Debug, Display},
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, EnumVariantNames},
@@ -38,54 +37,6 @@ pub struct Interactions {
     pub pre: Vec<InteractionData>,
     #[serde(default)]
     pub post: Vec<InteractionData>,
-}
-
-/// Order hooks are user-specified Ethereum calls that get executed as part of
-/// a pre- or post- interaction.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub struct Hooks {
-    #[serde(default)]
-    pub pre: Vec<Hook>,
-    #[serde(default)]
-    pub post: Vec<Hook>,
-}
-
-impl Hooks {
-    pub fn is_empty(&self) -> bool {
-        self.pre.is_empty() && self.post.is_empty()
-    }
-
-    pub fn gas_limit(&self) -> u64 {
-        std::iter::empty()
-            .chain(&self.pre)
-            .chain(&self.post)
-            .fold(0_u64, |total, hook| total.saturating_add(hook.gas_limit))
-    }
-}
-
-/// A user-specified hook.
-#[serde_as]
-#[derive(Clone, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Hook {
-    pub target: H160,
-    #[serde_as(as = "BytesHex")]
-    pub call_data: Vec<u8>,
-    #[serde_as(as = "DisplayFromStr")]
-    pub gas_limit: u64,
-}
-
-impl Debug for Hook {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("Hook")
-            .field("target", &self.target)
-            .field(
-                "call_data",
-                &format_args!("0x{}", hex::encode(&self.call_data)),
-            )
-            .field("gas_limit", &self.gas_limit)
-            .finish()
-    }
 }
 
 /// An order that is returned when querying the orderbook.
@@ -707,6 +658,8 @@ pub enum OnchainOrderPlacementError {
     // InvalidQuote error is return, if the quote and the order did not match
     // together
     InvalidQuote,
+    // Non-zero fee orders are rejected.
+    NonZeroFee,
     // In case order data is invalid - e.g. signature type EIP-712 for
     // onchain orders - this error is returned
     InvalidOrderData,

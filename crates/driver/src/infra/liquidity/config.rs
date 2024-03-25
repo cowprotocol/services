@@ -145,18 +145,18 @@ pub struct UniswapV3 {
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
 
-    /// The base URL used to connect to subgraph clients.
-    pub graph_api_base_url: Url,
+    /// The URL used to connect to uniswap v3 subgraph client.
+    pub graph_url: Url,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(graph_api_base_url: &Url, chain: eth::ChainId) -> Option<Self> {
+    pub fn uniswap_v3(graph_url: &Url, chain: eth::ChainId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), chain)?,
             max_pools_to_initialize: 100,
-            graph_api_base_url: graph_api_base_url.clone(),
+            graph_url: graph_url.clone(),
         })
     }
 }
@@ -189,14 +189,14 @@ pub struct BalancerV2 {
     /// ignored.
     pub pool_deny_list: Vec<eth::H256>,
 
-    /// The base URL used to connect to subgraph clients.
-    pub graph_api_base_url: Url,
+    /// The base URL used to connect to balancer v2 subgraph client.
+    pub graph_url: Url,
 }
 
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
-    pub fn balancer_v2(graph_api_base_url: &Url, chain: eth::ChainId) -> Option<Self> {
+    pub fn balancer_v2(graph_url: &Url, chain: eth::ChainId) -> Option<Self> {
         let factory_addresses =
             |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
                 contracts
@@ -228,7 +228,7 @@ impl BalancerV2 {
                 contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
             ]),
             pool_deny_list: Vec::new(),
-            graph_api_base_url: graph_api_base_url.clone(),
+            graph_url: graph_url.clone(),
         })
     }
 }

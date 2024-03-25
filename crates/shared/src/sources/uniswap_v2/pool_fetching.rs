@@ -229,6 +229,7 @@ where
             }
         }
         if !new_missing_pairs.is_empty() {
+            tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             for pair in new_missing_pairs {
                 non_existent_pools.insert(pair);

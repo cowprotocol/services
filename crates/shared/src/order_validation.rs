@@ -1,7 +1,6 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::ValidatedAppData,
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -17,6 +16,7 @@ use {
         trade_finding,
     },
     anyhow::{anyhow, Result},
+    app_data::{Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
@@ -27,8 +27,6 @@ use {
         order::{
             AppdataFromMismatch,
             BuyTokenDestination,
-            Hook,
-            Hooks,
             Interactions,
             Order,
             OrderClass,
@@ -162,6 +160,7 @@ pub enum ValidationError {
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
+    TooMuchGas,
     Other(anyhow::Error),
 }
 
@@ -176,6 +175,7 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
         ValidationError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
+        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
     }
 }
@@ -249,8 +249,9 @@ pub struct OrderValidator {
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
-    app_data_validator: crate::app_data::Validator,
+    app_data_validator: Validator,
     request_verified_quotes: bool,
+    max_gas_per_order: u64,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -320,7 +321,8 @@ impl OrderValidator {
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
-        app_data_validator: crate::app_data::Validator,
+        app_data_validator: Validator,
+        max_gas_per_order: u64,
     ) -> Self {
         Self {
             native_token,
@@ -337,6 +339,7 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             request_verified_quotes: false,
+            max_gas_per_order,
         }
     }
 
@@ -711,6 +714,14 @@ impl OrderValidating for OrderValidator {
             }
         };
 
+        if quote.as_ref().is_some_and(|quote| {
+            // Quoted gas does not include additional gas for hooks nor ERC1271 signatures
+            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
+                > self.max_gas_per_order
+        }) {
+            return Err(ValidationError::TooMuchGas);
+        }
+
         let order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -1036,6 +1047,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1182,6 +1194,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1269,6 +1282,7 @@ mod tests {
             max_limit_orders_per_user,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1472,6 +1486,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1542,6 +1557,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1597,6 +1613,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1647,6 +1664,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1698,6 +1716,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1751,6 +1770,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1808,6 +1828,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1859,6 +1880,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1914,6 +1936,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1976,6 +1999,7 @@ mod tests {
                 0,
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
+                u64::MAX,
             );
 
             let order = OrderCreation {

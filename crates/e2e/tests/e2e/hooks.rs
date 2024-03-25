@@ -1,4 +1,5 @@
 use {
+    app_data::Hook,
     contracts::GnosisSafe,
     e2e::{
         setup::{safe::Safe, *},
@@ -7,9 +8,10 @@ use {
     },
     ethcontract::{Bytes, H160, U256},
     model::{
-        order::{Hook, OrderCreation, OrderCreationAppData, OrderKind},
+        order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::{hashed_eip712_message, EcdsaSigningScheme, Signature},
     },
+    reqwest::StatusCode,
     secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
@@ -32,6 +34,65 @@ async fn local_node_signature() {
 #[ignore]
 async fn local_node_partial_fills() {
     run_test(partial_fills).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_gas_limit() {
+    run_test(gas_limit).await;
+}
+
+async fn gas_limit(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let cow = onchain
+        .deploy_cow_weth_pool(to_wei(1_000_000), to_wei(1_000), to_wei(1_000))
+        .await;
+
+    // Fund trader accounts and approve relayer
+    cow.fund(trader.address(), to_wei(5)).await;
+    tx!(
+        trader.account(),
+        cow.approve(onchain.contracts().allowance, to_wei(5))
+    );
+
+    let services = Services::new(onchain.contracts()).await;
+    services.start_protocol(solver).await;
+
+    let order = OrderCreation {
+        sell_token: cow.address(),
+        sell_amount: to_wei(4),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(3),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full {
+            full: json!({
+                "metadata": {
+                    "hooks": {
+                        "pre": [Hook {
+                            target: trader.address(),
+                            call_data: Default::default(),
+                            gas_limit: 10_000_000,
+                        }],
+                        "post": [],
+                    },
+                },
+            })
+            .to_string(),
+        },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let error = services.create_order(&order).await.unwrap_err();
+    assert_eq!(error.0, StatusCode::BAD_REQUEST);
+    assert!(error.1.contains("TooMuchGas"));
 }
 
 async fn allowance(web3: Web3) {

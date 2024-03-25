@@ -225,6 +225,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("TooManyLimitOrders", "Too many limit orders"),
                 StatusCode::BAD_REQUEST,
             ),
+            ValidationError::TooMuchGas => with_status(
+                error("TooMuchGas", "Executing order requires too many gas units"),
+                StatusCode::BAD_REQUEST,
+            ),
 
             ValidationError::Other(err) => {
                 tracing::error!(?err, "ValidationErrorWrapper");

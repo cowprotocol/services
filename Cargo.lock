@@ -150,6 +150,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b13c32d80ecc7ab747b80c3784bce54ee8a7a0cc4fbda9bf4cda2cf6fe90854"
 
 [[package]]
+name = "app-data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "app-data-hash",
+ "ethcontract",
+ "hex",
+ "model",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "app-data-hash"
 version = "0.1.0"
 dependencies = [
@@ -240,6 +255,7 @@ name = "autopilot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "async-trait",
  "bigdecimal",
  "chrono",
@@ -247,6 +263,7 @@ dependencies = [
  "contracts",
  "database",
  "derivative",
+ "derive_more",
  "ethcontract",
  "ethrpc",
  "futures",
@@ -1672,6 +1689,7 @@ name = "e2e"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "app-data-hash",
  "async-trait",
  "autopilot",
@@ -3121,6 +3139,7 @@ name = "orderbook"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "app-data-hash",
  "async-trait",
  "bigdecimal",
@@ -4009,6 +4028,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "app-data-hash",
  "async-stream",
  "async-trait",
@@ -4050,6 +4070,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "strum",
+ "tempfile",
  "testlib",
  "thiserror",
  "time",
@@ -4122,8 +4143,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "aws-config 0.56.0",
- "aws-sdk-s3",
  "chrono",
  "clap",
  "contracts",
@@ -4182,7 +4201,6 @@ dependencies = [
  "futures",
  "glob",
  "hex",
- "humantime-serde",
  "hyper",
  "itertools 0.11.0",
  "model",

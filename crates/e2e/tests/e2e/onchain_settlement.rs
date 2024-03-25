@@ -82,17 +82,25 @@ async fn onchain_settlement(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     let solver_endpoint = colocation::start_naive_solver().await;
+    let quoter_endpoint = colocation::start_baseline_solver(solver.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: solver_endpoint,
+            },
+            SolverEngine {
+                name: "test_quoter".into(),
+                account: solver,
+                endpoint: quoter_endpoint,
+            },
+        ],
     );
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
         ])
         .await;
 
@@ -136,7 +144,7 @@ async fn onchain_settlement(web3: Web3) {
         None,
         vec![
             "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
         ],
     );
 

@@ -101,6 +101,9 @@ pub struct Simulation {
     pub access_list: eth::AccessList,
 }
 
+// We want the string to be printed together with a simulation so we
+// don't care that it's not used for anything else.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct SimulationId(String);
 
