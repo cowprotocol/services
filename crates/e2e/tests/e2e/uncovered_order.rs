@@ -56,10 +56,14 @@ async fn test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+    // This order can't be created because we require the trader
+    // to have at least 1 wei of sell tokens.
     services.create_order(&order).await.unwrap_err();
 
     tracing::info!("Placing order with 1 wei of sell_tokens");
     tx_value!(trader.account(), 1.into(), weth.deposit());
+    // Now that the trader has some funds they are able to create
+    // an order (even if it exceeds their current balance).
     services.create_order(&order).await.unwrap();
 
     tracing::info!("Deposit ETH to make order executable");
