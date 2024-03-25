@@ -60,7 +60,7 @@ impl QuoteParameters {
         }
     }
 
-    fn additional_cost(&self) -> u64 {
+    pub fn additional_cost(&self) -> u64 {
         self.signing_scheme
             .additional_gas_amount()
             .saturating_add(self.additional_gas)
@@ -279,7 +279,7 @@ impl QuoteSearchParameters {
     }
 
     /// Returns additional gas costs incurred by the quote.
-    fn additional_cost(&self) -> u64 {
+    pub fn additional_cost(&self) -> u64 {
         self.signing_scheme
             .additional_gas_amount()
             .saturating_add(self.additional_gas)
