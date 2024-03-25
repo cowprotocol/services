@@ -20,19 +20,33 @@ use {
     std::str::FromStr,
 };
 
+enum OrderClass {
+    Market,
+    Limit,
+    Any,
+}
+
+impl From<arguments::FeePolicyOrderClass> for OrderClass {
+    fn from(value: arguments::FeePolicyOrderClass) -> Self {
+        match value {
+            arguments::FeePolicyOrderClass::Market => Self::Market,
+            arguments::FeePolicyOrderClass::Limit => Self::Limit,
+            arguments::FeePolicyOrderClass::Any => Self::Any,
+        }
+    }
+}
+
 /// Constructs fee policies based on the current configuration.
-pub enum ProtocolFee {
-    Market(policy::Policy),
-    Limit(policy::Policy),
-    Any(policy::Policy),
+pub struct ProtocolFee {
+    policy: policy::Policy,
+    order_class: OrderClass,
 }
 
 impl ProtocolFee {
     pub fn new(fee_policy_args: arguments::FeePolicy) -> Self {
-        match fee_policy_args {
-            arguments::FeePolicy::Market(policy) => Self::Market(policy.into()),
-            arguments::FeePolicy::Limit(policy) => Self::Limit(policy.into()),
-            arguments::FeePolicy::Any(policy) => Self::Any(policy.into()),
+        Self {
+            policy: fee_policy_args.fee_policy_kind.into(),
+            order_class: fee_policy_args.fee_policy_order_class.into(),
         }
     }
 
@@ -78,10 +92,10 @@ impl ProtocolFee {
             // TODO: support multiple fee policies
             .find_map(|fee_policy| {
                 let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_);
-                match (outside_market_price, fee_policy) {
-                    (_, ProtocolFee::Any(policy)) => Some(policy),
-                    (true, ProtocolFee::Limit(policy)) => Some(policy),
-                    (false, ProtocolFee::Market(policy)) => Some(policy),
+                match (outside_market_price, &fee_policy.order_class) {
+                    (_, OrderClass::Any) => Some(&fee_policy.policy),
+                    (true, OrderClass::Market) => Some(&fee_policy.policy),
+                    (false, OrderClass::Limit) => Some(&fee_policy.policy),
                     _ => None,
                 }
             })

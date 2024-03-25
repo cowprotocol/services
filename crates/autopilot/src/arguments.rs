@@ -358,13 +358,9 @@ impl std::fmt::Display for Arguments {
 /// - Volume based fee for any order class:
 /// volume:0.1:any
 #[derive(Debug, Clone)]
-pub enum FeePolicy {
-    /// Type of fee policy to use for in-market orders.
-    Market(FeePolicyKind),
-    /// Type of fee policy to use for out-of-market orders.
-    Limit(FeePolicyKind),
-    /// Type of fee policy to use for all order classes.
-    Any(FeePolicyKind),
+pub struct FeePolicy {
+    pub fee_policy_kind: FeePolicyKind,
+    pub fee_policy_order_class: FeePolicyOrderClass,
 }
 
 #[derive(clap::Parser, Debug, Clone)]
@@ -386,23 +382,13 @@ pub enum FeePolicyKind {
 }
 
 #[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
-enum FeePolicyOrderClass {
+pub enum FeePolicyOrderClass {
     /// If a fee policy needs to be applied to in-market orders.
     Market,
     /// If a fee policy needs to be applied to limit orders.
     Limit,
     /// If a fee policy needs to be applied regardless of the order class.
     Any,
-}
-
-impl FeePolicy {
-    fn new(fee_policy_kind: FeePolicyKind, fee_policy_order_class: FeePolicyOrderClass) -> Self {
-        match fee_policy_order_class {
-            FeePolicyOrderClass::Market => FeePolicy::Market(fee_policy_kind),
-            FeePolicyOrderClass::Limit => FeePolicy::Limit(fee_policy_kind),
-            FeePolicyOrderClass::Any => FeePolicy::Any(fee_policy_kind),
-        }
-    }
 }
 
 impl FromStr for FeePolicy {
@@ -464,7 +450,10 @@ impl FromStr for FeePolicy {
         )
         .map_err(|e| anyhow::anyhow!("invalid fee policy order class: {}", e))?;
 
-        Ok(FeePolicy::new(fee_policy_kind, fee_policy_order_class))
+        Ok(FeePolicy {
+            fee_policy_kind,
+            fee_policy_order_class,
+        })
     }
 }
 
