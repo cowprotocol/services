@@ -48,7 +48,7 @@ async fn vault_balances(web3: Web3) {
     let order = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: token.address(),
-        sell_amount: to_wei(9),
+        sell_amount: to_wei(10),
         sell_token_balance: SellTokenSource::External,
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(8),
