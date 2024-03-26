@@ -117,7 +117,7 @@ impl Trade {
                 // since sell price limit can be lower than order sell limit (e.g. price
                 // improvement fee with quote as price limit), we don't want to
                 // return error in cases when the solution is worse than price limit (quote)
-                Ok(limit_sell.saturating_sub(sold))
+                Some(limit_sell.saturating_sub(sold))
             }
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
