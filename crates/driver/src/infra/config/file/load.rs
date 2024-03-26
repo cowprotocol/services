@@ -277,10 +277,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         use_soft_cancellations: *use_soft_cancellations,
                     },
                 },
-                submission: match config.submission.logic {
-                    file::Logic::Boundary => mempool::SubmissionLogic::Boundary,
-                    file::Logic::Native => mempool::SubmissionLogic::Native,
-                },
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {
