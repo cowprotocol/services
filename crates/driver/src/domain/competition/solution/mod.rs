@@ -414,27 +414,3 @@ pub mod error {
         Score(#[from] scoring::Error),
     }
 }
-
-mod tests {
-    use {super::*, shared::conversions::U256Ext};
-
-    #[test]
-    fn multiplication_ceil_div() {
-        let result = eth::U256::from(992158370040532752u128)
-            .checked_mul(eth::U256::from(1000713976565140939u128))
-            .unwrap()
-            .checked_ceil_div(&eth::U256::from(46207788330881468994906599317053u128))
-            .unwrap();
-        assert_eq!(result, eth::U256::from(21488u128));
-    }
-
-    #[test]
-    fn multiplication_div() {
-        let result = eth::U256::from(992158370040532752u128)
-            .checked_mul(eth::U256::from(1000713976565140939u128))
-            .unwrap()
-            .checked_div(eth::U256::from(46207788330881468994906599317053u128))
-            .unwrap();
-        assert_eq!(result, eth::U256::from(21487u128));
-    }
-}
