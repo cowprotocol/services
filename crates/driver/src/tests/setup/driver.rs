@@ -184,7 +184,6 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
-           logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address())
