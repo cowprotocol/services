@@ -5,8 +5,6 @@ pub use {
     },
     database,
     model::{
-        app_data::AppDataHash,
-        bytes_hex,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,
