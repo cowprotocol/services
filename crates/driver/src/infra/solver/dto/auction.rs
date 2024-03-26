@@ -9,6 +9,7 @@ use {
             eth,
             liquidity,
         },
+        infra::config::file::FeeHandler,
         util::{
             conv::{rational_to_big_decimal, u256::U256Ext},
             serialize,
@@ -25,7 +26,7 @@ impl Auction {
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
-        manage_protocol_fees: bool,
+        fee_handler: FeeHandler,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -69,31 +70,27 @@ impl Auction {
                 .iter()
                 .map(|order| {
                     let mut available = order.available(weth);
-                    // Solvers are unaware of the protocol fees. In case of volume based fees,
-                    // fee withheld by driver might be higher than the surplus of the solution. This
-                    // would lead to violating limit prices when driver tries to withhold the
-                    // volume based fee. To avoid this, we artifically adjust the order limit
-                    // amounts (make then worse) before sending to solvers, to force solvers to only
-                    // submit solutions with enough surplus to cover the fee.
-                    //
-                    // https://github.com/cowprotocol/services/issues/2440
-                    if let Some(fees::FeePolicy::Volume { factor }) = order.protocol_fees.first() {
-                        match order.side {
-                            Side::Buy => {
-                                // reduce sell amount by factor
-                                available.sell.amount = available
-                                    .sell
-                                    .amount
-                                    .apply_factor(1.0 / (1.0 + factor))
-                                    .unwrap_or_default();
-                            }
-                            Side::Sell => {
-                                // increase buy amount by factor
-                                available.buy.amount = available
-                                    .buy
-                                    .amount
-                                    .apply_factor(1.0 / (1.0 - factor))
-                                    .unwrap_or_default();
+                    if fee_handler == FeeHandler::Driver {
+                        if let Some(fees::FeePolicy::Volume { factor }) =
+                            order.protocol_fees.first()
+                        {
+                            match order.side {
+                                Side::Buy => {
+                                    // reduce sell amount by factor
+                                    available.sell.amount = available
+                                        .sell
+                                        .amount
+                                        .apply_factor(1.0 / (1.0 + factor))
+                                        .unwrap_or_default();
+                                }
+                                Side::Sell => {
+                                    // increase buy amount by factor
+                                    available.buy.amount = available
+                                        .buy
+                                        .amount
+                                        .apply_factor(1.0 / (1.0 - factor))
+                                        .unwrap_or_default();
+                                }
                             }
                         }
                     }
@@ -117,7 +114,7 @@ impl Auction {
                         fee_policies: order
                             .protocol_fees
                             .iter()
-                            .filter(|_| manage_protocol_fees)
+                            .filter(|_| fee_handler == FeeHandler::Solver)
                             .cloned()
                             .map(Into::into)
                             .collect(),

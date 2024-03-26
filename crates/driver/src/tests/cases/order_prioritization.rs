@@ -1,6 +1,9 @@
-use crate::tests::{
-    cases::EtherExt,
-    setup::{ab_order, ab_pool, ab_solution, setup, Order},
+use crate::{
+    infra::config::file::FeeHandler,
+    tests::{
+        cases::EtherExt,
+        setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order},
+    },
 };
 
 /// Test that orders are sorted correctly before being sent to the solver:
@@ -11,6 +14,9 @@ use crate::tests::{
 #[ignore]
 async fn sorting() {
     let test = setup()
+        .solvers(vec![
+            test_solver().fee_handler(FeeHandler::Solver)
+        ])
         .pool(ab_pool())
         // Orders with better price ratios come first.
         .order(ab_order())

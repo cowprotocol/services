@@ -2,7 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, util::serialize},
     reqwest::Url,
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
@@ -189,9 +189,17 @@ struct SolverConfig {
     /// Datetime when the CIP38 rank by surplus rules should be activated.
     rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 
-    /// Whether or not the solver manages the protocol fees, set as true if not
-    /// specified
-    manage_protocol_fees: Option<bool>,
+    /// Determines whether the `solver` or the `driver` handles the fees
+    #[serde(default)]
+    fee_handler: FeeHandler,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FeeHandler {
+    #[default]
+    Driver,
+    Solver,
 }
 
 #[serde_as]

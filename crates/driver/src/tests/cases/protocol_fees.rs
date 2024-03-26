@@ -1,6 +1,7 @@
 use {
     crate::{
         domain::{competition::order, eth},
+        infra::config::file::FeeHandler,
         tests::{
             self,
             cases::EtherExt,
@@ -76,8 +77,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     };
     // Amounts expected to be returned by the driver after fee processing
     let expected_amounts = ExpectedOrderAmounts {
-        sell: test_case.execution.driver.sell,
-        buy: test_case.execution.driver.buy,
+        sell: test_case.execution.solver.sell,
+        buy: test_case.execution.solver.buy,
     };
     let order = ab_order()
         .kind(order::Kind::Limit)
@@ -100,9 +101,9 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .pool(pool)
         .order(order.clone())
         .solution(ab_solution())
-        .solvers(vec![
-            test_solver().rank_by_surplus_date(DateTime::<Utc>::MIN_UTC)
-        ])
+        .solvers(vec![test_solver()
+            .rank_by_surplus_date(DateTime::<Utc>::MIN_UTC)
+            .fee_handler(FeeHandler::Solver)])
         .done()
         .await;
 

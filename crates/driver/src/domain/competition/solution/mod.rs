@@ -29,6 +29,8 @@ pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
 
+use crate::infra::config::file::FeeHandler;
+
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
 /// A solution represents a set of orders which the solver has found an optimal
@@ -44,6 +46,7 @@ pub struct Solution {
     score: SolverScore,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
+    fee_handler: FeeHandler,
 }
 
 impl Solution {
@@ -57,6 +60,7 @@ impl Solution {
         score: SolverScore,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
+        fee_handler: FeeHandler,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -67,6 +71,7 @@ impl Solution {
             score,
             weth,
             gas,
+            fee_handler,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -77,28 +82,33 @@ impl Solution {
             return Err(error::Solution::InvalidClearingPrices);
         }
 
-        // Apply protocol fees
-        let mut trades = Vec::with_capacity(solution.trades.len());
-        for trade in solution.trades {
-            match &trade {
-                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                    order::Kind::Market | order::Kind::Limit { .. } => {
-                        let prices = ClearingPrices {
-                            sell: solution.prices
-                                [&fulfillment.order().sell.token.wrap(solution.weth)],
-                            buy: solution.prices
-                                [&fulfillment.order().buy.token.wrap(solution.weth)],
-                        };
-                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
-                        trades.push(Trade::Fulfillment(fulfillment))
-                    }
-                    order::Kind::Liquidity => {
-                        trades.push(trade);
-                    }
-                },
-                Trade::Jit(_) => trades.push(trade),
+        // Apply protocol fees only if the drivers is set to handler the fees
+        let trades = if fee_handler == FeeHandler::Driver {
+            let mut trades = Vec::with_capacity(solution.trades.len());
+            for trade in solution.trades {
+                match &trade {
+                    Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                        order::Kind::Market | order::Kind::Limit { .. } => {
+                            let prices = ClearingPrices {
+                                sell: solution.prices
+                                    [&fulfillment.order().sell.token.wrap(solution.weth)],
+                                buy: solution.prices
+                                    [&fulfillment.order().buy.token.wrap(solution.weth)],
+                            };
+                            let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                            trades.push(Trade::Fulfillment(fulfillment))
+                        }
+                        order::Kind::Liquidity => {
+                            trades.push(trade);
+                        }
+                    },
+                    Trade::Jit(_) => trades.push(trade),
+                }
             }
-        }
+            trades
+        } else {
+            solution.trades
+        };
         Ok(Self { trades, ..solution })
     }
 
@@ -179,7 +189,11 @@ impl Solution {
                 trade.order().side,
                 executed,
                 custom_prices,
-                trade.order().protocol_fees.clone(),
+                if self.fee_handler == FeeHandler::Driver {
+                    trade.order().protocol_fees.clone()
+                } else {
+                    vec![]
+                },
             ))
         }
 
