@@ -134,7 +134,7 @@ impl Settlement {
         )
         .await?;
         let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, eth.block_gas_limit(), price);
+        let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
@@ -406,18 +406,11 @@ pub struct Gas {
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
-    pub fn new(estimate: eth::Gas, block_limit: eth::Gas, price: eth::GasPrice) -> Self {
-        // Specify a different gas limit than the estimated gas when executing a
-        // settlement transaction. This allows the transaction to be resilient
-        // to small variations in actual gas usage.
-        // Also, some solutions can have significant gas refunds that are refunded at
-        // the end of execution, so we want to increase gas limit enough so
-        // those solutions don't revert with out of gas error.
-        const GAS_LIMIT_FACTOR: f64 = 2.0;
-        let estimate_with_buffer =
-            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
-                .into();
-
+    pub fn new(
+        estimate: eth::Gas,
+        block_limit: eth::Gas,
+        price: eth::GasPrice,
+    ) -> Result<Self, solution::Error> {
         // We don't allow for solutions to take up more than half of the block's gas
         // limit. This is to ensure that block producers attempt to include the
         // settlement transaction in the next block as long as it is reasonably
@@ -429,12 +422,26 @@ impl Gas {
         // whose gas limit exceed the remaining space (without simulating the actual
         // gas required).
         let max_gas = eth::Gas(block_limit.0 / 2);
+        if estimate > max_gas {
+            return Err(solution::Error::GasLimitExceeded(estimate, max_gas));
+        }
 
-        Self {
+        // Specify a different gas limit than the estimated gas when executing a
+        // settlement transaction. This allows the transaction to be resilient
+        // to small variations in actual gas usage.
+        // Also, some solutions can have significant gas refunds that are refunded at
+        // the end of execution, so we want to increase gas limit enough so
+        // those solutions don't revert with out of gas error.
+        const GAS_LIMIT_FACTOR: f64 = 2.0;
+        let estimate_with_buffer =
+            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
+                .into();
+
+        Ok(Self {
             estimate,
             limit: std::cmp::min(max_gas, estimate_with_buffer),
             price,
-        }
+        })
     }
 
     /// The balance required to ensure settlement execution with the given gas
