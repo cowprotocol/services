@@ -11,14 +11,17 @@ use {
         error::Math,
         order::{self, Side},
     },
-    crate::domain::{
-        competition::{
-            auction,
-            order::fees::Quote,
-            solution::{fee, fee::adjust_quote_to_order_limits},
-            PriceLimits,
+    crate::{
+        domain::{
+            competition::{
+                auction,
+                order::fees::Quote,
+                solution::{fee, fee::adjust_quote_to_order_limits},
+                PriceLimits,
+            },
+            eth::{self},
         },
-        eth::{self},
+        util::conv::u256::U256Ext,
     },
 };
 
@@ -138,7 +141,7 @@ impl Trade {
                     .0
                     .checked_mul(self.custom_price.sell)
                     .ok_or(Math::Overflow)?
-                    .checked_div(self.custom_price.buy)
+                    .checked_ceil_div(&self.custom_price.buy)
                     .ok_or(Math::DivisionByZero)?;
                 bought.checked_sub(limit_buy).ok_or(Error::NegativeSurplus(
                     self.executed,
