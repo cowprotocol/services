@@ -354,3 +354,90 @@ pub enum Error {
     #[error(transparent)]
     Math(#[from] Math),
 }
+
+mod tests {
+    use {
+        super::*,
+        crate::domain::{
+            competition::{self},
+            eth::ContractAddress,
+        },
+        hex_literal::hex,
+        primitive_types::{H160, U256},
+        std::collections::HashMap,
+    };
+
+    #[test]
+    fn scoring() {
+        // https://calldata.swiss-knife.xyz/decoder?tx=0x2733e73bba9a97b093270a36fa1677ddfb7e8ab2b415e29fac775fc50f418cbc&chainId=1
+
+        let trade = Trade::new(
+            eth::Asset {
+                token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                )))),
+                amount: 1000000000000000000.into(),
+            },
+            eth::Asset {
+                token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "7Fd4d7737597E7b4ee22AcbF8D94362343ae0a79"
+                )))),
+                amount: 21070.into(),
+            },
+            Side::Sell,
+            order::TargetAmount(1000000000000000000u128.into()),
+            CustomClearingPrices {
+                sell: 21487.into(), //21488.into(),
+                buy: 1000000000000000000u128.into(),
+            },
+            vec![],
+        );
+        let trade2 = Trade::new(
+            eth::Asset {
+                token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                )))),
+                amount: 2462816524964351000.into(),
+            },
+            eth::Asset {
+                token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "0001A500A6B18995B03f44bb040A5fFc28E45CB0"
+                )))),
+                amount: 1780965271839759490991.into(),
+            },
+            Side::Sell,
+            order::TargetAmount(2462816524964351000u128.into()),
+            CustomClearingPrices {
+                sell: 1816312450684296713029u128.into(),
+                buy: 2462816524964351000u128.into(),
+            },
+            vec![],
+        );
+        let scoring = Scoring::new(vec![trade, trade2]);
+        let prices: HashMap<eth::TokenAddress, competition::auction::Price> = From::from([
+            (
+                eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+                )))),
+                competition::auction::Price::new(U256::from(1000000000000000000u128).into())
+                    .unwrap(),
+            ),
+            (
+                eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "7Fd4d7737597E7b4ee22AcbF8D94362343ae0a79"
+                )))),
+                competition::auction::Price::new(
+                    U256::from(45187528242205150000000000000000u128).into(),
+                )
+                .unwrap(),
+            ),
+            (
+                eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "0001A500A6B18995B03f44bb040A5fFc28E45CB0"
+                )))),
+                competition::auction::Price::new(U256::from(1341581552361326u128).into()).unwrap(),
+            ),
+        ]);
+        println!("{:?}", scoring.score(&prices).unwrap());
+    }
+}

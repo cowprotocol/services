@@ -13,6 +13,7 @@ use {
             solver::Solver,
             Simulator,
         },
+        util::conv::u256::U256Ext,
     },
     futures::future::try_join_all,
     itertools::Itertools,
@@ -156,7 +157,7 @@ impl Solution {
                         .0
                         .checked_mul(uniform_prices.sell)
                         .ok_or(error::Math::Overflow)?
-                        .checked_div(uniform_prices.buy)
+                        .checked_ceil_div(&uniform_prices.buy)
                         .ok_or(error::Math::DivisionByZero)?,
                     order::Side::Buy => trade.executed().0,
                 },
@@ -411,5 +412,29 @@ pub mod error {
         Math(#[from] Math),
         #[error(transparent)]
         Score(#[from] scoring::Error),
+    }
+}
+
+mod tests {
+    use {super::*, shared::conversions::U256Ext};
+
+    #[test]
+    fn multiplication_ceil_div() {
+        let result = eth::U256::from(992158370040532752u128)
+            .checked_mul(eth::U256::from(1000713976565140939u128))
+            .unwrap()
+            .checked_ceil_div(&eth::U256::from(46207788330881468994906599317053u128))
+            .unwrap();
+        assert_eq!(result, eth::U256::from(21488u128));
+    }
+
+    #[test]
+    fn multiplication_div() {
+        let result = eth::U256::from(992158370040532752u128)
+            .checked_mul(eth::U256::from(1000713976565140939u128))
+            .unwrap()
+            .checked_div(eth::U256::from(46207788330881468994906599317053u128))
+            .unwrap();
+        assert_eq!(result, eth::U256::from(21487u128));
     }
 }
