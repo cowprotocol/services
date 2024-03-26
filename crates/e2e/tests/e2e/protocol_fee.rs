@@ -16,44 +16,14 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_surplus_fee_sell_order() {
-    run_test(surplus_fee_sell_order_test).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_surplus_fee_sell_order_capped() {
-    run_test(surplus_fee_sell_order_capped_test).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_volume_fee_sell_order() {
-    run_test(volume_fee_sell_order_test).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_partner_fee_sell_order() {
-    run_test(partner_fee_sell_order_test).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn local_node_partner_fee_with_not_default_cap_sell_order_test() {
-    run_test(partner_fee_with_not_default_cap_sell_order_test).await;
-}
-
-#[tokio::test]
-#[ignore]
 async fn local_node_surplus_fee_buy_order() {
     run_test(surplus_fee_buy_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn local_node_surplus_fee_buy_order_capped() {
-    run_test(surplus_fee_buy_order_capped_test).await;
+async fn local_node_partner_fee_sell_order() {
+    run_test(partner_fee_sell_order_test).await;
 }
 
 #[tokio::test]
@@ -68,166 +38,7 @@ async fn local_node_price_improvement_fee_sell_order() {
     run_test(price_improvement_fee_sell_order_test).await;
 }
 
-async fn surplus_fee_sell_order_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::Surplus {
-        factor: 0.3,
-        max_volume_factor: 0.9,
-    };
-    let protocol_fee = ProtocolFee {
-        policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
-    };
-    // Without protocol fee:
-    // Expected execution is 10000000000000000000 GNO for
-    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
-    //
-    // With protocol fee:
-    // surplus [DAI] = 9871415430342266811 DAI - 5000000000000000000 DAI =
-    // 4871415430342266811 DAI
-    //
-    // protocol fee = 0.3*surplus = 1461424629102680043 DAI =
-    // 1461424629102680043 DAI / 9871415430342266811 *
-    // (10000000000000000000 - 167058994203399) = 1480436341679873337 GNO
-    //
-    // final execution is 10000000000000000000 GNO for 8409990801239586768 DAI, with
-    // executed_surplus_fee = 1480603400674076736 GNO
-    //
-    // Settlement contract balance after execution = 1480603400674076736 GNO =
-    // 1480603400674076736 GNO * 8409990801239586768 / (10000000000000000000 -
-    // 1480603400674076736) = 1461589542731026166 DAI
-    execute_test(
-        web3.clone(),
-        vec![ProtocolFeesConfig(vec![protocol_fee])],
-        OrderKind::Sell,
-        None,
-        1480603400674076736u128.into(),
-        1461589542731026166u128.into(),
-    )
-    .await;
-}
-
-async fn surplus_fee_sell_order_capped_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::Surplus {
-        factor: 0.9,
-        max_volume_factor: 0.1,
-    };
-    let protocol_fees = vec![
-        ProtocolFee {
-            policy: fee_policy.clone(),
-            policy_order_class: FeePolicyOrderClass::Market,
-        },
-        // Tests ability of providing multiple fees in the config. In fact, the Market one is used
-        // only since the order is in-market.
-        ProtocolFee {
-            policy: fee_policy,
-            policy_order_class: FeePolicyOrderClass::Limit,
-        },
-    ];
-    // Without protocol fee:
-    // Expected execution is 10000000000000000000 GNO for
-    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
-    //
-    // With protocol fee:
-    // Expected executed_surplus_fee is 167058994203399 +
-    // 0.1*(10000000000000000000 - 167058994203399) = 1000150353094783059
-    //
-    // Final execution is 10000000000000000000 GNO for 8884273887308040129 DAI, with
-    // executed_surplus_fee = 1000150353094783059 GNO
-    //
-    // Settlement contract balance after execution = 1000150353094783059 GNO =
-    // 1000150353094783059 GNO * 8884273887308040129 / (10000000000000000000 -
-    // 1000150353094783059) = 987306456662572858 DAI
-    execute_test(
-        web3.clone(),
-        vec![ProtocolFeesConfig(protocol_fees)],
-        OrderKind::Sell,
-        None,
-        1000150353094783059u128.into(),
-        987306456662572858u128.into(),
-    )
-    .await;
-}
-
-async fn volume_fee_sell_order_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
-    // Tests ability of providing `any` fee policy order class config. In fact, the
-    // Market config could be used since the order is in-market.
-    let protocol_fee = ProtocolFee {
-        policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Any,
-    };
-    // Without protocol fee:
-    // Expected execution is 10000000000000000000 GNO for
-    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
-    //
-    // With protocol fee:
-    // Expected executed_surplus_fee is 167058994203399 +
-    // 0.1*(10000000000000000000 - 167058994203399) = 1000150353094783059
-    //
-    // Final execution is 10000000000000000000 GNO for 8884273887308040129 DAI, with
-    // executed_surplus_fee = 1000150353094783059 GNO
-    //
-    // Settlement contract balance after execution = 1000150353094783059 GNO =
-    // 1000150353094783059 GNO * 8884273887308040129 / (10000000000000000000 -
-    // 1000150353094783059) = 987306456662572858 DAI
-    execute_test(
-        web3.clone(),
-        vec![ProtocolFeesConfig(vec![protocol_fee])],
-        OrderKind::Sell,
-        None,
-        1000150353094783059u128.into(),
-        987306456662572858u128.into(),
-    )
-    .await;
-}
-
 async fn partner_fee_sell_order_test(web3: Web3) {
-    // Fee policy to be overwritten by the partner fee + capped to 0.01
-    let fee_policy = FeePolicyKind::PriceImprovement {
-        factor: 0.5,
-        max_volume_factor: 0.9,
-    };
-    let protocol_fee = ProtocolFee {
-        policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
-    };
-    // Without protocol fee:
-    // Expected execution is 10000000000000000000 GNO for
-    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
-    //
-    // With protocol fee:
-    // Expected executed_surplus_fee is 167058994203399 +
-    // 0.01*(10000000000000000000 - 167058994203399) = 100165388404261365
-    //
-    // Final execution is 10000000000000000000 GNO for 9772701276038844388 DAI, with
-    // executed_surplus_fee = 100165388404261365 GNO
-    //
-    // Settlement contract balance after execution = 100165388404261365 GNO =
-    // 100165388404261365 GNO * 9772701276038844388 / (10000000000000000000 -
-    // 100165388404261365) = 98879067931768848 DAI
-    execute_test(
-        web3.clone(),
-        vec![ProtocolFeesConfig(vec![protocol_fee])],
-        OrderKind::Sell,
-        Some(OrderCreationAppData::Full {
-            full: json!({
-                "version": "1.1.0",
-                "metadata": {
-                    "partnerFee": {
-                        "bps":1000,
-                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
-                    }
-                }
-            })
-            .to_string(),
-        }),
-        100165388404261365u128.into(),
-        98879067931768848u128.into(),
-    )
-    .await;
-}
-
-async fn partner_fee_with_not_default_cap_sell_order_test(web3: Web3) {
     // Fee policy to be overwritten by the partner fee + capped to 0.02
     let fee_policy = FeePolicyKind::PriceImprovement {
         factor: 0.5,
@@ -281,10 +92,18 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
         factor: 0.3,
         max_volume_factor: 0.9,
     };
-    let protocol_fee = ProtocolFee {
-        policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
-    };
+    let protocol_fees = vec![
+        ProtocolFee {
+            policy: fee_policy.clone(),
+            policy_order_class: FeePolicyOrderClass::Market,
+        },
+        // Tests ability of providing multiple fees in the config. In fact, the Market one is used
+        // only since the order is in-market.
+        ProtocolFee {
+            policy: fee_policy,
+            policy_order_class: FeePolicyOrderClass::Limit,
+        },
+    ];
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
     // with executed_surplus_fee = 167058994203399 GNO
@@ -301,40 +120,11 @@ async fn surplus_fee_buy_order_test(web3: Web3) {
     // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
-        vec![ProtocolFeesConfig(vec![protocol_fee])],
+        vec![ProtocolFeesConfig(protocol_fees)],
         OrderKind::Buy,
         None,
         1488043031123213136u128.into(),
         1488043031123213136u128.into(),
-    )
-    .await;
-}
-
-async fn surplus_fee_buy_order_capped_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::Surplus {
-        factor: 0.9,
-        max_volume_factor: 0.1,
-    };
-    let protocol_fee = ProtocolFee {
-        policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
-    };
-    // Without protocol fee:
-    // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
-    // with executed_surplus_fee = 167058994203399 GNO
-    //
-    // With protocol fee:
-    // Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
-    // 504208401617866820
-    //
-    // Settlement contract balance after execution = executed_surplus_fee GNO
-    execute_test(
-        web3.clone(),
-        vec![ProtocolFeesConfig(vec![protocol_fee])],
-        OrderKind::Buy,
-        None,
-        504208401617866820u128.into(),
-        504208401617866820u128.into(),
     )
     .await;
 }
@@ -370,9 +160,11 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
         factor: 0.3,
         max_volume_factor: 0.9,
     };
+    // Tests ability of providing `any` fee policy order class config. In fact, the
+    // Market config could be used since the order is in-market.
     let protocol_fee = ProtocolFee {
         policy: fee_policy,
-        policy_order_class: FeePolicyOrderClass::Market,
+        policy_order_class: FeePolicyOrderClass::Any,
     };
     // Without protocol fee:
     // Expected execution is 10000000000000000000 GNO for
@@ -409,10 +201,15 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
 
 // because of rounding errors, it's good enough to check that the expected value
 // is within a very narrow range of the executed value
-fn is_approximately_equal(executed_value: U256, expected_value: U256) -> bool {
+fn assert_approximately(executed_value: U256, expected_value: U256) {
     let lower = expected_value * U256::from(99999999999u128) / U256::from(100000000000u128); // in percents = 99.999999999%
     let upper = expected_value * U256::from(100000000001u128) / U256::from(100000000000u128); // in percents = 100.000000001%
-    executed_value >= lower && executed_value <= upper
+    assert!(
+        executed_value >= lower && executed_value <= upper,
+        "Expected: ~{}, got: {}",
+        expected_value,
+        executed_value
+    )
 }
 
 async fn execute_test(
@@ -532,9 +329,11 @@ async fn execute_test(
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        is_approximately_equal(order.metadata.executed_surplus_fee, expected_surplus_fee)
+        !order.metadata.executed_surplus_fee.is_zero()
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    let order = services.get_order(&uid).await.unwrap();
+    assert_approximately(order.metadata.executed_surplus_fee, expected_surplus_fee);
 
     // Check settlement contract balance
     let balance_after = match order_kind {
@@ -549,10 +348,7 @@ async fn execute_test(
             .await
             .unwrap(),
     };
-    assert!(is_approximately_equal(
-        balance_after,
-        expected_settlement_contract_balance
-    ));
+    assert_approximately(balance_after, expected_settlement_contract_balance);
 }
 
 struct ProtocolFeesConfig(Vec<ProtocolFee>);
