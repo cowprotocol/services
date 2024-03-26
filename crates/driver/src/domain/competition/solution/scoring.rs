@@ -109,13 +109,15 @@ impl Trade {
                     .0
                     .checked_mul(self.executed.into())?
                     .checked_div(price_limits.buy.0)?;
-                // difference between limit sell and executed amount converted to sell token
-                limit_sell.checked_sub(
-                    self.executed
-                        .0
-                        .checked_mul(self.custom_price.buy)?
-                        .checked_div(self.custom_price.sell)?,
-                )
+                let sold = self
+                    .executed
+                    .0
+                    .checked_mul(self.custom_price.buy)?
+                    .checked_div(self.custom_price.sell)?;
+                // since sell price limit can be lower than order sell limit (e.g. price
+                // improvement fee with quote as price limit), we don't want to
+                // return error in cases when the solution is worse than price limit (quote)
+                Ok(limit_sell.saturating_sub(sold))
             }
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
@@ -124,12 +126,15 @@ impl Trade {
                     .0
                     .checked_mul(price_limits.buy.0)?
                     .checked_div(price_limits.sell.0)?;
-                // difference between executed amount converted to buy token and limit buy
-                self.executed
+                let bought = self
+                    .executed
                     .0
                     .checked_mul(self.custom_price.sell)?
-                    .checked_div(self.custom_price.buy)?
-                    .checked_sub(limit_buy)
+                    .checked_div(self.custom_price.buy)?;
+                // since buy price limit can be higher than order buy limit (e.g. price
+                // improvement fee with quote as price limit), we don't want to
+                // return error in cases when the solution is worse than price limit (quote)
+                Some(bought.saturating_sub(limit_buy))
             }
         }
         .map(|surplus| eth::Asset {
@@ -353,4 +358,87 @@ pub enum Error {
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
+}
+
+mod tests {
+    use {
+        super::*,
+        crate::domain::{
+            competition::{
+                order::fees::Quote,
+                {self},
+            },
+            eth::ContractAddress,
+        },
+        hex_literal::hex,
+        primitive_types::{H160, U256},
+        std::collections::HashMap,
+    };
+
+    #[test]
+    fn scoring() {
+        let trade = Trade::new(
+            eth::Asset {
+                token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                )))),
+                amount: 52750000000.into(),
+            },
+            eth::Asset {
+                token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "ba100000625a3754423978a60c9317c58a424e3d"
+                )))),
+                amount: 9965722167958114231512u128.into(),
+            },
+            Side::Sell,
+            order::TargetAmount(52750000000u128.into()),
+            CustomClearingPrices {
+                sell: 10001272613209356122753u128.into(),
+                buy: 52750000000u128.into(),
+            },
+            vec![order::FeePolicy::PriceImprovement {
+                factor: 0.01,
+                max_volume_factor: 0.01,
+                quote: Quote {
+                    sell: eth::Asset {
+                        token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                            "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                        )))),
+                        amount: 52750000000.into(),
+                    },
+                    buy: eth::Asset {
+                        token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                            "ba100000625a3754423978a60c9317c58a424e3d"
+                        )))),
+                        amount: 10008190482577794101511u128.into(),
+                    },
+                    fee: eth::Asset {
+                        token: eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                            "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                        )))),
+                        amount: 34059640.into(),
+                    },
+                },
+            }],
+        );
+        let scoring = Scoring::new(vec![trade]);
+        let prices: HashMap<eth::TokenAddress, competition::auction::Price> = From::from([
+            (
+                eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "ba100000625a3754423978a60c9317c58a424e3d"
+                )))),
+                competition::auction::Price::new(U256::from(1428692600436524u128).into()).unwrap(),
+            ),
+            (
+                eth::TokenAddress(ContractAddress(H160::from_slice(&hex!(
+                    "a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                )))),
+                competition::auction::Price::new(
+                    U256::from(273235830183844100000000000u128).into(),
+                )
+                .unwrap(),
+            ),
+        ]);
+        println!("{:?}", scoring.score(&prices).unwrap());
+    }
 }
