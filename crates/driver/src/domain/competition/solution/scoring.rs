@@ -97,6 +97,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+        tracing::debug!("Scoring trade {:?}", self);
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices)?)
     }
 
@@ -104,7 +105,7 @@ impl Trade {
     /// fees have been applied and calculated over the price limits.
     ///
     /// Denominated in SURPLUS token
-    fn surplus_over(&self, price_limits: PriceLimits) -> Result<eth::Asset, Error> {
+    fn surplus_over(&self, price_limits: PriceLimits) -> Result<eth::Asset, Math> {
         match self.side {
             Side::Buy => {
                 // scale limit sell to support partially fillable orders
@@ -122,10 +123,7 @@ impl Trade {
                     .ok_or(Math::Overflow)?
                     .checked_div(self.custom_price.sell)
                     .ok_or(Math::DivisionByZero)?;
-                limit_sell.checked_sub(sold).ok_or(Error::NegativeSurplus(
-                    self.executed,
-                    self.custom_price.clone(),
-                ))
+                limit_sell.checked_sub(sold).ok_or(Math::Negative)
             }
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
@@ -143,10 +141,7 @@ impl Trade {
                     .ok_or(Math::Overflow)?
                     .checked_ceil_div(&self.custom_price.buy)
                     .ok_or(Math::DivisionByZero)?;
-                bought.checked_sub(limit_buy).ok_or(Error::NegativeSurplus(
-                    self.executed,
-                    self.custom_price.clone(),
-                ))
+                bought.checked_sub(limit_buy).ok_or(Math::Negative)
             }
         }
         .map(|surplus| eth::Asset {
@@ -227,13 +222,13 @@ impl Trade {
         let surplus = self.surplus_over(quote);
         // negative surplus is not error in this case, as solutions often have no
         // improvement over quote which results in negative surplus
-        if let Err(Error::NegativeSurplus(..)) = surplus {
+        if let Err(Math::Negative) = surplus {
             return Ok(eth::Asset {
                 token: self.surplus_token(),
                 amount: 0.into(),
             });
         }
-        surplus
+        Ok(surplus?)
     }
 
     fn surplus_over_limit_price(&self) -> Result<eth::Asset, Error> {
@@ -241,7 +236,7 @@ impl Trade {
             sell: self.sell.amount,
             buy: self.buy.amount,
         };
-        self.surplus_over(limit_price)
+        Ok(self.surplus_over(limit_price)?)
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
@@ -374,8 +369,6 @@ pub enum Error {
     MultipleFeePolicies,
     #[error("fee policy not implemented yet")]
     UnimplementedFeePolicy,
-    #[error("failed to calculate surplus for trade executed {0:?}, custom price {1:?}")]
-    NegativeSurplus(order::TargetAmount, CustomClearingPrices),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
