@@ -189,7 +189,7 @@ struct SolverConfig {
     /// Datetime when the CIP38 rank by surplus rules should be activated.
     rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 
-    /// Whether or not the solver manages the protocol fees, set as false if not
+    /// Whether or not the solver manages the protocol fees, set as true if not
     /// specified
     manage_protocol_fees: Option<bool>,
 }

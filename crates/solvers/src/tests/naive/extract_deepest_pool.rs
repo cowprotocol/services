@@ -36,7 +36,7 @@ async fn test() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [

@@ -288,7 +288,7 @@ components:
         - kind
         - partiallyFillable
         - class
-        - protocolFees
+        - feePolicies
       properties:
         uid:
           $ref: "#/components/schemas/OrderUid"
@@ -312,7 +312,7 @@ components:
           type: boolean
         class:
           $ref: "#/components/schemas/OrderClass"
-        protocolFees:
+        feePolicies:
           description: |
             Any protocol fee policies that apply to the order.
           type: array

@@ -43,7 +43,7 @@ async fn uniswap() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -168,7 +168,7 @@ async fn balancer_weighted() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -332,7 +332,7 @@ async fn balancer_weighted_v3plus() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -451,7 +451,7 @@ async fn distant_convergence() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -570,7 +570,7 @@ async fn same_path() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -739,7 +739,7 @@ async fn balancer_stable() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [

@@ -43,7 +43,7 @@ async fn trusted_token() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -148,7 +148,7 @@ async fn untrusted_sell_token() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -253,7 +253,7 @@ async fn insufficient_balance() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [

@@ -151,7 +151,7 @@ async fn quote() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -359,7 +359,7 @@ async fn solve() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [

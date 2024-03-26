@@ -108,7 +108,7 @@ impl Solver {
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
-                "protocolFees": match quote.order.kind {
+                "feePolicies": match quote.order.kind {
                     _ if config.quote => json!([]),
                     order::Kind::Market => json!([]),
                     order::Kind::Liquidity => json!([]),

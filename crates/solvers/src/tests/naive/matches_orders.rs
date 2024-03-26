@@ -28,7 +28,7 @@ async fn sell_orders_on_both_sides() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -42,7 +42,7 @@ async fn sell_orders_on_both_sides() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [
@@ -139,7 +139,7 @@ async fn sell_orders_on_one_side() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -153,7 +153,7 @@ async fn sell_orders_on_one_side() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [
@@ -250,7 +250,7 @@ async fn buy_orders_on_both_sides() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -264,7 +264,7 @@ async fn buy_orders_on_both_sides() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [
@@ -361,7 +361,7 @@ async fn buy_and_sell_orders() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -375,7 +375,7 @@ async fn buy_and_sell_orders() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
-                    "protocolFees": [],
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [

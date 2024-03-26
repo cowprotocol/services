@@ -114,7 +114,7 @@ impl Auction {
                             competition::order::Kind::Limit { .. } => Class::Limit,
                             competition::order::Kind::Liquidity => Class::Liquidity,
                         },
-                        fee_policy: order
+                        fee_policies: order
                             .protocol_fees
                             .iter()
                             .filter(|_| manage_protocol_fees)
@@ -283,7 +283,7 @@ struct Order {
     kind: Kind,
     partially_fillable: bool,
     class: Class,
-    fee_policy: Vec<FeePolicy>,
+    fee_policies: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Serialize)]

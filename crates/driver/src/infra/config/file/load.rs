@@ -76,7 +76,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 },
                 request_headers: config.request_headers,
                 rank_by_surplus_date: config.rank_by_surplus_date,
-                manage_protocol_fees: config.manage_protocol_fees.unwrap_or_default(),
+                manage_protocol_fees: config.manage_protocol_fees.unwrap_or(true),
             }
         }))
         .await,
