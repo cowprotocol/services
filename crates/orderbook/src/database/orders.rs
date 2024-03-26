@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     anyhow::{Context as _, Result},
+    app_data::AppDataHash,
     async_trait::async_trait,
     chrono::{DateTime, Utc},
     database::{
@@ -11,7 +12,6 @@ use {
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
     model::{
-        app_data::AppDataHash,
         order::{
             EthflowData,
             Interactions,

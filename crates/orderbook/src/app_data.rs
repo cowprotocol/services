@@ -4,8 +4,7 @@ use {
         ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},
-    model::app_data::AppDataHash,
-    shared::app_data,
+    app_data::AppDataHash,
 };
 
 /// CoW Protocol API app-data registry.

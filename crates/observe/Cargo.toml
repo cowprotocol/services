@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-atty = "0.2"
+atty = "0.2.14"
 futures = { workspace = true }
 once_cell = { workspace = true }
 pin-project-lite = "0.2"

@@ -1,5 +1,9 @@
 use {
-    super::{blockchain, blockchain::Blockchain, Partial},
+    super::{
+        blockchain::{self, Blockchain},
+        fee,
+        Partial,
+    },
     crate::{
         domain::{
             competition::order,
@@ -53,18 +57,45 @@ impl Solver {
             } else {
                 quote.order.buy_token
             };
+            let sell_amount = match quote.order.side {
+                order::Side::Buy if config.quote => {
+                    "22300745198530623141535718272648361505980416".to_owned()
+                }
+                order::Side::Buy => match quote.order.fee_policy {
+                    // For volume based fee, we artifially reduce the limit sell amount for buy
+                    // orders before sending to solvers. This allows driver to withhold volume based
+                    // fee and not violate original limit prices.
+                    fee::Policy::Volume { factor } => eth::TokenAmount(quote.sell_amount())
+                        .apply_factor(1.0 / (1.0 + factor))
+                        .unwrap()
+                        .0
+                        .to_string(),
+                    _ => quote.sell_amount().to_string(),
+                },
+                _ => quote.sell_amount().to_string(),
+            };
+            let buy_amount = match quote.order.side {
+                order::Side::Sell if config.quote => "1".to_owned(),
+                order::Side::Sell => match quote.order.fee_policy {
+                    // For volume based fee, we artifially increase the limit buy amount for sell
+                    // orders before sending to solvers. This allows driver to withhold volume based
+                    // fee and not violate original limit prices.
+                    fee::Policy::Volume { factor } => eth::TokenAmount(quote.buy_amount())
+                        .apply_factor(1.0 / (1.0 - factor))
+                        .unwrap()
+                        .0
+                        .to_string(),
+                    _ => quote.buy_amount().to_string(),
+                },
+                _ => quote.buy_amount().to_string(),
+            };
+
             orders_json.push(json!({
                 "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
-                "sellAmount": match quote.order.side {
-                    order::Side::Buy if config.quote => "22300745198530623141535718272648361505980416".to_owned(),
-                    _ => quote.sell_amount().to_string(),
-                },
-                "buyAmount": match quote.order.side {
-                    order::Side::Sell if config.quote => "1".to_owned(),
-                    _ => quote.buy_amount().to_string(),
-                },
+                "sellAmount": sell_amount,
+                "buyAmount": buy_amount,
                 "feeAmount": quote.order.user_fee.to_string(),
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",
