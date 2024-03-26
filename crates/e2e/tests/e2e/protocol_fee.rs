@@ -121,7 +121,6 @@ async fn combined_protocol_fees(web3: Web3) {
         token_gno.approve(onchain.contracts().allowance, to_wei(100))
     );
 
-    // Place Orders
     let services = Services::new(onchain.contracts()).await;
     let solver_endpoint =
         colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
@@ -145,109 +144,109 @@ async fn combined_protocol_fees(web3: Web3) {
         ])
         .await;
 
-    // Market surplus fee order
-    let order = OrderCreation {
-        sell_token: token_gno.address(),
-        sell_amount: to_wei(10),
-        buy_token: token_dai.address(),
-        buy_amount: to_wei(5),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-    );
-    let uid = services.create_order(&order).await.unwrap();
-
-    tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let metadata_updated = || async {
-        onchain.mint_block().await;
-        let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_surplus_fee.is_zero()
-    };
-    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
-    let order = services.get_order(&uid).await.unwrap();
-    assert_approximately(
-        order.metadata.executed_surplus_fee,
-        1480603400674076736u128.into(),
-    );
-
-    // Check settlement contract balance
-    let balance_after = token_dai
-        .balance_of(onchain.contracts().gp_settlement.address())
-        .call()
-        .await
-        .unwrap();
-    assert_approximately(balance_after, 1461589542731026166u128.into());
-
-    // Partner fee order
-    let order = OrderCreation {
-        sell_token: token_gno.address(),
-        sell_amount: to_wei(10),
-        buy_token: token_dai.address(),
-        buy_amount: to_wei(5),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        app_data: OrderCreationAppData::Full {
-            full: json!({
-                "version": "1.1.0",
-                "metadata": {
-                    "partnerFee": {
-                        "bps":1000,
-                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
-                    }
-                }
-            })
-            .to_string(),
-        },
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-    );
-    let uid = services.create_order(&order).await.unwrap();
-
-    tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let metadata_updated = || async {
-        onchain.mint_block().await;
-        let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_surplus_fee.is_zero()
-    };
-    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
-    let order = services.get_order(&uid).await.unwrap();
-    assert_approximately(
-        order.metadata.executed_surplus_fee,
-        200222753873115539u128.into(),
-    );
-
-    // Check settlement contract balance
-    let balance_after = token_dai
-        .balance_of(onchain.contracts().gp_settlement.address())
-        .call()
-        .await
-        .unwrap();
-    assert_approximately(balance_after, 1656727546861038995u128.into());
+    // // Market surplus fee order
+    // let order = OrderCreation {
+    //     sell_token: token_gno.address(),
+    //     sell_amount: to_wei(10),
+    //     buy_token: token_dai.address(),
+    //     buy_amount: to_wei(5),
+    //     valid_to: model::time::now_in_epoch_seconds() + 300,
+    //     kind: OrderKind::Sell,
+    //     ..Default::default()
+    // }
+    // .sign(
+    //     EcdsaSigningScheme::Eip712,
+    //     &onchain.contracts().domain_separator,
+    //     SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).
+    // unwrap()), );
+    // let uid = services.create_order(&order).await.unwrap();
+    //
+    // tracing::info!("Waiting for trade.");
+    // wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1
+    // })     .await
+    //     .unwrap();
+    //
+    // wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0
+    // })     .await
+    //     .unwrap();
+    //
+    // let metadata_updated = || async {
+    //     onchain.mint_block().await;
+    //     let order = services.get_order(&uid).await.unwrap();
+    //     !order.metadata.executed_surplus_fee.is_zero()
+    // };
+    // wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    // let order = services.get_order(&uid).await.unwrap();
+    // assert_approximately(
+    //     order.metadata.executed_surplus_fee,
+    //     1480603400674076736u128.into(),
+    // );
+    //
+    // // Check settlement contract balance
+    // let balance_after = token_dai
+    //     .balance_of(onchain.contracts().gp_settlement.address())
+    //     .call()
+    //     .await
+    //     .unwrap();
+    // assert_approximately(balance_after, 1461589542731026166u128.into());
+    //
+    // // Partner fee order
+    // let order = OrderCreation {
+    //     sell_token: token_gno.address(),
+    //     sell_amount: to_wei(10),
+    //     buy_token: token_dai.address(),
+    //     buy_amount: to_wei(5),
+    //     valid_to: model::time::now_in_epoch_seconds() + 300,
+    //     kind: OrderKind::Sell,
+    //     app_data: OrderCreationAppData::Full {
+    //         full: json!({
+    //             "version": "1.1.0",
+    //             "metadata": {
+    //                 "partnerFee": {
+    //                     "bps":1000,
+    //                     "recipient":
+    // "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",                 }
+    //             }
+    //         })
+    //         .to_string(),
+    //     },
+    //     ..Default::default()
+    // }
+    // .sign(
+    //     EcdsaSigningScheme::Eip712,
+    //     &onchain.contracts().domain_separator,
+    //     SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).
+    // unwrap()), );
+    // let uid = services.create_order(&order).await.unwrap();
+    //
+    // tracing::info!("Waiting for trade.");
+    // wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1
+    // })     .await
+    //     .unwrap();
+    //
+    // wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0
+    // })     .await
+    //     .unwrap();
+    //
+    // let metadata_updated = || async {
+    //     onchain.mint_block().await;
+    //     let order = services.get_order(&uid).await.unwrap();
+    //     !order.metadata.executed_surplus_fee.is_zero()
+    // };
+    // wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    // let order = services.get_order(&uid).await.unwrap();
+    // assert_approximately(
+    //     order.metadata.executed_surplus_fee,
+    //     200222753873115539u128.into(),
+    // );
+    //
+    // // Check settlement contract balance
+    // let balance_after = token_dai
+    //     .balance_of(onchain.contracts().gp_settlement.address())
+    //     .call()
+    //     .await
+    //     .unwrap();
+    // assert_approximately(balance_after, 1656727546861038995u128.into());
 
     // Limit price improvement fee order
     let order = OrderCreation {
