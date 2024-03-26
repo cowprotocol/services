@@ -38,6 +38,265 @@ async fn local_node_price_improvement_fee_sell_order() {
     run_test(price_improvement_fee_sell_order_test).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_combined_protocol_fees() {
+    run_test(combined_protocol_fees).await;
+}
+
+async fn combined_protocol_fees(web3: Web3) {
+    let market_surplus_policy = ProtocolFee {
+        policy: FeePolicyKind::Surplus {
+            factor: 0.3,
+            max_volume_factor: 0.9,
+        },
+        policy_order_class: FeePolicyOrderClass::Market,
+    };
+
+    let limit_price_improvement_policy = ProtocolFee {
+        policy: FeePolicyKind::PriceImprovement {
+            factor: 0.3,
+            max_volume_factor: 0.9,
+        },
+        policy_order_class: FeePolicyOrderClass::Limit,
+    };
+
+    let autopilot_config = vec![
+        ProtocolFeesConfig(vec![market_surplus_policy, limit_price_improvement_policy]).to_string(),
+        "--fee-policy-max-partner-fee=0.02".to_string(),
+    ];
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [token_gno, token_dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1000))
+        .await;
+
+    // Fund trader accounts
+    token_gno.mint(trader.address(), to_wei(100)).await;
+
+    // Create and fund Uniswap pool
+    token_gno.mint(solver.address(), to_wei(1000)).await;
+    token_dai.mint(solver.address(), to_wei(1000)).await;
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .uniswap_v2_factory
+            .create_pair(token_gno.address(), token_dai.address())
+    );
+    tx!(
+        solver.account(),
+        token_gno.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        solver.account(),
+        token_dai.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        solver.account(),
+        onchain.contracts().uniswap_v2_router.add_liquidity(
+            token_gno.address(),
+            token_dai.address(),
+            to_wei(1000),
+            to_wei(1000),
+            0_u64.into(),
+            0_u64.into(),
+            solver.address(),
+            U256::max_value(),
+        )
+    );
+
+    // Approve GPv2 for trading
+    tx!(
+        trader.account(),
+        token_gno.approve(onchain.contracts().allowance, to_wei(100))
+    );
+
+    // Place Orders
+    let services = Services::new(onchain.contracts()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
+    let mut config = vec![
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+    ];
+    config.extend(autopilot_config);
+    services.start_autopilot(None, config);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // Market surplus fee order
+    let order = OrderCreation {
+        sell_token: token_gno.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_dai.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        let order = services.get_order(&uid).await.unwrap();
+        !order.metadata.executed_surplus_fee.is_zero()
+    };
+    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    let order = services.get_order(&uid).await.unwrap();
+    assert_approximately(
+        order.metadata.executed_surplus_fee,
+        1480603400674076736u128.into(),
+    );
+
+    // Check settlement contract balance
+    let balance_after = token_dai
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_approximately(balance_after, 1461589542731026166u128.into());
+
+    // Partner fee order
+    let order = OrderCreation {
+        sell_token: token_gno.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_dai.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full {
+            full: json!({
+                "version": "1.1.0",
+                "metadata": {
+                    "partnerFee": {
+                        "bps":1000,
+                        "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                    }
+                }
+            })
+            .to_string(),
+        },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        let order = services.get_order(&uid).await.unwrap();
+        !order.metadata.executed_surplus_fee.is_zero()
+    };
+    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    let order = services.get_order(&uid).await.unwrap();
+    assert_approximately(
+        order.metadata.executed_surplus_fee,
+        200222753873115539u128.into(),
+    );
+
+    // Check settlement contract balance
+    let balance_after = token_dai
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_approximately(balance_after, 1656727546861038995u128.into());
+
+    // Limit price improvement fee order
+    let order = OrderCreation {
+        sell_token: token_gno.address(),
+        sell_amount: to_wei(5),
+        buy_token: token_dai.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: true,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let uid = services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        let order = services.get_order(&uid).await.unwrap();
+        !order.metadata.executed_surplus_fee.is_zero()
+    };
+    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    let order = services.get_order(&uid).await.unwrap();
+    assert_approximately(
+        order.metadata.executed_surplus_fee,
+        200222753873115539u128.into(),
+    );
+
+    // Check settlement contract balance
+    let balance_after = token_dai
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_approximately(balance_after, 1656727546861038995u128.into());
+}
+
 async fn partner_fee_sell_order_test(web3: Web3) {
     // Fee policy to be overwritten by the partner fee + capped to 0.02
     let fee_policy = FeePolicyKind::PriceImprovement {
