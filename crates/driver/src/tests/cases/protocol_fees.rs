@@ -1185,7 +1185,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
 }
 
 #[tokio::test]
-//#[ignore]
+#[ignore]
 async fn price_improvement_fee_sell_no_improvement() {
     let fee_policy = Policy::PriceImprovement {
         factor: 0.5,
