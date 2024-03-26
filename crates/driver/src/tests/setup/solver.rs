@@ -10,7 +10,7 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, blockchain::contracts::Addresses, Ethereum},
+        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -37,6 +37,7 @@ pub struct Config<'a> {
     pub deadline: time::Deadline,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
+    pub fee_handler: FeeHandler,
 }
 
 impl Solver {
@@ -110,6 +111,7 @@ impl Solver {
                 },
                 "feePolicies": match quote.order.kind {
                     _ if config.quote => json!([]),
+                    _ if config.fee_handler == FeeHandler::Driver => json!([]),
                     order::Kind::Market => json!([]),
                     order::Kind::Liquidity => json!([]),
                     order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),

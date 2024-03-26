@@ -822,6 +822,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                fee_handler: solver.fee_handler,
             })
             .await;
 

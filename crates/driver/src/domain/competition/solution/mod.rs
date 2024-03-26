@@ -9,6 +9,7 @@ use {
         },
         infra::{
             blockchain::{self, Ethereum},
+            config::file::FeeHandler,
             simulator,
             solver::Solver,
             Simulator,
@@ -28,8 +29,6 @@ pub mod settlement;
 pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
-
-use crate::infra::config::file::FeeHandler;
 
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
