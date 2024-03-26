@@ -45,6 +45,22 @@ impl From<U256> for Ether {
     }
 }
 
+/// Like [`Gas`] but can be negative to encode a gas discount.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct SignedGas {
+    is_positive: bool,
+    amount: U256,
+}
+
+impl SignedGas {
+    pub fn new(is_positive: bool, amount: U256) -> Self {
+        Self {
+            is_positive,
+            amount,
+        }
+    }
+}
+
 /// Gas amount.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
@@ -54,6 +70,18 @@ impl std::ops::Add for Gas {
 
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Add<SignedGas> for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: SignedGas) -> Self::Output {
+        if rhs.is_positive {
+            Self(self.0.saturating_add(rhs.amount))
+        } else {
+            Self(self.0.saturating_sub(rhs.amount))
+        }
     }
 }
 
