@@ -16,8 +16,8 @@ use {
         util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Ok, Result},
+    app_data::AppDataHash,
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,

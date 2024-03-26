@@ -1,22 +1,14 @@
 [package]
-name = "app-data"
+name = "bytes-hex"
 version = "0.1.0"
 authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [dependencies]
-app-data-hash = { path = "../app-data-hash" }
-bytes-hex = { path = "../bytes-hex" }
-anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-primitive-types = { workspace = true }
 hex = { workspace = true }
-
-[dev-dependencies]
-ethcontract = { workspace = true }
-
-[features]
-test_helpers = []

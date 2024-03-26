@@ -6,11 +6,11 @@ use {
         Contracts,
         TIMEOUT,
     },
+    app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
     ethcontract::{H256, U256},
     model::{
-        app_data::{AppDataDocument, AppDataHash},
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
         solver_competition::SolverCompetitionAPI,

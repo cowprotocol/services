@@ -10,6 +10,7 @@ use {
         Postgres,
     },
     anyhow::{anyhow, bail, Context, Result},
+    app_data::AppDataHash,
     chrono::{TimeZone, Utc},
     contracts::cowswap_onchain_orders::{
         event_data::{OrderInvalidation, OrderPlacement as ContractOrderPlacement},
@@ -30,7 +31,6 @@ use {
     futures::{stream, StreamExt},
     itertools::multiunzip,
     model::{
-        app_data::AppDataHash,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::SigningScheme,
         DomainSeparator,
@@ -723,7 +723,6 @@ mod test {
         ethcontract::{Bytes, EventMetadata, H160, U256},
         mockall::predicate::{always, eq},
         model::{
-            app_data::AppDataHash,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
             signature::SigningScheme,
             DomainSeparator,

@@ -1,7 +1,7 @@
 use {
     anyhow::{Context, Result},
+    app_data::AppDataHash,
     database::byte_array::ByteArray,
-    model::app_data::AppDataHash,
     std::string::FromUtf8Error,
 };
 

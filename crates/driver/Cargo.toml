@@ -15,6 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
+app-data = { path = "../app-data" }
 async-trait = "0.1"
 axum = "0.6"
 bigdecimal = "0.3"

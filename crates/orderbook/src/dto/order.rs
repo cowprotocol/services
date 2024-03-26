@@ -1,6 +1,6 @@
 use {
+    app_data::AppDataHash,
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderClass, OrderKind, OrderUid, SellTokenSource},
         signature::Signature,

@@ -12,6 +12,7 @@ doctest = false
 anyhow = { workspace = true }
 app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }
+bytes-hex = { path = "../bytes-hex" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
