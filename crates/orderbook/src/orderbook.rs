@@ -4,11 +4,10 @@ use {
         dto,
     },
     anyhow::{Context, Result},
-    app_data::Validator,
+    app_data::{AppDataHash, Validator},
     chrono::Utc,
     ethcontract::H256,
     model::{
-        app_data::AppDataHash,
         order::{
             Order,
             OrderCancellation,
@@ -332,7 +331,7 @@ impl Orderbook {
 
             if let Some(replaced_order) = validated_app_data.protocol.replaced_order {
                 return Ok(Some(
-                    self.find_order_for_cancellation(&replaced_order.uid)
+                    self.find_order_for_cancellation(&replaced_order.uid.into())
                         .await
                         .map_err(AddOrderError::OrderNotFound)?,
                 ));
