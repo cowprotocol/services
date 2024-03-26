@@ -4,7 +4,7 @@ use {
             competition,
             competition::{
                 order,
-                order::{fees, FeePolicy, Side},
+                order::{fees, Side},
             },
             eth,
             liquidity,
@@ -25,6 +25,7 @@ impl Auction {
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
+        manage_protocol_fees: bool,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -76,7 +77,7 @@ impl Auction {
                     // submit solutions with enough surplus to cover the fee.
                     //
                     // https://github.com/cowprotocol/services/issues/2440
-                    if let Some(FeePolicy::Volume { factor }) = order.protocol_fees.first() {
+                    if let Some(fees::FeePolicy::Volume { factor }) = order.protocol_fees.first() {
                         match order.side {
                             Side::Buy => {
                                 // reduce sell amount by factor
@@ -116,6 +117,7 @@ impl Auction {
                         fee_policy: order
                             .protocol_fees
                             .iter()
+                            .filter(|_| manage_protocol_fees)
                             .cloned()
                             .map(Into::into)
                             .collect(),

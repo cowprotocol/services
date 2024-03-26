@@ -104,6 +104,8 @@ pub struct Config {
     pub request_headers: HashMap<String, String>,
     /// Datetime when the CIP38 rank by surplus rules should be activated.
     pub rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether or not the solver manages the protocol fees
+    pub manage_protocol_fees: bool,
 }
 
 impl Solver {
@@ -167,7 +169,13 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(auction, liquidity, weth)).unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(
+            auction,
+            liquidity,
+            weth,
+            self.config.manage_protocol_fees,
+        ))
+        .unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
