@@ -101,10 +101,7 @@ impl Trade {
     /// fees have been applied and calculated over the price limits.
     ///
     /// Denominated in SURPLUS token
-    fn surplus_over_reference_price(
-        &self,
-        price_limits: PriceLimits,
-    ) -> Result<Option<eth::Asset>, Math> {
+    fn surplus_over_reference_price(&self, price_limits: PriceLimits) -> Result<eth::Asset, Error> {
         match self.side {
             Side::Buy => {
                 // scale limit sell to support partially fillable orders
@@ -122,9 +119,10 @@ impl Trade {
                     .ok_or(Math::Overflow)?
                     .checked_div(self.custom_price.sell)
                     .ok_or(Math::DivisionByZero)?;
-                // negative surplus is not error (e.g. price improvement fee with quote as price
-                // limit often leads to negative surplus over reference price)
-                Ok(limit_sell.checked_sub(sold))
+                limit_sell.checked_sub(sold).ok_or(Error::NegativeSurplus(
+                    self.executed,
+                    self.custom_price.clone(),
+                ))
             }
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
@@ -142,16 +140,15 @@ impl Trade {
                     .ok_or(Math::Overflow)?
                     .checked_div(self.custom_price.buy)
                     .ok_or(Math::DivisionByZero)?;
-                // negative surplus is not error (e.g. price improvement fee with quote as price
-                // limit often leads to negative surplus over reference price)
-                Ok(bought.checked_sub(limit_buy))
+                bought.checked_sub(limit_buy).ok_or(Error::NegativeSurplus(
+                    self.executed,
+                    self.custom_price.clone(),
+                ))
             }
         }
-        .map(|surplus| {
-            surplus.map(|surplus| eth::Asset {
-                token: self.surplus_token(),
-                amount: surplus.into(),
-            })
+        .map(|surplus| eth::Asset {
+            token: self.surplus_token(),
+            amount: surplus.into(),
         })
     }
 
@@ -224,17 +221,16 @@ impl Trade {
                 fee_amount: quote.fee.amount.0,
             },
         )?;
-        Ok(self
-            .surplus_over_reference_price(price_limits)
-            .map(|surplus| {
-                // negative surplus is not error (e.g. price improvement fee with quote as price
-                // limit often leads to negative surplus over reference price when solution is
-                // worse than quote)
-                surplus.unwrap_or(eth::Asset {
-                    token: self.surplus_token(),
-                    amount: 0.into(),
-                })
-            })?)
+        let surplus = self.surplus_over_reference_price(price_limits);
+        // negative surplus is not error in this case, as solutions often have no
+        // improvement over quote which results in negative surplus
+        if let Err(Error::NegativeSurplus(..)) = surplus {
+            return Ok(eth::Asset {
+                token: self.surplus_token(),
+                amount: 0.into(),
+            });
+        }
+        surplus
     }
 
     fn surplus_over_limit_price(&self) -> Result<eth::Asset, Error> {
@@ -242,11 +238,7 @@ impl Trade {
             sell: self.sell.amount,
             buy: self.buy.amount,
         };
-        self.surplus_over_reference_price(price_limits)?
-            .ok_or(Error::NegativeSurplus(
-                self.executed,
-                self.custom_price.clone(),
-            ))
+        self.surplus_over_reference_price(price_limits)
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
