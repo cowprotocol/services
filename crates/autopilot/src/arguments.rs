@@ -206,6 +206,11 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub fee_policies: Vec<FeePolicy>,
 
+    /// Maximum partner fee allow. If the partner fee specified is greater than
+    /// this maximum, the partner fee will be capped
+    #[clap(long, env, default_value = "0.01")]
+    pub fee_policy_max_partner_fee: FeeFactor,
+
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
     pub s3: infra::persistence::cli::S3,
@@ -253,6 +258,7 @@ impl std::fmt::Display for Arguments {
             shadow,
             solve_deadline,
             fee_policies,
+            fee_policy_max_partner_fee,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
@@ -314,6 +320,11 @@ impl std::fmt::Display for Arguments {
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
         writeln!(f, "fee_policies: {:?}", fee_policies)?;
+        writeln!(
+            f,
+            "fee_policy_max_partner_fee: {:?}",
+            fee_policy_max_partner_fee
+        )?;
         writeln!(
             f,
             "order_events_cleanup_interval: {:?}",
