@@ -104,7 +104,7 @@ impl Trade {
     /// fees have been applied and calculated over the price limits.
     ///
     /// Denominated in SURPLUS token
-    fn surplus_over_reference_price(&self, price_limits: PriceLimits) -> Result<eth::Asset, Error> {
+    fn surplus_over(&self, price_limits: PriceLimits) -> Result<eth::Asset, Error> {
         match self.side {
             Side::Buy => {
                 // scale limit sell to support partially fillable orders
@@ -194,9 +194,9 @@ impl Trade {
                 max_volume_factor,
                 quote,
             } => {
-                let surplus = self.surplus_over_quote(quote)?;
+                let price_improvement = self.price_improvement(quote)?;
                 let fee = std::cmp::min(
-                    self.surplus_fee(surplus, *factor)?.amount,
+                    self.surplus_fee(price_improvement, *factor)?.amount,
                     self.volume_fee(*max_volume_factor)?.amount,
                 );
                 Ok(fee)
@@ -211,8 +211,8 @@ impl Trade {
         })
     }
 
-    fn surplus_over_quote(&self, quote: &Quote) -> Result<eth::Asset, Error> {
-        let price_limits = adjust_quote_to_order_limits(
+    fn price_improvement(&self, quote: &Quote) -> Result<eth::Asset, Error> {
+        let quote = adjust_quote_to_order_limits(
             fee::Order {
                 sell_amount: self.sell.amount.0,
                 buy_amount: self.buy.amount.0,
@@ -224,7 +224,7 @@ impl Trade {
                 fee_amount: quote.fee.amount.0,
             },
         )?;
-        let surplus = self.surplus_over_reference_price(price_limits);
+        let surplus = self.surplus_over(quote);
         // negative surplus is not error in this case, as solutions often have no
         // improvement over quote which results in negative surplus
         if let Err(Error::NegativeSurplus(..)) = surplus {
@@ -237,11 +237,11 @@ impl Trade {
     }
 
     fn surplus_over_limit_price(&self) -> Result<eth::Asset, Error> {
-        let price_limits = PriceLimits {
+        let limit_price = PriceLimits {
             sell: self.sell.amount,
             buy: self.buy.amount,
         };
-        self.surplus_over_reference_price(price_limits)
+        self.surplus_over(limit_price)
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
