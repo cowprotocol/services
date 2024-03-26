@@ -52,11 +52,11 @@ pub struct SignedGas {
     amount: U256,
 }
 
-impl SignedGas {
-    pub fn new(is_positive: bool, amount: U256) -> Self {
+impl From<i64> for SignedGas {
+    fn from(value: i64) -> Self {
         Self {
-            is_positive,
-            amount,
+            is_positive: value.is_positive(),
+            amount: value.abs().into(),
         }
     }
 }

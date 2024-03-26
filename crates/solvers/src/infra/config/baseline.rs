@@ -45,7 +45,8 @@ struct Config {
     /// Offset applied to the gas estimate for a solution to hackily address
     /// systematic over- or under-estimation of the execution cost of orders.
     /// To be configured in units of gas.
-    solution_gas_offset: Option<i64>,
+    #[serde(default)]
+    solution_gas_offset: i64,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -71,9 +72,6 @@ pub async fn load(path: &Path) -> baseline::Config {
         ),
     };
 
-    let gas_offset = config.solution_gas_offset.unwrap_or_default();
-    let gas_offset = eth::SignedGas::new(gas_offset.is_positive(), gas_offset.abs().into());
-
     baseline::Config {
         weth,
         base_tokens: config
@@ -89,6 +87,6 @@ pub async fn load(path: &Path) -> baseline::Config {
             nmb_orders_factor: config.risk_parameters.2,
             intercept: config.risk_parameters.3,
         },
-        solution_gas_offset: gas_offset,
+        solution_gas_offset: config.solution_gas_offset.into(),
     }
 }
