@@ -78,6 +78,7 @@ name = "{name}"
 endpoint = "{endpoint}"
 relative-slippage = "0.1"
 account = "{account}"
+rank-by-surplus-date = "2021-01-01T00:00:00Z"
 
 "#
                 )

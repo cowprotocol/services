@@ -23,6 +23,7 @@ mod protocol_fee;
 mod quoting;
 mod refunder;
 mod replace_order;
+mod scoring;
 mod smart_contract_orders;
 mod solver_competition;
 mod submission;
