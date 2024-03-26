@@ -168,7 +168,7 @@ pub struct InteractionData {
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "bytes_hex")]
     pub call_data: Vec<u8>,
     /// The input amounts into the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the settlement contract into the AMM
@@ -539,7 +539,7 @@ pub struct SimulatedTransaction {
     pub to: H160,
     /// Transaction input data
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "bytes_hex")]
     pub data: Vec<u8>,
     /// Gas price can influence the success of simulation if sender balance
     /// is not enough for paying the costs of executing the transaction onchain
@@ -564,12 +564,10 @@ mod tests {
     use {
         super::*,
         crate::sources::uniswap_v3::graph_api::Token,
+        app_data::AppDataHash,
         ethcontract::H256,
         maplit::btreemap,
-        model::{
-            app_data::AppDataHash,
-            order::{OrderKind, SellTokenSource},
-        },
+        model::order::{OrderKind, SellTokenSource},
         serde_json::json,
         std::str::FromStr,
         web3::types::AccessListItem,
