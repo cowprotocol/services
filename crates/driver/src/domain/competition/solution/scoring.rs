@@ -243,7 +243,10 @@ impl Trade {
             buy: self.buy.amount,
         };
         self.surplus_over_reference_price(price_limits)?
-            .ok_or(Error::Surplus(self.executed, self.custom_price.clone()))
+            .ok_or(Error::NegativeSurplus(
+                self.executed,
+                self.custom_price.clone(),
+            ))
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
@@ -377,7 +380,7 @@ pub enum Error {
     #[error("fee policy not implemented yet")]
     UnimplementedFeePolicy,
     #[error("failed to calculate surplus for trade executed {0:?}, custom price {1:?}")]
-    Surplus(order::TargetAmount, CustomClearingPrices),
+    NegativeSurplus(order::TargetAmount, CustomClearingPrices),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
