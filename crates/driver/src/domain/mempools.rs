@@ -104,47 +104,62 @@ impl Mempools {
         block_stream.next().await;
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
-        loop {
-            // Wait for the next block to be mined or we time out.
-            if tokio::time::timeout_at(deadline, block_stream.next())
-                .await
-                .is_err()
-            {
-                tracing::info!(?hash, "tx not confirmed in time, cancelling");
-                self.cancel(mempool, settlement.gas.price, solver).await?;
-                return Err(Error::Expired);
-            }
-            tracing::debug!(?hash, "checking if tx is confirmed");
 
-            let receipt = self
-                .ethereum
-                .transaction_status(&hash)
-                .await
-                .unwrap_or_else(|err| {
-                    tracing::warn!(?hash, ?err, "failed to get transaction status",);
-                    TxStatus::Pending
-                });
-            match receipt {
-                TxStatus::Executed => return Ok(hash),
-                TxStatus::Reverted => return Err(Error::Revert(hash)),
-                TxStatus::Pending => {
-                    // Check if transaction still simulates
-                    if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
-                        if err.is_revert() {
-                            tracing::info!(
-                                ?hash,
-                                ?err,
-                                "tx started failing in mempool, cancelling"
-                            );
-                            self.cancel(mempool, settlement.gas.price, solver).await?;
-                            return Err(Error::SimulationRevert);
-                        } else {
-                            tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+        // Wait for the transaction to be mined, expired or failing.
+        let result = async {
+            loop {
+                // Wait for the next block to be mined or we time out.
+                if tokio::time::timeout_at(deadline, block_stream.next())
+                    .await
+                    .is_err()
+                {
+                    tracing::info!(?hash, "tx not confirmed in time, cancelling");
+                    self.cancel(mempool, settlement.gas.price, solver).await?;
+                    return Err(Error::Expired);
+                }
+                tracing::debug!(?hash, "checking if tx is confirmed");
+
+                let receipt = self
+                    .ethereum
+                    .transaction_status(&hash)
+                    .await
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(?hash, ?err, "failed to get transaction status",);
+                        TxStatus::Pending
+                    });
+                match receipt {
+                    TxStatus::Executed => return Ok(hash.clone()),
+                    TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
+                    TxStatus::Pending => {
+                        // Check if transaction still simulates
+                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
+                            if err.is_revert() {
+                                tracing::info!(
+                                    ?hash,
+                                    ?err,
+                                    "tx started failing in mempool, cancelling"
+                                );
+                                self.cancel(mempool, settlement.gas.price, solver).await?;
+                                return Err(Error::SimulationRevert);
+                            } else {
+                                tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+                            }
                         }
                     }
                 }
             }
         }
+        .await;
+
+        if result.is_err() {
+            // Do one last attempt to see if the transaction was confirmed (in case of race
+            // conditions or misclassified errors like `OrderFilled` simulation failures).
+            if let Ok(TxStatus::Executed) = self.ethereum.transaction_status(&hash).await {
+                tracing::info!(?hash, "Found confirmed transaction, ignoring error");
+                return Ok(hash);
+            }
+        }
+        result
     }
 
     /// Cancel a pending settlement by sending a transaction to self with a
