@@ -72,6 +72,12 @@ impl num::Zero for Ether {
     }
 }
 
+impl std::iter::Sum for Ether {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(num::Zero::zero(), std::ops::Add::add)
+    }
+}
+
 /// Domain separator used for signing.
 ///
 /// https://eips.ethereum.org/EIPS/eip-712#definition-of-domainseparator

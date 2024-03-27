@@ -50,12 +50,7 @@ impl Scoring {
     ///
     /// Denominated in NATIVE token
     pub fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        self.trades
-            .iter()
-            .map(|trade| trade.score(prices))
-            .try_fold(eth::Ether(0.into()), |acc, score| {
-                score.map(|score| acc + score)
-            })
+        self.trades.iter().map(|trade| trade.score(prices)).sum()
     }
 }
 
