@@ -195,6 +195,7 @@ pub enum Error {
     Encoding(auction::Id, EncodingError),
 }
 
+#[cfg(test)]
 mod tests {
     use {
         crate::domain::{auction, eth},
