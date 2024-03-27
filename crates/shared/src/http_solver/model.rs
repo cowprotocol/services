@@ -255,6 +255,7 @@ impl Score {
                 gas_amount: gas_left
                     .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
             }),
+            (Score::Surplus, Score::Surplus) => Some(Score::Surplus),
             _ => None,
         }
     }
