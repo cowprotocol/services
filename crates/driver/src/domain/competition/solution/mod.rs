@@ -394,6 +394,8 @@ pub mod error {
         Overflow,
         #[error("division by zero")]
         DivisionByZero,
+        #[error("negative")]
+        Negative,
     }
 
     #[derive(Debug, thiserror::Error)]
