@@ -119,13 +119,14 @@ impl Auction {
                             competition::order::Kind::Limit { .. } => Class::Limit,
                             competition::order::Kind::Liquidity => Class::Liquidity,
                         },
-                        fee_policies: order
-                            .protocol_fees
-                            .iter()
-                            .filter(|_| fee_handler == FeeHandler::Solver)
-                            .cloned()
-                            .map(Into::into)
-                            .collect(),
+                        fee_policies: (fee_handler == FeeHandler::Solver).then_some(
+                            order
+                                .protocol_fees
+                                .iter()
+                                .cloned()
+                                .map(Into::into)
+                                .collect(),
+                        ),
                     }
                 })
                 .collect(),
@@ -288,7 +289,8 @@ struct Order {
     kind: Kind,
     partially_fillable: bool,
     class: Class,
-    fee_policies: Vec<FeePolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee_policies: Option<Vec<FeePolicy>>,
 }
 
 #[derive(Debug, Serialize)]

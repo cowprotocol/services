@@ -288,7 +288,6 @@ components:
         - kind
         - partiallyFillable
         - class
-        - feePolicies
       properties:
         uid:
           $ref: "#/components/schemas/OrderUid"

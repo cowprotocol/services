@@ -242,13 +242,6 @@ impl Settlement {
         Ok(eth::U256::from_big_rational(&quality)?.into())
     }
 
-    pub fn merge(self, other: Self) -> Result<Self> {
-        self.inner.merge(other.inner).map(|inner| Self {
-            inner,
-            solver: self.solver,
-        })
-    }
-
     pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.inner
             .clearing_prices()
