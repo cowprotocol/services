@@ -1181,7 +1181,6 @@ components:
               InsufficientBalance,
               InsufficientAllowance,
               InvalidSignature,
-              InsufficientFee,
               SellAmountOverflow,
               TransferSimulationFailed,
               ZeroAmount,

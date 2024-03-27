@@ -44,7 +44,6 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
             app_data,
             sell_token: token_a.address(),
             sell_amount: to_wei(2),
-            fee_amount: to_wei(1),
             buy_token: token_b.address(),
             buy_amount: to_wei(1),
             valid_to,

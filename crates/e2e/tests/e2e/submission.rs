@@ -57,7 +57,6 @@ async fn test_cancel_on_expiry(web3: Web3) {
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
         sell_amount: to_wei(2),
-        fee_amount: to_wei(1),
         buy_token: token.address(),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,

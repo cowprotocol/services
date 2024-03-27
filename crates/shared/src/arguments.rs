@@ -299,11 +299,6 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
-
-    /// Deprecate market orders (orders with positive signed fee) starting from
-    /// date
-    #[clap(long, env)]
-    pub market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// The kind of EVM code simulator to use.
@@ -431,7 +426,6 @@ impl Display for Arguments {
             paraswap_api_url,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
-            market_orders_deprecation_date,
         } = self;
 
         write!(f, "{}", ethrpc)?;
@@ -517,11 +511,6 @@ impl Display for Arguments {
             f,
             "max_pools_to_initialize_cache: {}",
             max_pools_to_initialize_cache
-        )?;
-        display_option(
-            f,
-            "market_orders_deprecation_date",
-            market_orders_deprecation_date,
         )?;
 
         Ok(())
