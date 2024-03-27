@@ -39,7 +39,7 @@ pub struct Order {
     pub kind: Kind,
     pub partially_fillable: bool,
     pub class: Class,
-    pub fee_policies: Vec<FeePolicy>,
+    pub fee_policies: Option<Vec<FeePolicy>>,
 }
 
 #[derive(Debug, Deserialize)]
