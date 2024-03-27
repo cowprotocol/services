@@ -58,6 +58,7 @@ async fn weighted() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -176,6 +177,7 @@ async fn weighted_v3plus() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -301,6 +303,7 @@ async fn stable() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 },
                 {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
@@ -314,6 +317,7 @@ async fn stable() {
                     "kind": "buy",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [
@@ -482,6 +486,7 @@ async fn composable_stable_v4() {
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
+                    "feePolicies": [],
                 },
             ],
             "liquidity": [

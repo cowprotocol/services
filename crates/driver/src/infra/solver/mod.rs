@@ -10,7 +10,7 @@ use {
             liquidity,
             time::Remaining,
         },
-        infra::blockchain::Ethereum,
+        infra::{blockchain::Ethereum, config::file::FeeHandler},
         util,
     },
     anyhow::Result,
@@ -104,6 +104,8 @@ pub struct Config {
     pub request_headers: HashMap<String, String>,
     /// Datetime when the CIP38 rank by surplus rules should be activated.
     pub rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Determines whether the `solver` or the `driver` handles the fees
+    pub fee_handler: FeeHandler,
 }
 
 impl Solver {
@@ -167,7 +169,13 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(auction, liquidity, weth)).unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(
+            auction,
+            liquidity,
+            weth,
+            self.config.fee_handler,
+        ))
+        .unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
@@ -183,13 +191,7 @@ impl Solver {
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-        let solutions = res.into_domain(
-            auction,
-            liquidity,
-            weth,
-            self.clone(),
-            self.config.rank_by_surplus_date,
-        )?;
+        let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
 
         super::observe::solutions(&solutions);
         Ok(solutions)
