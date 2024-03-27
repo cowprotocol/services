@@ -4,6 +4,5 @@
 pub mod baseline;
 pub mod legacy;
 pub mod liquidity;
-pub mod naive;
 
 pub type Result<T> = anyhow::Result<T>;

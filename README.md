@@ -27,17 +27,6 @@ Concretely, it is responsible for "cutting" new auctions (i.e. determining aucti
 
 The `autopilot` connects to the same PostgreSQL database as the `orderbook` and uses it to query orders as well as storing the most recent auction and settlement competition.
 
-## Solver
-
-The `solver` crate is responsible for submitting on-chain settlements based on the orders it gets from the order book and other liquidity sources like Balancer or Uniswap pools.
-
-It implements a few settlement strategies directly in Rust:
-
-- Naive Solver: Can match to overlapping opposing orders (e.g. DAI for WETH & WETH for DAI) with one another settling the excess with Uniswap
-- Uniswap Baseline: Same path finding as used by the Uniswap frontend (settling orders individually instead of batching them together)
-
-It can also interact with a more advanced, Gnosis internal, closed source solver which tries to settle all orders using the combinatorial optimization formulations described in [Multi-Token Batch Auctions with Uniform Clearing Price](https://github.com/gnosis/dex-research/blob/master/BatchAuctionOptimization/batchauctions.pdf)
-
 ## Other Crates
 
 There are additional crates that live in the cargo workspace.
