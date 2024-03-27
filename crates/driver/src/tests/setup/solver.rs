@@ -1,5 +1,9 @@
 use {
-    super::{blockchain, blockchain::Blockchain, Partial},
+    super::{
+        blockchain::{self, Blockchain},
+        fee,
+        Partial,
+    },
     crate::{
         domain::{
             competition::order,
@@ -53,18 +57,45 @@ impl Solver {
             } else {
                 quote.order.buy_token
             };
+            let sell_amount = match quote.order.side {
+                order::Side::Buy if config.quote => {
+                    "22300745198530623141535718272648361505980416".to_owned()
+                }
+                order::Side::Buy => match quote.order.fee_policy {
+                    // For volume based fee, we artifially reduce the limit sell amount for buy
+                    // orders before sending to solvers. This allows driver to withhold volume based
+                    // fee and not violate original limit prices.
+                    fee::Policy::Volume { factor } => eth::TokenAmount(quote.sell_amount())
+                        .apply_factor(1.0 / (1.0 + factor))
+                        .unwrap()
+                        .0
+                        .to_string(),
+                    _ => quote.sell_amount().to_string(),
+                },
+                _ => quote.sell_amount().to_string(),
+            };
+            let buy_amount = match quote.order.side {
+                order::Side::Sell if config.quote => "1".to_owned(),
+                order::Side::Sell => match quote.order.fee_policy {
+                    // For volume based fee, we artifially increase the limit buy amount for sell
+                    // orders before sending to solvers. This allows driver to withhold volume based
+                    // fee and not violate original limit prices.
+                    fee::Policy::Volume { factor } => eth::TokenAmount(quote.buy_amount())
+                        .apply_factor(1.0 / (1.0 - factor))
+                        .unwrap()
+                        .0
+                        .to_string(),
+                    _ => quote.buy_amount().to_string(),
+                },
+                _ => quote.buy_amount().to_string(),
+            };
+
             orders_json.push(json!({
                 "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
-                "sellAmount": match quote.order.side {
-                    order::Side::Buy if config.quote => "22300745198530623141535718272648361505980416".to_owned(),
-                    _ => quote.sell_amount().to_string(),
-                },
-                "buyAmount": match quote.order.side {
-                    order::Side::Sell if config.quote => "1".to_owned(),
-                    _ => quote.buy_amount().to_string(),
-                },
+                "sellAmount": sell_amount,
+                "buyAmount": buy_amount,
                 "feeAmount": quote.order.user_fee.to_string(),
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",
@@ -110,13 +141,13 @@ impl Solver {
                     config
                         .blockchain
                         .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
-                    fulfillment.quoted_order.buy.to_string(),
+                    fulfillment.execution.buy.to_string(),
                 );
                 prices_json.insert(
                     config
                         .blockchain
                         .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
-                    (fulfillment.quoted_order.sell - fulfillment.quoted_order.order.surplus_fee())
+                    (fulfillment.execution.sell - fulfillment.quoted_order.order.surplus_fee())
                         .to_string(),
                 );
                 {
@@ -129,10 +160,10 @@ impl Solver {
                     let executed_amount = match fulfillment.quoted_order.order.executed {
                         Some(executed) => executed.to_string(),
                         None => match fulfillment.quoted_order.order.side {
-                            order::Side::Sell => (fulfillment.quoted_order.sell_amount()
+                            order::Side::Sell => (fulfillment.execution.sell
                                 - fulfillment.quoted_order.order.surplus_fee())
                             .to_string(),
-                            order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
+                            order::Side::Buy => fulfillment.execution.buy.to_string(),
                         },
                     };
                     let fee = fulfillment
@@ -169,7 +200,7 @@ impl Solver {
             .iter()
             .flat_map(|s| s.fulfillments.iter())
             .flat_map(|f| {
-                let quote = &f.quoted_order;
+                let quote = &f;
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
                     let contract = contracts::ERC20::at(&config.blockchain.web3, token);
@@ -188,8 +219,8 @@ impl Solver {
                     )
                 };
                 [
-                    build_token(quote.order.sell_token.to_string()),
-                    build_token(quote.order.buy_token.to_string()),
+                    build_token(quote.quoted_order.order.sell_token.to_string()),
+                    build_token(quote.quoted_order.order.buy_token.to_string()),
                 ]
             });
         let tokens_json = futures::future::join_all(build_tokens)
@@ -209,7 +240,6 @@ impl Solver {
                     max_confirm_time: Default::default(),
                     retry_interval: Default::default(),
                     kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
-                    submission: infra::mempool::SubmissionLogic::Native,
                 }],
             )
             .await

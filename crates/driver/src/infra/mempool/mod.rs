@@ -7,47 +7,69 @@ use {
     ethcontract::dyns::DynWeb3,
 };
 
-pub use crate::boundary::mempool::{Config, GlobalTxPool, Kind, RevertProtection, SubmissionLogic};
-
 #[derive(Debug, Clone)]
-pub enum Mempool {
-    /// Legacy implementation of the mempool, using the shared and solvers crate
-    Boundary(crate::boundary::mempool::Mempool),
-    /// Driver native mempool implementation
-    Native(Box<Inner>),
+pub struct Config {
+    pub min_priority_fee: eth::U256,
+    pub gas_price_cap: eth::U256,
+    pub target_confirm_time: std::time::Duration,
+    pub max_confirm_time: std::time::Duration,
+    pub retry_interval: std::time::Duration,
+    pub kind: Kind,
 }
 
-impl std::fmt::Display for Mempool {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Boundary(mempool) => write!(f, "Boundary({mempool})"),
-            Self::Native(mempool) => write!(f, "Native({mempool})"),
-        }
-    }
-}
-
-impl Mempool {
-    pub fn config(&self) -> &Config {
-        match self {
-            Self::Boundary(mempool) => mempool.config(),
-            Self::Native(mempool) => &mempool.config,
-        }
+impl Config {
+    pub fn deadline(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now() + self.max_confirm_time
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Inner {
+pub enum Kind {
+    /// The public mempool of the [`Ethereum`] node.
+    Public(RevertProtection),
+    /// The MEVBlocker private mempool.
+    MEVBlocker {
+        url: reqwest::Url,
+        max_additional_tip: eth::U256,
+        additional_tip_percentage: f64,
+        use_soft_cancellations: bool,
+    },
+}
+
+impl Kind {
+    /// for instrumentization purposes
+    pub fn format_variant(&self) -> &'static str {
+        match self {
+            Kind::Public(_) => "PublicMempool",
+            Kind::MEVBlocker { .. } => "MEVBlocker",
+        }
+    }
+}
+
+/// Don't submit transactions with high revert risk (i.e. transactions
+/// that interact with on-chain AMMs) to the public mempool.
+/// This can be enabled to avoid MEV when private transaction
+/// submission strategies are available. If private submission strategies
+/// are not available, revert protection is always disabled.
+#[derive(Debug, Clone, Copy)]
+pub enum RevertProtection {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Debug, Clone)]
+pub struct Mempool {
     transport: DynWeb3,
     config: Config,
 }
 
-impl std::fmt::Display for Inner {
+impl std::fmt::Display for Mempool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Mempool({})", self.config.kind.format_variant())
     }
 }
 
-impl Inner {
+impl Mempool {
     pub fn new(config: Config, transport: DynWeb3) -> Self {
         let transport = match &config.kind {
             Kind::Public(_) => transport,

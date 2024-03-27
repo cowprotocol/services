@@ -78,10 +78,10 @@ mod tests {
     use {
         super::*,
         anyhow::anyhow,
+        app_data::AppDataHash,
         chrono::{TimeZone, Utc},
         ethcontract::H160,
         model::{
-            app_data::AppDataHash,
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
                 OrderQuote,

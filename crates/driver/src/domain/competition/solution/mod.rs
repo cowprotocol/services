@@ -13,6 +13,7 @@ use {
             solver::Solver,
             Simulator,
         },
+        util::conv::u256::U256Ext,
     },
     futures::future::try_join_all,
     itertools::Itertools,
@@ -42,9 +43,11 @@ pub struct Solution {
     solver: Solver,
     score: SolverScore,
     weth: eth::WethAddress,
+    gas: Option<eth::Gas>,
 }
 
 impl Solution {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
         trades: Vec<Trade>,
@@ -53,6 +56,7 @@ impl Solution {
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
+        gas: Option<eth::Gas>,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -62,6 +66,7 @@ impl Solution {
             solver,
             score,
             weth,
+            gas,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -121,6 +126,10 @@ impl Solution {
         &self.score
     }
 
+    pub fn gas(&self) -> Option<eth::Gas> {
+        self.gas
+    }
+
     /// JIT score calculation as per CIP38
     pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
@@ -148,7 +157,7 @@ impl Solution {
                         .0
                         .checked_mul(uniform_prices.sell)
                         .ok_or(error::Math::Overflow)?
-                        .checked_div(uniform_prices.buy)
+                        .checked_ceil_div(&uniform_prices.buy)
                         .ok_or(error::Math::DivisionByZero)?,
                     order::Side::Buy => trade.executed().0,
                 },
@@ -385,6 +394,8 @@ pub mod error {
         Overflow,
         #[error("division by zero")]
         DivisionByZero,
+        #[error("negative")]
+        Negative,
     }
 
     #[derive(Debug, thiserror::Error)]

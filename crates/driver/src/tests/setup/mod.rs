@@ -31,7 +31,6 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
-    serde_json::json,
     serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
@@ -43,6 +42,7 @@ use {
 
 mod blockchain;
 mod driver;
+pub mod fee;
 mod solver;
 
 #[derive(Debug, Clone, Copy)]
@@ -71,37 +71,6 @@ pub enum Score {
     },
     #[serde(rename_all = "camelCase")]
     RiskAdjusted { success_probability: f64 },
-}
-
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum FeePolicy {
-    #[serde(rename_all = "camelCase")]
-    Surplus { factor: f64, max_volume_factor: f64 },
-    #[serde(rename_all = "camelCase")]
-    Volume { factor: f64 },
-}
-
-impl FeePolicy {
-    pub fn to_json_value(&self) -> serde_json::Value {
-        match self {
-            FeePolicy::Surplus {
-                factor,
-                max_volume_factor,
-            } => json!({
-                "surplus": {
-                    "factor": factor,
-                    "maxVolumeFactor": max_volume_factor
-                }
-            }),
-            FeePolicy::Volume { factor } => json!({
-                "volume": {
-                    "factor": factor
-                }
-            }),
-        }
-    }
 }
 
 impl Default for Score {
@@ -138,6 +107,9 @@ pub struct Order {
     pub name: &'static str,
 
     pub sell_amount: eth::U256,
+    /// The explicit limit buy amount for the order. If None, it will be derived
+    /// from the order's quote.
+    pub buy_amount: Option<eth::U256>,
     pub sell_token: &'static str,
     pub buy_token: &'static str,
 
@@ -156,8 +128,9 @@ pub struct Order {
     /// buy amount is divided depends on the order side. This is necessary to
     /// keep the solution scores positive.
     pub surplus_factor: eth::U256,
-    /// Override the executed amount of the order. Useful for testing liquidity
-    /// orders. Otherwise [`execution_diff`] is probably more suitable.
+    /// Override the executed target amount of the order. Useful for testing
+    /// liquidity orders. Otherwise [`execution_diff`] is probably more
+    /// suitable.
     pub executed: Option<eth::U256>,
     /// Provides explicit expected order executed amounts.
     pub expected_amounts: Option<ExpectedOrderAmounts>,
@@ -166,7 +139,7 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
-    pub fee_policy: FeePolicy,
+    pub fee_policy: fee::Policy,
 }
 
 impl Order {
@@ -256,15 +229,8 @@ impl Order {
         }
     }
 
-    pub fn fee_policy(self, fee_policy: FeePolicy) -> Self {
+    pub fn fee_policy(self, fee_policy: fee::Policy) -> Self {
         Self { fee_policy, ..self }
-    }
-
-    pub fn executed(self, executed_price: eth::U256) -> Self {
-        Self {
-            executed: Some(executed_price),
-            ..self
-        }
     }
 
     pub fn expected_amounts(self, expected_amounts: ExpectedOrderAmounts) -> Self {
@@ -281,6 +247,26 @@ impl Order {
         }
     }
 
+    pub fn buy_amount(self, buy_amount: eth::U256) -> Self {
+        Self {
+            buy_amount: Some(buy_amount),
+            ..self
+        }
+    }
+
+    pub fn partial(self, already_executed: eth::U256) -> Self {
+        Self {
+            partial: Partial::Yes {
+                executed: already_executed,
+            },
+            ..self
+        }
+    }
+
+    pub fn executed(self, executed: Option<eth::U256>) -> Self {
+        Self { executed, ..self }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -293,6 +279,7 @@ impl Default for Order {
     fn default() -> Self {
         Self {
             sell_amount: Default::default(),
+            buy_amount: None,
             sell_token: Default::default(),
             buy_token: Default::default(),
             internalize: Default::default(),
@@ -308,7 +295,7 @@ impl Default for Order {
             expected_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
-            fee_policy: FeePolicy::Surplus {
+            fee_policy: fee::Policy::Surplus {
                 factor: 0.0,
                 max_volume_factor: 0.06,
             },
@@ -328,6 +315,8 @@ pub struct Solver {
     slippage: infra::solver::Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub fn test_solver() -> Solver {
@@ -347,6 +336,7 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
+        rank_by_surplus_date: None,
     }
 }
 
@@ -374,6 +364,13 @@ impl Solver {
 
     pub fn balance(self, balance: eth::U256) -> Self {
         Self { balance, ..self }
+    }
+
+    pub fn rank_by_surplus_date(self, rank_by_surplus_date: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            rank_by_surplus_date: Some(rank_by_surplus_date),
+            ..self
+        }
     }
 }
 
@@ -535,6 +532,7 @@ impl Solution {
     }
 
     /// Increase the solution gas consumption by at least `units`.
+    #[allow(dead_code)]
     pub fn increase_gas(self, units: usize) -> Self {
         // non-zero bytes costs 16 gas
         let additional_bytes = (units / 16) + 1;
@@ -801,7 +799,7 @@ impl Setup {
         }
         let mut quotes = Vec::new();
         for order in orders {
-            let quote = blockchain.quote(&order).await;
+            let quote = blockchain.quote(&order);
             quotes.push(quote);
         }
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
@@ -1007,6 +1005,7 @@ impl Test {
         balances
     }
 
+    #[allow(dead_code)]
     pub fn web3(&self) -> &web3::Web3<DynTransport> {
         &self.blockchain.web3
     }
@@ -1059,7 +1058,8 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 5);
+        // response contains 1 optional field
+        assert!((5..=6).contains(&solution.as_object().unwrap().len()));
         solution
     }
 

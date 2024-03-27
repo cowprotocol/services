@@ -1,10 +1,10 @@
 use {
     crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
+    app_data::Hook,
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, U256},
     hex_literal::hex,
     model::{
-        order::Hook,
         signature::{EcdsaSignature, EcdsaSigningScheme},
         DomainSeparator,
         TokenPair,

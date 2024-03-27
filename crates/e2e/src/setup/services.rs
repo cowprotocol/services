@@ -6,11 +6,11 @@ use {
         Contracts,
         TIMEOUT,
     },
+    app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
     ethcontract::{H256, U256},
     model::{
-        app_data::{AppDataDocument, AppDataHash},
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
         solver_competition::SolverCompetitionAPI,
@@ -62,6 +62,12 @@ impl ServicesBuilder {
     }
 }
 
+#[derive(Default)]
+pub struct ExtraServiceArgs {
+    pub api: Vec<String>,
+    pub autopilot: Vec<String>,
+}
+
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
 pub struct Services<'a> {
@@ -103,11 +109,6 @@ impl<'a> Services<'a> {
             "--baseline-sources=None".to_string(),
             "--network-block-interval=1s".to_string(),
             "--solver-competition-auth=super_secret_key".to_string(),
-            format!(
-                "--custom-univ2-baseline-sources={:?}|{:?}",
-                self.contracts.uniswap_v2_router.address(),
-                self.contracts.default_pool_code(),
-            ),
             format!(
                 "--settlement-contract-address={:?}",
                 self.contracts.gp_settlement.address()
@@ -168,6 +169,11 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
+        self.start_protocol_with_args(Default::default(), solver)
+            .await;
+    }
+
+    pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
         let solver_endpoint =
             colocation::start_baseline_solver(self.contracts.weth.address()).await;
         colocation::start_driver(
@@ -180,15 +186,26 @@ impl<'a> Services<'a> {
         );
         self.start_autopilot(
             None,
-            vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
+            [
+                vec![
+                    "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                        .to_string(),
+                ],
+                args.autopilot,
+            ]
+            .concat(),
         );
-        self.start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        self.start_api(
+            [
+                vec![
+                    "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                        .to_string(),
+                ],
+                args.api,
+            ]
+            .concat(),
+        )
         .await;
     }
 

@@ -1,7 +1,6 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::ValidatedAppData,
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -17,19 +16,17 @@ use {
         trade_finding,
     },
     anyhow::{anyhow, Result},
+    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     chrono::Utc,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             AppdataFromMismatch,
             BuyTokenDestination,
-            Hook,
-            Hooks,
             Interactions,
             Order,
             OrderClass,
@@ -164,6 +161,7 @@ pub enum ValidationError {
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
+    TooMuchGas,
     Other(anyhow::Error),
 }
 
@@ -179,6 +177,7 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
         ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,
+        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
     }
 }
@@ -252,9 +251,10 @@ pub struct OrderValidator {
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
-    app_data_validator: crate::app_data::Validator,
+    app_data_validator: Validator,
     request_verified_quotes: bool,
     market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
+    max_gas_per_order: u64,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -324,8 +324,9 @@ impl OrderValidator {
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
-        app_data_validator: crate::app_data::Validator,
+        app_data_validator: Validator,
         market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
+        max_gas_per_order: u64,
     ) -> Self {
         Self {
             native_token,
@@ -343,6 +344,7 @@ impl OrderValidator {
             app_data_validator,
             request_verified_quotes: false,
             market_orders_deprecation_date,
+            max_gas_per_order,
         }
     }
 
@@ -588,8 +590,6 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
-
         // Fast path to check if transfer is possible with a single node query.
         // If not, run extra queries for additional information.
         match self
@@ -601,7 +601,7 @@ impl OrderValidating for OrderValidator {
                     source: data.sell_token_balance,
                     interactions: app_data.interactions.pre.clone(),
                 },
-                min_balance,
+                MINIMUM_BALANCE,
             )
             .await
         {
@@ -728,6 +728,14 @@ impl OrderValidating for OrderValidator {
             }
         };
 
+        if quote.as_ref().is_some_and(|quote| {
+            // Quoted gas does not include additional gas for hooks nor ERC1271 signatures
+            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
+                > self.max_gas_per_order
+        }) {
+            return Err(ValidationError::TooMuchGas);
+        }
+
         let order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -815,17 +823,11 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
 }
 
 /// Min balance user must have in sell token for order to be accepted.
-///
-/// None when addition overflows.
-fn minimum_balance(order: &OrderData) -> Option<U256> {
-    // TODO: We might even want to allow 0 balance for partially fillable but we
-    // require balance for fok limit orders too so this make some sense and protects
-    // against accidentally creating order for token without balance.
-    if order.partially_fillable {
-        return Some(1.into());
-    }
-    order.sell_amount.checked_add(order.fee_amount)
-}
+// All orders can be placed without having the full sell balance.
+// A minimum, of 1 atom is still required as a spam protection measure.
+// TODO: ideally, we should keep the full balance enforcement for SWAPs,
+// but given all orders are LIMIT now, this is harder to do.
+const MINIMUM_BALANCE: U256 = U256::one(); // 1 atom of a token
 
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
@@ -978,22 +980,6 @@ mod tests {
     };
 
     #[test]
-    fn minimum_balance_() {
-        let order = OrderData {
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
-            ..Default::default()
-        };
-        assert_eq!(minimum_balance(&order), None);
-        let order = OrderData {
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            ..Default::default()
-        };
-        assert_eq!(minimum_balance(&order), Some(U256::from(2)));
-    }
-
-    #[test]
     fn detects_orders_with_same_buy_and_sell_token() {
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
         assert!(has_same_buy_and_sell_token(
@@ -1061,6 +1047,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1208,6 +1195,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1296,6 +1284,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1500,6 +1489,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1571,6 +1561,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -1627,6 +1618,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1685,6 +1677,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1742,6 +1735,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1794,6 +1788,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1848,6 +1843,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1872,59 +1868,6 @@ mod tests {
                 PartialValidationError::UnsupportedToken { .. }
             ))
         ));
-    }
-
-    #[tokio::test]
-    async fn post_validate_err_sell_amount_overflow() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
-        order_quoter.expect_store_quote().returning(Ok);
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-            None,
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            app_data: OrderCreationAppData::Full {
-                full: "{}".to_string(),
-            },
-            ..Default::default()
-        };
-        let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await;
-        dbg!(&result);
-        assert!(matches!(result, Err(ValidationError::SellAmountOverflow)));
     }
 
     #[tokio::test]
@@ -1958,6 +1901,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2014,6 +1958,7 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
             Default::default(),
             None,
+            u64::MAX,
         );
 
         let creation = OrderCreation {
@@ -2077,6 +2022,7 @@ mod tests {
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
                 None,
+                u64::MAX,
             );
 
             let order = OrderCreation {

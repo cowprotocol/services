@@ -4,17 +4,9 @@ use {
         infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
     },
     futures::future::join_all,
-    lazy_static::lazy_static,
-    reqwest::Url,
     std::path::Path,
     tokio::fs,
 };
-
-lazy_static! {
-    pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
-        Url::parse("https://api.thegraph.com/subgraphs/name/")
-            .expect("invalid default Graph API base URL");
-}
 
 /// Load the driver configuration from a TOML file for the specifed Ethereum
 /// network.
@@ -43,10 +35,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         chain,
         "The configured chain ID does not match connected Ethereum node"
     );
-    let graph_api_base_url = config
-        .liquidity
-        .graph_api_base_url
-        .unwrap_or(DEFAULT_GRAPH_API_BASE_URL.clone());
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
@@ -167,11 +155,12 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Preset {
                         preset,
                         max_pools_to_initialize,
+                        graph_url,
                     } => liquidity::config::UniswapV3 {
                         max_pools_to_initialize,
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(&graph_api_base_url, chain)
+                                liquidity::config::UniswapV3::uniswap_v3(&graph_url, chain)
                             }
                         }
                         .expect("no Uniswap V3 preset for current network")
@@ -179,10 +168,11 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
+                        graph_url,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        graph_api_base_url: graph_api_base_url.clone(),
+                        graph_url,
                     },
                 })
                 .collect(),
@@ -195,14 +185,12 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     file::BalancerV2Config::Preset {
                         preset,
                         pool_deny_list,
+                        graph_url,
                     } => liquidity::config::BalancerV2 {
                         pool_deny_list: pool_deny_list.clone(),
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
-                                liquidity::config::BalancerV2::balancer_v2(
-                                    &graph_api_base_url,
-                                    chain,
-                                )
+                                liquidity::config::BalancerV2::balancer_v2(&graph_url, chain)
                             }
                         }
                         .expect("no Balancer V2 preset for current network")
@@ -215,6 +203,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         liquidity_bootstrapping,
                         composable_stable,
                         pool_deny_list,
+                        graph_url,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
                         weighted: weighted
@@ -235,7 +224,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
-                        graph_api_base_url: graph_api_base_url.clone(),
+                        graph_url,
                     },
                 })
                 .collect(),
@@ -287,10 +276,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         additional_tip_percentage: *additional_tip_percentage,
                         use_soft_cancellations: *use_soft_cancellations,
                     },
-                },
-                submission: match config.submission.logic {
-                    file::Logic::Boundary => mempool::SubmissionLogic::Boundary,
-                    file::Logic::Native => mempool::SubmissionLogic::Native,
                 },
             })
             .collect(),

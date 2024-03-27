@@ -42,19 +42,10 @@ impl Mempools {
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
-                    let result = match &mempool {
-                        infra::Mempool::Boundary(mempool) => {
-                            mempool.execute(solver, settlement.clone()).await
-                        }
-                        infra::Mempool::Native(inner) => {
-                            self.submit(inner, solver, settlement)
-                                .instrument(tracing::info_span!(
-                                    "mempool",
-                                    kind = inner.to_string()
-                                ))
-                                .await
-                        }
-                    };
+                    let result = self
+                        .submit(&mempool, solver, settlement)
+                        .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
+                        .await;
                     observe::mempool_executed(&mempool, settlement, &result);
                     result
                 }
@@ -82,7 +73,7 @@ impl Mempools {
 
     async fn submit(
         &self,
-        mempool: &infra::mempool::Inner,
+        mempool: &infra::mempool::Mempool,
         solver: &Solver,
         settlement: &Settlement,
     ) -> Result<eth::TxId, Error> {
@@ -160,7 +151,7 @@ impl Mempools {
     /// slightly higher gas price than the existing one.
     async fn cancel(
         &self,
-        mempool: &infra::mempool::Inner,
+        mempool: &infra::mempool::Mempool,
         pending: eth::GasPrice,
         solver: &Solver,
     ) -> Result<(), Error> {
