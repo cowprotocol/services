@@ -13,9 +13,17 @@ use {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub auction_id: Option<i64>,
-    pub solution_id: Option<u64>,
+    pub solution_id: Option<SolutionId>,
     #[serde(flatten)]
     pub kind: Kind,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum SolutionId {
+    Single(u64),
+    Merged(Vec<u64>),
 }
 
 #[serde_as]
