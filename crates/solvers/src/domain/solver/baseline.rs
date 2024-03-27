@@ -61,8 +61,8 @@ struct Inner {
     /// Parameters used to calculate the revert risk of a solution.
     risk: domain::Risk,
 
-    /// Offset applied to the gas estimate for a solution to hackily address
-    /// systematic over- or under-estimation of the execution cost of orders.
+    /// Units of gas that get added to the gas estimate for executing a
+    /// computed trade route to arrive at a gas estimate for a whole settlement.
     solution_gas_offset: eth::SignedGas,
 }
 

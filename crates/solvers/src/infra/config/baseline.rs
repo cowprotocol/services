@@ -7,6 +7,7 @@ use {
     ethereum_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
+    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::path::Path,
     tokio::fs,
 };
@@ -42,10 +43,9 @@ struct Config {
     /// (gas_amount_factor, gas_price_factor, nmb_orders_factor, intercept)
     risk_parameters: (f64, f64, f64, f64),
 
-    /// Offset applied to the gas estimate for a solution to hackily address
-    /// systematic over- or under-estimation of the execution cost of orders.
-    /// To be configured in units of gas.
-    #[serde(default)]
+    /// Units of gas that get added to the gas estimate for executing a
+    /// computed trade route to arrive at a gas estimate for a whole settlement.
+    #[serde(default = "default_gas_offset")]
     solution_gas_offset: i64,
 }
 
@@ -89,4 +89,10 @@ pub async fn load(path: &Path) -> baseline::Config {
         },
         solution_gas_offset: config.solution_gas_offset.into(),
     }
+}
+
+/// Returns minimum gas used for settling a single order.
+/// (not accounting for the cost of additional interactions)
+fn default_gas_offset() -> i64 {
+    SETTLEMENT_OVERHEAD.try_into().unwrap()
 }
