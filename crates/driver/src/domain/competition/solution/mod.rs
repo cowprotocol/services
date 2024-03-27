@@ -9,6 +9,7 @@ use {
         },
         infra::{
             blockchain::{self, Ethereum},
+            config::file::FeeHandler,
             simulator,
             solver::Solver,
             Simulator,
@@ -44,6 +45,7 @@ pub struct Solution {
     score: SolverScore,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
+    fee_handler: FeeHandler,
 }
 
 impl Solution {
@@ -57,6 +59,7 @@ impl Solution {
         score: SolverScore,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
+        fee_handler: FeeHandler,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -67,6 +70,7 @@ impl Solution {
             score,
             weth,
             gas,
+            fee_handler,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -77,7 +81,11 @@ impl Solution {
             return Err(error::Solution::InvalidClearingPrices);
         }
 
-        // Apply protocol fees
+        // Apply protocol fees only if the drivers is set to handler the fees
+        if fee_handler != FeeHandler::Driver {
+            return Ok(solution);
+        }
+
         let mut trades = Vec::with_capacity(solution.trades.len());
         for trade in solution.trades {
             match &trade {
@@ -179,7 +187,11 @@ impl Solution {
                 trade.order().side,
                 executed,
                 custom_prices,
-                trade.order().protocol_fees.clone(),
+                if self.fee_handler == FeeHandler::Driver {
+                    trade.order().protocol_fees.clone()
+                } else {
+                    vec![]
+                },
             ))
         }
 

@@ -10,7 +10,7 @@ use {
             eth,
             time::{self},
         },
-        infra::{self, blockchain::contracts::Addresses, Ethereum},
+        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -37,6 +37,7 @@ pub struct Config<'a> {
     pub deadline: time::Deadline,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
+    pub fee_handler: FeeHandler,
 }
 
 impl Solver {
@@ -62,14 +63,17 @@ impl Solver {
                     "22300745198530623141535718272648361505980416".to_owned()
                 }
                 order::Side::Buy => match quote.order.fee_policy {
-                    // For volume based fee, we artifially reduce the limit sell amount for buy
-                    // orders before sending to solvers. This allows driver to withhold volume based
-                    // fee and not violate original limit prices.
-                    fee::Policy::Volume { factor } => eth::TokenAmount(quote.sell_amount())
-                        .apply_factor(1.0 / (1.0 + factor))
-                        .unwrap()
-                        .0
-                        .to_string(),
+                    // If the fees are handler in the driver, for volume based fee, we artificially
+                    // reduce the limit sell amount for buy orders before sending to solvers. This
+                    // allows driver to withhold volume based fee and not violate original limit
+                    // prices.
+                    fee::Policy::Volume { factor } if config.fee_handler == FeeHandler::Driver => {
+                        eth::TokenAmount(quote.sell_amount())
+                            .apply_factor(1.0 / (1.0 + factor))
+                            .unwrap()
+                            .0
+                            .to_string()
+                    }
                     _ => quote.sell_amount().to_string(),
                 },
                 _ => quote.sell_amount().to_string(),
@@ -77,14 +81,17 @@ impl Solver {
             let buy_amount = match quote.order.side {
                 order::Side::Sell if config.quote => "1".to_owned(),
                 order::Side::Sell => match quote.order.fee_policy {
-                    // For volume based fee, we artifially increase the limit buy amount for sell
-                    // orders before sending to solvers. This allows driver to withhold volume based
-                    // fee and not violate original limit prices.
-                    fee::Policy::Volume { factor } => eth::TokenAmount(quote.buy_amount())
-                        .apply_factor(1.0 / (1.0 - factor))
-                        .unwrap()
-                        .0
-                        .to_string(),
+                    // If the fees are handler in the driver, for volume based fee, we artificially
+                    // increase the limit buy amount for sell orders before sending to solvers. This
+                    // allows driver to withhold volume based fee and not violate original limit
+                    // prices.
+                    fee::Policy::Volume { factor } if config.fee_handler == FeeHandler::Driver => {
+                        eth::TokenAmount(quote.buy_amount())
+                            .apply_factor(1.0 / (1.0 - factor))
+                            .unwrap()
+                            .0
+                            .to_string()
+                    }
                     _ => quote.buy_amount().to_string(),
                 },
                 _ => quote.buy_amount().to_string(),
@@ -107,6 +114,13 @@ impl Solver {
                     order::Kind::Market => "market",
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
+                },
+                "feePolicies": match quote.order.kind {
+                    _ if config.quote => json!([]),
+                    _ if config.fee_handler == FeeHandler::Driver => json!([]),
+                    order::Kind::Market => json!([]),
+                    order::Kind::Liquidity => json!([]),
+                    order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
                 },
             }));
         }
