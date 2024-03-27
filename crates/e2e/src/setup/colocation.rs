@@ -19,11 +19,6 @@ risk-parameters = [0,0,0,0]
     start_solver(config_file, "baseline".to_string()).await
 }
 
-pub async fn start_naive_solver() -> Url {
-    let config_file = config_tmp_file("risk-parameters = [0,0,0,0]");
-    start_solver(config_file, "naive".to_string()).await
-}
-
 pub async fn start_legacy_solver(solver_endpoint: Url, chain_id: Option<U256>) -> Url {
     let chain_id = chain_id.unwrap_or(U256::from(1));
     let config_file = config_tmp_file(format!(

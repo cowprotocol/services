@@ -5,13 +5,11 @@ use crate::{
 
 pub mod baseline;
 pub mod legacy;
-pub mod naive;
 
-pub use self::{baseline::Baseline, legacy::Legacy, naive::Naive};
+pub use self::{baseline::Baseline, legacy::Legacy};
 
 pub enum Solver {
     Baseline(Baseline),
-    Naive(Naive),
     Legacy(Legacy),
 }
 
@@ -24,7 +22,6 @@ impl Solver {
         let deadline = auction.deadline.clone();
         let solutions = match self {
             Solver::Baseline(solver) => solver.solve(auction).await,
-            Solver::Naive(solver) => solver.solve(auction).await,
             Solver::Legacy(solver) => solver.solve(auction).await,
         };
         metrics::solved(&deadline, &solutions);
@@ -36,7 +33,6 @@ impl Solver {
     pub fn notify(&self, notification: notification::Notification) {
         match self {
             Solver::Baseline(_) => (),
-            Solver::Naive(_) => (),
             Solver::Legacy(solver) => solver.notify(notification),
         }
     }

@@ -35,11 +35,6 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// optimistically batch similar orders and get difference from AMMs
-    Naive {
-        #[clap(long, env)]
-        config: PathBuf,
-    },
     /// forward auction to solver implementing the legacy HTTP interface
     Legacy {
         #[clap(long, env)]

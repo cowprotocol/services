@@ -4,7 +4,6 @@ use {
 };
 
 mod baseline_solver;
-pub mod naive_solver;
 
 // Wrapper type for AWS ARN identifiers
 #[derive(Debug, Clone)]
