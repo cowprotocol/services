@@ -48,7 +48,6 @@ pub struct Solution {
     score: SolverScore,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
-    fee_handler: FeeHandler,
 }
 
 impl Solution {
@@ -73,7 +72,6 @@ impl Solution {
             score,
             weth,
             gas,
-            fee_handler,
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -190,11 +188,7 @@ impl Solution {
                 trade.order().side,
                 executed,
                 custom_prices,
-                if self.fee_handler == FeeHandler::Driver {
-                    trade.order().protocol_fees.clone()
-                } else {
-                    vec![]
-                },
+                trade.order().protocol_fees.clone(),
             ))
         }
 
@@ -289,7 +283,6 @@ impl Solution {
             },
             weth: self.weth,
             // Same solver are guaranteed to have the same fee handler
-            fee_handler: self.fee_handler,
             gas: match (self.gas, other.gas) {
                 (Some(gas), Some(other_gas)) => Some(gas + other_gas),
                 (Some(gas), None) => Some(gas),
