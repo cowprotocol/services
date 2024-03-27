@@ -82,32 +82,34 @@ impl Solution {
         }
 
         // Apply protocol fees only if the drivers is set to handler the fees
-        let trades = if fee_handler == FeeHandler::Driver {
-            let mut trades = Vec::with_capacity(solution.trades.len());
-            for trade in solution.trades {
-                match &trade {
-                    Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                        order::Kind::Market | order::Kind::Limit { .. } => {
-                            let prices = ClearingPrices {
-                                sell: solution.prices
-                                    [&fulfillment.order().sell.token.wrap(solution.weth)],
-                                buy: solution.prices
-                                    [&fulfillment.order().buy.token.wrap(solution.weth)],
-                            };
-                            let fulfillment = fulfillment.with_protocol_fee(prices)?;
-                            trades.push(Trade::Fulfillment(fulfillment))
-                        }
-                        order::Kind::Liquidity => {
-                            trades.push(trade);
-                        }
-                    },
-                    Trade::Jit(_) => trades.push(trade),
-                }
+        if fee_handler != FeeHandler::Driver {
+            return Ok(Self {
+                trades: solution.trades,
+                ..solution
+            });
+        }
+
+        let mut trades = Vec::with_capacity(solution.trades.len());
+        for trade in solution.trades {
+            match &trade {
+                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                    order::Kind::Market | order::Kind::Limit { .. } => {
+                        let prices = ClearingPrices {
+                            sell: solution.prices
+                                [&fulfillment.order().sell.token.wrap(solution.weth)],
+                            buy: solution.prices
+                                [&fulfillment.order().buy.token.wrap(solution.weth)],
+                        };
+                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        trades.push(Trade::Fulfillment(fulfillment))
+                    }
+                    order::Kind::Liquidity => {
+                        trades.push(trade);
+                    }
+                },
+                Trade::Jit(_) => trades.push(trade),
             }
-            trades
-        } else {
-            solution.trades
-        };
+        }
         Ok(Self { trades, ..solution })
     }
 

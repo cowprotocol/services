@@ -15,7 +15,7 @@ use crate::{
 async fn sorting() {
     let test = setup()
         .solvers(vec![
-            test_solver().fee_handler(FeeHandler::Solver)
+            test_solver().fee_handler(FeeHandler::Driver)
         ])
         .pool(ab_pool())
         // Orders with better price ratios come first.

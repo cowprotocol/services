@@ -36,7 +36,7 @@ async fn solver_fee() {
             .solver_fee(Some(500.into()));
         let test = tests::setup()
             .name(format!("Solver Fee: {side:?}"))
-            .solvers(vec![test_solver().fee_handler(FeeHandler::Solver)])
+            .solvers(vec![test_solver().fee_handler(FeeHandler::Driver)])
             .pool(ab_pool())
             .order(order.clone())
             .solution(ab_solution())
