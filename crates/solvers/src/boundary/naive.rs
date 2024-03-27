@@ -2,17 +2,21 @@ use {
     crate::{
         boundary::liquidity::constant_product::to_boundary_pool,
         domain::{
+            auction,
             eth,
             liquidity,
-            order,
-            solution::{self},
+            order::{self, Side},
+            solution::{self, Fee},
         },
     },
     ethereum_types::H160,
     itertools::Itertools,
     model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
     num::{BigRational, One},
-    shared::external_prices::ExternalPrices,
+    shared::{
+        external_prices::ExternalPrices,
+        price_estimation::gas::{ERC20_TRANSFER, INITIALIZATION_COST, SETTLEMENT, TRADE},
+    },
     solver::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
@@ -34,6 +38,8 @@ use {
 pub fn solve(
     orders: &[&order::Order],
     liquidity: &liquidity::Liquidity,
+    gas_price: auction::GasPrice,
+    tokens: &auction::Tokens,
 ) -> Option<solution::Solution> {
     let pool = match &liquidity.state {
         liquidity::State::ConstantProduct(pool) => pool,
@@ -51,8 +57,6 @@ pub fn solve(
     // settlement transaction anyway.
     let boundary_orders = orders
         .iter()
-        // The naive solver currently doesn't support limit orders, so filter them out.
-        .filter(|order| !order.solver_determines_fee())
         .map(|order| LimitOrder {
             id: match order.class {
                 order::Class::Market => LimitOrderId::Market(OrderUid(order.uid.0)),
@@ -114,6 +118,24 @@ pub fn solve(
         multi_order_solver::solve(&slippage.context(), boundary_orders, &boundary_pool)?;
 
     let swap = pool_handler.swap.lock().unwrap().take();
+
+    // Evenly divide settlement execution cost across all settled orders that need a
+    // fee. Does not take pre- and post-interactions into account.
+    let eth_per_order = {
+        let num_trades = boundary_solution
+            .trades()
+            .filter(|t| t.order.solver_determines_fee())
+            .count() as u64;
+        let gas_interaction: u64 = swap.iter().map(|_| liquidity.gas.0.as_u64()).sum();
+        let total_gas = INITIALIZATION_COST
+            + SETTLEMENT
+            + num_trades * TRADE
+            + 2 * num_trades * ERC20_TRANSFER
+            + gas_interaction;
+        let gas_per_trade = eth::U256::from(total_gas.checked_div(num_trades).unwrap_or_default());
+        eth::Ether(gas_per_trade.checked_mul(gas_price.0 .0)?)
+    };
+
     Some(solution::Solution {
         id: Default::default(),
         prices: solution::ClearingPrices::new(
@@ -125,19 +147,30 @@ pub fn solve(
         trades: boundary_solution
             .traded_orders()
             .map(|order| {
-                solution::Trade::Fulfillment(
-                    solution::Fulfillment::fill(
-                        orders
-                            .iter()
-                            .copied()
-                            .find(|o| o.uid.0 == order.metadata.uid.0)
-                            .unwrap()
-                            .clone(),
-                    )
-                    .expect("all orders can be filled, as limit orders are filtered out"),
-                )
+                let order = orders
+                    .iter()
+                    .copied()
+                    .find(|o| o.uid.0 == order.metadata.uid.0)?
+                    .clone();
+
+                // partial fills not supported so always execute the full amount
+                let executed = match order.side {
+                    Side::Buy => order.buy.amount,
+                    Side::Sell => order.sell.amount,
+                };
+
+                let fee = if order.solver_determines_fee() {
+                    let sell_price = tokens.0.get(&order.sell.token)?.reference_price?;
+                    Fee::Surplus(sell_price.ether_value(eth_per_order)?)
+                } else {
+                    Fee::Protocol
+                };
+
+                Some(solution::Trade::Fulfillment(solution::Fulfillment::new(
+                    order, executed, fee,
+                )?))
             })
-            .collect(),
+            .collect::<Option<Vec<_>>>()?,
         // We can skip computing a gas estimate here because that is only used by the protocol
         // when quoting trades. And because the naive solver is not able to solve single order
         // auctions (which is how we model a /quote request) it can not be used for

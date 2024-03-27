@@ -43,7 +43,13 @@ impl Naive {
                 .values()
                 .enumerate()
                 .filter_map(|(i, group)| {
-                    boundary::naive::solve(&group.orders, group.liquidity).map(|solution| {
+                    boundary::naive::solve(
+                        &group.orders,
+                        group.liquidity,
+                        auction.gas_price,
+                        &auction.tokens,
+                    )
+                    .map(|solution| {
                         let gas = solution::INITIALIZATION_COST
                             + solution::SETTLEMENT
                             + solution::ERC20_TRANSFER * solution.trades.len() as u64 * 2
