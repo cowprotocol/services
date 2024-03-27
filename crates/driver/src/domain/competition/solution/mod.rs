@@ -288,6 +288,14 @@ impl Solution {
                 None => return Err(error::Merge::Incompatible("Scores")),
             },
             weth: self.weth,
+            // Same solver are guaranteed to have the same fee handler
+            fee_handler: self.fee_handler,
+            gas: match (self.gas, other.gas) {
+                (Some(gas), Some(other_gas)) => Some(gas + other_gas),
+                (Some(gas), None) => Some(gas),
+                (None, Some(gas)) => Some(gas),
+                (None, None) => None,
+            },
         })
     }
 
