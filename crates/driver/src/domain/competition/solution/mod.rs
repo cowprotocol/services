@@ -83,10 +83,7 @@ impl Solution {
 
         // Apply protocol fees only if the drivers is set to handler the fees
         if fee_handler != FeeHandler::Driver {
-            return Ok(Self {
-                trades: solution.trades,
-                ..solution
-            });
+            return Ok(solution);
         }
 
         let mut trades = Vec::with_capacity(solution.trades.len());
