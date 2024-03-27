@@ -7,11 +7,9 @@ use {
             cli,
             config,
             liquidity,
-            mempool,
             simulator::{self, Simulator},
             solver::Solver,
             Api,
-            Mempool,
         },
     },
     clap::Parser,
@@ -52,7 +50,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
-    let tx_pool = mempool::GlobalTxPool::default();
     let serve = Api {
         solvers: solvers(&config, &eth),
         liquidity: liquidity(&config, &eth).await,
@@ -61,18 +58,8 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             config
                 .mempools
                 .iter()
-                .map(|mempool| match mempool.submission {
-                    infra::mempool::SubmissionLogic::Boundary => Mempool::Boundary(
-                        crate::boundary::Mempool::new(
-                            mempool.to_owned(),
-                            eth.clone(),
-                            tx_pool.clone(),
-                        )
-                        .unwrap(),
-                    ),
-                    infra::mempool::SubmissionLogic::Native => Mempool::Native(Box::new(
-                        crate::infra::mempool::Inner::new(mempool.to_owned(), web3.clone()),
-                    )),
+                .map(|mempool| {
+                    crate::infra::mempool::Mempool::new(mempool.to_owned(), web3.clone())
                 })
                 .collect(),
             eth.clone(),

@@ -6,7 +6,11 @@ use {
         domain::{competition::order, eth, time},
         infra::{
             self,
-            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
+            config::file::{
+                default_http_time_buffer,
+                default_solving_share_of_deadline,
+                FeeHandler,
+            },
         },
         tests::{
             cases::{
@@ -317,6 +321,8 @@ pub struct Solver {
     timeouts: infra::solver::Timeouts,
     /// Datetime when the CIP38 rank by surplus rules should be activated.
     rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Determines whether the `solver` or the `driver` handles the fees
+    fee_handler: FeeHandler,
 }
 
 pub fn test_solver() -> Solver {
@@ -337,6 +343,7 @@ pub fn test_solver() -> Solver {
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
         rank_by_surplus_date: None,
+        fee_handler: FeeHandler::default(),
     }
 }
 
@@ -371,6 +378,11 @@ impl Solver {
             rank_by_surplus_date: Some(rank_by_surplus_date),
             ..self
         }
+    }
+
+    pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
+        self.fee_handler = fee_handler;
+        self
     }
 }
 
@@ -810,6 +822,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                fee_handler: solver.fee_handler,
             })
             .await;
 

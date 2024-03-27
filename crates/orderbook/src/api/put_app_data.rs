@@ -1,7 +1,6 @@
 use {
-    crate::app_data,
     anyhow::Result,
-    model::app_data::{AppDataDocument, AppDataHash},
+    app_data::{AppDataDocument, AppDataHash},
     reqwest::StatusCode,
     shared::api::{internal_error_reply, IntoWarpReply},
     std::{convert::Infallible, sync::Arc},
@@ -22,13 +21,13 @@ fn request(
 }
 
 fn response(
-    result: Result<(app_data::Registered, AppDataHash), app_data::RegisterError>,
+    result: Result<(crate::app_data::Registered, AppDataHash), crate::app_data::RegisterError>,
 ) -> super::ApiReply {
     match result {
         Ok((registered, hash)) => {
             let status = match registered {
-                app_data::Registered::New => StatusCode::CREATED,
-                app_data::Registered::AlreadyExisted => StatusCode::OK,
+                crate::app_data::Registered::New => StatusCode::CREATED,
+                crate::app_data::Registered::AlreadyExisted => StatusCode::OK,
             };
             reply::with_status(reply::json(&hash), status)
         }
@@ -37,7 +36,7 @@ fn response(
 }
 
 pub fn filter(
-    registry: Arc<app_data::Registry>,
+    registry: Arc<crate::app_data::Registry>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     request(registry.size_limit()).and_then(move |hash, document: AppDataDocument| {
         let registry = registry.clone();
@@ -50,7 +49,7 @@ pub fn filter(
     })
 }
 
-impl IntoWarpReply for app_data::RegisterError {
+impl IntoWarpReply for crate::app_data::RegisterError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::Invalid(err) => reply::with_status(
