@@ -97,7 +97,7 @@ impl Solver {
                 _ => quote.buy_amount().to_string(),
             };
 
-            orders_json.push(json!({
+            let mut order = json!({
                 "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
@@ -115,15 +115,21 @@ impl Solver {
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
-                // TODO: Temporary removed
-                // "feePolicies": match quote.order.kind {
-                //     _ if config.quote => json!([]),
-                //     _ if config.fee_handler == FeeHandler::Driver => json!([]),
-                //     order::Kind::Market => json!([]),
-                //     order::Kind::Liquidity => json!([]),
-                //     order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
-                // },
-            }));
+            });
+            if config.fee_handler == FeeHandler::Solver {
+                order.as_object_mut().unwrap().insert(
+                    "feePolicies".to_owned(),
+                    match quote.order.kind {
+                        _ if config.quote => json!([]),
+                        order::Kind::Market => json!([]),
+                        order::Kind::Liquidity => json!([]),
+                        order::Kind::Limit { .. } => {
+                            json!([quote.order.fee_policy.to_json_value()])
+                        }
+                    },
+                );
+            }
+            orders_json.push(order);
         }
         for (i, solution) in config.solutions.iter().enumerate() {
             let mut interactions_json = Vec::new();

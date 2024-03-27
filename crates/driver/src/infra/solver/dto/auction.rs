@@ -119,14 +119,14 @@ impl Auction {
                             competition::order::Kind::Limit { .. } => Class::Limit,
                             competition::order::Kind::Liquidity => Class::Liquidity,
                         },
-                        fee_policies: None,
-                        // order
-                        //     .protocol_fees
-                        //     .iter()
-                        //     .filter(|_| fee_handler == FeeHandler::Solver)
-                        //     .cloned()
-                        //     .map(Into::into)
-                        //     .collect(),
+                        fee_policies: (fee_handler == FeeHandler::Solver).then_some(
+                            order
+                                .protocol_fees
+                                .iter()
+                                .cloned()
+                                .map(Into::into)
+                                .collect(),
+                        ),
                     }
                 })
                 .collect(),
