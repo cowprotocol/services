@@ -43,6 +43,7 @@ async fn test() {
                     "kind": "sell",
                     "partiallyFillable": true,
                     "class": "limit",
+                    "feePolicies": [],
                 }
             ],
             "liquidity": [
@@ -101,7 +102,8 @@ async fn test() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );

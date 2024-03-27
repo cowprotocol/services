@@ -168,7 +168,7 @@ impl TradeVerifier {
         tracing::debug!(
             lost_buy_amount = %summary.buy_tokens_diff,
             lost_sell_amount = %summary.sell_tokens_diff,
-            gas_diff = ?trade.gas_estimate.abs_diff(summary.gas_used.as_u64()),
+            gas_diff = ?trade.gas_estimate.unwrap_or_default().abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
             promised_out_amount = ?trade.out_amount,
             verified_out_amount = ?summary.out_amount,
@@ -194,20 +194,30 @@ impl TradeVerifying for TradeVerifier {
     ) -> Result<Estimate> {
         match self.verify_inner(query, verification, &trade).await {
             Ok(verified) => Ok(verified),
-            Err(Error::SimulationFailed(err)) => {
-                let estimate = Estimate {
-                    out_amount: trade.out_amount,
-                    gas: trade.gas_estimate,
-                    solver: trade.solver,
-                    verified: false,
-                };
-                tracing::warn!(
-                    ?err,
-                    ?estimate,
-                    "failed verification; returning unverified estimate"
-                );
-                Ok(estimate)
-            }
+            Err(Error::SimulationFailed(err)) => match trade.gas_estimate {
+                Some(gas) => {
+                    let estimate = Estimate {
+                        out_amount: trade.out_amount,
+                        gas,
+                        solver: trade.solver,
+                        verified: false,
+                    };
+                    tracing::warn!(
+                        ?err,
+                        estimate = ?trade,
+                        "failed verification; returning unferified estimate"
+                    );
+                    Ok(estimate)
+                }
+                None => {
+                    tracing::warn!(
+                        ?err,
+                        estimate = ?trade,
+                        "failed verification and no gas estimate provided; discarding estimate"
+                    );
+                    Err(err)
+                }
+            },
             Err(err @ Error::TooInaccurate) => {
                 tracing::warn!("discarding quote because it's too inaccurate");
                 Err(err.into())

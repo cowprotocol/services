@@ -285,7 +285,7 @@ impl HttpTradeFinder {
                 OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
                 OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
             },
-            gas_estimate,
+            gas_estimate: Some(gas_estimate),
             interactions: settlement
                 .interaction_data
                 .into_iter()
@@ -446,9 +446,10 @@ impl HttpTradeFinder {
 impl TradeFinding for HttpTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
         let price_estimate = self.compute_trade(Arc::new(query.clone())).await?;
+        let gas_estimate = price_estimate.gas_estimate.context("no gas estimate")?;
         Ok(Quote {
             out_amount: price_estimate.out_amount,
-            gas_estimate: price_estimate.gas_estimate,
+            gas_estimate,
             solver: price_estimate.solver,
         })
     }
@@ -464,9 +465,13 @@ impl PriceEstimating for HttpTradeFinder {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async {
             let trade = self.compute_trade(query).await?;
+            let gas = trade
+                .gas_estimate
+                .context("no gas estimate")
+                .map_err(PriceEstimationError::EstimatorInternal)?;
             Ok(Estimate {
                 out_amount: trade.out_amount,
-                gas: trade.gas_estimate,
+                gas,
                 solver: trade.solver,
                 verified: false,
             })
@@ -490,23 +495,16 @@ mod tests {
             price_estimation::Query,
             recent_block_cache::CacheConfig,
             sources::{
-                balancer_v2::{
-                    pool_fetching::BalancerContracts,
-                    BalancerFactoryKind,
-                    BalancerPoolFetcher,
-                },
                 uniswap_v2::{
                     self,
                     pool_cache::PoolCache,
                     pool_fetching::test_util::FakePoolFetcher,
                 },
-                uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
                 BaselineSource,
             },
             token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         },
         anyhow::anyhow,
-        clap::ValueEnum,
         ethcontract::dyns::DynTransport,
         ethrpc::{current_block::current_block_stream, http::HttpTransport, Web3},
         gas_estimation::GasPrice1559,
@@ -819,45 +817,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let block_retriever = Arc::new(web3.clone());
         let token_info = Arc::new(TokenInfoFetcher { web3: web3.clone() });
-        let contracts =
-            BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
-                .await
-                .unwrap();
-        let current_block_stream =
-            current_block_stream(Arc::new(web3.clone()), Duration::from_secs(10))
-                .await
-                .unwrap();
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        let balancer_pool_fetcher = Arc::new(
-            BalancerPoolFetcher::new(
-                &base_url,
-                chain_id,
-                block_retriever.clone(),
-                token_info.clone(),
-                Default::default(),
-                current_block_stream.clone(),
-                client.clone(),
-                web3.clone(),
-                &contracts,
-                Default::default(),
-            )
-            .await
-            .expect("failed to create Balancer pool fetcher"),
-        );
-        let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(
-                &base_url,
-                chain_id,
-                web3.clone(),
-                client.clone(),
-                block_retriever.clone(),
-                100,
-            )
-            .await
-            .expect("failed to create uniswap v3 pool fetcher"),
-        );
         let gas_info = Arc::new(web3);
 
         let estimator = HttpTradeFinder {
@@ -876,7 +836,7 @@ mod tests {
             }),
             sharing: RequestSharing::labelled("test".into()),
             pools,
-            balancer_pools: Some(balancer_pool_fetcher),
+            balancer_pools: None,
             token_info,
             gas_info,
             native_token: testlib::tokens::WETH,
@@ -889,7 +849,7 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
-            uniswap_v3_pools: Some(uniswap_v3_pool_fetcher),
+            uniswap_v3_pools: None,
             use_liquidity: true,
             solver: Default::default(),
         };

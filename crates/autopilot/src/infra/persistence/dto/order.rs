@@ -1,8 +1,9 @@
 use {
     crate::{
         boundary::{self},
-        domain,
+        domain::{self, fee::FeeFactor},
     },
+    app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -36,7 +37,7 @@ pub struct Order {
     pub buy_token_balance: boundary::BuyTokenDestination,
     #[serde(flatten)]
     pub class: boundary::OrderClass,
-    pub app_data: boundary::AppDataHash,
+    pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
 }
@@ -207,14 +208,14 @@ impl From<boundary::BuyTokenDestination> for domain::auction::order::BuyTokenDes
     }
 }
 
-impl From<domain::auction::order::AppDataHash> for boundary::AppDataHash {
+impl From<domain::auction::order::AppDataHash> for AppDataHash {
     fn from(hash: domain::auction::order::AppDataHash) -> Self {
         Self(hash.0)
     }
 }
 
-impl From<boundary::AppDataHash> for domain::auction::order::AppDataHash {
-    fn from(hash: boundary::AppDataHash) -> Self {
+impl From<AppDataHash> for domain::auction::order::AppDataHash {
+    fn from(hash: AppDataHash) -> Self {
         Self(hash.0)
     }
 }
@@ -281,8 +282,11 @@ pub enum FeePolicy {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
 }
 
@@ -293,23 +297,25 @@ impl From<domain::fee::Policy> for FeePolicy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor,
-                max_volume_factor,
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
             },
             domain::fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor,
-                max_volume_factor,
+                factor: factor.into(),
+                max_volume_factor: max_volume_factor.into(),
                 quote: Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
                 },
             },
-            domain::fee::Policy::Volume { factor } => Self::Volume { factor },
+            domain::fee::Policy::Volume { factor } => Self::Volume {
+                factor: factor.into(),
+            },
         }
     }
 }
@@ -321,23 +327,25 @@ impl From<FeePolicy> for domain::fee::Policy {
                 factor,
                 max_volume_factor,
             } => Self::Surplus {
-                factor,
-                max_volume_factor,
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
             },
             FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
             } => Self::PriceImprovement {
-                factor,
-                max_volume_factor,
+                factor: FeeFactor::try_from(factor).unwrap(),
+                max_volume_factor: FeeFactor::try_from(max_volume_factor).unwrap(),
                 quote: domain::fee::Quote {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
                 },
             },
-            FeePolicy::Volume { factor } => Self::Volume { factor },
+            FeePolicy::Volume { factor } => Self::Volume {
+                factor: FeeFactor::try_from(factor).unwrap(),
+            },
         }
     }
 }

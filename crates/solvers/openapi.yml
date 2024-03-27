@@ -311,7 +311,73 @@ components:
           type: boolean
         class:
           $ref: "#/components/schemas/OrderClass"
-
+        feePolicies:
+          description: |
+            Any protocol fee policies that apply to the order.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeePolicy"
+    FeePolicy:
+      description: |
+        A fee policy that applies to an order.
+      type: object
+      oneOf:
+        - $ref: "#/components/schemas/SurplusFee"
+        - $ref: "#/components/schemas/PriceImprovement"
+        - $ref: "#/components/schemas/VolumeFee"
+    SurplusFee:
+      description: |
+        If the order receives more than limit price, pay the protocol a factor of the difference.
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: ["surplus"]
+        maxVolumeFactor:
+          description: Never charge more than that percentage of the order volume.
+          type: number
+          minimum: 0.0
+          maximum: 0.99999
+          example: 0.05
+        factor:
+          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          type: number
+          example: 0.5
+    PriceImprovement:
+      description: |
+        A cut from the price improvement over the best quote is taken as a protocol fee.
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [ "priceImprovement" ]
+        maxVolumeFactor:
+          description: Never charge more than that percentage of the order volume.
+          type: number
+          example: 0.01
+        factor:
+          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          type: number
+          example: 0.5
+        quote:
+          $ref: "#/components/schemas/Quote"
+    VolumeFee:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: ["volume"]
+        factor:
+          description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
+          type: number
+          example: 0.5
+    Quote:
+      type: object
+      properties:
+        sell_amount:
+          $ref: "#/components/schemas/TokenAmount"
+        buy_amount:
+          $ref: "#/components/schemas/TokenAmount"
     TokenReserve:
       description: |
         A reserve of tokens in an on-chain liquidity pool.
@@ -842,3 +908,6 @@ components:
                     The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
                   type: number
                   example: 0.9
+        gas:
+          type: integer
+          description: How many units of gas this solution is estimated to cost.

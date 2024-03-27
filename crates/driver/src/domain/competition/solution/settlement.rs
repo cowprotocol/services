@@ -349,16 +349,21 @@ impl Gas {
             eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
                 .into();
 
-        // The block gas limit may fluctuate between blocks (validators trying to
-        // upvote/downvote the limit), thus add a bit margin to not run into
-        // GasLimitExceeded errors. The maximum deviation per block is 1/1024 so using
-        // 1% buffer will make that even with 10 consecutive blocks in which the gas
-        // limit decreased maximally will not exceed the limit.
-        let block_limit = eth::Gas(block_limit.0 * 99 / 100);
+        // We don't allow for solutions to take up more than half of the block's gas
+        // limit. This is to ensure that block producers attempt to include the
+        // settlement transaction in the next block as long as it is reasonably
+        // priced. If we were to allow for solutions very close to the block
+        // gas limit, validators may discard the settlement transaction unless it is
+        // paying a very high priority fee. This is because the default block
+        // building algorithm picks the highest paying transaction whose gas limit
+        // will not exceed the remaining space in the block next and ignore transactions
+        // whose gas limit exceed the remaining space (without simulating the actual
+        // gas required).
+        let max_gas = eth::Gas(block_limit.0 / 2);
 
         Self {
             estimate,
-            limit: std::cmp::min(block_limit, estimate_with_buffer),
+            limit: std::cmp::min(max_gas, estimate_with_buffer),
             price,
         }
     }

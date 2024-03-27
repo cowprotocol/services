@@ -6,7 +6,11 @@ use {
         domain::{competition::order, eth, time},
         infra::{
             self,
-            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
+            config::file::{
+                default_http_time_buffer,
+                default_solving_share_of_deadline,
+                FeeHandler,
+            },
         },
         tests::{
             cases::{
@@ -128,8 +132,9 @@ pub struct Order {
     /// buy amount is divided depends on the order side. This is necessary to
     /// keep the solution scores positive.
     pub surplus_factor: eth::U256,
-    /// Override the executed amount of the order. Useful for testing liquidity
-    /// orders. Otherwise [`execution_diff`] is probably more suitable.
+    /// Override the executed target amount of the order. Useful for testing
+    /// liquidity orders. Otherwise [`execution_diff`] is probably more
+    /// suitable.
     pub executed: Option<eth::U256>,
     /// Provides explicit expected order executed amounts.
     pub expected_amounts: Option<ExpectedOrderAmounts>,
@@ -253,6 +258,19 @@ impl Order {
         }
     }
 
+    pub fn partial(self, already_executed: eth::U256) -> Self {
+        Self {
+            partial: Partial::Yes {
+                executed: already_executed,
+            },
+            ..self
+        }
+    }
+
+    pub fn executed(self, executed: Option<eth::U256>) -> Self {
+        Self { executed, ..self }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -301,6 +319,10 @@ pub struct Solver {
     slippage: infra::solver::Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Determines whether the `solver` or the `driver` handles the fees
+    fee_handler: FeeHandler,
 }
 
 pub fn test_solver() -> Solver {
@@ -320,6 +342,8 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
+        rank_by_surplus_date: None,
+        fee_handler: FeeHandler::default(),
     }
 }
 
@@ -347,6 +371,18 @@ impl Solver {
 
     pub fn balance(self, balance: eth::U256) -> Self {
         Self { balance, ..self }
+    }
+
+    pub fn rank_by_surplus_date(self, rank_by_surplus_date: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            rank_by_surplus_date: Some(rank_by_surplus_date),
+            ..self
+        }
+    }
+
+    pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
+        self.fee_handler = fee_handler;
+        self
     }
 }
 
@@ -786,6 +822,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                fee_handler: solver.fee_handler,
             })
             .await;
 
@@ -1034,7 +1071,8 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 5);
+        // response contains 1 optional field
+        assert!((5..=6).contains(&solution.as_object().unwrap().len()));
         solution
     }
 

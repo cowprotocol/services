@@ -45,9 +45,39 @@ impl From<U256> for Ether {
     }
 }
 
+/// Like [`Gas`] but can be negative to encode a gas discount.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct SignedGas(i64);
+
+impl From<i64> for SignedGas {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
 /// Gas amount.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
+
+impl std::ops::Add for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Add<SignedGas> for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: SignedGas) -> Self::Output {
+        if rhs.0.is_positive() {
+            Self(self.0.saturating_add(rhs.0.into()))
+        } else {
+            Self(self.0.saturating_sub(rhs.0.abs().into()))
+        }
+    }
+}
 
 /// A 256-bit rational type.
 pub type Rational = num::rational::Ratio<U256>;

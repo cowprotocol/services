@@ -1,14 +1,13 @@
 use {
     crate::{
-        app_data,
         database::orders::{InsertionError, OrderStoring},
         dto,
     },
     anyhow::{Context, Result},
+    app_data::{AppDataHash, Validator},
     chrono::Utc,
     ethcontract::H256,
     model::{
-        app_data::AppDataHash,
         order::{
             Order,
             OrderCancellation,
@@ -24,7 +23,6 @@ use {
     },
     primitive_types::H160,
     shared::{
-        app_data::Validator,
         metrics::LivenessChecking,
         order_quoting::Quote,
         order_validation::{OrderValidating, ValidationError},
@@ -167,7 +165,7 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    app_data: Arc<app_data::Registry>,
+    app_data: Arc<crate::app_data::Registry>,
 }
 
 impl Orderbook {
@@ -177,7 +175,7 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        app_data: Arc<app_data::Registry>,
+        app_data: Arc<crate::app_data::Registry>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -333,7 +331,7 @@ impl Orderbook {
 
             if let Some(replaced_order) = validated_app_data.protocol.replaced_order {
                 return Ok(Some(
-                    self.find_order_for_cancellation(&replaced_order.uid)
+                    self.find_order_for_cancellation(&replaced_order.uid.into())
                         .await
                         .map_err(AddOrderError::OrderNotFound)?,
                 ));
@@ -477,8 +475,8 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
-        let app_data = Arc::new(app_data::Registry::new(
-            shared::app_data::Validator::new(8192),
+        let app_data = Arc::new(crate::app_data::Registry::new(
+            Validator::new(8192),
             database.clone(),
             None,
         ));

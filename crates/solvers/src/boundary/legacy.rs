@@ -579,6 +579,7 @@ fn to_domain_solution(
                 return Err(anyhow::anyhow!("solvers not allowed to use surplus score"))
             }
         },
+        gas: None,
     })
 }
 

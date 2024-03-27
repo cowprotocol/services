@@ -1,11 +1,9 @@
 use {
+    crate::{AppDataHash, Hooks},
     anyhow::{anyhow, Context, Result},
-    model::{
-        app_data::AppDataHash,
-        order::{Hooks, OrderUid},
-    },
     primitive_types::H160,
-    serde::Deserialize,
+    serde::{de, Deserialize, Deserializer, Serialize, Serializer},
+    std::{fmt, fmt::Display},
 };
 
 mod compat;
@@ -13,25 +11,32 @@ mod compat;
 /// The minimum valid empty app data JSON string.
 pub const EMPTY: &str = "{}";
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
     pub document: String,
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
     pub signer: Option<H160>,
     pub replaced_order: Option<ReplacedOrder>,
+    pub partner_fee: Option<PartnerFee>,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct PartnerFee {
+    pub bps: u64,
+    pub recipient: H160,
 }
 
 #[derive(Clone)]
@@ -39,7 +44,7 @@ pub struct Validator {
     size_limit: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test_helpers"))]
 impl Default for Validator {
     fn default() -> Self {
         Self { size_limit: 8192 }
@@ -129,9 +134,80 @@ struct Root {
     backend: Option<compat::BackendAppData>,
 }
 
+// uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
+#[derive(Clone, Copy, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct OrderUid(pub [u8; 56]);
+
+impl Display for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bytes = [0u8; 2 + 56 * 2];
+        bytes[..2].copy_from_slice(b"0x");
+        // Unwrap because the length is always correct.
+        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
+        // Unwrap because the string is always valid utf8.
+        let str = std::str::from_utf8(&bytes).unwrap();
+        f.write_str(str)
+    }
+}
+
+impl fmt::Debug for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Default for OrderUid {
+    fn default() -> Self {
+        Self([0u8; 56])
+    }
+}
+
+impl Serialize for OrderUid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for OrderUid {
+    fn deserialize<D>(deserializer: D) -> Result<OrderUid, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor {}
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = OrderUid;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "an uid with orderDigest_owner_validTo")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let s = s.strip_prefix("0x").ok_or_else(|| {
+                    de::Error::custom(format!(
+                        "{s:?} can't be decoded as hex uid because it does not start with '0x'"
+                    ))
+                })?;
+                let mut value = [0u8; 56];
+                hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
+                    de::Error::custom(format!("failed to decode {s:?} as hex uid: {err}"))
+                })?;
+                Ok(OrderUid(value))
+            }
+        }
+
+        deserializer.deserialize_str(Visitor {})
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use {super::*, ethcontract::H160, model::order::Hook};
+    use {super::*, crate::Hook, ethcontract::H160};
 
     macro_rules! assert_app_data {
         ($s:expr, $e:expr $(,)?) => {{

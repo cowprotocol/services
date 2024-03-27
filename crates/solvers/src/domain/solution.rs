@@ -24,6 +24,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub score: Score,
+    pub gas: Option<eth::Gas>,
 }
 
 impl Solution {
@@ -37,6 +38,7 @@ impl Solution {
         Self { score, ..self }
     }
 
+    /// Sets the provided gas and computes the risk adjusted score accordingly.
     pub fn with_risk_adjusted_score(
         self,
         risk: &Risk,
@@ -44,9 +46,13 @@ impl Solution {
         gas_price: auction::GasPrice,
     ) -> Self {
         let nmb_orders = self.trades.len();
-        self.with_score(Score::RiskAdjusted(SuccessProbability(
+        let scored = self.with_score(Score::RiskAdjusted(SuccessProbability(
             risk.success_probability(gas, gas_price, nmb_orders),
-        )))
+        )));
+        Self {
+            gas: Some(gas),
+            ..scored
+        }
     }
 
     /// Returns `self` with eligible interactions internalized using the
@@ -128,14 +134,11 @@ pub struct Single {
     pub output: eth::Asset,
     /// The swap interactions for the single order settlement.
     pub interactions: Vec<Interaction>,
-    /// The estimated gas needed for swapping the sell amount to buy amount.
+    /// The estimated gas needed for the solution settling this single order.
     pub gas: eth::Gas,
 }
 
 impl Single {
-    /// An approximation for the overhead of executing a trade in a settlement.
-    const SETTLEMENT_OVERHEAD: u64 = 106_391;
-
     /// Creates a full solution for a single order solution given gas and sell
     /// token prices.
     pub fn into_solution(
@@ -149,7 +152,7 @@ impl Single {
             input,
             output,
             interactions,
-            gas: swap,
+            gas,
         } = self;
 
         if (order.sell.token, order.buy.token) != (input.token, output.token) {
@@ -162,13 +165,7 @@ impl Single {
             // full order fee as well as a solver computed fee. Note that this
             // is fine for now, since there is no way to create limit orders
             // with non-zero fees.
-            Fee::Surplus(
-                sell_token?.ether_value(eth::Ether(
-                    swap.0
-                        .checked_add(Self::SETTLEMENT_OVERHEAD.into())?
-                        .checked_mul(gas_price.0 .0)?,
-                ))?,
-            )
+            Fee::Surplus(sell_token?.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
         } else {
             Fee::Protocol
         };
@@ -217,6 +214,7 @@ impl Single {
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
             score,
+            gas: Some(gas),
         })
     }
 }

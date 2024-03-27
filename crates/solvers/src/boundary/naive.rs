@@ -138,6 +138,11 @@ pub fn solve(
                 )
             })
             .collect(),
+        // We can skip computing a gas estimate here because that is only used by the protocol
+        // when quoting trades. And because the naive solver is not able to solve single order
+        // auctions (which is how we model a /quote request) it can not be used for
+        // quoting anyway.
+        gas: None,
         interactions: swap
             .into_iter()
             .map(|(input, output)| {

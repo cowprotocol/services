@@ -691,6 +691,9 @@ fn main() {
 
     // Test Contract for incrementing arbitrary counters.
     generate_contract("Counter");
+
+    // Test Contract for using up a specified amount of gas.
+    generate_contract("GasHog");
 }
 
 fn generate_contract(name: &str) {
