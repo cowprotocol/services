@@ -26,11 +26,19 @@ pub struct AuctionWithId {
 /// The price of a token in wei. This represents how much wei is needed to buy
 /// 10**18 of another token.
 #[derive(Debug, Clone, Copy)]
-pub struct Price(pub eth::Ether);
+pub struct Price(eth::Ether);
 
 impl Price {
     /// The base Ether amount for pricing.
     const BASE: u128 = 10_u128.pow(18);
+
+    pub fn new(value: eth::Ether) -> Result<Self, InvalidPrice> {
+        if value.0.is_zero() {
+            Err(InvalidPrice)
+        } else {
+            Ok(Self(value))
+        }
+    }
 
     /// Apply this price to some token amount, converting that token into ETH.
     ///
@@ -54,3 +62,7 @@ impl Price {
 
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
+
+#[derive(Debug, thiserror::Error)]
+#[error("price cannot be zero")]
+pub struct InvalidPrice;

@@ -1,7 +1,12 @@
-use crate::domain::{
-    self,
-    auction::{self, order},
-    eth,
+pub use error::Error;
+
+use crate::{
+    domain::{
+        self,
+        auction::{self, order},
+        eth,
+    },
+    util::conv::U256Ext,
 };
 
 #[derive(Debug)]
@@ -39,7 +44,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let surplus = self.surplus().ok_or(Error::Surplus(self.sell, self.buy))?;
+        let surplus = self.surplus()?;
         let price = prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
@@ -47,26 +52,11 @@ impl Trade {
         Ok(price.in_eth(surplus.amount))
     }
 
-    /// Surplus based on uniform clearing prices returns the surplus without any
-    /// fees applied.
-    ///
-    /// Denominated in SURPLUS token
-    #[allow(dead_code)]
-    fn surplus_before_fee(&self) -> Option<eth::Asset> {
-        trade_surplus(
-            self.side,
-            self.executed,
-            self.sell,
-            self.buy,
-            &self.prices.uniform,
-        )
-    }
-
     /// Surplus based on custom clearing prices returns the surplus after all
     /// fees have been applied.
     ///
     /// Denominated in SURPLUS token
-    pub fn surplus(&self) -> Option<eth::Asset> {
+    pub fn surplus(&self) -> Result<eth::Asset, error::Math> {
         trade_surplus(
             self.side,
             self.executed,
@@ -97,35 +87,42 @@ fn trade_surplus(
     sell: eth::Asset,
     buy: eth::Asset,
     prices: &ClearingPrices,
-) -> Option<eth::Asset> {
+) -> Result<eth::Asset, error::Math> {
     match kind {
         order::Side::Buy => {
             // scale limit sell to support partially fillable orders
             let limit_sell = sell
                 .amount
                 .0
-                .checked_mul(executed.0)?
-                .checked_div(buy.amount.0)?;
+                .checked_mul(executed.0)
+                .ok_or(error::Math::Overflow)?
+                .checked_div(buy.amount.0)
+                .ok_or(error::Math::DivisionByZero)?;
+            let sold = executed
+                .0
+                .checked_mul(prices.buy)
+                .ok_or(error::Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(error::Math::DivisionByZero)?;
             // difference between limit sell and executed amount converted to sell token
-            limit_sell.checked_sub(
-                executed
-                    .0
-                    .checked_mul(prices.buy)?
-                    .checked_div(prices.sell)?,
-            )
+            limit_sell.checked_sub(sold).ok_or(error::Math::Negative)
         }
         order::Side::Sell => {
             // scale limit buy to support partially fillable orders
             let limit_buy = executed
                 .0
-                .checked_mul(buy.amount.0)?
-                .checked_div(sell.amount.0)?;
-            // difference between executed amount converted to buy token and limit buy
-            executed
+                .checked_mul(buy.amount.0)
+                .ok_or(error::Math::Overflow)?
+                .checked_div(sell.amount.0)
+                .ok_or(error::Math::DivisionByZero)?;
+            let bought = executed
                 .0
-                .checked_mul(prices.sell)?
-                .checked_div(prices.buy)?
-                .checked_sub(limit_buy)
+                .checked_mul(prices.sell)
+                .ok_or(error::Math::Overflow)?
+                .checked_ceil_div(&prices.buy)
+                .ok_or(error::Math::DivisionByZero)?;
+            // difference between executed amount converted to buy token and limit buy
+            bought.checked_sub(limit_buy).ok_or(error::Math::Negative)
         }
     }
     .map(|surplus| match kind {
@@ -140,10 +137,24 @@ fn trade_surplus(
     })
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("failed to calculate surplus for trade sell {0:?} buy {1:?}")]
-    Surplus(eth::Asset, eth::Asset),
-    #[error("missing native price for token {0:?}")]
-    MissingPrice(eth::TokenAddress),
+pub mod error {
+    use crate::domain::eth;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Error {
+        #[error("missing native price for token {0:?}")]
+        MissingPrice(eth::TokenAddress),
+        #[error(transparent)]
+        Math(#[from] Math),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Math {
+        #[error("overflow")]
+        Overflow,
+        #[error("division by zero")]
+        DivisionByZero,
+        #[error("negative")]
+        Negative,
+    }
 }
