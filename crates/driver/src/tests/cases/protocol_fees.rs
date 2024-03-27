@@ -77,16 +77,9 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .then_some(test_case.execution.solver.sell - solver_fee),
     };
     // Amounts expected to be returned by the driver after fee processing
-    let expected_amounts = if test_case.fee_handler == FeeHandler::Driver {
-        ExpectedOrderAmounts {
-            sell: test_case.execution.driver.sell,
-            buy: test_case.execution.driver.buy,
-        }
-    } else {
-        ExpectedOrderAmounts {
-            sell: test_case.execution.solver.sell,
-            buy: test_case.execution.solver.buy,
-        }
+    let expected_amounts = ExpectedOrderAmounts {
+        sell: test_case.execution.driver.sell,
+        buy: test_case.execution.driver.buy,
     };
     let order = ab_order()
         .kind(order::Kind::Limit)
@@ -177,7 +170,7 @@ async fn protocol_fee_calculated_on_the_solver_side() {
                 buy: 40.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 40.ether().into_wei(),
+                sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
         },
