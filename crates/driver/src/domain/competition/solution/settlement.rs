@@ -224,9 +224,7 @@ impl Settlement {
         self.solutions
             .values()
             .map(|solution| solution.scoring(&prices))
-            .try_fold(eth::Ether(0.into()), |acc, score| {
-                score.map(|score| acc + score)
-            })
+            .sum()
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.

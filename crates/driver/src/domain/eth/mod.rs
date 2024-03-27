@@ -335,6 +335,12 @@ impl num::Zero for Ether {
     }
 }
 
+impl std::iter::Sum for Ether {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(num::Zero::zero(), std::ops::Add::add)
+    }
+}
+
 /// Block number.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);

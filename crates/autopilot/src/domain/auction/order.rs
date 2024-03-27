@@ -64,7 +64,7 @@ impl fmt::Debug for OrderUid {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Side {
     Buy,
     Sell,
@@ -153,5 +153,11 @@ pub struct TargetAmount(pub eth::U256);
 impl From<eth::U256> for TargetAmount {
     fn from(value: eth::U256) -> Self {
         Self(value)
+    }
+}
+
+impl From<TargetAmount> for eth::U256 {
+    fn from(value: TargetAmount) -> Self {
+        value.0
     }
 }
