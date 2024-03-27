@@ -115,13 +115,14 @@ impl Solver {
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
-                "feePolicies": match quote.order.kind {
-                    _ if config.quote => json!([]),
-                    _ if config.fee_handler == FeeHandler::Driver => json!([]),
-                    order::Kind::Market => json!([]),
-                    order::Kind::Liquidity => json!([]),
-                    order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
-                },
+                // TODO: Temporary removed
+                // "feePolicies": match quote.order.kind {
+                //     _ if config.quote => json!([]),
+                //     _ if config.fee_handler == FeeHandler::Driver => json!([]),
+                //     order::Kind::Market => json!([]),
+                //     order::Kind::Liquidity => json!([]),
+                //     order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
+                // },
             }));
         }
         for (i, solution) in config.solutions.iter().enumerate() {
