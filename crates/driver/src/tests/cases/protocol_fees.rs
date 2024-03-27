@@ -1183,3 +1183,40 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
     };
     protocol_fee_test_case(test_case).await;
 }
+
+#[tokio::test]
+#[ignore]
+async fn price_improvement_fee_sell_no_improvement() {
+    let fee_policy = Policy::PriceImprovement {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 0.9,
+        quote: Quote {
+            sell: 49.ether().into_wei(),
+            buy: 50.ether().into_wei(),
+            network_fee: 1.ether().into_wei(),
+        },
+    };
+    let test_case = TestCase {
+        fee_policy,
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            // Demanding to receive less than quoted (in-market)
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Sell,
+        },
+        execution: Execution {
+            // Receive 5 ETH less than quoted, no improvement
+            solver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 45.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 50.ether().into_wei(),
+                buy: 45.ether().into_wei(),
+            },
+        },
+        expected_score: 5.ether().into_wei(),
+    };
+    protocol_fee_test_case(test_case).await;
+}
