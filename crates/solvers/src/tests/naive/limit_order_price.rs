@@ -13,10 +13,9 @@ async fn test() {
 
     // pool price is 1:1 with 1000 units of each token
     // order sells 1 unit for 0.9 units
-    // leaving us with 0.1 units of surplus (modulo price impact)
-    // order is estimated to cost ~200000 units of gas to execute
-    // with a native price of 1:1 we should find a solution as
-    // long as gas price < 500000000000
+    // this trade will incur 3% AMM fee and ~1% price impact
+    // leaving us with 0.096 units of surplus
+    // order is estimated to cost ~248391 units of gas to execute
     let solution = engine
         .solve(json!({
             "id": "1",
@@ -96,6 +95,8 @@ async fn test() {
                     "successProbability": 0.5,
                 },
                 "trades": [{
+                    // fee / effectiveGasPrice == 248391 == unitsOfGasForOrder
+                    // fee + executedAmount == order.sellAmount
                     "executedAmount": "996274135000000000",
                     "fee": "3725865000000000",
                     "kind": "fulfillment",
