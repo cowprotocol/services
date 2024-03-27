@@ -153,17 +153,20 @@ pub fn solve(
                     .find(|o| o.uid.0 == order.metadata.uid.0)?
                     .clone();
 
-                // partial fills not supported so always execute the full amount
-                let executed = match order.side {
-                    Side::Buy => order.buy.amount,
-                    Side::Sell => order.sell.amount,
-                };
-
                 let fee = if order.solver_determines_fee() {
                     let sell_price = tokens.0.get(&order.sell.token)?.reference_price?;
                     Fee::Surplus(sell_price.ether_value(eth_per_order)?)
                 } else {
                     Fee::Protocol
+                };
+
+                // partial fills not supported so always execute the full amount
+                let executed = match order.side {
+                    Side::Buy => order.buy.amount,
+                    Side::Sell => order
+                        .sell
+                        .amount
+                        .checked_sub(fee.surplus().unwrap_or_default())?,
                 };
 
                 Some(solution::Trade::Fulfillment(solution::Fulfillment::new(
