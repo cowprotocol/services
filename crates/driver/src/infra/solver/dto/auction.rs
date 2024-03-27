@@ -70,6 +70,14 @@ impl Auction {
                 .iter()
                 .map(|order| {
                     let mut available = order.available(weth);
+                    // In case of volume based fees, fee withheld by driver might be higher than the
+                    // surplus of the solution. This would lead to violating limit prices when
+                    // driver tries to withhold the volume based fee. To avoid this, we artificially
+                    // adjust the order limit amounts (make then worse) before sending to solvers,
+                    // to force solvers to only submit solutions with enough surplus to cover the
+                    // fee.
+                    //
+                    // https://github.com/cowprotocol/services/issues/2440
                     if fee_handler == FeeHandler::Driver {
                         if let Some(fees::FeePolicy::Volume { factor }) =
                             order.protocol_fees.first()

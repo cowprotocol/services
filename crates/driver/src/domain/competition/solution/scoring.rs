@@ -367,8 +367,6 @@ pub struct CustomClearingPrices {
 pub enum Error {
     #[error("multiple fee policies are not supported yet")]
     MultipleFeePolicies,
-    #[error("failed to calculate surplus for trade executed {0:?}, custom price {1:?}")]
-    Surplus(order::TargetAmount, CustomClearingPrices),
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
