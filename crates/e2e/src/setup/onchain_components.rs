@@ -413,6 +413,48 @@ impl OnchainComponents {
         .expect("Uniswap V2 pair couldn't mint");
     }
 
+    pub async fn mint_token_a_to_token_b_uni_v2_pool(
+        &self,
+        token_a: &MintableToken,
+        token_b: &MintableToken,
+        amount: U256,
+    ) {
+        let pair = contracts::IUniswapLikePair::at(
+            &self.web3,
+            self.contracts
+                .uniswap_v2_factory
+                .get_pair(token_b.address(), token_a.address())
+                .call()
+                .await
+                .expect("failed to get Uniswap V2 pair"),
+        );
+        assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
+
+        // Mint amount + 1 to the pool, and then swap out 1 of the minted token
+        // in order to force it to update its K-value.
+        token_b.mint(pair.address(), amount + 1).await;
+        let (out0, out1) = if TokenPair::new(token_b.address(), token_a.address())
+            .unwrap()
+            .get()
+            .0
+            == token_b.address()
+        {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
+        pair.swap(
+            out0.into(),
+            out1.into(),
+            token_a.minter.address(),
+            Default::default(),
+        )
+        .from(token_a.minter.clone())
+        .send()
+        .await
+        .expect("Uniswap V2 pair couldn't mint");
+    }
+
     pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
         let contract =
             CowProtocolToken::builder(&self.web3, holder.address(), holder.address(), supply)

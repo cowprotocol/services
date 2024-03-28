@@ -1,4 +1,5 @@
 use {
+    driver::domain::eth::NonZeroU256,
     e2e::{
         setup::{colocation::SolverEngine, *},
         tx,
@@ -6,6 +7,7 @@ use {
     ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount, Validity},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -71,15 +73,15 @@ async fn combined_protocol_fees(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_gno, token_dai] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
         .await;
 
     // Fund trader accounts
     token_gno.mint(trader.address(), to_wei(100)).await;
 
     // Create and fund Uniswap pool
-    token_gno.mint(solver.address(), to_wei(1000)).await;
-    token_dai.mint(solver.address(), to_wei(1000)).await;
+    token_gno.mint(solver.address(), to_wei(10000)).await;
+    token_dai.mint(solver.address(), to_wei(200)).await;
     tx!(
         solver.account(),
         onchain
@@ -91,23 +93,20 @@ async fn combined_protocol_fees(web3: Web3) {
         solver.account(),
         token_gno.approve(
             onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
+            to_wei(10000)
         )
     );
     tx!(
         solver.account(),
-        token_dai.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
+        token_dai.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
     );
     tx!(
         solver.account(),
         onchain.contracts().uniswap_v2_router.add_liquidity(
             token_gno.address(),
             token_dai.address(),
-            to_wei(1000),
-            to_wei(1000),
+            to_wei(10),
+            to_wei(10),
             0_u64.into(),
             0_u64.into(),
             solver.address(),
@@ -128,7 +127,7 @@ async fn combined_protocol_fees(web3: Web3) {
         onchain.contracts(),
         vec![SolverEngine {
             name: "test_solver".into(),
-            account: solver,
+            account: solver.clone(),
             endpoint: solver_endpoint,
         }],
     );
@@ -253,7 +252,7 @@ async fn combined_protocol_fees(web3: Web3) {
         sell_token: token_gno.address(),
         sell_amount: to_wei(5),
         buy_token: token_dai.address(),
-        buy_amount: to_wei(5),
+        buy_amount: to_wei(6),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         partially_fillable: true,
@@ -265,6 +264,43 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let uid = services.create_order(&order).await.unwrap();
+    let quote_request = OrderQuoteRequest {
+        sell_token: token_gno.address(),
+        buy_token: token_dai.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::AfterFee {
+                value: NonZeroU256::try_from(5).unwrap(),
+            },
+        },
+        validity: Validity::To(model::time::now_in_epoch_seconds() + 300),
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+
+    tx!(
+        solver.account(),
+        onchain.contracts().uniswap_v2_router.add_liquidity(
+            token_gno.address(),
+            token_dai.address(),
+            to_wei(9000),
+            to_wei(10),
+            0_u64.into(),
+            0_u64.into(),
+            solver.address(),
+            U256::max_value(),
+        )
+    );
+    // onchain.mint_token_to_weth_uni_v2_pool(&token_gno, to_wei(10000)).await;
+
+    tracing::info!("waiting for liquidity state to update");
+    wait_for_condition(TIMEOUT, || async {
+        // Mint blocks until we evict the cached liquidity and fetch the new state.
+        onchain.mint_block().await;
+        let next = services.submit_quote(&quote_request).await.unwrap();
+        next.quote.buy_amount != quote.quote.buy_amount
+    })
+    .await
+    .unwrap();
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
