@@ -1,13 +1,6 @@
 use {
     super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
-    crate::{
-        domain::competition::order,
-        infra::time,
-        tests::{
-            cases::{self, EtherExt},
-            hex_address,
-        },
-    },
+    crate::{domain::competition::order, infra::time, tests::hex_address},
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
