@@ -1,6 +1,7 @@
 use {
     driver::domain::eth::NonZeroU256,
     e2e::{
+        assert_approximately_eq,
         setup::{colocation::SolverEngine, *},
         tx,
         tx_value,
@@ -243,19 +244,19 @@ async fn combined_protocol_fees(web3: Web3) {
         .get_order(&market_price_improvement_uid)
         .await
         .unwrap();
-    assert_approximately(
+    assert_approximately_eq!(
         market_price_improvement.metadata.executed_surplus_fee,
-        202975487334646u128.into(),
+        U256::from(202975487334646u128)
     );
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
-    assert_approximately(
+    assert_approximately_eq!(
         limit_surplus_order.metadata.executed_surplus_fee,
-        2867498030315590404u128.into(),
+        U256::from(2867498030315590404u128)
     );
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
-    assert_approximately(
+    assert_approximately_eq!(
         partner_fee_order.metadata.executed_surplus_fee,
-        200163063434215496u128.into(),
+        U256::from(200163063434215496u128)
     );
 
     let balance_after = market_order_token
@@ -263,21 +264,21 @@ async fn combined_protocol_fees(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_approximately(balance_after, 135046086668429u128.into());
+    assert_approximately_eq!(balance_after, U256::from(135046086668429u128));
 
     let balance_after = limit_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    assert_approximately(balance_after, 97299747979617501015u128.into());
+    assert_approximately_eq!(balance_after, U256::from(97299747979617501015u128));
 
     let balance_after = partner_fee_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    assert_approximately(balance_after, 133174891053662228u128.into());
+    assert_approximately_eq!(balance_after, U256::from(133174891053662228u128));
 }
 
 async fn volume_fee_buy_order_test(web3: Web3) {
@@ -306,19 +307,6 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         504208401617866820u128.into(),
     )
     .await;
-}
-
-// because of rounding errors, it's good enough to check that the expected value
-// is within a very narrow range of the executed value
-fn assert_approximately(executed_value: U256, expected_value: U256) {
-    let lower = expected_value * U256::from(99999999999u128) / U256::from(100000000000u128); // in percents = 99.999999999%
-    let upper = expected_value * U256::from(100000000001u128) / U256::from(100000000000u128); // in percents = 100.000000001%
-    assert!(
-        executed_value >= lower && executed_value <= upper,
-        "Expected: ~{}, got: {}",
-        expected_value,
-        executed_value
-    )
 }
 
 async fn execute_test(
@@ -442,7 +430,7 @@ async fn execute_test(
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
     let order = services.get_order(&uid).await.unwrap();
-    assert_approximately(order.metadata.executed_surplus_fee, expected_surplus_fee);
+    assert_approximately_eq!(order.metadata.executed_surplus_fee, expected_surplus_fee);
 
     // Check settlement contract balance
     let balance_after = match order_kind {
@@ -457,7 +445,7 @@ async fn execute_test(
             .await
             .unwrap(),
     };
-    assert_approximately(balance_after, expected_settlement_contract_balance);
+    assert_approximately_eq!(balance_after, expected_settlement_contract_balance);
 }
 
 struct ProtocolFeesConfig(Vec<ProtocolFee>);
