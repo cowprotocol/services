@@ -667,6 +667,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                     (OrderClass::Limit, Some(quote))
@@ -695,6 +696,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     self.check_max_limit_orders(owner).await?;
                 }
@@ -721,6 +723,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     self.check_max_limit_orders(owner).await?;
                 }
