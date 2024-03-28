@@ -62,7 +62,7 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
-pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
+pub fn duplicated_solution_id(solver: &solver::Name, id: &solution::Id) {
     tracing::debug!(?id, "discarded solution: duplicated id");
     metrics::get()
         .dropped_solutions
@@ -80,7 +80,7 @@ pub fn solutions(solutions: &[Solution]) {
 }
 
 /// Observe that a solution was discarded because it is empty.
-pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
+pub fn empty_solution(solver: &solver::Name, id: &solution::Id) {
     tracing::debug!(?id, "discarded solution: empty");
     metrics::get()
         .dropped_solutions
@@ -107,12 +107,12 @@ pub fn postprocessing_timed_out(completed: &[Settlement]) {
 }
 
 /// Observe that a solution is about to be encoded into a settlement.
-pub fn encoding(id: solution::Id) {
+pub fn encoding(id: &solution::Id) {
     tracing::trace!(?id, "encoding settlement");
 }
 
 /// Observe that settlement encoding failed.
-pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
+pub fn encoding_failed(solver: &solver::Name, id: &solution::Id, err: &solution::Error) {
     tracing::info!(?id, ?err, "discarded solution: settlement encoding");
     metrics::get()
         .dropped_solutions
@@ -121,28 +121,19 @@ pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::
 }
 
 /// Observe that two solutions were merged.
-pub fn merged(settlement: &Settlement, other: &Settlement) {
-    tracing::debug!(
-        settlement_1 = ?settlement.solutions(),
-        settlement_2 = ?other.solutions(),
-        "merged solutions"
-    );
+pub fn merged(first: &Solution, other: &Solution, result: &Solution) {
+    tracing::debug!(?first, ?other, ?result, "merged solutions");
 }
 
 /// Observe that it was not possible to merge two solutions.
-pub fn not_merged(settlement: &Settlement, other: &Settlement, err: solution::Error) {
-    tracing::debug!(
-        ?err,
-        settlement_1 = ?settlement.solutions(),
-        settlement_2 = ?other.solutions(),
-        "solutions can't be merged"
-    );
+pub fn not_merged(first: &Solution, other: &Solution, err: solution::error::Merge) {
+    tracing::debug!(?err, ?first, ?other, "solutions can't be merged");
 }
 
 /// Observe that scoring is about to start.
 pub fn scoring(settlement: &Settlement) {
     tracing::trace!(
-        solutions = ?settlement.solutions(),
+        solution = ?settlement.solution(),
         gas = ?settlement.gas,
         "scoring settlement"
     );
@@ -160,7 +151,7 @@ pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
 /// Observe the settlement score.
 pub fn score(settlement: &Settlement, score: &competition::Score) {
     tracing::info!(
-        solutions = ?settlement.solutions(),
+        solution = ?settlement.solution(),
         score = ?score,
         "scored settlement"
     );

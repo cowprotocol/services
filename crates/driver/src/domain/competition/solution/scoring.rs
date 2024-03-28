@@ -362,8 +362,6 @@ pub struct CustomClearingPrices {
 pub enum Error {
     #[error("multiple fee policies are not supported yet")]
     MultipleFeePolicies,
-    #[error("fee policy not implemented yet")]
-    UnimplementedFeePolicy,
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
