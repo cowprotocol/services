@@ -85,7 +85,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(200)).await;
     let [trader] = onchain.make_accounts(to_wei(200)).await;
     let [limit_order_token, market_order_token, partner_fee_order_token] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
         .await;
 
     limit_order_token.mint(solver.address(), to_wei(1000)).await;
@@ -148,9 +148,9 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let market_price_improvement_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(5),
+        sell_amount: to_wei(10),
         buy_token: market_order_token.address(),
-        buy_amount: to_wei(3),
+        buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -162,9 +162,9 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     let limit_surplus_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(5),
+        sell_amount: to_wei(10),
         buy_token: limit_order_token.address(),
-        buy_amount: to_wei(6),
+        buy_amount: to_wei(15),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -176,9 +176,9 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     let partner_fee_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(5),
+        sell_amount: to_wei(10),
         buy_token: partner_fee_order_token.address(),
-        buy_amount: to_wei(3),
+        buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         app_data: partner_fee_app_data,
@@ -263,17 +263,17 @@ async fn combined_protocol_fees(web3: Web3) {
         .unwrap();
     assert_approximately(
         market_price_improvement.metadata.executed_surplus_fee,
-        202972993230628u128.into(),
+        202975487334646u128.into(),
     );
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
     assert_approximately(
         limit_surplus_order.metadata.executed_surplus_fee,
-        1473330174389045481u128.into(),
+        2867498030315590404u128.into(),
     );
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     assert_approximately(
         partner_fee_order.metadata.executed_surplus_fee,
-        100163063434215497u128.into(),
+        200163063434215496u128.into(),
     );
 
     let balance_after = market_order_token
@@ -281,21 +281,21 @@ async fn combined_protocol_fees(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_approximately(balance_after, 135044427261218u128.into());
+    assert_approximately(balance_after, 135046086668429u128.into());
 
     let balance_after = limit_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    assert_approximately(balance_after, 99005624671640782648u128.into());
+    assert_approximately(balance_after, 97299747979617501015u128.into());
 
     let balance_after = partner_fee_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    assert_approximately(balance_after, 66641691187129028u128.into());
+    assert_approximately(balance_after, 133174891053662228u128.into());
 }
 
 async fn partner_fee_sell_order_test(web3: Web3) {
