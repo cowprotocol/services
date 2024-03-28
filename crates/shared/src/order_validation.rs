@@ -2356,7 +2356,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_market_orders() {
+    fn detects_market_orders_buy() {
         let quote = Quote {
             sell_amount: 90.into(),
             buy_amount: 100.into(),
@@ -2405,6 +2405,60 @@ mod tests {
                 fee: quote.fee_amount,
             },
             model::order::OrderKind::Buy,
+        ));
+    }
+
+    #[test]
+    fn detects_market_orders_sell() {
+        // 1 to 1 conversion
+        let quote = Quote {
+            sell_amount: 100.into(),
+            buy_amount: 100.into(),
+            fee_amount: 10.into(),
+            ..Default::default()
+        };
+
+        // at market price
+        assert!(!is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 90.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
+        ));
+        // willing to buy less than market price
+        assert!(!is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 80.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
+        ));
+        // wanting to buy more than market price
+        assert!(is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 1000.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
         ));
     }
 }
