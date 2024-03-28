@@ -12,8 +12,8 @@ const_format = "0.2"
 futures = { workspace = true }
 hex = { workspace = true }
 sqlx = { workspace = true }
+strum = { version = "0.25", features = ["derive"] }
 
 [dev-dependencies]
 hex-literal = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
-strum = { version = "0.25", features = ["derive"] }
