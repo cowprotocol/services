@@ -3,6 +3,7 @@ use {
         boundary::{self},
         domain::{self, fee::FeeFactor},
     },
+    app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -36,7 +37,7 @@ pub struct Order {
     pub buy_token_balance: boundary::BuyTokenDestination,
     #[serde(flatten)]
     pub class: boundary::OrderClass,
-    pub app_data: boundary::AppDataHash,
+    pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
 }
@@ -207,14 +208,14 @@ impl From<boundary::BuyTokenDestination> for domain::auction::order::BuyTokenDes
     }
 }
 
-impl From<domain::auction::order::AppDataHash> for boundary::AppDataHash {
+impl From<domain::auction::order::AppDataHash> for AppDataHash {
     fn from(hash: domain::auction::order::AppDataHash) -> Self {
         Self(hash.0)
     }
 }
 
-impl From<boundary::AppDataHash> for domain::auction::order::AppDataHash {
-    fn from(hash: boundary::AppDataHash) -> Self {
+impl From<AppDataHash> for domain::auction::order::AppDataHash {
+    fn from(hash: AppDataHash) -> Self {
         Self(hash.0)
     }
 }

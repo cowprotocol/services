@@ -26,13 +26,9 @@ pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution
 pub fn scoring_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: Option<solution::Id>,
+    solution_id: &solution::Id,
     err: &score::Error,
 ) {
-    if solution_id.is_none() {
-        return;
-    }
-
     let notification = match err {
         score::Error::ZeroScore => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
@@ -56,13 +52,13 @@ pub fn scoring_failed(
         score::Error::Scoring(_) => return, // TODO: should we notify?
     };
 
-    solver.notify(auction_id, solution_id, notification);
+    solver.notify(auction_id, Some(solution_id.clone()), notification);
 }
 
 pub fn encoding_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
     err: &solution::Error,
 ) {
     let notification = match err {
@@ -86,13 +82,13 @@ pub fn encoding_failed(
         )),
     };
 
-    solver.notify(auction_id, Some(solution_id), notification);
+    solver.notify(auction_id, Some(solution_id.clone()), notification);
 }
 
 pub fn simulation_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
     err: &simulator::Error,
     succeeded_at_least_once: SimulationSucceededAtLeastOnce,
 ) {
@@ -104,19 +100,15 @@ pub fn simulation_failed(
         ),
         simulator::Error::Other(error) => notification::Kind::DriverError(error.to_string()),
     };
-    solver.notify(auction_id, Some(solution_id), kind);
+    solver.notify(auction_id, Some(solution_id.clone()), kind);
 }
 
 pub fn executed(
     solver: &Solver,
     auction_id: auction::Id,
-    solution_id: Option<solution::Id>,
+    solution_id: &solution::Id,
     res: &Result<eth::TxId, Error>,
 ) {
-    if solution_id.is_none() {
-        return;
-    };
-
     let kind = match res {
         Ok(hash) => notification::Settlement::Success(hash.clone()),
         Err(Error::Revert(hash)) => notification::Settlement::Revert(hash.clone()),
@@ -126,7 +118,7 @@ pub fn executed(
 
     solver.notify(
         Some(auction_id),
-        solution_id,
+        Some(solution_id.clone()),
         notification::Kind::Settled(kind),
     );
 }
@@ -134,11 +126,11 @@ pub fn executed(
 pub fn duplicated_solution_id(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
+    solution_id: &solution::Id,
 ) {
     solver.notify(
         auction_id,
-        Some(solution_id),
+        Some(solution_id.clone()),
         notification::Kind::DuplicatedSolutionId,
     );
 }

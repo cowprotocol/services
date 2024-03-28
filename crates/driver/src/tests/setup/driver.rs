@@ -184,7 +184,6 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
-           logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address())
@@ -228,6 +227,7 @@ async fn create_config_file(
                account = "0x{}"
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
+               fee-handler = {}
                {}
                "#,
             solver.name,
@@ -241,6 +241,7 @@ async fn create_config_file(
             hex::encode(solver.private_key.secret_bytes()),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
+            serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.rank_by_surplus_date.map_or_else(
                 || "".to_string(),
                 |timestamp| format!("rank-by-surplus-date = \"{}\"", timestamp.to_rfc3339())
