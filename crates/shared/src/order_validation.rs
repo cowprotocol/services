@@ -2376,6 +2376,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
@@ -2389,6 +2390,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
@@ -2402,6 +2404,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
     }
 }
