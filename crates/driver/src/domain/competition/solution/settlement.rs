@@ -209,7 +209,7 @@ impl Settlement {
         auction: &competition::Auction,
     ) -> Result<eth::Ether, solution::error::Scoring> {
         let prices = auction.prices();
-        
+
         self.solution.scoring(&prices)
     }
 
