@@ -928,8 +928,22 @@ pub struct Amounts {
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-pub fn is_order_outside_market_price(order: &Amounts, quote: &Amounts) -> bool {
-    (order.sell + order.fee).full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy)
+pub fn is_order_outside_market_price(
+    order: &Amounts,
+    quote: &Amounts,
+    kind: model::order::OrderKind,
+) -> bool {
+    match kind {
+        OrderKind::Buy => {
+            order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy)
+        }
+        OrderKind::Sell => {
+            order
+                .sell
+                .full_mul(quote.buy - quote.fee / quote.sell * quote.buy)
+                < quote.sell.full_mul(order.buy)
+        }
+    }
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(

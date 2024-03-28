@@ -225,18 +225,16 @@ pub struct Quote {
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
 pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, Math> {
-    let quote_sell_amount = quote
-        .sell_amount
-        .checked_add(quote.fee_amount)
-        .ok_or(Math::Overflow)?;
-
     match order.side {
         Side::Sell => {
-            let scaled_buy_amount = quote
+            let quote_buy_amount = quote
                 .buy_amount
+                .checked_sub(quote.fee_amount / quote.sell_amount * quote.buy_amount)
+                .ok_or(Math::Negative)?;
+            let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order.sell_amount)
                 .ok_or(Math::Overflow)?
-                .checked_div(quote_sell_amount)
+                .checked_div(quote.sell_amount)
                 .ok_or(Math::DivisionByZero)?;
             let buy_amount = order.buy_amount.max(scaled_buy_amount);
             Ok(PriceLimits {
@@ -245,6 +243,10 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
             })
         }
         Side::Buy => {
+            let quote_sell_amount = quote
+                .sell_amount
+                .checked_add(quote.fee_amount)
+                .ok_or(Math::Overflow)?;
             let scaled_sell_amount = quote_sell_amount
                 .checked_mul(order.buy_amount)
                 .ok_or(Math::Overflow)?
