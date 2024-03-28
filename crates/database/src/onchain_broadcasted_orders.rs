@@ -35,19 +35,24 @@ impl OnchainOrderPlacementError {
 }
 
 #[cfg(test)]
-impl OnchainOrderPlacementError {
-    pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 8> {
-        const ERRORS: [OnchainOrderPlacementError; 8] = [
-            OnchainOrderPlacementError::QuoteNotFound,
-            OnchainOrderPlacementError::InvalidQuote,
-            OnchainOrderPlacementError::PreValidationError,
-            OnchainOrderPlacementError::DisabledOrderClass,
-            OnchainOrderPlacementError::ValidToTooFarInFuture,
-            OnchainOrderPlacementError::InvalidOrderData,
-            OnchainOrderPlacementError::InsufficientFee,
-            OnchainOrderPlacementError::Other,
-        ];
-        ERRORS.into_iter()
+impl Iterator for OnchainOrderPlacementError {
+    type Item = OnchainOrderPlacementError;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use OnchainOrderPlacementError::*;
+        let next = match self {
+            QuoteNotFound => Some(InvalidQuote),
+            InvalidQuote => Some(PreValidationError),
+            PreValidationError => Some(DisabledOrderClass),
+            DisabledOrderClass => Some(ValidToTooFarInFuture),
+            ValidToTooFarInFuture => Some(InvalidOrderData),
+            InvalidOrderData => Some(InsufficientFee),
+            InsufficientFee => Some(NonZeroFee),
+            NonZeroFee => Some(Other),
+            Other => None,
+        };
+        *self = next.clone().unwrap_or(Other);
+        next
     }
 }
 
@@ -164,9 +169,9 @@ mod tests {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         round_trip_for_error(&mut db, None).await;
-        for error in OnchainOrderPlacementError::into_iter() {
+        for error in OnchainOrderPlacementError::QuoteNotFound {
             crate::clear_DANGER_(&mut db).await.unwrap();
-            round_trip_for_error(&mut db, Some(error)).await;
+            round_trip_for_error(&mut db, Some(error.clone())).await;
         }
     }
 
