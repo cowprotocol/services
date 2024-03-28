@@ -76,7 +76,20 @@ async fn private_rpc_with_high_risk_solution() {
     err.kind("FailedToSubmit");
 }
 
-/// Checks that very large settlements are rejected by the driver.
+#[tokio::test]
+#[ignore]
+async fn too_much_gas() {
+    let test = tests::setup()
+        .name("too much gas")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution().increase_gas(6_000_000))
+        .rpc_args(vec!["--gas-limit".into(), "10000000".into()])
+        .done()
+        .await;
+    test.solve().await.ok().empty();
+}
+
 #[tokio::test]
 #[ignore]
 async fn high_gas_limit() {
@@ -84,16 +97,18 @@ async fn high_gas_limit() {
         .name("high gas limit")
         .pool(ab_pool())
         .order(ab_order())
-        .solution(ab_solution().increase_gas(15_000_000))
+        .solution(ab_solution().increase_gas(4_000_000))
+        .rpc_args(vec!["--gas-limit".into(), "10000000".into()])
         .done()
         .await;
 
-    // Set to 30M for solving purposes
+    test.solve().await.ok().orders(&[ab_order()]);
+
+    // Assume validators downvoted gas limit, solution still settles
     test.web3()
         .transport()
-        .execute("evm_setBlockGasLimit", vec![serde_json::json!(30_000_000)])
+        .execute("evm_setBlockGasLimit", vec![serde_json::json!(9_000_000)])
         .await
         .unwrap();
-
-    test.solve().await.ok().empty();
+    test.settle().await.ok().await;
 }

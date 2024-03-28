@@ -473,6 +473,7 @@ pub fn setup() -> Setup {
         enable_simulation: true,
         settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
+        rpc_args: vec!["--gas-limit".into(), "10000000".into()],
     }
 }
 
@@ -494,6 +495,8 @@ pub struct Setup {
     settlement_address: Option<eth::H160>,
     /// Via which mempool the solutions should be submitted
     mempools: Vec<Mempool>,
+    /// Extra configuration for the RPC node
+    rpc_args: Vec<String>,
 }
 
 /// The validity of a solution.
@@ -751,6 +754,11 @@ impl Setup {
         self
     }
 
+    pub fn rpc_args(mut self, rpc_args: Vec<String>) -> Self {
+        self.rpc_args = rpc_args;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -787,6 +795,7 @@ impl Setup {
             trader_secret_key,
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
+            rpc_args: self.rpc_args,
         })
         .await;
         let mut solutions = Vec::new();
