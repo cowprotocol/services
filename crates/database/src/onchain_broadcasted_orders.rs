@@ -171,7 +171,7 @@ mod tests {
         round_trip_for_error(&mut db, None).await;
         for error in OnchainOrderPlacementError::QuoteNotFound {
             crate::clear_DANGER_(&mut db).await.unwrap();
-            round_trip_for_error(&mut db, Some(error.clone())).await;
+            round_trip_for_error(&mut db, Some(error)).await;
         }
     }
 
