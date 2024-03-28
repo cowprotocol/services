@@ -1,11 +1,14 @@
 use {
+    driver::domain::eth::NonZeroU256,
     e2e::{
         setup::{colocation::SolverEngine, *},
         tx,
+        tx_value,
     },
     ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount, Validity},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -36,6 +39,263 @@ async fn local_node_volume_fee_buy_order() {
 #[ignore]
 async fn local_node_price_improvement_fee_sell_order() {
     run_test(price_improvement_fee_sell_order_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_combined_protocol_fees() {
+    run_test(combined_protocol_fees).await;
+}
+
+async fn combined_protocol_fees(web3: Web3) {
+    let limit_surplus_policy = ProtocolFee {
+        policy: FeePolicyKind::Surplus {
+            factor: 0.3,
+            max_volume_factor: 0.9,
+        },
+        policy_order_class: FeePolicyOrderClass::Limit,
+    };
+    let market_price_improvement_policy = ProtocolFee {
+        policy: FeePolicyKind::PriceImprovement {
+            factor: 0.3,
+            max_volume_factor: 0.9,
+        },
+        policy_order_class: FeePolicyOrderClass::Market,
+    };
+    let partner_fee_app_data = OrderCreationAppData::Full {
+        full: json!({
+            "version": "1.1.0",
+            "metadata": {
+                "partnerFee": {
+                    "bps":1000,
+                    "recipient": "0xb6BAd41ae76A11D10f7b0E664C5007b908bC77C9",
+                }
+            }
+        })
+        .to_string(),
+    };
+
+    let autopilot_config = vec![
+        ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
+        "--fee-policy-max-partner-fee=0.02".to_string(),
+    ];
+
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(200)).await;
+    let [trader] = onchain.make_accounts(to_wei(200)).await;
+    let [limit_order_token, market_order_token, partner_fee_order_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10), to_wei(10))
+        .await;
+
+    limit_order_token.mint(solver.address(), to_wei(1000)).await;
+    market_order_token.mint(solver.address(), to_wei(100)).await;
+    partner_fee_order_token
+        .mint(solver.address(), to_wei(100))
+        .await;
+    tx!(
+        solver.account(),
+        limit_order_token.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
+    );
+    tx!(
+        solver.account(),
+        market_order_token.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
+    );
+    tx!(
+        solver.account(),
+        partner_fee_order_token
+            .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
+    );
+    tx!(
+        trader.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(100))
+    );
+    tx_value!(
+        trader.account(),
+        to_wei(100),
+        onchain.contracts().weth.deposit()
+    );
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
+    );
+
+    let services = Services::new(onchain.contracts()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver.clone(),
+            endpoint: solver_endpoint,
+        }],
+    );
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    let market_price_improvement_order = OrderCreation {
+        sell_token: onchain.contracts().weth.address(),
+        sell_amount: to_wei(5),
+        buy_token: market_order_token.address(),
+        buy_amount: to_wei(3),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let limit_surplus_order = OrderCreation {
+        sell_token: onchain.contracts().weth.address(),
+        sell_amount: to_wei(5),
+        buy_token: limit_order_token.address(),
+        buy_amount: to_wei(6),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let partner_fee_order = OrderCreation {
+        sell_token: onchain.contracts().weth.address(),
+        sell_amount: to_wei(5),
+        buy_token: partner_fee_order_token.address(),
+        buy_amount: to_wei(3),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        app_data: partner_fee_app_data,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    let market_price_improvement_uid = services
+        .create_order(&market_price_improvement_order)
+        .await
+        .unwrap();
+    let limit_surplus_order_uid = services.create_order(&limit_surplus_order).await.unwrap();
+    let partner_fee_order_uid = services.create_order(&partner_fee_order).await.unwrap();
+
+    let mut config = vec![
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+    ];
+    config.extend(autopilot_config);
+    services.start_autopilot(None, config);
+
+    tracing::info!("Acquiring a quote.");
+    let quote_request = OrderQuoteRequest {
+        sell_token: onchain.contracts().weth.address(),
+        buy_token: limit_order_token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::AfterFee {
+                value: NonZeroU256::try_from(5).unwrap(),
+            },
+        },
+        validity: Validity::To(model::time::now_in_epoch_seconds() + 300),
+        ..Default::default()
+    };
+    let quote = services.submit_quote(&quote_request).await.unwrap();
+
+    tracing::info!("Rebalancing AMM pool.");
+    onchain
+        .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
+        .await;
+
+    tracing::info!("Waiting for liquidity state to update");
+    wait_for_condition(TIMEOUT, || async {
+        // Mint blocks until we evict the cached liquidity and fetch the new state.
+        onchain.mint_block().await;
+        let next = services.submit_quote(&quote_request).await.unwrap();
+        next.quote.buy_amount != quote.quote.buy_amount
+    })
+    .await
+    .unwrap();
+
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 3 })
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    tracing::info!("Waiting for orders metadata update.");
+    let metadata_updated = || async {
+        onchain.mint_block().await;
+        let order_a = services
+            .get_order(&market_price_improvement_uid)
+            .await
+            .unwrap();
+        let order_b = services.get_order(&limit_surplus_order_uid).await.unwrap();
+        let order_c = services.get_order(&partner_fee_order_uid).await.unwrap();
+        !order_a.metadata.executed_surplus_fee.is_zero()
+            && !order_b.metadata.executed_surplus_fee.is_zero()
+            && !order_c.metadata.executed_surplus_fee.is_zero()
+    };
+    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+
+    let market_price_improvement = services
+        .get_order(&market_price_improvement_uid)
+        .await
+        .unwrap();
+    assert_approximately(
+        market_price_improvement.metadata.executed_surplus_fee,
+        202972993230628u128.into(),
+    );
+    let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
+    assert_approximately(
+        limit_surplus_order.metadata.executed_surplus_fee,
+        1473330174389045481u128.into(),
+    );
+    let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
+    assert_approximately(
+        partner_fee_order.metadata.executed_surplus_fee,
+        100163063434215497u128.into(),
+    );
+
+    let balance_after = market_order_token
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_approximately(balance_after, 135044427261218u128.into());
+
+    let balance_after = limit_order_token
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_approximately(balance_after, 99005624671640782648u128.into());
+
+    let balance_after = partner_fee_order_token
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_approximately(balance_after, 66641691187129028u128.into());
 }
 
 async fn partner_fee_sell_order_test(web3: Web3) {
