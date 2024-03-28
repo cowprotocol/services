@@ -943,7 +943,7 @@ pub fn is_order_outside_market_price(
         OrderKind::Sell => {
             order
                 .sell
-                .full_mul(quote.buy - quote.fee / quote.sell * quote.buy)
+                .full_mul(quote.buy - quote.fee * quote.buy / quote.sell)
                 < quote.sell.full_mul(order.buy)
         }
     }

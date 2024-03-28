@@ -229,7 +229,7 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
         Side::Sell => {
             let quote_buy_amount = quote
                 .buy_amount
-                .checked_sub(quote.fee_amount / quote.sell_amount * quote.buy_amount)
+                .checked_sub(quote.fee_amount * quote.buy_amount / quote.sell_amount)
                 .ok_or(Math::Negative)?;
             let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order.sell_amount)
@@ -327,7 +327,7 @@ mod tests {
             side: Side::Sell,
         };
         let quote = Quote {
-            sell_amount: to_wei(9),
+            sell_amount: to_wei(10),
             buy_amount: to_wei(25),
             fee_amount: to_wei(1),
         };
@@ -338,9 +338,10 @@ mod tests {
             limit.sell.0, order.sell_amount,
             "Sell amount should be taken from the order for sell orders in market price."
         );
-        assert_eq!(
-            limit.buy.0, quote.buy_amount,
-            "Buy amount should reflect the improved market condition from the quote."
+        assert!(
+            limit.buy.0 <= quote.buy_amount,
+            "Buy amount should be equal to quoted buy amount if fee is 0, otherwise have to be \
+             lower."
         );
     }
 
