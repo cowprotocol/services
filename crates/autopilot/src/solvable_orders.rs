@@ -28,7 +28,7 @@ use {
         signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
-        collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
+        collections::{btree_map::Entry, BTreeMap, HashMap},
         sync::{Arc, Mutex, Weak},
         time::Duration,
     },
@@ -190,11 +190,15 @@ impl SolvableOrdersCache {
         filtered_order_events.extend(removed);
 
         // create auction
+        /// How much time we allow for fetching uncached prices.
+        const NATIVE_PRICE_TIMEOUT: Duration = Duration::from_millis(4_000);
         let (orders, mut prices) = get_orders_with_native_prices(
             orders.clone(),
             &self.native_price_estimator,
             self.metrics,
-        );
+            NATIVE_PRICE_TIMEOUT,
+        )
+        .await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
@@ -449,20 +453,17 @@ async fn update_task(
     }
 }
 
-fn get_orders_with_native_prices(
-    orders: Vec<Order>,
+async fn get_orders_with_native_prices(
+    mut orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
+    timeout: Duration,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
-    let traded_tokens = orders
-        .iter()
-        .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    let tokens_by_priority = prioritize_missing_prices(&mut orders);
 
     let prices: HashMap<_, _> = native_price_estimator
-        .get_cached_prices(&traded_tokens)
+        .get_prices(tokens_by_priority, timeout)
+        .await
         .into_iter()
         .flat_map(|(token, result)| {
             let price = to_normalized_price(result.ok()?)?;
@@ -474,7 +475,8 @@ fn get_orders_with_native_prices(
     // and prices that have orders.
     let mut filtered_market_orders = 0_i64;
     let mut used_prices = BTreeMap::new();
-    let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+    let mut tokens_by_priority = indexmap::IndexSet::new();
+    orders.retain(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -484,13 +486,12 @@ fn get_orders_with_native_prices(
             }
             _ => {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
+                tokens_by_priority.insert(*t0);
+                tokens_by_priority.insert(*t1);
                 false
             }
         }
     });
-
-    let tokens_by_priority = prioritize_missing_prices(filtered);
-    native_price_estimator.replace_high_priority(tokens_by_priority);
 
     // Record separate metrics just for missing native token prices for market
     // orders, as they should be prioritized.
@@ -498,7 +499,7 @@ fn get_orders_with_native_prices(
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (usable, used_prices)
+    (orders, used_prices)
 }
 
 /// Computes which missing native prices are the most urgent to fetch.
@@ -507,7 +508,7 @@ fn get_orders_with_native_prices(
 /// For the remaining orders we prioritize token prices that are needed the most
 /// often. That way we have the chance to make a majority of orders solvable
 /// with very few fetch requests.
-fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
+fn prioritize_missing_prices(orders: &mut [Order]) -> IndexSet<H160> {
     /// How old an order can be at most to be considered a market order.
     const MARKET_ORDER_AGE_MINUTES: i64 = 30;
     let market_order_age = chrono::Duration::minutes(MARKET_ORDER_AGE_MINUTES);
@@ -780,7 +781,15 @@ mod tests {
         native_price_estimator
             .expect_estimate_native_price()
             .withf(move |token| *token == token1)
-            .returning(|_| async { Ok(2.) }.boxed());
+            .returning(|_| {
+                async {
+                    // Sleep a bit to prevent estimator to finish before the
+                    // 0ms fetch timeout is over.
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    Ok(2.)
+                }
+                .boxed()
+            });
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
@@ -810,8 +819,13 @@ mod tests {
         // We'll have no native prices in this call. But this call will cause a
         // background task to fetch the missing prices so we'll have them in the
         // next call.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            Default::default(),
+        )
+        .await;
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -819,8 +833,13 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
         // Now we have all the native prices we want.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            Default::default(),
+        )
+        .await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
@@ -1157,14 +1176,14 @@ mod tests {
             ..Default::default()
         };
 
-        let orders = vec![
+        let mut orders = vec![
             order(token(4), token(6), 31),
             order(token(4), token(6), 31),
             order(token(1), token(2), 29), // older market order
             order(token(5), token(6), 31),
             order(token(1), token(3), 1), // youngest market order
         ];
-        let result = prioritize_missing_prices(orders);
+        let result = prioritize_missing_prices(&mut orders);
         assert!(result.into_iter().eq([
             token(1), // coming from youngest market order
             token(3), // coming from youngest market order

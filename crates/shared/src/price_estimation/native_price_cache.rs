@@ -10,6 +10,7 @@ use {
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
+    tokio::time::timeout_at,
     tracing::Instrument,
 };
 
@@ -46,6 +47,7 @@ struct Inner {
     high_priority: Mutex<IndexSet<H160>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
+    concurrent_requests: usize,
 }
 
 struct UpdateTask {
@@ -106,42 +108,39 @@ impl Inner {
     /// have fetched some requested price in the meantime.
     fn estimate_prices_and_update_cache<'a>(
         &'a self,
-        tokens: &'a [H160],
+        tokens: impl Iterator<Item = &'a H160> + Send + 'a,
         max_age: Duration,
         parallelism: usize,
     ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        let estimates = tokens
-            .iter()
-            .enumerate()
-            .map(move |(index, token)| async move {
-                {
-                    // check if price is cached by now
-                    let now = Instant::now();
-                    let mut cache = self.cache.lock().unwrap();
-                    let price = Self::get_cached_price(*token, now, &mut cache, &max_age, false);
-                    if let Some(price) = price {
-                        return (index, price);
-                    }
+        let estimates = tokens.enumerate().map(move |(index, token)| async move {
+            {
+                // check if price is cached by now
+                let now = Instant::now();
+                let mut cache = self.cache.lock().unwrap();
+                let price = Self::get_cached_price(*token, now, &mut cache, &max_age, false);
+                if let Some(price) = price {
+                    return (index, price);
                 }
+            }
 
-                let result = self.estimator.estimate_native_price(*token).await;
+            let result = self.estimator.estimate_native_price(*token).await;
 
-                // update price in cache
-                if should_cache(&result) {
-                    let now = Instant::now();
-                    let mut cache = self.cache.lock().unwrap();
-                    cache.insert(
-                        *token,
-                        CachedResult {
-                            result: result.clone(),
-                            updated_at: now,
-                            requested_at: now,
-                        },
-                    );
-                };
+            // update price in cache
+            if should_cache(&result) {
+                let now = Instant::now();
+                let mut cache = self.cache.lock().unwrap();
+                cache.insert(
+                    *token,
+                    CachedResult {
+                        result: result.clone(),
+                        updated_at: now,
+                        requested_at: now,
+                    },
+                );
+            };
 
-                (index, result)
-            });
+            (index, result)
+        });
         futures::stream::iter(estimates)
             .buffered(parallelism)
             .boxed()
@@ -205,7 +204,7 @@ impl UpdateTask {
 
         if !outdated_entries.is_empty() {
             let mut stream = inner.estimate_prices_and_update_cache(
-                &outdated_entries,
+                outdated_entries.iter(),
                 max_age,
                 self.concurrent_requests,
             );
@@ -247,6 +246,7 @@ impl CachingNativePriceEstimator {
             cache: Default::default(),
             high_priority: Default::default(),
             max_age,
+            concurrent_requests,
         });
 
         let update_task = UpdateTask {
@@ -263,27 +263,57 @@ impl CachingNativePriceEstimator {
         Self(inner)
     }
 
-    /// Only returns prices that are currently cached. Missing prices will get
-    /// prioritized to get fetched during the next cycles of the maintenance
-    /// background task.
-    pub fn get_cached_prices(
+    /// Collects cached prices first and tries to actually fetch missing prices
+    /// for a limited period of time afterwards. Schedules missing prices to get
+    /// fetched during the next cycles of the maintenance background task.
+    pub async fn get_prices(
         &self,
-        tokens: &[H160],
+        mut tokens: IndexSet<H160>,
+        timeout: Duration,
     ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
+        let inner = &self.0;
         let now = Instant::now();
-        let mut cache = self.0.cache.lock().unwrap();
+        let deadline = now + timeout;
         let mut results = HashMap::default();
-        for token in tokens {
-            let cached = Inner::get_cached_price(*token, now, &mut cache, &self.0.max_age, true);
-            let label = if cached.is_some() { "hits" } else { "misses" };
-            Metrics::get()
-                .native_price_cache_access
-                .with_label_values(&[label])
-                .inc_by(1);
-            if let Some(result) = cached {
-                results.insert(*token, result);
-            }
+
+        {
+            // fetch cached prices and keep uncached tokens
+            let mut cache = inner.cache.lock().unwrap();
+            tokens.retain(|token| {
+                let cached =
+                    Inner::get_cached_price(*token, now, &mut cache, &self.0.max_age, true);
+                let label = if cached.is_some() { "hits" } else { "misses" };
+                Metrics::get()
+                    .native_price_cache_access
+                    .with_label_values(&[label])
+                    .inc_by(1);
+
+                if let Some(result) = cached {
+                    results.insert(*token, result);
+                    false
+                } else {
+                    true
+                }
+            });
         }
+
+        // **Only** fetching prices in the background task can cause orders to not be
+        // included in the an auction for quite some time after a restart.
+        // Since most tokens can be estimated fairly quickly in general it makes sense
+        // to try to fetch them here for a limited period of time to improve start up
+        // speed.
+        // This is also very useful when an order with new tokens was just created
+        // and we want to include it immediately in the next auction instead of
+        // waiting for the background task to fetch it.
+        let mut stream = inner.estimate_prices_and_update_cache(
+            tokens.iter(),
+            inner.max_age,
+            inner.concurrent_requests,
+        );
+        while let Ok(Some((index, result))) = timeout_at(deadline.into(), stream.next()).await {
+            results.insert(tokens[index], result);
+        }
+
         results
     }
 
@@ -315,7 +345,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(&[token], self.0.max_age, 1)
+                .estimate_prices_and_update_cache(std::iter::once(&token), self.0.max_age, 1)
                 .next()
                 .await
                 .unwrap()
@@ -593,6 +623,7 @@ mod tests {
             high_priority: Default::default(),
             estimator: Box::new(MockNativePriceEstimating::new()),
             max_age: Default::default(),
+            concurrent_requests: 1,
         };
 
         let now = now + Duration::from_secs(1);
