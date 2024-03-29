@@ -340,8 +340,10 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     // 99798139220950950951
     tracing::info!("newlog limit_surplus_order={:?}", limit_surplus_order);
-    // assert_approximately_eq!(limit_executed_surplus_fee_in_buy_token,
-    // limit_quote_diff * 3 / 10);
+    assert_approximately_eq!(
+        limit_executed_surplus_fee_in_buy_token,
+        limit_quote_diff * 3 / 10
+    );
 
     assert_approximately_eq!(
         limit_surplus_order.metadata.executed_surplus_fee,
