@@ -928,25 +928,34 @@ pub struct Amounts {
 
 /// Checks whether or not an order's limit price is outside the market price
 /// specified by the quote.
-///
-/// Note that this check only looks at the order's limit price and the market
-/// price and is independent of amounts or trade direction.
 pub fn is_order_outside_market_price(
     order: &Amounts,
     quote: &Amounts,
     kind: model::order::OrderKind,
 ) -> bool {
-    match kind {
+    let check = move || match kind {
         OrderKind::Buy => {
-            order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy)
+            Some(order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy))
         }
         OrderKind::Sell => {
-            order
-                .sell
-                .full_mul(quote.buy - quote.fee * quote.buy / quote.sell)
-                < quote.sell.full_mul(order.buy)
+            let quote_buy = quote.buy.checked_sub(
+                quote
+                    .fee
+                    .checked_mul(quote.buy)?
+                    .checked_div(quote.sell.into())?,
+            )?;
+            Some(order.sell.full_mul(quote_buy) < quote.sell.full_mul(order.buy))
         }
-    }
+    };
+
+    check().unwrap_or_else(|| {
+        tracing::warn!(
+            ?order,
+            ?quote,
+            "failed to check if order is outside market price"
+        );
+        true
+    })
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
