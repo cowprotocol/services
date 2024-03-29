@@ -993,7 +993,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
         quote: Quote {
             sell: 50.ether().into_wei(),
             buy: 50.ether().into_wei(),
-            network_fee: 5.ether().into_wei(),
+            network_fee: 5.ether().into_wei(), // 50 sell for 45 buy
         },
     };
     let test_case = TestCase {
@@ -1005,6 +1005,8 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
+            // Quote is 50 sell for 45 buy, which is equal to 20 sell for 18 buy
+            // Solver returns 20 sell for 30 buy, so the price improvement is 12 in buy token
             // Receive 12 ETH more than quoted, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 20.ether().into_wei(),
