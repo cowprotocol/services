@@ -376,27 +376,26 @@ async fn combined_protocol_fees(web3: Web3) {
         .saturating_sub(limit_surplus_order.data.buy_amount);
     assert!(limit_executed_surplus_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
-    let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     let balance_after = market_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    // todo: check if the balance is correct
+    assert_approximately_eq!(market_executed_surplus_fee_in_buy_token, balance_after);
 
     let balance_after = limit_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    // todo: check if the balance is correct
+    assert_approximately_eq!(limit_executed_surplus_fee_in_buy_token, balance_after);
 
     let balance_after = partner_fee_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    assert!(balance_after >= partner_fee_order.data.sell_amount * 2 / 100);
+    assert_approximately_eq!(partner_fee_executed_surplus_fee_in_buy_token, balance_after);
 }
 
 async fn get_quote(
