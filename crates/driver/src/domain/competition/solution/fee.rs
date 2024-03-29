@@ -304,8 +304,10 @@ mod tests {
             "Sell amount should match order sell amount for sell orders."
         );
         assert_eq!(
-            limit.buy.0, to_wei(19),
-            "Buy amount should be equal to order buy amount for out of market orders");
+            limit.buy.0,
+            to_wei(19),
+            "Buy amount should be equal to order buy amount for out of market orders"
+        );
     }
 
     #[test]
@@ -328,7 +330,8 @@ mod tests {
             "Buy amount should match order buy amount for buy orders."
         );
         assert_eq!(
-            limit.sell.0, to_wei(20),
+            limit.sell.0,
+            to_wei(20),
             "Sell amount should be equal to order sell amount for out of market orders."
         );
     }
@@ -353,7 +356,8 @@ mod tests {
             "Sell amount should be taken from the order for sell orders in market price."
         );
         assert_eq!(
-            limit.buy.0, to_wei(20),
+            limit.buy.0,
+            to_wei(20),
             "Buy amount should be equal to quoted buy amount but reduced by fee."
         );
     }
@@ -374,7 +378,8 @@ mod tests {
         let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
-            limit.sell.0, to_wei(18),
+            limit.sell.0,
+            to_wei(18),
             "Sell amount should match quoted buy amount increased by fee"
         );
         assert_eq!(
