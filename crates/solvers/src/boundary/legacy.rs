@@ -643,6 +643,11 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::DuplicatedSolutionId(
                 notification
                     .solution_id
+                    .clone()
+                    .and_then(|id| match id {
+                        notification::Id::Single(id) => Some(id),
+                        notification::Id::Merged(_) => None,
+                    })
                     .expect("duplicated solution ID notification must have a solution ID")
                     .0,
             ))

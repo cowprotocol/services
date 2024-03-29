@@ -6,7 +6,11 @@ use {
         domain::{competition::order, eth, time},
         infra::{
             self,
-            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
+            config::file::{
+                default_http_time_buffer,
+                default_solving_share_of_deadline,
+                FeeHandler,
+            },
         },
         tests::{
             cases::{
@@ -317,6 +321,8 @@ pub struct Solver {
     timeouts: infra::solver::Timeouts,
     /// Datetime when the CIP38 rank by surplus rules should be activated.
     rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+    /// Determines whether the `solver` or the `driver` handles the fees
+    fee_handler: FeeHandler,
 }
 
 pub fn test_solver() -> Solver {
@@ -337,6 +343,7 @@ pub fn test_solver() -> Solver {
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
         rank_by_surplus_date: None,
+        fee_handler: FeeHandler::default(),
     }
 }
 
@@ -371,6 +378,11 @@ impl Solver {
             rank_by_surplus_date: Some(rank_by_surplus_date),
             ..self
         }
+    }
+
+    pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
+        self.fee_handler = fee_handler;
+        self
     }
 }
 
@@ -473,6 +485,7 @@ pub fn setup() -> Setup {
         enable_simulation: true,
         settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
+        rpc_args: vec!["--gas-limit".into(), "10000000".into()],
     }
 }
 
@@ -494,6 +507,8 @@ pub struct Setup {
     settlement_address: Option<eth::H160>,
     /// Via which mempool the solutions should be submitted
     mempools: Vec<Mempool>,
+    /// Extra configuration for the RPC node
+    rpc_args: Vec<String>,
 }
 
 /// The validity of a solution.
@@ -751,6 +766,11 @@ impl Setup {
         self
     }
 
+    pub fn rpc_args(mut self, rpc_args: Vec<String>) -> Self {
+        self.rpc_args = rpc_args;
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -787,6 +807,7 @@ impl Setup {
             trader_secret_key,
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
+            rpc_args: self.rpc_args,
         })
         .await;
         let mut solutions = Vec::new();
@@ -810,6 +831,7 @@ impl Setup {
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
+                fee_handler: solver.fee_handler,
             })
             .await;
 

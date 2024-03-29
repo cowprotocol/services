@@ -9,14 +9,17 @@ use {
         },
         infra::{
             blockchain::{self, Ethereum},
+            config::file::FeeHandler,
             simulator,
             solver::Solver,
             Simulator,
         },
+        util::conv::u256::U256Ext,
     },
     futures::future::try_join_all,
     itertools::Itertools,
-    std::collections::{BTreeSet, HashMap},
+    num::{BigRational, One},
+    std::collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
     thiserror::Error,
 };
 
@@ -28,6 +31,8 @@ pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
 
+type Prices = HashMap<eth::TokenAddress, eth::U256>;
+
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
 /// A solution represents a set of orders which the solver has found an optimal
@@ -37,7 +42,7 @@ pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::
 pub struct Solution {
     id: Id,
     trades: Vec<Trade>,
-    prices: HashMap<eth::TokenAddress, eth::U256>,
+    prices: Prices,
     interactions: Vec<Interaction>,
     solver: Solver,
     score: SolverScore,
@@ -50,12 +55,13 @@ impl Solution {
     pub fn new(
         id: Id,
         trades: Vec<Trade>,
-        prices: HashMap<eth::TokenAddress, eth::U256>,
+        prices: Prices,
         interactions: Vec<Interaction>,
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
+        fee_handler: FeeHandler,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -76,7 +82,11 @@ impl Solution {
             return Err(error::Solution::InvalidClearingPrices);
         }
 
-        // Apply protocol fees
+        // Apply protocol fees only if the drivers is set to handler the fees
+        if fee_handler != FeeHandler::Driver {
+            return Ok(solution);
+        }
+
         let mut trades = Vec::with_capacity(solution.trades.len());
         for trade in solution.trades {
             match &trade {
@@ -102,8 +112,8 @@ impl Solution {
     }
 
     /// The ID of this solution.
-    pub fn id(&self) -> Id {
-        self.id
+    pub fn id(&self) -> &Id {
+        &self.id
     }
 
     /// Trades settled by this solution.
@@ -156,7 +166,7 @@ impl Solution {
                         .0
                         .checked_mul(uniform_prices.sell)
                         .ok_or(error::Math::Overflow)?
-                        .checked_div(uniform_prices.buy)
+                        .checked_ceil_div(&uniform_prices.buy)
                         .ok_or(error::Math::DivisionByZero)?,
                     order::Side::Buy => trade.executed().0,
                 },
@@ -214,6 +224,72 @@ impl Solution {
     /// An empty solution has no user trades and a score of 0.
     pub fn is_empty(&self) -> bool {
         self.user_trades().next().is_none()
+    }
+
+    pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
+        // We can only merge solutions from the same solver
+        if self.solver.account().address() != other.solver.account().address() {
+            return Err(error::Merge::Incompatible("Solvers"));
+        }
+
+        // Solutions should not settle the same order twice
+        let uids: HashSet<_> = self.user_trades().map(|t| t.order().uid).collect();
+        let other_uids: HashSet<_> = other.user_trades().map(|t| t.order().uid).collect();
+        if !uids.is_disjoint(&other_uids) {
+            return Err(error::Merge::DuplicateTrade);
+        }
+
+        // Solution prices need to be congruent, i.e. there needs to be a unique factor
+        // to scale all common tokens from one solution into the other.
+        let factor =
+            scaling_factor(&self.prices, &other.prices).ok_or(error::Merge::IncongruentPrices)?;
+
+        // To avoid precision issues, make sure we always scale up settlements
+        if factor < BigRational::one() {
+            return other.merge(self);
+        }
+
+        // Scale prices
+        let mut prices = self.prices.clone();
+        for (token, price) in other.prices.iter() {
+            let scaled = number::conversions::big_rational_to_u256(
+                &(number::conversions::u256_to_big_rational(price) * &factor),
+            )
+            .map_err(error::Merge::Math)?;
+            match prices.entry(*token) {
+                Entry::Occupied(entry) => {
+                    // This shouldn't fail unless there are rounding errors given that the scaling
+                    // factor is unique
+                    if *entry.get() != scaled {
+                        return Err(error::Merge::IncongruentPrices);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(scaled);
+                }
+            }
+        }
+
+        // Merge remaining fields
+        Ok(Solution {
+            id: Id::Merged([self.id.ids(), other.id.ids()].concat()),
+            trades: [self.trades.clone(), other.trades.clone()].concat(),
+            prices,
+            interactions: [self.interactions.clone(), other.interactions.clone()].concat(),
+            solver: self.solver.clone(),
+            score: match self.score.merge(&other.score) {
+                Some(score) => score,
+                None => return Err(error::Merge::Incompatible("Scores")),
+            },
+            weth: self.weth,
+            // Same solver are guaranteed to have the same fee handler
+            gas: match (self.gas, other.gas) {
+                (Some(gas), Some(other_gas)) => Some(gas + other_gas),
+                (Some(gas), None) => Some(gas),
+                (None, Some(gas)) => Some(gas),
+                (None, None) => None,
+            },
+        })
     }
 
     /// Return the trades which fulfill non-liquidity auction orders. These are
@@ -337,6 +413,33 @@ impl std::fmt::Debug for Solution {
     }
 }
 
+/// Given two solutions returns the factors with
+/// which prices of the second solution would have to be multiplied so that the
+/// given token would have the same price in both solutions.
+/// If the solutions have no prices in common any scaling factor is valid (we
+/// return 1). Returns None if the solutions have more than one price in common
+/// and the scaling factor is not unique.
+fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
+    let factors: HashSet<_> = first
+        .keys()
+        .collect::<HashSet<_>>()
+        .intersection(&second.keys().collect::<HashSet<_>>())
+        .map(|&token| {
+            let first_price = first[token];
+            let second_price = second[token];
+            BigRational::new(
+                number::conversions::u256_to_big_int(&second_price),
+                number::conversions::u256_to_big_int(&first_price),
+            )
+        })
+        .collect();
+    match factors.len() {
+        0 => Some(BigRational::one()),
+        1 => factors.into_iter().next(),
+        _ => None,
+    }
+}
+
 /// Carries information how the score should be calculated.
 #[derive(Debug, Clone)]
 pub enum SolverScore {
@@ -344,27 +447,65 @@ pub enum SolverScore {
     RiskAdjusted(f64),
     Surplus,
 }
-/// A unique solution ID. This ID is generated by the solver and only needs to
-/// be unique within a single round of competition. This ID is only important in
-/// the communication between the driver and the solver, and it is not used by
-/// the protocol.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct Id(pub u64);
 
-impl From<u64> for Id {
-    fn from(value: u64) -> Self {
-        Self(value)
+impl SolverScore {
+    fn merge(&self, other: &SolverScore) -> Option<SolverScore> {
+        match (self, other) {
+            (SolverScore::Solver(a), SolverScore::Solver(b)) => Some(SolverScore::Solver(a + b)),
+            (SolverScore::RiskAdjusted(a), SolverScore::RiskAdjusted(b)) => {
+                Some(SolverScore::RiskAdjusted(a * b))
+            }
+            _ => None,
+        }
     }
 }
 
-impl From<Id> for u64 {
-    fn from(value: Id) -> Self {
-        value.0
+/// A unique reference to a specific solution. Sings IDs are generated by the
+/// solver and need to be unique within a single round of competition. If the
+/// driver merges solutions it combines individual IDs. This reference is only
+/// important in the communication between the driver and the solver, and it is
+/// not used by the protocol.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum Id {
+    Single(u64),
+    Merged(Vec<u64>),
+}
+
+impl From<u64> for Id {
+    fn from(value: u64) -> Self {
+        Id::Single(value)
+    }
+}
+
+impl Id {
+    /// Returns the number of solutions that has gone into merging this
+    /// solution.
+    pub fn count_merges(&self) -> usize {
+        self.ids().len()
+    }
+
+    pub fn ids(&self) -> Vec<u64> {
+        match self {
+            Id::Single(id) => vec![*id],
+            Id::Merged(ids) => ids.clone(),
+        }
     }
 }
 
 pub mod error {
     use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Merge {
+        #[error("incompatible {0:?}")]
+        Incompatible(&'static str),
+        #[error("duplicate trade")]
+        DuplicateTrade,
+        #[error("incongruent prices")]
+        IncongruentPrices,
+        #[error("math error: {0:?}")]
+        Math(anyhow::Error),
+    }
 
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
@@ -381,6 +522,8 @@ pub mod error {
         NonBufferableTokensUsed(BTreeSet<TokenAddress>),
         #[error("invalid internalization: uninternalized solution fails to simulate")]
         FailingInternalization,
+        #[error("Gas estimate of {0:?} exceeded the per settlement limit of {1:?}")]
+        GasLimitExceeded(eth::Gas, eth::Gas),
         #[error("insufficient solver account Ether balance, required {0:?}")]
         SolverAccountInsufficientBalance(eth::Ether),
         #[error("attempted to merge settlements generated by different solvers")]
@@ -393,6 +536,8 @@ pub mod error {
         Overflow,
         #[error("division by zero")]
         DivisionByZero,
+        #[error("negative")]
+        Negative,
     }
 
     #[derive(Debug, thiserror::Error)]

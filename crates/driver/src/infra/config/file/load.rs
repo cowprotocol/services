@@ -76,6 +76,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 },
                 request_headers: config.request_headers,
                 rank_by_surplus_date: config.rank_by_surplus_date,
+                fee_handler: config.fee_handler,
             }
         }))
         .await,
@@ -276,10 +277,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         additional_tip_percentage: *additional_tip_percentage,
                         use_soft_cancellations: *use_soft_cancellations,
                     },
-                },
-                submission: match config.submission.logic {
-                    file::Logic::Boundary => mempool::SubmissionLogic::Boundary,
-                    file::Logic::Native => mempool::SubmissionLogic::Native,
                 },
             })
             .collect(),

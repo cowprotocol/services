@@ -1,6 +1,7 @@
 use {
     super::Postgres,
     anyhow::{Context as _, Result},
+    app_data::AppDataHash,
     async_trait::async_trait,
     chrono::{DateTime, Utc},
     database::{
@@ -11,7 +12,6 @@ use {
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
     model::{
-        app_data::AppDataHash,
         order::{
             EthflowData,
             Interactions,
@@ -379,7 +379,7 @@ impl LimitOrderCounting for Postgres {
                 &Amounts {
                     sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
                     buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
-                    fee: big_decimal_to_u256(&order_with_quote.order_fee_amount).unwrap(),
+                    fee: 0.into(),
                 },
                 &Amounts {
                     sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
@@ -390,6 +390,10 @@ impl LimitOrderCounting for Postgres {
                         sell_token_price: order_with_quote.quote_sell_token_price,
                     }
                     .fee(),
+                },
+                match order_with_quote.order_kind {
+                    DbOrderKind::Buy => model::order::OrderKind::Buy,
+                    DbOrderKind::Sell => model::order::OrderKind::Sell,
                 },
             )
         })

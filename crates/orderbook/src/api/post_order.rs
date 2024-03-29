@@ -192,10 +192,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("InvalidSignature", "invalid signature"),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::InsufficientFee => with_status(
-                error("InsufficientFee", "Order does not include sufficient fee"),
-                StatusCode::BAD_REQUEST,
-            ),
             ValidationError::NonZeroFee => with_status(
                 error("NonZeroFee", "Fee must be zero"),
                 StatusCode::BAD_REQUEST,

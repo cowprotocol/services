@@ -42,19 +42,10 @@ impl Mempools {
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
-                    let result = match &mempool {
-                        infra::Mempool::Boundary(mempool) => {
-                            mempool.execute(solver, settlement.clone()).await
-                        }
-                        infra::Mempool::Native(inner) => {
-                            self.submit(inner, solver, settlement)
-                                .instrument(tracing::info_span!(
-                                    "mempool",
-                                    kind = inner.to_string()
-                                ))
-                                .await
-                        }
-                    };
+                    let result = self
+                        .submit(&mempool, solver, settlement)
+                        .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
+                        .await;
                     observe::mempool_executed(&mempool, settlement, &result);
                     result
                 }
@@ -82,7 +73,7 @@ impl Mempools {
 
     async fn submit(
         &self,
-        mempool: &infra::mempool::Inner,
+        mempool: &infra::mempool::Mempool,
         solver: &Solver,
         settlement: &Settlement,
     ) -> Result<eth::TxId, Error> {
@@ -113,54 +104,69 @@ impl Mempools {
         block_stream.next().await;
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
-        loop {
-            // Wait for the next block to be mined or we time out.
-            if tokio::time::timeout_at(deadline, block_stream.next())
-                .await
-                .is_err()
-            {
-                tracing::info!(?hash, "tx not confirmed in time, cancelling");
-                self.cancel(mempool, settlement.gas.price, solver).await?;
-                return Err(Error::Expired);
-            }
-            tracing::debug!(?hash, "checking if tx is confirmed");
 
-            let receipt = self
-                .ethereum
-                .transaction_status(&hash)
-                .await
-                .unwrap_or_else(|err| {
-                    tracing::warn!(?hash, ?err, "failed to get transaction status",);
-                    TxStatus::Pending
-                });
-            match receipt {
-                TxStatus::Executed => return Ok(hash),
-                TxStatus::Reverted => return Err(Error::Revert(hash)),
-                TxStatus::Pending => {
-                    // Check if transaction still simulates
-                    if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
-                        if err.is_revert() {
-                            tracing::info!(
-                                ?hash,
-                                ?err,
-                                "tx started failing in mempool, cancelling"
-                            );
-                            self.cancel(mempool, settlement.gas.price, solver).await?;
-                            return Err(Error::SimulationRevert);
-                        } else {
-                            tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+        // Wait for the transaction to be mined, expired or failing.
+        let result = async {
+            loop {
+                // Wait for the next block to be mined or we time out.
+                if tokio::time::timeout_at(deadline, block_stream.next())
+                    .await
+                    .is_err()
+                {
+                    tracing::info!(?hash, "tx not confirmed in time, cancelling");
+                    self.cancel(mempool, settlement.gas.price, solver).await?;
+                    return Err(Error::Expired);
+                }
+                tracing::debug!(?hash, "checking if tx is confirmed");
+
+                let receipt = self
+                    .ethereum
+                    .transaction_status(&hash)
+                    .await
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(?hash, ?err, "failed to get transaction status",);
+                        TxStatus::Pending
+                    });
+                match receipt {
+                    TxStatus::Executed => return Ok(hash.clone()),
+                    TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
+                    TxStatus::Pending => {
+                        // Check if transaction still simulates
+                        if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
+                            if err.is_revert() {
+                                tracing::info!(
+                                    ?hash,
+                                    ?err,
+                                    "tx started failing in mempool, cancelling"
+                                );
+                                self.cancel(mempool, settlement.gas.price, solver).await?;
+                                return Err(Error::SimulationRevert);
+                            } else {
+                                tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+                            }
                         }
                     }
                 }
             }
         }
+        .await;
+
+        if result.is_err() {
+            // Do one last attempt to see if the transaction was confirmed (in case of race
+            // conditions or misclassified errors like `OrderFilled` simulation failures).
+            if let Ok(TxStatus::Executed) = self.ethereum.transaction_status(&hash).await {
+                tracing::info!(?hash, "Found confirmed transaction, ignoring error");
+                return Ok(hash);
+            }
+        }
+        result
     }
 
     /// Cancel a pending settlement by sending a transaction to self with a
     /// slightly higher gas price than the existing one.
     async fn cancel(
         &self,
-        mempool: &infra::mempool::Inner,
+        mempool: &infra::mempool::Mempool,
         pending: eth::GasPrice,
         solver: &Solver,
     ) -> Result<(), Error> {

@@ -419,6 +419,7 @@ Indexes:
  valid\_to\_too\_far\_in\_future | unused
  invalid\_order\_data            | unused
  insufficient\_fee               | the proposed fee is less than quoted fee
+ non\_zero\_fee                  | the proposed fee is not zero
  other                           | some unexpected error happened
 
 #### ordereventlabel
