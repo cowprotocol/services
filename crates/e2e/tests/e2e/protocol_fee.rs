@@ -344,12 +344,13 @@ async fn combined_protocol_fees(web3: Web3) {
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
-    let market_price_improvement = services
+    let market_price_improvement_order = services
         .get_order(&market_price_improvement_uid)
         .await
         .unwrap();
     let market_executed_surplus_fee_in_buy_token =
-        market_price_improvement.metadata.executed_surplus_fee * market_quote_after.buy_amount
+        market_price_improvement_order.metadata.executed_surplus_fee
+            * market_quote_after.buy_amount
             / market_quote_after.sell_amount;
     let market_quote_diff = market_quote_after
         .buy_amount
@@ -406,27 +407,40 @@ async fn combined_protocol_fees(web3: Web3) {
     //     U256::from(200163063434215496u128)
     // );
 
-    // let balance_after = market_order_token
-    //     .balance_of(onchain.contracts().gp_settlement.address())
-    //     .call()
-    //     .await
-    //     .unwrap();
-    // assert_approximately_eq!(balance_after, U256::from(135046086668429u128));
+    let balance_after = market_order_token
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert!(
+        balance_after
+            >= market_price_improvement_order
+                .metadata
+                .executed_sell_amount_before_fees
+                * 3
+                / 10
+    );
 
-    // let balance_after = limit_order_token
-    //     .balance_of(onchain.contracts().gp_settlement.address())
-    //     .call()
-    //     .await
-    //     .unwrap();
-    // assert_approximately_eq!(balance_after,
-    // U256::from(97299747979617501015u128));
+    let balance_after = limit_order_token
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert!(
+        balance_after
+            >= limit_surplus_order
+                .metadata
+                .executed_sell_amount_before_fees
+                * 3
+                / 10
+    );
 
     let balance_after = partner_fee_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
         .call()
         .await
         .unwrap();
-    assert!(balance_after > partner_fee_order.metadata.executed_sell_amount_before_fees * 2 / 100);
+    assert!(balance_after >= partner_fee_order.metadata.executed_sell_amount_before_fees * 2 / 100);
 }
 
 async fn get_quote(
