@@ -2,7 +2,7 @@ use {
     crate::{domain::fee::FeeFactor, infra},
     anyhow::Context,
     clap::ValueEnum,
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
         bad_token::token_owner_finder,
@@ -167,10 +167,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub additional_deadline_for_rewards: usize,
 
-    /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
-    #[clap(long, env, default_value = "0.01", value_parser = shared::arguments::wei_from_ether)]
-    pub score_cap: U256,
-
     /// The amount of time that the autopilot waits looking for a settlement
     /// transaction onchain after the driver acknowledges the receipt of a
     /// settlement.
@@ -254,7 +250,6 @@ impl std::fmt::Display for Arguments {
             drivers,
             submission_deadline,
             additional_deadline_for_rewards,
-            score_cap,
             shadow,
             solve_deadline,
             fee_policies,
@@ -316,7 +311,6 @@ impl std::fmt::Display for Arguments {
             "additional_deadline_for_rewards: {}",
             additional_deadline_for_rewards
         )?;
-        writeln!(f, "score_cap: {}", score_cap)?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
         writeln!(f, "fee_policies: {:?}", fee_policies)?;
