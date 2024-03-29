@@ -1,5 +1,6 @@
 use {
     anyhow::{Context, Result},
+    app_data::AppDataHash,
     database::{
         onchain_broadcasted_orders::OnchainOrderPlacementError as DbOnchainOrderPlacementError,
         orders::{
@@ -14,7 +15,6 @@ use {
     },
     ethcontract::{H160, H256},
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,

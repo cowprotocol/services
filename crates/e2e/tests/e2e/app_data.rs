@@ -1,8 +1,8 @@
 use {
+    app_data::AppDataHash,
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
-        app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,

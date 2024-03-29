@@ -3,7 +3,6 @@
 
 use {
     crate::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
@@ -11,6 +10,7 @@ use {
         TokenPair,
     },
     anyhow::{anyhow, Result},
+    app_data::AppDataHash,
     chrono::{offset::Utc, DateTime},
     derivative::Derivative,
     hex_literal::hex,
@@ -844,6 +844,12 @@ impl<'de> Deserialize<'de> for OrderUid {
         }
 
         deserializer.deserialize_str(Visitor {})
+    }
+}
+
+impl From<app_data::OrderUid> for OrderUid {
+    fn from(value: app_data::OrderUid) -> Self {
+        Self(value.0)
     }
 }
 

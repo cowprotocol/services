@@ -10,7 +10,7 @@ use {
     crate::{
         arguments,
         boundary::{self},
-        domain,
+        domain::{self},
     },
     app_data::Validator,
     derive_more::Into,
@@ -42,18 +42,39 @@ pub struct ProtocolFee {
     order_class: OrderClass,
 }
 
-impl ProtocolFee {
-    pub fn new(fee_policy_args: arguments::FeePolicy) -> Self {
+impl From<arguments::FeePolicy> for ProtocolFee {
+    fn from(value: arguments::FeePolicy) -> Self {
         Self {
-            policy: fee_policy_args.fee_policy_kind.into(),
-            order_class: fee_policy_args.fee_policy_order_class.into(),
+            policy: value.fee_policy_kind.into(),
+            order_class: value.fee_policy_order_class.into(),
+        }
+    }
+}
+
+pub struct ProtocolFees {
+    fee_policies: Vec<ProtocolFee>,
+    max_partner_fee: FeeFactor,
+}
+
+impl ProtocolFees {
+    pub fn new(
+        fee_policies: &[arguments::FeePolicy],
+        fee_policy_max_partner_fee: FeeFactor,
+    ) -> Self {
+        Self {
+            fee_policies: fee_policies
+                .iter()
+                .cloned()
+                .map(ProtocolFee::from)
+                .collect(),
+            max_partner_fee: fee_policy_max_partner_fee,
         }
     }
 
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
     pub fn apply(
-        protocol_fees: &[ProtocolFee],
+        protocol_fees: &ProtocolFees,
         order: boundary::Order,
         quote: &domain::Quote,
     ) -> domain::Order {
@@ -69,9 +90,11 @@ impl ProtocolFee {
         {
             if let Some(partner_fee) = validated_app_data.protocol.partner_fee {
                 let fee_policy = vec![Policy::Volume {
-                    factor: FeeFactor::partner_fee_capped_from(
+                    factor: FeeFactor::try_from_capped(
                         partner_fee.bps.into_f64() / 10_000.0,
-                    ),
+                        protocol_fees.max_partner_fee.into(),
+                    )
+                    .unwrap(),
                 }];
                 return boundary::order::to_domain(order, fee_policy);
             }
@@ -88,10 +111,11 @@ impl ProtocolFee {
             fee: quote.fee,
         };
         let protocol_fees = protocol_fees
+            .fee_policies
             .iter()
             // TODO: support multiple fee policies
             .find_map(|fee_policy| {
-                let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_);
+                let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
                 match (outside_market_price, &fee_policy.order_class) {
                     (_, OrderClass::Any) => Some(&fee_policy.policy),
                     (true, OrderClass::Limit) => Some(&fee_policy.policy),
@@ -149,9 +173,9 @@ pub enum Policy {
 pub struct FeeFactor(f64);
 
 impl FeeFactor {
-    /// Convert a partner fee into a `Factor` capping its value
-    pub fn partner_fee_capped_from(value: f64) -> Self {
-        Self(value.max(0.0).min(0.01))
+    /// Convert a fee into a `FeeFactor` capping its value
+    pub fn try_from_capped(value: f64, cap: f64) -> anyhow::Result<Self> {
+        value.max(0.0).min(cap).try_into()
     }
 }
 

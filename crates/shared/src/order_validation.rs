@@ -16,13 +16,12 @@ use {
         trade_finding,
     },
     anyhow::{anyhow, Result},
-    app_data::{Hook, Hooks, ValidatedAppData, Validator},
+    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             AppdataFromMismatch,
@@ -661,6 +660,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                     (OrderClass::Limit, Some(quote))
@@ -684,6 +684,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     self.check_max_limit_orders(owner).await?;
                 }
@@ -705,6 +706,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     self.check_max_limit_orders(owner).await?;
                 }
@@ -902,11 +904,31 @@ pub struct Amounts {
 
 /// Checks whether or not an order's limit price is outside the market price
 /// specified by the quote.
-///
-/// Note that this check only looks at the order's limit price and the market
-/// price and is independent of amounts or trade direction.
-pub fn is_order_outside_market_price(order: &Amounts, quote: &Amounts) -> bool {
-    (order.sell + order.fee).full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy)
+pub fn is_order_outside_market_price(
+    order: &Amounts,
+    quote: &Amounts,
+    kind: model::order::OrderKind,
+) -> bool {
+    let check = move || match kind {
+        OrderKind::Buy => {
+            Some(order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy))
+        }
+        OrderKind::Sell => {
+            let quote_buy = quote
+                .buy
+                .checked_sub(quote.fee.checked_mul(quote.buy)?.checked_div(quote.sell)?)?;
+            Some(order.sell.full_mul(quote_buy) < quote.sell.full_mul(order.buy))
+        }
+    };
+
+    check().unwrap_or_else(|| {
+        tracing::warn!(
+            ?order,
+            ?quote,
+            "failed to check if order is outside market price"
+        );
+        true
+    })
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
@@ -2210,7 +2232,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_market_orders() {
+    fn detects_market_orders_buy() {
         let quote = Quote {
             sell_amount: 90.into(),
             buy_amount: 100.into(),
@@ -2230,6 +2252,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
@@ -2243,6 +2266,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
@@ -2256,6 +2280,61 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
+        ));
+    }
+
+    #[test]
+    fn detects_market_orders_sell() {
+        // 1 to 1 conversion
+        let quote = Quote {
+            sell_amount: 100.into(),
+            buy_amount: 100.into(),
+            fee_amount: 10.into(),
+            ..Default::default()
+        };
+
+        // at market price
+        assert!(!is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 90.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
+        ));
+        // willing to buy less than market price
+        assert!(!is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 80.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
+        ));
+        // wanting to buy more than market price
+        assert!(is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 1000.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
         ));
     }
 }

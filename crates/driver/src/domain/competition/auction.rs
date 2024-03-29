@@ -425,10 +425,10 @@ impl Price {
     /// use driver::domain::{competition::auction::Price, eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(18))).unwrap();
+    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
-    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(18)));
+    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
         (amount.0 * self.0 .0 / Self::BASE).into()
