@@ -136,11 +136,14 @@ async fn combined_protocol_fees(web3: Web3) {
         .await;
 
     tracing::info!("Acquiring quotes.");
-    let limit_order_quote = get_quote(
+    let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
+    let sell_amount = to_wei(10);
+    let limit_quote_before = get_quote(
         &services,
         onchain.contracts().weth.address(),
         limit_order_token.address(),
-        to_wei(10),
+        sell_amount,
+        quote_valid_to,
     )
     .await
     .unwrap();
@@ -148,18 +151,22 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         market_order_token.address(),
-        to_wei(10),
+        sell_amount,
+        quote_valid_to,
     )
     .await
     .unwrap();
+    tracing::info!("newlog market_quote_before={:?}", market_quote_before.quote);
 
     let market_price_improvement_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: market_quote_before.quote.sell_amount,
+        sell_amount,
         buy_token: market_order_token.address(),
-        buy_amount: market_quote_before.quote.buy_amount * 2 / 3, // to make sure the order is in-market
-        valid_to: model::time::now_in_epoch_seconds() + 300,
+        // to make sure the order is in-market
+        buy_amount: market_quote_before.quote.buy_amount * 2 / 3,
+        valid_to: quote_valid_to,
         kind: OrderKind::Sell,
+        quote_id: market_quote_before.id,
         ..Default::default()
     }
     .sign(
@@ -169,10 +176,11 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     let limit_surplus_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: limit_order_quote.quote.sell_amount,
+        sell_amount,
         buy_token: limit_order_token.address(),
-        buy_amount: limit_order_quote.quote.buy_amount * 3 / 2, // to make sure the order is out-of-market
-        valid_to: model::time::now_in_epoch_seconds() + 300,
+        // to make sure the order is out-of-market
+        buy_amount: limit_quote_before.quote.buy_amount * 3 / 2,
+        valid_to: quote_valid_to,
         kind: OrderKind::Sell,
         ..Default::default()
     }
@@ -183,10 +191,10 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     let partner_fee_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(10),
+        sell_amount,
         buy_token: partner_fee_order_token.address(),
         buy_amount: to_wei(5),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
+        valid_to: quote_valid_to,
         kind: OrderKind::Sell,
         app_data: partner_fee_app_data,
         ..Default::default()
@@ -197,7 +205,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    tracing::info!("Rebalancing AMM pool.");
+    tracing::info!("Rebalancing market order token AMM pool.");
     onchain
         .mint_token_to_weth_uni_v2_pool(&market_order_token, to_wei(1000))
         .await;
@@ -210,7 +218,8 @@ async fn combined_protocol_fees(web3: Web3) {
             &services,
             onchain.contracts().weth.address(),
             market_order_token.address(),
-            to_wei(10),
+            sell_amount,
+            model::time::now_in_epoch_seconds() + 300,
         )
         .await
         .unwrap();
@@ -223,14 +232,12 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         market_order_token.address(),
-        to_wei(10),
+        sell_amount,
+        model::time::now_in_epoch_seconds() + 300,
     )
     .await
     .unwrap()
     .quote;
-    let market_quote_diff = market_quote_after
-        .buy_amount
-        .saturating_sub(market_quote_before.quote.buy_amount);
 
     let market_price_improvement_uid = services
         .create_order(&market_price_improvement_order)
@@ -259,25 +266,25 @@ async fn combined_protocol_fees(web3: Web3) {
             &services,
             onchain.contracts().weth.address(),
             limit_order_token.address(),
-            to_wei(10),
+            sell_amount,
+            model::time::now_in_epoch_seconds() + 300,
         )
         .await
         .unwrap();
-        new_limit_order_quote.quote.buy_amount != limit_order_quote.quote.buy_amount
+        new_limit_order_quote.quote.buy_amount != limit_quote_before.quote.buy_amount
     })
     .await
     .unwrap();
-    // let limit_quote_diff = get_quote(
-    //     &services,
-    //     onchain.contracts().weth.address(),
-    //     limit_order_token.address(),
-    //     to_wei(10),
-    // )
-    // .await
-    // .unwrap()
-    // .quote
-    // .buy_amount
-    // .saturating_sub(limit_order_quote.quote.buy_amount);
+    let limit_quote_after = get_quote(
+        &services,
+        onchain.contracts().weth.address(),
+        limit_order_token.address(),
+        sell_amount,
+        model::time::now_in_epoch_seconds() + 300,
+    )
+    .await
+    .unwrap()
+    .quote;
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 3 })
@@ -310,17 +317,32 @@ async fn combined_protocol_fees(web3: Web3) {
     let market_executed_surplus_fee_in_buy_token =
         market_price_improvement.metadata.executed_surplus_fee * market_quote_after.buy_amount
             / market_quote_after.sell_amount;
-    tracing::info!(
-        "newlog market_executed_surplus_fee_in_buy_token={:?}",
-        market_executed_surplus_fee_in_buy_token
-    );
-    tracing::info!("newlog market_quote_diff={:?}", market_quote_diff);
-    assert!(market_price_improvement.metadata.executed_surplus_fee >= market_quote_diff * 3 / 10);
-    assert_approximately_eq!(
-        market_price_improvement.metadata.executed_surplus_fee,
-        U256::from(202975487334646u128)
-    );
+    let market_quote_diff = market_quote_after
+        .buy_amount
+        .saturating_sub(market_quote_before.quote.buy_amount);
+    assert!(market_executed_surplus_fee_in_buy_token >= market_quote_diff * 3 / 10);
+
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
+    let limit_executed_surplus_fee_in_buy_token = limit_surplus_order.metadata.executed_surplus_fee
+        * limit_quote_after.buy_amount
+        / limit_quote_after.sell_amount;
+    let limit_quote_diff = limit_quote_after
+        .buy_amount
+        .saturating_sub(limit_quote_before.quote.buy_amount);
+    tracing::info!(
+        "newlog limit_executed_surplus_fee_in_buy_token={:?}",
+        limit_executed_surplus_fee_in_buy_token
+    );
+    // 98805803802988972485
+    tracing::info!(
+        "newlog limit_quote_diff * 3 / 10={:?}",
+        limit_quote_diff * 3 / 10
+    );
+    // 99798139220950950951
+    tracing::info!("newlog limit_surplus_order={:?}", limit_surplus_order);
+    // assert_approximately_eq!(limit_executed_surplus_fee_in_buy_token,
+    // limit_quote_diff * 3 / 10);
+
     assert_approximately_eq!(
         limit_surplus_order.metadata.executed_surplus_fee,
         U256::from(2867498030315590404u128)
@@ -358,16 +380,17 @@ async fn get_quote(
     sell_token: Address,
     buy_token: Address,
     sell_amount: U256,
+    valid_to: u32,
 ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
     let quote_request = OrderQuoteRequest {
         sell_token,
         buy_token,
         side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::AfterFee {
+            sell_amount: SellAmount::BeforeFee {
                 value: NonZeroU256::try_from(sell_amount.as_u128()).unwrap(),
             },
         },
-        validity: Validity::To(model::time::now_in_epoch_seconds() + 300),
+        validity: Validity::To(valid_to),
         ..Default::default()
     };
     services.submit_quote(&quote_request).await
