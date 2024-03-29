@@ -303,6 +303,9 @@ mod tests {
             limit.sell.0, order.sell_amount,
             "Sell amount should match order sell amount for sell orders."
         );
+        assert_eq!(
+            limit.buy.0, to_wei(19),
+            "Buy amount should be equal to order buy amount for out of market orders");
     }
 
     #[test]
@@ -324,19 +327,23 @@ mod tests {
             limit.buy.0, order.buy_amount,
             "Buy amount should match order buy amount for buy orders."
         );
+        assert_eq!(
+            limit.sell.0, to_wei(20),
+            "Sell amount should be equal to order sell amount for out of market orders."
+        );
     }
 
     #[test]
     fn test_adjust_quote_to_in_market_sell_order_limits() {
         let order = Order {
             sell_amount: to_wei(10),
-            buy_amount: to_wei(20),
+            buy_amount: to_wei(10),
             side: Side::Sell,
         };
         let quote = Quote {
             sell_amount: to_wei(10),
             buy_amount: to_wei(25),
-            fee_amount: to_wei(1),
+            fee_amount: to_wei(2),
         };
 
         let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
@@ -345,10 +352,9 @@ mod tests {
             limit.sell.0, order.sell_amount,
             "Sell amount should be taken from the order for sell orders in market price."
         );
-        assert!(
-            limit.buy.0 <= quote.buy_amount,
-            "Buy amount should be equal to quoted buy amount if fee is 0, otherwise have to be \
-             lower."
+        assert_eq!(
+            limit.buy.0, to_wei(20),
+            "Buy amount should be equal to quoted buy amount but reduced by fee."
         );
     }
 
@@ -368,10 +374,8 @@ mod tests {
         let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
-            limit.sell.0,
-            quote.sell_amount + quote.fee_amount,
-            "Sell amount should reflect the improved market condition from the quote for buy \
-             orders."
+            limit.sell.0, to_wei(18),
+            "Sell amount should match quoted buy amount increased by fee"
         );
         assert_eq!(
             limit.buy.0, order.buy_amount,
