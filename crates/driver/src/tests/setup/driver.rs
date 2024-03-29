@@ -220,7 +220,6 @@ async fn create_config_file(
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
                fee-handler = {}
-               {}
                "#,
             solver.name,
             addr,
@@ -234,10 +233,6 @@ async fn create_config_file(
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
-            solver.rank_by_surplus_date.map_or_else(
-                || "".to_string(),
-                |timestamp| format!("rank-by-surplus-date = \"{}\"", timestamp.to_rfc3339())
-            ),
         )
         .unwrap();
     }
