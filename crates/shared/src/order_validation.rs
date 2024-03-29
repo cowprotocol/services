@@ -938,12 +938,9 @@ pub fn is_order_outside_market_price(
             Some(order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy))
         }
         OrderKind::Sell => {
-            let quote_buy = quote.buy.checked_sub(
-                quote
-                    .fee
-                    .checked_mul(quote.buy)?
-                    .checked_div(quote.sell.into())?,
-            )?;
+            let quote_buy = quote
+                .buy
+                .checked_sub(quote.fee.checked_mul(quote.buy)?.checked_div(quote.sell)?)?;
             Some(order.sell.full_mul(quote_buy) < quote.sell.full_mul(order.buy))
         }
     };
