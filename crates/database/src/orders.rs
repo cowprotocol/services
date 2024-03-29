@@ -720,7 +720,7 @@ pub async fn count_limit_orders_by_owner(
 pub struct OrderWithQuote {
     pub order_buy_amount: BigDecimal,
     pub order_sell_amount: BigDecimal,
-    pub order_fee_amount: BigDecimal,
+    pub order_kind: OrderKind,
     pub quote_buy_amount: BigDecimal,
     pub quote_sell_amount: BigDecimal,
     pub quote_gas_amount: f64,
@@ -737,7 +737,7 @@ pub async fn user_orders_with_quote(
     const QUERY: &str = const_format::concatcp!(
         "SELECT o_quotes.sell_amount as quote_sell_amount, o.sell_amount as order_sell_amount,",
         " o_quotes.buy_amount as quote_buy_amount, o.buy_amount as order_buy_amount,",
-        " o.fee_amount as order_fee_amount, o_quotes.gas_amount as quote_gas_amount,",
+        " o.kind as order_kind, o_quotes.gas_amount as quote_gas_amount,",
         " o_quotes.gas_price as quote_gas_price, o_quotes.sell_token_price as quote_sell_token_price",
         " FROM (",
             " SELECT *",

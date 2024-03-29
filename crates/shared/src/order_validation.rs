@@ -18,7 +18,6 @@ use {
     anyhow::{anyhow, Result},
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    chrono::Utc,
     contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
@@ -139,7 +138,6 @@ pub enum ValidationError {
     InvalidQuote,
     /// Unable to compute quote because of a price estimation error.
     PriceForQuote(PriceEstimationError),
-    InsufficientFee,
     /// Orders with positive signed fee amount are deprecated
     NonZeroFee,
     InsufficientBalance,
@@ -176,7 +174,6 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
         ValidationError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
         ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
         ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
-        ValidationError::InsufficientFee => OnchainOrderPlacementError::InsufficientFee,
         ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
         _ => OnchainOrderPlacementError::Other,
     }
@@ -253,7 +250,6 @@ pub struct OrderValidator {
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
     request_verified_quotes: bool,
-    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
     max_gas_per_order: u64,
 }
 
@@ -325,7 +321,6 @@ impl OrderValidator {
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
         app_data_validator: Validator,
-        market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
         max_gas_per_order: u64,
     ) -> Self {
         Self {
@@ -343,7 +338,6 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             request_verified_quotes: false,
-            market_orders_deprecation_date,
             max_gas_per_order,
         }
     }
@@ -647,7 +641,6 @@ impl OrderValidating for OrderValidator {
                     &quote_parameters,
                     order.quote_id,
                     Some(data.fee_amount),
-                    self.market_orders_deprecation_date,
                 )
                 .await?;
                 tracing::debug!(
@@ -667,6 +660,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                     (OrderClass::Limit, Some(quote))
@@ -675,14 +669,9 @@ impl OrderValidating for OrderValidator {
                 }
             }
             OrderClass::Limit => {
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    None,
-                    self.market_orders_deprecation_date,
-                )
-                .await?;
+                let quote =
+                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
+                        .await?;
                 // If the order is not "In-Market", check for the limit orders
                 if is_order_outside_market_price(
                     &Amounts {
@@ -695,20 +684,16 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     self.check_max_limit_orders(owner).await?;
                 }
                 (class, Some(quote))
             }
             OrderClass::Liquidity => {
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    None,
-                    self.market_orders_deprecation_date,
-                )
-                .await?;
+                let quote =
+                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
+                        .await?;
                 // If the order is not "In-Market", check for the limit orders
                 if is_order_outside_market_price(
                     &Amounts {
@@ -721,6 +706,7 @@ impl OrderValidating for OrderValidator {
                         buy: quote.buy_amount,
                         fee: quote.fee_amount,
                     },
+                    data.kind,
                 ) {
                     self.check_max_limit_orders(owner).await?;
                 }
@@ -838,18 +824,11 @@ pub async fn get_quote_and_check_fee(
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
     fee_amount: Option<U256>,
-    market_orders_deprecation_date: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<Quote, ValidationError> {
     let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
 
-    match market_orders_deprecation_date {
-        Some(date) if Utc::now() > date && fee_amount.is_some_and(|fee| !fee.is_zero()) => {
-            return Err(ValidationError::NonZeroFee);
-        }
-        None if fee_amount.is_some_and(|fee| fee < quote.fee_amount) => {
-            return Err(ValidationError::InsufficientFee);
-        }
-        _ => (),
+    if fee_amount.is_some_and(|fee| !fee.is_zero()) {
+        return Err(ValidationError::NonZeroFee);
     }
 
     Ok(quote)
@@ -925,11 +904,31 @@ pub struct Amounts {
 
 /// Checks whether or not an order's limit price is outside the market price
 /// specified by the quote.
-///
-/// Note that this check only looks at the order's limit price and the market
-/// price and is independent of amounts or trade direction.
-pub fn is_order_outside_market_price(order: &Amounts, quote: &Amounts) -> bool {
-    (order.sell + order.fee).full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy)
+pub fn is_order_outside_market_price(
+    order: &Amounts,
+    quote: &Amounts,
+    kind: model::order::OrderKind,
+) -> bool {
+    let check = move || match kind {
+        OrderKind::Buy => {
+            Some(order.sell.full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy))
+        }
+        OrderKind::Sell => {
+            let quote_buy = quote
+                .buy
+                .checked_sub(quote.fee.checked_mul(quote.buy)?.checked_div(quote.sell)?)?;
+            Some(order.sell.full_mul(quote_buy) < quote.sell.full_mul(order.buy))
+        }
+    };
+
+    check().unwrap_or_else(|| {
+        tracing::warn!(
+            ?order,
+            ?quote,
+            "failed to check if order is outside market price"
+        );
+        true
+    })
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
@@ -1046,7 +1045,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let result = validator
@@ -1194,7 +1192,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let order = || PreOrderData {
@@ -1283,7 +1280,6 @@ mod tests {
             max_limit_orders_per_user,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
 
@@ -1293,7 +1289,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
             sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
+            fee_amount: U256::from(0),
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -1488,7 +1484,6 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
 
@@ -1560,7 +1555,6 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
 
@@ -1617,7 +1611,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let order = OrderCreation {
@@ -1637,71 +1630,6 @@ mod tests {
             .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
-    }
-
-    #[tokio::test]
-    async fn post_out_of_market_orders_when_limit_orders_disabled() {
-        let expected_buy_amount = U256::from(100);
-
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter.expect_find_quote().returning(move |_, _| {
-            Ok(Quote {
-                buy_amount: expected_buy_amount,
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            })
-        });
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            Arc::new(order_validation::banned::Users::none()),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-            None,
-            u64::MAX,
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: expected_buy_amount + 1, // buy more than expected
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            kind: OrderKind::Sell,
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            app_data: OrderCreationAppData::Full {
-                full: "{}".to_string(),
-            },
-            ..Default::default()
-        };
-        let (order, quote) = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
-        // Out-of-price orders are intentionally marked as liquidity
-        // orders!
-        assert_eq!(order.metadata.class, OrderClass::Limit);
-        assert!(quote.is_some());
     }
 
     #[tokio::test]
@@ -1734,7 +1662,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let order = OrderCreation {
@@ -1787,7 +1714,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let order = OrderCreation {
@@ -1842,7 +1768,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let order = OrderCreation {
@@ -1900,7 +1825,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
         let order = OrderCreation {
@@ -1957,7 +1881,6 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-            None,
             u64::MAX,
         );
 
@@ -2021,7 +1944,6 @@ mod tests {
                 0,
                 Arc::new(MockCodeFetching::new()),
                 Default::default(),
-                None,
                 u64::MAX,
             );
 
@@ -2031,7 +1953,6 @@ mod tests {
                 sell_amount: 1.into(),
                 buy_token: H160::from_low_u64_be(2),
                 buy_amount: 1.into(),
-                fee_amount: 1.into(),
                 app_data: OrderCreationAppData::Full {
                     full: "{}".to_string(),
                 },
@@ -2086,7 +2007,7 @@ mod tests {
             buy_token: H160([2; 20]),
             sell_amount: 3.into(),
             buy_amount: 4.into(),
-            fee_amount: 6.into(),
+            fee_amount: 0.into(),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -2102,7 +2023,7 @@ mod tests {
             fee_amount: 6.into(),
             ..Default::default()
         };
-        let fee_amount = quote_data.fee_amount;
+        let fee_amount = 0.into();
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
@@ -2114,7 +2035,6 @@ mod tests {
             &quote_search_parameters,
             quote_id,
             Some(fee_amount),
-            None,
         )
         .await
         .unwrap();
@@ -2152,7 +2072,7 @@ mod tests {
             fee_amount: 6.into(),
             ..Default::default()
         };
-        let fee_amount = quote_data.fee_amount;
+        let fee_amount = 0.into();
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
@@ -2186,7 +2106,6 @@ mod tests {
             &quote_search_parameters,
             None,
             Some(fee_amount),
-            None,
         )
         .await
         .unwrap();
@@ -2217,35 +2136,11 @@ mod tests {
             &quote_search_parameters,
             Some(0),
             Some(U256::zero()),
-            None,
         )
         .await
         .unwrap_err();
 
         assert!(matches!(err, ValidationError::QuoteNotFound));
-    }
-
-    #[tokio::test]
-    async fn get_quote_errors_on_insufficient_fees() {
-        let mut order_quoter = MockOrderQuoting::new();
-        order_quoter.expect_find_quote().returning(|_, _| {
-            Ok(Quote {
-                fee_amount: 2.into(),
-                ..Default::default()
-            })
-        });
-
-        let err = get_quote_and_check_fee(
-            &order_quoter,
-            &Default::default(),
-            Default::default(),
-            Some(U256::one()),
-            None,
-        )
-        .await
-        .unwrap_err();
-
-        assert!(matches!(err, ValidationError::InsufficientFee));
     }
 
     #[tokio::test]
@@ -2265,7 +2160,6 @@ mod tests {
                     },
                     Default::default(),
                     Default::default(),
-                    None,
                 )
                 .await
                 .unwrap_err();
@@ -2302,7 +2196,6 @@ mod tests {
                     },
                     Default::default(),
                     Some(U256::zero()),
-                    None,
                 )
                 .await
                 .unwrap_err();
@@ -2339,7 +2232,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_market_orders() {
+    fn detects_market_orders_buy() {
         let quote = Quote {
             sell_amount: 90.into(),
             buy_amount: 100.into(),
@@ -2359,6 +2252,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
@@ -2372,6 +2266,7 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
@@ -2385,6 +2280,61 @@ mod tests {
                 buy: quote.buy_amount,
                 fee: quote.fee_amount,
             },
+            model::order::OrderKind::Buy,
+        ));
+    }
+
+    #[test]
+    fn detects_market_orders_sell() {
+        // 1 to 1 conversion
+        let quote = Quote {
+            sell_amount: 100.into(),
+            buy_amount: 100.into(),
+            fee_amount: 10.into(),
+            ..Default::default()
+        };
+
+        // at market price
+        assert!(!is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 90.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
+        ));
+        // willing to buy less than market price
+        assert!(!is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 80.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
+        ));
+        // wanting to buy more than market price
+        assert!(is_order_outside_market_price(
+            &Amounts {
+                sell: 100.into(),
+                buy: 1000.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
+            model::order::OrderKind::Sell,
         ));
     }
 }

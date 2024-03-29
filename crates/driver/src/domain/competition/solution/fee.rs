@@ -225,18 +225,23 @@ pub struct Quote {
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
 pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, Math> {
-    let quote_sell_amount = quote
-        .sell_amount
-        .checked_add(quote.fee_amount)
-        .ok_or(Math::Overflow)?;
-
     match order.side {
         Side::Sell => {
-            let scaled_buy_amount = quote
+            let quote_buy_amount = quote
                 .buy_amount
+                .checked_sub(
+                    quote
+                        .fee_amount
+                        .checked_mul(quote.buy_amount)
+                        .ok_or(Math::Overflow)?
+                        .checked_div(quote.sell_amount)
+                        .ok_or(Math::DivisionByZero)?,
+                )
+                .ok_or(Math::Negative)?;
+            let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order.sell_amount)
                 .ok_or(Math::Overflow)?
-                .checked_div(quote_sell_amount)
+                .checked_div(quote.sell_amount)
                 .ok_or(Math::DivisionByZero)?;
             let buy_amount = order.buy_amount.max(scaled_buy_amount);
             Ok(PriceLimits {
@@ -245,6 +250,10 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
             })
         }
         Side::Buy => {
+            let quote_sell_amount = quote
+                .sell_amount
+                .checked_add(quote.fee_amount)
+                .ok_or(Math::Overflow)?;
             let scaled_sell_amount = quote_sell_amount
                 .checked_mul(order.buy_amount)
                 .ok_or(Math::Overflow)?
@@ -294,6 +303,11 @@ mod tests {
             limit.sell.0, order.sell_amount,
             "Sell amount should match order sell amount for sell orders."
         );
+        assert_eq!(
+            limit.buy.0,
+            to_wei(19),
+            "Buy amount should be equal to order buy amount for out of market orders"
+        );
     }
 
     #[test]
@@ -315,19 +329,24 @@ mod tests {
             limit.buy.0, order.buy_amount,
             "Buy amount should match order buy amount for buy orders."
         );
+        assert_eq!(
+            limit.sell.0,
+            to_wei(20),
+            "Sell amount should be equal to order sell amount for out of market orders."
+        );
     }
 
     #[test]
     fn test_adjust_quote_to_in_market_sell_order_limits() {
         let order = Order {
             sell_amount: to_wei(10),
-            buy_amount: to_wei(20),
+            buy_amount: to_wei(10),
             side: Side::Sell,
         };
         let quote = Quote {
-            sell_amount: to_wei(9),
+            sell_amount: to_wei(10),
             buy_amount: to_wei(25),
-            fee_amount: to_wei(1),
+            fee_amount: to_wei(2),
         };
 
         let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
@@ -337,8 +356,9 @@ mod tests {
             "Sell amount should be taken from the order for sell orders in market price."
         );
         assert_eq!(
-            limit.buy.0, quote.buy_amount,
-            "Buy amount should reflect the improved market condition from the quote."
+            limit.buy.0,
+            to_wei(20),
+            "Buy amount should be equal to quoted buy amount but reduced by fee."
         );
     }
 
@@ -359,9 +379,8 @@ mod tests {
 
         assert_eq!(
             limit.sell.0,
-            quote.sell_amount + quote.fee_amount,
-            "Sell amount should reflect the improved market condition from the quote for buy \
-             orders."
+            to_wei(18),
+            "Sell amount should match quoted buy amount increased by fee"
         );
         assert_eq!(
             limit.buy.0, order.buy_amount,

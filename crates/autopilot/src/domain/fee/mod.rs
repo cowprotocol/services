@@ -115,7 +115,7 @@ impl ProtocolFees {
             .iter()
             // TODO: support multiple fee policies
             .find_map(|fee_policy| {
-                let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_);
+                let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
                 match (outside_market_price, &fee_policy.order_class) {
                     (_, OrderClass::Any) => Some(&fee_policy.policy),
                     (true, OrderClass::Limit) => Some(&fee_policy.policy),

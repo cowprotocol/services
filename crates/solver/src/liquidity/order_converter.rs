@@ -379,7 +379,6 @@ pub mod tests {
             data: OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 10.into(),
-                fee_amount: 0.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
                 ..Default::default()
@@ -405,7 +404,6 @@ pub mod tests {
             data: OrderData {
                 sell_amount: 10.into(),
                 buy_amount: 100.into(),
-                fee_amount: 0.into(),
                 kind: OrderKind::Buy,
                 partially_fillable: true,
                 ..Default::default()

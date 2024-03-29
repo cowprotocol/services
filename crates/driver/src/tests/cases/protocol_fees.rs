@@ -687,9 +687,9 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
         // high enough so we don't get capped by volume fee
         max_volume_factor: 0.9,
         quote: Quote {
-            sell: 49.ether().into_wei(),
+            sell: 50.ether().into_wei(),
             buy: 50.ether().into_wei(),
-            network_fee: 1.ether().into_wei(),
+            network_fee: 4.ether().into_wei(), // 50 sell for 46 buy
         },
     };
     let test_case = TestCase {
@@ -701,14 +701,14 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
+            // Receive 14 ETH more than quoted, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
             },
             driver: Amounts {
                 sell: 50.ether().into_wei(),
-                buy: 55.ether().into_wei(),
+                buy: 53.ether().into_wei(),
             },
         },
         expected_score: 20.ether().into_wei(),
@@ -991,9 +991,9 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
         // high enough so we don't get capped by volume fee
         max_volume_factor: 0.9,
         quote: Quote {
-            sell: 49.ether().into_wei(),
+            sell: 50.ether().into_wei(),
             buy: 50.ether().into_wei(),
-            network_fee: 1.ether().into_wei(),
+            network_fee: 5.ether().into_wei(), // 50 sell for 45 buy
         },
     };
     let test_case = TestCase {
@@ -1005,14 +1005,16 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
+            // Quote is 50 sell for 45 buy, which is equal to 20 sell for 18 buy
+            // Solver returns 20 sell for 30 buy, so the price improvement is 12 in buy token
+            // Receive 12 ETH more than quoted, half of which gets captured by the protocol
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 30.ether().into_wei(),
             },
             driver: Amounts {
                 sell: 20.ether().into_wei(),
-                buy: 25.ether().into_wei(),
+                buy: 24.ether().into_wei(),
             },
         },
         expected_score: 20.ether().into_wei(),
