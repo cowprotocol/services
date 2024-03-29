@@ -174,7 +174,7 @@ async fn protocol_fee_calculated_on_the_solver_side() {
                 buy: 40.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
+        expected_score: 35.ether().into_wei(),
         fee_handler: FeeHandler::Solver,
     };
 
