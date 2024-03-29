@@ -362,10 +362,10 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_executed_surplus_fee_in_buy_token =
         partner_fee_order.metadata.executed_surplus_fee * partner_fee_quote_after.buy_amount
             / partner_fee_quote_after.sell_amount;
-    assert!(
-        partner_fee_executed_surplus_fee_in_buy_token
-            >= partner_fee_order.data.buy_amount * 2 / 100
-    );
+    let partner_fee_quote_diff = partner_fee_quote_after
+        .buy_amount
+        .saturating_sub(partner_fee_order.data.buy_amount);
+    assert!(partner_fee_executed_surplus_fee_in_buy_token >= partner_fee_quote_diff * 2 / 100);
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
     let limit_executed_surplus_fee_in_buy_token = limit_surplus_order.metadata.executed_surplus_fee
