@@ -229,7 +229,14 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
         Side::Sell => {
             let quote_buy_amount = quote
                 .buy_amount
-                .checked_sub(quote.fee_amount * quote.buy_amount / quote.sell_amount)
+                .checked_sub(
+                    quote
+                        .fee_amount
+                        .checked_mul(quote.buy_amount)
+                        .ok_or(Math::Overflow)?
+                        .checked_div(quote.sell_amount)
+                        .ok_or(Math::DivisionByZero)?,
+                )
                 .ok_or(Math::Negative)?;
             let scaled_buy_amount = quote_buy_amount
                 .checked_mul(order.sell_amount)
