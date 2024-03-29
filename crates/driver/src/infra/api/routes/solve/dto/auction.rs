@@ -152,7 +152,6 @@ impl Auction {
             }),
             time::Deadline::new(self.deadline, timeouts),
             eth,
-            self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
         )
         .await
         .map_err(Into::into)
@@ -200,8 +199,6 @@ pub struct Auction {
     tokens: Vec<Token>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
-    #[serde_as(as = "serialize::U256")]
-    score_cap: eth::U256,
 }
 
 impl Auction {

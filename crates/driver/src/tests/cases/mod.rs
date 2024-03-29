@@ -52,9 +52,6 @@ pub const DEFAULT_SCORE_MAX: u64 = 500000000000;
 /// The default solver fee for limit orders.
 pub const DEFAULT_SOLVER_FEE: &str = "1e-16";
 
-/// The default maximum value to be payout out to solver per solution
-pub const DEFAULT_SCORE_CAP: &str = "1e-2";
-
 /// A generic wrapper struct for representing amounts in Ether using high
 /// precision.
 ///
