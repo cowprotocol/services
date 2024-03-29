@@ -57,12 +57,15 @@ async fn order_cancellation(web3: Web3) {
             endpoint: solver_endpoint,
         }],
     );
-    services.start_autopilot(
-        None,
-        vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ],
-    );
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
