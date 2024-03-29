@@ -6,12 +6,13 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::prelude::U256,
+    ethcontract::{prelude::U256, Address},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount, Validity},
+        quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount, Validity},
         signature::EcdsaSigningScheme,
     },
+    reqwest::StatusCode,
     secp256k1::SecretKey,
     serde_json::json,
     shared::ethrpc::Web3,
@@ -72,7 +73,9 @@ async fn combined_protocol_fees(web3: Web3) {
         .await;
 
     limit_order_token.mint(solver.address(), to_wei(1000)).await;
-    market_order_token.mint(solver.address(), to_wei(100)).await;
+    market_order_token
+        .mint(solver.address(), to_wei(1000))
+        .await;
     partner_fee_order_token
         .mint(solver.address(), to_wei(100))
         .await;
@@ -85,7 +88,10 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     tx!(
         solver.account(),
-        market_order_token.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
+        market_order_token.approve(
+            onchain.contracts().uniswap_v2_router.address(),
+            to_wei(1000)
+        )
     );
     tx!(
         solver.account(),
@@ -129,11 +135,29 @@ async fn combined_protocol_fees(web3: Web3) {
         ])
         .await;
 
+    tracing::info!("Acquiring quotes.");
+    let limit_order_quote = get_quote(
+        &services,
+        onchain.contracts().weth.address(),
+        limit_order_token.address(),
+        to_wei(10),
+    )
+    .await
+    .unwrap();
+    let market_quote_before = get_quote(
+        &services,
+        onchain.contracts().weth.address(),
+        market_order_token.address(),
+        to_wei(10),
+    )
+    .await
+    .unwrap();
+
     let market_price_improvement_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(10),
+        sell_amount: market_quote_before.quote.sell_amount,
         buy_token: market_order_token.address(),
-        buy_amount: to_wei(5),
+        buy_amount: market_quote_before.quote.buy_amount * 2 / 3, // to make sure the order is in-market
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -145,9 +169,9 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     let limit_surplus_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
-        sell_amount: to_wei(10),
+        sell_amount: limit_order_quote.quote.sell_amount,
         buy_token: limit_order_token.address(),
-        buy_amount: to_wei(15),
+        buy_amount: limit_order_quote.quote.buy_amount * 3 / 2, // to make sure the order is out-of-market
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -173,6 +197,41 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
+    tracing::info!("Rebalancing AMM pool.");
+    onchain
+        .mint_token_to_weth_uni_v2_pool(&market_order_token, to_wei(1000))
+        .await;
+
+    tracing::info!("Waiting for liquidity state to update");
+    wait_for_condition(TIMEOUT, || async {
+        // Mint blocks until we evict the cached liquidity and fetch the new state.
+        onchain.mint_block().await;
+        let new_market_order_quote = get_quote(
+            &services,
+            onchain.contracts().weth.address(),
+            market_order_token.address(),
+            to_wei(10),
+        )
+        .await
+        .unwrap();
+        new_market_order_quote.quote.buy_amount != market_quote_before.quote.buy_amount
+    })
+    .await
+    .unwrap();
+
+    let market_quote_after = get_quote(
+        &services,
+        onchain.contracts().weth.address(),
+        market_order_token.address(),
+        to_wei(10),
+    )
+    .await
+    .unwrap()
+    .quote;
+    let market_quote_diff = market_quote_after
+        .buy_amount
+        .saturating_sub(market_quote_before.quote.buy_amount);
+
     let market_price_improvement_uid = services
         .create_order(&market_price_improvement_order)
         .await
@@ -187,20 +246,6 @@ async fn combined_protocol_fees(web3: Web3) {
     config.extend(autopilot_config);
     services.start_autopilot(None, config);
 
-    tracing::info!("Acquiring a quote.");
-    let quote_request = OrderQuoteRequest {
-        sell_token: onchain.contracts().weth.address(),
-        buy_token: limit_order_token.address(),
-        side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::AfterFee {
-                value: NonZeroU256::try_from(5).unwrap(),
-            },
-        },
-        validity: Validity::To(model::time::now_in_epoch_seconds() + 300),
-        ..Default::default()
-    };
-    let quote = services.submit_quote(&quote_request).await.unwrap();
-
     tracing::info!("Rebalancing AMM pool.");
     onchain
         .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
@@ -210,11 +255,29 @@ async fn combined_protocol_fees(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         // Mint blocks until we evict the cached liquidity and fetch the new state.
         onchain.mint_block().await;
-        let next = services.submit_quote(&quote_request).await.unwrap();
-        next.quote.buy_amount != quote.quote.buy_amount
+        let new_limit_order_quote = get_quote(
+            &services,
+            onchain.contracts().weth.address(),
+            limit_order_token.address(),
+            to_wei(10),
+        )
+        .await
+        .unwrap();
+        new_limit_order_quote.quote.buy_amount != limit_order_quote.quote.buy_amount
     })
     .await
     .unwrap();
+    // let limit_quote_diff = get_quote(
+    //     &services,
+    //     onchain.contracts().weth.address(),
+    //     limit_order_token.address(),
+    //     to_wei(10),
+    // )
+    // .await
+    // .unwrap()
+    // .quote
+    // .buy_amount
+    // .saturating_sub(limit_order_quote.quote.buy_amount);
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 3 })
@@ -244,6 +307,15 @@ async fn combined_protocol_fees(web3: Web3) {
         .get_order(&market_price_improvement_uid)
         .await
         .unwrap();
+    let market_executed_surplus_fee_in_buy_token =
+        market_price_improvement.metadata.executed_surplus_fee * market_quote_after.buy_amount
+            / market_quote_after.sell_amount;
+    tracing::info!(
+        "newlog market_executed_surplus_fee_in_buy_token={:?}",
+        market_executed_surplus_fee_in_buy_token
+    );
+    tracing::info!("newlog market_quote_diff={:?}", market_quote_diff);
+    assert!(market_price_improvement.metadata.executed_surplus_fee >= market_quote_diff * 3 / 10);
     assert_approximately_eq!(
         market_price_improvement.metadata.executed_surplus_fee,
         U256::from(202975487334646u128)
@@ -279,6 +351,26 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
     assert_approximately_eq!(balance_after, U256::from(133174891053662228u128));
+}
+
+async fn get_quote(
+    services: &Services<'_>,
+    sell_token: Address,
+    buy_token: Address,
+    sell_amount: U256,
+) -> Result<OrderQuoteResponse, (StatusCode, String)> {
+    let quote_request = OrderQuoteRequest {
+        sell_token,
+        buy_token,
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::AfterFee {
+                value: NonZeroU256::try_from(sell_amount.as_u128()).unwrap(),
+            },
+        },
+        validity: Validity::To(model::time::now_in_epoch_seconds() + 300),
+        ..Default::default()
+    };
+    services.submit_quote(&quote_request).await
 }
 
 async fn volume_fee_buy_order_test(web3: Web3) {
