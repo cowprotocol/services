@@ -37,6 +37,6 @@ async fn one_valid_solution() {
         })
         .done()
         .await;
-    test.solve().await.ok().default_score().orders(&[order]);
+    test.solve().await.ok().orders(&[order]);
     test.reveal().await.ok().calldata();
 }

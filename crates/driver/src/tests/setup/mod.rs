@@ -21,8 +21,6 @@ use {
                 DEFAULT_POOL_AMOUNT_B,
                 DEFAULT_POOL_AMOUNT_C,
                 DEFAULT_POOL_AMOUNT_D,
-                DEFAULT_SCORE_MAX,
-                DEFAULT_SCORE_MIN,
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
@@ -69,6 +67,7 @@ pub enum Partial {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
+    #[allow(dead_code)]
     Solver {
         #[serde_as(as = "serialize::U256")]
         score: eth::U256,
@@ -560,11 +559,6 @@ impl Solution {
             calldata: Calldata::Invalid,
             ..self
         }
-    }
-
-    /// Set the solution score to the specified value.
-    pub fn score(self, score: Score) -> Self {
-        Self { score, ..self }
     }
 }
 
@@ -1082,25 +1076,6 @@ impl<'a> SolveOk<'a> {
         assert!(solution.get("score").is_some());
         let score = solution.get("score").unwrap().as_str().unwrap();
         eth::U256::from_dec_str(score).unwrap()
-    }
-
-    /// Ensure that the score in the response is within a certain range. The
-    /// reason why this is a range is because small timing differences in
-    /// the test can lead to the settlement using slightly different amounts
-    /// of gas, which in turn leads to different scores.
-    pub fn score_in_range(self, min: eth::U256, max: eth::U256) -> Self {
-        let score = self.score();
-        assert!(score >= min, "score less than min {score} < {min}");
-        assert!(score <= max, "score more than max {score} > {max}");
-        self
-    }
-
-    /// Ensure that the score is within the default expected range.
-    pub fn default_score(self) -> Self {
-        self.score_in_range(
-            DEFAULT_SCORE_MIN.ether().into_wei(),
-            DEFAULT_SCORE_MAX.ether().into_wei(),
-        )
     }
 
     /// Ensures that `/solve` returns no solutions.
