@@ -102,8 +102,6 @@ pub struct Config {
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>,
-    /// Datetime when the CIP38 rank by surplus rules should be activated.
-    pub rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
     /// Determines whether the `solver` or the `driver` handles the fees
     pub fee_handler: FeeHandler,
 }

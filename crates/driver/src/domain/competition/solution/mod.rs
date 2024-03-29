@@ -455,6 +455,7 @@ impl SolverScore {
             (SolverScore::RiskAdjusted(a), SolverScore::RiskAdjusted(b)) => {
                 Some(SolverScore::RiskAdjusted(a * b))
             }
+            (SolverScore::Surplus, SolverScore::Surplus) => Some(SolverScore::Surplus),
             _ => None,
         }
     }
