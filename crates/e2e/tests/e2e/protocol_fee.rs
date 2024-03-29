@@ -322,26 +322,22 @@ async fn combined_protocol_fees(web3: Web3) {
     .unwrap()
     .quote;
 
-    tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 3 })
-        .await
-        .unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
     tracing::info!("Waiting for orders metadata update.");
     let metadata_updated = || async {
         onchain.mint_block().await;
-        let order_a = services
+        let market_order_updated = services
             .get_order(&market_price_improvement_uid)
             .await
-            .unwrap();
-        let order_b = services.get_order(&limit_surplus_order_uid).await.unwrap();
-        let order_c = services.get_order(&partner_fee_order_uid).await.unwrap();
-        !order_a.metadata.executed_surplus_fee.is_zero()
-            && !order_b.metadata.executed_surplus_fee.is_zero()
-            && !order_c.metadata.executed_surplus_fee.is_zero()
+            .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero());
+        let limit_order_updated = services
+            .get_order(&limit_surplus_order_uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero());
+        let partner_fee_order_updated = services
+            .get_order(&partner_fee_order_uid)
+            .await
+            .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero());
+        market_order_updated && limit_order_updated && partner_fee_order_updated
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
