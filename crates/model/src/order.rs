@@ -658,6 +658,7 @@ pub enum OnchainOrderPlacementError {
     // InvalidQuote error is return, if the quote and the order did not match
     // together
     InvalidQuote,
+    InsufficientFee,
     // Non-zero fee orders are rejected.
     NonZeroFee,
     // In case order data is invalid - e.g. signature type EIP-712 for

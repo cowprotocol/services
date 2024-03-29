@@ -13,6 +13,7 @@ pub enum OnchainOrderPlacementError {
     DisabledOrderClass,
     ValidToTooFarInFuture,
     InvalidOrderData,
+    InsufficientFee,
     NonZeroFee,
     Other,
 }
@@ -26,6 +27,7 @@ impl OnchainOrderPlacementError {
             Self::DisabledOrderClass => "disabled_class",
             Self::ValidToTooFarInFuture => "expired",
             Self::InvalidOrderData => "invalid_data",
+            Self::InsufficientFee => "low_fee",
             Self::NonZeroFee => "non_zero_fee",
             Self::Other => "unspecified",
         }
