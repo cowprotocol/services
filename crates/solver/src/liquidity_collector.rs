@@ -40,6 +40,8 @@ impl LiquidityCollecting for LiquidityCollector {
             .into_iter()
             .flatten()
             .flatten()
+            // Filter empty liquidity
+            .filter(|pool| pool.is_empty())
             .collect();
         tracing::debug!("got {} AMMs", amms.len());
         Ok(amms)

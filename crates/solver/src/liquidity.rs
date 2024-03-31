@@ -73,6 +73,17 @@ impl Liquidity {
             Liquidity::Concentrated(amm) => Some(amm.pool.address),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Liquidity::ConstantProduct(amm) => amm.is_empty(),
+            Liquidity::BalancerWeighted(amm) => amm.is_empty(),
+            Liquidity::BalancerStable(amm) => amm.is_empty(),
+            // This should probably check balances of the limit order...
+            Liquidity::LimitOrder(_) => false,
+            Liquidity::Concentrated(_) => false,
+        }
+    }
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded
@@ -296,6 +307,12 @@ impl ConstantProductOrder {
             settlement_handling,
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        // Empty if less than 1 WEI.
+        // TODO - this could be improved with a price feed...
+        self.reserves.1 < 1 || self.reserves.0 < 1
+    }
 }
 
 impl std::fmt::Debug for ConstantProductOrder {
@@ -331,6 +348,12 @@ impl std::fmt::Debug for WeightedProductOrder {
     }
 }
 
+impl WeightedProductOrder {
+    fn is_empty(&self) -> bool {
+        false
+    }
+}
+
 #[derive(Clone)]
 #[cfg_attr(test, derive(Derivative))]
 #[cfg_attr(test, derivative(PartialEq))]
@@ -353,6 +376,10 @@ impl StablePoolOrder {
             amplification_parameter: self.amplification_parameter,
         }
         .reserves_without_bpt()
+    }
+
+    fn is_empty(&self) -> bool {
+        false
     }
 }
 
