@@ -78,6 +78,7 @@ impl Ipfs {
 
     pub async fn add(&self, data: PinByHashRequest) -> Result<PinResponse> {
         let url = format!("{}pinning/pinByHash", self.base);
+        // Prevent upload attempt when `auth_token is None`.
         let jwt = if let Some(jwt) = &self.auth_token {
             jwt
         } else {
