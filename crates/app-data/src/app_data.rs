@@ -18,7 +18,7 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolAppData {
     #[serde(default)]
@@ -28,12 +28,12 @@ pub struct ProtocolAppData {
     pub partner_fee: Option<PartnerFee>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PartnerFee {
     pub bps: u64,
     pub recipient: H160,

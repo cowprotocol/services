@@ -1,8 +1,9 @@
 use {
-    crate::ipfs::Ipfs,
+    crate::ipfs::{Ipfs, PinByHashRequest, PinResponse},
     anyhow::Result,
-    app_data::AppDataHash,
+    app_data::{AppDataHash, ValidatedAppData},
     cached::{Cached, TimedSizedCache},
+    serde_json::Value,
     std::sync::Mutex,
 };
 
@@ -118,6 +119,26 @@ impl IpfsAppData {
         metric.with_label_values(&[outcome(&result), "node"]).inc();
         Ok(result)
     }
+
+    pub async fn post_app_data(&self, data: ValidatedAppData) -> Result<PinResponse> {
+        tracing::debug!("posting appData to IPFS {:?}", data);
+        self.ipfs.add(data.into()).await
+    }
+}
+
+impl From<ValidatedAppData> for PinByHashRequest {
+    fn from(value: ValidatedAppData) -> Self {
+        // Parse the string into serde_json::Value
+        let parsed_json: Value = serde_json::from_str(&value.document).unwrap();
+        // build escaped json string.
+        let escaped_json_string = serde_json::to_string(&parsed_json.to_string()).unwrap();
+
+        Self {
+            hash_to_pin: new_app_data_cid(&value.hash),
+            // Use escaped JSON string in target structure
+            pinata_metadata: format!(r#"{{"keyvalues":{{"appData":{}}}}}"#, escaped_json_string),
+        }
+    }
 }
 
 fn new_app_data_cid(contract_app_data: &AppDataHash) -> String {
@@ -137,7 +158,7 @@ fn old_app_data_cid(contract_app_data: &AppDataHash) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, app_data::Validator};
 
     // Can be compared with CID explorer to make sure CIDs encode the right data.
     #[test]
@@ -168,5 +189,43 @@ mod tests {
         ));
         let result = ipfs.fetch(&hash).await;
         let _ = dbg!(result);
+    }
+
+    #[test]
+    fn validated_app_data_into_pin_request() {
+        let basic_app_data = r#"{"appCode": "CoW Swap"}"#;
+        let validated = Validator::default()
+            .validate(basic_app_data.as_ref())
+            .unwrap();
+        let pin_request: PinByHashRequest = validated.into();
+        assert_eq!(
+            pin_request,
+            PinByHashRequest {
+                hash_to_pin: "bafkrwietfjndgkz7vw6dk35gurpo5jc43yc2dzusq6d6lfc3uxxm4qq744".into(),
+                pinata_metadata: r#"{"keyvalues":{"appData":"{\"appCode\":\"CoW Swap\"}"}}"#.into()
+            }
+        )
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn post_app_data() {
+        let basic_app_data = r#"{"appCode": "CoW Swap"}"#;
+        let validated = Validator::default()
+            .validate(basic_app_data.as_ref())
+            .unwrap();
+        let auth_token = std::env::var("pin_token").ok();
+        let ipfs = Ipfs::new(
+            Default::default(),
+            "https://api.pinata.cloud".parse().unwrap(),
+            auth_token,
+        );
+        let ipfs = IpfsAppData::new(ipfs);
+
+        let res = ipfs.post_app_data(validated).await;
+        assert_eq!(
+            &res.unwrap().ipfs_hash,
+            "bafkrwietfjndgkz7vw6dk35gurpo5jc43yc2dzusq6d6lfc3uxxm4qq744"
+        );
     }
 }

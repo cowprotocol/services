@@ -60,7 +60,13 @@ impl Registry {
             .insert_full_app_data(&validated.hash, &validated.document)
             .await
         {
-            Ok(()) => Ok((Registered::New, validated.hash)),
+            Ok(()) => {
+                // Post New AppData to IPFS after successful insert.
+                if let Some(ipfs) = &self.ipfs {
+                    let _ = ipfs.post_app_data(validated.clone()).await;
+                };
+                Ok((Registered::New, validated.hash))
+            }
             Err(InsertError::Duplicate) => Ok((Registered::AlreadyExisted, validated.hash)),
             Err(InsertError::Mismatch(existing)) => Err(RegisterError::DataMismatch { existing }),
             Err(InsertError::Other(err)) => Err(RegisterError::Other(err)),
