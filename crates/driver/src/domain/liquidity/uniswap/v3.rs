@@ -3,13 +3,15 @@ use {
         boundary,
         domain::{eth, liquidity},
     },
+    derivative::Derivative,
     std::collections::BTreeMap,
 };
 
 /// A Uniswap V3 concentrated liquidity pool.
 ///
 /// [^1]: <https://uniswap.org/whitepaper-v3.pdf>
-#[derive(Clone, Debug)]
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
 pub struct Pool {
     pub router: eth::ContractAddress,
     pub address: eth::ContractAddress,
@@ -17,6 +19,7 @@ pub struct Pool {
     pub sqrt_price: SqrtPrice,
     pub liquidity: Liquidity,
     pub tick: Tick,
+    #[derivative(Debug = "ignore")]
     pub liquidity_net: BTreeMap<Tick, LiquidityNet>,
     pub fee: Fee,
 }

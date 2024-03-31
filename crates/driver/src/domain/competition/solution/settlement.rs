@@ -249,7 +249,7 @@ impl Settlement {
                     mempools::RevertProtection::Disabled => gas_cost,
                 };
                 let score = competition::Score::new(
-                    auction.score_cap(),
+                    competition::Score(eth::U256::MAX.try_into().unwrap()),
                     objective_value,
                     success_probability,
                     failure_cost,

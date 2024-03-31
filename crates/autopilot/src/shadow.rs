@@ -32,7 +32,6 @@ pub struct RunLoop {
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::auction::Id,
     block: u64,
-    score_cap: U256,
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
 }
@@ -42,7 +41,6 @@ impl RunLoop {
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<infra::Driver>,
         trusted_tokens: AutoUpdatingTokenList,
-        score_cap: U256,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
     ) -> Self {
@@ -52,7 +50,6 @@ impl RunLoop {
             trusted_tokens,
             auction: 0,
             block: 0,
-            score_cap,
             solve_deadline,
             liveness,
         }
@@ -190,13 +187,8 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let request = solve::Request::new(
-            id,
-            auction,
-            &self.trusted_tokens.all(),
-            self.score_cap,
-            self.solve_deadline,
-        );
+        let request =
+            solve::Request::new(id, auction, &self.trusted_tokens.all(), self.solve_deadline);
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {

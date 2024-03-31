@@ -1,13 +1,6 @@
 use {
     super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
-    crate::{
-        domain::competition::order,
-        infra::time,
-        tests::{
-            cases::{self, EtherExt},
-            hex_address,
-        },
-    },
+    crate::{domain::competition::order, infra::time, tests::hex_address},
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -121,7 +114,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "scoreCap": cases::DEFAULT_SCORE_CAP.ether().into_wei().to_string(),
     })
 }
 
@@ -228,7 +220,6 @@ async fn create_config_file(
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
                fee-handler = {}
-               {}
                "#,
             solver.name,
             addr,
@@ -242,10 +233,6 @@ async fn create_config_file(
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
-            solver.rank_by_surplus_date.map_or_else(
-                || "".to_string(),
-                |timestamp| format!("rank-by-surplus-date = \"{}\"", timestamp.to_rfc3339())
-            ),
         )
         .unwrap();
     }

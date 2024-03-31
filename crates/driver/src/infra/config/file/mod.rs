@@ -186,9 +186,6 @@ struct SolverConfig {
     #[serde(default)]
     request_headers: HashMap<String, String>,
 
-    /// Datetime when the CIP38 rank by surplus rules should be activated.
-    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
-
     /// Determines whether the `solver` or the `driver` handles the fees
     #[serde(default)]
     fee_handler: FeeHandler,
