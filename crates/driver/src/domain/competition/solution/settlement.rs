@@ -203,6 +203,7 @@ impl Settlement {
             .into()
     }
 
+    /// Score as defined per CIP38. Equal to surplus + protocol fees.
     pub fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, solution::error::Scoring> {
         self.solution.scoring(prices)
     }
