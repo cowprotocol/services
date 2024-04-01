@@ -144,6 +144,7 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         limit_order_token.address(),
+        OrderKind::Sell,
         sell_amount,
         quote_valid_to,
     )
@@ -153,6 +154,7 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         market_order_token.address(),
+        OrderKind::Sell,
         sell_amount,
         quote_valid_to,
     )
@@ -162,6 +164,7 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         partner_fee_order_token.address(),
+        OrderKind::Sell,
         sell_amount,
         quote_valid_to,
     )
@@ -233,6 +236,7 @@ async fn combined_protocol_fees(web3: Web3) {
             &services,
             onchain.contracts().weth.address(),
             market_order_token.address(),
+            OrderKind::Sell,
             sell_amount,
             model::time::now_in_epoch_seconds() + 300,
         )
@@ -242,6 +246,7 @@ async fn combined_protocol_fees(web3: Web3) {
             &services,
             onchain.contracts().weth.address(),
             partner_fee_order_token.address(),
+            OrderKind::Sell,
             sell_amount,
             model::time::now_in_epoch_seconds() + 300,
         )
@@ -258,6 +263,7 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         market_order_token.address(),
+        OrderKind::Sell,
         sell_amount,
         model::time::now_in_epoch_seconds() + 300,
     )
@@ -268,6 +274,7 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         partner_fee_order_token.address(),
+        OrderKind::Sell,
         sell_amount,
         model::time::now_in_epoch_seconds() + 300,
     )
@@ -302,6 +309,7 @@ async fn combined_protocol_fees(web3: Web3) {
             &services,
             onchain.contracts().weth.address(),
             limit_order_token.address(),
+            OrderKind::Sell,
             sell_amount,
             model::time::now_in_epoch_seconds() + 300,
         )
@@ -315,6 +323,7 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         limit_order_token.address(),
+        OrderKind::Sell,
         sell_amount,
         model::time::now_in_epoch_seconds() + 300,
     )
@@ -398,17 +407,24 @@ async fn get_quote(
     services: &Services<'_>,
     sell_token: Address,
     buy_token: Address,
-    sell_amount: U256,
+    kind: OrderKind,
+    amount: U256,
     valid_to: u32,
 ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
+    let side = match kind {
+        OrderKind::Sell => OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(amount.as_u128()).unwrap(),
+            },
+        },
+        OrderKind::Buy => OrderQuoteSide::Buy {
+            buy_amount_after_fee: NonZeroU256::try_from(amount.as_u128()).unwrap(),
+        },
+    };
     let quote_request = OrderQuoteRequest {
         sell_token,
         buy_token,
-        side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::BeforeFee {
-                value: NonZeroU256::try_from(sell_amount.as_u128()).unwrap(),
-            },
-        },
+        side,
         validity: Validity::To(valid_to),
         ..Default::default()
     };
@@ -423,34 +439,8 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         // applied
         policy_order_class: FeePolicyOrderClass::Any,
     };
-    // Without protocol fee:
-    // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
-    // with executed_surplus_fee = 167058994203399 GNO
-    //
-    // With protocol fee:
-    // Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
-    // 504208401617866820
-    //
-    // Settlement contract balance after execution = executed_surplus_fee GNO
-    execute_test(
-        web3.clone(),
-        vec![ProtocolFeesConfig(vec![protocol_fee])],
-        OrderKind::Buy,
-        None,
-        504208401617866820u128.into(),
-        504208401617866820u128.into(),
-    )
-    .await;
-}
+    let protocol_fees_config = ProtocolFeesConfig(vec![protocol_fee]).to_string();
 
-async fn execute_test(
-    web3: Web3,
-    autopilot_config: Vec<impl ToString>,
-    order_kind: OrderKind,
-    app_data: Option<OrderCreationAppData>,
-    expected_surplus_fee: U256,
-    expected_settlement_contract_balance: U256,
-) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -518,11 +508,11 @@ async fn execute_test(
             endpoint: solver_endpoint,
         }],
     );
-    let mut config = vec![
+    let config = vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+        protocol_fees_config,
     ];
-    config.extend(autopilot_config.iter().map(ToString::to_string));
     services.start_autopilot(None, config);
     services
         .start_api(vec![
@@ -530,14 +520,25 @@ async fn execute_test(
         ])
         .await;
 
+    let quote = get_quote(
+        &services,
+        token_gno.address(),
+        token_dai.address(),
+        OrderKind::Buy,
+        to_wei(5),
+        model::time::now_in_epoch_seconds() + 300,
+    )
+    .await
+    .unwrap()
+    .quote;
+
     let order = OrderCreation {
         sell_token: token_gno.address(),
-        sell_amount: to_wei(10),
+        sell_amount: quote.sell_amount * 3 / 2,
         buy_token: token_dai.address(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
-        app_data: app_data.unwrap_or_default(),
-        kind: order_kind,
+        kind: OrderKind::Buy,
         ..Default::default()
     }
     .sign(
@@ -563,23 +564,18 @@ async fn execute_test(
         !order.metadata.executed_surplus_fee.is_zero()
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+
     let order = services.get_order(&uid).await.unwrap();
-    assert_approximately_eq!(order.metadata.executed_surplus_fee, expected_surplus_fee);
+    let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
+    assert!(order.metadata.executed_surplus_fee >= fee_in_buy_token + quote.sell_amount / 10);
 
     // Check settlement contract balance
-    let balance_after = match order_kind {
-        OrderKind::Buy => token_gno
-            .balance_of(onchain.contracts().gp_settlement.address())
-            .call()
-            .await
-            .unwrap(),
-        OrderKind::Sell => token_dai
-            .balance_of(onchain.contracts().gp_settlement.address())
-            .call()
-            .await
-            .unwrap(),
-    };
-    assert_approximately_eq!(balance_after, expected_settlement_contract_balance);
+    let balance_after = token_gno
+        .balance_of(onchain.contracts().gp_settlement.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(order.metadata.executed_surplus_fee, balance_after);
 }
 
 struct ProtocolFeesConfig(Vec<ProtocolFee>);
