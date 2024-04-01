@@ -163,7 +163,6 @@ weth = "{:?}"
 
 [liquidity]
 base-tokens = []
-graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 [liquidity.zeroex]
 base-url = {:?}
@@ -172,6 +171,7 @@ http-timeout = "10s"
 
 [submission]
 gas-price-cap = "1000000000000"
+max-confirm-time= "2s"
 
 [[submission.mempool]]
 mempool = "public"
