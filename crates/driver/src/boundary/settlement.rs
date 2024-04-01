@@ -262,7 +262,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             buy_token: order.buy.token.into(),
             sell_amount: order.sell.amount.into(),
             buy_amount: order.buy.amount.into(),
-            fee_amount: order.user_fee.into(),
+            fee_amount: 0.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
             app_data: AppDataHash(order.app_data.into()),
@@ -283,7 +283,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         },
         metadata: OrderMetadata {
             full_fee_amount: Default::default(),
-            solver_fee: order.user_fee.into(),
+            solver_fee: 0.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,

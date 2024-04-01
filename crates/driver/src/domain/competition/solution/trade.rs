@@ -88,7 +88,12 @@ impl Fulfillment {
     /// considering their signed order and the uniform clearing prices
     pub fn fee(&self) -> order::SellAmount {
         match self.fee {
-            Fee::Static => self.order.user_fee,
+            Fee::Static => {
+                // Orders with static fees are no longer used, expect for quoting purposes, when
+                // the static fee is set to 0. This is expected to be resolved with https://github.com/cowprotocol/services/issues/2543
+                // Once resolved, this code will be simplified as part of https://github.com/cowprotocol/services/issues/2507
+                order::SellAmount(0.into())
+            }
             Fee::Dynamic(fee) => fee,
         }
     }

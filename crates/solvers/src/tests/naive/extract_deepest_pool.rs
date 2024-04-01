@@ -32,7 +32,6 @@ async fn test() {
                     "buyToken": "0x0202020202020202020202020202020202020202",
                     "sellAmount": "100",
                     "buyAmount": "1",
-                    "feeAmount": "0",
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",

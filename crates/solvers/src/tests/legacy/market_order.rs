@@ -53,7 +53,7 @@ async fn quote() {
                         "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     },
                     "fee": {
-                        "amount": "4200000000000000",
+                        "amount": "0",
                         "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     },
                     "has_atomic_execution": false,
@@ -147,7 +147,6 @@ async fn quote() {
                     "buyToken": "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
                     "sellAmount": "133700000000000000",
                     "buyAmount": "6000000000000000000000",
-                    "feeAmount": "4200000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",
@@ -261,7 +260,7 @@ async fn solve() {
                         "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     },
                     "fee": {
-                        "amount": "4200000000000000",
+                        "amount": "0",
                         "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     },
                     "has_atomic_execution": false,
@@ -355,7 +354,6 @@ async fn solve() {
                     "buyToken": "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
                     "sellAmount": "133700000000000000",
                     "buyAmount": "6000000000000000000000",
-                    "feeAmount": "4200000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
                     "class": "market",

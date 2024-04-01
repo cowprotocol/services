@@ -197,12 +197,6 @@ components:
         buyAmount:
           description: Amount to be bought
           $ref: "#/components/schemas/TokenAmount"
-        userFee:
-          description: |
-            The fee that the user signed to pay for getting their order included.
-
-            This fee may be different from solver fee as it includes subsidies.
-          $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: The time until which the order is valid.
           type: integer

@@ -68,7 +68,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
-            "userFee": quote.order.user_fee.to_string(),
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
                 order::Kind::Liquidity => json!([]),

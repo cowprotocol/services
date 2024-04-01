@@ -70,7 +70,7 @@ pub fn solve(
                 order::Side::Sell => OrderKind::Sell,
             },
             partially_fillable: order.partially_fillable,
-            user_fee: order.fee().amount,
+            user_fee: 0.into(),
             settlement_handling: Arc::new(OrderHandler {
                 order: Order {
                     metadata: OrderMetadata {
@@ -80,7 +80,7 @@ pub fn solve(
                             order::Class::Limit => OrderClass::Limit,
                             order::Class::Liquidity => OrderClass::Liquidity,
                         },
-                        solver_fee: order.fee().amount,
+                        solver_fee: 0.into(),
                         ..Default::default()
                     },
                     data: OrderData {
@@ -88,7 +88,7 @@ pub fn solve(
                         buy_token: order.buy.token.0,
                         sell_amount: order.sell.amount,
                         buy_amount: order.buy.amount,
-                        fee_amount: order.fee().amount,
+                        fee_amount: 0.into(),
                         kind: match order.side {
                             order::Side::Buy => OrderKind::Buy,
                             order::Side::Sell => OrderKind::Sell,

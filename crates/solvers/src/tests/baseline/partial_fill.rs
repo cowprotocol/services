@@ -39,7 +39,6 @@ async fn test() {
                     "buyToken": "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
                     "sellAmount": "1000000000000000000",
                     "buyAmount": "40000000000000000000000",
-                    "feeAmount": "0",
                     "kind": "sell",
                     "partiallyFillable": true,
                     "class": "limit",

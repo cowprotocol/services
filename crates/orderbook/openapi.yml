@@ -914,10 +914,6 @@ components:
           description: see `OrderParameters::buyAmount`
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-        userFee:
-          description: see `OrderParameters::feeAmount`
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer

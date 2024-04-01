@@ -108,7 +108,6 @@ impl Auction {
                         buy_token: available.buy.token.into(),
                         sell_amount: available.sell.amount.into(),
                         buy_amount: available.buy.amount.into(),
-                        fee_amount: available.user_fee.into(),
                         kind: match order.side {
                             competition::order::Side::Buy => Kind::Buy,
                             competition::order::Side::Sell => Kind::Sell,
@@ -284,8 +283,6 @@ struct Order {
     sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    fee_amount: eth::U256,
     kind: Kind,
     partially_fillable: bool,
     class: Class,

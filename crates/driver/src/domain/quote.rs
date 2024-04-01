@@ -120,7 +120,6 @@ impl Order {
                 buy: self.buy(),
                 sell: self.sell(),
                 side: self.side,
-                user_fee: Default::default(),
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
