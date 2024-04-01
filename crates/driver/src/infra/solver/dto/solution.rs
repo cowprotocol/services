@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{competition, competition::order, eth, liquidity},
-        infra::Solver,
+        infra::{solver::Config, Solver},
         util::serialize,
     },
     itertools::Itertools,
@@ -17,7 +17,7 @@ impl Solutions {
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
         solver: Solver,
-        rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
+        solver_config: &Config,
     ) -> Result<Vec<competition::Solution>, super::Error> {
         self.solutions
             .into_iter()
@@ -189,23 +189,10 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    match rank_by_surplus_date
-                        .is_some_and(|date| auction.deadline().driver() > date)
-                    {
-                        true => competition::solution::SolverScore::Surplus,
-                        false => match solution.score {
-                            Score::Solver { score } => {
-                                competition::solution::SolverScore::Solver(score)
-                            }
-                            Score::RiskAdjusted {
-                                success_probability,
-                            } => competition::solution::SolverScore::RiskAdjusted(
-                                success_probability,
-                            ),
-                        },
-                    },
+                    competition::solution::SolverScore::Surplus,
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
+                    solver_config.fee_handler,
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
@@ -236,6 +223,7 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    #[allow(dead_code)]
     score: Score,
     gas: Option<u64>,
 }

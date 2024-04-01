@@ -21,7 +21,6 @@ impl Request {
         id: domain::auction::Id,
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
-        score_cap: U256,
         time_limit: Duration,
     ) -> Self {
         Self {
@@ -48,7 +47,6 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            score_cap,
         }
     }
 }
@@ -62,8 +60,6 @@ pub struct Request {
     pub tokens: Vec<Token>,
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub score_cap: U256,
 }
 
 #[serde_as]

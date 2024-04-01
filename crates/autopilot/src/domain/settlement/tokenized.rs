@@ -1,5 +1,6 @@
 use {
     crate::domain::{self, eth},
+    app_data::AppDataHash,
     ethcontract::{Address, Bytes, U256},
 };
 
@@ -45,7 +46,7 @@ pub fn order_uid(
         sell_amount: trade.3,
         buy_amount: trade.4,
         valid_to: trade.5,
-        app_data: crate::boundary::AppDataHash(trade.6 .0),
+        app_data: AppDataHash(trade.6 .0),
         fee_amount: trade.7,
         kind: match flags.side() {
             domain::auction::order::Side::Buy => model::order::OrderKind::Buy,

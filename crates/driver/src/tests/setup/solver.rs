@@ -1,12 +1,16 @@
 use {
-    super::{blockchain, blockchain::Blockchain, Partial},
+    super::{
+        blockchain::{self, Blockchain},
+        fee,
+        Partial,
+    },
     crate::{
         domain::{
             competition::order,
             eth,
             time::{self},
         },
-        infra::{self, blockchain::contracts::Addresses, Ethereum},
+        infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -33,6 +37,7 @@ pub struct Config<'a> {
     pub deadline: time::Deadline,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
+    pub fee_handler: FeeHandler,
 }
 
 impl Solver {
@@ -53,18 +58,51 @@ impl Solver {
             } else {
                 quote.order.buy_token
             };
-            orders_json.push(json!({
+            let sell_amount = match quote.order.side {
+                order::Side::Buy if config.quote => {
+                    "22300745198530623141535718272648361505980416".to_owned()
+                }
+                order::Side::Buy => match quote.order.fee_policy {
+                    // If the fees are handler in the driver, for volume based fee, we artificially
+                    // reduce the limit sell amount for buy orders before sending to solvers. This
+                    // allows driver to withhold volume based fee and not violate original limit
+                    // prices.
+                    fee::Policy::Volume { factor } if config.fee_handler == FeeHandler::Driver => {
+                        eth::TokenAmount(quote.sell_amount())
+                            .apply_factor(1.0 / (1.0 + factor))
+                            .unwrap()
+                            .0
+                            .to_string()
+                    }
+                    _ => quote.sell_amount().to_string(),
+                },
+                _ => quote.sell_amount().to_string(),
+            };
+            let buy_amount = match quote.order.side {
+                order::Side::Sell if config.quote => "1".to_owned(),
+                order::Side::Sell => match quote.order.fee_policy {
+                    // If the fees are handler in the driver, for volume based fee, we artificially
+                    // increase the limit buy amount for sell orders before sending to solvers. This
+                    // allows driver to withhold volume based fee and not violate original limit
+                    // prices.
+                    fee::Policy::Volume { factor } if config.fee_handler == FeeHandler::Driver => {
+                        eth::TokenAmount(quote.buy_amount())
+                            .apply_factor(1.0 / (1.0 - factor))
+                            .unwrap()
+                            .0
+                            .to_string()
+                    }
+                    _ => quote.buy_amount().to_string(),
+                },
+                _ => quote.buy_amount().to_string(),
+            };
+
+            let mut order = json!({
                 "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
-                "sellAmount": match quote.order.side {
-                    order::Side::Buy if config.quote => "22300745198530623141535718272648361505980416".to_owned(),
-                    _ => quote.sell_amount().to_string(),
-                },
-                "buyAmount": match quote.order.side {
-                    order::Side::Sell if config.quote => "1".to_owned(),
-                    _ => quote.buy_amount().to_string(),
-                },
+                "sellAmount": sell_amount,
+                "buyAmount": buy_amount,
                 "feeAmount": quote.order.user_fee.to_string(),
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",
@@ -77,7 +115,21 @@ impl Solver {
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
-            }));
+            });
+            if config.fee_handler == FeeHandler::Solver {
+                order.as_object_mut().unwrap().insert(
+                    "feePolicies".to_owned(),
+                    match quote.order.kind {
+                        _ if config.quote => json!([]),
+                        order::Kind::Market => json!([]),
+                        order::Kind::Liquidity => json!([]),
+                        order::Kind::Limit { .. } => {
+                            json!([quote.order.fee_policy.to_json_value()])
+                        }
+                    },
+                );
+            }
+            orders_json.push(order);
         }
         for (i, solution) in config.solutions.iter().enumerate() {
             let mut interactions_json = Vec::new();
@@ -209,7 +261,6 @@ impl Solver {
                     max_confirm_time: Default::default(),
                     retry_interval: Default::default(),
                     kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
-                    submission: infra::mempool::SubmissionLogic::Native,
                 }],
             )
             .await

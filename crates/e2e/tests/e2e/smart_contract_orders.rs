@@ -1,10 +1,14 @@
 use {
-    e2e::setup::{safe::Safe, *},
+    e2e::{
+        setup::{safe::Safe, *},
+        tx,
+    },
     ethcontract::{Bytes, H160, U256},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
     },
+    reqwest::StatusCode,
     shared::ethrpc::Web3,
 };
 
@@ -12,6 +16,12 @@ use {
 #[ignore]
 async fn local_node_smart_contract_orders() {
     run_test(smart_contract_orders).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_max_gas_limit() {
+    run_test(erc1271_gas_limit).await;
 }
 
 async fn smart_contract_orders(web3: Web3) {
@@ -37,8 +47,7 @@ async fn smart_contract_orders(web3: Web3) {
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: token.address(),
-        sell_amount: to_wei(4),
-        fee_amount: to_wei(1),
+        sell_amount: to_wei(5),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -147,5 +156,57 @@ async fn smart_contract_orders(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch native token balance");
-    assert_eq!(balance, U256::from(7_975_363_406_512_003_608_u128));
+    assert!(balance > to_wei(6));
+}
+
+async fn erc1271_gas_limit(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let trader = contracts::test::GasHog::builder(&web3)
+        .deploy()
+        .await
+        .unwrap();
+
+    let cow = onchain
+        .deploy_cow_weth_pool(to_wei(1_000_000), to_wei(1_000), to_wei(1_000))
+        .await;
+
+    // Fund trader accounts and approve relayer
+    cow.fund(trader.address(), to_wei(5)).await;
+    tx!(
+        solver.account(),
+        trader.approve(cow.address(), onchain.contracts().allowance, to_wei(10))
+    );
+
+    let services = Services::new(onchain.contracts()).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                api: vec!["--max-gas-per-order=1000000".to_string()],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    // Use 1M gas units during signature verification
+    let mut signature = [0; 32];
+    U256::exp10(6).to_big_endian(&mut signature);
+
+    let order = OrderCreation {
+        sell_token: cow.address(),
+        sell_amount: to_wei(4),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(3),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        signature: Signature::Eip1271(signature.to_vec()),
+        from: Some(trader.address()),
+        ..Default::default()
+    };
+
+    let error = services.create_order(&order).await.unwrap_err();
+    assert_eq!(error.0, StatusCode::BAD_REQUEST);
+    assert!(error.1.contains("TooMuchGas"));
 }

@@ -10,7 +10,7 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
     },
     futures::future::try_join_all,
-    std::collections::{BTreeSet, HashMap, HashSet},
+    std::collections::{BTreeSet, HashMap},
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -42,8 +42,7 @@ pub struct Settlement {
     pub access_list: eth::AccessList,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
-    /// See the [`Settlement::solutions`] method.
-    solutions: HashMap<solution::Id, Solution>,
+    solution: Solution,
 }
 
 impl Settlement {
@@ -73,20 +72,13 @@ impl Settlement {
 
         // Encode the solution into a settlement.
         let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-        Self::new(
-            auction.id().unwrap(),
-            [(solution.id, solution)].into(),
-            boundary,
-            eth,
-            simulator,
-        )
-        .await
+        Self::new(auction.id().unwrap(), solution, boundary, eth, simulator).await
     }
 
     /// Create a new settlement and ensure that it is valid.
     async fn new(
         auction_id: auction::Id,
-        solutions: HashMap<solution::Id, Solution>,
+        solution: Solution,
         settlement: boundary::Settlement,
         eth: &Ethereum,
         simulator: &Simulator,
@@ -102,10 +94,7 @@ impl Settlement {
         // The solution is to do access list estimation in two steps: first, simulate
         // moving 1 wei into every smart contract to get a partial access list, and then
         // use that partial access list to calculate the final access list.
-        let user_trades = solutions
-            .values()
-            .flat_map(|solution| solution.user_trades());
-        let partial_access_lists = try_join_all(user_trades.map(|trade| async {
+        let partial_access_lists = try_join_all(solution.user_trades().map(|trade| async {
             if !trade.order().buys_eth() || !trade.order().pays_to_contract(eth).await? {
                 return Ok(Default::default());
             }
@@ -134,7 +123,7 @@ impl Settlement {
         )
         .await?;
         let price = eth.gas_price().await?;
-        let gas = Gas::new(gas, eth.block_gas_limit(), price);
+        let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
@@ -144,9 +133,9 @@ impl Settlement {
         }
 
         // Is at least one interaction internalized?
-        if solutions
-            .values()
-            .flat_map(|solution| solution.interactions.iter())
+        if solution
+            .interactions()
+            .iter()
             .any(|interaction| interaction.internalize())
         {
             // Some rules which are enforced by the settlement contract for non-internalized
@@ -168,7 +157,7 @@ impl Settlement {
 
         Ok(Self {
             auction_id,
-            solutions,
+            solution,
             boundary: settlement,
             access_list,
             gas,
@@ -221,12 +210,7 @@ impl Settlement {
     ) -> Result<eth::Ether, solution::error::Scoring> {
         let prices = auction.prices();
 
-        self.solutions
-            .values()
-            .map(|solution| solution.scoring(&prices))
-            .try_fold(eth::Ether(0.into()), |acc, score| {
-                score.map(|score| acc + score)
-            })
+        self.solution.scoring(&prices)
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
@@ -239,7 +223,7 @@ impl Settlement {
     ) -> Result<competition::Score, score::Error> {
         // For testing purposes, calculate CIP38 even before activation
         let score = self.cip38_score(auction);
-        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solutions());
+        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solution);
 
         let score = match self.boundary.score() {
             competition::SolverScore::Solver(score) => {
@@ -265,7 +249,7 @@ impl Settlement {
                     mempools::RevertProtection::Disabled => gas_cost,
                 };
                 let score = competition::Score::new(
-                    auction.score_cap(),
+                    competition::Score(eth::U256::MAX.try_into().unwrap()),
                     objective_value,
                     success_probability,
                     failure_cost,
@@ -281,47 +265,9 @@ impl Settlement {
         Ok(score)
     }
 
-    // TODO(#1478): merge() should be defined on Solution rather than Settlement.
-    /// Merge another settlement into this settlement.
-    ///
-    /// Merging settlements results in a score that can be anything due to the
-    /// fact that contracts can do basically anything, but in practice it can be
-    /// assumed that the score will be at least equal to the sum of the scores
-    /// of the merged settlements.
-    pub async fn merge(
-        &self,
-        other: &Self,
-        eth: &Ethereum,
-        simulator: &Simulator,
-    ) -> Result<Self, Error> {
-        // The solver must be the same for both settlements.
-        if self.boundary.solver != other.boundary.solver {
-            return Err(Error::DifferentSolvers);
-        }
-
-        // Merge the settlements.
-        let mut solutions = self.solutions.clone();
-        solutions.extend(
-            other
-                .solutions
-                .iter()
-                .map(|(id, solution)| (*id, solution.clone())),
-        );
-        Self::new(
-            self.auction_id,
-            solutions,
-            self.boundary.clone().merge(other.boundary.clone())?,
-            eth,
-            simulator,
-        )
-        .await
-    }
-
-    /// The solutions encoded in this settlement. This is a [`HashSet`] because
-    /// multiple solutions can be encoded in a single settlement due to
-    /// merging. See [`Self::merge`].
-    pub fn solutions(&self) -> HashSet<super::Id> {
-        self.solutions.keys().copied().collect()
+    /// The solution encoded in this settlement.
+    pub fn solution(&self) -> &super::Id {
+        self.solution.id()
     }
 
     /// Address of the solver which generated this settlement.
@@ -331,47 +277,32 @@ impl Settlement {
 
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
-        self.solutions
-            .values()
-            .fold(Default::default(), |mut acc, solution| {
-                for trade in solution.user_trades() {
-                    let order = acc.entry(trade.order().uid).or_default();
-                    let prices = ClearingPrices {
-                        sell: solution.prices
-                            [&trade.order().sell.token.wrap(solution.weth)],
-                        buy: solution.prices
-                            [&trade.order().buy.token.wrap(solution.weth)],
-                    };
-                    order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
+        let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
+        for trade in self.solution.user_trades() {
+            let order = acc.entry(trade.order().uid).or_default();
+            let prices = ClearingPrices {
+                sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
+                buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
+            };
+            order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute sell_amount");
+                        tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
                         0.into()
                     });
-                    order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
+            order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(?trade, prices=?solution.prices, ?err, "could not compute buy_amount");
+                        tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
                         0.into()
                     });
-                }
-                acc
-            })
+        }
+        acc
     }
 
     /// The uniform price vector this settlement proposes
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.boundary.clearing_prices()
-    }
-
-    /// Settlements have valid notify ID only if they are originated from a
-    /// single solution. Otherwise, for merged settlements, no notifications
-    /// are sent, therefore, notify id is None.
-    pub fn notify_id(&self) -> Option<super::Id> {
-        match self.solutions.len() {
-            1 => self.solutions.keys().next().copied(),
-            _ => None,
-        }
     }
 }
 
@@ -406,18 +337,11 @@ pub struct Gas {
 impl Gas {
     /// Computes settlement gas parameters given estimates for gas and gas
     /// price.
-    pub fn new(estimate: eth::Gas, block_limit: eth::Gas, price: eth::GasPrice) -> Self {
-        // Specify a different gas limit than the estimated gas when executing a
-        // settlement transaction. This allows the transaction to be resilient
-        // to small variations in actual gas usage.
-        // Also, some solutions can have significant gas refunds that are refunded at
-        // the end of execution, so we want to increase gas limit enough so
-        // those solutions don't revert with out of gas error.
-        const GAS_LIMIT_FACTOR: f64 = 2.0;
-        let estimate_with_buffer =
-            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
-                .into();
-
+    pub fn new(
+        estimate: eth::Gas,
+        block_limit: eth::Gas,
+        price: eth::GasPrice,
+    ) -> Result<Self, solution::Error> {
         // We don't allow for solutions to take up more than half of the block's gas
         // limit. This is to ensure that block producers attempt to include the
         // settlement transaction in the next block as long as it is reasonably
@@ -429,12 +353,26 @@ impl Gas {
         // whose gas limit exceed the remaining space (without simulating the actual
         // gas required).
         let max_gas = eth::Gas(block_limit.0 / 2);
+        if estimate > max_gas {
+            return Err(solution::Error::GasLimitExceeded(estimate, max_gas));
+        }
 
-        Self {
+        // Specify a different gas limit than the estimated gas when executing a
+        // settlement transaction. This allows the transaction to be resilient
+        // to small variations in actual gas usage.
+        // Also, some solutions can have significant gas refunds that are refunded at
+        // the end of execution, so we want to increase gas limit enough so
+        // those solutions don't revert with out of gas error.
+        const GAS_LIMIT_FACTOR: f64 = 2.0;
+        let estimate_with_buffer =
+            eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
+                .into();
+
+        Ok(Self {
             estimate,
             limit: std::cmp::min(max_gas, estimate_with_buffer),
             price,
-        }
+        })
     }
 
     /// The balance required to ensure settlement execution with the given gas

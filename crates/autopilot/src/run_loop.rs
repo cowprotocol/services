@@ -42,7 +42,6 @@ pub struct RunLoop {
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
-    pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
@@ -304,7 +303,6 @@ impl RunLoop {
             id,
             auction,
             &self.market_makable_token_list.all(),
-            self.score_cap,
             self.solve_deadline,
         );
         let request = &request;

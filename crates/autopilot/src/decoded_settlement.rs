@@ -3,11 +3,11 @@
 
 use {
     anyhow::{Context, Result},
+    app_data::AppDataHash,
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
     model::{
-        app_data::AppDataHash,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::{Signature, SigningScheme},
         DomainSeparator,

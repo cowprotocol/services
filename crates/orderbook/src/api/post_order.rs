@@ -192,10 +192,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("InvalidSignature", "invalid signature"),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::InsufficientFee => with_status(
-                error("InsufficientFee", "Order does not include sufficient fee"),
-                StatusCode::BAD_REQUEST,
-            ),
             ValidationError::NonZeroFee => with_status(
                 error("NonZeroFee", "Fee must be zero"),
                 StatusCode::BAD_REQUEST,
@@ -227,6 +223,10 @@ impl IntoWarpReply for ValidationErrorWrapper {
             ),
             ValidationError::TooManyLimitOrders => with_status(
                 error("TooManyLimitOrders", "Too many limit orders"),
+                StatusCode::BAD_REQUEST,
+            ),
+            ValidationError::TooMuchGas => with_status(
+                error("TooMuchGas", "Executing order requires too many gas units"),
                 StatusCode::BAD_REQUEST,
             ),
 
