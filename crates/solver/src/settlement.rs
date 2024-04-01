@@ -578,7 +578,6 @@ pub mod tests {
     fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
         Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades),
-            ..Default::default()
         }
     }
 
