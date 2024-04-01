@@ -35,7 +35,7 @@ use {
         ZeroExResponseError,
         ZeroExSignature,
     },
-    std::{str::FromStr, sync::Arc, time::Duration},
+    std::{str::FromStr, sync::Arc},
     web3::{
         ethabi::{encode, Token},
         signing::{self, SecretKeyRef},
