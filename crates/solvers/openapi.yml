@@ -74,10 +74,7 @@ paths:
                       emptySolution,
                       duplicatedSolutionId,
                       simulationFailed,
-                      zeroScore,
-                      scoreHigherThanQuality,
-                      successProbabilityOutOfRange,
-                      objectiveValueNonPositive,
+                      invalidClearingPrices,
                       nonBufferableTokensUsed,
                       solverAccountInsufficientBalance,
                       success,
@@ -857,7 +854,6 @@ components:
         - prices
         - trades
         - interactions
-        - score
       properties:
         id:
           description: An opaque identifier for the solution. This is a solver generated number that is unique across multiple solutions within the auction.
@@ -881,33 +877,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
-        score:
-          description: |
-            Information required by the driver to score the solution. 
-
-            Can either be a raw score or a success probability.
-          oneOf:
-            - type: object
-              properties:
-                kind:
-                  type: string
-                  enum: [solver]
-                score:
-                  description: |
-                    The raw score of the solution. This is the score that is
-                    used by the driver to rank solutions.
-                  allOf:
-                    - $ref: "#/components/schemas/Decimal"
-            - type: object
-              properties:
-                kind:
-                  type: string
-                  enum: [riskAdjusted]
-                successProbability:
-                  description: |
-                    The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
-                  type: number
-                  example: 0.9
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.

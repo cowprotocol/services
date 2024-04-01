@@ -207,8 +207,6 @@ pub struct SettledBatchAuctionModel {
     pub approvals: Vec<ApprovalModel>,
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
-    // #[serde(flatten, deserialize_with = "deserialize_optional_score")]
-    // pub score: Score,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
