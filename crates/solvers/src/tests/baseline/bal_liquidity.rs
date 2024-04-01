@@ -117,10 +117,6 @@ async fn weighted() {
                         "outputAmount": "1657855325872947866705"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -235,10 +231,6 @@ async fn weighted_v3plus() {
                         "outputAmount": "1663373703594405548696"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -377,10 +369,6 @@ async fn stable() {
                             "outputAmount": "9999475"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas":  289911,
                 },
                 {
@@ -409,10 +397,6 @@ async fn stable() {
                             "outputAmount": "10000000"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas":  289911,
                 },
             ]
@@ -545,10 +529,6 @@ async fn composable_stable_v4() {
                             "outputAmount": "10029862202766050434"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas": 289911,
                 },
             ]

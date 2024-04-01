@@ -122,10 +122,6 @@ async fn sell_orders_on_both_sides() {
                     },
                 ],
                 "interactions": [],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),

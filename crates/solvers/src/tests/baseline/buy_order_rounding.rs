@@ -102,10 +102,6 @@ async fn uniswap() {
                         "outputAmount": "1000000000428620302"
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),
@@ -272,10 +268,6 @@ async fn balancer_weighted() {
                         "outputAmount": "1000000000000337213"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 266391,
             }]
         }),
@@ -390,10 +382,6 @@ async fn balancer_weighted_v3plus() {
                         "outputAmount": "1000000000000001964333"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -508,10 +496,6 @@ async fn distant_convergence() {
                         "outputAmount": "1000000000000015112015"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -662,10 +646,6 @@ async fn same_path() {
                         "outputAmount": "9056454904357528"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),
@@ -804,10 +784,6 @@ async fn balancer_stable() {
                             "outputAmount": "10000000000000000000"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas": 289911,
                 },
             ]
