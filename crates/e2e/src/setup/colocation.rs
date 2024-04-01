@@ -95,7 +95,6 @@ weth = "{:?}"
 
 [liquidity]
 base-tokens = []
-graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 [[liquidity.uniswap-v2]]
 router = "{:?}"
@@ -104,7 +103,6 @@ missing-pool-cache-time = "1h"
 
 [submission]
 gas-price-cap = "1000000000000"
-logic = "native"
 max-confirm-time= "2s"
 
 [[submission.mempool]]

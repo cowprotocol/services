@@ -2,7 +2,7 @@
 
 use {
     anyhow::{bail, Result},
-    reqwest::{Client, IntoUrl, Url},
+    reqwest::{Client, Url},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
     serde_json::{json, Map, Value},
     thiserror::Error,
@@ -29,26 +29,7 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn new(
-        base_url: &Url,
-        org: impl AsRef<str>,
-        name: impl AsRef<str>,
-        client: Client,
-    ) -> Result<Self> {
-        Self::with_base_url(base_url.clone(), org, name, client)
-    }
-
-    /// Creates a new subgraph client with the specified base URL.
-    pub fn with_base_url(
-        base_url: impl IntoUrl,
-        org: impl AsRef<str>,
-        name: impl AsRef<str>,
-        client: Client,
-    ) -> Result<Self> {
-        let subgraph_url = crate::url::join(
-            &base_url.into_url()?,
-            &format!("{}/{}", org.as_ref(), name.as_ref()),
-        );
+    pub fn new(subgraph_url: Url, client: Client) -> Result<Self> {
         Ok(Self {
             client,
             subgraph_url,

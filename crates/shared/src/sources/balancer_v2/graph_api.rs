@@ -11,7 +11,7 @@
 use {
     super::swap::fixed_point::Bfp,
     crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
-    anyhow::{bail, Result},
+    anyhow::Result,
     ethcontract::{H160, H256},
     reqwest::{Client, Url},
     serde::Deserialize,
@@ -33,20 +33,9 @@ const QUERY_PAGE_SIZE: usize = 10;
 pub struct BalancerSubgraphClient(SubgraphClient);
 
 impl BalancerSubgraphClient {
-    /// Creates a new Balancer subgraph client for the specified chain ID.
-    pub fn for_chain(base_url: &Url, chain_id: u64, client: Client) -> Result<Self> {
-        let subgraph_name = match chain_id {
-            1 => "balancer-v2",
-            5 => "balancer-goerli-v2",
-            100 => "balancer-gnosis-chain-v2",
-            _ => bail!("unsupported chain {}", chain_id),
-        };
-        Ok(Self(SubgraphClient::new(
-            base_url,
-            "balancer-labs",
-            subgraph_name,
-            client,
-        )?))
+    /// Creates a new Balancer subgraph client with full subgraph URL.
+    pub fn from_subgraph_url(subgraph_url: &Url, client: Client) -> Result<Self> {
+        Ok(Self(SubgraphClient::new(subgraph_url.clone(), client)?))
     }
 
     /// Retrieves the list of registered pools from the subgraph.
@@ -253,13 +242,7 @@ mod tests {
         crate::sources::balancer_v2::swap::fixed_point::Bfp,
         ethcontract::{H160, H256},
         maplit::hashmap,
-        std::collections::HashMap,
     };
-
-    pub fn default_for_chain(chain_id: u64, client: Client) -> Result<BalancerSubgraphClient> {
-        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
-        BalancerSubgraphClient::for_chain(&base_url, chain_id, client)
-    }
 
     #[test]
     fn decode_pools_data() {
@@ -485,39 +468,5 @@ mod tests {
                 },
             }
         )
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn balancer_subgraph_query() {
-        for (network_name, chain_id) in [("Mainnet", 1), ("Goerli", 5)] {
-            println!("### {network_name}");
-            let client = default_for_chain(chain_id, Client::new()).unwrap();
-            let result = client.get_registered_pools().await.unwrap();
-            println!(
-                "Retrieved {} total pools at block {}",
-                result.pools.len(),
-                result.fetched_block_number,
-            );
-
-            let grouped_by_factory = result.pools.into_iter().fold(
-                HashMap::<_, Vec<_>>::new(),
-                |mut factories, pool| {
-                    factories
-                        .entry((pool.pool_type, pool.factory))
-                        .or_default()
-                        .push(pool);
-                    factories
-                },
-            );
-            for ((pool_type, factory), pools) in grouped_by_factory {
-                println!(
-                    "- {} {:?} pools from factory {:?}",
-                    pools.len(),
-                    pool_type,
-                    factory,
-                );
-            }
-        }
     }
 }

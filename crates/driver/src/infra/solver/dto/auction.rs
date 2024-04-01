@@ -1,6 +1,15 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth, liquidity},
+        domain::{
+            competition,
+            competition::{
+                order,
+                order::{fees, Side},
+            },
+            eth,
+            liquidity,
+        },
+        infra::config::file::FeeHandler,
         util::{
             conv::{rational_to_big_decimal, u256::U256Ext},
             serialize,
@@ -17,6 +26,7 @@ impl Auction {
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
+        fee_handler: FeeHandler,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -64,7 +74,39 @@ impl Auction {
                 .orders()
                 .iter()
                 .map(|order| {
-                    let available = order.available(weth);
+                    let mut available = order.available(weth);
+                    // In case of volume based fees, fee withheld by driver might be higher than the
+                    // surplus of the solution. This would lead to violating limit prices when
+                    // driver tries to withhold the volume based fee. To avoid this, we artificially
+                    // adjust the order limit amounts (make then worse) before sending to solvers,
+                    // to force solvers to only submit solutions with enough surplus to cover the
+                    // fee.
+                    //
+                    // https://github.com/cowprotocol/services/issues/2440
+                    if fee_handler == FeeHandler::Driver {
+                        if let Some(fees::FeePolicy::Volume { factor }) =
+                            order.protocol_fees.first()
+                        {
+                            match order.side {
+                                Side::Buy => {
+                                    // reduce sell amount by factor
+                                    available.sell.amount = available
+                                        .sell
+                                        .amount
+                                        .apply_factor(1.0 / (1.0 + factor))
+                                        .unwrap_or_default();
+                                }
+                                Side::Sell => {
+                                    // increase buy amount by factor
+                                    available.buy.amount = available
+                                        .buy
+                                        .amount
+                                        .apply_factor(1.0 / (1.0 - factor))
+                                        .unwrap_or_default();
+                                }
+                            }
+                        }
+                    }
                     Order {
                         uid: order.uid.into(),
                         sell_token: available.sell.token.into(),
@@ -82,6 +124,14 @@ impl Auction {
                             competition::order::Kind::Limit { .. } => Class::Limit,
                             competition::order::Kind::Liquidity => Class::Liquidity,
                         },
+                        fee_policies: (fee_handler == FeeHandler::Solver).then_some(
+                            order
+                                .protocol_fees
+                                .iter()
+                                .cloned()
+                                .map(Into::into)
+                                .collect(),
+                        ),
                     }
                 })
                 .collect(),
@@ -255,6 +305,8 @@ struct Order {
     kind: Kind,
     partially_fillable: bool,
     class: Class,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee_policies: Option<Vec<FeePolicy>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -270,6 +322,62 @@ enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
+}
+
+impl From<fees::FeePolicy> for FeePolicy {
+    fn from(value: order::FeePolicy) -> Self {
+        match value {
+            order::FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            },
+            order::FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell.amount.into(),
+                    buy_amount: quote.buy.amount.into(),
+                    fee: quote.fee.amount.into(),
+                },
+            },
+            order::FeePolicy::Volume { factor } => FeePolicy::Volume { factor },
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    #[serde_as(as = "serialize::U256")]
+    pub sell_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub buy_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub fee: eth::U256,
 }
 
 #[serde_as]

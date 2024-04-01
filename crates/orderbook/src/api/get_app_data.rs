@@ -1,7 +1,7 @@
 use {
     crate::database::Postgres,
     anyhow::Result,
-    model::app_data::{AppDataDocument, AppDataHash},
+    app_data::{AppDataDocument, AppDataHash},
     reqwest::StatusCode,
     std::convert::Infallible,
     warp::{reply, Filter, Rejection, Reply},

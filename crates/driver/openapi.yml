@@ -340,10 +340,6 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
-        scoreCap:
-          description: |
-            The protocol rewards the winning solver the difference between the observed score and the second best score up to this cap.
-          $ref: "#/components/schemas/BigUint"
     SolveResponse:
       description: |
         Response of the solve endpoint.

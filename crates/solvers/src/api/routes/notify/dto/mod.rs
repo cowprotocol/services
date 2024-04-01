@@ -1,4 +1,4 @@
-pub use solvers_dto::notification::Notification;
+pub use solvers_dto::notification::{Notification, SolutionId};
 
 use crate::domain::{auction, eth, notification};
 
@@ -11,7 +11,10 @@ pub fn to_domain(
             Some(id) => auction::Id::Solve(id),
             None => auction::Id::Quote,
         },
-        solution_id: notification.solution_id.map(Into::into),
+        solution_id: notification.solution_id.as_ref().map(|id| match id {
+            SolutionId::Single(id) => notification::Id::Single((*id).into()),
+            SolutionId::Merged(ids) => notification::Id::Merged(ids.to_vec()),
+        }),
         kind: match &notification.kind {
             solvers_dto::notification::Kind::Timeout => notification::Kind::Timeout,
             solvers_dto::notification::Kind::EmptySolution => notification::Kind::EmptySolution,

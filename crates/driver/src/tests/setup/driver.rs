@@ -1,13 +1,6 @@
 use {
     super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
-    crate::{
-        domain::competition::order,
-        infra::time,
-        tests::{
-            cases::{self, EtherExt},
-            hex_address,
-        },
-    },
+    crate::{domain::competition::order, infra::time, tests::hex_address},
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -121,7 +114,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "scoreCap": cases::DEFAULT_SCORE_CAP.ether().into_wei().to_string(),
     })
 }
 
@@ -184,7 +176,6 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
-           logic = "native"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address())
@@ -228,6 +219,7 @@ async fn create_config_file(
                account = "0x{}"
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
+               fee-handler = {}
                "#,
             solver.name,
             addr,
@@ -240,6 +232,7 @@ async fn create_config_file(
             hex::encode(solver.private_key.secret_bytes()),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
+            serde_json::to_string(&solver.fee_handler).unwrap(),
         )
         .unwrap();
     }
