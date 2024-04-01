@@ -9,7 +9,6 @@ use {
     crate::{
         boundary,
         domain::{
-            self,
             auction,
             eth,
             liquidity,
@@ -32,7 +31,6 @@ pub struct Config {
     pub base_tokens: Vec<eth::TokenAddress>,
     pub max_hops: usize,
     pub max_partial_attempts: usize,
-    pub risk: domain::Risk,
     pub solution_gas_offset: eth::SignedGas,
 }
 
@@ -57,10 +55,6 @@ struct Inner {
     /// Basically we continuously halve the amount to execute until we find a
     /// valid solution or exceed this count.
     max_partial_attempts: usize,
-
-    /// Parameters used to calculate the revert risk of a solution.
-    risk: domain::Risk,
-
     /// Units of gas that get added to the gas estimate for executing a
     /// computed trade route to arrive at a gas estimate for a whole settlement.
     solution_gas_offset: eth::SignedGas,
@@ -74,7 +68,6 @@ impl Baseline {
             base_tokens: config.base_tokens.into_iter().collect(),
             max_hops: config.max_hops,
             max_partial_attempts: config.max_partial_attempts,
-            risk: config.risk,
             solution_gas_offset: config.solution_gas_offset,
         }))
     }
@@ -160,9 +153,6 @@ impl Inner {
                 }
 
                 let gas = route.gas() + self.solution_gas_offset;
-                let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
-                    self.risk.success_probability(gas, auction.gas_price, 1),
-                ));
 
                 Some(
                     solution::Single {
@@ -172,7 +162,7 @@ impl Inner {
                         interactions,
                         gas,
                     }
-                    .into_solution(auction.gas_price, sell_token, score)?
+                    .into_solution(auction.gas_price, sell_token)?
                     .with_id(solution::Id(i as u64))
                     .with_buffers_internalizations(&auction.tokens),
                 )

@@ -5,7 +5,6 @@ mod metrics;
 pub mod order_balance_filter;
 pub mod settlement;
 pub mod settlement_access_list;
-pub mod settlement_rater;
 pub mod settlement_simulation;
 pub mod settlement_submission;
 pub mod solver;

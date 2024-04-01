@@ -28,7 +28,6 @@ use {
                 InternalizationStrategy,
                 MetadataModel,
                 OrderModel,
-                Score,
                 SettledBatchAuctionModel,
                 SimulatedTransaction,
                 SolverRejectionReason,
@@ -569,16 +568,6 @@ fn to_domain_solution(
             .into_iter()
             .map(|(interaction, _)| interaction)
             .collect(),
-        score: match model.score {
-            Score::Solver { score } => solution::Score::Solver(score),
-            Score::RiskAdjusted {
-                success_probability,
-                ..
-            } => solution::Score::RiskAdjusted(solution::SuccessProbability(success_probability)),
-            Score::Surplus => {
-                return Err(anyhow::anyhow!("solvers not allowed to use surplus score"))
-            }
-        },
         gas: None,
     })
 }
@@ -613,23 +602,8 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                 *succeeded_at_least_once,
             ))
         }
-        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(quality, gas_cost)) => {
-            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
-                quality: quality.0,
-                gas_cost: gas_cost.0,
-            })
-        }
-        Kind::ScoringFailed(ScoreKind::ZeroScore) => {
-            AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
-        }
-        Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality(score, quality)) => {
-            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
-                score: score.0,
-                quality: quality.0,
-            })
-        }
-        Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(_)) => {
-            AuctionResult::Rejected(SolverRejectionReason::SuccessProbabilityOutOfRange)
+        Kind::ScoringFailed(ScoreKind::InvalidClearingPrices) => {
+            AuctionResult::Rejected(SolverRejectionReason::InvalidClearingPrices)
         }
         Kind::NonBufferableTokensUsed(tokens) => {
             AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
