@@ -88,24 +88,25 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
         max_volume_factor: 0.1,
     };
     // Without protocol fee:
-    // Expected executed_surplus_fee is 167058994203399
+    // Expected execution is 10000000000000000000 GNO for
+    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
     //
     // With protocol fee:
     // Expected executed_surplus_fee is 167058994203399 +
-    // 0.1*10000000000000000000 = 1000167058994203400
+    // 0.1*(10000000000000000000 - 167058994203399) = 1000150353094783059
     //
-    // Final execution is 10000000000000000000 GNO for 8884257395945205588 DAI, with
-    // executed_surplus_fee = 1000167058994203400 GNO
+    // Final execution is 10000000000000000000 GNO for 8884273887308040129 DAI, with
+    // executed_surplus_fee = 1000150353094783059 GNO
     //
-    // Settlement contract balance after execution = 1000167058994203400 GNO =
-    // 1000167058994203400 GNO * 8884257395945205588 / (10000000000000000000 -
-    // 1000167058994203400) = 987322948025407485 DAI
+    // Settlement contract balance after execution = 1000150353094783059 GNO =
+    // 1000150353094783059 GNO * 8884273887308040129 / (10000000000000000000 -
+    // 1000150353094783059) = 987306456662572858 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
-        1000167058994203400u128.into(),
-        987322948025407485u128.into(),
+        1000150353094783059u128.into(),
+        987306456662572858u128.into(),
     )
     .await;
 }
@@ -113,21 +114,25 @@ async fn surplus_fee_sell_order_capped_test(web3: Web3) {
 async fn volume_fee_sell_order_test(web3: Web3) {
     let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
     // Without protocol fee:
-    // Expected executed_surplus_fee is 167058994203399
+    // Expected execution is 10000000000000000000 GNO for
+    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
     //
     // With protocol fee:
     // Expected executed_surplus_fee is 167058994203399 +
-    // 0.1*10000000000000000000 = 1000167058994203400
+    // 0.1*(10000000000000000000 - 167058994203399) = 1000150353094783059
     //
-    // Settlement contract balance after execution = 1000167058994203400 GNO =
-    // 1000167058994203400 GNO * 8884257395945205588 / (10000000000000000000 -
-    // 1000167058994203400) = 987322948025407485 DAI
+    // Final execution is 10000000000000000000 GNO for 8884273887308040129 DAI, with
+    // executed_surplus_fee = 1000150353094783059 GNO
+    //
+    // Settlement contract balance after execution = 1000150353094783059 GNO =
+    // 1000150353094783059 GNO * 8884273887308040129 / (10000000000000000000 -
+    // 1000150353094783059) = 987306456662572858 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
-        1000167058994203400u128.into(),
-        987322948025407485u128.into(),
+        1000150353094783059u128.into(),
+        987306456662572858u128.into(),
     )
     .await;
 }

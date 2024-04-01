@@ -7,7 +7,7 @@ pub async fn notify(
     notification: axum::extract::Json<dto::Notification>,
 ) -> axum::http::StatusCode {
     let handle_request = async {
-        let notification = notification.to_domain();
+        let notification = dto::to_domain(&notification);
         let auction_id = notification.auction_id;
 
         tracing::trace!(?auction_id, ?notification);

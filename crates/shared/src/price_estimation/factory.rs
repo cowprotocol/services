@@ -127,6 +127,9 @@ impl<'a> PriceEstimatorFactory<'a> {
                     network
                         .simulation_web3
                         .clone()
+                        .map(|web3| {
+                            ethrpc::instrumented::instrument_with_label(&web3, "simulator".into())
+                        })
                         .context("missing simulation node configuration")
                 };
                 let tenderly_simulator = || -> anyhow::Result<_> {
@@ -153,7 +156,11 @@ impl<'a> PriceEstimatorFactory<'a> {
                         ))
                     }
                 };
-                let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(network.web3.clone())));
+                let code_fetcher = ethrpc::instrumented::instrument_with_label(
+                    &network.web3,
+                    "codeFetching".into(),
+                );
+                let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
 
                 Ok(Arc::new(TradeVerifier::new(
                     simulator,
@@ -161,6 +168,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     network.block_stream.clone(),
                     network.settlement,
                     network.native_token,
+                    args.quote_inaccuracy_limit,
                 )))
             })
             .transpose()?;

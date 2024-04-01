@@ -76,6 +76,7 @@ pub async fn collector(
     blocks: CurrentBlockStream,
     config: &infra::liquidity::config::ZeroEx,
 ) -> anyhow::Result<Box<dyn LiquidityCollecting>> {
+    let eth = eth.with_metric_label("zeroex".into());
     let settlement = eth.contracts().settlement().clone();
     let web3 = settlement.raw_instance().web3().clone();
     let contract = contracts::IZeroEx::deployed(&web3).await?;

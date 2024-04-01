@@ -103,38 +103,6 @@ impl Competition {
             }
         });
 
-        let solutions = solutions.filter(|solution| {
-            let mut amm_orders = HashSet::<eth::Address>::new();
-
-            for trade in solution.trades() {
-                let solution = solution.id();
-
-                let owner = match trade {
-                    solution::Trade::Fulfillment(f) => {
-                        let uid = f.order().uid;
-                        let Some(order) = auction.orders().iter().find(|o| o.uid == uid) else {
-                            tracing::warn!(?uid, ?solution, "order not in original auction");
-                            return false;
-                        };
-                        order.trader().0
-                    }
-                    solution::Trade::Jit(j) => j.order().signature.signer,
-                };
-
-                let is_cow_amm_order = self.eth.contracts().cow_amms().contains(&owner);
-                if is_cow_amm_order && !amm_orders.insert(owner) {
-                    tracing::warn!(
-                        amm = ?owner,
-                        ?solution,
-                        "solution contains more than 1 order for the same CoW AMM"
-                    );
-                    return false;
-                }
-            }
-
-            true
-        });
-
         // Encode solutions into settlements (streamed).
         let encoded = solutions
             .map(|solution| async move {
@@ -213,6 +181,7 @@ impl Competition {
                         score,
                         trades: settlement.orders(),
                         prices: settlement.prices(),
+                        gas: Some(settlement.gas.estimate),
                     },
                     settlement,
                 )
@@ -361,11 +330,12 @@ async fn merge_settlements(
     eth: &Ethereum,
     simulator: &Simulator,
 ) {
+    let eth = eth.with_metric_label("mergeSettlements".into());
     let mut new = std::pin::pin!(new);
     while let Some(settlement) = new.next().await {
         // Try to merge [`settlement`] into some settlements.
         for other in merged.iter_mut() {
-            match other.merge(&settlement, eth, simulator).await {
+            match other.merge(&settlement, &eth, simulator).await {
                 Ok(m) => {
                     *other = m;
                     observe::merged(&settlement, other);
@@ -389,10 +359,16 @@ pub struct Solved {
     pub score: Score,
     pub trades: HashMap<order::Uid, Amounts>,
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
+    pub gas: Option<eth::Gas>,
 }
 
 #[derive(Debug, Default)]
 pub struct Amounts {
+    pub sell: eth::TokenAmount,
+    pub buy: eth::TokenAmount,
+}
+
+pub struct PriceLimits {
     pub sell: eth::TokenAmount,
     pub buy: eth::TokenAmount,
 }

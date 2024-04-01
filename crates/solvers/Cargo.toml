@@ -33,12 +33,13 @@ s3 = { path = "../s3" }
 serde = "1"
 serde_json = "1"
 serde_with = "3"
+solvers-dto = { path = "../solvers-dto" }
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = "0.7"
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
-web3 = "0.19"
+web3 = { workspace = true }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.

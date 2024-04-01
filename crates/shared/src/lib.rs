@@ -3,7 +3,6 @@ pub mod macros;
 
 pub mod account_balances;
 pub mod api;
-pub mod app_data;
 pub mod arguments;
 pub mod bad_token;
 pub mod balancer_sor_api;

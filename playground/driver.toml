@@ -1,0 +1,31 @@
+[[solver]]
+name = "baseline" # Arbitrary name given to this solver, must be unique
+endpoint = "http://baseline"
+absolute-slippage = "40000000000000000" # Denominated in wei, optional
+relative-slippage = "0.1" # Percentage in the [0, 1] range
+account = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6" # Known test private key
+
+[submission]
+gas-price-cap = 1e12
+additional-tip-percentage = 0.05
+
+[[submission.mempool]]
+mempool = "public"
+
+[liquidity]
+base-tokens = [
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", # WETH
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F", # DAI 
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7", # USDT
+    "0xc00e94Cb662C3520282E6f5717214004A7f26888", # COMP
+    "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2", # MKR
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", # WBTC
+    "0x6810e776880C02933D47DB1b9fc05908e5386b96", # GNO
+]
+
+[[liquidity.uniswap-v2]] # Uniswap V2 configuration
+preset = "uniswap-v2"
+
+[[liquidity.balancer-v2]]
+preset = "balancer-v2"

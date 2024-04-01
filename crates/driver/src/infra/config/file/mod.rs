@@ -5,7 +5,7 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     solver::solver::Arn,
-    std::time::Duration,
+    std::{collections::HashMap, time::Duration},
 };
 
 mod load;
@@ -18,7 +18,7 @@ struct Config {
     /// Note that the actual chain ID is fetched from the configured Ethereum
     /// RPC endpoint, and the driver will exit if it does not match this
     /// value.
-    chain_id: Option<eth::U256>,
+    chain_id: Option<u64>,
 
     /// Disable access list simulation, useful for environments that don't
     /// support this, such as less popular blockchains.
@@ -185,6 +185,12 @@ struct SolverConfig {
     /// Timeout configuration for the solver.
     #[serde(default, flatten)]
     timeouts: Timeouts,
+
+    #[serde(default)]
+    request_headers: HashMap<String, String>,
+
+    /// Datetime when the CIP38 rank by surplus rules should be activated.
+    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[serde_as]
@@ -242,8 +248,6 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
-
-    cow_amms: Option<Vec<eth::H160>>,
 }
 
 #[derive(Debug, Deserialize)]

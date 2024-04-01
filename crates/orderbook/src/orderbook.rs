@@ -1,10 +1,10 @@
 use {
     crate::{
-        app_data,
         database::orders::{InsertionError, OrderStoring},
         dto,
     },
     anyhow::{Context, Result},
+    app_data::Validator,
     chrono::Utc,
     ethcontract::H256,
     model::{
@@ -25,6 +25,7 @@ use {
     primitive_types::H160,
     shared::{
         metrics::LivenessChecking,
+        order_quoting::Quote,
         order_validation::{OrderValidating, ValidationError},
     },
     std::{borrow::Cow, sync::Arc},
@@ -86,12 +87,18 @@ impl Metrics {
 
 #[derive(Debug, Error)]
 pub enum AddOrderError {
+    #[error("unable to find an existing order: {0}")]
+    OrderNotFound(#[source] OrderCancellationError),
     #[error("duplicated order")]
     DuplicatedOrder,
     #[error("{0:?}")]
     OrderValidation(ValidationError),
     #[error("database error: {0}")]
     Database(#[from] anyhow::Error),
+    #[error("invalid appData format")]
+    InvalidAppData(#[source] anyhow::Error),
+    #[error("the new order is not a valid replacement for the old one")]
+    InvalidReplacement,
     #[error(
         "contract app data {contract_app_data:?} is associated with full app data {existing:?} \
          which is different from the provided {provided:?}"
@@ -154,28 +161,12 @@ pub enum OrderCancellationError {
     Other(#[from] anyhow::Error),
 }
 
-#[derive(Debug, Error)]
-pub enum ReplaceOrderError {
-    #[error("unable to cancel existing order: {0}")]
-    Cancellation(#[from] OrderCancellationError),
-    #[error("unable to add new order: {0}")]
-    Add(#[from] AddOrderError),
-    #[error("the new order is not a valid replacement for the old one")]
-    InvalidReplacement,
-}
-
-impl From<ValidationError> for ReplaceOrderError {
-    fn from(err: ValidationError) -> Self {
-        Self::Add(err.into())
-    }
-}
-
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    app_data: Arc<app_data::Registry>,
+    app_data: Arc<crate::app_data::Registry>,
 }
 
 impl Orderbook {
@@ -185,7 +176,7 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        app_data: Arc<app_data::Registry>,
+        app_data: Arc<crate::app_data::Registry>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -206,6 +197,10 @@ impl Orderbook {
             _ => None,
         };
 
+        let replaced_order = self
+            .get_replaced_order(&payload, full_app_data_override.as_deref())
+            .await?;
+
         let (order, quote) = self
             .order_validator
             .validate_and_construct_order(
@@ -215,15 +210,21 @@ impl Orderbook {
                 full_app_data_override,
             )
             .await?;
-        let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
-        self.database
-            .insert_order(&order, quote)
-            .await
-            .map_err(|err| AddOrderError::from_insertion(err, &order))?;
-        Metrics::on_order_operation(&order, OrderOperation::Created);
+        // Check if it has to replace an existing order
+        if let Some(old_order) = replaced_order {
+            self.replace_order(order, old_order, quote).await
+        } else {
+            let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
-        Ok((order.metadata.uid, quote_id))
+            self.database
+                .insert_order(&order, quote)
+                .await
+                .map_err(|err| AddOrderError::from_insertion(err, &order))?;
+            Metrics::on_order_operation(&order, OrderOperation::Created);
+
+            Ok((order.metadata.uid, quote_id))
+        }
     }
 
     /// Finds an order for cancellation.
@@ -312,52 +313,65 @@ impl Orderbook {
         Ok(())
     }
 
+    async fn get_replaced_order(
+        &self,
+        new_order: &OrderCreation,
+        app_data_override: Option<&str>,
+    ) -> Result<Option<Order>, AddOrderError> {
+        let full_app_data = match &new_order.app_data {
+            OrderCreationAppData::Hash { .. } => app_data_override,
+            OrderCreationAppData::Both { full, .. } | OrderCreationAppData::Full { full } => {
+                Some(full.as_str())
+            }
+        };
+
+        if let Some(full_app_data) = full_app_data {
+            let validated_app_data = Validator::new(usize::MAX)
+                .validate(full_app_data.as_bytes())
+                .map_err(AddOrderError::InvalidAppData)?;
+
+            if let Some(replaced_order) = validated_app_data.protocol.replaced_order {
+                return Ok(Some(
+                    self.find_order_for_cancellation(&replaced_order.uid)
+                        .await
+                        .map_err(AddOrderError::OrderNotFound)?,
+                ));
+            }
+        }
+        Ok(None)
+    }
+
     pub async fn replace_order(
         &self,
-        old_order: OrderUid,
-        new_order: OrderCreation,
-    ) -> Result<OrderUid, ReplaceOrderError> {
+        validated_new_order: Order,
+        old_order: Order,
+        quote: Option<Quote>,
+    ) -> Result<(OrderUid, Option<i64>), AddOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
         // accept `PreSign` orders, otherwise anyone can cancel a user order by
         // submitting a `PreSign` order on someone's behalf.
-        new_order
+        validated_new_order
             .signature
             .scheme()
             .try_to_ecdsa_scheme()
-            .ok_or(ReplaceOrderError::InvalidReplacement)?;
-
-        let old_order = self.find_order_for_cancellation(&old_order).await?;
-        let (new_order, new_quote) = self
-            .order_validator
-            .validate_and_construct_order(
-                new_order,
-                &self.domain_separator,
-                self.settlement_contract,
-                None,
-            )
-            .await?;
+            .ok_or(AddOrderError::InvalidReplacement)?;
 
         // Verify that the new order is a valid replacement order by checking
-        // that the `app_data` encodes an order cancellation and that both the
-        // old and new orders have the same signer.
-        let cancellation = OrderCancellation {
-            order_uid: old_order.metadata.uid,
-            ..Default::default()
-        };
-        if new_order.data.app_data != cancellation.hash_struct()
-            || new_order.metadata.owner != old_order.metadata.owner
-        {
-            return Err(ReplaceOrderError::InvalidReplacement);
+        // that both the old and new orders have the same signer.
+        if validated_new_order.metadata.owner != old_order.metadata.owner {
+            return Err(AddOrderError::InvalidReplacement);
         }
 
-        self.database
-            .replace_order(&old_order.metadata.uid, &new_order, new_quote)
-            .await
-            .map_err(|err| AddOrderError::from_insertion(err, &new_order))?;
-        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
-        Metrics::on_order_operation(&new_order, OrderOperation::Created);
+        let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
-        Ok(new_order.metadata.uid)
+        self.database
+            .replace_order(&old_order.metadata.uid, &validated_new_order, quote)
+            .await
+            .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
+        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
+        Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
+
+        Ok((validated_new_order.metadata.uid, quote_id))
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
@@ -407,7 +421,6 @@ mod tests {
         ethcontract::H160,
         mockall::predicate::eq,
         model::{
-            app_data::AppDataHash,
             order::{OrderData, OrderMetadata},
             signature::Signature,
         },
@@ -430,10 +443,6 @@ mod tests {
             ..Default::default()
         };
         let new_order_uid = OrderUid([2; 56]);
-        let cancellation = OrderCancellation {
-            order_uid: old_order.metadata.uid,
-            ..Default::default()
-        };
 
         let mut database = MockOrderStoring::new();
         database
@@ -467,8 +476,8 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
-        let app_data = Arc::new(app_data::Registry::new(
-            shared::app_data::Validator::new(8192),
+        let app_data = Arc::new(crate::app_data::Registry::new(
+            Validator::new(8192),
             database.clone(),
             None,
         ));
@@ -480,68 +489,77 @@ mod tests {
             app_data,
         };
 
-        // App data does not encode cancellation.
-        assert!(matches!(
-            orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(old_order.metadata.owner),
-                        signature: Signature::Eip712(Default::default()),
-                        ..Default::default()
-                    },
-                )
-                .await,
-            Err(ReplaceOrderError::InvalidReplacement)
-        ));
-
         // Different owner
         assert!(matches!(
             orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(H160([2; 20])),
-                        signature: Signature::Eip712(Default::default()),
-                        app_data: AppDataHash(cancellation.hash_struct()).into(),
-                        ..Default::default()
+                .add_order(OrderCreation {
+                    from: Some(H160([2; 20])),
+                    signature: Signature::Eip712(Default::default()),
+                    app_data: OrderCreationAppData::Full {
+                        full: format!(
+                            r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
+                            old_order.metadata.uid
+                        )
                     },
-                )
+                    ..Default::default()
+                },)
                 .await,
-            Err(ReplaceOrderError::InvalidReplacement)
+            Err(AddOrderError::InvalidReplacement)
+        ));
+
+        // Different replacedOrder
+        assert!(matches!(
+            orderbook
+                .add_order(OrderCreation {
+                    from: Some(H160([2; 20])),
+                    signature: Signature::Eip712(Default::default()),
+                    app_data: OrderCreationAppData::Full {
+                        full: format!(
+                            r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
+                            OrderUid::from_integer(1000),
+                        )
+                    },
+                    ..Default::default()
+                },)
+                .await,
+            Err(AddOrderError::OrderNotFound(
+                OrderCancellationError::OrderNotFound
+            ))
         ));
 
         // Non-signed order.
         assert!(matches!(
             orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(old_order.metadata.owner),
-                        signature: Signature::PreSign,
-                        app_data: AppDataHash(cancellation.hash_struct()).into(),
-                        ..Default::default()
+                .add_order(OrderCreation {
+                    from: Some(old_order.metadata.owner),
+                    signature: Signature::PreSign,
+                    app_data: OrderCreationAppData::Full {
+                        full: format!(
+                            r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
+                            old_order.metadata.uid
+                        )
                     },
-                )
+                    ..Default::default()
+                },)
                 .await,
-            Err(ReplaceOrderError::InvalidReplacement)
+            Err(AddOrderError::InvalidReplacement)
         ));
 
         // Stars align...
-        assert_eq!(
-            orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(old_order.metadata.owner),
-                        signature: Signature::Eip712(Default::default()),
-                        app_data: AppDataHash(cancellation.hash_struct()).into(),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .unwrap(),
-            new_order_uid,
-        );
+        let (order_id, _) = orderbook
+            .add_order(OrderCreation {
+                from: Some(old_order.metadata.owner),
+                signature: Signature::Eip712(Default::default()),
+                app_data: OrderCreationAppData::Full {
+                    full: format!(
+                        r#"{{"version":"1.1.0","metadata":{{"replacedOrder":{{"uid":"{}"}}}}}}"#,
+                        old_order.metadata.uid
+                    ),
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(order_id, new_order_uid,);
     }
 }

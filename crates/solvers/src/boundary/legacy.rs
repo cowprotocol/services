@@ -67,11 +67,7 @@ impl Legacy {
         Self {
             solver: DefaultHttpSolverApi {
                 name: config.solver_name,
-                network_name: network_name(
-                    config.chain_id.network_id(),
-                    config.chain_id.value().as_u64(),
-                )
-                .into(),
+                network_name: network_name(config.chain_id.value().as_u64()).into(),
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
@@ -579,7 +575,11 @@ fn to_domain_solution(
                 success_probability,
                 ..
             } => solution::Score::RiskAdjusted(solution::SuccessProbability(success_probability)),
+            Score::Surplus => {
+                return Err(anyhow::anyhow!("solvers not allowed to use surplus score"))
+            }
         },
+        gas: None,
     })
 }
 

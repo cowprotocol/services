@@ -59,6 +59,7 @@ async fn trusted_token() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0x97b744df0b59d93A866304f97431D8EfAd29a08d",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
                     "gasEstimate": "110000"
                 }
             ],
@@ -99,7 +100,8 @@ async fn trusted_token() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );
@@ -161,6 +163,7 @@ async fn untrusted_sell_token() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0x97b744df0b59d93A866304f97431D8EfAd29a08d",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
                     "gasEstimate": "110000"
                 }
             ],
@@ -201,7 +204,8 @@ async fn untrusted_sell_token() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );
@@ -263,6 +267,7 @@ async fn insufficient_balance() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0x97b744df0b59d93A866304f97431D8EfAd29a08d",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
                     "gasEstimate": "110000"
                 }
             ],
@@ -303,7 +308,8 @@ async fn insufficient_balance() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 166391,
             }]
         }),
     );

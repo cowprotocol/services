@@ -217,9 +217,6 @@ pub struct Arguments {
     /// `order_events` database table.
     #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_threshold: Duration,
-
-    #[clap(long, env, use_value_delimiter = true)]
-    pub cow_amms: Vec<H160>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -262,7 +259,6 @@ impl std::fmt::Display for Arguments {
             auction_update_interval,
             max_settlement_transaction_wait,
             s3,
-            cow_amms,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -339,7 +335,6 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait
         )?;
         writeln!(f, "s3: {:?}", s3)?;
-        writeln!(f, "cow_amms: {:?}", cow_amms)?;
         Ok(())
     }
 }

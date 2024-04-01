@@ -18,7 +18,7 @@ use {
 
 impl Request {
     pub fn new(
-        id: domain::AuctionId,
+        id: domain::auction::Id,
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         score_cap: U256,
@@ -103,6 +103,7 @@ pub struct Solution {
     pub orders: HashMap<boundary::OrderUid, TradedAmounts>,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
+    pub gas: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

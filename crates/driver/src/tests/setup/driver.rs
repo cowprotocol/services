@@ -3,7 +3,10 @@ use {
     crate::{
         domain::competition::order,
         infra::time,
-        tests::{cases, hex_address},
+        tests::{
+            cases::{self, EtherExt},
+            hex_address,
+        },
     },
     rand::seq::SliceRandom,
     serde_json::json,
@@ -76,12 +79,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
                 order::Kind::Liquidity => json!([]),
-                order::Kind::Limit { .. } => json!([{
-                    "surplus": {
-                        "factor": 0.0,
-                        "maxVolumeFactor": 0.06
-                    }
-                }]),
+                order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
             },
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
@@ -123,7 +121,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "scoreCap": cases::DEFAULT_SCORE_CAP.to_string(),
+        "scoreCap": cases::DEFAULT_SCORE_CAP.ether().into_wei().to_string(),
     })
 }
 

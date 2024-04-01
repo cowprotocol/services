@@ -24,37 +24,36 @@
 
 use {
     super::{
-        trade,
-        trade::{ClearingPrices, Fee, Fulfillment},
+        error::Math,
+        trade::{self, ClearingPrices, Fee, Fulfillment},
     },
     crate::domain::{
         competition::{
             order,
             order::{FeePolicy, Side},
+            PriceLimits,
         },
         eth,
     },
+    bigdecimal::Zero,
 };
 
 impl Fulfillment {
     /// Applies the protocol fee to the existing fulfillment creating a new one.
     pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
-        let protocol_fee = self.protocol_fee(prices)?;
+        let protocol_fee = self.protocol_fee_in_sell_token(prices)?;
 
         // Increase the fee by the protocol fee
         let fee = match self.surplus_fee() {
             None => {
                 if !protocol_fee.is_zero() {
-                    return Err(trade::Error::ProtocolFeeOnStaticOrder.into());
+                    return Err(Error::ProtocolFeeOnStaticOrder);
                 }
                 Fee::Static
             }
-            Some(fee) => Fee::Dynamic(
-                (fee.0
-                    .checked_add(protocol_fee)
-                    .ok_or(trade::Error::Overflow)?)
-                .into(),
-            ),
+            Some(fee) => {
+                Fee::Dynamic((fee.0.checked_add(protocol_fee.0).ok_or(Math::Overflow)?).into())
+            }
         };
 
         // Reduce the executed amount by the protocol fee. This is because solvers are
@@ -66,15 +65,16 @@ impl Fulfillment {
             order::Side::Sell => order::TargetAmount(
                 self.executed()
                     .0
-                    .checked_sub(protocol_fee)
-                    .ok_or(trade::Error::Overflow)?,
+                    .checked_sub(protocol_fee.0)
+                    .ok_or(Math::Overflow)?,
             ),
         };
 
         Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
-    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+    /// Computed protocol fee in surplus token.
+    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::TokenAmount, Error> {
         // TODO: support multiple fee policies
         if self.order().protocol_fees.len() > 1 {
             return Err(Error::MultipleFeePolicies);
@@ -85,8 +85,10 @@ impl Fulfillment {
                 factor,
                 max_volume_factor,
             }) => self.calculate_fee(
-                self.order().sell.amount.0,
-                self.order().buy.amount.0,
+                PriceLimits {
+                    sell: self.order().sell.amount,
+                    buy: self.order().buy.amount,
+                },
                 prices,
                 *factor,
                 *max_volume_factor,
@@ -96,15 +98,19 @@ impl Fulfillment {
                 max_volume_factor,
                 quote,
             }) => {
-                let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
-                    self.order().sell.amount.0,
-                    self.order().buy.amount.0,
-                    self.order().side,
-                    quote.sell.amount.0,
-                    quote.buy.amount.0,
-                    quote.fee.amount.0,
+                let price_limits = adjust_quote_to_order_limits(
+                    Order {
+                        sell_amount: self.order().sell.amount.0,
+                        buy_amount: self.order().buy.amount.0,
+                        side: self.order().side,
+                    },
+                    Quote {
+                        sell_amount: quote.sell.amount.0,
+                        buy_amount: quote.buy.amount.0,
+                        fee_amount: quote.fee.amount.0,
+                    },
                 )?;
-                self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
+                self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
@@ -113,16 +119,17 @@ impl Fulfillment {
 
     /// Computes protocol fee compared to the given limit amounts taken from
     /// the order or a quote.
+    ///
+    /// The protocol fee is computed in surplus token.
     fn calculate_fee(
         &self,
-        limit_sell_amount: eth::U256,
-        limit_buy_amount: eth::U256,
+        price_limits: PriceLimits,
         prices: ClearingPrices,
         factor: f64,
         max_volume_factor: f64,
-    ) -> Result<eth::U256, Error> {
+    ) -> Result<eth::TokenAmount, Error> {
         let fee_from_surplus =
-            self.fee_from_surplus(limit_sell_amount, limit_buy_amount, prices, factor)?;
+            self.fee_from_surplus(price_limits.sell.0, price_limits.buy.0, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         let protocol_fee = std::cmp::min(fee_from_surplus, fee_from_volume);
@@ -130,49 +137,72 @@ impl Fulfillment {
         Ok(protocol_fee)
     }
 
+    /// Computes the surplus fee in the surplus token.
     fn fee_from_surplus(
         &self,
         sell_amount: eth::U256,
         buy_amount: eth::U256,
         prices: ClearingPrices,
         factor: f64,
-    ) -> Result<eth::U256, Error> {
+    ) -> Result<eth::TokenAmount, Error> {
         let surplus = self.surplus_over_reference_price(sell_amount, buy_amount, prices)?;
-        let surplus_in_sell_token = self.surplus_in_sell_token(surplus, prices)?;
-        apply_factor(surplus_in_sell_token, factor)
+        surplus
+            .apply_factor(factor)
+            .ok_or(Math::Overflow)
+            .map_err(Into::into)
     }
 
-    fn fee_from_volume(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
-        let executed = self.executed().0;
-        let executed_sell_amount = match self.order().side {
-            Side::Buy => {
-                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                executed
-                    .checked_mul(prices.buy)
-                    .ok_or(trade::Error::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(trade::Error::DivisionByZero)?
-            }
-            Side::Sell => executed,
+    /// Computes the volume based fee in surplus token
+    ///
+    /// The volume is defined as a full sell amount (including fees) for buy
+    /// order, or a full buy amount for sell order.
+    fn fee_from_volume(
+        &self,
+        prices: ClearingPrices,
+        factor: f64,
+    ) -> Result<eth::TokenAmount, Error> {
+        let volume = match self.order().side {
+            Side::Buy => self.sell_amount(&prices)?,
+            Side::Sell => self.buy_amount(&prices)?,
         };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
-        let executed_sell_amount_with_fee = executed_sell_amount
-            .checked_add(
-                // surplus_fee is always expressed in sell token
-                self.surplus_fee()
-                    .map(|fee| fee.0)
-                    .ok_or(trade::Error::ProtocolFeeOnStaticOrder)?,
-            )
-            .ok_or(trade::Error::Overflow)?;
-        apply_factor(executed_sell_amount_with_fee, factor)
+        volume
+            .apply_factor(factor)
+            .ok_or(Math::Overflow)
+            .map_err(Into::into)
+    }
+
+    /// Returns the protocol fee denominated in the sell token.
+    fn protocol_fee_in_sell_token(
+        &self,
+        prices: ClearingPrices,
+    ) -> Result<eth::TokenAmount, Error> {
+        let fee_in_sell_token = match self.order().side {
+            Side::Buy => self.protocol_fee(prices)?,
+            Side::Sell => self
+                .protocol_fee(prices)?
+                .0
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?
+                .into(),
+        };
+        Ok(fee_in_sell_token)
     }
 }
 
-fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
-    Ok(amount
-        .checked_mul(eth::U256::from_f64_lossy(factor * 10000.))
-        .ok_or(trade::Error::Overflow)?
-        / 10000)
+#[derive(Clone)]
+pub struct Order {
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
+    pub side: Side,
+}
+
+#[derive(Clone)]
+pub struct Quote {
+    pub sell_amount: eth::U256,
+    pub buy_amount: eth::U256,
+    pub fee_amount: eth::U256,
 }
 
 /// This function adjusts quote amounts to directly compare them with the
@@ -194,36 +224,37 @@ fn apply_factor(amount: eth::U256, factor: f64) -> Result<eth::U256, Error> {
 /// - test_adjust_quote_to_out_market_buy_order_limits
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
-fn adjust_quote_to_order_limits(
-    order_sell_amount: eth::U256,
-    order_buy_amount: eth::U256,
-    order_side: Side,
-    quote_sell_amount: eth::U256,
-    quote_buy_amount: eth::U256,
-    quote_fee_amount: eth::U256,
-) -> Result<(eth::U256, eth::U256), Error> {
-    let quote_sell_amount = quote_sell_amount
-        .checked_add(quote_fee_amount)
-        .ok_or(trade::Error::Overflow)?;
+pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, Math> {
+    let quote_sell_amount = quote
+        .sell_amount
+        .checked_add(quote.fee_amount)
+        .ok_or(Math::Overflow)?;
 
-    match order_side {
+    match order.side {
         Side::Sell => {
-            let scaled_buy_amount = quote_buy_amount
-                .checked_mul(order_sell_amount)
-                .ok_or(trade::Error::Overflow)?
+            let scaled_buy_amount = quote
+                .buy_amount
+                .checked_mul(order.sell_amount)
+                .ok_or(Math::Overflow)?
                 .checked_div(quote_sell_amount)
-                .ok_or(trade::Error::DivisionByZero)?;
-            let buy_amount = order_buy_amount.max(scaled_buy_amount);
-            Ok((order_sell_amount, buy_amount))
+                .ok_or(Math::DivisionByZero)?;
+            let buy_amount = order.buy_amount.max(scaled_buy_amount);
+            Ok(PriceLimits {
+                sell: order.sell_amount.into(),
+                buy: buy_amount.into(),
+            })
         }
         Side::Buy => {
             let scaled_sell_amount = quote_sell_amount
-                .checked_mul(order_buy_amount)
-                .ok_or(trade::Error::Overflow)?
-                .checked_div(quote_buy_amount)
-                .ok_or(trade::Error::DivisionByZero)?;
-            let sell_amount = order_sell_amount.min(scaled_sell_amount);
-            Ok((sell_amount, order_buy_amount))
+                .checked_mul(order.buy_amount)
+                .ok_or(Math::Overflow)?
+                .checked_div(quote.buy_amount)
+                .ok_or(Math::DivisionByZero)?;
+            let sell_amount = order.sell_amount.min(scaled_sell_amount);
+            Ok(PriceLimits {
+                sell: sell_amount.into(),
+                buy: order.buy_amount.into(),
+            })
         }
     }
 }
@@ -232,6 +263,10 @@ fn adjust_quote_to_order_limits(
 pub enum Error {
     #[error("multiple fee policies are not supported yet")]
     MultipleFeePolicies,
+    #[error("orders with non solver determined gas cost fees are not supported")]
+    ProtocolFeeOnStaticOrder,
+    #[error(transparent)]
+    Math(#[from] Math),
     #[error(transparent)]
     Fulfillment(#[from] trade::Error),
 }
@@ -243,106 +278,93 @@ mod tests {
 
     #[test]
     fn test_adjust_quote_to_out_market_sell_order_limits() {
-        let order_sell_amount = to_wei(20);
-        let order_buy_amount = to_wei(19);
-        let quote_sell_amount = to_wei(21);
-        let quote_buy_amount = to_wei(18);
-        let quote_fee_amount = to_wei(1);
-
-        let (sell_amount, _) = adjust_quote_to_order_limits(
-            order_sell_amount,
-            order_buy_amount,
-            Side::Sell,
-            quote_sell_amount,
-            quote_buy_amount,
-            quote_fee_amount,
-        )
-        .unwrap();
+        let order = Order {
+            sell_amount: to_wei(20),
+            buy_amount: to_wei(19),
+            side: Side::Sell,
+        };
+        let quote = Quote {
+            sell_amount: to_wei(21),
+            buy_amount: to_wei(18),
+            fee_amount: to_wei(1),
+        };
+        let limit = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
 
         assert_eq!(
-            sell_amount, order_sell_amount,
+            limit.sell.0, order.sell_amount,
             "Sell amount should match order sell amount for sell orders."
         );
     }
 
     #[test]
     fn test_adjust_quote_to_out_market_buy_order_limits() {
-        let order_sell_amount = to_wei(20);
-        let order_buy_amount = to_wei(19);
-        let quote_sell_amount = to_wei(21);
-        let quote_buy_amount = to_wei(18);
-        let quote_fee_amount = to_wei(1);
+        let order = Order {
+            sell_amount: to_wei(20),
+            buy_amount: to_wei(19),
+            side: Side::Buy,
+        };
+        let quote = Quote {
+            sell_amount: to_wei(21),
+            buy_amount: to_wei(18),
+            fee_amount: to_wei(1),
+        };
 
-        let (_, buy_amount) = adjust_quote_to_order_limits(
-            order_sell_amount,
-            order_buy_amount,
-            Side::Buy,
-            quote_sell_amount,
-            quote_buy_amount,
-            quote_fee_amount,
-        )
-        .unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote).unwrap();
 
         assert_eq!(
-            buy_amount, order_buy_amount,
+            limit.buy.0, order.buy_amount,
             "Buy amount should match order buy amount for buy orders."
         );
     }
 
     #[test]
     fn test_adjust_quote_to_in_market_sell_order_limits() {
-        let order_sell_amount = to_wei(10);
-        let order_buy_amount = to_wei(20);
-        let quote_sell_amount = to_wei(9);
-        let quote_buy_amount = to_wei(25);
-        let quote_fee_amount = to_wei(1);
+        let order = Order {
+            sell_amount: to_wei(10),
+            buy_amount: to_wei(20),
+            side: Side::Sell,
+        };
+        let quote = Quote {
+            sell_amount: to_wei(9),
+            buy_amount: to_wei(25),
+            fee_amount: to_wei(1),
+        };
 
-        let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
-            order_sell_amount,
-            order_buy_amount,
-            Side::Sell,
-            quote_sell_amount,
-            quote_buy_amount,
-            quote_fee_amount,
-        )
-        .unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
-            sell_amount, order_sell_amount,
+            limit.sell.0, order.sell_amount,
             "Sell amount should be taken from the order for sell orders in market price."
         );
         assert_eq!(
-            buy_amount, quote_buy_amount,
+            limit.buy.0, quote.buy_amount,
             "Buy amount should reflect the improved market condition from the quote."
         );
     }
 
     #[test]
     fn test_adjust_quote_to_in_market_buy_order_limits() {
-        let order_sell_amount = to_wei(20);
-        let order_buy_amount = to_wei(10);
-        let quote_sell_amount = to_wei(17);
-        let quote_buy_amount = to_wei(10);
-        let quote_fee_amount = to_wei(1);
+        let order = Order {
+            sell_amount: to_wei(20),
+            buy_amount: to_wei(10),
+            side: Side::Buy,
+        };
+        let quote = Quote {
+            sell_amount: to_wei(17),
+            buy_amount: to_wei(10),
+            fee_amount: to_wei(1),
+        };
 
-        let (sell_amount, buy_amount) = adjust_quote_to_order_limits(
-            order_sell_amount,
-            order_buy_amount,
-            Side::Buy,
-            quote_sell_amount,
-            quote_buy_amount,
-            quote_fee_amount,
-        )
-        .unwrap();
+        let limit = adjust_quote_to_order_limits(order.clone(), quote.clone()).unwrap();
 
         assert_eq!(
-            sell_amount,
-            quote_sell_amount + quote_fee_amount,
+            limit.sell.0,
+            quote.sell_amount + quote.fee_amount,
             "Sell amount should reflect the improved market condition from the quote for buy \
              orders."
         );
         assert_eq!(
-            buy_amount, order_buy_amount,
+            limit.buy.0, order.buy_amount,
             "Buy amount should be taken from the order for buy orders in market price."
         );
     }

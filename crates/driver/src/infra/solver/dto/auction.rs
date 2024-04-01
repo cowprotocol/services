@@ -92,6 +92,7 @@ impl Auction {
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.address.into(),
+                            router: pool.router.into(),
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves
@@ -112,6 +113,7 @@ impl Auction {
                         Liquidity::ConcentratedLiquidity(ConcentratedLiquidityPool {
                             id: liquidity.id.into(),
                             address: pool.address.0,
+                            router: pool.router.into(),
                             gas_estimate: liquidity.gas.0,
                             tokens: vec![pool.tokens.get().0.into(), pool.tokens.get().1.into()],
                             sqrt_price: pool.sqrt_price.0,
@@ -128,6 +130,7 @@ impl Auction {
                     liquidity::Kind::BalancerV2Stable(pool) => Liquidity::Stable(StablePool {
                         id: liquidity.id.into(),
                         address: pool.id.address().into(),
+                        balancer_pool_id: pool.id.into(),
                         gas_estimate: liquidity.gas.into(),
                         tokens: pool
                             .reserves
@@ -152,6 +155,7 @@ impl Auction {
                         Liquidity::WeightedProduct(WeightedProductPool {
                             id: liquidity.id.into(),
                             address: pool.id.address().into(),
+                            balancer_pool_id: pool.id.into(),
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .reserves
@@ -182,6 +186,7 @@ impl Auction {
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.base.address.into(),
+                            router: pool.base.router.into(),
                             gas_estimate: liquidity.gas.into(),
                             tokens: pool
                                 .base
@@ -299,6 +304,7 @@ struct ConstantProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
+    router: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
     tokens: BTreeMap<eth::H160, ConstantProductReserve>,
@@ -320,6 +326,7 @@ struct WeightedProductPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
+    balancer_pool_id: eth::H256,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
     tokens: IndexMap<eth::H160, WeightedProductReserve>,
@@ -354,6 +361,7 @@ struct StablePool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
+    balancer_pool_id: eth::H256,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
     tokens: IndexMap<eth::H160, StableReserve>,
@@ -380,6 +388,7 @@ struct ConcentratedLiquidityPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     id: usize,
     address: eth::H160,
+    router: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
     tokens: Vec<eth::H160>,

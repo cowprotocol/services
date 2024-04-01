@@ -160,7 +160,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         zeroex_api_port,
     );
     services.start_autopilot(
-        Some(Duration::from_secs(11)),
+        None,
         vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),

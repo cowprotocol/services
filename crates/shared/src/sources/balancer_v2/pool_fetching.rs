@@ -225,13 +225,14 @@ pub struct BalancerContracts {
 
 impl BalancerContracts {
     pub async fn new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
-        let vault = BalancerV2Vault::deployed(web3)
+        let web3 = ethrpc::instrumented::instrument_with_label(web3, "balancerV2".into());
+        let vault = BalancerV2Vault::deployed(&web3)
             .await
             .context("Cannot retrieve balancer vault")?;
 
         macro_rules! instance {
             ($factory:ident) => {{
-                $factory::deployed(web3)
+                $factory::deployed(&web3)
                     .await
                     .context(format!(
                         "Cannot retrieve Balancer factory {}",
@@ -296,6 +297,7 @@ impl BalancerPoolFetcher {
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<H256>,
     ) -> Result<Self> {
+        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "balancerV2".into());
         let pool_initializer = BalancerSubgraphClient::for_chain(base_url, chain_id, client)?;
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(

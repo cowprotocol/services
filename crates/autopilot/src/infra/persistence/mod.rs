@@ -2,7 +2,6 @@ use {
     crate::{boundary, database::Postgres, domain},
     anyhow::Context,
     chrono::Utc,
-    itertools::Itertools,
     std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
@@ -35,8 +34,8 @@ impl Persistence {
     /// If the given auction is successfully saved, it is also archived.
     pub async fn replace_current_auction(
         &self,
-        auction: domain::Auction,
-    ) -> Result<domain::AuctionId, Error> {
+        auction: &domain::Auction,
+    ) -> Result<domain::auction::Id, Error> {
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
             .replace_current_auction(&auction)
@@ -61,7 +60,7 @@ impl Persistence {
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, id: domain::AuctionId, instance: dto::auction::Auction) {
+    fn archive_auction(&self, id: domain::auction::Id, instance: dto::auction::Auction) {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
@@ -119,21 +118,12 @@ impl Persistence {
     /// Saves the given fee policies to the DB as a single batch.
     pub async fn store_fee_policies(
         &self,
-        auction_id: domain::AuctionId,
+        auction_id: domain::auction::Id,
         fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
     ) -> anyhow::Result<()> {
-        let fee_policies = fee_policies
-            .into_iter()
-            .flat_map(|(order_uid, policies)| {
-                policies
-                    .into_iter()
-                    .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
-            })
-            .collect_vec();
-
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
         for chunk in fee_policies.chunks(self.postgres.config.insert_batch_size.get()) {
-            crate::database::fee_policies::insert_batch(&mut ex, chunk.iter().cloned())
+            crate::database::fee_policies::insert_batch(&mut ex, auction_id, chunk.iter().cloned())
                 .await
                 .context("fee_policies::insert_batch")?;
         }

@@ -13,7 +13,6 @@ use {
     anyhow::Context,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     ethrpc::current_block::BlockRetrieving,
-    itertools::Itertools,
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
@@ -92,16 +91,12 @@ pub fn to_interaction(
         TokenAmount::new(output.0.token.into(), output.0.amount),
     );
 
-    interaction
-        .encode()
-        .into_iter()
-        .map(|(target, value, call_data)| eth::Interaction {
-            target: eth::Address(target),
-            value: eth::Ether(value),
-            call_data: call_data.0.into(),
-        })
-        .exactly_one()
-        .unwrap()
+    let encoded = interaction.encode();
+    eth::Interaction {
+        target: eth::Address(encoded.0),
+        value: eth::Ether(encoded.1),
+        call_data: crate::util::Bytes(encoded.2 .0),
+    }
 }
 
 pub fn collector(
@@ -109,7 +104,7 @@ pub fn collector(
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
 ) -> Box<dyn LiquidityCollecting> {
-    let eth = Arc::new(eth.clone());
+    let eth = Arc::new(eth.with_metric_label("uniswapV3".into()));
     let config = Arc::new(Clone::clone(config));
     let init = move || {
         let eth = eth.clone();
@@ -136,7 +131,7 @@ async fn init_liquidity(
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
             &config.graph_api_base_url,
-            eth.network().chain.into(),
+            eth.network().0,
             web3.clone(),
             boundary::liquidity::http_client(),
             block_retriever,

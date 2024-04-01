@@ -213,19 +213,7 @@ impl Trade {
     }
 }
 
-#[cfg(test)]
-use shared::interaction::{EncodedInteraction, Interaction};
 use shared::{external_prices::ExternalPrices, http_solver::model::Score};
-#[cfg(test)]
-#[derive(Debug)]
-pub struct NoopInteraction;
-
-#[cfg(test)]
-impl Interaction for NoopInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
-        Vec::new()
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {

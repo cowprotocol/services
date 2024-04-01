@@ -52,6 +52,7 @@ async fn test() {
                     "fee": "0.003",
                     "id": "0",
                     "address": "0x2222222222222222222222222222222222222222",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "0"
                 },
                 {
@@ -67,6 +68,7 @@ async fn test() {
                     "fee": "0.003",
                     "id": "1",
                     "address": "0x1111111111111111111111111111111111111111",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "0"
                 },
                 {
@@ -82,6 +84,7 @@ async fn test() {
                     "fee": "0.003",
                     "id": "2",
                     "address": "0x3333333333333333333333333333333333333333",
+                    "router": "0xffffffffffffffffffffffffffffffffffffffff",
                     "gasEstimate": "0"
                 },
             ],
@@ -122,7 +125,8 @@ async fn test() {
                 "score": {
                     "kind": "riskAdjusted",
                     "successProbability": 0.5,
-                }
+                },
+                "gas": 94391,
             }]
         }),
     );

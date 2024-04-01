@@ -115,7 +115,7 @@ pub struct Approval {
 }
 
 impl Interaction for Approval {
-    fn encode(&self) -> Vec<EncodedInteraction> {
+    fn encode(&self) -> EncodedInteraction {
         // Use a "dummy" contract - unfortunately `ethcontract` doesn't
         // allow you use the generated contract intances to encode
         // transaction data without a `Web3` instance. Hopefully, this
@@ -365,7 +365,7 @@ mod tests {
         let spender = H160([0x02; 20]);
         assert_eq!(
             Approval { token, spender }.encode(),
-            vec![(
+            (
                 token,
                 0.into(),
                 Bytes(
@@ -376,7 +376,7 @@ mod tests {
                     )
                     .unwrap()
                 )
-            )]
+            )
         );
     }
 

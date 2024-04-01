@@ -515,8 +515,7 @@ mod tests {
                     user_data: Default::default(),
                 }
                 .encode(),
-            ]
-            .concat(),
+            ],
         );
     }
 }

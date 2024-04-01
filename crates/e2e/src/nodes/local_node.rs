@@ -49,6 +49,27 @@ impl<T: Transport> TestNodeApi<T> {
         CallFuture::new(self.transport.execute("evm_mine", vec![]))
     }
 
+    pub fn disable_automine(&self) -> CallFuture<(), T::Out> {
+        CallFuture::new(
+            self.transport
+                .execute("evm_setAutomine", vec![serde_json::json!(false)]),
+        )
+    }
+
+    pub fn set_mining_interval(&self, seconds: usize) -> CallFuture<(), T::Out> {
+        CallFuture::new(
+            self.transport
+                .execute("evm_setIntervalMining", vec![serde_json::json!(seconds)]),
+        )
+    }
+
+    pub fn set_block_gas_limit(&self, limit: usize) -> CallFuture<bool, T::Out> {
+        CallFuture::new(
+            self.transport
+                .execute("evm_setBlockGasLimit", vec![serde_json::json!(limit)]),
+        )
+    }
+
     pub fn set_balance(&self, address: &H160, balance: &U256) -> CallFuture<(), T::Out> {
         let json_address = serde_json::json!(address);
         let json_balance = serde_json::json!(format!("{:#032x}", balance));
