@@ -19,7 +19,6 @@ pub mod negative_scores;
 pub mod order_prioritization;
 pub mod protocol_fees;
 pub mod quote;
-pub mod score_competition;
 pub mod settle;
 pub mod solver_balance;
 
@@ -44,16 +43,8 @@ pub const CD_ORDER_AMOUNT: u64 = 40;
 
 pub const ETH_ORDER_AMOUNT: u64 = 40;
 
-/// With the default amounts defined above, this is the expected score range for
-/// both buy and sell orders.
-pub const DEFAULT_SCORE_MIN: u64 = 2;
-pub const DEFAULT_SCORE_MAX: u64 = 500000000000;
-
 /// The default solver fee for limit orders.
 pub const DEFAULT_SOLVER_FEE: &str = "1e-16";
-
-/// The default maximum value to be payout out to solver per solution
-pub const DEFAULT_SCORE_CAP: &str = "1e-2";
 
 /// A generic wrapper struct for representing amounts in Ether using high
 /// precision.

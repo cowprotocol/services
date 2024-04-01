@@ -7,6 +7,7 @@ use {
     ethereum_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
+    shared::price_estimation::gas::SETTLEMENT_OVERHEAD,
     std::path::Path,
     tokio::fs,
 };
@@ -41,6 +42,11 @@ struct Config {
     /// Parameters used to calculate the revert risk of a solution.
     /// (gas_amount_factor, gas_price_factor, nmb_orders_factor, intercept)
     risk_parameters: (f64, f64, f64, f64),
+
+    /// Units of gas that get added to the gas estimate for executing a
+    /// computed trade route to arrive at a gas estimate for a whole settlement.
+    #[serde(default = "default_gas_offset")]
+    solution_gas_offset: i64,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -81,5 +87,12 @@ pub async fn load(path: &Path) -> baseline::Config {
             nmb_orders_factor: config.risk_parameters.2,
             intercept: config.risk_parameters.3,
         },
+        solution_gas_offset: config.solution_gas_offset.into(),
     }
+}
+
+/// Returns minimum gas used for settling a single order.
+/// (not accounting for the cost of additional interactions)
+fn default_gas_offset() -> i64 {
+    SETTLEMENT_OVERHEAD.try_into().unwrap()
 }

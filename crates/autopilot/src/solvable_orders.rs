@@ -80,7 +80,7 @@ pub struct SolvableOrdersCache {
     metrics: &'static Metrics,
     weth: H160,
     limit_order_price_factor: BigDecimal,
-    protocol_fee: domain::ProtocolFee,
+    protocol_fees: domain::ProtocolFees,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -104,7 +104,7 @@ impl SolvableOrdersCache {
         update_interval: Duration,
         weth: H160,
         limit_order_price_factor: BigDecimal,
-        protocol_fee: domain::ProtocolFee,
+        protocol_fees: domain::ProtocolFees,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -121,7 +121,7 @@ impl SolvableOrdersCache {
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             weth,
             limit_order_price_factor,
-            protocol_fee,
+            protocol_fees,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -242,7 +242,7 @@ impl SolvableOrdersCache {
                 .into_iter()
                 .filter_map(|order| {
                     if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        Some(self.protocol_fee.apply(order, quote))
+                        Some(domain::ProtocolFees::apply(&self.protocol_fees, order, quote))
                     } else {
                         tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
                         None

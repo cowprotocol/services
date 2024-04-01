@@ -13,14 +13,11 @@ doctest = false
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-aws-sdk-s3 = { version = "0.29", default-features = false, features = ["rustls", "rt-tokio"] }
-aws-config = { version ="0.56" }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 derivative = { workspace = true }
 ethcontract = { workspace = true }
-ethcontract-mock = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 flate2 = "1.0"
 futures = { workspace = true }
@@ -56,6 +53,7 @@ url = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
+ethcontract-mock = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }
 testlib = { path = "../testlib" }

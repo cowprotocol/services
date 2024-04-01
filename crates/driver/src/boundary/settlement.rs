@@ -16,8 +16,8 @@ use {
         util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Ok, Result},
+    app_data::AppDataHash,
     model::{
-        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,
@@ -240,13 +240,6 @@ impl Settlement {
         let quality = surplus + scoring_fees;
 
         Ok(eth::U256::from_big_rational(&quality)?.into())
-    }
-
-    pub fn merge(self, other: Self) -> Result<Self> {
-        self.inner.merge(other.inner).map(|inner| Self {
-            inner,
-            solver: self.solver,
-        })
     }
 
     pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {

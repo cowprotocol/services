@@ -1,8 +1,8 @@
 use {
+    app_data::AppDataHash,
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
-        app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
@@ -41,7 +41,6 @@ async fn app_data(web3: Web3) {
             app_data,
             sell_token: token_a.address(),
             sell_amount: to_wei(2),
-            fee_amount: to_wei(1),
             buy_token: token_b.address(),
             buy_amount: to_wei(1),
             valid_to,

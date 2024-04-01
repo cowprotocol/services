@@ -4,7 +4,7 @@ use {
     sqlx::{Executor, PgConnection},
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, sqlx::Type)]
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, strum::EnumIter)]
 #[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
 pub enum OnchainOrderPlacementError {
     QuoteNotFound,
@@ -14,6 +14,7 @@ pub enum OnchainOrderPlacementError {
     ValidToTooFarInFuture,
     InvalidOrderData,
     InsufficientFee,
+    NonZeroFee,
     Other,
 }
 
@@ -27,25 +28,9 @@ impl OnchainOrderPlacementError {
             Self::ValidToTooFarInFuture => "expired",
             Self::InvalidOrderData => "invalid_data",
             Self::InsufficientFee => "low_fee",
+            Self::NonZeroFee => "non_zero_fee",
             Self::Other => "unspecified",
         }
-    }
-}
-
-#[cfg(test)]
-impl OnchainOrderPlacementError {
-    pub fn into_iter() -> std::array::IntoIter<OnchainOrderPlacementError, 8> {
-        const ERRORS: [OnchainOrderPlacementError; 8] = [
-            OnchainOrderPlacementError::QuoteNotFound,
-            OnchainOrderPlacementError::InvalidQuote,
-            OnchainOrderPlacementError::PreValidationError,
-            OnchainOrderPlacementError::DisabledOrderClass,
-            OnchainOrderPlacementError::ValidToTooFarInFuture,
-            OnchainOrderPlacementError::InvalidOrderData,
-            OnchainOrderPlacementError::InsufficientFee,
-            OnchainOrderPlacementError::Other,
-        ];
-        ERRORS.into_iter()
     }
 }
 
@@ -131,7 +116,7 @@ pub async fn read_order(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray, sqlx::Connection, strum::IntoEnumIterator};
 
     #[tokio::test]
     #[ignore]
@@ -162,7 +147,7 @@ mod tests {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         round_trip_for_error(&mut db, None).await;
-        for error in OnchainOrderPlacementError::into_iter() {
+        for error in OnchainOrderPlacementError::iter() {
             crate::clear_DANGER_(&mut db).await.unwrap();
             round_trip_for_error(&mut db, Some(error)).await;
         }

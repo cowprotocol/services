@@ -1,5 +1,5 @@
 use {
-    super::{order, Order, Score},
+    super::{order, Order},
     crate::{
         domain::{
             competition::{self, auction},
@@ -32,7 +32,6 @@ pub struct Auction {
     tokens: Tokens,
     gas_price: eth::GasPrice,
     deadline: time::Deadline,
-    score_cap: Score,
 }
 
 impl Auction {
@@ -42,7 +41,6 @@ impl Auction {
         tokens: impl Iterator<Item = Token>,
         deadline: time::Deadline,
         eth: &Ethereum,
-        score_cap: Score,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
@@ -66,7 +64,6 @@ impl Auction {
             tokens,
             gas_price: eth.gas_price().await?,
             deadline,
-            score_cap,
         })
     }
 
@@ -107,10 +104,6 @@ impl Auction {
     /// The deadline for the driver to start sending solution to autopilot.
     pub fn deadline(&self) -> time::Deadline {
         self.deadline
-    }
-
-    pub fn score_cap(&self) -> Score {
-        self.score_cap
     }
 
     pub fn prices(&self) -> Prices {
@@ -425,10 +418,10 @@ impl Price {
     /// use driver::domain::{competition::auction::Price, eth};
     ///
     /// let amount = eth::TokenAmount::from(eth::U256::exp10(18));
-    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(18))).unwrap();
+    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(15))).unwrap(); // 0.001 ETH
     ///
     /// let eth = price.in_eth(amount);
-    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(18)));
+    /// assert_eq!(eth, eth::Ether::from(eth::U256::exp10(15)));
     /// ```
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
         (amount.0 * self.0 .0 / Self::BASE).into()
