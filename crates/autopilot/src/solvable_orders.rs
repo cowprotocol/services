@@ -782,13 +782,7 @@ mod tests {
             .expect_estimate_native_price()
             .withf(move |token| *token == token1)
             .returning(|_| {
-                async {
-                    // Sleep a bit to prevent estimator to finish before the
-                    // 0ms fetch timeout is over.
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                    Ok(2.)
-                }
-                .boxed()
+                async { Ok(2.) }.boxed()
             });
         native_price_estimator
             .expect_estimate_native_price()
@@ -816,23 +810,6 @@ mod tests {
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-        // We'll have no native prices in this call. But this call will cause a
-        // background task to fetch the missing prices so we'll have them in the
-        // next call.
-        let (filtered_orders, prices) = get_orders_with_native_prices(
-            orders.clone(),
-            &native_price_estimator,
-            metrics,
-            Default::default(),
-        )
-        .await;
-        assert!(filtered_orders.is_empty());
-        assert!(prices.is_empty());
-
-        // Wait for native prices to get fetched.
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
-        // Now we have all the native prices we want.
         let (filtered_orders, prices) = get_orders_with_native_prices(
             orders.clone(),
             &native_price_estimator,
