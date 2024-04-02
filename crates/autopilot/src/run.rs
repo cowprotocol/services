@@ -558,7 +558,11 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        domain::ProtocolFees::new(&args.fee_policies, args.fee_policy_max_partner_fee),
+        domain::ProtocolFees::new(
+            &args.fee_policies,
+            args.fee_policy_max_partner_fee,
+            args.protocol_fee_exempt_addresses.as_slice(),
+        ),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
