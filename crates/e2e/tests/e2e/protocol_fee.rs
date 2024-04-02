@@ -513,7 +513,7 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         protocol_fees_config,
     ];
-    services.start_autopilot(None, config);
+    services.start_autopilot(None, config).await;
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
