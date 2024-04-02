@@ -41,6 +41,7 @@ impl ZeroExPriceEstimator {
 
 impl PriceEstimating for ZeroExPriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        tracing::info!("newlog 0xPriceEstimator query={:?}", query);
         self.0.estimate(query)
     }
 }

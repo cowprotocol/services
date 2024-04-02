@@ -40,6 +40,7 @@ impl ExternalPriceEstimator {
 
 impl PriceEstimating for ExternalPriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        tracing::info!("newlog ExternalPriceEstimator query={:?}", query);
         self.0.estimate(query)
     }
 }

@@ -77,6 +77,7 @@ impl HttpPriceEstimator {
 
 impl PriceEstimating for HttpPriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        tracing::info!("newlog HttpPriceEstimator query={:?}", query);
         self.0.estimate(query)
     }
 }
@@ -464,6 +465,7 @@ impl TradeFinding for HttpTradeFinder {
 impl PriceEstimating for HttpTradeFinder {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async {
+            tracing::info!("newlog HttpTradeFinder query={:?}", query);
             let trade = self.compute_trade(query).await?;
             let gas = trade
                 .gas_estimate

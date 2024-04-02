@@ -37,6 +37,7 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         query: Arc<Query>,
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async {
+            tracing::info!("newlog InstrumentedPriceEstomator query={:?}", query);
             let start = Instant::now();
             let estimate = self.inner.estimate(query).await;
             self.metrics

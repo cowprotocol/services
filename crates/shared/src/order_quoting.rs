@@ -386,20 +386,37 @@ impl OrderQuoter {
             _ => self.now.now() + self.validity.standard_quote,
         };
 
-        let trade_query = Arc::new(parameters.to_price_query());
-        let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
-            self.gas_estimator
-                .estimate()
-                .map_err(PriceEstimationError::ProtocolInternal),
-            self.price_estimator.estimate(trade_query.clone()),
-            self.native_price_estimator
-                .estimate_native_price(parameters.sell_token),
-            // We don't care about the native price of the buy_token for the quote but we need it
-            // when we build the auction. To prevent creating orders which we can't settle later on
-            // we make the native buy_token price a requirement here as well.
-            self.native_price_estimator
-                .estimate_native_price(parameters.buy_token),
-        )?;
+        let query = parameters.to_price_query();
+        tracing::info!("newlog trade_query={:?}", query);
+        let trade_query = Arc::new(query);
+        let trade_estimate = self.price_estimator.estimate(trade_query.clone()).await;
+        tracing::info!("newlog trade_estimate={:?}", trade_estimate);
+        let trade_estimate = trade_estimate?;
+        let gas_estimate = self.gas_estimator
+            .estimate()
+            .map_err(PriceEstimationError::ProtocolInternal).await;
+        tracing::info!("newlog gas_estimate={:?}", gas_estimate);
+        let gas_estimate = gas_estimate?;
+        let sell_token_price =  self.native_price_estimator
+            .estimate_native_price(parameters.sell_token).await;
+        tracing::info!("newlog sell_token_price={:?}", sell_token_price);
+        let sell_token_price = sell_token_price?;
+        let buy_token_price = self.native_price_estimator
+            .estimate_native_price(parameters.buy_token).await;
+        tracing::info!("newlog buy_token_price={:?}", buy_token_price);
+        // let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
+        //     self.gas_estimator
+        //         .estimate()
+        //         .map_err(PriceEstimationError::ProtocolInternal),
+        //     self.price_estimator.estimate(trade_query.clone()),
+        //     self.native_price_estimator
+        //         .estimate_native_price(parameters.sell_token),
+        //     // We don't care about the native price of the buy_token for the quote but we need it
+        //     // when we build the auction. To prevent creating orders which we can't settle later on
+        //     // we make the native buy_token price a requirement here as well.
+        //     self.native_price_estimator
+        //         .estimate_native_price(parameters.buy_token),
+        // )?;
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
             OrderQuoteSide::Sell {

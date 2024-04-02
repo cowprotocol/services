@@ -17,6 +17,7 @@ use {
 impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
         async move {
+            tracing::info!("newlog CompetitionEstimator query={:?}", query);
             let out_token = match query.kind {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
@@ -31,7 +32,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 .produce_results(query.clone(), gas_is_reasonable, |e, q| e.estimate(q))
                 .map(Result::Ok);
 
-            let (context, results) = futures::try_join!(get_context, get_results)?;
+            let result = futures::try_join!(get_context, get_results);
+            tracing::info!("newlog result={:?}", result.is_ok());
+            let (context, results) = result?;
 
             let winner = results
                 .into_iter()
@@ -47,7 +50,9 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 })
                 .with_context(|| "all price estimates reported 0 gas cost")
                 .map_err(PriceEstimationError::EstimatorInternal)?;
-            self.report_winner(&query, query.kind, winner)
+            let r = self.report_winner(&query, query.kind, winner);
+            tracing::info!("newlog CompetitionEstimator winner={:?} query={:?}", r.is_ok(), query);
+            r
         }
         .boxed()
     }
@@ -98,9 +103,14 @@ impl PriceRanking {
                     .estimate()
                     .map_ok(|gas| gas.effective_gas_price())
                     .map_err(PriceEstimationError::ProtocolInternal);
-                let (native_price, gas_price) =
-                    futures::try_join!(native.estimate_native_price(token), gas)?;
-
+                tracing::info!("newlog native estimates token={:?}", token);
+                let r1 = native.estimate_native_price(token).await;
+                tracing::info!("newlog r1={:?}", r1);
+                let r2 = gas.await;
+                tracing::info!("newlog r2={:?}", r2);
+                // let (native_price, gas_price) =
+                //     futures::try_join!(native.estimate_native_price(token), gas)?;
+                let (native_price, gas_price) = (r1?, r2?);
                 Ok(RankingContext {
                     native_price,
                     gas_price,

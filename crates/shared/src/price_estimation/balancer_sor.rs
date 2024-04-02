@@ -81,6 +81,7 @@ impl BalancerSor {
 
 impl PriceEstimating for BalancerSor {
     fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+        tracing::info!("newlog BalancerSor query={:?}", query);
         self.estimate(query).boxed()
     }
 }

@@ -126,6 +126,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_api_port = {
         let order = order.clone();
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+        let weth_addr = onchain.contracts().weth.address();
         let gpv2_addr = onchain.contracts().gp_settlement.address();
         let zeroex_addr = zeroex.address();
         let orders_handler = Arc::new(Box::new(move |query: &OrdersQuery| {
@@ -136,6 +137,7 @@ async fn zero_ex_liquidity(web3: Web3) {
                 zeroex_addr,
                 gpv2_addr,
                 chain_id,
+                weth_addr,
             )
         }));
 
@@ -218,6 +220,7 @@ fn orders_query_handler(
     zeroex_addr: H160,
     gpv2_addr: H160,
     chain_id: u64,
+    weth_address: H160,
 ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
     if query.sender == Some(gpv2_addr) {
         let typed_order = Eip712TypedZeroExOrder {
@@ -234,11 +237,24 @@ fn orders_query_handler(
             expiry: NaiveDateTime::MAX.timestamp() as u64,
             salt: U256::from(Utc::now().timestamp()),
         };
-        Ok(vec![typed_order.to_order_record(
-            chain_id,
-            zeroex_addr,
-            zeroex_maker,
-        )])
+        let native_order = Eip712TypedZeroExOrder {
+            maker_token: weth_address,
+            taker_token: order_creation.buy_token,
+            maker_amount: order_creation.buy_amount.as_u128(),
+            taker_amount: order_creation.sell_amount.as_u128(),
+            taker_token_fee_amount: 0,
+            maker: zeroex_maker.address(),
+            taker: gpv2_addr,
+            sender: gpv2_addr,
+            fee_recipient: zeroex_addr,
+            pool: H256::default(),
+            expiry: NaiveDateTime::MAX.timestamp() as u64,
+            salt: U256::from(Utc::now().timestamp()),
+        };
+        Ok(vec![
+            typed_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
+            native_order.to_order_record(chain_id, zeroex_addr, zeroex_maker),
+        ])
     } else if query.sender
         == Some(H160::from_str("0x0000000000000000000000000000000000000000").unwrap())
     {

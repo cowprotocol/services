@@ -57,6 +57,7 @@ type Pools = HashMap<TokenPair, Vec<Pool>>;
 impl PriceEstimating for BaselinePriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async move {
+            tracing::info!("newlog BaselinePriceEstimator query={:?}", query);
             let gas_price = async {
                 let gas_price = self
                     .gas_estimator

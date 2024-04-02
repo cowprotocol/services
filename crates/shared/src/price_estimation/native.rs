@@ -74,6 +74,7 @@ impl NativePriceEstimating for NativePriceEstimator {
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let query = Arc::new(self.query(&token));
+            tracing::info!("newlog native price estimator query={:?}", query);
             let estimate = self.inner.estimate(query.clone()).await?;
             Ok(estimate.price_in_buy_token_f64(&query))
         }

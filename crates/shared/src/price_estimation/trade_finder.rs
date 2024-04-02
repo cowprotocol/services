@@ -115,6 +115,7 @@ impl Clone for TradeEstimator {
 
 impl PriceEstimating for TradeEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        tracing::info!("newlog TradeEstimator query={:?}", query);
         self.estimate(query).boxed()
     }
 }
