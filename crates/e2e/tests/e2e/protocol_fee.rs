@@ -160,16 +160,17 @@ async fn combined_protocol_fees(web3: Web3) {
     )
     .await
     .unwrap();
-    let partner_fee_quote_before = get_quote(
+    let partner_fee_quote = get_quote(
         &services,
         onchain.contracts().weth.address(),
         partner_fee_order_token.address(),
         OrderKind::Sell,
         sell_amount,
-        quote_valid_to,
+        model::time::now_in_epoch_seconds() + 300,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .quote;
 
     let market_price_improvement_order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
@@ -207,11 +208,10 @@ async fn combined_protocol_fees(web3: Web3) {
         sell_token: onchain.contracts().weth.address(),
         sell_amount,
         buy_token: partner_fee_order_token.address(),
-        buy_amount: partner_fee_quote_before.quote.buy_amount * 2 / 3,
+        buy_amount: to_wei(5),
         valid_to: quote_valid_to,
         kind: OrderKind::Sell,
         app_data: partner_fee_app_data,
-        quote_id: partner_fee_quote_before.id,
         ..Default::default()
     }
     .sign(
@@ -223,9 +223,6 @@ async fn combined_protocol_fees(web3: Web3) {
     tracing::info!("Rebalancing market and partner order tokens AMM pool.");
     onchain
         .mint_token_to_weth_uni_v2_pool(&market_order_token, to_wei(1000))
-        .await;
-    onchain
-        .mint_token_to_weth_uni_v2_pool(&partner_fee_order_token, to_wei(1000))
         .await;
 
     tracing::info!("Waiting for liquidity state to update");
@@ -242,19 +239,7 @@ async fn combined_protocol_fees(web3: Web3) {
         )
         .await
         .unwrap();
-        let new_partner_fee_order_quote = get_quote(
-            &services,
-            onchain.contracts().weth.address(),
-            partner_fee_order_token.address(),
-            OrderKind::Sell,
-            sell_amount,
-            model::time::now_in_epoch_seconds() + 300,
-        )
-        .await
-        .unwrap();
         new_market_order_quote.quote.buy_amount != market_quote_before.quote.buy_amount
-            && new_partner_fee_order_quote.quote.buy_amount
-                != partner_fee_quote_before.quote.buy_amount
     })
     .await
     .unwrap();
@@ -263,17 +248,6 @@ async fn combined_protocol_fees(web3: Web3) {
         &services,
         onchain.contracts().weth.address(),
         market_order_token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        model::time::now_in_epoch_seconds() + 300,
-    )
-    .await
-    .unwrap()
-    .quote;
-    let partner_fee_quote_after = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        partner_fee_order_token.address(),
         OrderKind::Sell,
         sell_amount,
         model::time::now_in_epoch_seconds() + 300,
@@ -365,11 +339,10 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     let partner_fee_executed_surplus_fee_in_buy_token =
-        partner_fee_order.metadata.executed_surplus_fee * partner_fee_quote_after.buy_amount
-            / partner_fee_quote_after.sell_amount;
+        partner_fee_order.metadata.executed_surplus_fee * partner_fee_quote.buy_amount
+            / partner_fee_quote.sell_amount;
     assert!(
-        partner_fee_executed_surplus_fee_in_buy_token
-            >= partner_fee_quote_after.buy_amount * 2 / 100
+        partner_fee_executed_surplus_fee_in_buy_token >= partner_fee_quote.buy_amount * 2 / 100
     );
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
