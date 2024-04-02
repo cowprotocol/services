@@ -215,13 +215,16 @@ pub struct Solutions {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")] // TODO: deny_unknown_fields
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solution {
     id: u64,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    // TODO: remove this once all solvers are updated to not return the score
+    #[allow(dead_code)]
+    score: Option<Score>,
     gas: Option<u64>,
 }
 
@@ -365,4 +368,16 @@ enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, tag = "kind")]
+pub enum Score {
+    Solver {
+        #[serde_as(as = "serialize::U256")]
+        score: eth::U256,
+    },
+    #[serde(rename_all = "camelCase")]
+    RiskAdjusted { success_probability: f64 },
 }
