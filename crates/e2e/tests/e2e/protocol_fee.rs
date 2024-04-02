@@ -138,48 +138,34 @@ async fn combined_protocol_fees(web3: Web3) {
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
     let sell_amount = to_wei(10);
-    let limit_quote_before = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        limit_order_token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        quote_valid_to,
-    )
-    .await
-    .unwrap();
-    let market_quote_before = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        market_order_token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        quote_valid_to,
-    )
-    .await
-    .unwrap();
-    let partner_fee_quote = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        partner_fee_order_token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        model::time::now_in_epoch_seconds() + 300,
-    )
-    .await
-    .unwrap()
-    .quote;
+    let [limit_quote_before, market_quote_before, partner_fee_quote] =
+        futures::future::try_join_all(
+            [
+                &limit_order_token,
+                &market_order_token,
+                &partner_fee_order_token,
+            ]
+            .map(|token| {
+                get_quote(
+                    &services,
+                    onchain.contracts().weth.address(),
+                    token.address(),
+                    OrderKind::Sell,
+                    sell_amount,
+                    quote_valid_to,
+                )
+            }),
+        )
+        .await
+        .unwrap()
+        .try_into()
+        .expect("Expected exactly three elements");
 
     let market_price_improvement_order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
         sell_amount,
-        buy_token: market_order_token.address(),
         // to make sure the order is in-market
         buy_amount: market_quote_before.quote.buy_amount * 2 / 3,
-        valid_to: quote_valid_to,
-        kind: OrderKind::Sell,
-        quote_id: market_quote_before.id,
-        ..Default::default()
+        ..sell_order_from_quote(&market_quote_before)
     }
     .sign(
         EcdsaSigningScheme::Eip712,
@@ -187,15 +173,10 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let limit_surplus_order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
         sell_amount,
-        buy_token: limit_order_token.address(),
         // to make sure the order is out-of-market
         buy_amount: limit_quote_before.quote.buy_amount * 3 / 2,
-        valid_to: quote_valid_to,
-        kind: OrderKind::Sell,
-        quote_id: limit_quote_before.id,
-        ..Default::default()
+        ..sell_order_from_quote(&limit_quote_before)
     }
     .sign(
         EcdsaSigningScheme::Eip712,
@@ -203,14 +184,10 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let partner_fee_order = OrderCreation {
-        sell_token: onchain.contracts().weth.address(),
         sell_amount,
-        buy_token: partner_fee_order_token.address(),
         buy_amount: to_wei(5),
-        valid_to: quote_valid_to,
-        kind: OrderKind::Sell,
-        app_data: partner_fee_app_data,
-        ..Default::default()
+        app_data: partner_fee_app_data.clone(),
+        ..sell_order_from_quote(&partner_fee_quote)
     }
     .sign(
         EcdsaSigningScheme::Eip712,
@@ -254,12 +231,19 @@ async fn combined_protocol_fees(web3: Web3) {
     .unwrap()
     .quote;
 
-    let market_price_improvement_uid = services
-        .create_order(&market_price_improvement_order)
+    let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid] =
+        futures::future::try_join_all(
+            [
+                &market_price_improvement_order,
+                &limit_surplus_order,
+                &partner_fee_order,
+            ]
+            .map(|order| services.create_order(order)),
+        )
         .await
-        .unwrap();
-    let limit_surplus_order_uid = services.create_order(&limit_surplus_order).await.unwrap();
-    let partner_fee_order_uid = services.create_order(&partner_fee_order).await.unwrap();
+        .unwrap()
+        .try_into()
+        .expect("Expected exactly three elements");
 
     let mut config = vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
@@ -304,21 +288,25 @@ async fn combined_protocol_fees(web3: Web3) {
     .quote;
 
     tracing::info!("Waiting for orders metadata update.");
+
     let metadata_updated = || async {
         onchain.mint_block().await;
-        let market_order_updated = services
-            .get_order(&market_price_improvement_uid)
-            .await
-            .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero());
-        let limit_order_updated = services
-            .get_order(&limit_surplus_order_uid)
-            .await
-            .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero());
-        let partner_fee_order_updated = services
-            .get_order(&partner_fee_order_uid)
-            .await
-            .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero());
-        market_order_updated && limit_order_updated && partner_fee_order_updated
+        futures::future::join_all(
+            [
+                &market_price_improvement_uid,
+                &limit_surplus_order_uid,
+                &partner_fee_order_uid,
+            ]
+            .map(|uid| async {
+                services
+                    .get_order(uid)
+                    .await
+                    .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero())
+            }),
+        )
+        .await
+        .into_iter()
+        .all(std::convert::identity)
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
@@ -336,10 +324,11 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     let partner_fee_executed_surplus_fee_in_buy_token =
-        surplus_fee_in_buy_token(&partner_fee_order, &partner_fee_quote);
+        surplus_fee_in_buy_token(&partner_fee_order, &partner_fee_quote.quote);
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
-        partner_fee_executed_surplus_fee_in_buy_token >= partner_fee_quote.buy_amount * 2 / 100
+        partner_fee_executed_surplus_fee_in_buy_token
+            >= partner_fee_quote.quote.buy_amount * 2 / 100
     );
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
@@ -403,6 +392,19 @@ async fn get_quote(
 
 fn surplus_fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
     order.metadata.executed_surplus_fee * quote.buy_amount / quote.sell_amount
+}
+
+fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
+    OrderCreation {
+        sell_token: quote.quote.sell_token,
+        sell_amount: quote.quote.sell_amount,
+        buy_token: quote.quote.buy_token,
+        buy_amount: quote.quote.buy_amount,
+        valid_to: quote.quote.valid_to,
+        kind: OrderKind::Sell,
+        quote_id: quote.id,
+        ..Default::default()
+    }
 }
 
 async fn volume_fee_buy_order_test(web3: Web3) {
