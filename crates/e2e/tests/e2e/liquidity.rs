@@ -237,11 +237,25 @@ fn orders_query_handler(
             expiry: NaiveDateTime::MAX.timestamp() as u64,
             salt: U256::from(Utc::now().timestamp()),
         };
-        let native_order = Eip712TypedZeroExOrder {
-            maker_token: weth_address,
-            taker_token: order_creation.buy_token,
-            maker_amount: order_creation.buy_amount.as_u128(),
-            taker_amount: order_creation.sell_amount.as_u128(),
+        let usdt_weth_order = Eip712TypedZeroExOrder {
+            maker_token: order_creation.buy_token,
+            taker_token: weth_address,
+            maker_amount: order_creation.buy_amount.as_u128() * 3,
+            taker_amount: order_creation.sell_amount.as_u128() * 2,
+            taker_token_fee_amount: 0,
+            maker: zeroex_maker.address(),
+            taker: gpv2_addr,
+            sender: gpv2_addr,
+            fee_recipient: zeroex_addr,
+            pool: H256::default(),
+            expiry: NaiveDateTime::MAX.timestamp() as u64,
+            salt: U256::from(Utc::now().timestamp()),
+        };
+        let usdc_weth_order = Eip712TypedZeroExOrder {
+            maker_token: order_creation.buy_token,
+            taker_token: weth_address,
+            maker_amount: order_creation.buy_amount.as_u128() * 3,
+            taker_amount: order_creation.sell_amount.as_u128() * 2,
             taker_token_fee_amount: 0,
             maker: zeroex_maker.address(),
             taker: gpv2_addr,
@@ -253,7 +267,8 @@ fn orders_query_handler(
         };
         Ok(vec![
             typed_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
-            native_order.to_order_record(chain_id, zeroex_addr, zeroex_maker),
+            usdt_weth_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
+            usdc_weth_order.to_order_record(chain_id, zeroex_addr, zeroex_maker),
         ])
     } else if query.sender
         == Some(H160::from_str("0x0000000000000000000000000000000000000000").unwrap())
