@@ -12,6 +12,7 @@ async fn weighted() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -133,6 +134,7 @@ async fn weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -247,6 +249,7 @@ async fn stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -414,6 +417,7 @@ async fn composable_stable_v4() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),

@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 pub mod baseline;
 pub mod legacy;
+pub mod naive;
 
 /// Unwraps result or logs a `TOML` parsing error.
 fn unwrap_or_log<T, E, P>(result: Result<T, E>, path: &P) -> T

@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{eth, solver::baseline},
+        domain::{eth, solver::baseline, Risk},
         infra::{config::unwrap_or_log, contracts},
         util::serialize,
     },
@@ -38,6 +38,11 @@ struct Config {
     /// The maximum number of pieces to divide partially fillable limit orders
     /// when trying to solve it against baseline liquidity.
     max_partial_attempts: usize,
+
+    /// Parameters used to calculate the revert risk of a solution.
+    /// (gas_amount_factor, gas_price_factor, nmb_orders_factor, intercept)
+    risk_parameters: (f64, f64, f64, f64),
+
     /// Units of gas that get added to the gas estimate for executing a
     /// computed trade route to arrive at a gas estimate for a whole settlement.
     #[serde(default = "default_gas_offset")]
@@ -76,6 +81,12 @@ pub async fn load(path: &Path) -> baseline::Config {
             .collect(),
         max_hops: config.max_hops,
         max_partial_attempts: config.max_partial_attempts,
+        risk: Risk {
+            gas_amount_factor: config.risk_parameters.0,
+            gas_price_factor: config.risk_parameters.1,
+            nmb_orders_factor: config.risk_parameters.2,
+            intercept: config.risk_parameters.3,
+        },
         solution_gas_offset: config.solution_gas_offset.into(),
     }
 }
