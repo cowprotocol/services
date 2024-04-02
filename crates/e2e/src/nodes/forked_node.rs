@@ -61,16 +61,4 @@ impl<T: Transport> ForkedNodeApi<T> {
                 .execute("anvil_setBalance", vec![json_address, json_balance]),
         )
     }
-
-    // Makes GPv2 auth contract always return `true` to make any solver to be
-    // whitelisted.
-    pub fn set_mocked_settle(&self) -> CallFuture<(), T::Out> {
-        let gpv2_auth_address_json =
-            serde_json::json!("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE");
-        let bytecode_json = serde_json::json!("0x600160005260206000F3");
-        CallFuture::new(
-            self.transport
-                .execute("anvil_setCode", vec![gpv2_auth_address_json, bytecode_json]),
-        )
-    }
 }

@@ -64,7 +64,6 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
     let [trader, zeroex_maker] = onchain.make_accounts(to_wei(1)).await;
-    forked_node_api.set_mocked_settle().await.unwrap();
 
     let token_usdc = ERC20::at(
         &web3,
