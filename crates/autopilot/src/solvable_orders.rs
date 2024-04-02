@@ -140,7 +140,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    pub async fn update(&self, block: u64) -> Result<()> {
+    async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
