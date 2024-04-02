@@ -220,7 +220,7 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    tracing::info!("Rebalancing market and partner order tokens AMM pool.");
+    tracing::info!("Rebalancing AMM pool for the market order.");
     onchain
         .mint_token_to_weth_uni_v2_pool(&market_order_token, to_wei(1000))
         .await;
@@ -270,7 +270,7 @@ async fn combined_protocol_fees(web3: Web3) {
     config.extend(autopilot_config);
     services.start_autopilot(None, config).await;
 
-    tracing::info!("Rebalancing limit order AMM pool.");
+    tracing::info!("Rebalancing AMM pool for the limit order.");
     onchain
         .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
         .await;
