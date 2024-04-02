@@ -223,6 +223,7 @@ pub struct Solution {
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
     // TODO: remove this once all solvers are updated to not return the score
+    // https://github.com/cowprotocol/services/issues/2588
     #[allow(dead_code)]
     score: Option<Score>,
     gas: Option<u64>,
