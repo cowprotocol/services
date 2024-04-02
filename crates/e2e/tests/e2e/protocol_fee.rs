@@ -79,34 +79,25 @@ async fn combined_protocol_fees(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
         .await;
 
-    limit_order_token.mint(solver.address(), to_wei(1000)).await;
-    market_order_token
-        .mint(solver.address(), to_wei(1000))
-        .await;
-    partner_fee_order_token
-        .mint(solver.address(), to_wei(1000))
-        .await;
-    tx!(
-        solver.account(),
-        limit_order_token.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        market_order_token.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        partner_fee_order_token.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
+    for token in &[
+        &limit_order_token,
+        &market_order_token,
+        &partner_fee_order_token,
+    ] {
+        token.mint(solver.address(), to_wei(1000)).await;
+        tx!(
+            solver.account(),
+            token.approve(
+                onchain.contracts().uniswap_v2_router.address(),
+                to_wei(1000)
+            )
+        );
+        tx!(
+            trader.account(),
+            token.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
+        );
+    }
+
     tx!(
         trader.account(),
         onchain
