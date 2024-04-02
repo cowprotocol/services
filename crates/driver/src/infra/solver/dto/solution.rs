@@ -189,22 +189,7 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    match solver_config
-                        .rank_by_surplus_date
-                        .is_some_and(|date| auction.deadline().driver() > date)
-                    {
-                        true => competition::solution::SolverScore::Surplus,
-                        false => match solution.score {
-                            Score::Solver { score } => {
-                                competition::solution::SolverScore::Solver(score)
-                            }
-                            Score::RiskAdjusted {
-                                success_probability,
-                            } => competition::solution::SolverScore::RiskAdjusted(
-                                success_probability,
-                            ),
-                        },
-                    },
+                    competition::solution::SolverScore::Surplus,
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
@@ -238,6 +223,7 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    #[allow(dead_code)]
     score: Score,
     gas: Option<u64>,
 }

@@ -1,23 +1,20 @@
-use {
-    crate::{
-        domain::{competition::order, eth},
-        infra::config::file::FeeHandler,
-        tests::{
-            self,
-            cases::EtherExt,
-            setup::{
-                ab_adjusted_pool,
-                ab_liquidity_quote,
-                ab_order,
-                ab_solution,
-                fee::{Policy, Quote},
-                test_solver,
-                ExpectedOrderAmounts,
-                Test,
-            },
+use crate::{
+    domain::{competition::order, eth},
+    infra::config::file::FeeHandler,
+    tests::{
+        self,
+        cases::EtherExt,
+        setup::{
+            ab_adjusted_pool,
+            ab_liquidity_quote,
+            ab_order,
+            ab_solution,
+            fee::{Policy, Quote},
+            test_solver,
+            ExpectedOrderAmounts,
+            Test,
         },
     },
-    chrono::{DateTime, Utc},
 };
 
 struct Amounts {
@@ -102,9 +99,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .pool(pool)
         .order(order.clone())
         .solution(ab_solution())
-        .solvers(vec![test_solver()
-            .rank_by_surplus_date(DateTime::<Utc>::MIN_UTC)
-            .fee_handler(test_case.fee_handler)])
+        .solvers(vec![test_solver().fee_handler(test_case.fee_handler)])
         .done()
         .await;
 
