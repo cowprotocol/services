@@ -8,8 +8,15 @@ use {
     },
     ethcontract::{prelude::U256, Address},
     model::{
-        order::{OrderCreation, OrderCreationAppData, OrderKind},
-        quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount, Validity},
+        order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
+        quote::{
+            OrderQuote,
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            SellAmount,
+            Validity,
+        },
         signature::EcdsaSigningScheme,
     },
     reqwest::StatusCode,
@@ -329,9 +336,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
     let market_executed_surplus_fee_in_buy_token =
-        market_price_improvement_order.metadata.executed_surplus_fee
-            * market_quote_after.buy_amount
-            / market_quote_after.sell_amount;
+        surplus_fee_in_buy_token(&market_price_improvement_order, &market_quote_after);
     let market_quote_diff = market_quote_after
         .buy_amount
         .saturating_sub(market_quote_before.quote.buy_amount);
@@ -340,17 +345,15 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     let partner_fee_executed_surplus_fee_in_buy_token =
-        partner_fee_order.metadata.executed_surplus_fee * partner_fee_quote.buy_amount
-            / partner_fee_quote.sell_amount;
+        surplus_fee_in_buy_token(&partner_fee_order, &partner_fee_quote);
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
         partner_fee_executed_surplus_fee_in_buy_token >= partner_fee_quote.buy_amount * 2 / 100
     );
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
-    let limit_executed_surplus_fee_in_buy_token = limit_surplus_order.metadata.executed_surplus_fee
-        * limit_quote_after.buy_amount
-        / limit_quote_after.sell_amount;
+    let limit_executed_surplus_fee_in_buy_token =
+        surplus_fee_in_buy_token(&limit_surplus_order, &limit_quote_after);
     let limit_quote_diff = limit_quote_after
         .buy_amount
         .saturating_sub(limit_surplus_order.data.buy_amount);
@@ -405,6 +408,10 @@ async fn get_quote(
         ..Default::default()
     };
     services.submit_quote(&quote_request).await
+}
+
+fn surplus_fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
+    order.metadata.executed_surplus_fee * quote.buy_amount / quote.sell_amount
 }
 
 async fn volume_fee_buy_order_test(web3: Web3) {
