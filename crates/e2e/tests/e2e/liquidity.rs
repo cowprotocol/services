@@ -82,37 +82,34 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     let zeroex = IZeroEx::deployed(&web3).await.unwrap();
 
-    let amount = 500;
+    let amount = to_wei_with_exp(5, 8);
 
     // Give trader some USDC
     let usdc_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(amount, 6))
-    );
+    tx!(usdc_whale, token_usdc.transfer(trader.address(), amount));
 
-    // Give trader some USDT
+    // Give 0x maker a bit more USDT
     let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
     tx!(
         usdt_whale,
-        token_usdt.transfer(zeroex_maker.address(), to_wei_with_exp(amount * 3, 6))
+        token_usdt.transfer(zeroex_maker.address(), amount * 2)
     );
 
     // Approve GPv2 for trading
     tx!(
         trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(amount, 6))
+        token_usdc.approve(onchain.contracts().allowance, amount)
     );
     tx!(
         zeroex_maker.account(),
-        token_usdt.approve(zeroex.address(), to_wei_with_exp(amount * 3, 6))
+        token_usdt.approve(zeroex.address(), amount * 2)
     );
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
-        sell_amount: to_wei_with_exp(amount, 6),
+        sell_amount: amount,
         buy_token: token_usdt.address(),
-        buy_amount: to_wei_with_exp(amount, 6),
+        buy_amount: amount - to_wei_with_exp(1, 8),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -210,7 +207,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     assert!(sell_token_balance_before > sell_token_balance_after);
-    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(amount, 6));
+    assert!(buy_token_balance_after >= buy_token_balance_before + amount);
 }
 
 fn orders_query_handler(
@@ -226,6 +223,7 @@ fn orders_query_handler(
         let typed_order = Eip712TypedZeroExOrder {
             maker_token: order_creation.buy_token,
             taker_token: order_creation.sell_token,
+            // fully covers execution costs
             maker_amount: order_creation.buy_amount.as_u128() * 3,
             taker_amount: order_creation.sell_amount.as_u128() * 2,
             taker_token_fee_amount: 0,
