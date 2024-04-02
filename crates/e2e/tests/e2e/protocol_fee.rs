@@ -294,7 +294,7 @@ async fn combined_protocol_fees(web3: Web3) {
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
     ];
     config.extend(autopilot_config);
-    services.start_autopilot(None, config);
+    services.start_autopilot(None, config).await;
 
     tracing::info!("Rebalancing limit order AMM pool.");
     onchain
