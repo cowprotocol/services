@@ -475,8 +475,7 @@ async fn get_orders_with_native_prices(
     // and prices that have orders.
     let mut filtered_market_orders = 0_i64;
     let mut used_prices = BTreeMap::new();
-    let mut tokens_by_priority = indexmap::IndexSet::new();
-    orders.retain(|order| {
+    let (usable, mut filtered) = orders.into_iter().partition::<Vec<_>, _>(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
@@ -486,12 +485,13 @@ async fn get_orders_with_native_prices(
             }
             _ => {
                 filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
-                tokens_by_priority.insert(*t0);
-                tokens_by_priority.insert(*t1);
                 false
             }
         }
     });
+
+    let tokens_by_priority = prioritize_missing_prices(&mut filtered);
+    native_price_estimator.replace_high_priority(tokens_by_priority);
 
     // Record separate metrics just for missing native token prices for market
     // orders, as they should be prioritized.
@@ -499,7 +499,7 @@ async fn get_orders_with_native_prices(
         .auction_market_order_missing_price
         .set(filtered_market_orders);
 
-    (orders, used_prices)
+    (usable, used_prices)
 }
 
 /// Computes which missing native prices are the most urgent to fetch.
