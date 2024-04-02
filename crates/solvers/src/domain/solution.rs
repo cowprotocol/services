@@ -144,7 +144,7 @@ impl Single {
     pub fn into_solution(
         self,
         gas_price: auction::GasPrice,
-        sell_token: Option<auction::Price>,
+        sell_token: auction::Price,
         score: solution::Score,
     ) -> Option<Solution> {
         let Self {
@@ -165,7 +165,7 @@ impl Single {
             // full order fee as well as a solver computed fee. Note that this
             // is fine for now, since there is no way to create limit orders
             // with non-zero fees.
-            Fee::Surplus(sell_token?.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
+            Fee::Surplus(sell_token.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
         } else {
             Fee::Protocol
         };

@@ -98,7 +98,7 @@ impl Baseline {
         let span = tracing::Span::current();
         let background_work = async move {
             let _entered = span.enter();
-            inner.solve(auction, sender).await;
+            inner.solve(auction, sender);
         };
 
         if tokio::time::timeout(deadline, tokio::spawn(background_work))
@@ -117,7 +117,7 @@ impl Baseline {
 }
 
 impl Inner {
-    async fn solve(
+    fn solve(
         &self,
         auction: auction::Auction,
         sender: tokio::sync::mpsc::UnboundedSender<solution::Solution>,
@@ -126,10 +126,30 @@ impl Inner {
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
         for (i, order) in auction.orders.into_iter().enumerate() {
-            let sell_token = auction.tokens.reference_price(&order.sell.token);
             let Some(user_order) = UserOrder::new(&order) else {
                 continue;
             };
+
+            let sell_token = match auction.tokens.reference_price(&order.sell.token) {
+                Some(price) => price,
+                None => {
+                    // Early return if the sell token is native token
+                    if user_order.get().sell.token == self.weth.0.into() {
+                        auction::Price(eth::Ether(U256::one().pow(18.into())))
+                    } else {
+                        // Estimate the price of the sell token in the native token
+                        let native_price_request = self.native_price_request(user_order);
+                        match boundary_solver.route(native_price_request, self.max_hops) {
+                            Some(route) => {
+                                let price = route.output().amount;
+                                auction::Price(eth::Ether(price))
+                            }
+                            None => continue,
+                        }
+                    }
+                }
+            };
+
             let solution = self.requests_for_order(user_order).find_map(|request| {
                 tracing::trace!(order =% order.uid, ?request, "finding route");
 
@@ -213,6 +233,24 @@ impl Inner {
                 }
             })
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
+    }
+
+    fn native_price_request(&self, order: UserOrder) -> Request {
+        let sell = eth::Asset {
+            token: order.get().sell.token,
+            amount: U256::one().pow(18.into()),
+        };
+
+        let buy = eth::Asset {
+            token: self.weth.0.into(),
+            amount: U256::one(),
+        };
+
+        Request {
+            sell,
+            buy,
+            side: order::Side::Sell,
+        }
     }
 }
 
