@@ -781,9 +781,7 @@ mod tests {
         native_price_estimator
             .expect_estimate_native_price()
             .withf(move |token| *token == token1)
-            .returning(|_| {
-                async { Ok(2.) }.boxed()
-            });
+            .returning(|_| async { Ok(2.) }.boxed());
         native_price_estimator
             .expect_estimate_native_price()
             .times(1)
