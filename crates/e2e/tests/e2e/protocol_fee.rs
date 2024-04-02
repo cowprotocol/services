@@ -495,7 +495,7 @@ async fn execute_test(
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
     ];
     config.extend(autopilot_config.iter().map(ToString::to_string));
-    services.start_autopilot(None, config);
+    services.start_autopilot(None, config).await;
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
