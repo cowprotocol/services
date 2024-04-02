@@ -335,6 +335,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let market_quote_diff = market_quote_after
         .buy_amount
         .saturating_sub(market_quote_before.quote.buy_amount);
+    // see `market_price_improvement_policy.factor`, which is 0.3
     assert!(market_executed_surplus_fee_in_buy_token >= market_quote_diff * 3 / 10);
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
@@ -342,6 +343,7 @@ async fn combined_protocol_fees(web3: Web3) {
         partner_fee_order.metadata.executed_surplus_fee * partner_fee_quote.buy_amount
             / partner_fee_quote.sell_amount;
     assert!(
+        // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
         partner_fee_executed_surplus_fee_in_buy_token >= partner_fee_quote.buy_amount * 2 / 100
     );
 
@@ -352,6 +354,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let limit_quote_diff = limit_quote_after
         .buy_amount
         .saturating_sub(limit_surplus_order.data.buy_amount);
+    // see `limit_surplus_policy.factor`, which is 0.3
     assert!(limit_executed_surplus_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
     let balance_after = market_order_token
