@@ -30,7 +30,7 @@ async fn matrix() {
                 .done()
                 .await;
 
-            test.solve().await.ok().default_score();
+            test.solve().await.ok();
             test.settle().await.ok().await.ab_order_executed().await;
         }
     }
@@ -70,7 +70,7 @@ async fn private_rpc_with_high_risk_solution() {
         .done()
         .await;
 
-    test.solve().await.ok().default_score();
+    test.solve().await.ok();
     // Public cannot be used and private RPC is not available
     let err = test.settle().await.err();
     err.kind("FailedToSubmit");

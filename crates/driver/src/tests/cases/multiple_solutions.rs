@@ -17,7 +17,7 @@ async fn valid() {
         .done()
         .await;
 
-    test.solve().await.ok().default_score().orders(&[order]);
+    test.solve().await.ok().orders(&[order]);
     test.reveal().await.ok().calldata();
 }
 
@@ -35,6 +35,6 @@ async fn invalid() {
         .done()
         .await;
 
-    test.solve().await.ok().default_score().orders(&[order]);
+    test.solve().await.ok().orders(&[order]);
     test.reveal().await.ok().calldata();
 }

@@ -75,7 +75,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                         .unwrap(),
                 },
                 request_headers: config.request_headers,
-                rank_by_surplus_date: config.rank_by_surplus_date,
                 fee_handler: config.fee_handler,
             }
         }))

@@ -21,8 +21,6 @@ use {
                 DEFAULT_POOL_AMOUNT_B,
                 DEFAULT_POOL_AMOUNT_C,
                 DEFAULT_POOL_AMOUNT_D,
-                DEFAULT_SCORE_MAX,
-                DEFAULT_SCORE_MIN,
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
@@ -69,6 +67,7 @@ pub enum Partial {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
+    #[allow(dead_code)]
     Solver {
         #[serde_as(as = "serialize::U256")]
         score: eth::U256,
@@ -319,8 +318,6 @@ pub struct Solver {
     slippage: infra::solver::Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
-    /// Datetime when the CIP38 rank by surplus rules should be activated.
-    rank_by_surplus_date: Option<chrono::DateTime<chrono::Utc>>,
     /// Determines whether the `solver` or the `driver` handles the fees
     fee_handler: FeeHandler,
 }
@@ -342,7 +339,6 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
-        rank_by_surplus_date: None,
         fee_handler: FeeHandler::default(),
     }
 }
@@ -371,13 +367,6 @@ impl Solver {
 
     pub fn balance(self, balance: eth::U256) -> Self {
         Self { balance, ..self }
-    }
-
-    pub fn rank_by_surplus_date(self, rank_by_surplus_date: chrono::DateTime<chrono::Utc>) -> Self {
-        Self {
-            rank_by_surplus_date: Some(rank_by_surplus_date),
-            ..self
-        }
     }
 
     pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
@@ -570,11 +559,6 @@ impl Solution {
             calldata: Calldata::Invalid,
             ..self
         }
-    }
-
-    /// Set the solution score to the specified value.
-    pub fn score(self, score: Score) -> Self {
-        Self { score, ..self }
     }
 }
 
@@ -1092,25 +1076,6 @@ impl<'a> SolveOk<'a> {
         assert!(solution.get("score").is_some());
         let score = solution.get("score").unwrap().as_str().unwrap();
         eth::U256::from_dec_str(score).unwrap()
-    }
-
-    /// Ensure that the score in the response is within a certain range. The
-    /// reason why this is a range is because small timing differences in
-    /// the test can lead to the settlement using slightly different amounts
-    /// of gas, which in turn leads to different scores.
-    pub fn score_in_range(self, min: eth::U256, max: eth::U256) -> Self {
-        let score = self.score();
-        assert!(score >= min, "score less than min {score} < {min}");
-        assert!(score <= max, "score more than max {score} > {max}");
-        self
-    }
-
-    /// Ensure that the score is within the default expected range.
-    pub fn default_score(self) -> Self {
-        self.score_in_range(
-            DEFAULT_SCORE_MIN.ether().into_wei(),
-            DEFAULT_SCORE_MAX.ether().into_wei(),
-        )
     }
 
     /// Ensures that `/solve` returns no solutions.
