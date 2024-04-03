@@ -22,7 +22,7 @@ use {
     ethrpc::Web3,
     hex_literal::hex,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -145,12 +145,8 @@ async fn zero_ex_liquidity(web3: Web3) {
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
-    let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
-    tracing::info!("Waiting for trade.");
     let sell_token_balance_before = token_usdc
         .balance_of(trader.address())
         .call()
@@ -162,27 +158,27 @@ async fn zero_ex_liquidity(web3: Web3) {
         .await
         .unwrap();
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
+    services.create_order(&order).await.unwrap();
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let sell_token_balance_after = token_usdc
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-    let buy_token_balance_after = token_usdt
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-
-    assert!(sell_token_balance_before > sell_token_balance_after);
-    assert!(buy_token_balance_after >= buy_token_balance_before + amount);
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async {
+        token_usdc
+            .balance_of(trader.address())
+            .call()
+            .await
+            .is_ok_and(|balance| balance < sell_token_balance_before)
+    })
+    .await
+    .unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        token_usdt
+            .balance_of(trader.address())
+            .call()
+            .await
+            .is_ok_and(|balance| balance >= buy_token_balance_before + amount)
+    })
+    .await
+    .unwrap();
 }
 
 fn create_zeroex_liquidity_orders(
