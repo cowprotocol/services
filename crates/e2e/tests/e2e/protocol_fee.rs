@@ -195,9 +195,12 @@ async fn combined_protocol_fees(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    tracing::info!("Rebalancing AMM pool for the market order.");
+    tracing::info!("Rebalancing AMM pools for market & limit order.");
     onchain
         .mint_token_to_weth_uni_v2_pool(&market_order_token, to_wei(1000))
+        .await;
+    onchain
+        .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
         .await;
 
     tracing::info!("Waiting for liquidity state to update");
@@ -219,17 +222,21 @@ async fn combined_protocol_fees(web3: Web3) {
     .await
     .unwrap();
 
-    let market_quote_after = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        market_order_token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        model::time::now_in_epoch_seconds() + 300,
-    )
-    .await
-    .unwrap()
-    .quote;
+    let [market_quote_after, limit_quote_after] =
+        futures::future::try_join_all([&market_order_token, &limit_order_token].map(|token| {
+            get_quote(
+                &services,
+                onchain.contracts().weth.address(),
+                token.address(),
+                OrderKind::Sell,
+                sell_amount,
+                quote_valid_to,
+            )
+        }))
+        .await
+        .unwrap()
+        .try_into()
+        .expect("Expected exactly two elements");
 
     let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid] =
         futures::future::try_join_all(
@@ -252,43 +259,7 @@ async fn combined_protocol_fees(web3: Web3) {
     config.extend(autopilot_config);
     services.start_autopilot(None, config).await;
 
-    tracing::info!("Rebalancing AMM pool for the limit order.");
-    onchain
-        .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
-        .await;
-
-    tracing::info!("Waiting for liquidity state to update");
-    wait_for_condition(TIMEOUT, || async {
-        // Mint blocks until we evict the cached liquidity and fetch the new state.
-        onchain.mint_block().await;
-        let new_limit_order_quote = get_quote(
-            &services,
-            onchain.contracts().weth.address(),
-            limit_order_token.address(),
-            OrderKind::Sell,
-            sell_amount,
-            model::time::now_in_epoch_seconds() + 300,
-        )
-        .await
-        .unwrap();
-        new_limit_order_quote.quote.buy_amount != limit_quote_before.quote.buy_amount
-    })
-    .await
-    .unwrap();
-    let limit_quote_after = get_quote(
-        &services,
-        onchain.contracts().weth.address(),
-        limit_order_token.address(),
-        OrderKind::Sell,
-        sell_amount,
-        model::time::now_in_epoch_seconds() + 300,
-    )
-    .await
-    .unwrap()
-    .quote;
-
-    tracing::info!("Waiting for orders metadata update.");
-
+    tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
         onchain.mint_block().await;
         futures::future::join_all(
@@ -310,13 +281,15 @@ async fn combined_protocol_fees(web3: Web3) {
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
+    tracing::info!("Checking executions...");
     let market_price_improvement_order = services
         .get_order(&market_price_improvement_uid)
         .await
         .unwrap();
     let market_executed_surplus_fee_in_buy_token =
-        surplus_fee_in_buy_token(&market_price_improvement_order, &market_quote_after);
+        surplus_fee_in_buy_token(&market_price_improvement_order, &market_quote_after.quote);
     let market_quote_diff = market_quote_after
+        .quote
         .buy_amount
         .saturating_sub(market_quote_before.quote.buy_amount);
     // see `market_price_improvement_policy.factor`, which is 0.3
@@ -333,8 +306,9 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
     let limit_executed_surplus_fee_in_buy_token =
-        surplus_fee_in_buy_token(&limit_surplus_order, &limit_quote_after);
+        surplus_fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
     let limit_quote_diff = limit_quote_after
+        .quote
         .buy_amount
         .saturating_sub(limit_surplus_order.data.buy_amount);
     // see `limit_surplus_policy.factor`, which is 0.3
