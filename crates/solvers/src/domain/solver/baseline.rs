@@ -135,7 +135,7 @@ impl Inner {
                 None => {
                     // Early return if the sell token is native token
                     if user_order.get().sell.token == self.weth.0.into() {
-                        auction::Price(eth::Ether(U256::one().pow(18.into())))
+                        auction::Price(eth::Ether(eth::U256::exp10(18)))
                     } else {
                         // Estimate the price of the sell token in the native token
                         let native_price_request = self.native_price_request(user_order);
@@ -238,7 +238,7 @@ impl Inner {
     fn native_price_request(&self, order: UserOrder) -> Request {
         let sell = eth::Asset {
             token: order.get().sell.token,
-            amount: U256::one().pow(18.into()),
+            amount: eth::U256::exp10(18),
         };
 
         let buy = eth::Asset {
