@@ -126,15 +126,14 @@ async fn zero_ex_liquidity(web3: Web3) {
         let gpv2_addr = onchain.contracts().gp_settlement.address();
         let zeroex_addr = zeroex.address();
         let orders_handler = Arc::new(Box::new(move |query: &OrdersQuery| {
-            orders_query_handler(
-                query,
+            Ok(create_zeroex_liquidity_orders(
                 order.clone(),
                 zeroex_maker.clone(),
                 zeroex_addr,
                 gpv2_addr,
                 chain_id,
                 weth_addr,
-            )
+            ))
         }));
 
         ZeroExApi::builder()
@@ -209,78 +208,64 @@ async fn zero_ex_liquidity(web3: Web3) {
     assert!(buy_token_balance_after >= buy_token_balance_before + amount);
 }
 
-fn orders_query_handler(
-    query: &OrdersQuery,
+fn create_zeroex_liquidity_orders(
     order_creation: OrderCreation,
     zeroex_maker: TestAccount,
     zeroex_addr: H160,
     gpv2_addr: H160,
     chain_id: u64,
     weth_address: H160,
-) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
-    if query.sender == Some(gpv2_addr) {
-        let typed_order = Eip712TypedZeroExOrder {
-            maker_token: order_creation.buy_token,
-            taker_token: order_creation.sell_token,
-            // fully covers execution costs
-            maker_amount: order_creation.buy_amount.as_u128() * 3,
-            taker_amount: order_creation.sell_amount.as_u128() * 2,
-            taker_token_fee_amount: 0,
-            maker: zeroex_maker.address(),
-            taker: gpv2_addr,
-            sender: gpv2_addr,
-            fee_recipient: zeroex_addr,
-            pool: H256::default(),
-            expiry: NaiveDateTime::MAX.timestamp() as u64,
-            salt: U256::from(Utc::now().timestamp()),
-        };
-        let usdt_weth_order = Eip712TypedZeroExOrder {
-            maker_token: weth_address,
-            taker_token: order_creation.buy_token,
-            // the value comes from the `--amount-to-estimate-prices-with` config value to provide
-            // sufficient liquidity
-            maker_amount: 1_000_000_000_000_000_000u128,
-            taker_amount: order_creation.sell_amount.as_u128(),
-            taker_token_fee_amount: 0,
-            maker: zeroex_maker.address(),
-            taker: gpv2_addr,
-            sender: gpv2_addr,
-            fee_recipient: zeroex_addr,
-            pool: H256::default(),
-            expiry: NaiveDateTime::MAX.timestamp() as u64,
-            salt: U256::from(Utc::now().timestamp()),
-        };
-        let usdc_weth_order = Eip712TypedZeroExOrder {
-            maker_token: weth_address,
-            taker_token: order_creation.sell_token,
-            // the value comes from the `--amount-to-estimate-prices-with` config value to provide
-            // sufficient liquidity
-            maker_amount: 1_000_000_000_000_000_000u128,
-            taker_amount: order_creation.sell_amount.as_u128(),
-            taker_token_fee_amount: 0,
-            maker: zeroex_maker.address(),
-            taker: gpv2_addr,
-            sender: gpv2_addr,
-            fee_recipient: zeroex_addr,
-            pool: H256::default(),
-            expiry: NaiveDateTime::MAX.timestamp() as u64,
-            salt: U256::from(Utc::now().timestamp()),
-        };
-        Ok(vec![
-            typed_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
-            usdt_weth_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
-            usdc_weth_order.to_order_record(chain_id, zeroex_addr, zeroex_maker),
-        ])
-    } else if query.sender
-        == Some(H160::from_str("0x0000000000000000000000000000000000000000").unwrap())
-    {
-        Ok(vec![])
-    } else {
-        Err(ZeroExResponseError::ServerError(format!(
-            "unexpected sender: {:?}",
-            query.sender
-        )))
-    }
+) -> Vec<OrderRecord> {
+    let typed_order = Eip712TypedZeroExOrder {
+        maker_token: order_creation.buy_token,
+        taker_token: order_creation.sell_token,
+        // fully covers execution costs
+        maker_amount: order_creation.buy_amount.as_u128() * 3,
+        taker_amount: order_creation.sell_amount.as_u128() * 2,
+        taker_token_fee_amount: 0,
+        maker: zeroex_maker.address(),
+        taker: gpv2_addr,
+        sender: gpv2_addr,
+        fee_recipient: zeroex_addr,
+        pool: H256::default(),
+        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        salt: U256::from(Utc::now().timestamp()),
+    };
+    let usdt_weth_order = Eip712TypedZeroExOrder {
+        maker_token: weth_address,
+        taker_token: order_creation.buy_token,
+        // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+        // sufficient liquidity
+        maker_amount: 1_000_000_000_000_000_000u128,
+        taker_amount: order_creation.sell_amount.as_u128(),
+        taker_token_fee_amount: 0,
+        maker: zeroex_maker.address(),
+        taker: gpv2_addr,
+        sender: gpv2_addr,
+        fee_recipient: zeroex_addr,
+        pool: H256::default(),
+        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        salt: U256::from(Utc::now().timestamp()),
+    };
+    let usdc_weth_order = Eip712TypedZeroExOrder {
+        maker_token: weth_address,
+        taker_token: order_creation.sell_token,
+        // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+        // sufficient liquidity
+        maker_amount: 1_000_000_000_000_000_000u128,
+        taker_amount: order_creation.sell_amount.as_u128(),
+        taker_token_fee_amount: 0,
+        maker: zeroex_maker.address(),
+        taker: gpv2_addr,
+        sender: gpv2_addr,
+        fee_recipient: zeroex_addr,
+        pool: H256::default(),
+        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        salt: U256::from(Utc::now().timestamp()),
+    };
+    [typed_order, usdt_weth_order, usdc_weth_order]
+        .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
+        .to_vec()
 }
 
 struct Eip712TypedZeroExOrder {
