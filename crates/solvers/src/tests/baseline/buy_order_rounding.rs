@@ -357,6 +357,22 @@ async fn balancer_weighted_v3plus() {
                     "gasEstimate": "88892",
                     "version": "v3Plus",
                 },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "1000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
+                },
             ],
             "effectiveGasPrice": "1000000000",
             "deadline": "2106-01-01T00:00:00.000Z"
@@ -475,6 +491,22 @@ async fn distant_convergence() {
                     "balancerPoolId": "0x5c78d05b8ecf97507d1cf70646082c54faa4da950000000000000000000005ca",
                     "gasEstimate": "88892",
                     "version": "v3Plus",
+                },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "1000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
                 },
             ],
             "effectiveGasPrice": "1000000000",
@@ -610,6 +642,22 @@ async fn same_path() {
                     "address": "0x9090909090909090909090909090909090909090",
                     "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
                     "gasEstimate": "0"
+                },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "1000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
                 },
             ],
             "effectiveGasPrice": "1000000000",
