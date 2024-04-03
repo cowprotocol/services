@@ -3,7 +3,7 @@ use {
     contracts::{IZeroEx, ERC20},
     driver::domain::eth::H160,
     e2e::{
-        api::zeroex::ZeroExApi,
+        api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
         nodes::forked_node::ForkedNodeApi,
         setup::{
             colocation::{self, SolverEngine},
@@ -27,14 +27,6 @@ use {
         DomainSeparator,
     },
     secp256k1::SecretKey,
-    shared::zeroex_api::{
-        Order,
-        OrderMetadata,
-        OrderRecord,
-        OrdersQuery,
-        ZeroExResponseError,
-        ZeroExSignature,
-    },
     std::{str::FromStr, sync::Arc},
     web3::{
         ethabi::{encode, Token},
@@ -125,7 +117,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         let weth_addr = onchain.contracts().weth.address();
         let gpv2_addr = onchain.contracts().gp_settlement.address();
         let zeroex_addr = zeroex.address();
-        let orders_handler = Arc::new(Box::new(move |query: &OrdersQuery| {
+        let orders_handler = Arc::new(Box::new(move |query: &shared::zeroex_api::OrdersQuery| {
             Ok(create_zeroex_liquidity_orders(
                 order.clone(),
                 zeroex_maker.clone(),
@@ -215,7 +207,7 @@ fn create_zeroex_liquidity_orders(
     gpv2_addr: H160,
     chain_id: u64,
     weth_address: H160,
-) -> Vec<OrderRecord> {
+) -> Vec<shared::zeroex_api::OrderRecord> {
     let typed_order = Eip712TypedZeroExOrder {
         maker_token: order_creation.buy_token,
         taker_token: order_creation.sell_token,
