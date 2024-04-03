@@ -139,10 +139,13 @@ pub fn run_database_metrics_work(db: Postgres) {
 
 async fn database_metrics(db: Postgres) -> ! {
     loop {
+        // The DB gets used a lot right after starting the system.
+        // Since these queries are quite expensive we delay them
+        // to improve the startup time of the system.
+        tokio::time::sleep(Duration::from_secs(60)).await;
         if let Err(err) = db.update_database_metrics().await {
             tracing::error!(?err, "failed to update table rows metric");
         }
-        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
 

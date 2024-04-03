@@ -18,7 +18,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::time::Duration,
+    std::{ops::DerefMut, time::Duration},
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -127,7 +127,7 @@ impl<'a> Services<'a> {
     /// (note: specifying a larger solve deadline will impact test times as the
     /// driver delays the submission of the solution until shortly before the
     /// deadline in case the solution would start to revert at some point)
-    pub fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
+    pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
 
         let args = [
@@ -144,6 +144,7 @@ impl<'a> Services<'a> {
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::run(args));
+        self.wait_until_autopilot_ready().await;
     }
 
     /// Start the api service in a background tasks.
@@ -196,7 +197,8 @@ impl<'a> Services<'a> {
                 args.autopilot,
             ]
             .concat(),
-        );
+        )
+        .await;
         self.start_api(
             [
                 vec![
@@ -267,7 +269,8 @@ impl<'a> Services<'a> {
             colocation::LiquidityProvider::UniswapV2,
         );
 
-        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args);
+        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args)
+            .await;
         self.start_api(api_args).await;
     }
 
@@ -282,6 +285,21 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
+    }
+
+    async fn wait_until_autopilot_ready(&self) {
+        let is_up = || async {
+            let mut db = self.db.acquire().await.unwrap();
+            const QUERY: &str = "SELECT COUNT(*) FROM auctions";
+            let count: i64 = sqlx::query_scalar(QUERY)
+                .fetch_one(db.deref_mut())
+                .await
+                .unwrap();
+            count > 0
+        };
+        wait_for_condition(TIMEOUT, is_up)
+            .await
+            .expect("waiting for autopilot timed out");
     }
 
     pub async fn get_auction(&self) -> dto::AuctionWithId {
