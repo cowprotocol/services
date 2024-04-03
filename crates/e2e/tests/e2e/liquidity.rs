@@ -237,7 +237,8 @@ fn orders_query_handler(
         let usdt_weth_order = Eip712TypedZeroExOrder {
             maker_token: weth_address,
             taker_token: order_creation.buy_token,
-            // add sufficient liquidity
+            // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+            // sufficient liquidity
             maker_amount: 1_000_000_000_000_000_000u128,
             taker_amount: order_creation.sell_amount.as_u128(),
             taker_token_fee_amount: 0,
@@ -252,7 +253,8 @@ fn orders_query_handler(
         let usdc_weth_order = Eip712TypedZeroExOrder {
             maker_token: weth_address,
             taker_token: order_creation.sell_token,
-            // add sufficient liquidity
+            // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+            // sufficient liquidity
             maker_amount: 1_000_000_000_000_000_000u128,
             taker_amount: order_creation.sell_amount.as_u128(),
             taker_token_fee_amount: 0,

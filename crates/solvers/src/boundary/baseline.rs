@@ -25,7 +25,7 @@ impl<'a> Solver<'a> {
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
-            onchain_liquidity: to_boundary_amms(liquidity),
+            onchain_liquidity: to_boundary_liquidity(liquidity),
             liquidity: liquidity
                 .iter()
                 .map(|liquidity| (liquidity.id.clone(), liquidity))
@@ -137,7 +137,7 @@ impl<'a> Solver<'a> {
     }
 }
 
-fn to_boundary_amms(
+fn to_boundary_liquidity(
     liquidity: &[liquidity::Liquidity],
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
