@@ -259,6 +259,7 @@ impl Auction {
                             id: liquidity.id.0,
                             address: limit_order.zeroex.address(),
                             gas_estimate: liquidity.gas.into(),
+                            hash: Default::default(),
                             maker_token: limit_order.order.maker_token,
                             taker_token: limit_order.order.taker_token,
                             maker_amount: limit_order.order.maker_amount.into(),
@@ -520,6 +521,8 @@ struct ForeignLimitOrder {
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
+    #[serde_as(as = "serialize::Hex")]
+    hash: [u8; 32],
     maker_token: eth::H160,
     taker_token: eth::H160,
     #[serde_as(as = "serialize::U256")]

@@ -51,7 +51,8 @@ pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC
 async fn forked_node_zero_ex_liquidity_mainnet() {
     run_forked_test_with_block_number(
         zero_ex_liquidity,
-        std::env::var("FORK_URL_MAINNET").expect("FORK_URL must be set to run forked tests"),
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
         FORK_BLOCK,
     )
     .await
@@ -62,7 +63,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    let [trader_a, trader_b, zeroex_maker, zeroex_taker] = onchain.make_accounts(to_wei(1)).await;
+    let [trader, zeroex_maker] = onchain.make_accounts(to_wei(1)).await;
 
     let token_usdc = ERC20::at(
         &web3,
@@ -78,35 +79,36 @@ async fn zero_ex_liquidity(web3: Web3) {
             .unwrap(),
     );
 
+    let zeroex = IZeroEx::deployed(&web3).await.unwrap();
+
+    let amount = to_wei_with_exp(5, 8);
+
     // Give trader some USDC
     let usdc_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader_a.address(), to_wei_with_exp(500, 6))
-    );
+    tx!(usdc_whale, token_usdc.transfer(trader.address(), amount));
 
-    // Give trader some USDT
+    // Give 0x maker a bit more USDT
     let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
     tx!(
         usdt_whale,
-        token_usdt.transfer(trader_b.address(), to_wei_with_exp(500, 6))
+        token_usdt.transfer(zeroex_maker.address(), amount * 2)
     );
 
     // Approve GPv2 for trading
     tx!(
-        trader_a.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(500, 6))
+        trader.account(),
+        token_usdc.approve(onchain.contracts().allowance, amount)
     );
     tx!(
-        trader_b.account(),
-        token_usdt.approve(onchain.contracts().allowance, to_wei_with_exp(500, 6))
+        zeroex_maker.account(),
+        token_usdt.approve(zeroex.address(), amount * 2)
     );
 
-    let order_a = OrderCreation {
+    let order = OrderCreation {
         sell_token: token_usdc.address(),
-        sell_amount: to_wei_with_exp(500, 6),
+        sell_amount: amount,
         buy_token: token_usdt.address(),
-        buy_amount: to_wei_with_exp(500, 6),
+        buy_amount: amount - to_wei_with_exp(1, 8),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -114,27 +116,13 @@ async fn zero_ex_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-    );
-    let order_b = OrderCreation {
-        sell_token: token_usdt.address(),
-        sell_amount: to_wei_with_exp(500, 6),
-        buy_token: token_usdc.address(),
-        buy_amount: to_wei_with_exp(500, 6),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let zeroex = IZeroEx::deployed(&web3).await.unwrap();
     let zeroex_api_port = {
-        let order = order_a.clone();
+        let order = order.clone();
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+        let weth_addr = onchain.contracts().weth.address();
         let gpv2_addr = onchain.contracts().gp_settlement.address();
         let zeroex_addr = zeroex.address();
         let orders_handler = Arc::new(Box::new(move |query: &OrdersQuery| {
@@ -142,10 +130,10 @@ async fn zero_ex_liquidity(web3: Web3) {
                 query,
                 order.clone(),
                 zeroex_maker.clone(),
-                zeroex_taker.clone(),
                 zeroex_addr,
                 gpv2_addr,
                 chain_id,
+                weth_addr,
             )
         }));
 
@@ -158,7 +146,8 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint = colocation::start_naive_solver().await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver_with_zeroex_liquidity(
         onchain.contracts(),
         vec![SolverEngine {
@@ -180,20 +169,19 @@ async fn zero_ex_liquidity(web3: Web3) {
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
-    let order_id = services.create_order(&order_a).await.unwrap();
-    services.create_order(&order_b).await.unwrap();
+    let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     let sell_token_balance_before = token_usdc
-        .balance_of(trader_a.address())
+        .balance_of(trader.address())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_usdt
-        .balance_of(trader_a.address())
+        .balance_of(trader.address())
         .call()
         .await
         .unwrap();
@@ -207,49 +195,82 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     let sell_token_balance_after = token_usdc
-        .balance_of(trader_a.address())
+        .balance_of(trader.address())
         .call()
         .await
         .unwrap();
     let buy_token_balance_after = token_usdt
-        .balance_of(trader_a.address())
+        .balance_of(trader.address())
         .call()
         .await
         .unwrap();
 
     assert!(sell_token_balance_before > sell_token_balance_after);
-    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6));
+    assert!(buy_token_balance_after >= buy_token_balance_before + amount);
 }
 
 fn orders_query_handler(
     query: &OrdersQuery,
     order_creation: OrderCreation,
     zeroex_maker: TestAccount,
-    zeroex_taker: TestAccount,
     zeroex_addr: H160,
     gpv2_addr: H160,
     chain_id: u64,
+    weth_address: H160,
 ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
     if query.sender == Some(gpv2_addr) {
         let typed_order = Eip712TypedZeroExOrder {
-            maker_token: order_creation.sell_token,
-            taker_token: order_creation.buy_token,
-            maker_amount: order_creation.sell_amount.as_u128() * 2,
-            taker_amount: order_creation.buy_amount.as_u128() * 2,
+            maker_token: order_creation.buy_token,
+            taker_token: order_creation.sell_token,
+            // fully covers execution costs
+            maker_amount: order_creation.buy_amount.as_u128() * 3,
+            taker_amount: order_creation.sell_amount.as_u128() * 2,
             taker_token_fee_amount: 0,
             maker: zeroex_maker.address(),
-            taker: zeroex_taker.address(),
-            sender: zeroex_maker.address(),
+            taker: gpv2_addr,
+            sender: gpv2_addr,
             fee_recipient: zeroex_addr,
             pool: H256::default(),
             expiry: NaiveDateTime::MAX.timestamp() as u64,
             salt: U256::from(Utc::now().timestamp()),
         };
-        Ok(vec![typed_order.to_order_record(
-            chain_id,
-            gpv2_addr,
-            zeroex_maker,
-        )])
+        let usdt_weth_order = Eip712TypedZeroExOrder {
+            maker_token: weth_address,
+            taker_token: order_creation.buy_token,
+            // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+            // sufficient liquidity
+            maker_amount: 1_000_000_000_000_000_000u128,
+            taker_amount: order_creation.sell_amount.as_u128(),
+            taker_token_fee_amount: 0,
+            maker: zeroex_maker.address(),
+            taker: gpv2_addr,
+            sender: gpv2_addr,
+            fee_recipient: zeroex_addr,
+            pool: H256::default(),
+            expiry: NaiveDateTime::MAX.timestamp() as u64,
+            salt: U256::from(Utc::now().timestamp()),
+        };
+        let usdc_weth_order = Eip712TypedZeroExOrder {
+            maker_token: weth_address,
+            taker_token: order_creation.sell_token,
+            // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+            // sufficient liquidity
+            maker_amount: 1_000_000_000_000_000_000u128,
+            taker_amount: order_creation.sell_amount.as_u128(),
+            taker_token_fee_amount: 0,
+            maker: zeroex_maker.address(),
+            taker: gpv2_addr,
+            sender: gpv2_addr,
+            fee_recipient: zeroex_addr,
+            pool: H256::default(),
+            expiry: NaiveDateTime::MAX.timestamp() as u64,
+            salt: U256::from(Utc::now().timestamp()),
+        };
+        Ok(vec![
+            typed_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
+            usdt_weth_order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()),
+            usdc_weth_order.to_order_record(chain_id, zeroex_addr, zeroex_maker),
+        ])
     } else if query.sender
         == Some(H160::from_str("0x0000000000000000000000000000000000000000").unwrap())
     {
@@ -338,17 +359,17 @@ impl Eip712TypedZeroExOrder {
     fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::ZEROEX_LIMIT_ORDER_TYPEHASH);
-        hash_data[32..52].copy_from_slice(self.maker_token.as_fixed_bytes());
-        hash_data[64..84].copy_from_slice(self.taker_token.as_fixed_bytes());
-        hash_data[96..112].copy_from_slice(&self.maker_amount.to_be_bytes());
-        hash_data[128..144].copy_from_slice(&self.taker_amount.to_be_bytes());
-        hash_data[160..176].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
-        hash_data[192..212].copy_from_slice(self.maker.as_fixed_bytes());
-        hash_data[224..244].copy_from_slice(self.taker.as_fixed_bytes());
-        hash_data[256..276].copy_from_slice(self.sender.as_fixed_bytes());
-        hash_data[288..308].copy_from_slice(self.fee_recipient.as_fixed_bytes());
+        hash_data[44..64].copy_from_slice(self.maker_token.as_fixed_bytes());
+        hash_data[76..96].copy_from_slice(self.taker_token.as_fixed_bytes());
+        hash_data[112..128].copy_from_slice(&self.maker_amount.to_be_bytes());
+        hash_data[144..160].copy_from_slice(&self.taker_amount.to_be_bytes());
+        hash_data[176..192].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
+        hash_data[204..224].copy_from_slice(self.maker.as_fixed_bytes());
+        hash_data[236..256].copy_from_slice(self.taker.as_fixed_bytes());
+        hash_data[268..288].copy_from_slice(self.sender.as_fixed_bytes());
+        hash_data[300..320].copy_from_slice(self.fee_recipient.as_fixed_bytes());
         hash_data[320..352].copy_from_slice(self.pool.as_fixed_bytes());
-        hash_data[352..360].copy_from_slice(&self.expiry.to_be_bytes());
+        hash_data[376..384].copy_from_slice(&self.expiry.to_be_bytes());
         self.salt.to_big_endian(&mut hash_data[384..416]);
         signing::keccak256(&hash_data)
     }
@@ -372,9 +393,9 @@ impl ZeroExDomainSeparator {
             );
         }
         let abi_encode_string = encode(&[
-            Token::Uint((*DOMAIN_TYPE_HASH).into()),
-            Token::Uint((*DOMAIN_NAME).into()),
-            Token::Uint((*DOMAIN_VERSION).into()),
+            Token::FixedBytes((*DOMAIN_TYPE_HASH).into()),
+            Token::FixedBytes((*DOMAIN_NAME).into()),
+            Token::FixedBytes((*DOMAIN_VERSION).into()),
             Token::Uint(chain_id.into()),
             Token::Address(contract_addr),
         ]);

@@ -163,7 +163,6 @@ weth = "{:?}"
 
 [liquidity]
 base-tokens = []
-graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 [liquidity.zeroex]
 base-url = {:?}
