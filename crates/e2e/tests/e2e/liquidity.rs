@@ -124,14 +124,16 @@ async fn zero_ex_liquidity(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     let solver_endpoint =
         colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver_with_zeroex_liquidity(
+    colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {
             name: "test_solver".into(),
             account: solver,
             endpoint: solver_endpoint,
         }],
-        zeroex_api_port,
+        colocation::LiquidityProvider::ZeroEx {
+            api_port: zeroex_api_port,
+        },
     );
     services.start_autopilot(
         None,

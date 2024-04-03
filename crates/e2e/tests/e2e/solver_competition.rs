@@ -55,6 +55,7 @@ async fn solver_competition(web3: Web3) {
                     .await,
             },
         ],
+        colocation::LiquidityProvider::UniswapV2,
     );
 
     let services = Services::new(onchain.contracts()).await;

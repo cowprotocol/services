@@ -489,6 +489,7 @@ async fn execute_test(
             account: solver,
             endpoint: solver_endpoint,
         }],
+        colocation::LiquidityProvider::UniswapV2,
     );
     let mut config = vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),

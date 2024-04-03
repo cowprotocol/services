@@ -183,6 +183,7 @@ impl<'a> Services<'a> {
                 account: solver,
                 endpoint: solver_endpoint,
             }],
+            colocation::LiquidityProvider::UniswapV2,
         );
         self.start_autopilot(
             None,
@@ -260,7 +261,11 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         };
 
-        colocation::start_driver(self.contracts, solvers);
+        colocation::start_driver(
+            self.contracts,
+            solvers,
+            colocation::LiquidityProvider::UniswapV2,
+        );
 
         self.start_autopilot(Some(Duration::from_secs(11)), autopilot_args);
         self.start_api(api_args).await;
