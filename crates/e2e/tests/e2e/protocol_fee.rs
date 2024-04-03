@@ -1,11 +1,6 @@
 use {
     driver::domain::eth::NonZeroU256,
-    e2e::{
-        assert_approximately_eq,
-        setup::{colocation::SolverEngine, *},
-        tx,
-        tx_value,
-    },
+    e2e::{assert_approximately_eq, setup::*, tx, tx_value},
     ethcontract::{prelude::U256, Address},
     model::{
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
@@ -66,11 +61,6 @@ async fn combined_protocol_fees(web3: Web3) {
         .to_string(),
     };
 
-    let autopilot_config = vec![
-        ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
-        "--fee-policy-max-partner-fee=0.02".to_string(),
-    ];
-
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(200)).await;
@@ -118,21 +108,19 @@ async fn combined_protocol_fees(web3: Web3) {
             .approve(onchain.contracts().uniswap_v2_router.address(), to_wei(200))
     );
 
+    let autopilot_config = vec![
+        ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
+        "--fee-policy-max-partner-fee=0.02".to_string(),
+    ];
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver.clone(),
-            endpoint: solver_endpoint,
-        }],
-    );
     services
-        .start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: autopilot_config,
+                ..Default::default()
+            },
+            solver,
+        )
         .await;
 
     tracing::info!("Acquiring quotes.");
@@ -251,13 +239,6 @@ async fn combined_protocol_fees(web3: Web3) {
         .unwrap()
         .try_into()
         .expect("Expected exactly three elements");
-
-    let mut config = vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-    ];
-    config.extend(autopilot_config);
-    services.start_autopilot(None, config).await;
 
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
@@ -448,26 +429,14 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
-    );
-    let config = vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        protocol_fees_config,
-    ];
-    services.start_autopilot(None, config).await;
     services
-        .start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-        ])
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec![protocol_fees_config],
+                ..Default::default()
+            },
+            solver,
+        )
         .await;
 
     let quote = get_quote(
