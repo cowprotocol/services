@@ -1,94 +1,45 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
-use ethcontract::common::abi::{encode, Token};
-use ethcontract::private::lazy_static;
-use hex_literal::hex;
-use web3::signing;
 use {
+    crate::setup::TestAccount,
+    autopilot::domain::eth::U256,
+    chrono::{DateTime, NaiveDateTime, Utc},
+    driver::domain::eth::H256,
+    ethcontract::{
+        common::abi::{encode, Token},
+        private::lazy_static,
+    },
+    hex_literal::hex,
+    model::DomainSeparator,
     shared::{
         zeroex_api,
-        zeroex_api::{OrderRecord, OrdersQuery, ZeroExResponseError},
+        zeroex_api::{Order, OrderMetadata, OrderRecord, ZeroExSignature},
     },
-    std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc},
+    std::net::SocketAddr,
     warp::{Filter, Reply},
-    web3::types::H160,
+    web3::{signing, types::H160},
 };
-use autopilot::domain::eth::U256;
-use driver::domain::eth::H256;
-use model::DomainSeparator;
-use shared::zeroex_api::{Order, OrderMetadata, ZeroExSignature};
-use crate::setup::TestAccount;
-
-type OrdersHandler =
-    Arc<dyn Fn(&OrdersQuery) -> Result<Vec<OrderRecord>, ZeroExResponseError> + Send + Sync>;
-
-#[derive(Default)]
-pub struct ZeroExApiBuilder {
-    orders_handler: Option<OrdersHandler>,
-}
-
-impl ZeroExApiBuilder {
-    pub fn with_orders_handler(mut self, handler: OrdersHandler) -> Self {
-        self.orders_handler = Some(handler);
-        self
-    }
-
-    pub fn build(&self) -> ZeroExApi {
-        ZeroExApi {
-            orders_handler: self
-                .orders_handler
-                .clone()
-                .unwrap_or_else(|| self.not_implemented_handler()),
-        }
-    }
-
-    fn not_implemented_handler(&self) -> OrdersHandler {
-        Arc::new(Box::new(|_query: &OrdersQuery| {
-            Err(ZeroExResponseError::ServerError(
-                "not implemented".to_string(),
-            ))
-        }))
-    }
-}
 
 pub struct ZeroExApi {
-    orders_handler: OrdersHandler,
+    orders: Vec<OrderRecord>,
 }
 
 impl ZeroExApi {
-    pub fn builder() -> ZeroExApiBuilder {
-        ZeroExApiBuilder::default()
+    /// Creates a new `ZeroExApi` with the given orders to be returned by the
+    /// `/orderbook/v1/orders` endpoint.
+    pub fn new(orders: Vec<OrderRecord>) -> Self {
+        Self { orders }
     }
 
     /// Starts the server and returns the assigned port number.
-    pub async fn run(&self) -> u16 {
-        let orders_handler = self.orders_handler.clone();
-
-        let orders_route = warp::path!("orderbook" / "v1" / "orders")
-            .and(warp::query::<HashMap<String, String>>())
-            .map(move |params: HashMap<String, String>| {
-                let query = OrdersQuery {
-                    taker: params.get("taker").and_then(|t| H160::from_str(t).ok()),
-                    sender: params.get("sender").and_then(|s| H160::from_str(s).ok()),
-                    verifying_contract: params
-                        .get("verifyingContract")
-                        .and_then(|vc| H160::from_str(vc).ok()),
-                };
-
-                match orders_handler(&query) {
-                    Ok(orders) => warp::reply::json(&zeroex_api::OrdersResponse {
-                        total: orders.len() as u64,
-                        page: 1,
-                        per_page: 100,
-                        records: orders,
-                    })
-                    .into_response(),
-                    Err(err) => warp::reply::with_status(
-                        warp::reply::json(&err.to_string()),
-                        warp::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                    .into_response(),
-                }
-            });
+    pub async fn run(self) -> u16 {
+        let orders_route = warp::path!("orderbook" / "v1" / "orders").map(move || {
+            warp::reply::json(&zeroex_api::OrdersResponse {
+                total: self.orders.len() as u64,
+                page: 1,
+                per_page: 100,
+                records: self.orders.clone(),
+            })
+            .into_response()
+        });
 
         let addr: SocketAddr = ([0, 0, 0, 0], 0).into();
         let server = warp::serve(orders_route);
@@ -105,7 +56,6 @@ impl ZeroExApi {
         port
     }
 }
-
 
 pub struct Eip712TypedZeroExOrder {
     pub maker_token: H160,

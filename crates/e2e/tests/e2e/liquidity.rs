@@ -1,5 +1,5 @@
 use {
-    chrono::{DateTime, NaiveDateTime, Utc},
+    chrono::{NaiveDateTime, Utc},
     contracts::{IZeroEx, ERC20},
     driver::domain::eth::H160,
     e2e::{
@@ -18,20 +18,15 @@ use {
         },
         tx,
     },
-    ethcontract::{prelude::U256, private::lazy_static, H256},
+    ethcontract::{prelude::U256, H256},
     ethrpc::Web3,
     hex_literal::hex,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
-        DomainSeparator,
     },
     secp256k1::SecretKey,
-    std::{str::FromStr, sync::Arc},
-    web3::{
-        ethabi::{encode, Token},
-        signing::{self, SecretKeyRef},
-    },
+    web3::signing::SecretKeyRef,
 };
 
 /// The block number from which we will fetch state for the forked tests.
@@ -112,27 +107,17 @@ async fn zero_ex_liquidity(web3: Web3) {
     );
 
     let zeroex_api_port = {
-        let order = order.clone();
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let weth_addr = onchain.contracts().weth.address();
-        let gpv2_addr = onchain.contracts().gp_settlement.address();
-        let zeroex_addr = zeroex.address();
-        let orders_handler = Arc::new(Box::new(move |query: &shared::zeroex_api::OrdersQuery| {
-            Ok(create_zeroex_liquidity_orders(
-                order.clone(),
-                zeroex_maker.clone(),
-                zeroex_addr,
-                gpv2_addr,
-                chain_id,
-                weth_addr,
-            ))
-        }));
+        let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
+            order.clone(),
+            zeroex_maker,
+            zeroex.address(),
+            onchain.contracts().gp_settlement.address(),
+            chain_id,
+            onchain.contracts().weth.address(),
+        );
 
-        ZeroExApi::builder()
-            .with_orders_handler(orders_handler)
-            .build()
-            .run()
-            .await
+        ZeroExApi::new(zeroex_liquidity_orders).run().await
     };
 
     // Place Orders
