@@ -157,7 +157,9 @@ impl Inner {
                                     None => continue,
                                 }
                             }
-                            None => continue,
+                            // This is to allow quotes to be generated for tokens for which the sell
+                            // token price is not available, so we default to fee=0
+                            None => auction::Price(eth::Ether(eth::U256::MAX)),
                         }
                     }
                 }
