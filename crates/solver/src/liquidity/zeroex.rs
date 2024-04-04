@@ -180,7 +180,7 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
 pub struct OrderSettlementHandler {
     pub order: Order,
     pub zeroex: Arc<IZeroEx>,
-    pub allowances: Arc<Allowances>,
+    allowances: Arc<Allowances>,
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {

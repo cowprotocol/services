@@ -1,6 +1,6 @@
 use {
     crate::domain::{eth, liquidity},
-    anyhow::{anyhow, Context},
+    anyhow::anyhow,
     contracts::IZeroEx,
     ethcontract::Bytes,
     primitive_types::{H160, H256, U256},
@@ -40,7 +40,7 @@ pub struct ZeroExSignature {
 
 impl LimitOrder {
     pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
-        let method = self.zeroex.clone().fill_or_kill_limit_order(
+        let method = self.zeroex.fill_or_kill_limit_order(
             (
                 self.order.maker_token,
                 self.order.taker_token,
@@ -66,13 +66,12 @@ impl LimitOrder {
                 .amount
                 .0
                 .try_into()
-                .map_err(|err: &str| anyhow!(err))
-                .context("executed amount does not fit into u128")?,
+                .map_err(|_| anyhow!("executed amount does not fit into u128"))?,
         );
         let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
 
         Ok(eth::Interaction {
-            target: self.zeroex.clone().address().into(),
+            target: self.zeroex.address().into(),
             value: 0.into(),
             call_data: calldata.0.into(),
         })
