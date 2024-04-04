@@ -200,3 +200,17 @@ async fn run<F, Fut, T>(
         panic::resume_unwind(err);
     }
 }
+
+#[macro_export]
+macro_rules! assert_approximately_eq {
+    ($executed_value:expr, $expected_value:expr) => {{
+        let lower = $expected_value * U256::from(99999999999u128) / U256::from(100000000000u128);
+        let upper = $expected_value * U256::from(100000000001u128) / U256::from(100000000000u128);
+        assert!(
+            $executed_value >= lower && $executed_value <= upper,
+            "Expected: ~{}, got: {}",
+            $expected_value,
+            $executed_value
+        );
+    }};
+}
