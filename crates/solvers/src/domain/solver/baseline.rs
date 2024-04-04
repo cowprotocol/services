@@ -34,6 +34,7 @@ pub struct Config {
     pub max_partial_attempts: usize,
     pub risk: domain::Risk,
     pub solution_gas_offset: eth::SignedGas,
+    pub native_token_price_estimation_amount: eth::U256,
 }
 
 struct Inner {
@@ -64,6 +65,10 @@ struct Inner {
     /// Units of gas that get added to the gas estimate for executing a
     /// computed trade route to arrive at a gas estimate for a whole settlement.
     solution_gas_offset: eth::SignedGas,
+
+    /// The amount of the native token to use to estimate native price of a
+    /// token
+    native_token_price_estimation_amount: eth::U256,
 }
 
 impl Baseline {
@@ -76,6 +81,7 @@ impl Baseline {
             max_partial_attempts: config.max_partial_attempts,
             risk: config.risk,
             solution_gas_offset: config.solution_gas_offset,
+            native_token_price_estimation_amount: config.native_token_price_estimation_amount,
         }))
     }
 
@@ -141,8 +147,15 @@ impl Inner {
                         let native_price_request = self.native_price_request(user_order);
                         match boundary_solver.route(native_price_request, self.max_hops) {
                             Some(route) => {
-                                let price = route.output().amount;
-                                auction::Price(eth::Ether(price))
+                                // how many units of buy_token are bought for one unit of sell_token
+                                // (buy_amount / sell_amount).
+                                let price =
+                                    self.native_token_price_estimation_amount.to_f64_lossy()
+                                        / route.output().amount.to_f64_lossy();
+                                match to_normalized_price(price) {
+                                    Some(price) => auction::Price(eth::Ether(price)),
+                                    None => continue,
+                                }
                             }
                             None => continue,
                         }
@@ -238,19 +251,39 @@ impl Inner {
     fn native_price_request(&self, order: UserOrder) -> Request {
         let sell = eth::Asset {
             token: order.get().sell.token,
-            amount: eth::U256::exp10(18),
+            // Note that we intentionally do not use [`eth::U256::max_value()`]
+            // as an order with this would cause overflows with the smart
+            // contract, so buy orders requiring excessively large sell amounts
+            // would not work anyway. Instead we use `2 ** 144`, the rationale
+            // being that Uniswap V2 pool reserves are 112-bit integers. Noting
+            // that `256 - 112 = 144`, this means that we can us to trade a full
+            // `type(uint112).max` without overflowing a `uint256` on the smart
+            // contract level. Requiring to trade more than `type(uint112).max`
+            // is unlikely and would not work with Uniswap V2 anyway.
+            amount: eth::U256::one() << 144,
         };
 
         let buy = eth::Asset {
-            token: self.weth.0.into(),
-            amount: U256::one(),
+            token: self.weth.0.into(), // todo native token not weth
+            amount: self.native_token_price_estimation_amount,
         };
 
         Request {
             sell,
             buy,
-            side: order::Side::Sell,
+            side: order::Side::Buy,
         }
+    }
+}
+
+fn to_normalized_price(price: f64) -> Option<U256> {
+    let uint_max = 2.0_f64.powi(256);
+
+    let price_in_eth = 1e18 * price;
+    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
+        Some(U256::from_f64_lossy(price_in_eth))
+    } else {
+        None
     }
 }
 
