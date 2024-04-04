@@ -136,7 +136,7 @@ async fn combined_protocol_fees(web3: Web3) {
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
     let sell_amount = to_wei(10);
-    let [limit_quote_before, market_quote_before, partner_fee_quote, fee_exempt_token_before] =
+    let [limit_quote_before, market_quote_before, partner_fee_quote, fee_exempt_quote] =
         futures::future::try_join_all(
             [
                 &limit_order_token,
@@ -158,7 +158,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly three elements");
+        .expect("Expected exactly four elements");
 
     let market_price_improvement_order = OrderCreation {
         sell_amount,
@@ -196,7 +196,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let fee_exempt_token_order = OrderCreation {
         sell_amount,
         buy_amount: to_wei(5),
-        ..sell_order_from_quote(&fee_exempt_token_before)
+        ..sell_order_from_quote(&fee_exempt_quote)
     }
     .sign(
         EcdsaSigningScheme::Eip712,
@@ -210,9 +210,6 @@ async fn combined_protocol_fees(web3: Web3) {
         .await;
     onchain
         .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
-        .await;
-    onchain
-        .mint_token_to_weth_uni_v2_pool(&fee_exempt_token, to_wei(1000))
         .await;
 
     tracing::info!("Waiting for liquidity state to update");
@@ -234,19 +231,17 @@ async fn combined_protocol_fees(web3: Web3) {
     .await
     .unwrap();
 
-    let [market_quote_after, limit_quote_after, fee_exempt_token_after] =
-        futures::future::try_join_all(
-            [&market_order_token, &limit_order_token, &fee_exempt_token].map(|token| {
-                get_quote(
-                    &services,
-                    onchain.contracts().weth.address(),
-                    token.address(),
-                    OrderKind::Sell,
-                    sell_amount,
-                    quote_valid_to,
-                )
-            }),
-        )
+    let [market_quote_after, limit_quote_after] =
+        futures::future::try_join_all([&market_order_token, &limit_order_token].map(|token| {
+            get_quote(
+                &services,
+                onchain.contracts().weth.address(),
+                token.address(),
+                OrderKind::Sell,
+                sell_amount,
+                quote_valid_to,
+            )
+        }))
         .await
         .unwrap()
         .try_into()
@@ -265,7 +260,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly three elements");
+        .expect("Expected exactly four elements");
 
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
@@ -328,7 +323,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap();
     let fee_exempt_surplus_fee_in_buy_token =
-        surplus_fee_in_buy_token(&fee_exempt_order, &fee_exempt_token_after.quote);
+        surplus_fee_in_buy_token(&fee_exempt_order, &fee_exempt_quote.quote);
 
     let balance_after = market_order_token
         .balance_of(onchain.contracts().gp_settlement.address())
