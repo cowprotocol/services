@@ -139,7 +139,8 @@ impl Inner {
             let sell_token = match auction.tokens.reference_price(&order.sell.token) {
                 Some(price) => price,
                 None => {
-                    // internal routing request to estimate the price of the sell token in the native token
+                    // internal routing request to estimate the price of the sell token in the
+                    // native token
 
                     // Early return if the sell token is native token
                     if user_order.get().sell.token == self.weth.0.into() {
