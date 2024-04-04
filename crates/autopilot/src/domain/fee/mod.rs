@@ -122,26 +122,24 @@ impl ProtocolFees {
         {
             vec![]
         } else {
-            self
-                    .fee_policies
-                    .iter()
-                    // TODO: support multiple fee policies
-                    .find_map(|fee_policy| {
-                        let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
-                        match (outside_market_price, &fee_policy.order_class) {
-                            (_, OrderClass::Any) => Some(&fee_policy.policy),
-                            (true, OrderClass::Limit) => Some(&fee_policy.policy),
-                            (false, OrderClass::Market) => Some(&fee_policy.policy),
-                            _ => None,
-                        }
-                    })
-                    .and_then(|policy| match policy {
-                        policy::Policy::Surplus(variant) => variant.apply(&order),
-                        policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
-                        policy::Policy::Volume(variant) => variant.apply(&order),
-                    })
-                    .into_iter()
-                    .collect_vec()
+            self.fee_policies
+                .iter()
+                .filter_map(|fee_policy| {
+                    let outside_market_price =
+                        boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
+                    match (outside_market_price, &fee_policy.order_class) {
+                        (_, OrderClass::Any) => Some(&fee_policy.policy),
+                        (true, OrderClass::Limit) => Some(&fee_policy.policy),
+                        (false, OrderClass::Market) => Some(&fee_policy.policy),
+                        _ => None,
+                    }
+                })
+                .flat_map(|policy| match policy {
+                    policy::Policy::Surplus(variant) => variant.apply(&order),
+                    policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
+                    policy::Policy::Volume(variant) => variant.apply(&order),
+                })
+                .collect_vec()
         };
         boundary::order::to_domain(order, protocol_fees)
     }
