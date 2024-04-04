@@ -262,6 +262,9 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             buy_token: order.buy.token.into(),
             sell_amount: order.sell.amount.into(),
             buy_amount: order.buy.amount.into(),
+            // The fee amount is guaranteed to be 0 and it no longer exists in the domain, but for
+            // the proper encoding of the order where the `model::OrderData` struct is used, we must
+            // set it to 0.
             fee_amount: 0.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
