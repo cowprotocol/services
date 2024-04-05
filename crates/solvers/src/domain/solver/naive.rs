@@ -31,7 +31,6 @@ impl Naive {
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        let risk = self.risk.clone();
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things.
@@ -49,11 +48,7 @@ impl Naive {
                             + solution::ERC20_TRANSFER * solution.trades.len() as u64 * 2
                             + group.liquidity.gas.0.as_u64(); // this is pessimistic in case the pool is not used
                         solution
-                            .with_risk_adjusted_score(
-                                &risk,
-                                eth::Gas(gas.into()),
-                                auction.gas_price,
-                            )
+                            .with_gas(eth::Gas(gas.into()))
                             .with_id(solution::Id(i as u64))
                     })
                 })

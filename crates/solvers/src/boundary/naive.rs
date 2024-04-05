@@ -154,7 +154,6 @@ pub fn solve(
                 })
             })
             .collect(),
-        score: Default::default(),
     })
 }
 

@@ -168,8 +168,6 @@ pub enum Error {
     InvalidTokens,
     #[error("invalid order amounts in auction")]
     InvalidAmounts,
-    #[error("zero score cap")]
-    ZeroScoreCap,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[source] crate::infra::blockchain::Error),
 }

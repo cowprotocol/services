@@ -1,7 +1,6 @@
 use {
     super::{Ether, U256},
     bigdecimal::Zero,
-    num::zero,
     std::{ops, ops::Add},
 };
 
@@ -202,49 +201,5 @@ impl Zero for EffectiveGasPrice {
 
     fn is_zero(&self) -> bool {
         self.0.is_zero()
-    }
-}
-
-impl ops::Mul<EffectiveGasPrice> for Gas {
-    type Output = GasCost;
-
-    fn mul(self, rhs: EffectiveGasPrice) -> Self::Output {
-        GasCost::new(self, rhs)
-    }
-}
-
-/// Gas cost in Ether.
-///
-/// The amount of Ether that is paid in transaction fees.
-#[derive(Clone, Copy)]
-pub struct GasCost {
-    gas: Gas,
-    price: EffectiveGasPrice,
-}
-
-impl GasCost {
-    pub fn new(gas: Gas, price: EffectiveGasPrice) -> Self {
-        Self { gas, price }
-    }
-
-    pub fn get(&self) -> Ether {
-        (self.gas.0 * self.price.0 .0).into()
-    }
-
-    pub fn zero() -> Self {
-        Self {
-            gas: zero(),
-            price: zero(),
-        }
-    }
-}
-
-impl std::fmt::Debug for GasCost {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct("GasCost")
-            .field("gas", &self.gas.0)
-            .field("price", &self.price.0 .0)
-            .field("gas_cost", &self.get().0)
-            .finish()
     }
 }

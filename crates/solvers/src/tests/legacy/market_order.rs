@@ -206,10 +206,6 @@ async fn quote() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );
@@ -414,10 +410,6 @@ async fn solve() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );

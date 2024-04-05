@@ -18,7 +18,6 @@ enum Kind {
     MissingSurplusFee,
     InvalidTokens,
     InvalidAmounts,
-    ZeroScoreCap,
     QuoteSameTokens,
     FailedToSubmit,
 }
@@ -52,7 +51,6 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
                  or sell amount"
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
-            Kind::ZeroScoreCap => "Score cap is zero",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -97,7 +95,6 @@ impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) 
             api::routes::AuctionError::InvalidTokens => Kind::InvalidTokens,
             api::routes::AuctionError::InvalidAmounts => Kind::InvalidAmounts,
             api::routes::AuctionError::Blockchain(_) => Kind::Unknown,
-            api::routes::AuctionError::ZeroScoreCap => Kind::ZeroScoreCap,
         };
         error.into()
     }

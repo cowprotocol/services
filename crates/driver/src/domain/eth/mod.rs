@@ -11,7 +11,7 @@ mod gas;
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
-    gas::{EffectiveGasPrice, FeePerGas, Gas, GasCost, GasPrice},
+    gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
 };

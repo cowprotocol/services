@@ -22,7 +22,6 @@ pub struct Solution {
     pub prices: HashMap<H160, U256>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
-    pub score: Score,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
 }
@@ -182,17 +181,4 @@ pub enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
-}
-
-/// A score for a solution. The score is used to rank solutions.
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Score {
-    Solver {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-    },
-    #[serde(rename_all = "camelCase")]
-    RiskAdjusted { success_probability: f64 },
 }
