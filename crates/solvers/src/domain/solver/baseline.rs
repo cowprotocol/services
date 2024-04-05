@@ -260,7 +260,7 @@ impl Inner {
         };
 
         let buy = eth::Asset {
-            token: self.weth.0.into(), // todo native token not weth
+            token: self.weth.0.into(),
             amount: self.native_token_price_estimation_amount,
         };
 

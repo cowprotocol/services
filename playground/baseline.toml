@@ -11,3 +11,4 @@ base-tokens = [
 ]
 max-hops = 2
 max-partial-attempts = 5
+native-token-price-estimation-amount = "100000000000000000" # 0.1 ETH
