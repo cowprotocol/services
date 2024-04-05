@@ -12,16 +12,10 @@ weth = "{weth:?}"
 base-tokens = []
 max-hops = 1
 max-partial-attempts = 5
-risk-parameters = [0,0,0,0]
         "#,
     ));
 
     start_solver(config_file, "baseline".to_string()).await
-}
-
-pub async fn start_naive_solver() -> Url {
-    let config_file = config_tmp_file("risk-parameters = [0,0,0,0]");
-    start_solver(config_file, "naive".to_string()).await
 }
 
 pub async fn start_legacy_solver(solver_endpoint: Url, chain_id: Option<U256>) -> Url {
