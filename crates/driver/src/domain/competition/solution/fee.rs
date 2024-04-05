@@ -75,46 +75,83 @@ impl Fulfillment {
 
     /// Computed protocol fee in surplus token.
     fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::TokenAmount, Error> {
-        // TODO: support multiple fee policies
-        if self.order().protocol_fees.len() > 1 {
-            return Err(Error::MultipleFeePolicies);
-        }
+        let mut current_order_price_limits = PriceLimits {
+            sell: self.order().sell.amount,
+            buy: self.order().buy.amount,
+        };
+        let mut fee = eth::TokenAmount::default();
+        self.order()
+            .protocol_fees
+            .iter()
+            .try_for_each(|protocol_fee| {
+                let current_fee = match protocol_fee {
+                    FeePolicy::Surplus {
+                        factor,
+                        max_volume_factor,
+                    } => self.calculate_fee(
+                        current_order_price_limits.clone(),
+                        prices,
+                        *factor,
+                        *max_volume_factor,
+                    ),
+                    FeePolicy::PriceImprovement {
+                        factor,
+                        max_volume_factor,
+                        quote,
+                    } => {
+                        let price_limits = adjust_quote_to_order_limits(
+                            Order {
+                                sell_amount: current_order_price_limits.sell.0,
+                                buy_amount: current_order_price_limits.buy.0,
+                                side: self.order().side,
+                            },
+                            Quote {
+                                sell_amount: quote.sell.amount.0,
+                                buy_amount: quote.buy.amount.0,
+                                fee_amount: quote.fee.amount.0,
+                            },
+                        )?;
+                        self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
+                    }
+                    FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),
+                }?;
 
-        match self.order().protocol_fees.first() {
-            Some(FeePolicy::Surplus {
-                factor,
-                max_volume_factor,
-            }) => self.calculate_fee(
-                PriceLimits {
-                    sell: self.order().sell.amount,
-                    buy: self.order().buy.amount,
-                },
-                prices,
-                *factor,
-                *max_volume_factor,
-            ),
-            Some(FeePolicy::PriceImprovement {
-                factor,
-                max_volume_factor,
-                quote,
-            }) => {
-                let price_limits = adjust_quote_to_order_limits(
-                    Order {
-                        sell_amount: self.order().sell.amount.0,
-                        buy_amount: self.order().buy.amount.0,
-                        side: self.order().side,
-                    },
-                    Quote {
-                        sell_amount: quote.sell.amount.0,
-                        buy_amount: quote.buy.amount.0,
-                        fee_amount: quote.fee.amount.0,
-                    },
-                )?;
-                self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
-            }
-            Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
-            None => Ok(0.into()),
-        }
+                // Recalculate the current price limits in order to apply the next protocol fees
+                // to the new amount
+                match self.order().side {
+                    Side::Buy => {
+                        current_order_price_limits.sell = current_order_price_limits
+                            .sell
+                            .checked_sub(
+                                current_fee
+                                    .0
+                                    .checked_mul(prices.sell)
+                                    .ok_or(Math::Overflow)?
+                                    .checked_div(prices.buy)
+                                    .ok_or(Math::DivisionByZero)?
+                                    .into(),
+                            )
+                            .ok_or(Math::Negative)?
+                    }
+                    Side::Sell => {
+                        current_order_price_limits.buy = current_order_price_limits
+                            .buy
+                            .checked_sub(
+                                current_fee
+                                    .0
+                                    .checked_mul(prices.buy)
+                                    .ok_or(Math::Overflow)?
+                                    .checked_div(prices.sell)
+                                    .ok_or(Math::DivisionByZero)?
+                                    .into(),
+                            )
+                            .ok_or(Math::Negative)?
+                    }
+                };
+                fee += current_fee;
+                Ok::<_, Error>(())
+            })?;
+        Ok(fee)
     }
 
     /// Computes protocol fee compared to the given limit amounts taken from
@@ -270,8 +307,6 @@ pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceL
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("multiple fee policies are not supported yet")]
-    MultipleFeePolicies,
     #[error("orders with non solver determined gas cost fees are not supported")]
     ProtocolFeeOnStaticOrder,
     #[error(transparent)]
