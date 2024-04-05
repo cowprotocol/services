@@ -148,7 +148,7 @@ impl Inner {
                                 // (buy_amount / sell_amount).
                                 let price =
                                     self.native_token_price_estimation_amount.to_f64_lossy()
-                                        / route.output().amount.to_f64_lossy();
+                                        / route.input().amount.to_f64_lossy();
                                 match to_normalized_price(price) {
                                     Some(price) => auction::Price(eth::Ether(price)),
                                     None => continue,

@@ -46,7 +46,7 @@ struct Config {
 
     /// The amount of the native token to use to estimate native price of a
     /// token
-    native_token_price_estimation_amount: eth::U256,
+    native_token_price_estimation_amount: i64,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -82,7 +82,7 @@ pub async fn load(path: &Path) -> baseline::Config {
         max_hops: config.max_hops,
         max_partial_attempts: config.max_partial_attempts,
         solution_gas_offset: config.solution_gas_offset.into(),
-        native_token_price_estimation_amount: config.native_token_price_estimation_amount,
+        native_token_price_estimation_amount: config.native_token_price_estimation_amount.into(),
     }
 }
 

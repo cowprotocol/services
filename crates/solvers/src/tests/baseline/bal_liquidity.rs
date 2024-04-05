@@ -12,7 +12,7 @@ async fn weighted() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                native-token-price-estimation-amount = "100000000000000000"
+                native-token-price-estimation-amount = 100000000000000000
             "#
             .to_owned(),
         ),
@@ -134,7 +134,7 @@ async fn weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                native-token-price-estimation-amount = "1000000000000000000"
+                native-token-price-estimation-amount = 1000000000000000000
             "#
             .to_owned(),
         ),
@@ -202,7 +202,7 @@ async fn weighted_v3plus() {
                     "kind": "constantProduct",
                     "tokens": {
                         "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
-                            "balance": "1000000000000000000000",
+                            "balance": "20000000000000000000000",
                         },
                         "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
                             "balance": "1000000000000000000000",
@@ -265,7 +265,7 @@ async fn stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                native-token-price-estimation-amount = "100000000000000000"
+                native-token-price-estimation-amount = 100000000000000000
             "#
             .to_owned(),
         ),
@@ -433,7 +433,7 @@ async fn composable_stable_v4() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                native-token-price-estimation-amount = "1000000000000000000"
+                native-token-price-estimation-amount = 1000000000000000000
             "#
             .to_owned(),
         ),
