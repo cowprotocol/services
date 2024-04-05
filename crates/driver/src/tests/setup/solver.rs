@@ -62,7 +62,7 @@ impl Solver {
                 order::Side::Buy if config.quote => {
                     "22300745198530623141535718272648361505980416".to_owned()
                 }
-                order::Side::Buy => match quote.order.fee_policy {
+                order::Side::Buy => match quote.order.fee_policy.first().unwrap() {
                     // If the fees are handler in the driver, for volume based fee, we artificially
                     // reduce the limit sell amount for buy orders before sending to solvers. This
                     // allows driver to withhold volume based fee and not violate original limit
@@ -80,7 +80,7 @@ impl Solver {
             };
             let buy_amount = match quote.order.side {
                 order::Side::Sell if config.quote => "1".to_owned(),
-                order::Side::Sell => match quote.order.fee_policy {
+                order::Side::Sell => match quote.order.fee_policy.first().unwrap() {
                     // If the fees are handler in the driver, for volume based fee, we artificially
                     // increase the limit buy amount for sell orders before sending to solvers. This
                     // allows driver to withhold volume based fee and not violate original limit
@@ -123,7 +123,13 @@ impl Solver {
                         order::Kind::Market => json!([]),
                         order::Kind::Liquidity => json!([]),
                         order::Kind::Limit { .. } => {
-                            json!([quote.order.fee_policy.to_json_value()])
+                            let fee_policies_json: Vec<serde_json::Value> = quote
+                                .order
+                                .fee_policy
+                                .iter()
+                                .map(|policy| policy.to_json_value())
+                                .collect();
+                            json!(fee_policies_json)
                         }
                     },
                 );

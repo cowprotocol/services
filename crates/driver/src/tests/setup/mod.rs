@@ -119,7 +119,7 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
-    pub fee_policy: fee::Policy,
+    pub fee_policy: Vec<fee::Policy>,
 }
 
 impl Order {
@@ -202,7 +202,7 @@ impl Order {
         }
     }
 
-    pub fn fee_policy(self, fee_policy: fee::Policy) -> Self {
+    pub fn fee_policy(self, fee_policy: Vec<fee::Policy>) -> Self {
         Self { fee_policy, ..self }
     }
 
@@ -267,10 +267,10 @@ impl Default for Order {
             expected_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
-            fee_policy: fee::Policy::Surplus {
+            fee_policy: vec![fee::Policy::Surplus {
                 factor: 0.0,
                 max_volume_factor: 0.06,
-            },
+            }],
         }
     }
 }

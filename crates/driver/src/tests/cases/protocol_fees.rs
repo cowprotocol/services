@@ -37,7 +37,7 @@ struct Order {
 
 struct TestCase {
     order: Order,
-    fee_policy: Policy,
+    fee_policy: Vec<Policy>,
     execution: Execution,
     expected_score: eth::U256,
     fee_handler: FeeHandler,
@@ -120,7 +120,7 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -153,7 +153,7 @@ async fn protocol_fee_calculated_on_the_solver_side() {
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -185,7 +185,7 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
         max_volume_factor: 0.9,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -217,7 +217,7 @@ async fn surplus_protocol_fee_partial_buy_order_not_capped() {
         max_volume_factor: 1.0,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -251,7 +251,7 @@ async fn surplus_protocol_fee_partial_sell_order_not_capped() {
         max_volume_factor: 0.9,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -283,7 +283,7 @@ async fn surplus_protocol_fee_buy_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -315,7 +315,7 @@ async fn surplus_protocol_fee_sell_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -347,7 +347,7 @@ async fn surplus_protocol_fee_partial_buy_order_capped() {
         max_volume_factor: 0.2,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -379,7 +379,7 @@ async fn surplus_protocol_fee_partial_sell_order_capped() {
         max_volume_factor: 0.1,
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -407,7 +407,7 @@ async fn surplus_protocol_fee_partial_sell_order_capped() {
 async fn volume_protocol_fee_buy_order() {
     let fee_policy = Policy::Volume { factor: 0.5 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -435,7 +435,7 @@ async fn volume_protocol_fee_buy_order() {
 async fn volume_protocol_fee_buy_order_at_limit_price() {
     let fee_policy = Policy::Volume { factor: 0.25 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -465,7 +465,7 @@ async fn volume_protocol_fee_buy_order_at_limit_price() {
 async fn volume_protocol_fee_sell_order() {
     let fee_policy = Policy::Volume { factor: 0.1 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -493,7 +493,7 @@ async fn volume_protocol_fee_sell_order() {
 async fn volume_protocol_fee_sell_order_at_limit_price() {
     let fee_policy = Policy::Volume { factor: 0.2 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
@@ -523,7 +523,7 @@ async fn volume_protocol_fee_sell_order_at_limit_price() {
 async fn volume_protocol_fee_partial_buy_order() {
     let fee_policy = Policy::Volume { factor: 0.5 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -551,7 +551,7 @@ async fn volume_protocol_fee_partial_buy_order() {
 async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
     let fee_policy = Policy::Volume { factor: 0.25 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -582,7 +582,7 @@ async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
 async fn volume_protocol_fee_partial_sell_order() {
     let fee_policy = Policy::Volume { factor: 0.1 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -610,7 +610,7 @@ async fn volume_protocol_fee_partial_sell_order() {
 async fn volume_protocol_fee_partial_sell_order_at_limit_price() {
     let fee_policy = Policy::Volume { factor: 0.2 };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 50.ether().into_wei(),
@@ -650,7 +650,7 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell more than quoted (in-market)
             sell_amount: 60.ether().into_wei(),
@@ -688,7 +688,7 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
@@ -726,7 +726,7 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell less than quoted (out-market)
             sell_amount: 50.ether().into_wei(),
@@ -764,7 +764,7 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive more than quoted (out-market)
@@ -802,7 +802,7 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell more than quoted (in-market)
             sell_amount: 60.ether().into_wei(),
@@ -840,7 +840,7 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
@@ -878,7 +878,7 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell less than quoted (out-market)
             sell_amount: 50.ether().into_wei(),
@@ -916,7 +916,7 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive more than quoted (out-market)
@@ -954,7 +954,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell more than quoted (in-market)
             sell_amount: 50.ether().into_wei(),
@@ -992,7 +992,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
@@ -1032,7 +1032,7 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell less than quoted (out-market)
             sell_amount: 50.ether().into_wei(),
@@ -1070,7 +1070,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive more than quoted (out-market)
@@ -1108,7 +1108,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell more than quoted (in-market)
             sell_amount: 75.ether().into_wei(),
@@ -1146,7 +1146,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
@@ -1184,7 +1184,7 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             // Demanding to sell less than quoted (out-market)
             sell_amount: 50.ether().into_wei(),
@@ -1222,7 +1222,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive more than quoted (out-market)
@@ -1260,7 +1260,7 @@ async fn price_improvement_fee_sell_no_improvement() {
         },
     };
     let test_case = TestCase {
-        fee_policy,
+        fee_policy: vec![fee_policy],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             // Demanding to receive less than quoted (in-market)
