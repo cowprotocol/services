@@ -97,10 +97,6 @@ async fn test() {
                         "outputAmount": "2500007430"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 204391,
             }]
         }),

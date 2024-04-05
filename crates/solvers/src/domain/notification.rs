@@ -2,7 +2,7 @@ use {
     super::{
         auction,
         eth::{self, Ether, TokenAddress},
-        solution::{self, SuccessProbability},
+        solution::{self},
     },
     std::collections::BTreeSet,
 };
@@ -55,35 +55,5 @@ pub enum Settlement {
 
 #[derive(Debug)]
 pub enum ScoreKind {
-    ZeroScore,
-    ScoreHigherThanQuality(Score, Quality),
-    SuccessProbabilityOutOfRange(SuccessProbability),
-    ObjectiveValueNonPositive(Quality, GasCost),
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Score(pub eth::U256);
-
-impl From<eth::U256> for Score {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Quality(pub eth::U256);
-
-impl From<eth::U256> for Quality {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct GasCost(pub eth::U256);
-
-impl From<eth::U256> for GasCost {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
+    InvalidClearingPrices,
 }

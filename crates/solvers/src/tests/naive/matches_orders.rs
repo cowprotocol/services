@@ -104,10 +104,6 @@ async fn sell_orders_on_both_sides() {
                         "outputAmount": "54287532963535509685"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),
@@ -215,10 +211,6 @@ async fn sell_orders_on_one_side() {
                         "outputAmount": "139560520142598496102"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),
@@ -326,10 +318,6 @@ async fn buy_orders_on_both_sides() {
                         "outputAmount": "61942706346833798926"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),
@@ -437,10 +425,6 @@ async fn buy_and_sell_orders() {
                         "outputAmount": "65237102608923246619"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),

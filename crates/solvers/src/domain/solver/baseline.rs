@@ -160,9 +160,6 @@ impl Inner {
                 }
 
                 let gas = route.gas() + self.solution_gas_offset;
-                let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
-                    self.risk.success_probability(gas, auction.gas_price, 1),
-                ));
 
                 Some(
                     solution::Single {
@@ -172,7 +169,7 @@ impl Inner {
                         interactions,
                         gas,
                     }
-                    .into_solution(auction.gas_price, sell_token, score)?
+                    .into_solution(auction.gas_price, sell_token)?
                     .with_id(solution::Id(i as u64))
                     .with_buffers_internalizations(&auction.tokens),
                 )

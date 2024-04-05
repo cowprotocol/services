@@ -24,7 +24,6 @@
 
 pub mod liquidity;
 pub mod quote;
-pub mod score;
 pub mod settlement;
 
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly

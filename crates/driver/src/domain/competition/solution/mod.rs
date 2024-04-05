@@ -45,7 +45,6 @@ pub struct Solution {
     prices: Prices,
     interactions: Vec<Interaction>,
     solver: Solver,
-    score: SolverScore,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
 }
@@ -58,7 +57,6 @@ impl Solution {
         prices: Prices,
         interactions: Vec<Interaction>,
         solver: Solver,
-        score: SolverScore,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
@@ -69,7 +67,6 @@ impl Solution {
             prices,
             interactions,
             solver,
-            score,
             weth,
             gas,
         };
@@ -129,10 +126,6 @@ impl Solution {
     /// The solver which generated this solution.
     pub fn solver(&self) -> &Solver {
         &self.solver
-    }
-
-    pub fn score(&self) -> &SolverScore {
-        &self.score
     }
 
     pub fn gas(&self) -> Option<eth::Gas> {
@@ -277,10 +270,6 @@ impl Solution {
             prices,
             interactions: [self.interactions.clone(), other.interactions.clone()].concat(),
             solver: self.solver.clone(),
-            score: match self.score.merge(&other.score) {
-                Some(score) => score,
-                None => return Err(error::Merge::Incompatible("Scores")),
-            },
             weth: self.weth,
             // Same solver are guaranteed to have the same fee handler
             gas: match (self.gas, other.gas) {
@@ -408,7 +397,6 @@ impl std::fmt::Debug for Solution {
             .field("prices", &self.prices)
             .field("interactions", &self.interactions)
             .field("solver", &self.solver.name())
-            .field("score", &self.score)
             .finish()
     }
 }
@@ -437,27 +425,6 @@ fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
         0 => Some(BigRational::one()),
         1 => factors.into_iter().next(),
         _ => None,
-    }
-}
-
-/// Carries information how the score should be calculated.
-#[derive(Debug, Clone)]
-pub enum SolverScore {
-    Solver(eth::U256),
-    RiskAdjusted(f64),
-    Surplus,
-}
-
-impl SolverScore {
-    fn merge(&self, other: &SolverScore) -> Option<SolverScore> {
-        match (self, other) {
-            (SolverScore::Solver(a), SolverScore::Solver(b)) => Some(SolverScore::Solver(a + b)),
-            (SolverScore::RiskAdjusted(a), SolverScore::RiskAdjusted(b)) => {
-                Some(SolverScore::RiskAdjusted(a * b))
-            }
-            (SolverScore::Surplus, SolverScore::Surplus) => Some(SolverScore::Surplus),
-            _ => None,
-        }
     }
 }
 
