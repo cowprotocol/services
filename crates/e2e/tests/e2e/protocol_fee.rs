@@ -325,7 +325,7 @@ async fn combined_protocol_fees(web3: Web3) {
     let fee_exempt_surplus_fee_in_buy_token =
         surplus_fee_in_buy_token(&fee_exempt_order, &fee_exempt_quote.quote);
 
-    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance, fee_exempt_order_balance] =
+    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance, fee_exempt_order_token_balance] =
         futures::future::try_join_all(
             [
                 &market_order_token,
@@ -357,7 +357,7 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     assert_approximately_eq!(
         fee_exempt_surplus_fee_in_buy_token,
-        fee_exempt_order_balance
+        fee_exempt_order_token_balance
     );
 }
 
