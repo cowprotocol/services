@@ -113,6 +113,41 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 
 #[tokio::test]
 #[ignore]
+async fn surplus_and_price_improvement_protocol_fee_buy_order_not_capped() {
+    let fee_policy_surplus = Policy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
+    };
+    let fee_policy_volume = Policy::Volume { factor: 0.25 };
+    let test_case = TestCase {
+        fee_policy: vec![fee_policy_surplus, fee_policy_volume],
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
+            // protocol
+            solver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 40.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
+        expected_score: 20.ether().into_wei(),
+        fee_handler: FeeHandler::Driver,
+    };
+
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn surplus_protocol_fee_buy_order_not_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
