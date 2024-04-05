@@ -520,6 +520,7 @@ pub mod error {
     pub enum Scoring {
         #[error("invalid clearing prices")]
         InvalidClearingPrices,
+        #[error(transparent)]
         Math(#[from] Math),
         #[error(transparent)]
         Score(#[from] scoring::Error),
