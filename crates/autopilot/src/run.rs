@@ -561,7 +561,7 @@ pub async fn run(args: Arguments) {
         domain::ProtocolFees::new(
             &args.fee_policies,
             args.fee_policy_max_partner_fee,
-            args.protocol_fee_exempt_addresses.as_slice(),
+            args.protocol_fee_exempt_addresses.as_deref(),
         ),
     );
 

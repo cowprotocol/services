@@ -210,7 +210,7 @@ pub struct Arguments {
     /// List of addresses which are exempt from the protocol
     /// fees
     #[clap(long, env, use_value_delimiter = true)]
-    pub protocol_fee_exempt_addresses: Vec<H160>,
+    pub protocol_fee_exempt_addresses: Option<Vec<H160>>,
 
     /// Arguments for uploading information to S3.
     #[clap(flatten)]

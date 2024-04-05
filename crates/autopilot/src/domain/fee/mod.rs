@@ -65,7 +65,7 @@ impl ProtocolFees {
     pub fn new(
         fee_policies: &[arguments::FeePolicy],
         fee_policy_max_partner_fee: FeeFactor,
-        protocol_fee_exempt_addresses: &[H160],
+        protocol_fee_exempt_addresses: Option<&[H160]>,
     ) -> Self {
         Self {
             fee_policies: fee_policies
@@ -74,9 +74,13 @@ impl ProtocolFees {
                 .map(ProtocolFee::from)
                 .collect(),
             protocol_fee_exempt_addresses: protocol_fee_exempt_addresses
-                .iter()
-                .cloned()
-                .collect::<HashSet<_>>(),
+                .map(|protocol_fee_exempt_addresses| {
+                    protocol_fee_exempt_addresses
+                        .iter()
+                        .cloned()
+                        .collect::<HashSet<_>>()
+                })
+                .unwrap_or_default(),
             max_partner_fee: fee_policy_max_partner_fee,
         }
     }
