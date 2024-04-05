@@ -30,11 +30,10 @@ pub fn scoring_failed(
     err: &solution::error::Scoring,
 ) {
     let notification = match err {
-        solution::error::Scoring::InvalidClearingPrices => {
+        solution::error::Scoring::Solution(solution::error::Solution::InvalidClearingPrices) => {
             notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
-        solution::error::Scoring::Math(_) => return,
-        solution::error::Scoring::Score(_) => return,
+        _ => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);
