@@ -325,33 +325,40 @@ async fn combined_protocol_fees(web3: Web3) {
     let fee_exempt_surplus_fee_in_buy_token =
         surplus_fee_in_buy_token(&fee_exempt_order, &fee_exempt_quote.quote);
 
-    let balance_after = market_order_token
-        .balance_of(onchain.contracts().gp_settlement.address())
-        .call()
+    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance, fee_exempt_order_token_balance] =
+        futures::future::try_join_all(
+            [
+                &market_order_token,
+                &limit_order_token,
+                &partner_fee_order_token,
+                &fee_exempt_token,
+            ]
+            .map(|token| {
+                token
+                    .balance_of(onchain.contracts().gp_settlement.address())
+                    .call()
+            }),
+        )
         .await
-        .unwrap();
-    assert_approximately_eq!(market_executed_surplus_fee_in_buy_token, balance_after);
-
-    let balance_after = limit_order_token
-        .balance_of(onchain.contracts().gp_settlement.address())
-        .call()
-        .await
-        .unwrap();
-    assert_approximately_eq!(limit_executed_surplus_fee_in_buy_token, balance_after);
-
-    let balance_after = partner_fee_order_token
-        .balance_of(onchain.contracts().gp_settlement.address())
-        .call()
-        .await
-        .unwrap();
-    assert_approximately_eq!(partner_fee_executed_surplus_fee_in_buy_token, balance_after);
-
-    let balance_after = fee_exempt_token
-        .balance_of(onchain.contracts().gp_settlement.address())
-        .call()
-        .await
-        .unwrap();
-    assert_approximately_eq!(fee_exempt_surplus_fee_in_buy_token, balance_after);
+        .unwrap()
+        .try_into()
+        .expect("Expected exactly three elements");
+    assert_approximately_eq!(
+        market_executed_surplus_fee_in_buy_token,
+        market_order_token_balance
+    );
+    assert_approximately_eq!(
+        limit_executed_surplus_fee_in_buy_token,
+        limit_order_token_balance
+    );
+    assert_approximately_eq!(
+        partner_fee_executed_surplus_fee_in_buy_token,
+        partner_fee_order_token_balance
+    );
+    assert_approximately_eq!(
+        fee_exempt_surplus_fee_in_buy_token,
+        fee_exempt_order_token_balance
+    );
 }
 
 async fn get_quote(
