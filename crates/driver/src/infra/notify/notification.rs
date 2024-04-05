@@ -1,7 +1,7 @@
 use {
     crate::domain::{
-        competition::{auction, score::Quality, solution, Score},
-        eth::{self, Ether, GasCost, TokenAddress},
+        competition::{auction, solution},
+        eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
 };
@@ -49,26 +49,8 @@ pub enum Kind {
 
 #[derive(Debug)]
 pub enum ScoreKind {
-    /// The solution has zero score. Zero score solutions are not allowed as per
-    /// CIP20 definition. The main reason being that reference score is zero,
-    /// and if only one solution is in competition with zero score, that
-    /// solution would receive 0 reward (reward = score - reference score).
-    ZeroScore,
-    /// Protocol does not allow solutions that are claimed to be "better" than
-    /// the actual value they bring (quality). It is expected that score
-    /// is always lower than quality, because there is always some
-    /// execution cost that needs to be incorporated into the score and lower
-    /// it.
-    ScoreHigherThanQuality(Score, Quality),
-    /// Solution has success probability that is outside of the allowed range
-    /// [0, 1]
-    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
-    SuccessProbabilityOutOfRange(f64),
-    /// Objective value is defined as quality (surplus + fees) - gas costs.
-    /// Protocol doesn't allow solutions that cost more than they bring to
-    /// the users and protocol.
-    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
-    ObjectiveValueNonPositive(Quality, GasCost),
+    /// No clearing prices are present for all trades.
+    InvalidClearingPrices,
 }
 
 #[derive(Debug)]

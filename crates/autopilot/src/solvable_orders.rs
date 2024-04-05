@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain,
+        domain::{self},
         infra::{self, banned},
     },
     anyhow::Result,
@@ -242,7 +242,7 @@ impl SolvableOrdersCache {
                 .into_iter()
                 .filter_map(|order| {
                     if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        Some(domain::ProtocolFees::apply(&self.protocol_fees, order, quote))
+                        Some(self.protocol_fees.apply(order, quote))
                     } else {
                         tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
                         None
@@ -665,7 +665,11 @@ impl OrderFilterCounter {
             self.orders.remove(order_uid).unwrap();
         }
         if !filtered_orders.is_empty() {
-            tracing::debug!(%reason, orders = ?filtered_orders, "filtered orders");
+            tracing::debug!(
+                %reason,
+                count = filtered_orders.len(),
+                orders = ?filtered_orders, "filtered orders"
+            );
         }
         filtered_orders.into_keys().collect()
     }

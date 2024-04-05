@@ -56,6 +56,7 @@ async fn order_cancellation(web3: Web3) {
             account: solver,
             endpoint: solver_endpoint,
         }],
+        colocation::LiquidityProvider::UniswapV2,
     );
     services
         .start_autopilot(

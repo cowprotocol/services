@@ -102,10 +102,6 @@ async fn uniswap() {
                         "outputAmount": "1000000000428620302"
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),
@@ -122,7 +118,6 @@ async fn balancer_weighted() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 1
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -273,10 +268,6 @@ async fn balancer_weighted() {
                         "outputAmount": "1000000000000337213"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 266391,
             }]
         }),
@@ -293,7 +284,6 @@ async fn balancer_weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -408,10 +398,6 @@ async fn balancer_weighted_v3plus() {
                         "outputAmount": "1000000000000001964333"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -428,7 +414,6 @@ async fn distant_convergence() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -543,10 +528,6 @@ async fn distant_convergence() {
                         "outputAmount": "1000000000000015112015"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -563,7 +544,6 @@ async fn same_path() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -714,10 +694,6 @@ async fn same_path() {
                         "outputAmount": "9056454904357528"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 166391,
             }]
         }),
@@ -734,7 +710,6 @@ async fn balancer_stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
             "#
             .to_owned(),
         ),
@@ -857,10 +832,6 @@ async fn balancer_stable() {
                             "outputAmount": "10000000000000000000"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas": 289911,
                 },
             ]

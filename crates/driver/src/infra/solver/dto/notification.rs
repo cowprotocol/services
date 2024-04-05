@@ -38,26 +38,9 @@ impl Notification {
                         succeeded_once,
                     }
                 }
-                notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => Kind::ZeroScore,
-                notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanQuality(
-                    score,
-                    quality,
-                )) => Kind::ScoreHigherThanQuality {
-                    score: score.0.get(),
-                    quality: quality.0,
-                },
-                notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
-                    success_probability,
-                )) => Kind::SuccessProbabilityOutOfRange {
-                    probability: success_probability,
-                },
-                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive(
-                    quality,
-                    gas_cost,
-                )) => Kind::ObjectiveValueNonPositive {
-                    quality: quality.0,
-                    gas_cost: gas_cost.get().0,
-                },
+                notify::Kind::ScoringFailed(notify::ScoreKind::InvalidClearingPrices) => {
+                    Kind::InvalidClearingPrices
+                }
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
@@ -124,23 +107,7 @@ pub enum Kind {
         tx: Tx,
         succeeded_once: bool,
     },
-    ZeroScore,
-    ScoreHigherThanQuality {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-    },
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ObjectiveValueNonPositive {
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        gas_cost: eth::U256,
-    },
+    InvalidClearingPrices,
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
     },

@@ -213,12 +213,11 @@ impl Trade {
     }
 }
 
-use shared::{external_prices::ExternalPrices, http_solver::model::Score};
+use shared::external_prices::ExternalPrices;
 
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub score: Score,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -247,7 +246,6 @@ impl Settlement {
     pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
         Self {
             encoder: SettlementEncoder::new(clearing_prices),
-            ..Default::default()
         }
     }
 
@@ -263,19 +261,13 @@ impl Settlement {
 
     pub fn without_onchain_liquidity(&self) -> Self {
         let encoder = self.encoder.without_onchain_liquidity();
-        Self {
-            encoder,
-            score: self.score,
-        }
+        Self { encoder }
     }
 
     #[cfg(test)]
     pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self {
-            encoder,
-            ..Default::default()
-        }
+        Self { encoder }
     }
 
     #[cfg(test)]
@@ -286,10 +278,7 @@ impl Settlement {
             .map(|token| (token, U256::from(1_000_000_000_000_000_000_u128)))
             .collect();
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
-        Self {
-            encoder,
-            ..Default::default()
-        }
+        Self { encoder }
     }
 
     /// Returns the clearing prices map.
@@ -446,13 +435,7 @@ impl Settlement {
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
         let merged = self.encoder.merge(other.encoder)?;
-        Ok(Self {
-            encoder: merged,
-            score: self
-                .score
-                .merge(&other.score)
-                .ok_or(anyhow::anyhow!("score merge failed"))?,
-        })
+        Ok(Self { encoder: merged })
     }
 
     // Calculates the risk level for settlement to be reverted
@@ -595,7 +578,6 @@ pub mod tests {
     fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
         Settlement {
             encoder: SettlementEncoder::with_trades(prices, trades),
-            ..Default::default()
         }
     }
 

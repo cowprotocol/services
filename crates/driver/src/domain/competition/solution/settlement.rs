@@ -3,9 +3,8 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, order, score, solution},
-            eth::{self, GasCost},
-            mempools,
+            competition::{self, auction, order, solution},
+            eth::{self},
         },
         infra::{blockchain::Ethereum, observe, Simulator},
     },
@@ -204,65 +203,9 @@ impl Settlement {
             .into()
     }
 
-    fn cip38_score(
-        &self,
-        auction: &competition::Auction,
-    ) -> Result<eth::Ether, solution::error::Scoring> {
-        let prices = auction.prices();
-
-        self.solution.scoring(&prices)
-    }
-
-    // TODO(#1494): score() should be defined on Solution rather than Settlement.
-    /// Calculate the score for this settlement.
-    pub fn score(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-        revert_protection: &mempools::RevertProtection,
-    ) -> Result<competition::Score, score::Error> {
-        // For testing purposes, calculate CIP38 even before activation
-        let score = self.cip38_score(auction);
-        tracing::info!(?score, "CIP38 score for settlement: {:?}", self.solution);
-
-        let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => {
-                let eth = eth.with_metric_label("scoringSolution".into());
-                let quality = self.boundary.quality(&eth, auction)?;
-                let score = score.try_into()?;
-                if score > quality {
-                    return Err(score::Error::ScoreHigherThanQuality(score, quality));
-                }
-                score
-            }
-            competition::SolverScore::RiskAdjusted(success_probability) => {
-                let eth = eth.with_metric_label("scoringSolution".into());
-                let quality = self.boundary.quality(&eth, auction)?;
-                let gas_cost = self.gas.estimate * auction.gas_price().effective();
-                let success_probability = success_probability.try_into()?;
-                let objective_value = (quality - gas_cost)?;
-                // The cost in case of a revert can deviate non-deterministically from the cost
-                // in case of success and it is often significantly smaller. Thus, we go with
-                // the full cost as a safe assumption.
-                let failure_cost = match revert_protection {
-                    mempools::RevertProtection::Enabled => GasCost::zero(),
-                    mempools::RevertProtection::Disabled => gas_cost,
-                };
-                let score = competition::Score::new(
-                    competition::Score(eth::U256::MAX.try_into().unwrap()),
-                    objective_value,
-                    success_probability,
-                    failure_cost,
-                )?;
-                if score > quality {
-                    return Err(score::Error::ScoreHigherThanQuality(score, quality));
-                }
-                score
-            }
-            competition::SolverScore::Surplus => score?.0.try_into()?,
-        };
-
-        Ok(score)
+    /// Score as defined per CIP38. Equal to surplus + protocol fees.
+    pub fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, solution::error::Scoring> {
+        self.solution.scoring(prices)
     }
 
     /// The solution encoded in this settlement.

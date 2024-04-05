@@ -24,17 +24,12 @@ use {
 
 pub mod auction;
 pub mod order;
-pub mod score;
 pub mod solution;
 
 pub use {
     auction::{Auction, AuctionProcessor},
     order::Order,
-    score::{
-        risk::{ObjectiveValue, SuccessProbability},
-        Score,
-    },
-    solution::{Solution, SolverScore},
+    solution::Solution,
 };
 
 /// An ongoing competition. There is one competition going on per solver at any
@@ -149,10 +144,7 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(&settlement);
-                (
-                    settlement.score(&self.eth, auction, &self.mempools.revert_protection()),
-                    settlement,
-                )
+                (settlement.score(&auction.prices()), settlement)
             })
             .collect_vec();
 
@@ -366,7 +358,7 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 /// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
-    pub score: Score,
+    pub score: eth::Ether,
     pub trades: HashMap<order::Uid, Amounts>,
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
     pub gas: Option<eth::Gas>,

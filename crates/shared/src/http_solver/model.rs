@@ -14,8 +14,7 @@ use {
     num::BigRational,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H256, U256},
-    serde::{Deserialize, Deserializer, Serialize},
-    serde_json::Value,
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::{BTreeMap, BTreeSet, HashMap},
     web3::types::AccessList,
@@ -194,74 +193,6 @@ impl Interaction for InteractionData {
 }
 
 #[serde_as]
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum Score {
-    /// The score value is provided as is from solver.
-    /// Success probability is not incorporated into this value.
-    Solver {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-    },
-    /// This option is used to indicate that the solver did not provide a score.
-    /// Instead, the score should be computed by the protocol given the success
-    /// probability and optionally the amount of gas this settlement will take.
-    RiskAdjusted {
-        success_probability: f64,
-        #[serde_as(as = "Option<HexOrDecimalU256>")]
-        gas_amount: Option<U256>,
-    },
-    Surplus,
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Score::RiskAdjusted {
-            success_probability: 1.0,
-            gas_amount: None,
-        }
-    }
-}
-
-fn deserialize_optional_score<'de, D>(deserializer: D) -> Result<Score, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: Value = Deserialize::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or(Score::default()))
-}
-
-impl Score {
-    // Returns a new merged score, if possible. Currently only supports merging
-    // scores of same variant.
-    pub fn merge(&self, other: &Score) -> Option<Self> {
-        match (self, other) {
-            (Score::Solver { score: left }, Score::Solver { score: right }) => {
-                Some(Score::Solver {
-                    score: left.checked_add(*right)?,
-                })
-            }
-            (
-                Score::RiskAdjusted {
-                    success_probability: p_left,
-                    gas_amount: gas_left,
-                },
-                Score::RiskAdjusted {
-                    success_probability: p_right,
-                    gas_amount: gas_right,
-                },
-            ) => Some(Score::RiskAdjusted {
-                success_probability: p_left * p_right,
-                gas_amount: gas_left
-                    .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
-            }),
-            (Score::Surplus, Score::Surplus) => Some(Score::Surplus),
-            _ => None,
-        }
-    }
-}
-
-#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
@@ -276,8 +207,6 @@ pub struct SettledBatchAuctionModel {
     pub approvals: Vec<ApprovalModel>,
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
-    #[serde(flatten, deserialize_with = "deserialize_optional_score")]
-    pub score: Score,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -455,36 +384,8 @@ pub enum SolverRejectionReason {
     /// re-create simulation locally
     SimulationFailure(TransactionWithError, SimulationSucceededAtLeastOnce),
 
-    /// The solution doesn't have a positive score. Currently this can happen
-    /// only if the objective value is negative.
-    NonPositiveScore,
-
-    /// Objective value is too low.
-    /// [TODO] Remove once the colocation is finalized.
-    #[serde(rename = "objectiveValueNonPositive")]
-    ObjectiveValueNonPositiveLegacy,
-
-    /// Objective value is too low.
-    #[serde(rename_all = "camelCase")]
-    ObjectiveValueNonPositive {
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        gas_cost: U256,
-    },
-
-    /// Success probability is out of the allowed range [0, 1]
-    SuccessProbabilityOutOfRange,
-
-    /// It is expected for a score to be less or equal to the quality (surplus +
-    /// fees).
-    #[serde(rename_all = "camelCase")]
-    ScoreHigherThanQuality {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-    },
+    /// Not all trades have clearing prices
+    InvalidClearingPrices,
 
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
@@ -950,71 +851,6 @@ mod tests {
     }
 
     #[test]
-    fn decode_score() {
-        let solution = r#"
-            {
-                "tokens": {},
-                "orders": {},
-                "score": "20000000000000000",
-                "metadata": {},
-                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
-                "prices": {}
-            }
-        "#;
-        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(
-            deserialized.score,
-            Score::Solver {
-                score: 20_000_000_000_000_000u128.into()
-            }
-        );
-    }
-
-    #[test]
-    fn decode_score_risk_adjusted() {
-        let solution_with_gas = r#"
-            {
-                "tokens": {},
-                "orders": {},
-                "success_probability": 0.9,
-                "gas_amount": "4269",
-                "metadata": {},
-                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
-                "prices": {}
-            }
-        "#;
-        assert_eq!(
-            serde_json::from_str::<SettledBatchAuctionModel>(solution_with_gas)
-                .unwrap()
-                .score,
-            Score::RiskAdjusted {
-                success_probability: 0.9,
-                gas_amount: Some(4269.into())
-            }
-        );
-
-        let solution_without_gas = r#"
-            {
-                "tokens": {},
-                "orders": {},
-                "success_probability": 0.9,
-                "metadata": {},
-                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
-                "prices": {}
-            }
-        "#;
-        assert_eq!(
-            serde_json::from_str::<SettledBatchAuctionModel>(solution_without_gas)
-                .unwrap()
-                .score,
-            Score::RiskAdjusted {
-                success_probability: 0.9,
-                gas_amount: None
-            }
-        );
-    }
-
-    #[test]
     fn decode_trivial_solution_without_ref_token() {
         let x = r#"
             {
@@ -1226,73 +1062,6 @@ mod tests {
             .unwrap(),
             json!({
                 "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
-            }),
-        );
-    }
-
-    #[test]
-    fn serialize_objective_value_non_positive_legacy() {
-        let auction_result =
-            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositiveLegacy);
-
-        assert_eq!(
-            serde_json::to_value(auction_result).unwrap(),
-            json!({
-                "rejected": "objectiveValueNonPositive",
-            }),
-        );
-    }
-
-    #[test]
-    fn serialize_objective_value_non_positive_colocated() {
-        let auction_result =
-            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
-                quality: U256::from(1),
-                gas_cost: U256::from(2),
-            });
-
-        assert_eq!(
-            serde_json::to_value(auction_result).unwrap(),
-            json!({
-                "rejected": {
-                    "objectiveValueNonPositive": {
-                        "quality": "1",
-                        "gasCost": "2",
-                    },
-                }
-            }),
-        );
-    }
-
-    #[test]
-    fn serialize_non_positive_score() {
-        let auction_result = AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore);
-
-        assert_eq!(
-            serde_json::to_value(auction_result).unwrap(),
-            json!({
-                "rejected": "nonPositiveScore",
-            }),
-        );
-    }
-
-    #[test]
-    fn serialize_score_higher_than_quality() {
-        let auction_result =
-            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
-                score: U256::from(1),
-                quality: U256::from(2),
-            });
-
-        assert_eq!(
-            serde_json::to_value(auction_result).unwrap(),
-            json!({
-                "rejected": {
-                    "scoreHigherThanQuality": {
-                        "score": "1",
-                        "quality": "2",
-                    },
-                }
             }),
         );
     }

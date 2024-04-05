@@ -146,10 +146,6 @@ async fn test() {
                         "kind": "custom",
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );
