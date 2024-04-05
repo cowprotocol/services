@@ -1732,6 +1732,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "warp",
  "web3",
 ]
 
@@ -4221,11 +4222,13 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "ethcontract",
  "ethereum-types",
  "ethrpc",
  "futures",
  "glob",
  "hex",
+ "hex-literal",
  "hyper",
  "itertools 0.11.0",
  "model",

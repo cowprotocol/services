@@ -8,16 +8,16 @@ mod policy;
 
 use {
     crate::{
-        arguments,
+        arguments::{self},
         boundary::{self},
         domain::{self},
     },
     app_data::Validator,
     derive_more::Into,
     itertools::Itertools,
-    primitive_types::U256,
+    primitive_types::{H160, U256},
     prometheus::core::Number,
-    std::str::FromStr,
+    std::{collections::HashSet, str::FromStr},
 };
 
 enum OrderClass {
@@ -51,15 +51,21 @@ impl From<arguments::FeePolicy> for ProtocolFee {
     }
 }
 
+pub type ProtocolFeeExemptAddresses = HashSet<H160>;
+
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
+    /// List of addresses which are exempt from the protocol
+    /// fees
+    protocol_fee_exempt_addresses: ProtocolFeeExemptAddresses,
 }
 
 impl ProtocolFees {
     pub fn new(
         fee_policies: &[arguments::FeePolicy],
         fee_policy_max_partner_fee: FeeFactor,
+        protocol_fee_exempt_addresses: &[H160],
     ) -> Self {
         Self {
             fee_policies: fee_policies
@@ -67,17 +73,17 @@ impl ProtocolFees {
                 .cloned()
                 .map(ProtocolFee::from)
                 .collect(),
+            protocol_fee_exempt_addresses: protocol_fee_exempt_addresses
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>(),
             max_partner_fee: fee_policy_max_partner_fee,
         }
     }
 
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
-    pub fn apply(
-        protocol_fees: &ProtocolFees,
-        order: boundary::Order,
-        quote: &domain::Quote,
-    ) -> domain::Order {
+    pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
         // If the partner fee is specified, it overwrites the current volume fee policy
         if let Some(validated_app_data) = order
             .metadata
@@ -92,7 +98,7 @@ impl ProtocolFees {
                 let fee_policy = vec![Policy::Volume {
                     factor: FeeFactor::try_from_capped(
                         partner_fee.bps.into_f64() / 10_000.0,
-                        protocol_fees.max_partner_fee.into(),
+                        self.max_partner_fee.into(),
                     )
                     .unwrap(),
                 }];
@@ -110,26 +116,33 @@ impl ProtocolFees {
             buy: quote.buy_amount,
             fee: quote.fee,
         };
-        let protocol_fees = protocol_fees
-            .fee_policies
-            .iter()
-            // TODO: support multiple fee policies
-            .find_map(|fee_policy| {
-                let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
-                match (outside_market_price, &fee_policy.order_class) {
-                    (_, OrderClass::Any) => Some(&fee_policy.policy),
-                    (true, OrderClass::Limit) => Some(&fee_policy.policy),
-                    (false, OrderClass::Market) => Some(&fee_policy.policy),
-                    _ => None,
-                }
-            })
-            .and_then(|policy| match policy {
-                policy::Policy::Surplus(variant) => variant.apply(&order),
-                policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
-                policy::Policy::Volume(variant) => variant.apply(&order),
-            })
-            .into_iter()
-            .collect_vec();
+        let protocol_fees = if self
+            .protocol_fee_exempt_addresses
+            .contains(&order.metadata.owner)
+        {
+            vec![]
+        } else {
+            self
+                    .fee_policies
+                    .iter()
+                    // TODO: support multiple fee policies
+                    .find_map(|fee_policy| {
+                        let outside_market_price = boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
+                        match (outside_market_price, &fee_policy.order_class) {
+                            (_, OrderClass::Any) => Some(&fee_policy.policy),
+                            (true, OrderClass::Limit) => Some(&fee_policy.policy),
+                            (false, OrderClass::Market) => Some(&fee_policy.policy),
+                            _ => None,
+                        }
+                    })
+                    .and_then(|policy| match policy {
+                        policy::Policy::Surplus(variant) => variant.apply(&order),
+                        policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
+                        policy::Policy::Volume(variant) => variant.apply(&order),
+                    })
+                    .into_iter()
+                    .collect_vec()
+        };
         boundary::order::to_domain(order, protocol_fees)
     }
 }

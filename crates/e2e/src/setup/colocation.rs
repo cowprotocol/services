@@ -61,7 +61,43 @@ pub struct SolverEngine {
     pub account: TestAccount,
 }
 
-pub fn start_driver(contracts: &Contracts, solvers: Vec<SolverEngine>) -> JoinHandle<()> {
+pub enum LiquidityProvider {
+    UniswapV2,
+    ZeroEx { api_port: u16 },
+}
+
+impl LiquidityProvider {
+    pub fn to_string(&self, contracts: &Contracts) -> String {
+        match self {
+            Self::UniswapV2 => format!(
+                r#"
+[[liquidity.uniswap-v2]]
+router = "{:?}"
+pool-code = "{:?}"
+missing-pool-cache-time = "1h"
+"#,
+                contracts.uniswap_v2_router.address(),
+                contracts.default_pool_code()
+            ),
+            Self::ZeroEx { api_port } => format!(
+                r#"
+[liquidity.zeroex]
+base-url = {:?}
+api-key = {:?}
+http-timeout = "10s"
+"#,
+                format!("http://0.0.0.0:{}", api_port),
+                "no-api-key".to_string()
+            ),
+        }
+    }
+}
+
+pub fn start_driver(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    liquidity: LiquidityProvider,
+) -> JoinHandle<()> {
     let solvers = solvers
         .iter()
         .map(
@@ -85,6 +121,7 @@ account = "{account}"
         )
         .collect::<Vec<String>>()
         .join("\n");
+    let liquidity = liquidity.to_string(contracts);
     let config_file = config_tmp_file(format!(
         r#"
 [contracts]
@@ -96,10 +133,7 @@ weth = "{:?}"
 [liquidity]
 base-tokens = []
 
-[[liquidity.uniswap-v2]]
-router = "{:?}"
-pool-code = "{:?}"
-missing-pool-cache-time = "1h"
+{liquidity}
 
 [submission]
 gas-price-cap = "1000000000000"
@@ -110,8 +144,6 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
-        contracts.uniswap_v2_router.address(),
-        contracts.default_pool_code(),
     ));
     let args = vec![
         "driver".to_string(),
