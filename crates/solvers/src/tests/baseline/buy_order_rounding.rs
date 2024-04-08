@@ -118,6 +118,7 @@ async fn balancer_weighted() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 1
                 max-partial-attempts = 1
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -284,6 +285,7 @@ async fn balancer_weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -347,6 +349,22 @@ async fn balancer_weighted_v3plus() {
                     "gasEstimate": "88892",
                     "version": "v3Plus",
                 },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "1000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
+                },
             ],
             "effectiveGasPrice": "1000000000",
             "deadline": "2106-01-01T00:00:00.000Z"
@@ -398,6 +416,7 @@ async fn distant_convergence() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -461,6 +480,22 @@ async fn distant_convergence() {
                     "gasEstimate": "88892",
                     "version": "v3Plus",
                 },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "1000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
+                },
             ],
             "effectiveGasPrice": "1000000000",
             "deadline": "2106-01-01T00:00:00.000Z"
@@ -512,6 +547,7 @@ async fn same_path() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 0
                 max-partial-attempts = 1
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -591,6 +627,22 @@ async fn same_path() {
                     "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
                     "gasEstimate": "0"
                 },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "1000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
+                },
             ],
             "effectiveGasPrice": "1000000000",
             "deadline": "2106-01-01T00:00:00.000Z"
@@ -662,6 +714,7 @@ async fn balancer_stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),

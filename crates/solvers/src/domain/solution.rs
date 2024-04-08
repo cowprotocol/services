@@ -129,7 +129,7 @@ impl Single {
     pub fn into_solution(
         self,
         gas_price: auction::GasPrice,
-        sell_token: Option<auction::Price>,
+        sell_token: auction::Price,
     ) -> Option<Solution> {
         let Self {
             order,
@@ -144,12 +144,7 @@ impl Single {
         }
 
         let fee = if order.solver_determines_fee() {
-            // TODO: If the order has signed `fee` amount already, we should
-            // discount it from the surplus fee. ATM, users would pay both a
-            // full order fee as well as a solver computed fee. Note that this
-            // is fine for now, since there is no way to create limit orders
-            // with non-zero fees.
-            Fee::Surplus(sell_token?.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
+            Fee::Surplus(sell_token.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
         } else {
             Fee::Protocol
         };
