@@ -33,8 +33,7 @@ pub fn scoring_failed(
         solution::error::Scoring::InvalidClearingPrices => {
             notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
-        solution::error::Scoring::Math(_) => return,
-        solution::error::Scoring::Score(_) => return,
+        solution::error::Scoring::Math(_) | solution::error::Scoring::Score(_) => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);
