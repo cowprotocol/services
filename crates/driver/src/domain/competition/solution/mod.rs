@@ -146,11 +146,11 @@ impl Solution {
                 sell: *self
                     .prices
                     .get(&trade.order().sell.token.wrap(self.weth))
-                    .ok_or(error::Solution::InvalidClearingPrices)?,
+                    .ok_or(error::Scoring::InvalidClearingPrices)?,
                 buy: *self
                     .prices
                     .get(&trade.order().buy.token.wrap(self.weth))
-                    .ok_or(error::Solution::InvalidClearingPrices)?,
+                    .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
             let custom_prices = scoring::CustomClearingPrices {
                 sell: match trade.order().side {
@@ -518,8 +518,8 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Scoring {
-        #[error(transparent)]
-        Solution(#[from] Solution),
+        #[error("invalid clearing prices")]
+        InvalidClearingPrices,
         #[error(transparent)]
         Math(#[from] Math),
         #[error(transparent)]
