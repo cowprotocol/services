@@ -197,9 +197,7 @@ impl TokenAmount {
     }
 
     pub fn checked_sub(self, other: TokenAmount) -> Option<TokenAmount> {
-        // Use the checked_sub method of U256
-        let result = self.0.checked_sub(other.0)?;
-        Some(TokenAmount(result))
+        self.0.checked_sub(other.0).map(Into::into)
     }
 }
 

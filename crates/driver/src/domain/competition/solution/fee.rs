@@ -80,77 +80,73 @@ impl Fulfillment {
             buy: self.order().buy.amount,
         };
         let mut fee = eth::TokenAmount::default();
-        self.order()
-            .protocol_fees
-            .iter()
-            .try_for_each(|protocol_fee| {
-                let current_fee = match protocol_fee {
-                    FeePolicy::Surplus {
-                        factor,
-                        max_volume_factor,
-                    } => self.calculate_fee(
-                        current_order_price_limits.clone(),
-                        prices,
-                        *factor,
-                        *max_volume_factor,
-                    ),
-                    FeePolicy::PriceImprovement {
-                        factor,
-                        max_volume_factor,
-                        quote,
-                    } => {
-                        let price_limits = adjust_quote_to_order_limits(
-                            Order {
-                                sell_amount: current_order_price_limits.sell.0,
-                                buy_amount: current_order_price_limits.buy.0,
-                                side: self.order().side,
-                            },
-                            Quote {
-                                sell_amount: quote.sell.amount.0,
-                                buy_amount: quote.buy.amount.0,
-                                fee_amount: quote.fee.amount.0,
-                            },
-                        )?;
-                        self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
-                    }
-                    FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),
-                }?;
+        for protocol_fee in &self.order().protocol_fees {
+            let current_fee = match protocol_fee {
+                FeePolicy::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => self.calculate_fee(
+                    current_order_price_limits.clone(),
+                    prices,
+                    *factor,
+                    *max_volume_factor,
+                ),
+                FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                    quote,
+                } => {
+                    let price_limits = adjust_quote_to_order_limits(
+                        Order {
+                            sell_amount: current_order_price_limits.sell.0,
+                            buy_amount: current_order_price_limits.buy.0,
+                            side: self.order().side,
+                        },
+                        Quote {
+                            sell_amount: quote.sell.amount.0,
+                            buy_amount: quote.buy.amount.0,
+                            fee_amount: quote.fee.amount.0,
+                        },
+                    )?;
+                    self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
+                }
+                FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),
+            }?;
 
-                // Recalculate the current price limits in order to apply the next protocol fees
-                // to the new amount
-                match self.order().side {
-                    Side::Buy => {
-                        current_order_price_limits.sell = current_order_price_limits
-                            .sell
-                            .checked_sub(
-                                current_fee
-                                    .0
-                                    .checked_mul(prices.sell)
-                                    .ok_or(Math::Overflow)?
-                                    .checked_div(prices.buy)
-                                    .ok_or(Math::DivisionByZero)?
-                                    .into(),
-                            )
-                            .ok_or(Math::Negative)?
-                    }
-                    Side::Sell => {
-                        current_order_price_limits.buy = current_order_price_limits
-                            .buy
-                            .checked_sub(
-                                current_fee
-                                    .0
-                                    .checked_mul(prices.buy)
-                                    .ok_or(Math::Overflow)?
-                                    .checked_div(prices.sell)
-                                    .ok_or(Math::DivisionByZero)?
-                                    .into(),
-                            )
-                            .ok_or(Math::Negative)?
-                    }
-                };
-                fee += current_fee;
-                Ok::<_, Error>(())
-            })?;
+            // Recalculate the current price limits in order to apply the next protocol fees
+            // to the new amount
+            match self.order().side {
+                Side::Buy => {
+                    current_order_price_limits.sell = current_order_price_limits
+                        .sell
+                        .checked_sub(
+                            current_fee
+                                .0
+                                .checked_mul(prices.sell)
+                                .ok_or(Math::Overflow)?
+                                .checked_div(prices.buy)
+                                .ok_or(Math::DivisionByZero)?
+                                .into(),
+                        )
+                        .ok_or(Math::Negative)?
+                }
+                Side::Sell => {
+                    current_order_price_limits.buy = current_order_price_limits
+                        .buy
+                        .checked_sub(
+                            current_fee
+                                .0
+                                .checked_mul(prices.buy)
+                                .ok_or(Math::Overflow)?
+                                .checked_div(prices.sell)
+                                .ok_or(Math::DivisionByZero)?
+                                .into(),
+                        )
+                        .ok_or(Math::Negative)?
+                }
+            };
+            fee += current_fee;
+        }
         Ok(fee)
     }
 
