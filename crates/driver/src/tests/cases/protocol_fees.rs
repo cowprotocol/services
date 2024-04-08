@@ -155,6 +155,47 @@ async fn double_surplus_protocol_fee_buy_order_not_capped() {
 
 #[tokio::test]
 #[ignore]
+async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
+    let fee_policy_surplus = Policy::Surplus {
+        factor: 0.5,
+        // high enough so we don't get capped by volume fee
+        max_volume_factor: 1.0,
+    };
+    let fee_policy_volume = Policy::Volume { factor: 0.25 };
+    let test_case = TestCase {
+        fee_policy: vec![fee_policy_volume, fee_policy_surplus],
+        order: Order {
+            sell_amount: 60.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            // -> First fee policy:
+            // 25% of the solver proposed sell volume is kept by the protocol
+            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) = 40 )
+            // Fee = 50 ETH (limit price) - 40 ETH => 10 ETH
+            // -> Second fee policy:
+            // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
+            // New surplus: 10 ETH, fee 5 ETH * 40 / 50 (transformation to sell amount): 4 ETH
+            // Total fee: 14 ETH
+            solver: Amounts {
+                sell: 40.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            // driver executes at limit price
+            driver: Amounts {
+                sell: 54.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
+        expected_score: 22.8_f64.ether().into_wei(),
+        fee_handler: FeeHandler::Driver,
+    };
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn surplus_protocol_fee_buy_order_not_capped() {
     let fee_policy = Policy::Surplus {
         factor: 0.5,
