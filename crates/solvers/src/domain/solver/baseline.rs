@@ -130,34 +130,31 @@ impl Inner {
                 continue;
             };
 
-            let sell_token = match auction.tokens.reference_price(&order.sell.token) {
+            let sell_token = user_order.get().sell.token;
+            let sell_token_price = match auction.tokens.reference_price(&sell_token) {
                 Some(price) => price,
-                None => {
-                    // internal routing request to estimate the price of the sell token in the
-                    // native token
-
+                None if sell_token == self.weth.0.into() => {
                     // Early return if the sell token is native token
-                    if user_order.get().sell.token == self.weth.0.into() {
-                        auction::Price(eth::Ether(eth::U256::exp10(18)))
+                    auction::Price(eth::Ether(eth::U256::exp10(18)))
+                }
+                None => {
+                    // Estimate the price of the sell token in the native token
+                    let native_price_request = self.native_price_request(user_order);
+                    if let Some(route) = boundary_solver.route(native_price_request, self.max_hops)
+                    {
+                        // how many units of buy_token are bought for one unit of sell_token
+                        // (buy_amount / sell_amount).
+                        let price = self.native_token_price_estimation_amount.to_f64_lossy()
+                            / route.input().amount.to_f64_lossy();
+                        let Some(price) = to_normalized_price(price) else {
+                            continue;
+                        };
+
+                        auction::Price(eth::Ether(price))
                     } else {
-                        // Estimate the price of the sell token in the native token
-                        let native_price_request = self.native_price_request(user_order);
-                        match boundary_solver.route(native_price_request, self.max_hops) {
-                            Some(route) => {
-                                // how many units of buy_token are bought for one unit of sell_token
-                                // (buy_amount / sell_amount).
-                                let price =
-                                    self.native_token_price_estimation_amount.to_f64_lossy()
-                                        / route.input().amount.to_f64_lossy();
-                                match to_normalized_price(price) {
-                                    Some(price) => auction::Price(eth::Ether(price)),
-                                    None => continue,
-                                }
-                            }
-                            // This is to allow quotes to be generated for tokens for which the sell
-                            // token price is not available, so we default to fee=0
-                            None => auction::Price(eth::Ether(eth::U256::MAX)),
-                        }
+                        // This is to allow quotes to be generated for tokens for which the sell
+                        // token price is not available, so we default to fee=0
+                        auction::Price(eth::Ether(eth::U256::MAX))
                     }
                 }
             };
@@ -201,7 +198,7 @@ impl Inner {
                         interactions,
                         gas,
                     }
-                    .into_solution(auction.gas_price, sell_token)?
+                    .into_solution(auction.gas_price, sell_token_price)?
                     .with_id(solution::Id(i as u64))
                     .with_buffers_internalizations(&auction.tokens),
                 )
@@ -252,7 +249,7 @@ impl Inner {
             // contract, so buy orders requiring excessively large sell amounts
             // would not work anyway. Instead we use `2 ** 144`, the rationale
             // being that Uniswap V2 pool reserves are 112-bit integers. Noting
-            // that `256 - 112 = 144`, this means that we can us to trade a full
+            // that `256 - 112 = 144`, this means that we can use it to trade a full
             // `type(uint112).max` without overflowing a `uint256` on the smart
             // contract level. Requiring to trade more than `type(uint112).max`
             // is unlikely and would not work with Uniswap V2 anyway.
