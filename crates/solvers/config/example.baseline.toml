@@ -4,5 +4,5 @@ chain-id = "1"
 base-tokens = []
 max-hops = 0
 max-partial-attempts = 5
-native-token-price-estimation-amount = 100000000000000000
+native-token-price-estimation-amount = "100000000000000000"
 # solution-gas-offset = 106391 # rough estimate of the settlement overhead

@@ -12,7 +12,7 @@ weth = "{weth:?}"
 base-tokens = []
 max-hops = 1
 max-partial-attempts = 5
-native-token-price-estimation-amount = 100000000000000000
+native-token-price-estimation-amount = "100000000000000000"
         "#,
     ));
 
