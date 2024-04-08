@@ -113,33 +113,40 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 
 #[tokio::test]
 #[ignore]
-async fn surplus_and_price_improvement_protocol_fee_buy_order_not_capped() {
+async fn double_surplus_protocol_fee_buy_order_not_capped() {
     let fee_policy_surplus = Policy::Surplus {
         factor: 0.5,
         // high enough so we don't get capped by volume fee
         max_volume_factor: 1.0,
     };
-    let fee_policy_volume = Policy::Volume { factor: 0.25 };
     let test_case = TestCase {
-        fee_policy: vec![fee_policy_surplus, fee_policy_volume],
+        fee_policy: vec![fee_policy_surplus.clone(), fee_policy_surplus],
         order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: order::Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
-            // protocol
+            // 20 ETH surplus in sell token (after network fee)
+            // The protocol fees are applied one by one to the orders, altering the order pricing
+            // For this example:
+            // -> First fee policy:
+            //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %, fee 10 ETH
+            // -> Second fee policy:
+            // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
+            // New surplus: 10 ETH, fee 5 ETH
+            // Total fee: 15 ETH
+            // Out of the 20 ETH of surplus, 15 ETH goes to fees and 5 ETH goes to the trader
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
             driver: Amounts {
-                sell: 40.ether().into_wei(),
+                sell: 45.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
         },
-        expected_score: 20.ether().into_wei(),
+        expected_score: 15.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
 

@@ -19,10 +19,11 @@ use {
                 solution::{fee, fee::adjust_quote_to_order_limits},
                 PriceLimits,
             },
-            eth::{self},
+            eth::{self, TokenAmount},
         },
         util::conv::u256::U256Ext,
     },
+    num::CheckedAdd,
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -162,12 +163,7 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     fn protocol_fee(&self) -> Result<eth::Asset, Error> {
-        // TODO: support multiple fee policies
-        if self.policies.len() > 1 {
-            return Err(Error::MultipleFeePolicies);
-        }
-
-        let protocol_fee = |policy: &order::FeePolicy| match policy {
+        let calc_protocol_fee = |policy: &order::FeePolicy| match policy {
             order::FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
@@ -194,10 +190,16 @@ impl Trade {
             order::FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
         };
 
-        let protocol_fee = self.policies.first().map(protocol_fee).transpose();
+        let amount = self
+            .policies
+            .iter()
+            .try_fold(TokenAmount::default(), |acc, protocol_fee| {
+                acc.checked_add(&calc_protocol_fee(protocol_fee).ok()?)
+            })
+            .unwrap_or_default();
         Ok(eth::Asset {
             token: self.surplus_token(),
-            amount: protocol_fee?.unwrap_or(0.into()),
+            amount,
         })
     }
 
@@ -360,8 +362,6 @@ pub struct CustomClearingPrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("multiple fee policies are not supported yet")]
-    MultipleFeePolicies,
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]

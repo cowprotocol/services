@@ -228,6 +228,12 @@ impl num::CheckedMul for TokenAmount {
     }
 }
 
+impl num::CheckedAdd for TokenAmount {
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        self.0.checked_add(other.0).map(Into::into)
+    }
+}
+
 impl Div<Self> for TokenAmount {
     type Output = TokenAmount;
 

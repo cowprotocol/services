@@ -33,10 +33,10 @@ use {
             order::{FeePolicy, Side},
             PriceLimits,
         },
-        eth::{self, TokenAmount},
+        eth::{self},
     },
     bigdecimal::Zero,
-    num::{CheckedDiv, CheckedMul, CheckedSub},
+    num::CheckedAdd,
 };
 
 impl Fulfillment {
@@ -116,32 +116,10 @@ impl Fulfillment {
 
             // Recalculate the current price limits in order to apply the next protocol fees
             // to the new amount
-            match self.order().side {
-                Side::Buy => {
-                    current_order_price_limits.sell = current_order_price_limits
-                        .sell
-                        .checked_sub(
-                            &current_fee
-                                .checked_mul(&TokenAmount::from(prices.sell))
-                                .ok_or(Math::Overflow)?
-                                .checked_div(&TokenAmount::from(prices.buy))
-                                .ok_or(Math::DivisionByZero)?,
-                        )
-                        .ok_or(Math::Negative)?
-                }
-                Side::Sell => {
-                    current_order_price_limits.buy = current_order_price_limits
-                        .buy
-                        .checked_sub(
-                            &current_fee
-                                .checked_mul(&TokenAmount::from(prices.buy))
-                                .ok_or(Math::Overflow)?
-                                .checked_div(&TokenAmount::from(prices.sell))
-                                .ok_or(Math::DivisionByZero)?,
-                        )
-                        .ok_or(Math::Negative)?
-                }
-            };
+            current_order_price_limits.buy = current_order_price_limits
+                .buy
+                .checked_add(&current_fee)
+                .ok_or(Math::Overflow)?;
             fee += current_fee;
         }
         Ok(fee)
