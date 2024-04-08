@@ -14,7 +14,6 @@ use {
     },
     app_data::Validator,
     derive_more::Into,
-    itertools::Itertools,
     primitive_types::{H160, U256},
     prometheus::core::Number,
     std::{collections::HashSet, str::FromStr},

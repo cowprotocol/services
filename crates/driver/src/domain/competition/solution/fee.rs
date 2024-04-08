@@ -33,9 +33,10 @@ use {
             order::{FeePolicy, Side},
             PriceLimits,
         },
-        eth,
+        eth::{self, TokenAmount},
     },
     bigdecimal::Zero,
+    num::{CheckedDiv, CheckedMul, CheckedSub},
 };
 
 impl Fulfillment {
@@ -120,13 +121,11 @@ impl Fulfillment {
                     current_order_price_limits.sell = current_order_price_limits
                         .sell
                         .checked_sub(
-                            current_fee
-                                .0
-                                .checked_mul(prices.sell)
+                            &current_fee
+                                .checked_mul(&TokenAmount::from(prices.sell))
                                 .ok_or(Math::Overflow)?
-                                .checked_div(prices.buy)
-                                .ok_or(Math::DivisionByZero)?
-                                .into(),
+                                .checked_div(&TokenAmount::from(prices.buy))
+                                .ok_or(Math::DivisionByZero)?,
                         )
                         .ok_or(Math::Negative)?
                 }
@@ -134,13 +133,11 @@ impl Fulfillment {
                     current_order_price_limits.buy = current_order_price_limits
                         .buy
                         .checked_sub(
-                            current_fee
-                                .0
-                                .checked_mul(prices.buy)
+                            &current_fee
+                                .checked_mul(&TokenAmount::from(prices.buy))
                                 .ok_or(Math::Overflow)?
-                                .checked_div(prices.sell)
-                                .ok_or(Math::DivisionByZero)?
-                                .into(),
+                                .checked_div(&TokenAmount::from(prices.sell))
+                                .ok_or(Math::DivisionByZero)?,
                         )
                         .ok_or(Math::Negative)?
                 }
