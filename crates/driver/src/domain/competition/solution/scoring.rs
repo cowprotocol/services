@@ -17,17 +17,17 @@ use {
                 auction,
                 order::{fees::Quote, FeePolicy},
                 solution::{
+                    error,
                     fee::{self, adjust_quote_to_order_limits},
                     trade::{ClearingPrices, Fulfillment},
                 },
                 PriceLimits,
-                Solution,
             },
             eth::{self, TokenAmount},
         },
         util::conv::u256::U256Ext,
     },
-    num::CheckedSub,
+    num::CheckedAdd,
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -163,7 +163,6 @@ impl Trade {
     fn protocol_fees(&self) -> Result<eth::Asset, Error> {
         let mut amount = TokenAmount::default();
         let mut current_trade = self.clone();
-        let mut trade_fee: TokenAmount = self.fulfillment.fee().0.into();
         for (i, protocol_fee) in self
             .fulfillment
             .order()
@@ -173,27 +172,61 @@ impl Trade {
             .enumerate()
         {
             let fee = current_trade.protocol_fee(protocol_fee)?;
+            amount = amount
+                .checked_add(&fee)
+                .ok_or(Error::Math(Math::Overflow))?;
             // Do not apply the last fee since it won't be used again, it minimizes the
             // changes of negative trade fee
             if i < self.fulfillment.order().protocol_fees.iter().len() - 1 {
-                trade_fee = trade_fee
-                    .checked_sub(&fee)
-                    .ok_or(Error::Math(Math::Negative))?;
-
-                current_trade.custom_price = Solution::calculate_custom_prices(
+                current_trade.custom_price = Self::calculate_custom_prices(
                     self.fulfillment.side(),
-                    current_trade.executed.into(),
-                    trade_fee,
+                    self.fulfillment.executed().into(),
+                    self.fulfillment.fee().0.into(),
                     &self.uniform_prices,
+                    amount,
                 )
                 .map_err(|e| Error::CustomPrice(e.to_string()))?;
             }
-            amount += fee;
         }
 
         Ok(eth::Asset {
             token: self.surplus_token(),
             amount,
+        })
+    }
+
+    pub fn calculate_custom_prices(
+        side: Side,
+        executed: TokenAmount,
+        fulfillment_fee: TokenAmount,
+        uniform_prices: &ClearingPrices,
+        current_protocol_fee: TokenAmount,
+    ) -> Result<CustomClearingPrices, error::Scoring> {
+        Ok(CustomClearingPrices {
+            sell: match side {
+                Side::Sell => {
+                    executed
+                        .0
+                        .checked_mul(uniform_prices.sell)
+                        .ok_or(Math::Overflow)?
+                        .checked_ceil_div(&uniform_prices.buy)
+                        .ok_or(Math::DivisionByZero)?
+                        + current_protocol_fee.0
+                }
+                Side::Buy => executed.0,
+            },
+            buy: match side {
+                Side::Sell => executed.0 + fulfillment_fee.0,
+                Side::Buy => {
+                    (executed.0)
+                        .checked_mul(uniform_prices.buy)
+                        .ok_or(Math::Overflow)?
+                        .checked_div(uniform_prices.sell)
+                        .ok_or(Math::DivisionByZero)?
+                        + fulfillment_fee.0
+                        - current_protocol_fee.0
+                }
+            },
         })
     }
 

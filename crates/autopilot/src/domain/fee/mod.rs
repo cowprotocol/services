@@ -104,6 +104,13 @@ impl ProtocolFees {
             .into_iter()
             .collect::<Vec<_>>();
 
+        if self
+            .protocol_fee_exempt_addresses
+            .contains(&order.metadata.owner)
+        {
+            return boundary::order::to_domain(order, partner_fee);
+        }
+
         let order_ = boundary::Amounts {
             sell: order.data.sell_amount,
             buy: order.data.buy_amount,
@@ -114,32 +121,27 @@ impl ProtocolFees {
             buy: quote.buy_amount,
             fee: quote.fee,
         };
-        let protocol_fees = if self
-            .protocol_fee_exempt_addresses
-            .contains(&order.metadata.owner)
-        {
-            partner_fee
-        } else {
-            self.fee_policies
-                .iter()
-                .filter_map(|fee_policy| {
-                    let outside_market_price =
-                        boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
-                    match (outside_market_price, &fee_policy.order_class) {
-                        (_, OrderClass::Any) => Some(&fee_policy.policy),
-                        (true, OrderClass::Limit) => Some(&fee_policy.policy),
-                        (false, OrderClass::Market) => Some(&fee_policy.policy),
-                        _ => None,
-                    }
-                })
-                .flat_map(|policy| match policy {
-                    policy::Policy::Surplus(variant) => variant.apply(&order),
-                    policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
-                    policy::Policy::Volume(variant) => variant.apply(&order),
-                })
-                .chain(partner_fee)
-                .collect::<Vec<_>>()
-        };
+
+        let protocol_fees = self
+            .fee_policies
+            .iter()
+            .filter_map(|fee_policy| {
+                let outside_market_price =
+                    boundary::is_order_outside_market_price(&order_, &quote_, order.data.kind);
+                match (outside_market_price, &fee_policy.order_class) {
+                    (_, OrderClass::Any) => Some(&fee_policy.policy),
+                    (true, OrderClass::Limit) => Some(&fee_policy.policy),
+                    (false, OrderClass::Market) => Some(&fee_policy.policy),
+                    _ => None,
+                }
+            })
+            .flat_map(|policy| match policy {
+                policy::Policy::Surplus(variant) => variant.apply(&order),
+                policy::Policy::PriceImprovement(variant) => variant.apply(&order, quote),
+                policy::Policy::Volume(variant) => variant.apply(&order),
+            })
+            .chain(partner_fee)
+            .collect::<Vec<_>>();
         boundary::order::to_domain(order, protocol_fees)
     }
 }
