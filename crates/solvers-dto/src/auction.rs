@@ -34,8 +34,6 @@ pub struct Order {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
     pub kind: Kind,
     pub partially_fillable: bool,
     pub class: Class,

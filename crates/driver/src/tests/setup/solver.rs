@@ -103,7 +103,6 @@ impl Solver {
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
                 "sellAmount": sell_amount,
                 "buyAmount": buy_amount,
-                "feeAmount": quote.order.user_fee.to_string(),
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",
                     order::Side::Buy => "buy",

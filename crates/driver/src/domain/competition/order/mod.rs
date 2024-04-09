@@ -25,7 +25,6 @@ pub struct Order {
     /// The maximum amount this order is allowed to sell when completely filled.
     pub sell: eth::Asset,
     pub side: Side,
-    pub user_fee: SellAmount,
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
@@ -118,8 +117,6 @@ pub struct Available {
     /// The available minimum buy amount for an order that gets passed to a
     /// solver engine.
     pub buy: eth::Asset,
-    /// The available fee amount.
-    pub user_fee: SellAmount,
 }
 
 impl Order {
@@ -172,7 +169,6 @@ impl Order {
                 token: self.buy.token.wrap(weth),
                 amount: self.buy.amount,
             },
-            user_fee: self.user_fee,
         };
 
         let available = match self.partial {
@@ -181,9 +177,9 @@ impl Order {
         };
         let target = self.target();
 
-        for amount in [&mut amounts.sell.amount.0, &mut amounts.user_fee.0] {
-            *amount = util::math::mul_ratio(*amount, available.0, target.0).unwrap_or_default();
-        }
+        amounts.sell.amount = util::math::mul_ratio(amounts.sell.amount.0, available.0, target.0)
+            .unwrap_or_default()
+            .into();
 
         amounts.buy.amount =
             util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
@@ -427,7 +423,6 @@ mod tests {
                 Some(executed) if executed.token == buy(0).token => Side::Buy,
                 _ => panic!(),
             },
-            user_fee: Default::default(),
             kind: Kind::Limit,
             app_data: Default::default(),
             partial: available

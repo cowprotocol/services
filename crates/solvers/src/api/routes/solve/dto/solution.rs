@@ -48,7 +48,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                     receiver: trade.order.receiver,
                                     valid_to: trade.order.valid_to,
                                     app_data: trade.order.app_data.0,
-                                    fee_amount: trade.order.fee.0,
+                                    fee_amount: 0.into(),
                                     kind: match trade.order.side {
                                         crate::domain::order::Side::Buy => Kind::Buy,
                                         crate::domain::order::Side::Sell => Kind::Sell,

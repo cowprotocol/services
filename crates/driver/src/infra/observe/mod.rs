@@ -371,7 +371,6 @@ pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
 #[derive(Debug)]
 pub enum OrderExcludedFromAuctionReason {
     CouldNotFetchBalance,
-    CouldNotCalculateMaxSell,
     InsufficientBalance,
     OrderWithZeroAmountRemaining,
 }
