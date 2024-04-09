@@ -1,6 +1,6 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
@@ -22,8 +22,10 @@ struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, 
 
 type Token = H160;
 type PriceInWei = U256;
+type Decimals = u8;
+
 pub struct OneInch {
-    prices: Arc<Mutex<HashMap<Token, PriceInWei>>>,
+    prices: Arc<Mutex<HashMap<Token, (PriceInWei, Decimals)>>>,
 }
 
 impl OneInch {
@@ -33,11 +35,19 @@ impl OneInch {
         api_key: Option<String>,
         chain_id: u64,
         current_block: CurrentBlockStream,
+        token_info: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let instance = Self {
             prices: Arc::new(Mutex::new(HashMap::new())),
         };
-        instance.update_prices_in_background(client, base_url, api_key, chain_id, current_block);
+        instance.update_prices_in_background(
+            client,
+            base_url,
+            api_key,
+            chain_id,
+            current_block,
+            token_info,
+        );
         instance
     }
 
@@ -48,6 +58,7 @@ impl OneInch {
         api_key: Option<String>,
         chain_id: u64,
         current_block: CurrentBlockStream,
+        token_info: Arc<dyn TokenInfoFetching>,
     ) {
         let prices = self.prices.clone();
         tokio::task::spawn(async move {
@@ -56,7 +67,28 @@ impl OneInch {
                 match update_prices(&client, base_url.clone(), api_key.clone(), chain_id).await {
                     Ok(new_prices) => {
                         tracing::debug!("OneInch spot prices updated");
-                        *prices.lock().unwrap() = new_prices;
+                        // Fetch token decimals
+                        let token_decimals = token_info
+                            .get_token_infos(
+                                new_prices.keys().copied().collect::<Vec<_>>().as_slice(),
+                            )
+                            .await
+                            .into_iter()
+                            .filter_map(|(token, info)| {
+                                info.decimals.map(|decimals| (token, decimals))
+                            })
+                            .collect::<HashMap<_, _>>();
+
+                        let prices_with_decimals = new_prices
+                            .into_iter()
+                            .filter_map(|(token, price)| {
+                                token_decimals
+                                    .get(&token)
+                                    .map(|decimals| (token, (price, *decimals)))
+                            })
+                            .collect();
+
+                        *prices.lock().unwrap() = prices_with_decimals;
                     }
                     Err(err) => {
                         tracing::warn!(?err, "OneInch spot price update failed");
@@ -72,10 +104,10 @@ impl NativePriceEstimating for OneInch {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self.prices.lock().unwrap();
-            let price = prices
+            let (price, decimals) = prices
                 .get(&token)
                 .ok_or_else(|| PriceEstimationError::NoLiquidity)?;
-            Ok(price.to_f64_lossy() / 1e18)
+            Ok(price.to_f64_lossy() / U256::exp10((*decimals).into()).to_f64_lossy())
         }
         .boxed()
     }
@@ -132,6 +164,11 @@ mod tests {
         .await
         .unwrap();
         assert!(!prices.is_empty());
+
+        let prices = prices
+            .into_iter()
+            .map(|(k, v)| (k, (v, 18)))
+            .collect::<HashMap<_, _>>();
 
         let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
         let instance = OneInch {
