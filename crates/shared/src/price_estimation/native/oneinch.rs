@@ -22,10 +22,9 @@ struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, 
 
 type Token = H160;
 type PriceInWei = U256;
-type Decimals = u8;
 
 pub struct OneInch {
-    prices: Arc<Mutex<HashMap<Token, (PriceInWei, Decimals)>>>,
+    prices: Arc<Mutex<HashMap<Token, f64>>>,
 }
 
 impl OneInch {
@@ -64,31 +63,18 @@ impl OneInch {
         tokio::task::spawn(async move {
             let mut block_stream = into_stream(current_block);
             loop {
-                match update_prices(&client, base_url.clone(), api_key.clone(), chain_id).await {
+                match update_prices(
+                    &client,
+                    base_url.clone(),
+                    api_key.clone(),
+                    chain_id,
+                    token_info.as_ref(),
+                )
+                .await
+                {
                     Ok(new_prices) => {
                         tracing::debug!("OneInch spot prices updated");
-                        // Fetch token decimals
-                        let token_decimals = token_info
-                            .get_token_infos(
-                                new_prices.keys().copied().collect::<Vec<_>>().as_slice(),
-                            )
-                            .await
-                            .into_iter()
-                            .filter_map(|(token, info)| {
-                                info.decimals.map(|decimals| (token, decimals))
-                            })
-                            .collect::<HashMap<_, _>>();
-
-                        let prices_with_decimals = new_prices
-                            .into_iter()
-                            .filter_map(|(token, price)| {
-                                token_decimals
-                                    .get(&token)
-                                    .map(|decimals| (token, (price, *decimals)))
-                            })
-                            .collect();
-
-                        *prices.lock().unwrap() = prices_with_decimals;
+                        *prices.lock().unwrap() = new_prices;
                     }
                     Err(err) => {
                         tracing::warn!(?err, "OneInch spot price update failed");
@@ -104,10 +90,10 @@ impl NativePriceEstimating for OneInch {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self.prices.lock().unwrap();
-            let (price, decimals) = prices
+            prices
                 .get(&token)
-                .ok_or_else(|| PriceEstimationError::NoLiquidity)?;
-            Ok(price.to_f64_lossy() / U256::exp10((*decimals).into()).to_f64_lossy())
+                .cloned()
+                .ok_or_else(|| PriceEstimationError::NoLiquidity)
         }
         .boxed()
     }
@@ -118,7 +104,8 @@ async fn update_prices(
     base_url: Url,
     api_key: Option<String>,
     chain: u64,
-) -> Result<HashMap<Token, PriceInWei>> {
+    token_info: &dyn TokenInfoFetching,
+) -> Result<HashMap<Token, f64>> {
     let mut builder = client.get(format!("{}/price/v1.1/{}", base_url, chain));
     if let Some(api_key) = api_key {
         builder = builder.header(AUTHORIZATION, api_key)
@@ -137,9 +124,23 @@ async fn update_prices(
         .text()
         .await
         .context("Failed to fetch Native 1Inch prices")?;
-    let result = serde_json::from_str::<Response>(&response)
-        .with_context(|| format!("Failed to parse Native 1inch prices from {response:?}"))?;
-    Ok(result.0)
+    let prices = serde_json::from_str::<Response>(&response)
+        .with_context(|| format!("Failed to parse Native 1inch prices from {response:?}"))?
+        .0;
+
+    let token_decimals = token_info
+        .get_token_infos(&prices.keys().copied().collect::<Vec<_>>())
+        .await;
+
+    let normalized_prices = prices
+        .into_iter()
+        .filter_map(|(token, price)| {
+            let decimals = token_decimals.get(&token)?.decimals?;
+            let normalized_price = price.to_f64_lossy() / 10f64.powf(decimals.into());
+            Some((token, normalized_price))
+        })
+        .collect();
+    Ok(normalized_prices)
 }
 
 #[cfg(test)]
