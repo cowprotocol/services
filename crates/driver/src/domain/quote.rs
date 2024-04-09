@@ -87,7 +87,12 @@ impl Order {
         };
 
         let solutions = solver
-            .solve(&self.fake_auction(eth, tokens).await?, &liquidity)
+            .solve(
+                &self
+                    .fake_auction(eth, tokens, solver.quote_using_limit_orders())
+                    .await?,
+                &liquidity,
+            )
             .await?;
         Quote::new(
             eth,
@@ -105,6 +110,7 @@ impl Order {
         &self,
         eth: &Ethereum,
         tokens: &infra::tokens::Fetcher,
+        quote_using_limit_orders: bool,
     ) -> Result<competition::Auction, Error> {
         let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
 
@@ -121,7 +127,11 @@ impl Order {
                 sell: self.sell(),
                 side: self.side,
                 user_fee: Default::default(),
-                kind: competition::order::Kind::Market,
+                kind: if quote_using_limit_orders {
+                    competition::order::Kind::Limit
+                } else {
+                    competition::order::Kind::Market
+                },
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
                 pre_interactions: Default::default(),

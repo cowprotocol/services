@@ -189,6 +189,10 @@ struct SolverConfig {
     /// Determines whether the `solver` or the `driver` handles the fees
     #[serde(default)]
     fee_handler: FeeHandler,
+
+    /// Use limit orders for quoting
+    #[serde(default)]
+    quote_using_limit_orders: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

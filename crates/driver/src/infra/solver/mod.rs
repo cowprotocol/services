@@ -104,6 +104,9 @@ pub struct Config {
     pub request_headers: HashMap<String, String>,
     /// Determines whether the `solver` or the `driver` handles the fees
     pub fee_handler: FeeHandler,
+    /// Use limit orders for quoting
+    /// TODO: Remove once all solvers are moved to use limit orders for quoting
+    pub quote_using_limit_orders: bool,
 }
 
 impl Solver {
@@ -156,6 +159,11 @@ impl Solver {
     /// Timeout configuration for this solver.
     pub fn timeouts(&self) -> Timeouts {
         self.config.timeouts
+    }
+
+    /// Use limit orders for quoting instead of market orders
+    pub fn quote_using_limit_orders(&self) -> bool {
+        self.config.quote_using_limit_orders
     }
 
     /// Make a POST request instructing the solver to solve an auction.
