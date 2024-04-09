@@ -63,18 +63,19 @@ impl OneInch {
         tokio::task::spawn(async move {
             let mut block_stream = into_stream(current_block);
             loop {
-                match update_prices(
+                let current_prices = get_current_prices(
                     &client,
                     base_url.clone(),
                     api_key.clone(),
                     chain_id,
                     token_info.as_ref(),
                 )
-                .await
-                {
-                    Ok(new_prices) => {
+                .await;
+
+                match current_prices {
+                    Ok(current_prices) => {
                         tracing::debug!("OneInch spot prices updated");
-                        *prices.lock().unwrap() = new_prices;
+                        *prices.lock().unwrap() = current_prices;
                     }
                     Err(err) => {
                         tracing::warn!(?err, "OneInch spot price update failed");
@@ -99,7 +100,7 @@ impl NativePriceEstimating for OneInch {
     }
 }
 
-async fn update_prices(
+async fn get_current_prices(
     client: &Client,
     base_url: Url,
     api_key: Option<String>,
@@ -147,7 +148,10 @@ async fn update_prices(
 mod tests {
     use {
         super::*,
-        crate::price_estimation::oneinch::BASE_URL,
+        crate::{
+            price_estimation::oneinch::BASE_URL,
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
         std::{env, str::FromStr},
     };
 
@@ -156,20 +160,33 @@ mod tests {
     async fn works() {
         let auth_token = env::var("ONEINCH_AUTH_TOKEN").unwrap();
 
-        let prices = update_prices(
+        let mut token_info = MockTokenInfoFetching::new();
+        token_info.expect_get_token_infos().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|token| {
+                    (
+                        *token,
+                        TokenInfo {
+                            symbol: None,
+                            // hard code 6 decimals because we are testing with USDC
+                            decimals: Some(6),
+                        },
+                    )
+                })
+                .collect()
+        });
+
+        let prices = get_current_prices(
             &Client::default(),
             Url::parse(BASE_URL).unwrap(),
             Some(auth_token),
             1,
+            &token_info,
         )
         .await
         .unwrap();
         assert!(!prices.is_empty());
-
-        let prices = prices
-            .into_iter()
-            .map(|(k, v)| (k, (v, 18)))
-            .collect::<HashMap<_, _>>();
 
         let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
         let instance = OneInch {
