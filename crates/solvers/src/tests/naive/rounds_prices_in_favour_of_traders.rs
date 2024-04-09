@@ -12,11 +12,7 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {
-    let engine = tests::SolverEngine::new(
-        "naive",
-        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
-    )
-    .await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
 
     let solution = engine
         .solve(json!({
@@ -109,10 +105,6 @@ async fn test() {
                         "outputAmount": "997000"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 259417,
             }]
         }),

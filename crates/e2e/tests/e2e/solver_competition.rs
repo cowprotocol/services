@@ -55,6 +55,7 @@ async fn solver_competition(web3: Web3) {
                     .await,
             },
         ],
+        colocation::LiquidityProvider::UniswapV2,
     );
 
     let services = Services::new(onchain.contracts()).await;
@@ -65,7 +66,7 @@ async fn solver_competition(web3: Web3) {
                 .to_string(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
-    );
+    ).await;
     services.start_api(vec![
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
     ]).await;

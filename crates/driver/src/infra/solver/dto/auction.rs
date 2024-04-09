@@ -57,7 +57,12 @@ impl Auction {
                 liquidity::Kind::Swapr(pool) => {
                     pool.base.reserves.iter().map(|r| r.token).collect()
                 }
-                liquidity::Kind::ZeroEx(_) => todo!(),
+                liquidity::Kind::ZeroEx(limit_order) => {
+                    vec![
+                        limit_order.order.maker_token.into(),
+                        limit_order.order.taker_token.into(),
+                    ]
+                }
             })
         {
             tokens.entry(token.into()).or_insert_with(Default::default);
@@ -248,7 +253,19 @@ impl Auction {
                             fee: bigdecimal::BigDecimal::new(pool.fee.bps().into(), 4),
                         })
                     }
-                    liquidity::Kind::ZeroEx(_) => todo!(),
+                    liquidity::Kind::ZeroEx(limit_order) => {
+                        Liquidity::LimitOrder(ForeignLimitOrder {
+                            id: liquidity.id.0,
+                            address: limit_order.zeroex.address(),
+                            gas_estimate: liquidity.gas.into(),
+                            hash: Default::default(),
+                            maker_token: limit_order.order.maker_token,
+                            taker_token: limit_order.order.taker_token,
+                            maker_amount: limit_order.order.maker_amount.into(),
+                            taker_amount: limit_order.order.taker_amount.into(),
+                            taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
+                        })
+                    }
                 })
                 .collect(),
             tokens,

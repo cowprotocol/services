@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/toolchain@v1
@@ -31,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: ethanis/nitpicker@v1
         with:
           nitpicks: ".github/nitpicks.yml"
@@ -46,6 +50,8 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
@@ -62,6 +68,8 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
@@ -85,6 +93,8 @@ jobs:
       TOML_TRACE_ERROR: 1      
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
@@ -113,6 +123,8 @@ jobs:
       TOML_TRACE_ERROR: 1
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
@@ -137,6 +149,8 @@ jobs:
       TOML_TRACE_ERROR: 1      
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
@@ -151,6 +165,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - run: npm install @apidevtools/swagger-cli
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml

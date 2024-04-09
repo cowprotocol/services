@@ -211,7 +211,6 @@ impl Solver {
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
-                "score": solution.score,
             }));
         }
 

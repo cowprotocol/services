@@ -8,7 +8,7 @@ mod notification;
 pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
 use {
     super::simulator,
-    crate::domain::{competition::score, eth, mempools::Error},
+    crate::domain::{eth, mempools::Error},
 };
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
@@ -27,29 +27,13 @@ pub fn scoring_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
     solution_id: &solution::Id,
-    err: &score::Error,
+    err: &solution::error::Scoring,
 ) {
     let notification = match err {
-        score::Error::ZeroScore => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
+        solution::error::Scoring::InvalidClearingPrices => {
+            notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
-        score::Error::ScoreHigherThanQuality(score, quality) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::ScoreHigherThanQuality(*score, *quality),
-        ),
-        score::Error::RiskAdjusted(score::risk::Error::SuccessProbabilityOutOfRange(
-            success_probability,
-        )) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
-        ),
-        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive(
-            quality,
-            gas_cost,
-        )) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::ObjectiveValueNonPositive(*quality, *gas_cost),
-        ),
-        score::Error::RiskAdjusted(score::risk::Error::Boundary(_)) => return,
-        score::Error::Boundary(_) => return,
-        score::Error::Scoring(_) => return, // TODO: should we notify?
+        solution::error::Scoring::Math(_) | solution::error::Scoring::Score(_) => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);

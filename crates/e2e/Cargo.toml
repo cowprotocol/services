@@ -33,6 +33,7 @@ sqlx = { workspace = true }
 tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros", "process"] }
 tracing = { workspace = true }
+warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }
 
 [dev-dependencies]

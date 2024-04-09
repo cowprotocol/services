@@ -1,19 +1,16 @@
 use {
     crate::{
-        boundary,
         domain::{
             competition::{
                 self,
                 auction,
                 order,
-                score,
                 solution::settlement::{self, Internalization},
             },
             eth,
             liquidity,
         },
         infra::Ethereum,
-        util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Ok, Result},
     app_data::AppDataHash,
@@ -35,10 +32,7 @@ use {
     },
     shared::{
         external_prices::ExternalPrices,
-        http_solver::{
-            self,
-            model::{InternalizationStrategy, TokenAmount},
-        },
+        http_solver::model::{InternalizationStrategy, TokenAmount},
     },
     solver::{
         interactions::Erc20ApproveInteraction,
@@ -159,17 +153,6 @@ impl Settlement {
             );
         }
 
-        settlement.score = match solution.score().clone() {
-            competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
-            competition::SolverScore::RiskAdjusted(success_probability) => {
-                http_solver::model::Score::RiskAdjusted {
-                    success_probability,
-                    gas_amount: None,
-                }
-            }
-            competition::SolverScore::Surplus => http_solver::model::Score::Surplus,
-        };
-
         Ok(Self {
             inner: settlement,
             solver: solution.solver().address(),
@@ -203,43 +186,6 @@ impl Settlement {
             input: input.into(),
             access_list: Default::default(),
         }
-    }
-
-    pub fn score(&self) -> competition::SolverScore {
-        match self.inner.score {
-            http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(score),
-            http_solver::model::Score::RiskAdjusted {
-                success_probability,
-                ..
-            } => competition::SolverScore::RiskAdjusted(success_probability),
-            http_solver::model::Score::Surplus => competition::SolverScore::Surplus,
-        }
-    }
-
-    /// Observed quality of the settlement defined as surplus + fees.
-    pub fn quality(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-    ) -> Result<score::Quality, boundary::Error> {
-        let prices = ExternalPrices::try_from_auction_prices(
-            eth.contracts().weth().address(),
-            auction
-                .tokens()
-                .iter()
-                .filter_map(|token| {
-                    token
-                        .price
-                        .map(|price| (token.address.into(), price.into()))
-                })
-                .collect(),
-        )?;
-
-        let surplus = self.inner.total_surplus(&prices);
-        let scoring_fees = self.inner.total_scoring_fees(&prices);
-        let quality = surplus + scoring_fees;
-
-        Ok(eth::U256::from_big_rational(&quality)?.into())
     }
 
     pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
@@ -450,7 +396,9 @@ pub fn to_boundary_interaction(
                 liquidity::Kind::Swapr(pool) => pool
                     .swap(&input, &output, &settlement_contract.into())
                     .context("invalid swapr execution")?,
-                liquidity::Kind::ZeroEx(_) => todo!(),
+                liquidity::Kind::ZeroEx(limit_order) => limit_order
+                    .to_interaction(&input)
+                    .context("invalid zeroex execution")?,
             };
 
             Ok(InteractionData {

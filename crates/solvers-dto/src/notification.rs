@@ -39,23 +39,7 @@ pub enum Kind {
         tx: Tx,
         succeeded_once: bool,
     },
-    ZeroScore,
-    ScoreHigherThanQuality {
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-    },
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ObjectiveValueNonPositive {
-        #[serde_as(as = "HexOrDecimalU256")]
-        quality: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        gas_cost: U256,
-    },
+    InvalidClearingPrices,
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
     },

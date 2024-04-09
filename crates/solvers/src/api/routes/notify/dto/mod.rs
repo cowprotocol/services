@@ -33,27 +33,8 @@ pub fn to_domain(
                 },
                 *succeeded_once,
             ),
-            solvers_dto::notification::Kind::ObjectiveValueNonPositive { quality, gas_cost } => {
-                notification::Kind::ScoringFailed(
-                    notification::ScoreKind::ObjectiveValueNonPositive(
-                        (*quality).into(),
-                        (*gas_cost).into(),
-                    ),
-                )
-            }
-            solvers_dto::notification::Kind::ZeroScore => {
-                notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
-            }
-            solvers_dto::notification::Kind::ScoreHigherThanQuality { score, quality } => {
-                notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanQuality(
-                    (*score).into(),
-                    (*quality).into(),
-                ))
-            }
-            solvers_dto::notification::Kind::SuccessProbabilityOutOfRange { probability } => {
-                notification::Kind::ScoringFailed(
-                    notification::ScoreKind::SuccessProbabilityOutOfRange((*probability).into()),
-                )
+            solvers_dto::notification::Kind::InvalidClearingPrices => {
+                notification::Kind::ScoringFailed(notification::ScoreKind::InvalidClearingPrices)
             }
             solvers_dto::notification::Kind::NonBufferableTokensUsed { tokens } => {
                 notification::Kind::NonBufferableTokensUsed(

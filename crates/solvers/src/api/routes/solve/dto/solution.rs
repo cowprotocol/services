@@ -113,12 +113,6 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                         }
                     })
                     .collect(),
-                score: match solution.score.clone() {
-                    solution::Score::Solver(score) => Score::Solver { score },
-                    solution::Score::RiskAdjusted(score) => Score::RiskAdjusted {
-                        success_probability: score.0,
-                    },
-                },
                 gas: solution.gas.map(|gas| gas.0.as_u64()),
             })
             .collect(),

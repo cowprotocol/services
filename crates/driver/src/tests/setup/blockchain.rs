@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order, Partial, Score},
+    super::{Asset, Order, Partial},
     crate::{
         domain::{
             competition::order,
@@ -89,7 +89,6 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub fulfillments: Vec<Fulfillment>,
-    pub score: Score,
 }
 
 #[derive(Debug, Clone)]
@@ -725,10 +724,7 @@ impl Blockchain {
                 ],
             });
         }
-        Solution {
-            fulfillments,
-            score: solution.score.clone(),
-        }
+        Solution { fulfillments }
     }
 
     /// Returns the address of the token with the given symbol.

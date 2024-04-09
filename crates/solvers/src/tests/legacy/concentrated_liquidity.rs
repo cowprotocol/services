@@ -139,10 +139,6 @@ async fn test() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );

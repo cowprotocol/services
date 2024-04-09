@@ -26,14 +26,13 @@ use {
             },
             setup::blockchain::Blockchain,
         },
-        util::{self, serialize},
+        util::{self},
     },
     bigdecimal::FromPrimitive,
     ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
-    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -61,27 +60,6 @@ pub enum Partial {
     Yes {
         executed: eth::U256,
     },
-}
-
-#[serde_as]
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum Score {
-    #[allow(dead_code)]
-    Solver {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-    },
-    #[serde(rename_all = "camelCase")]
-    RiskAdjusted { success_probability: f64 },
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Self::RiskAdjusted {
-            success_probability: 1.0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -509,7 +487,6 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub score: Score,
 }
 
 impl Solution {
@@ -560,7 +537,6 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
-            score: Default::default(),
         }
     }
 }
@@ -606,7 +582,6 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        score: Default::default(),
     }
 }
 
@@ -638,7 +613,6 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        score: Default::default(),
     }
 }
 
@@ -669,7 +643,6 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        score: Default::default(),
     }
 }
 

@@ -12,7 +12,7 @@ async fn weighted() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
+                native-token-price-estimation-amount = "100000000000000000"
             "#
             .to_owned(),
         ),
@@ -117,10 +117,6 @@ async fn weighted() {
                         "outputAmount": "1657855325872947866705"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -137,7 +133,7 @@ async fn weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -200,6 +196,22 @@ async fn weighted_v3plus() {
                     "gasEstimate": "88892",
                     "version": "v3Plus",
                 },
+                {
+                    "kind": "constantProduct",
+                    "tokens": {
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "20000000000000000000000",
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": { // native token on gnosis chain
+                            "balance": "1000000000000000000000",
+                        }
+                    },
+                    "fee": "0.0025",
+                    "id": "1",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd98",
+                    "router": "0x7a250d5630b4cf539739df2c5dacb4c659f2488d",
+                    "gasEstimate": "88892",
+                },
             ],
             "effectiveGasPrice": "1000000000",
             "deadline": "2106-01-01T00:00:00.000Z"
@@ -235,10 +247,6 @@ async fn weighted_v3plus() {
                         "outputAmount": "1663373703594405548696"
                     },
                 ],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 0.5,
-                },
                 "gas": 206391,
             }]
         }),
@@ -255,7 +263,7 @@ async fn stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
+                native-token-price-estimation-amount = "100000000000000000"
             "#
             .to_owned(),
         ),
@@ -376,10 +384,6 @@ async fn stable() {
                             "outputAmount": "9999475"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas":  289911,
                 },
                 {
@@ -408,10 +412,6 @@ async fn stable() {
                             "outputAmount": "10000000"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas":  289911,
                 },
             ]
@@ -429,7 +429,7 @@ async fn composable_stable_v4() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [0,0,0,0]
+                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -544,10 +544,6 @@ async fn composable_stable_v4() {
                             "outputAmount": "10029862202766050434"
                         },
                     ],
-                    "score": {
-                        "kind": "riskAdjusted",
-                        "successProbability": 0.5,
-                    },
                     "gas": 289911,
                 },
             ]

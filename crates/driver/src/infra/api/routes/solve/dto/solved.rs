@@ -30,7 +30,7 @@ impl Solution {
     pub fn new(solution_id: u64, solved: competition::Solved, solver: &Solver) -> Self {
         Self {
             solution_id,
-            score: solved.score.0.get(),
+            score: solved.score.0,
             submission_address: solver.address().into(),
             orders: solved
                 .trades

@@ -114,10 +114,6 @@ async fn test() {
                     }
                 ],
                 "interactions": [],
-                "score": {
-                    "kind": "riskAdjusted",
-                    "successProbability": 1.0,
-                }
             }]
         }),
     );

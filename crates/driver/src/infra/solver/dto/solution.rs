@@ -189,7 +189,6 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    competition::solution::SolverScore::Surplus,
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
@@ -223,8 +222,10 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    // TODO: remove this once all solvers are updated to not return the score
+    // https://github.com/cowprotocol/services/issues/2588
     #[allow(dead_code)]
-    score: Score,
+    score: Option<Score>,
     gas: Option<u64>,
 }
 
