@@ -36,13 +36,26 @@ use {
         eth::{self},
     },
     bigdecimal::Zero,
-    num::{CheckedAdd, CheckedSub},
 };
 
 impl Fulfillment {
+    /// Applies the protocol fees to the existing fulfillment creating a new
+    /// one.
+    pub fn with_protocol_fees(&self, prices: ClearingPrices) -> Result<Self, Error> {
+        let mut current_fulfillment = self.clone();
+        for protocol_fee in &self.order().protocol_fees {
+            current_fulfillment = current_fulfillment.with_protocol_fee(prices, protocol_fee)?;
+        }
+        Ok(current_fulfillment)
+    }
+
     /// Applies the protocol fee to the existing fulfillment creating a new one.
-    pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
-        let protocol_fee = self.protocol_fee_in_sell_token(prices)?;
+    fn with_protocol_fee(
+        &self,
+        prices: ClearingPrices,
+        protocol_fee: &FeePolicy,
+    ) -> Result<Self, Error> {
+        let protocol_fee = self.protocol_fee_in_sell_token(prices, protocol_fee)?;
 
         // Increase the fee by the protocol fee
         let fee = match self.surplus_fee() {
@@ -75,64 +88,45 @@ impl Fulfillment {
     }
 
     /// Computed protocol fee in surplus token.
-    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::TokenAmount, Error> {
-        let mut current_order_price_limits = PriceLimits {
-            sell: self.order().sell.amount,
-            buy: self.order().buy.amount,
-        };
-        let mut fee = eth::TokenAmount::default();
-        for protocol_fee in &self.order().protocol_fees {
-            let current_fee = match protocol_fee {
-                FeePolicy::Surplus {
-                    factor,
-                    max_volume_factor,
-                } => self.calculate_fee(
-                    current_order_price_limits.clone(),
-                    prices,
-                    *factor,
-                    *max_volume_factor,
-                ),
-                FeePolicy::PriceImprovement {
-                    factor,
-                    max_volume_factor,
-                    quote,
-                } => {
-                    let price_limits = adjust_quote_to_order_limits(
-                        Order {
-                            sell_amount: current_order_price_limits.sell.0,
-                            buy_amount: current_order_price_limits.buy.0,
-                            side: self.order().side,
-                        },
-                        Quote {
-                            sell_amount: quote.sell.amount.0,
-                            buy_amount: quote.buy.amount.0,
-                            fee_amount: quote.fee.amount.0,
-                        },
-                    )?;
-                    self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
-                }
-                FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),
-            }?;
-
-            // Recalculate the current price limits in order to apply the next protocol fees
-            // to the new amount
-            match self.order().side {
-                Side::Buy => {
-                    current_order_price_limits.buy = current_order_price_limits
-                        .buy
-                        .checked_add(&current_fee)
-                        .ok_or(Math::Overflow)?;
-                }
-                Side::Sell => {
-                    current_order_price_limits.sell = current_order_price_limits
-                        .sell
-                        .checked_sub(&current_fee)
-                        .ok_or(Math::Negative)?;
-                }
+    fn protocol_fee(
+        &self,
+        prices: ClearingPrices,
+        protocol_fee: &FeePolicy,
+    ) -> Result<eth::TokenAmount, Error> {
+        match protocol_fee {
+            FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => self.calculate_fee(
+                PriceLimits {
+                    sell: self.order().sell.amount,
+                    buy: self.order().buy.amount,
+                },
+                prices,
+                *factor,
+                *max_volume_factor,
+            ),
+            FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => {
+                let price_limits = adjust_quote_to_order_limits(
+                    Order {
+                        sell_amount: self.order().sell.amount.0,
+                        buy_amount: self.order().buy.amount.0,
+                        side: self.order().side,
+                    },
+                    Quote {
+                        sell_amount: quote.sell.amount.0,
+                        buy_amount: quote.buy.amount.0,
+                        fee_amount: quote.fee.amount.0,
+                    },
+                )?;
+                self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
-            fee += current_fee;
+            FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),
         }
-        Ok(fee)
     }
 
     /// Computes protocol fee compared to the given limit amounts taken from
@@ -193,11 +187,12 @@ impl Fulfillment {
     fn protocol_fee_in_sell_token(
         &self,
         prices: ClearingPrices,
+        protocol_fee: &FeePolicy,
     ) -> Result<eth::TokenAmount, Error> {
         let fee_in_sell_token = match self.order().side {
-            Side::Buy => self.protocol_fee(prices)?,
+            Side::Buy => self.protocol_fee(prices, protocol_fee)?,
             Side::Sell => self
-                .protocol_fee(prices)?
+                .protocol_fee(prices, protocol_fee)?
                 .0
                 .checked_mul(prices.buy)
                 .ok_or(Math::Overflow)?

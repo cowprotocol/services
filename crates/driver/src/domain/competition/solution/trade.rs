@@ -80,6 +80,10 @@ impl Fulfillment {
         &self.order
     }
 
+    pub fn side(&self) -> Side {
+        self.order.side
+    }
+
     pub fn executed(&self) -> order::TargetAmount {
         self.executed
     }

@@ -15,15 +15,19 @@ use {
         domain::{
             competition::{
                 auction,
-                order::fees::Quote,
-                solution::{fee, fee::adjust_quote_to_order_limits},
+                order::{fees::Quote, FeePolicy},
+                solution::{
+                    fee::{self, adjust_quote_to_order_limits},
+                    trade::{ClearingPrices, Fulfillment},
+                },
                 PriceLimits,
+                Solution,
             },
             eth::{self, TokenAmount},
         },
         util::conv::u256::U256Ext,
     },
-    num::CheckedAdd,
+    num::CheckedSub,
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -62,30 +66,24 @@ impl Scoring {
 // fees). Also, executed amount contains the fees for sell order.
 #[derive(Debug, Clone)]
 pub struct Trade {
-    sell: eth::Asset,
-    buy: eth::Asset,
-    side: Side,
+    fulfillment: Fulfillment,
     executed: order::TargetAmount,
+    uniform_prices: ClearingPrices,
     custom_price: CustomClearingPrices,
-    policies: Vec<order::FeePolicy>,
 }
 
 impl Trade {
     pub fn new(
-        sell: eth::Asset,
-        buy: eth::Asset,
-        side: Side,
+        fulfillment: &Fulfillment,
         executed: order::TargetAmount,
+        uniform_prices: ClearingPrices,
         custom_price: CustomClearingPrices,
-        policies: Vec<order::FeePolicy>,
     ) -> Self {
         Self {
-            sell,
-            buy,
-            side,
+            fulfillment: fulfillment.clone(),
             executed,
+            uniform_prices,
             custom_price,
-            policies,
         }
     }
 
@@ -102,7 +100,7 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     fn surplus_over(&self, price_limits: PriceLimits) -> Result<eth::Asset, Math> {
-        match self.side {
+        match self.fulfillment.side() {
             Side::Buy => {
                 // scale limit sell to support partially fillable orders
                 let limit_sell = price_limits
@@ -159,12 +157,52 @@ impl Trade {
         Ok(price.in_eth(surplus.amount))
     }
 
-    /// Protocol fee is defined by fee policies attached to the order.
+    /// Protocol fees is defined by fee policies attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fee(&self) -> Result<eth::Asset, Error> {
-        let calc_protocol_fee = |policy: &order::FeePolicy| match policy {
-            order::FeePolicy::Surplus {
+    fn protocol_fees(&self) -> Result<eth::Asset, Error> {
+        let mut amount = TokenAmount::default();
+        let mut current_trade = self.clone();
+        let mut trade_fee: TokenAmount = self.fulfillment.fee().0.into();
+        for (i, protocol_fee) in self
+            .fulfillment
+            .order()
+            .protocol_fees
+            .iter()
+            .rev()
+            .enumerate()
+        {
+            let fee = current_trade.protocol_fee(protocol_fee)?;
+            // Do not apply the last fee since it won't be used again, it minimizes the
+            // changes of negative trade fee
+            if i < self.fulfillment.order().protocol_fees.iter().len() - 1 {
+                trade_fee = trade_fee
+                    .checked_sub(&fee)
+                    .ok_or(Error::Math(Math::Negative))?;
+
+                current_trade.custom_price = Solution::calculate_custom_prices(
+                    self.fulfillment.side(),
+                    current_trade.executed.into(),
+                    trade_fee,
+                    &self.uniform_prices,
+                )
+                .map_err(|e| Error::CustomPrice(e.to_string()))?;
+            }
+            amount += fee;
+        }
+
+        Ok(eth::Asset {
+            token: self.surplus_token(),
+            amount,
+        })
+    }
+
+    /// Protocol fee is defined by a fee policy attached to the order.
+    ///
+    /// Denominated in SURPLUS token
+    fn protocol_fee(&self, fee_policy: &FeePolicy) -> Result<TokenAmount, Error> {
+        let calc_protocol_fee = |policy: &FeePolicy| match policy {
+            FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
             } => {
@@ -173,9 +211,9 @@ impl Trade {
                     self.surplus_fee(surplus, *factor)?.amount,
                     self.volume_fee(*max_volume_factor)?.amount,
                 );
-                Ok::<eth::TokenAmount, Error>(fee)
+                Ok::<TokenAmount, Error>(fee)
             }
-            order::FeePolicy::PriceImprovement {
+            FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
@@ -187,28 +225,18 @@ impl Trade {
                 );
                 Ok(fee)
             }
-            order::FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
+            FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
         };
-
-        let amount = self
-            .policies
-            .iter()
-            .try_fold(TokenAmount::default(), |acc, protocol_fee| {
-                acc.checked_add(&calc_protocol_fee(protocol_fee).ok()?)
-            })
-            .unwrap_or_default();
-        Ok(eth::Asset {
-            token: self.surplus_token(),
-            amount,
-        })
+        let amount = calc_protocol_fee(fee_policy)?;
+        Ok(amount)
     }
 
     fn price_improvement(&self, quote: &Quote) -> Result<eth::Asset, Error> {
         let quote = adjust_quote_to_order_limits(
             fee::Order {
-                sell_amount: self.sell.amount.0,
-                buy_amount: self.buy.amount.0,
-                side: self.side,
+                sell_amount: self.fulfillment.order().sell.amount.0,
+                buy_amount: self.fulfillment.order().buy.amount.0,
+                side: self.fulfillment.side(),
             },
             fee::Quote {
                 sell_amount: quote.sell.amount.0,
@@ -230,8 +258,8 @@ impl Trade {
 
     fn surplus_over_limit_price(&self) -> Result<eth::Asset, Error> {
         let limit_price = PriceLimits {
-            sell: self.sell.amount,
-            buy: self.buy.amount,
+            sell: self.fulfillment.order().sell.amount,
+            buy: self.fulfillment.order().buy.amount,
         };
         Ok(self.surplus_over(limit_price)?)
     }
@@ -296,7 +324,7 @@ impl Trade {
         // Finally:
         // case Sell: fee = traded_buy_amount' * factor / (1 - factor)
         // case Buy: fee = traded_sell_amount' * factor / (1 + factor)
-        let executed_in_surplus_token: eth::TokenAmount = match self.side {
+        let executed_in_surplus_token: eth::TokenAmount = match self.fulfillment.side() {
             Side::Sell => self
                 .executed
                 .0
@@ -313,7 +341,7 @@ impl Trade {
                 .ok_or(Math::DivisionByZero)?,
         }
         .into();
-        let factor = match self.side {
+        let factor = match self.fulfillment.side() {
             Side::Sell => factor / (1.0 - factor),
             Side::Buy => factor / (1.0 + factor),
         };
@@ -332,7 +360,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let protocol_fee = self.protocol_fee()?;
+        let protocol_fee = self.protocol_fees()?;
         let price = prices
             .get(&protocol_fee.token)
             .ok_or(Error::MissingPrice(protocol_fee.token))?;
@@ -341,9 +369,9 @@ impl Trade {
     }
 
     fn surplus_token(&self) -> eth::TokenAddress {
-        match self.side {
-            Side::Buy => self.sell.token,
-            Side::Sell => self.buy.token,
+        match self.fulfillment.side() {
+            Side::Buy => self.fulfillment.order().sell.token,
+            Side::Sell => self.fulfillment.order().buy.token,
         }
     }
 }
@@ -366,4 +394,6 @@ pub enum Error {
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
+    #[error("failed to calculate custom price {0:?}")]
+    CustomPrice(String),
 }

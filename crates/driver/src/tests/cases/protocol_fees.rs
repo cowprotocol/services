@@ -146,7 +146,7 @@ async fn double_surplus_protocol_fee_buy_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        expected_score: 15.ether().into_wei(),
+        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
 
@@ -176,19 +176,19 @@ async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
             // Fee = 50 ETH (limit price) - 40 ETH => 10 ETH
             // -> Second fee policy:
             // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
-            // New surplus: 10 ETH, fee 5 ETH * 40 / 50 (transformation to sell amount): 4 ETH
-            // Total fee: 14 ETH
+            // New surplus: 10 ETH, fee 5 ETH
+            // Total fee: 15 ETH
             solver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
             // driver executes at limit price
             driver: Amounts {
-                sell: 54.ether().into_wei(),
+                sell: 55.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
         },
-        expected_score: 22.8_f64.ether().into_wei(),
+        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
