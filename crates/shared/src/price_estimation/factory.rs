@@ -296,6 +296,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.args.one_inch_api_key.clone(),
                     self.network.chain_id,
                     self.network.block_stream.clone(),
+                    self.components.tokens.clone(),
                 )),
             )),
         }

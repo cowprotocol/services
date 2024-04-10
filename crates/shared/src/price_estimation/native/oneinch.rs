@@ -1,10 +1,11 @@
 use {
-    super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
+    super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
+    crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
-    number::serialization::HexOrDecimalU256,
+    num::ToPrimitive,
+    number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
     reqwest::{header::AUTHORIZATION, Client},
     serde::{Deserialize, Serialize},
@@ -18,12 +19,12 @@ use {
 
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
-struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, PriceInWei>);
+struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<H160, U256>);
 
 type Token = H160;
-type PriceInWei = U256;
+
 pub struct OneInch {
-    prices: Arc<Mutex<HashMap<Token, PriceInWei>>>,
+    prices: Arc<Mutex<HashMap<Token, NativePrice>>>,
 }
 
 impl OneInch {
@@ -33,11 +34,19 @@ impl OneInch {
         api_key: Option<String>,
         chain_id: u64,
         current_block: CurrentBlockStream,
+        token_info: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let instance = Self {
             prices: Arc::new(Mutex::new(HashMap::new())),
         };
-        instance.update_prices_in_background(client, base_url, api_key, chain_id, current_block);
+        instance.update_prices_in_background(
+            client,
+            base_url,
+            api_key,
+            chain_id,
+            current_block,
+            token_info,
+        );
         instance
     }
 
@@ -48,15 +57,25 @@ impl OneInch {
         api_key: Option<String>,
         chain_id: u64,
         current_block: CurrentBlockStream,
+        token_info: Arc<dyn TokenInfoFetching>,
     ) {
         let prices = self.prices.clone();
         tokio::task::spawn(async move {
             let mut block_stream = into_stream(current_block);
             loop {
-                match update_prices(&client, base_url.clone(), api_key.clone(), chain_id).await {
-                    Ok(new_prices) => {
+                let current_prices = get_current_prices(
+                    &client,
+                    base_url.clone(),
+                    api_key.clone(),
+                    chain_id,
+                    token_info.as_ref(),
+                )
+                .await;
+
+                match current_prices {
+                    Ok(current_prices) => {
                         tracing::debug!("OneInch spot prices updated");
-                        *prices.lock().unwrap() = new_prices;
+                        *prices.lock().unwrap() = current_prices;
                     }
                     Err(err) => {
                         tracing::warn!(?err, "OneInch spot price update failed");
@@ -72,21 +91,22 @@ impl NativePriceEstimating for OneInch {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self.prices.lock().unwrap();
-            let price = prices
+            prices
                 .get(&token)
-                .ok_or_else(|| PriceEstimationError::NoLiquidity)?;
-            Ok(price.to_f64_lossy() / 1e18)
+                .cloned()
+                .ok_or_else(|| PriceEstimationError::NoLiquidity)
         }
         .boxed()
     }
 }
 
-async fn update_prices(
+async fn get_current_prices(
     client: &Client,
     base_url: Url,
     api_key: Option<String>,
     chain: u64,
-) -> Result<HashMap<Token, PriceInWei>> {
+    token_info: &dyn TokenInfoFetching,
+) -> Result<HashMap<Token, f64>> {
     let mut builder = client.get(format!("{}/price/v1.1/{}", base_url, chain));
     if let Some(api_key) = api_key {
         builder = builder.header(AUTHORIZATION, api_key)
@@ -105,16 +125,37 @@ async fn update_prices(
         .text()
         .await
         .context("Failed to fetch Native 1Inch prices")?;
-    let result = serde_json::from_str::<Response>(&response)
-        .with_context(|| format!("Failed to parse Native 1inch prices from {response:?}"))?;
-    Ok(result.0)
+    let prices = serde_json::from_str::<Response>(&response)
+        .with_context(|| format!("Failed to parse Native 1inch prices from {response:?}"))?
+        .0;
+
+    let token_infos = token_info
+        .get_token_infos(&prices.keys().copied().collect::<Vec<_>>())
+        .await;
+
+    let normalized_prices = prices
+        .into_iter()
+        .filter_map(|(token, price)| {
+            let Some(decimals) = token_infos.get(&token).and_then(|info| info.decimals) else {
+                tracing::debug!(?token, "could not fetch decimals; discarding spot price");
+                return None;
+            };
+            let unit = num::BigRational::from_integer(10u64.pow(decimals.into()).into());
+            let normalized_price = u256_to_big_rational(&price) / unit;
+            Some((token, normalized_price.to_f64()?))
+        })
+        .collect();
+    Ok(normalized_prices)
 }
 
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::price_estimation::oneinch::BASE_URL,
+        crate::{
+            price_estimation::oneinch::BASE_URL,
+            token_info::{MockTokenInfoFetching, TokenInfo},
+        },
         std::{env, str::FromStr},
     };
 
@@ -123,11 +164,29 @@ mod tests {
     async fn works() {
         let auth_token = env::var("ONEINCH_AUTH_TOKEN").unwrap();
 
-        let prices = update_prices(
+        let mut token_info = MockTokenInfoFetching::new();
+        token_info.expect_get_token_infos().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|token| {
+                    (
+                        *token,
+                        TokenInfo {
+                            symbol: None,
+                            // hard code 6 decimals because we are testing with USDC
+                            decimals: Some(6),
+                        },
+                    )
+                })
+                .collect()
+        });
+
+        let prices = get_current_prices(
             &Client::default(),
             Url::parse(BASE_URL).unwrap(),
             Some(auth_token),
             1,
+            &token_info,
         )
         .await
         .unwrap();
