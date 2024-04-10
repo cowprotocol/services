@@ -133,7 +133,7 @@ async fn double_surplus_protocol_fee_buy_order_not_capped() {
             // -> First fee policy:
             //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %, fee 10 ETH
             // -> Second fee policy:
-            // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
+            // New sell amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // New surplus: 10 ETH, fee 5 ETH
             // Total fee: 15 ETH
             // Out of the 20 ETH of surplus, 15 ETH goes to fees and 5 ETH goes to the trader
@@ -179,10 +179,13 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
             // -> First fee policy:
             //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %, fee 10 ETH
             // -> Second fee policy:
-            // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
+            // New sell amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // New surplus: 10 ETH, fee 5 ETH
-            // Total fee: 15 ETH
-            // Out of the 20 ETH of surplus, 15 ETH goes to fees and 5 ETH goes to the trader
+            // -> Third fee policy:
+            // New sell amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
+            // New surplus: 5 ETH, fee 2.5 ETH
+            // Total fee: 17.5 ETH
+            // Out of the 20 ETH of surplus, 17.5 ETH goes to fees and 2.5 ETH goes to the trader
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -215,7 +218,16 @@ async fn double_surplus_protocol_fee_sell_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 20 ETH surplus, half of which gets captured by the protocol
+            // 20 ETH surplus in sell token (after network fee)
+            // The protocol fees are applied one by one to the orders, altering the order pricing
+            // For this example:
+            // -> First fee policy:
+            //  20 ETH surplus (60 ETH - 40 ETH), surplus policy: 50 %, fee 10 ETH
+            // -> Second fee policy:
+            // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
+            // New surplus: 10 ETH, fee 5 ETH
+            // Total fee: 15 ETH
+            // Out of the 20 ETH of surplus, 15 ETH goes to fees and 5 ETH goes to the trader
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -247,7 +259,18 @@ async fn triple_surplus_protocol_fee_sell_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // 20 ETH surplus, half of which gets captured by the protocol
+            // 20 ETH surplus in sell token (after network fee)
+            // The protocol fees are applied one by one to the orders, altering the order pricing
+            // For this example:
+            // -> First fee policy:
+            //  20 ETH surplus (60 ETH - 40 ETH), surplus policy: 50 %, fee 10 ETH
+            // -> Second fee policy:
+            // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
+            // -> Third fee policy:
+            // New buy amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
+            // New surplus: 5 ETH, fee 2.5 ETH
+            // Total fee: 17.5 ETH
+            // Out of the 20 ETH of surplus, 17.5 ETH goes to fees and 2.5 ETH goes to the trader
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -331,7 +354,13 @@ async fn surplus_and_price_improvement_protocol_fee_sell_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
+            // -> First fee policy:
+            // Receive 10 ETH more than quoted, half of which gets captured by the protocol (10 ETH)
+            // Fee = 10 ETH * 0.5 => 5 ETH
+            // -> Second fee policy:
+            // New buy amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
+            // New surplus: 5 ETH, fee 2.5 ETH
+            // Total fee: 7.5 ETH
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 30.ether().into_wei(),
@@ -374,7 +403,13 @@ async fn surplus_and_price_improvement_fee_buy_in_market_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Sell 10 ETH less than quoted, half of which is kept by the protocol
+            // -> First fee policy:
+            // Receive 10 ETH more than quoted, half of which gets captured by the protocol (10 ETH)
+            // Fee = 10 ETH * 0.5 => 5 ETH
+            // -> Second fee policy:
+            // New buy amount in the Order: 40 ETH + 5 ETH (fee) = 45 ETH
+            // New surplus: 5 ETH, fee 2.5 ETH
+            // Total fee: 7.5 ETH
             solver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
