@@ -76,6 +76,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 },
                 request_headers: config.request_headers,
                 fee_handler: config.fee_handler,
+                quote_using_limit_orders: config.quote_using_limit_orders,
             }
         }))
         .await,
