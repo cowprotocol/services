@@ -129,14 +129,17 @@ async fn get_current_prices(
         .with_context(|| format!("Failed to parse Native 1inch prices from {response:?}"))?
         .0;
 
-    let token_decimals = token_info
+    let token_infos = token_info
         .get_token_infos(&prices.keys().copied().collect::<Vec<_>>())
         .await;
 
     let normalized_prices = prices
         .into_iter()
         .filter_map(|(token, price)| {
-            let decimals = token_decimals.get(&token)?.decimals?;
+            let Some(decimals) = token_infos.get(&token).and_then(|info| info.decimals) else {
+                tracing::debug!(?token, "could not fetch decimals; discarding spot price");
+                return None;
+            };
             let normalized_price = price.to_f64_lossy() / 10f64.powf(decimals.into());
             Some((token, normalized_price))
         })
