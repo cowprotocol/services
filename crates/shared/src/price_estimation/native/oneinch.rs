@@ -140,7 +140,8 @@ async fn get_current_prices(
                 tracing::debug!(?token, "could not fetch decimals; discarding spot price");
                 return None;
             };
-            let unit = num::BigRational::from_integer(num::BigInt::from(10u64).pow(decimals.into()));
+            let unit =
+                num::BigRational::from_integer(num::BigInt::from(10u64).pow(decimals.into()));
             let normalized_price = u256_to_big_rational(&price) / unit;
             Some((token, normalized_price.to_f64()?))
         })
