@@ -21,8 +21,6 @@ pub struct Order {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub user_fee: U256,
     pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
@@ -49,7 +47,6 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_token: order.buy_token,
         sell_amount: order.sell_amount,
         buy_amount: order.buy_amount,
-        user_fee: order.user_fee,
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.side.into(),
@@ -78,7 +75,6 @@ pub fn to_domain(order: Order) -> domain::Order {
         buy_token: order.buy_token,
         sell_amount: order.sell_amount,
         buy_amount: order.buy_amount,
-        user_fee: order.user_fee,
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         side: order.kind.into(),

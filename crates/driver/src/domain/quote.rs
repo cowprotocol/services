@@ -126,7 +126,6 @@ impl Order {
                 buy: self.buy(),
                 sell: self.sell(),
                 side: self.side,
-                user_fee: Default::default(),
                 kind: if quote_using_limit_orders {
                     competition::order::Kind::Limit
                 } else {

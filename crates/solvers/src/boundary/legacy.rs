@@ -209,8 +209,8 @@ fn to_boundary_auction(
                 allow_partial_fill: order.partially_fillable,
                 is_sell_order: order.side == order::Side::Sell,
                 fee: TokenAmount {
-                    amount: order.fee().amount,
-                    token: order.fee().token.0,
+                    amount: 0.into(),
+                    token: order.sell.token.0,
                 },
                 cost: gas.gp_order_cost(),
                 is_liquidity_order: order.class == order::Class::Liquidity,
@@ -404,7 +404,6 @@ fn to_domain_solution(
                     token: eth::TokenAddress(jit.order.data.buy_token),
                     amount: jit.order.data.buy_amount,
                 },
-                fee: order::Fee(jit.order.data.fee_amount),
                 side: match jit.order.data.kind {
                     OrderKind::Buy => order::Side::Buy,
                     OrderKind::Sell => order::Side::Sell,

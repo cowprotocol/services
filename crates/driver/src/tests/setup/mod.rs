@@ -100,7 +100,6 @@ pub struct Order {
     pub valid_for: util::Timestamp,
     pub kind: order::Kind,
 
-    pub user_fee: eth::U256,
     // Currently used for limit orders to represent the surplus_fee calculated by the solver.
     pub solver_fee: Option<eth::U256>,
 
@@ -141,13 +140,6 @@ impl Order {
     pub fn multiply_amount(self, mult: eth::U256) -> Self {
         Self {
             sell_amount: self.sell_amount * mult,
-            ..self
-        }
-    }
-
-    pub fn user_fee(self, amount: eth::U256) -> Self {
-        Self {
-            user_fee: amount,
             ..self
         }
     }
@@ -268,7 +260,6 @@ impl Default for Order {
             partial: Default::default(),
             valid_for: 100.into(),
             kind: order::Kind::Market,
-            user_fee: Default::default(),
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.ether().into_wei(),
@@ -1014,10 +1005,6 @@ impl<'a> Solve<'a> {
             blockchain: self.blockchain,
         }
     }
-
-    pub fn status(self, code: hyper::StatusCode) {
-        assert_eq!(self.status, code);
-    }
 }
 
 impl<'a> SolveOk<'a> {
@@ -1088,10 +1075,7 @@ impl<'a> SolveOk<'a> {
 
             let (expected_sell, expected_buy) = match &expected.expected_amounts {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
-                None => (
-                    fulfillment.quoted_order.sell + fulfillment.quoted_order.order.user_fee,
-                    fulfillment.quoted_order.buy,
-                ),
+                None => (fulfillment.quoted_order.sell, fulfillment.quoted_order.buy),
             };
             assert!(u256(trade.get("sellAmount").unwrap()) == expected_sell);
             assert!(u256(trade.get("buyAmount").unwrap()) == expected_buy);

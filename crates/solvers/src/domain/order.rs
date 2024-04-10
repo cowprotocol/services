@@ -2,7 +2,7 @@
 
 use {
     crate::{domain::eth, util},
-    ethereum_types::{Address, H256, U256},
+    ethereum_types::{Address, H256},
     std::fmt::{self, Debug, Display, Formatter},
 };
 
@@ -12,7 +12,6 @@ pub struct Order {
     pub uid: Uid,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub fee: Fee,
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
@@ -24,14 +23,6 @@ impl Order {
         let mut bytes = [0_u8; 20];
         bytes.copy_from_slice(&self.uid.0[32..52]);
         bytes.into()
-    }
-
-    /// Returns the order's fee amount as an asset.
-    pub fn fee(&self) -> eth::Asset {
-        eth::Asset {
-            token: self.sell.token,
-            amount: self.fee.0,
-        }
     }
 
     /// Returns `true` if the order expects a solver-computed fee.
@@ -57,10 +48,6 @@ impl Display for Uid {
         Display::fmt(&util::fmt::Hex(&self.0), f)
     }
 }
-
-/// An order fee amount, denominated in its sell token.
-#[derive(Clone, Copy, Debug)]
-pub struct Fee(pub U256);
 
 /// The trading side of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,7 +125,6 @@ pub struct JitOrder {
     pub signature: Signature,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub fee: Fee,
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,

@@ -238,20 +238,7 @@ impl AuctionProcessor {
                 }
             };
 
-            let available_sell_amount = {
-                let available = order.available(weth);
-                available.sell.amount.0.checked_add(available.user_fee.0)
-            };
-            let max_sell = match available_sell_amount {
-                Some(amount) => order::SellAmount(amount),
-                None => {
-                    observe::order_excluded_from_auction(
-                        order,
-                        observe::OrderExcludedFromAuctionReason::CouldNotCalculateMaxSell,
-                    );
-                    return false;
-                }
-            };
+            let max_sell = order::SellAmount(order.available(weth).sell.amount.0);
 
             let allocated_balance = match order.partial {
                 order::Partial::Yes { .. } => max_sell.min(*remaining_balance),

@@ -46,7 +46,6 @@ impl Auction {
                         Kind::Sell => competition::order::Side::Sell,
                         Kind::Buy => competition::order::Side::Buy,
                     },
-                    user_fee: order.user_fee.into(),
                     kind: match order.class {
                         Class::Market => competition::order::Kind::Market,
                         Class::Limit => competition::order::Kind::Limit,
@@ -227,8 +226,6 @@ struct Order {
     sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    user_fee: eth::U256,
     protocol_fees: Vec<FeePolicy>,
     valid_to: u32,
     kind: Kind,

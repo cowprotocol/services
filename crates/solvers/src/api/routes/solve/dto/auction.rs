@@ -58,7 +58,6 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
                     Class::Limit => order::Class::Limit,
                     Class::Liquidity => order::Class::Liquidity,
                 },
-                fee: order::Fee(order.fee_amount),
                 partially_fillable: order.partially_fillable,
             })
             .collect(),

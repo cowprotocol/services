@@ -147,7 +147,7 @@ impl QuotedOrder {
             sell_amount: self.sell_amount(),
             buy_amount: self.buy_amount(),
             valid_to: u32::try_from(time::now().timestamp()).unwrap() + self.order.valid_for.0,
-            user_fee: self.order.user_fee,
+            user_fee: 0.into(),
             side: self.order.side,
             secret_key: blockchain.trader_secret_key,
             domain_separator: blockchain.domain_separator,
@@ -631,7 +631,7 @@ impl Blockchain {
                         .unwrap()
                         .mint(
                             self.trader_address,
-                            "1e-7".ether().into_wei() * execution.sell + order.user_fee,
+                            "1e-7".ether().into_wei() * execution.sell,
                         )
                         .from(trader_account.clone())
                         .send(),
