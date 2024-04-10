@@ -137,7 +137,7 @@ impl Solution {
         self.gas
     }
 
-    pub fn calculate_custom_prices(
+    fn calculate_custom_prices(
         side: Side,
         executed: TokenAmount,
         fee: TokenAmount,

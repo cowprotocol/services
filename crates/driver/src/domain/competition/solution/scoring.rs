@@ -27,6 +27,7 @@ use {
         },
         util::conv::u256::U256Ext,
     },
+    bigdecimal::Zero,
     num::CheckedAdd,
 };
 
@@ -168,16 +169,16 @@ impl Trade {
             .order()
             .protocol_fees
             .iter()
-            .rev()
             .enumerate()
+            .rev()
         {
             let fee = current_trade.protocol_fee(protocol_fee)?;
             amount = amount
                 .checked_add(&fee)
                 .ok_or(Error::Math(Math::Overflow))?;
-            // Do not apply the last fee since it won't be used again, it minimizes the
-            // changes of negative trade fee
-            if i < self.fulfillment.order().protocol_fees.iter().len() - 1 {
+            // Do not need to calculate the last custom prices because in the last iteration
+            // the prices are not used anymore to calculate the protocol fee
+            if !i.is_zero() {
                 current_trade.custom_price = Self::calculate_custom_prices(
                     self.fulfillment.side(),
                     self.fulfillment.executed().into(),
@@ -204,28 +205,27 @@ impl Trade {
     ) -> Result<CustomClearingPrices, error::Scoring> {
         Ok(CustomClearingPrices {
             sell: match side {
-                Side::Sell => {
-                    executed
-                        .0
-                        .checked_mul(uniform_prices.sell)
-                        .ok_or(Math::Overflow)?
-                        .checked_ceil_div(&uniform_prices.buy)
-                        .ok_or(Math::DivisionByZero)?
-                        + current_protocol_fee.0
-                }
+                Side::Sell => executed
+                    .0
+                    .checked_mul(uniform_prices.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_ceil_div(&uniform_prices.buy)
+                    .ok_or(Math::DivisionByZero)?
+                    .checked_add(current_protocol_fee.0)
+                    .ok_or(Math::Overflow)?,
                 Side::Buy => executed.0,
             },
             buy: match side {
                 Side::Sell => executed.0 + fulfillment_fee.0,
-                Side::Buy => {
-                    (executed.0)
-                        .checked_mul(uniform_prices.buy)
-                        .ok_or(Math::Overflow)?
-                        .checked_div(uniform_prices.sell)
-                        .ok_or(Math::DivisionByZero)?
-                        + fulfillment_fee.0
-                        - current_protocol_fee.0
-                }
+                Side::Buy => (executed.0)
+                    .checked_mul(uniform_prices.buy)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(uniform_prices.sell)
+                    .ok_or(Math::DivisionByZero)?
+                    .checked_add(fulfillment_fee.0)
+                    .ok_or(Math::Overflow)?
+                    .checked_sub(current_protocol_fee.0)
+                    .ok_or(Math::Negative)?,
             },
         })
     }
