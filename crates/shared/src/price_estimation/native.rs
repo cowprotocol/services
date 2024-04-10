@@ -10,7 +10,8 @@ use {
 mod oneinch;
 pub use self::oneinch::OneInch;
 
-pub type NativePriceEstimateResult = Result<f64, PriceEstimationError>;
+pub type NativePrice = f64;
+pub type NativePriceEstimateResult = Result<NativePrice, PriceEstimationError>;
 
 pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U256> {
     match chain_id {

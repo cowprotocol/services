@@ -1,5 +1,5 @@
 use {
-    super::{NativePriceEstimateResult, NativePriceEstimating},
+    super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
@@ -19,13 +19,12 @@ use {
 
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
-struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, PriceInWei>);
+struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<H160, U256>);
 
 type Token = H160;
-type PriceInWei = U256;
 
 pub struct OneInch {
-    prices: Arc<Mutex<HashMap<Token, f64>>>,
+    prices: Arc<Mutex<HashMap<Token, NativePrice>>>,
 }
 
 impl OneInch {
