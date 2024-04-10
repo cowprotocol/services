@@ -4,7 +4,8 @@ use {
     anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
-    number::serialization::HexOrDecimalU256,
+    num::ToPrimitive,
+    number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
     reqwest::{header::AUTHORIZATION, Client},
     serde::{Deserialize, Serialize},
@@ -140,8 +141,9 @@ async fn get_current_prices(
                 tracing::debug!(?token, "could not fetch decimals; discarding spot price");
                 return None;
             };
-            let normalized_price = price.to_f64_lossy() / 10f64.powf(decimals.into());
-            Some((token, normalized_price))
+            let unit = num::BigRational::from_integer(10u64.pow(decimals.into()).into());
+            let normalized_price = u256_to_big_rational(&price) / unit;
+            Some((token, normalized_price.to_f64()?))
         })
         .collect();
     Ok(normalized_prices)
