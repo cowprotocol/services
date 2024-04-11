@@ -153,10 +153,12 @@ impl Solution {
             };
             let custom_prices = trade.calculate_custom_prices(&uniform_prices)?;
             trades.push(scoring::Trade::new(
-                trade,
+                trade.order().sell,
+                trade.order().buy,
+                trade.order().side,
                 executed,
-                uniform_prices,
                 custom_prices,
+                trade.order().protocol_fees.clone(),
             ))
         }
 
