@@ -75,6 +75,8 @@ paths:
                       duplicatedSolutionId,
                       simulationFailed,
                       invalidClearingPrices,
+                      missingPrice,
+                      invalidExecutedAmount,
                       nonBufferableTokensUsed,
                       solverAccountInsufficientBalance,
                       success,
@@ -226,13 +228,13 @@ components:
       description: |
         The trading side of the order.
       type: string
-      enum: [sell, buy]
+      enum: [ sell, buy ]
 
     OrderClass:
       description: |
         How the CoW Protocol order was classified.
       type: string
-      enum: [market, limit, liquidity]
+      enum: [ market, limit, liquidity ]
 
     AppData:
       description: |
@@ -245,19 +247,19 @@ components:
       description: |
         Where should the sell token be drawn from?
       type: string
-      enum: [erc20, internal, external]
+      enum: [ erc20, internal, external ]
 
     BuyTokenBalance:
       description: |
         Where should the buy token be transferred to?
       type: string
-      enum: [erc20, internal]
+      enum: [ erc20, internal ]
 
     SigningScheme:
       description: |
         How was the order signed?
       type: string
-      enum: [eip712, ethSign, preSign, eip1271]
+      enum: [ eip712, ethSign, preSign, eip1271 ]
 
     Signature:
       description: |
@@ -320,7 +322,7 @@ components:
       properties:
         kind:
           type: string
-          enum: ["surplus"]
+          enum: [ "surplus" ]
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
@@ -354,7 +356,7 @@ components:
       properties:
         kind:
           type: string
-          enum: ["volume"]
+          enum: [ "volume" ]
         factor:
           description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
           type: number
@@ -388,7 +390,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [constantProduct]
+          enum: [ constantProduct ]
         tokens:
           description: |
             A mapping of token address to its reserve amounts.
@@ -412,7 +414,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [weightedProduct]
+          enum: [ weightedProduct ]
         tokens:
           description: |
             A mapping of token address to its reserve amounts with weights.
@@ -432,7 +434,7 @@ components:
           $ref: "#/components/schemas/Decimal"
         version:
           type: string
-          enum: ["v0", "v3Plus"]
+          enum: [ "v0", "v3Plus" ]
         balancer_pool_id:
           $ref: "#/components/schemas/BalancerPoolId"
 
@@ -449,7 +451,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [stable]
+          enum: [ stable ]
         tokens:
           description: |
             A mapping of token address to token balance and scaling rate.
@@ -486,7 +488,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [concentratedLiquidity]
+          enum: [ concentratedLiquidity ]
         tokens:
           type: array
           items:
@@ -522,7 +524,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [limitOrder]
+          enum: [ limitOrder ]
         makerToken:
           $ref: "#/components/schemas/Token"
         takerToken:
@@ -684,7 +686,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [fulfillment]
+          enum: [ fulfillment ]
         order:
           description: |
             A reference by UID of the order to execute in a solution. The order
@@ -713,7 +715,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [jit]
+          enum: [ jit ]
         executedAmount:
           description: |
             The amount of the order that was executed. This is denoted in
@@ -747,7 +749,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [liquidity]
+          enum: [ liquidity ]
         id:
           description: |
             The ID of executed liquidity provided in the auction input.
@@ -793,7 +795,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [custom]
+          enum: [ custom ]
         target:
           $ref: "#/components/schemas/Address"
         value:

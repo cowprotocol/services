@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             competition::{auction, solution},
-            eth,
+            eth::{self},
         },
         infra::notify,
         util::serialize,
@@ -38,9 +38,7 @@ impl Notification {
                         succeeded_once,
                     }
                 }
-                notify::Kind::ScoringFailed(notify::ScoreKind::InvalidClearingPrices) => {
-                    Kind::InvalidClearingPrices
-                }
+                notify::Kind::ScoringFailed(scoring) => scoring.into(),
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
@@ -62,6 +60,18 @@ impl Notification {
                     notify::Settlement::Fail => Kind::Fail,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
+            },
+        }
+    }
+}
+
+impl From<notify::ScoreKind> for Kind {
+    fn from(value: notify::ScoreKind) -> Self {
+        match value {
+            notify::ScoreKind::InvalidClearingPrices => Kind::InvalidClearingPrices,
+            notify::ScoreKind::InvalidExecutedAmount => Kind::InvalidExecutedAmount,
+            notify::ScoreKind::MissingPrice(token_address) => Kind::MissingPrice {
+                token_address: token_address.into(),
             },
         }
     }
@@ -108,6 +118,11 @@ pub enum Kind {
         succeeded_once: bool,
     },
     InvalidClearingPrices,
+    #[serde(rename_all = "camelCase")]
+    MissingPrice {
+        token_address: eth::H160,
+    },
+    InvalidExecutedAmount,
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
     },

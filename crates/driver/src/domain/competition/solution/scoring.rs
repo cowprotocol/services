@@ -176,7 +176,7 @@ impl Trade {
             if !i.is_zero() {
                 current_trade.custom_price = self
                     .calculate_custom_prices(amount)
-                    .map_err(|e| Error::CustomPrice(e.to_string()))?;
+                    .map_err(Error::Scoring)?;
             }
         }
 
@@ -419,6 +419,6 @@ pub enum Error {
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
-    #[error("failed to calculate custom price {0:?}")]
-    CustomPrice(String),
+    #[error("scoring: failed to calculate custom price {0:?}")]
+    Scoring(#[source] error::Scoring),
 }
