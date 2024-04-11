@@ -423,6 +423,7 @@ impl DefaultZeroExApi {
         page: usize,
     ) -> Result<OrdersResponse, ZeroExResponseError> {
         let mut url = query.format_url(&self.base_url);
+        tracing::info!("newlog 0x url={:?}", url);
         url.query_pairs_mut()
             .append_pair("page", &page.to_string())
             .append_pair("perPage", &results_per_page.to_string());
@@ -488,6 +489,7 @@ impl ZeroExApi for DefaultZeroExApi {
     ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
         let mut results = Vec::default();
         let mut page = 1;
+        tracing::info!("newlog 0x query={:?}", query);
         loop {
             let response = self
                 .get_orders_with_pagination(query, ORDERS_MAX_PAGE_SIZE, page)
@@ -531,7 +533,7 @@ impl DefaultZeroExApi {
         url: Url,
         set_current_block_header: bool,
     ) -> Result<T, ZeroExResponseError> {
-        tracing::trace!("Querying 0x API: {}", url);
+        tracing::info!("Querying 0x API: {}", url);
 
         let path = url.path().to_owned();
         let result = async move {

@@ -96,6 +96,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
             },
         ];
 
+        tracing::info!("newlog trying te get 0x orders");
         let zeroex_orders_results =
             futures::future::join_all(queries.iter().map(|query| self.api.get_orders(query))).await;
         let zeroex_orders = zeroex_orders_results
