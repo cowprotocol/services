@@ -14,7 +14,6 @@ use {
             solver::Solver,
             Simulator,
         },
-        util::conv::u256::U256Ext,
     },
     futures::future::try_join_all,
     itertools::Itertools,
@@ -30,11 +29,6 @@ pub mod settlement;
 pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
-
-use crate::domain::{
-    competition::{order::Side, solution::error::Math},
-    eth::TokenAmount,
-};
 
 type Prices = HashMap<eth::TokenAddress, eth::U256>;
 
@@ -137,36 +131,6 @@ impl Solution {
         self.gas
     }
 
-    fn calculate_custom_prices(
-        side: Side,
-        executed: TokenAmount,
-        fee: TokenAmount,
-        uniform_prices: &ClearingPrices,
-    ) -> Result<scoring::CustomClearingPrices, error::Scoring> {
-        Ok(scoring::CustomClearingPrices {
-            sell: match side {
-                Side::Sell => executed
-                    .0
-                    .checked_mul(uniform_prices.sell)
-                    .ok_or(Math::Overflow)?
-                    .checked_ceil_div(&uniform_prices.buy)
-                    .ok_or(Math::DivisionByZero)?,
-                Side::Buy => executed.0,
-            },
-            buy: match side {
-                Side::Sell => executed.0 + fee.0,
-                Side::Buy => {
-                    (executed.0)
-                        .checked_mul(uniform_prices.buy)
-                        .ok_or(Math::Overflow)?
-                        .checked_div(uniform_prices.sell)
-                        .ok_or(Math::DivisionByZero)?
-                        + fee.0
-                }
-            },
-        })
-    }
-
     /// JIT score calculation as per CIP38
     pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
@@ -187,12 +151,7 @@ impl Solution {
                     .get(&trade.order().buy.token.wrap(self.weth))
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
-            let custom_prices = Self::calculate_custom_prices(
-                trade.order().side,
-                trade.executed().into(),
-                trade.fee().0.into(),
-                &uniform_prices,
-            )?;
+            let custom_prices = trade.calculate_custom_prices(&uniform_prices)?;
             trades.push(scoring::Trade::new(
                 trade,
                 executed,
