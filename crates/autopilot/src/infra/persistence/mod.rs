@@ -1,5 +1,9 @@
 use {
-    crate::{boundary, database::Postgres, domain},
+    crate::{
+        boundary,
+        database::{order_events::store_order_events, Postgres},
+        domain,
+    },
     anyhow::Context,
     chrono::Utc,
     std::sync::Arc,
@@ -100,16 +104,25 @@ impl Persistence {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
-                let start = Instant::now();
-                let events_count = order_uids.len();
-                match boundary::store_order_events(&db, order_uids, label, Utc::now()).await {
-                    Ok(_) => {
-                        tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to insert order events");
-                    }
-                }
+
+                let store_order_events_inner = async {
+                    let start = Instant::now();
+                    let events_count = order_uids.len();
+                    let mut ex = db.pool.begin().await.context("begin transaction")?;
+                    store_order_events(&mut ex, order_uids, label, Utc::now()).await?;
+                    ex.commit().await?;
+                    Ok::<(Instant, usize), anyhow::Error>((start, events_count))
+                };
+
+        match store_order_events_inner.await {
+            Ok((start, events_count)) => {
+                tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
+            }
+            Err(err) => {
+                tracing::warn!(?err, "failed to insert order events");
+            }
+        }
+
             }
                 .instrument(tracing::Span::current()),
         );

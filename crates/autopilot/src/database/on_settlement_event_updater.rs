@@ -1,6 +1,12 @@
 use {
+    crate::{database::order_events::store_order_events, domain::auction},
     anyhow::{Context, Result},
-    database::{byte_array::ByteArray, settlement_observations::Observation},
+    chrono::Utc,
+    database::{
+        byte_array::ByteArray,
+        order_events::OrderEventLabel,
+        settlement_observations::Observation,
+    },
     ethcontract::U256,
     model::order::OrderUid,
     number::conversions::u256_to_big_decimal,
@@ -64,6 +70,15 @@ impl super::Postgres {
             .await
             .context("insert_settlement_observations")?;
 
+            let order_uids = auction_data
+                .order_executions
+                .iter()
+                .map(|(order_uid, _)| *order_uid)
+                .map(Into::into)
+                .collect::<Vec<auction::order::OrderUid>>();
+            store_order_events(ex, order_uids, OrderEventLabel::Traded, Utc::now())
+                .await
+                .context("store_order_events")?;
             for (order, executed_fee) in auction_data.order_executions {
                 database::order_execution::save(
                     ex,
