@@ -268,6 +268,7 @@ impl OrderRecord {
     /// Scales the `maker_amount` according to how much of the partially
     /// fillable amount was already used.
     pub fn remaining_maker_amount(&self) -> Result<u128> {
+        tracing::info!("newlog received limit_order={:?}", self);
         if self.metadata.remaining_fillable_taker_amount > self.order.taker_amount {
             anyhow::bail!("remaining taker amount bigger than total taker amount");
         }

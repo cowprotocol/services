@@ -75,6 +75,7 @@ impl ZeroExLiquidity {
             }),
             exchange: Exchange::ZeroEx,
         };
+        tracing::info!("newlog record={:?}, limit_order={:?}", record, limit_order);
         Some(Liquidity::LimitOrder(limit_order))
     }
 }
