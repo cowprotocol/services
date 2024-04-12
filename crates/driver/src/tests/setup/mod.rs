@@ -289,6 +289,9 @@ pub struct Solver {
     timeouts: infra::solver::Timeouts,
     /// Determines whether the `solver` or the `driver` handles the fees
     fee_handler: FeeHandler,
+    /// Whether or not solver is allowed to combine multiple solutions into a
+    /// new one.
+    merge_solutions: bool,
 }
 
 pub fn test_solver() -> Solver {
@@ -309,6 +312,7 @@ pub fn test_solver() -> Solver {
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
         fee_handler: FeeHandler::default(),
+        merge_solutions: false,
     }
 }
 
@@ -340,6 +344,11 @@ impl Solver {
 
     pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
         self.fee_handler = fee_handler;
+        self
+    }
+
+    pub fn merge_solutions(mut self) -> Self {
+        self.merge_solutions = true;
         self
     }
 }

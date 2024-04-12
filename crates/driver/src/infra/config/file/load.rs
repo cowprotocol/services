@@ -1,7 +1,15 @@
 use {
     crate::{
         domain::eth,
-        infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
+        infra::{
+            self,
+            blockchain,
+            config::file,
+            liquidity,
+            mempool,
+            simulator,
+            solver::{self, SolutionMerging},
+        },
     },
     futures::future::join_all,
     std::path::Path,
@@ -77,6 +85,10 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 request_headers: config.request_headers,
                 fee_handler: config.fee_handler,
                 quote_using_limit_orders: config.quote_using_limit_orders,
+                merge_solutions: match config.merge_solutions {
+                    true => SolutionMerging::Allowed,
+                    false => SolutionMerging::Forbidden,
+                },
             }
         }))
         .await,

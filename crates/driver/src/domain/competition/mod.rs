@@ -8,7 +8,7 @@ use {
             blockchain::Ethereum,
             notify,
             observe,
-            solver::{self, Solver},
+            solver::{self, SolutionMerging, Solver},
             Simulator,
         },
         util::Bytes,
@@ -98,10 +98,13 @@ impl Competition {
             }
         });
 
-        let merged = merge(solutions, auction);
+        let all_solutions = match self.solver.solution_merging() {
+            SolutionMerging::Allowed => merge(solutions, auction),
+            SolutionMerging::Forbidden => solutions.collect(),
+        };
 
         // Encode solutions into settlements (streamed).
-        let encoded = merged
+        let encoded = all_solutions
             .into_iter()
             .map(|solution| async move {
                 let id = solution.id().clone();
@@ -119,7 +122,7 @@ impl Competition {
                     .ok()
             });
 
-        // Merge settlements as they arrive until there are no more new settlements or
+        // Encode settlements as they arrive until there are no more new settlements or
         // timeout is reached.
         let mut settlements = Vec::new();
         let future = async {
