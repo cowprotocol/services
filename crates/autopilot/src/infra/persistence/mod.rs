@@ -104,7 +104,6 @@ impl Persistence {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
-
                 let store_order_events_inner = async {
                     let start = Instant::now();
                     let events_count = order_uids.len();
@@ -114,17 +113,16 @@ impl Persistence {
                     Ok::<(Instant, usize), anyhow::Error>((start, events_count))
                 };
 
-        match store_order_events_inner.await {
-            Ok((start, events_count)) => {
-                tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
+                match store_order_events_inner.await {
+                    Ok((start, events_count)) => {
+                        tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
+                    }
+                    Err(err) => {
+                        tracing::warn!(?err, "failed to insert order events");
+                    }
+                }
             }
-            Err(err) => {
-                tracing::warn!(?err, "failed to insert order events");
-            }
-        }
-
-            }
-                .instrument(tracing::Span::current()),
+            .instrument(tracing::Span::current()),
         );
     }
 

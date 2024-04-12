@@ -73,9 +73,8 @@ impl super::Postgres {
             let order_uids = auction_data
                 .order_executions
                 .iter()
-                .map(|(order_uid, _)| *order_uid)
-                .map(Into::into)
-                .collect::<Vec<auction::order::OrderUid>>();
+                .map(|(order_uid, _)| auction::order::OrderUid::from(*order_uid))
+                .collect::<Vec<_>>();
             store_order_events(ex, order_uids, OrderEventLabel::Traded, Utc::now())
                 .await
                 .context("store_order_events")?;
