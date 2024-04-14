@@ -25,7 +25,6 @@ use {
     thiserror::Error,
 };
 
-pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
 pub mod external;
@@ -35,12 +34,9 @@ pub mod http;
 pub mod instrumented;
 pub mod native;
 pub mod native_price_cache;
-pub mod oneinch;
-pub mod paraswap;
 pub mod sanitized;
 pub mod trade_finder;
 pub mod trade_verifier;
-pub mod zeroex;
 
 #[derive(Clone, Debug)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);

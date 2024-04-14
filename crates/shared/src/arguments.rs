@@ -213,21 +213,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
     pub pool_cache_delay_between_retries: Duration,
 
-    /// The ParaSwap API base url to use.
-    #[clap(long, env, default_value = super::paraswap_api::DEFAULT_URL)]
-    pub paraswap_api_url: String,
-
-    /// Special partner authentication for Paraswap API (allowing higher rater
-    /// limits)
-    #[clap(long, env)]
-    pub paraswap_partner: Option<String>,
-
-    /// The list of disabled ParaSwap DEXs. By default, the `ParaSwapPool4`
-    /// DEX (representing a private market maker) is disabled as it increases
-    /// price by 1% if built transactions don't actually get executed.
-    #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
-    pub disabled_paraswap_dexs: Vec<String>,
-
     #[clap(long, env)]
     pub zeroex_url: Option<String>,
 
@@ -401,8 +386,6 @@ impl Display for Arguments {
             pool_cache_maximum_recent_block_age,
             pool_cache_maximum_retries,
             pool_cache_delay_between_retries,
-            paraswap_partner,
-            disabled_paraswap_dexs,
             zeroex_url,
             zeroex_api_key,
             use_internal_buffers,
@@ -417,7 +400,6 @@ impl Display for Arguments {
             native_token_address,
             balancer_v2_vault_address,
             custom_univ2_baseline_sources,
-            paraswap_api_url,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
         } = self;
@@ -451,8 +433,6 @@ impl Display for Arguments {
             "pool_cache_delay_between_retries: {:?}",
             pool_cache_delay_between_retries
         )?;
-        display_secret_option(f, "paraswap_partner", paraswap_partner)?;
-        display_list(f, "disabled_paraswap_dexs", disabled_paraswap_dexs)?;
         display_option(f, "zeroex_url", zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", zeroex_api_key)?;
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
@@ -495,7 +475,6 @@ impl Display for Arguments {
             "custom_univ2_baseline_sources",
             custom_univ2_baseline_sources,
         )?;
-        writeln!(f, "paraswap_api_url: {}", paraswap_api_url)?;
         writeln!(
             f,
             "liquidity_fetcher_max_age_update: {:?}",
