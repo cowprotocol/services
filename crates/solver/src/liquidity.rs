@@ -11,7 +11,7 @@ use {
     crate::settlement::SettlementEncoder,
     anyhow::Result,
     model::{
-        order::{OrderKind, OrderUid, Order},
+        order::{Order, OrderKind, OrderUid},
         TokenPair,
     },
     num::rational::Ratio,
