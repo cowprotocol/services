@@ -4,7 +4,6 @@
 use {
     crate::{
         gas_price_estimation::GasEstimatorType,
-        price_estimation::PriceEstimators,
         sources::{
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
@@ -71,9 +70,6 @@ pub struct LegacySolver {
 // as both crates can create orders
 #[derive(clap::Parser)]
 pub struct OrderQuotingArguments {
-    #[clap(long, env, default_value_t)]
-    pub price_estimators: PriceEstimators,
-
     /// A list of external drivers used for price estimation in the following
     /// format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
@@ -354,7 +350,6 @@ impl Display for OrderQuotingArguments {
         let Self {
             eip1271_onchain_quote_validity,
             presign_onchain_quote_validity,
-            price_estimators,
             price_estimation_drivers,
             price_estimation_legacy_solvers,
             standard_offchain_quote_validity,
@@ -370,7 +365,6 @@ impl Display for OrderQuotingArguments {
             "presign_onchain_quote_validity_second: {:?}",
             presign_onchain_quote_validity
         )?;
-        writeln!(f, "price_estimators: {}", price_estimators)?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         display_list(
             f,

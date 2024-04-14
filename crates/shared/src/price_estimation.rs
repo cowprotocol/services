@@ -4,7 +4,7 @@ use {
         conversions::U256Ext,
         trade_finding::Interaction,
     },
-    anyhow::{Context, Result},
+    anyhow::Result,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
     itertools::Itertools,
@@ -19,7 +19,6 @@ use {
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
-        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -42,104 +41,6 @@ pub mod sanitized;
 pub mod trade_finder;
 pub mod trade_verifier;
 pub mod zeroex;
-
-#[derive(Clone, Debug)]
-pub struct PriceEstimators(Vec<PriceEstimator>);
-
-impl PriceEstimators {
-    fn none() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn as_slice(&self) -> &[PriceEstimator] {
-        &self.0
-    }
-}
-
-impl Default for PriceEstimators {
-    fn default() -> Self {
-        Self(vec![PriceEstimator {
-            kind: PriceEstimatorKind::Baseline,
-            address: H160::zero(),
-        }])
-    }
-}
-
-impl Display for PriceEstimators {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        if self.0.is_empty() {
-            return f.write_str("None");
-        }
-
-        let formatter = self
-            .as_slice()
-            .iter()
-            .format_with(",", |PriceEstimator { kind, address }, f| {
-                f(&format_args!("{kind:?}|{address:?}"))
-            });
-        write!(f, "{}", formatter)
-    }
-}
-
-impl FromStr for PriceEstimators {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "None" {
-            return Ok(Self::none());
-        }
-
-        Ok(Self(
-            s.split(',')
-                .map(PriceEstimator::from_str)
-                .collect::<Result<_>>()?,
-        ))
-    }
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum PriceEstimatorKind {
-    Baseline,
-    Paraswap,
-    ZeroEx,
-    OneInch,
-    BalancerSor,
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct PriceEstimator {
-    pub kind: PriceEstimatorKind,
-    pub address: H160,
-}
-
-impl PriceEstimator {
-    /// Returns the name of this price estimator type.
-    pub fn name(&self) -> String {
-        format!("{:?}", self.kind)
-    }
-}
-
-impl FromStr for PriceEstimator {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (estimator, address) = s
-            .split_once('|')
-            .unwrap_or((s, "0x0000000000000000000000000000000000000000"));
-        let address = H160::from_str(address).context("failed to convert to H160: {address}")?;
-        let kind = match estimator {
-            "Baseline" => PriceEstimatorKind::Baseline,
-            "Paraswap" => PriceEstimatorKind::Paraswap,
-            "ZeroEx" => PriceEstimatorKind::ZeroEx,
-            "OneInch" => PriceEstimatorKind::OneInch,
-            "BalancerSor" => PriceEstimatorKind::BalancerSor,
-            estimator => {
-                anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
-            }
-        };
-        Ok(PriceEstimator { kind, address })
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
@@ -613,50 +514,6 @@ pub mod mocks {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_price_estimators() {
-        for arg in [
-            "Baselin|0x0000000000000000000000000000000000000001", // incorrect estimator name
-            "Baseline|0x000000000000000000000000000000000000000", // address too short
-            "Baseline|0x00000000000000000000000000000000000000010", // address too long
-            "Baseline,0x0000000000000000000000000000000000000001", // wrong separator
-            "Baseline|",                                          // missing argument
-            "Baseline|0x0000000000000000000000000000000000000001|", // additional argument
-            "Baseline|0x0000000000000000000000000000000000000001|Baseline", // additional argument
-        ] {
-            let parsed = arg.parse::<PriceEstimator>();
-            assert!(
-                parsed.is_err(),
-                "string successfully parsed when it should have failed: {arg}"
-            );
-        }
-
-        let address = H160::from_low_u64_be;
-        let parsed = |arg: &str| arg.parse::<PriceEstimator>().unwrap();
-        let estimator = |kind, address| PriceEstimator { kind, address };
-        // Fallback case to allow for default CLI arguments.
-        assert_eq!(
-            parsed("Baseline"),
-            estimator(PriceEstimatorKind::Baseline, address(0))
-        );
-        assert_eq!(
-            parsed("Baseline|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Baseline, address(1))
-        );
-        assert_eq!(
-            parsed("ZeroEx|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::ZeroEx, address(1))
-        );
-        assert_eq!(
-            parsed("OneInch|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::OneInch, address(1))
-        );
-        assert_eq!(
-            parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::BalancerSor, address(1))
-        );
-    }
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {
