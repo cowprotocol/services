@@ -106,7 +106,7 @@ impl Settlement {
             };
 
             let boundary_limit_order = order_converter.normalize_limit_order(
-                solver::order_balance_filter::BalancedOrder::full(boundary_order),
+                solver::liquidity::BalancedOrder::full(boundary_order),
             )?;
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
