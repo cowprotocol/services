@@ -1,12 +1,13 @@
 use {
     crate::{
-        domain::competition::order,
+        domain::{competition::order, eth},
         tests::{
             self,
             cases::{EtherExt, DEFAULT_SOLVER_FEE},
-            setup::{ab_order, ab_pool, ab_solution},
+            setup::{ab_order, ab_pool, ab_solution, TRADER_ADDRESS},
         },
     },
+    std::str::FromStr,
     web3::Transport,
 };
 
@@ -25,7 +26,13 @@ async fn matrix() {
             let test = tests::setup()
                 .name(format!("{side:?} {kind:?}"))
                 .pool(ab_pool())
-                .order(ab_order().side(side).kind(kind).solver_fee(solver_fee))
+                .order(
+                    ab_order()
+                        .side(side)
+                        .kind(kind)
+                        .solver_fee(solver_fee)
+                        .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()),
+                )
                 .solution(ab_solution())
                 .done()
                 .await;
@@ -59,7 +66,7 @@ async fn private_rpc_with_high_risk_solution() {
     let test = tests::setup()
         .name("private rpc")
         .pool(ab_pool())
-        .order(ab_order())
+        .order(ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()))
         .solution(ab_solution())
         .mempools(vec![
             tests::setup::Mempool::Public,
@@ -82,7 +89,7 @@ async fn too_much_gas() {
     let test = tests::setup()
         .name("too much gas")
         .pool(ab_pool())
-        .order(ab_order())
+        .order(ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()))
         .solution(ab_solution().increase_gas(6_000_000))
         .rpc_args(vec!["--gas-limit".into(), "10000000".into()])
         .done()
@@ -96,7 +103,7 @@ async fn high_gas_limit() {
     let test = tests::setup()
         .name("high gas limit")
         .pool(ab_pool())
-        .order(ab_order())
+        .order(ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()))
         .solution(ab_solution().increase_gas(4_000_000))
         .rpc_args(vec!["--gas-limit".into(), "10000000".into()])
         .done()

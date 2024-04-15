@@ -1,9 +1,13 @@
-use crate::{
-    infra::config::file::FeeHandler,
-    tests::{
-        cases::EtherExt,
-        setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order},
+use {
+    crate::{
+        domain::eth,
+        infra::config::file::FeeHandler,
+        tests::{
+            cases::EtherExt,
+            setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order, TRADER_ADDRESS},
+        },
     },
+    std::str::FromStr,
 };
 
 /// Test that orders are sorted correctly before being sent to the solver:
@@ -13,21 +17,23 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn sorting() {
+    let base_order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
     let test = setup()
         .solvers(vec![
             test_solver().fee_handler(FeeHandler::Driver)
         ])
         .pool(ab_pool())
         // Orders with better price ratios come first.
-        .order(ab_order())
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
+        .order(base_order.clone())
+        .order(base_order.clone().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
         // Limit orders come after market orders.
         .order(
-            ab_order()
+            base_order
+                .clone()
                 .rename("third order")
                 .limit()
         )
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("fourth order").limit())
+        .order(base_order.reduce_amount("1e-3".ether().into_wei()).rename("fourth order").limit())
         .solution(ab_solution())
         .done()
         .await;
@@ -42,14 +48,15 @@ async fn sorting() {
 #[tokio::test]
 #[ignore]
 async fn filtering() {
+    let base_order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
     let test = setup()
         .pool(ab_pool())
         // Orders with better price ratios come first.
-        .order(ab_order())
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
+        .order(base_order.clone())
+        .order(base_order.clone().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
         // Filter out the next order, because the trader doesn't have enough balance to cover it.
         .order(
-            ab_order()
+            base_order
                 .rename("third order")
                 .multiply_amount("0.1".ether().into_wei())
                 .filtered()
@@ -66,6 +73,7 @@ async fn filtering() {
             .unfunded()
             .filtered()
             .limit()
+                .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap())
         )
         .solution(ab_solution())
         .done()

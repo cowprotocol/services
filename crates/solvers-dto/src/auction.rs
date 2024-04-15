@@ -33,11 +33,22 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
+    pub full_sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
-    pub kind: Kind,
-    pub partially_fillable: bool,
-    pub class: Class,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub full_buy_amount: U256,
     pub fee_policies: Option<Vec<FeePolicy>>,
+    pub valid_to: u32,
+    pub kind: Kind,
+    pub receiver: Option<H160>,
+    pub owner: H160,
+    pub partially_fillable: bool,
+    pub pre_interactions: Vec<model::interaction::InteractionData>,
+    pub post_interactions: Vec<model::interaction::InteractionData>,
+    pub class: Class,
+    #[serde(flatten)]
+    pub signature: model::signature::Signature,
 }
 
 #[derive(Debug, Deserialize)]

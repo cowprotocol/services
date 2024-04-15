@@ -4301,6 +4301,7 @@ dependencies = [
  "bigdecimal",
  "chrono",
  "hex",
+ "model",
  "number",
  "serde",
  "serde_with",

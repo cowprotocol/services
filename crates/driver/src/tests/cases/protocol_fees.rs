@@ -1,20 +1,24 @@
-use crate::{
-    domain::{competition::order, eth},
-    infra::config::file::FeeHandler,
-    tests::{
-        self,
-        cases::EtherExt,
-        setup::{
-            ab_adjusted_pool,
-            ab_liquidity_quote,
-            ab_order,
-            ab_solution,
-            fee::{Policy, Quote},
-            test_solver,
-            ExpectedOrderAmounts,
-            Test,
+use {
+    crate::{
+        domain::{competition::order, eth},
+        infra::config::file::FeeHandler,
+        tests::{
+            self,
+            cases::EtherExt,
+            setup::{
+                ab_adjusted_pool,
+                ab_liquidity_quote,
+                ab_order,
+                ab_solution,
+                fee::{Policy, Quote},
+                test_solver,
+                ExpectedOrderAmounts,
+                Test,
+                TRADER_ADDRESS,
+            },
         },
     },
+    std::str::FromStr,
 };
 
 struct Amounts {
@@ -82,6 +86,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .kind(order::Kind::Limit)
         .sell_amount(test_case.order.sell_amount)
         .buy_amount(test_case.order.buy_amount)
+        .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap())
         // Expected amounts already account for network fee, so it doesn't matter for the math.
         // However, it cannot be zero, otherwise the order would be perceived as a StaticFee orders (which cannot have Protocol Fees)
         // todo: can be cleaned up after https://github.com/cowprotocol/services/issues/2507

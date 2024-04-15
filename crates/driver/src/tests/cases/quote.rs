@@ -1,9 +1,12 @@
-use crate::{
-    domain::competition::order,
-    tests::{
-        self,
-        setup::{ab_order, ab_pool, ab_solution},
+use {
+    crate::{
+        domain::{competition::order, eth},
+        tests::{
+            self,
+            setup::{ab_order, ab_pool, ab_solution, TRADER_ADDRESS},
+        },
     },
+    std::str::FromStr,
 };
 
 /// Run a matrix of tests for all meaningful combinations of order kind and
@@ -16,7 +19,12 @@ async fn matrix() {
             let test = tests::setup()
                 .name(format!("{side:?} {kind:?}"))
                 .pool(ab_pool())
-                .order(ab_order().side(side).kind(kind))
+                .order(
+                    ab_order()
+                        .side(side)
+                        .kind(kind)
+                        .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()),
+                )
                 .solution(ab_solution())
                 .quote()
                 .done()

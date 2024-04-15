@@ -410,6 +410,17 @@ pub struct Interaction {
     pub call_data: Bytes<Vec<u8>>,
 }
 
+#[allow(clippy::from_over_into)]
+impl Into<model::interaction::InteractionData> for Interaction {
+    fn into(self) -> model::interaction::InteractionData {
+        model::interaction::InteractionData {
+            target: self.target.into(),
+            value: self.value.into(),
+            call_data: self.call_data.into(),
+        }
+    }
+}
+
 /// A transaction ID, AKA transaction hash.
 #[derive(Clone, Debug)]
 pub struct TxId(pub H256);

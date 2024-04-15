@@ -6,10 +6,11 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+model = { path = "../model" }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 hex = { workspace = true }
-number = { path = "../number"}
+number = { path = "../number" }
 serde = { workspace = true }
 serde_with = { workspace = true }
 web3 = { workspace = true }
