@@ -233,7 +233,7 @@ async fn combined_protocol_fees(web3: Web3) {
         new_market_order_quote.quote.buy_amount != market_quote_before.quote.buy_amount
     })
     .await
-    .expect("Timeout waiting for we evict the cached liquidity");
+    .expect("Timeout waiting for eviction of the cached liquidity");
 
     let [market_quote_after, limit_quote_after, partner_fee_quote_after] =
         futures::future::try_join_all(
