@@ -198,8 +198,8 @@ fn create_zeroex_liquidity_orders(
         maker_token: order_creation.buy_token,
         taker_token: order_creation.sell_token,
         // fully covers execution costs
-        maker_amount: order_creation.buy_amount.as_u128() * 6,
-        taker_amount: order_creation.sell_amount.as_u128() * 4,
+        maker_amount: order_creation.buy_amount.as_u128() * 3,
+        taker_amount: order_creation.sell_amount.as_u128() * 2,
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: gpv2_addr,
