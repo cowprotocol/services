@@ -95,7 +95,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         sell_token: token_usdc.address(),
         sell_amount: amount,
         buy_token: token_usdt.address(),
-        buy_amount: amount - to_wei_with_exp(1, 8),
+        buy_amount: amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -200,6 +200,7 @@ fn create_zeroex_liquidity_orders(
         // fully covers execution costs
         maker_amount: order_creation.buy_amount.as_u128() * 3,
         taker_amount: order_creation.sell_amount.as_u128() * 2,
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: gpv2_addr,
@@ -216,6 +217,7 @@ fn create_zeroex_liquidity_orders(
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128 * 2,
         taker_amount: order_creation.sell_amount.as_u128() * 2,
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: gpv2_addr,
@@ -232,6 +234,7 @@ fn create_zeroex_liquidity_orders(
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128 * 2,
         taker_amount: order_creation.sell_amount.as_u128() * 2,
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: gpv2_addr,

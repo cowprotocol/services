@@ -62,6 +62,7 @@ pub struct Eip712TypedZeroExOrder {
     pub taker_token: H160,
     pub maker_amount: u128,
     pub taker_amount: u128,
+    pub remaining_fillable_taker_amount: u128,
     pub taker_token_fee_amount: u128,
     pub maker: H160,
     pub taker: H160,
@@ -87,7 +88,7 @@ impl Eip712TypedZeroExOrder {
             metadata: OrderMetadata {
                 created_at: DateTime::<Utc>::MIN_UTC,
                 order_hash: self.hash_struct().to_vec(),
-                remaining_fillable_taker_amount: self.taker_amount / 2,
+                remaining_fillable_taker_amount: self.remaining_fillable_taker_amount,
             },
             order: Order {
                 chain_id,
