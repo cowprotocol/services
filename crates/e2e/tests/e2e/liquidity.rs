@@ -1,6 +1,6 @@
 use {
     chrono::{NaiveDateTime, Utc},
-    contracts::{IZeroEx, ERC20},
+    contracts::{i_zero_ex::Contract, IZeroEx, ERC20},
     driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
@@ -18,7 +18,7 @@ use {
         },
         tx,
     },
-    ethcontract::{prelude::U256, H256},
+    ethcontract::{errors::MethodError, prelude::U256, Bytes, H256},
     ethrpc::Web3,
     hex_literal::hex,
     model::{
@@ -106,19 +106,16 @@ async fn zero_ex_liquidity(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let zeroex_api_port = {
-        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
-            order.clone(),
-            zeroex_maker,
-            zeroex.address(),
-            onchain.contracts().gp_settlement.address(),
-            chain_id,
-            onchain.contracts().weth.address(),
-        );
-
-        ZeroExApi::new(zeroex_liquidity_orders).run().await
-    };
+    let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+    let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
+        order.clone(),
+        zeroex_maker,
+        zeroex.address(),
+        onchain.contracts().gp_settlement.address(),
+        chain_id,
+        onchain.contracts().weth.address(),
+    );
+    let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.clone()).run().await;
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
@@ -184,6 +181,16 @@ async fn zero_ex_liquidity(web3: Web3) {
     })
     .await
     .unwrap();
+
+    let zeroex_order_filled_amount =
+        get_zero_ex_order_filled_amount(&zeroex, &zeroex_liquidity_orders[0])
+            .await
+            .unwrap();
+    // [`relative-slippage`] config value is set to 0.1
+    // crates/e2e/src/setup/colocation.rs:110 which is then added to the
+    // original filled amount crates/solver/src/liquidity/slippage.rs:110
+    let expected_filled_amount = amount.as_u128() + amount.as_u128() / 10u128;
+    assert_eq!(zeroex_order_filled_amount, expected_filled_amount);
 }
 
 fn create_zeroex_liquidity_orders(
@@ -247,4 +254,28 @@ fn create_zeroex_liquidity_orders(
     [typed_order, usdt_weth_order, usdc_weth_order]
         .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
         .to_vec()
+}
+
+async fn get_zero_ex_order_filled_amount(
+    zeroex: &Contract,
+    zeroex_order: &shared::zeroex_api::OrderRecord,
+) -> Result<u128, MethodError> {
+    zeroex
+        .get_limit_order_info((
+            zeroex_order.order.maker_token,
+            zeroex_order.order.taker_token,
+            zeroex_order.order.maker_amount,
+            zeroex_order.order.taker_amount,
+            zeroex_order.order.taker_token_fee_amount,
+            zeroex_order.order.maker,
+            zeroex_order.order.taker,
+            zeroex_order.order.sender,
+            zeroex_order.order.fee_recipient,
+            Bytes(zeroex_order.order.pool.0),
+            zeroex_order.order.expiry,
+            zeroex_order.order.salt,
+        ))
+        .call()
+        .await
+        .map(|(_, _, filled_amount)| filled_amount)
 }
