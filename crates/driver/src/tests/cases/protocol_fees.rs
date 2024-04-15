@@ -340,37 +340,41 @@ async fn surplus_and_price_improvement_protocol_fee_sell_order_not_capped() {
         // high enough so we don't get capped by volume fee
         max_volume_factor: 0.9,
         quote: Quote {
-            sell: 49.ether().into_wei(),
-            buy: 40.ether().into_wei(),
-            network_fee: 1.ether().into_wei(),
+            sell: 50.ether().into_wei(),
+            buy: 50.ether().into_wei(),
+            network_fee: 5.ether().into_wei(), // 50 sell for 45 buy
         },
     };
     let test_case = TestCase {
         fee_policy: vec![fee_policy_price_improvement, fee_policy_surplus],
         order: Order {
             sell_amount: 50.ether().into_wei(),
-            // Demanding to receive more than quoted (out-market)
-            buy_amount: 50.ether().into_wei(),
+            // Demanding to receive less than quoted (in-market)
+            buy_amount: 25.ether().into_wei(),
             side: order::Side::Sell,
         },
         execution: Execution {
             // -> First fee policy:
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol (10 ETH)
-            // Fee = 10 ETH * 0.5 => 5 ETH
+            // Quote is 50 sell for 45 buy, which is equal to 20 sell for 18 buy
+            // Solver returns 20 sell for 30 buy, so the price improvement is 12 in buy token
+            // Receive 12 ETH more than quoted, half of which gets captured by the protocol
+            // Fee = 12 ETH * 0.5 => 6 ETH
             // -> Second fee policy:
-            // New buy amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
-            // New surplus: 5 ETH, fee 2.5 ETH
-            // Total fee: 7.5 ETH
+            // Order is 50 sell for 25 buy, which is equal to 20 sell for 10 buy
+            // New buy amount in the Order: 10 ETH + 6 ETH (fee) = 16 ETH
+            // New surplus: 30 ETH - 16 ETH = 14 ETH, fee 7 ETH
+            // Total fee: 6 ETH + 7 ETH = 13 ETH
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 30.ether().into_wei(),
             },
             driver: Amounts {
                 sell: 20.ether().into_wei(),
-                buy: 22.5.ether().into_wei(),
+                // 30 ETH - 13 ETH = 17 ETH
+                buy: 17.ether().into_wei(),
             },
         },
-        expected_score: 10.ether().into_wei(),
+        expected_score: 20.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
