@@ -207,7 +207,9 @@ fn create_zeroex_liquidity_orders(
         // fully covers execution costs
         maker_amount: order_creation.buy_amount.as_u128() * 3,
         taker_amount: order_creation.sell_amount.as_u128() * 2,
-        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
+        // makes 0x order partially fillable, but the amount is higher than the cowswap order to
+        // make sure the 0x order is not overfilled in the end of the e2e test
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
         taker: gpv2_addr,

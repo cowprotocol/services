@@ -10,7 +10,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct LimitOrder {
     pub order: Order,
-    pub adjusted_amounts: AdjustedAmounts,
+    pub fillable_amounts: FillableAmounts,
     pub zeroex: Arc<IZeroEx>,
 }
 
@@ -32,8 +32,11 @@ pub struct Order {
 }
 
 #[derive(Clone, Debug)]
-pub struct AdjustedAmounts {
+pub struct FillableAmounts {
+    /// Scaled amount according to how much of the partially fillable amount was
+    /// already used in the order.
     pub maker: u128,
+    /// Partially fillable amount that can be used in the order.
     pub taker: u128,
 }
 
