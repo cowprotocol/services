@@ -104,9 +104,7 @@ impl Persistence {
         tokio::spawn(
             async move {
                 let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
-                store_order_events(&mut tx, order_uids, label, Utc::now())
-                    .await
-                    .expect("store_order_events");
+                store_order_events(&mut tx, order_uids, label, Utc::now()).await;
             }
             .instrument(tracing::Span::current()),
         );

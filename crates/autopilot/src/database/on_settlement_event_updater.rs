@@ -75,9 +75,7 @@ impl super::Postgres {
                 .iter()
                 .map(|(order_uid, _)| auction::order::OrderUid::from(*order_uid))
                 .collect::<Vec<_>>();
-            store_order_events(ex, order_uids, OrderEventLabel::Traded, Utc::now())
-                .await
-                .context("store_order_events")?;
+            store_order_events(ex, order_uids, OrderEventLabel::Traded, Utc::now()).await;
             for (order, executed_fee) in auction_data.order_executions {
                 database::order_execution::save(
                     ex,
