@@ -10,6 +10,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct LimitOrder {
     pub order: Order,
+    pub adjusted_amounts: AdjustedAmounts,
     pub zeroex: Arc<IZeroEx>,
 }
 
@@ -28,6 +29,12 @@ pub struct Order {
     pub expiry: u64,
     pub salt: U256,
     pub signature: ZeroExSignature,
+}
+
+#[derive(Clone, Debug)]
+pub struct AdjustedAmounts {
+    pub maker: u128,
+    pub taker: u128,
 }
 
 #[derive(Clone, Debug)]

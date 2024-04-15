@@ -87,7 +87,7 @@ impl Eip712TypedZeroExOrder {
             metadata: OrderMetadata {
                 created_at: DateTime::<Utc>::MIN_UTC,
                 order_hash: self.hash_struct().to_vec(),
-                remaining_fillable_taker_amount: self.taker_amount,
+                remaining_fillable_taker_amount: self.taker_amount / 2,
             },
             order: Order {
                 chain_id,

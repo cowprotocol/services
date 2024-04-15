@@ -2,7 +2,7 @@ use {
     crate::{
         domain::liquidity::{
             self,
-            zeroex::{self, Order, ZeroExSignature},
+            zeroex::{self, AdjustedAmounts, Order, ZeroExSignature},
         },
         infra::{self, Ethereum},
     },
@@ -61,6 +61,10 @@ pub fn to_domain(
 
     let domain = zeroex::LimitOrder {
         order,
+        adjusted_amounts: AdjustedAmounts {
+            maker: limit_order.sell_amount.as_u128(),
+            taker: limit_order.buy_amount.as_u128(),
+        },
         zeroex: handler.zeroex.clone(),
     };
 
