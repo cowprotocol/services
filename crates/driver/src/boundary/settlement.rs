@@ -43,7 +43,6 @@ use {
             LimitOrderExecution,
         },
         settlement::Revertable,
-        settlement_simulation::settle_method_builder,
     },
     std::{collections::HashMap, sync::Arc},
 };
@@ -106,9 +105,8 @@ impl Settlement {
                 ),
             };
 
-            let boundary_limit_order = order_converter.normalize_limit_order(
-                solver::order_balance_filter::BalancedOrder::full(boundary_order),
-            )?;
+            let boundary_limit_order = order_converter
+                .normalize_limit_order(solver::liquidity::BalancedOrder::full(boundary_order))?;
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
 
@@ -171,12 +169,18 @@ impl Settlement {
             }
             settlement::Internalization::Disable => InternalizationStrategy::EncodeAllInteractions,
         });
-        let builder = settle_method_builder(
-            contract,
-            encoded_settlement,
-            ethcontract::Account::Local(self.solver.into(), None),
-        );
-        let tx = builder.into_inner();
+
+        let account = ethcontract::Account::Local(self.solver.into(), None);
+        let tx = contract
+            .settle(
+                encoded_settlement.tokens,
+                encoded_settlement.clearing_prices,
+                encoded_settlement.trades,
+                encoded_settlement.interactions,
+            )
+            .from(account)
+            .into_inner();
+
         let mut input = tx.data.unwrap().0;
         input.extend(auction_id.to_be_bytes());
         eth::Tx {
