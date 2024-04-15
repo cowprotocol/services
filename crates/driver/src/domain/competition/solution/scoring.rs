@@ -186,6 +186,12 @@ impl Trade {
         })
     }
 
+    /// Derive new custom prices (given the current custom prices) to exclude
+    /// the protocol fee from the trade.
+    ///
+    /// For this to work properly, `executed` amount is used to build actual
+    /// traded amounts. Note how the clearing prices actually represent the
+    /// traded amounts of a trade (as seen from the user perspective).
     pub fn calculate_custom_prices(
         &self,
         protocol_fee: TokenAmount,
@@ -193,17 +199,25 @@ impl Trade {
         Ok(match self.side {
             Side::Sell => CustomClearingPrices {
                 sell: self
-                    .custom_price
-                    .sell
+                    .executed
+                    .0
+                    .checked_mul(self.custom_price.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(self.custom_price.buy)
+                    .ok_or(Math::DivisionByZero)?
                     .checked_add(protocol_fee.0)
                     .ok_or(Math::Overflow)?,
-                buy: self.custom_price.buy,
+                buy: self.executed.0,
             },
             Side::Buy => CustomClearingPrices {
-                sell: self.custom_price.sell,
+                sell: self.executed.0,
                 buy: self
-                    .custom_price
-                    .buy
+                    .executed
+                    .0
+                    .checked_mul(self.custom_price.buy)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(self.custom_price.sell)
+                    .ok_or(Math::DivisionByZero)?
                     .checked_sub(protocol_fee.0)
                     .ok_or(Math::Negative)?,
             },
