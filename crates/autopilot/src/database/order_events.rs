@@ -1,13 +1,14 @@
 pub use database::order_events::OrderEventLabel;
 use {
     crate::domain,
-    anyhow::Result,
+    anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
         order_events::{self, OrderEvent},
     },
-    sqlx::{Error, PgConnection},
+    sqlx::{Acquire, Error, PgConnection},
+    tokio::time::Instant,
 };
 
 impl super::Postgres {
@@ -23,6 +24,9 @@ pub async fn store_order_events(
     label: OrderEventLabel,
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
+    let start = Instant::now();
+    let events_count = order_uids.len();
+    let mut ex = ex.begin().await.context("begin transaction")?;
     for uid in order_uids {
         let event = OrderEvent {
             order_uid: ByteArray(uid.0),
@@ -30,7 +34,16 @@ pub async fn store_order_events(
             label,
         };
 
-        order_events::insert_order_event(ex, &event).await?
+        match order_events::insert_order_event(&mut ex, &event).await {
+            Ok(_) => {
+                tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
+            }
+            Err(err) => {
+                tracing::warn!(?err, "failed to insert order events");
+                Err(err)?
+            }
+        }
     }
+    ex.commit().await.context("commit transaction")?;
     Ok(())
 }

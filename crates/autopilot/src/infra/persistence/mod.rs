@@ -7,7 +7,6 @@ use {
     anyhow::Context,
     chrono::Utc,
     std::sync::Arc,
-    tokio::time::Instant,
     tracing::Instrument,
 };
 
@@ -104,23 +103,10 @@ impl Persistence {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
-                let store_order_events_inner = async {
-                    let start = Instant::now();
-                    let events_count = order_uids.len();
-                    let mut ex = db.pool.begin().await.context("begin transaction")?;
-                    store_order_events(&mut ex, order_uids, label, Utc::now()).await?;
-                    ex.commit().await?;
-                    Ok::<(Instant, usize), anyhow::Error>((start, events_count))
-                };
-
-                match store_order_events_inner.await {
-                    Ok((start, events_count)) => {
-                        tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to insert order events");
-                    }
-                }
+                let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
+                store_order_events(&mut tx, order_uids, label, Utc::now())
+                    .await
+                    .expect("store_order_events");
             }
             .instrument(tracing::Span::current()),
         );
