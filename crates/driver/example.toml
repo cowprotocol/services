@@ -4,6 +4,7 @@ endpoint = "http://0.0.0.0:7872"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
+merge-solutions = true # Multiple solutions proposed by the solver may be combined into one by the driver
 
 [solver.request-headers]
 fake-header-one = "FAKE-HEADER-VALUE" # For instance an authorization token which must be provided on each request
