@@ -443,8 +443,8 @@ pub async fn run(args: Arguments) {
             false => Arc::new(quoter),
         }
     };
-    let optimal_quoter = create_quoter(price_estimator.clone());
-    let fast_quoter = create_quoter(fast_price_estimator.clone());
+    let optimal_quoter = create_quoter(price_estimator);
+    let fast_quoter = create_quoter(fast_price_estimator);
 
     let app_data_validator = Validator::new(args.app_data_size_limit);
     let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
