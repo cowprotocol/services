@@ -325,8 +325,7 @@ impl Competition {
 }
 
 /// Creates a vector with all possible combinations of the given solutions.
-/// The result is sorted by the number of merges, so the first elements are the
-/// original solutions.
+/// The result is sorted descending by score.
 fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
     for solution in solutions {
