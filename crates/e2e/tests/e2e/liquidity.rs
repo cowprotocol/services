@@ -118,7 +118,6 @@ async fn zero_ex_liquidity(web3: Web3) {
         order.clone(),
         zeroex_maker.clone(),
         zeroex.address(),
-        onchain.contracts().gp_settlement.address(),
         chain_id,
         onchain.contracts().weth.address(),
     );
@@ -197,6 +196,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     // original filled amount crates/solver/src/liquidity/slippage.rs:110
     let expected_filled_amount = amount.as_u128() + amount.as_u128() / 10u128;
     assert_eq!(zeroex_order_amounts.filled, expected_filled_amount);
+    assert!(zeroex_order_amounts.fillable > 0u128);
     assert_eq!(
         zeroex_order_amounts.fillable,
         amount.as_u128() * 2 - expected_filled_amount
@@ -233,7 +233,6 @@ fn create_zeroex_liquidity_orders(
     order_creation: OrderCreation,
     zeroex_maker: TestAccount,
     zeroex_addr: H160,
-    gpv2_addr: H160,
     chain_id: u64,
     weth_address: H160,
 ) -> [shared::zeroex_api::OrderRecord; 3] {
