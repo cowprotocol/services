@@ -247,6 +247,7 @@ fn create_zeroex_liquidity_orders(
         remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
+        // Makes it possible for anyone to fill the order
         taker: Default::default(),
         sender: Default::default(),
         fee_recipient: zeroex_addr,
@@ -257,7 +258,7 @@ fn create_zeroex_liquidity_orders(
     let usdt_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token: order_creation.buy_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+        // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
         taker_amount: order_creation.sell_amount.as_u128(),
@@ -274,7 +275,7 @@ fn create_zeroex_liquidity_orders(
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token: order_creation.sell_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+        // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
         taker_amount: order_creation.sell_amount.as_u128(),
