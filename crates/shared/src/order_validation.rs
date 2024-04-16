@@ -160,6 +160,7 @@ pub enum ValidationError {
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
+    QuoteNotVerified,
     Other(anyhow::Error),
 }
 
@@ -214,6 +215,7 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
+            CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
             // need to be higher than the computed fee amount. Don't bubble up

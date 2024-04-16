@@ -6,10 +6,11 @@ use {
         PriceEstimationError,
     },
     crate::{
+        account_balances::{BalanceFetching, Query},
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
         order_validation::PreOrderData,
-        price_estimation::Verification,
+        price_estimation::{Estimate, Verification},
     },
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, Utc},
@@ -18,6 +19,7 @@ use {
     futures::TryFutureExt as _,
     gas_estimation::GasPriceEstimating,
     model::{
+        interaction::InteractionData,
         order::{OrderClass, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
     },
@@ -226,6 +228,9 @@ pub enum CalculateQuoteError {
     #[error("failed to estimate price")]
     Price(#[from] PriceEstimationError),
 
+    #[error("failed to verify quote")]
+    QuoteNotVerified,
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -351,6 +356,7 @@ pub struct OrderQuoter {
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
     validity: Validity,
+    quote_verification: QuoteVerification,
 }
 
 impl OrderQuoter {
@@ -368,6 +374,14 @@ impl OrderQuoter {
             storage,
             now: Arc::new(Utc::now),
             validity,
+            quote_verification: QuoteVerification::Never,
+        }
+    }
+
+    pub fn enforce_verification(self, balance_fetcher: Arc<dyn BalanceFetching>) -> Self {
+        Self {
+            quote_verification: QuoteVerification::WhenFunded(balance_fetcher),
+            ..self
         }
     }
 
@@ -417,6 +431,10 @@ impl OrderQuoter {
             gas_price: gas_estimate.effective_gas_price(),
             sell_token_price,
         };
+
+        self.quote_verification
+            .check(&trade_estimate, parameters, quoted_sell_amount)
+            .await?;
 
         let quote_kind = quote_kind_from_signing_scheme(&parameters.signing_scheme);
         let quote = QuoteData {
@@ -527,6 +545,78 @@ impl OrderQuoting for OrderQuoter {
 
         tracing::debug!(?quote, "found quote");
         Ok(quote)
+    }
+}
+
+/// Handles whether or not quotes need to be verified.
+enum QuoteVerification {
+    /// Quotes get trusted blindly.
+    Never,
+    /// Enforce quotes only when the user has the required sell token balance.
+    /// If a user has the required sell token balance and a quote can still not
+    /// be verified the trade likely involves a weird token that solvers are not
+    /// able to handle correctly.
+    WhenFunded(Arc<dyn BalanceFetching>),
+}
+
+impl QuoteVerification {
+    /// Makes sure a quote was verified according to the configured rule.
+    async fn check(
+        &self,
+        estimate: &Estimate,
+        parameters: &QuoteParameters,
+        sell_amount: U256,
+    ) -> Result<(), CalculateQuoteError> {
+        let Some(verification) = &parameters.verification else {
+            return Ok(()); // no verification requested
+        };
+        if estimate.verified {
+            return Ok(()); // successfully verified
+        }
+        let balance_fetcher = match &self {
+            QuoteVerification::Never => return Ok(()),
+            QuoteVerification::WhenFunded(fetcher) => fetcher.as_ref(),
+        };
+
+        let balance =
+            match Self::get_balance(balance_fetcher, verification, parameters.sell_token).await {
+                Ok(balance) => balance,
+                Err(err) => {
+                    tracing::warn!(?err, "could not fetch balance for verification");
+                    return Err(CalculateQuoteError::QuoteNotVerified);
+                }
+            };
+
+        if balance >= sell_amount {
+            // Quote could not be verified although user has the required balance.
+            // This likely indicates a weird token that solvers are not able to handle.
+            return Err(CalculateQuoteError::QuoteNotVerified);
+        }
+
+        Ok(())
+    }
+
+    async fn get_balance(
+        balance_fetcher: &dyn BalanceFetching,
+        verification: &Verification,
+        token: H160,
+    ) -> Result<U256> {
+        let query = Query {
+            owner: verification.from,
+            token,
+            source: verification.sell_token_source,
+            interactions: verification
+                .pre_interactions
+                .iter()
+                .map(|i| InteractionData {
+                    target: i.target,
+                    value: i.value,
+                    call_data: i.data.clone(),
+                })
+                .collect(),
+        };
+        let mut balances = balance_fetcher.get_balances(&[query]).await;
+        balances.pop().context("missing balance result")?
     }
 }
 
@@ -702,6 +792,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: super::Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -835,6 +926,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -963,6 +1055,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1056,6 +1149,7 @@ mod tests {
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert!(matches!(
@@ -1125,6 +1219,7 @@ mod tests {
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert!(matches!(
@@ -1179,6 +1274,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert_eq!(
@@ -1257,6 +1353,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert_eq!(
@@ -1337,6 +1434,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert_eq!(
@@ -1406,6 +1504,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert!(matches!(
@@ -1434,6 +1533,7 @@ mod tests {
             storage: Arc::new(storage),
             now: Arc::new(Utc::now),
             validity: Validity::default(),
+            quote_verification: QuoteVerification::Never,
         };
 
         assert!(matches!(
