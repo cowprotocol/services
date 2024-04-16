@@ -80,6 +80,9 @@ impl Fulfillment {
         }
     }
 
+    /// Custom prices are calculated using the uniform clearing prices and the
+    /// fee. So that custom prices represent the actual traded amounts as
+    /// seen from the user perspective: the amount going in/out of their wallet
     pub fn calculate_custom_prices(
         &self,
         uniform_prices: &ClearingPrices,

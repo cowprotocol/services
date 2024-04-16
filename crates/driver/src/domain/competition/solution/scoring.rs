@@ -228,7 +228,7 @@ impl Trade {
     ///
     /// Denominated in SURPLUS token
     fn protocol_fee(&self, fee_policy: &FeePolicy) -> Result<TokenAmount, Error> {
-        let calc_protocol_fee = |policy: &FeePolicy| match policy {
+        match fee_policy {
             FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
@@ -253,9 +253,7 @@ impl Trade {
                 Ok(fee)
             }
             FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
-        };
-        let amount = calc_protocol_fee(fee_policy)?;
-        Ok(amount)
+        }
     }
 
     fn price_improvement(&self, quote: &Quote) -> Result<eth::Asset, Error> {
