@@ -418,7 +418,7 @@ pub async fn run(args: Arguments) {
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
-        Arc::new(OrderQuoter::new(
+        let quoter = OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -437,7 +437,11 @@ pub async fn run(args: Arguments) {
                 )
                 .unwrap(),
             },
-        ))
+        );
+        match args.enforce_verified_quotes {
+            true => Arc::new(quoter.enforce_verification(balance_fetcher.clone())),
+            false => Arc::new(quoter),
+        }
     };
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());

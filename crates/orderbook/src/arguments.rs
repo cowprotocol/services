@@ -147,6 +147,13 @@ pub struct Arguments {
     /// The maximum gas amount a single order can use for getting settled.
     #[clap(long, env, default_value = "8000000")]
     pub max_gas_per_order: u64,
+
+    /// If this is enabled any quote where the user has the required sell token
+    /// balance is required to pass simulation.
+    /// This is intended as a check to ensure that only orders get created
+    /// which the system is actually able to handle.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub enforce_verified_quotes: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -178,6 +185,7 @@ impl std::fmt::Display for Arguments {
             app_data_size_limit,
             db_url,
             max_gas_per_order,
+            enforce_verified_quotes,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -243,6 +251,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
         writeln!(f, "max_gas_per_order: {}", max_gas_per_order)?;
+        writeln!(f, "enforce_verified_quotes: {}", enforce_verified_quotes)?;
 
         Ok(())
     }

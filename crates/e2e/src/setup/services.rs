@@ -156,6 +156,7 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--enforce-verified-quotes=true".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
