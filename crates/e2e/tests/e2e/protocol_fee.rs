@@ -121,6 +121,7 @@ async fn combined_protocol_fees(web3: Web3) {
             "--protocol-fee-exempt-addresses={:?}",
             trader_exempt.address()
         ),
+        "--enable-multiple-fees=true".to_string(),
     ];
     let services = Services::new(onchain.contracts()).await;
     services
@@ -433,7 +434,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         // applied
         policy_order_class: FeePolicyOrderClass::Any,
     };
-    let protocol_fees_config = ProtocolFeesConfig(vec![protocol_fee]).to_string();
+    // Protocol fee set twice to test that only one policy will apply if the
+    // autopilot is not configured to support multiple fees
+    let protocol_fees_config =
+        ProtocolFeesConfig(vec![protocol_fee.clone(), protocol_fee]).to_string();
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -562,11 +566,13 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
 struct ProtocolFeesConfig(Vec<ProtocolFee>);
 
+#[derive(Clone)]
 struct ProtocolFee {
     policy: FeePolicyKind,
     policy_order_class: FeePolicyOrderClass,
 }
 
+#[derive(Clone)]
 enum FeePolicyOrderClass {
     Market,
     Limit,
