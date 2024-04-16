@@ -1,6 +1,9 @@
 use {
     self::solution::settlement,
-    super::{time, time::Remaining, Mempools},
+    super::{
+        time::{self, Remaining},
+        Mempools,
+    },
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -16,6 +19,7 @@ use {
     futures::{stream::FuturesUnordered, StreamExt},
     itertools::Itertools,
     std::{
+        cmp::Reverse,
         collections::{HashMap, HashSet},
         sync::Mutex,
     },
@@ -348,10 +352,12 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 
     // Sort merged solutions descending by score.
     merged.sort_by_key(|solution| {
-        solution
-            .scoring(&auction.prices())
-            .map(|score| score.0)
-            .unwrap_or_default()
+        Reverse(
+            solution
+                .scoring(&auction.prices())
+                .map(|score| score.0)
+                .unwrap_or_default(),
+        )
     });
     merged
 }
