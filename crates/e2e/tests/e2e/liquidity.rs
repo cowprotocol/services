@@ -207,7 +207,7 @@ fn create_zeroex_liquidity_orders(
         // fully covers execution costs
         maker_amount: order_creation.buy_amount.as_u128() * 3,
         taker_amount: order_creation.sell_amount.as_u128() * 2,
-        // makes 0x order partially fillable, but the amount is higher than the cowswap order to
+        // makes 0x order partially filled, but the amount is higher than the cowswap order to
         // make sure the 0x order is not overfilled in the end of the e2e test
         remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
         taker_token_fee_amount: 0,
@@ -224,8 +224,8 @@ fn create_zeroex_liquidity_orders(
         taker_token: order_creation.buy_token,
         // the value comes from the `--amount-to-estimate-prices-with` config value to provide
         // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128 * 2,
-        taker_amount: order_creation.sell_amount.as_u128() * 2,
+        maker_amount: 1_000_000_000_000_000_000u128,
+        taker_amount: order_creation.sell_amount.as_u128(),
         remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
@@ -241,8 +241,8 @@ fn create_zeroex_liquidity_orders(
         taker_token: order_creation.sell_token,
         // the value comes from the `--amount-to-estimate-prices-with` config value to provide
         // sufficient liquidity
-        maker_amount: 1_000_000_000_000_000_000u128 * 2,
-        taker_amount: order_creation.sell_amount.as_u128() * 2,
+        maker_amount: 1_000_000_000_000_000_000u128,
+        taker_amount: order_creation.sell_amount.as_u128(),
         remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
