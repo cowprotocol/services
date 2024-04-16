@@ -8,8 +8,16 @@ use {
 };
 
 #[derive(Clone, Debug)]
+pub struct Amounts {
+    pub maker: u128,
+    pub taker: u128,
+}
+
+#[derive(Clone, Debug)]
 pub struct LimitOrder {
     pub order: Order,
+    /// Scaled amounts according to how much of the partially fillable amounts
+    /// were already used in the order.
     pub fillable: Amounts,
     pub zeroex: Arc<IZeroEx>,
 }
@@ -21,23 +29,13 @@ pub struct Order {
     pub sender: H160,
     pub maker_token: H160,
     pub taker_token: H160,
-    pub maker_amount: u128,
-    pub taker_amount: u128,
+    pub amounts: Amounts,
     pub taker_token_fee_amount: u128,
     pub fee_recipient: H160,
     pub pool: H256,
     pub expiry: u64,
     pub salt: U256,
     pub signature: ZeroExSignature,
-}
-
-#[derive(Clone, Debug)]
-pub struct Amounts {
-    /// Scaled amount according to how much of the partially fillable amount was
-    /// already used in the order.
-    pub maker: u128,
-    /// Partially fillable amount that can be used in the order.
-    pub taker: u128,
 }
 
 #[derive(Clone, Debug)]
@@ -54,8 +52,8 @@ impl LimitOrder {
             (
                 self.order.maker_token,
                 self.order.taker_token,
-                self.order.maker_amount,
-                self.order.taker_amount,
+                self.order.amounts.maker,
+                self.order.amounts.taker,
                 self.order.taker_token_fee_amount,
                 self.order.maker,
                 self.order.taker,
