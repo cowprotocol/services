@@ -213,12 +213,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
     pub pool_cache_delay_between_retries: Duration,
 
-    #[clap(long, env)]
-    pub zeroex_url: Option<String>,
-
-    #[clap(long, env)]
-    pub zeroex_api_key: Option<String>,
-
     /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_internal_buffers: bool,
@@ -228,20 +222,6 @@ pub struct Arguments {
     /// supported Balancer V2 factory kinds if not specified.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
-
-    /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
-    /// (representing a private market maker) is disabled as it seems to
-    /// produce invalid swaps.
-    #[clap(long, env, default_value = "PMM1", use_value_delimiter = true)]
-    pub disabled_one_inch_protocols: Vec<String>,
-
-    /// Which address should receive the rewards for referring trades to 1Inch.
-    #[structopt(long, env)]
-    pub one_inch_referrer_address: Option<H160>,
-
-    /// The list of disabled 0x sources.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub disabled_zeroex_sources: Vec<String>,
 
     /// Deny list of balancer pool ids.
     #[clap(long, env, use_value_delimiter = true)]
@@ -386,13 +366,8 @@ impl Display for Arguments {
             pool_cache_maximum_recent_block_age,
             pool_cache_maximum_retries,
             pool_cache_delay_between_retries,
-            zeroex_url,
-            zeroex_api_key,
             use_internal_buffers,
             balancer_factories,
-            disabled_one_inch_protocols,
-            one_inch_referrer_address,
-            disabled_zeroex_sources,
             balancer_pool_deny_list,
             solver_competition_auth,
             network_block_interval,
@@ -433,21 +408,8 @@ impl Display for Arguments {
             "pool_cache_delay_between_retries: {:?}",
             pool_cache_delay_between_retries
         )?;
-        display_option(f, "zeroex_url", zeroex_url)?;
-        display_secret_option(f, "zeroex_api_key", zeroex_api_key)?;
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
-        display_list(
-            f,
-            "disabled_one_inch_protocols",
-            disabled_one_inch_protocols,
-        )?;
-        display_option(
-            f,
-            "one_inch_referrer_address",
-            &one_inch_referrer_address.map(|a| format!("{a:?}")),
-        )?;
-        display_list(f, "disabled_zeroex_sources", disabled_zeroex_sources)?;
         writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
         display_secret_option(f, "solver_competition_auth", solver_competition_auth)?;
         display_option(
