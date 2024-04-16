@@ -25,20 +25,26 @@ pub async fn store_order_events(
     timestamp: DateTime<Utc>,
 ) {
     let start = Instant::now();
-    let events_count = order_uids.len();
-    let mut ex = ex.begin().await.expect("begin transaction");
-    for uid in order_uids {
-        let event = OrderEvent {
-            order_uid: ByteArray(uid.0),
-            timestamp,
-            label,
-        };
+    let count = order_uids.len();
 
-        if let Err(err) = order_events::insert_order_event(&mut ex, &event).await {
-            tracing::warn!(?err, ?events_count, "failed to insert order events");
-            panic!("Failed to insert order events: {:?}", err);
+    let insert = async move {
+        let mut ex = ex.begin().await?;
+
+        for uid in order_uids {
+            let event = OrderEvent {
+                order_uid: ByteArray(uid.0),
+                timestamp,
+                label,
+            };
+
+            order_events::insert_order_event(&mut ex, &event).await?;
         }
+
+        ex.commit().await
+    };
+
+    match insert.await {
+        Ok(_) => tracing::debug!(?label, count, elapsed = ?start.elapsed(), "stored order events"),
+        Err(err) => tracing::warn!(?label, count, ?err, "failed to insert order events"),
     }
-    ex.commit().await.expect("commit transaction");
-    tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
 }
