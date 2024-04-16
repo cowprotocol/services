@@ -18,7 +18,14 @@ use {
         },
         tx,
     },
-    ethcontract::{errors::MethodError, prelude::U256, Account, Bytes, H256},
+    ethcontract::{
+        errors::MethodError,
+        prelude::U256,
+        transaction::TransactionResult,
+        Account,
+        Bytes,
+        H256,
+    },
     ethrpc::Web3,
     hex_literal::hex,
     model::{
@@ -226,7 +233,11 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_order_amounts = get_zeroex_order_amounts(&zeroex, &zeroex_order)
         .await
         .unwrap();
-    assert_eq!(zeroex_order_amounts.filled, amount.as_u128() * 2);
+    assert_eq!(
+        zeroex_order_amounts.filled,
+        amount.as_u128() * 2 - expected_filled_amount
+    );
+    assert_eq!(zeroex_order_amounts.fillable, 0u128);
 }
 
 fn create_zeroex_liquidity_orders(
@@ -335,7 +346,7 @@ async fn fill_or_kill_zeroex_limit_order(
     zeroex: &Contract,
     zeroex_order: &shared::zeroex_api::OrderRecord,
     from_account: Account,
-) -> Result<u128, MethodError> {
+) -> Result<TransactionResult, MethodError> {
     zeroex
         .fill_or_kill_limit_order(
             (
@@ -361,6 +372,6 @@ async fn fill_or_kill_zeroex_limit_order(
             zeroex_order.order.taker_amount,
         )
         .from(from_account)
-        .call()
+        .send()
         .await
 }
