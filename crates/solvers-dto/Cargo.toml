@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-model = { path = "../model" }
+bytes-hex = { path = "../bytes-hex" }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 hex = { workspace = true }

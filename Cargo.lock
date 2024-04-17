@@ -4299,9 +4299,9 @@ name = "solvers-dto"
 version = "0.1.0"
 dependencies = [
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "hex",
- "model",
  "number",
  "serde",
  "serde_with",

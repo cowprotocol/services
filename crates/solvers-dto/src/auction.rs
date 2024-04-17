@@ -44,11 +44,32 @@ pub struct Order {
     pub receiver: Option<H160>,
     pub owner: H160,
     pub partially_fillable: bool,
-    pub pre_interactions: Vec<model::interaction::InteractionData>,
-    pub post_interactions: Vec<model::interaction::InteractionData>,
+    pub pre_interactions: Vec<InteractionData>,
+    pub post_interactions: Vec<InteractionData>,
     pub class: Class,
-    #[serde(flatten)]
-    pub signature: model::signature::Signature,
+    pub signing_scheme: SigningScheme,
+    #[serde(with = "bytes_hex")]
+    pub signature: Vec<u8>,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionData {
+    pub target: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub value: U256,
+    #[serde(with = "bytes_hex")]
+    pub call_data: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SigningScheme {
+    Eip712,
+    EthSign,
+    Eip1271,
+    PreSign,
 }
 
 #[derive(Debug, Deserialize)]
