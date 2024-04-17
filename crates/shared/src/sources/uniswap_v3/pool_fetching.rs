@@ -398,10 +398,16 @@ fn append_events(pools: &mut HashMap<H160, Arc<PoolInfo>>, events: Vec<Event<Uni
 
         if let Entry::Occupied(mut entry) = pools.entry(address) {
             // Because contents of `Arc`s can't be modified we:
-            // 1. clone and update the content
-            // 2. put updated value into `Arc` and swap with original `Arc`
-            let mut new_state = PoolInfo::clone(entry.get());
-            let pool = &mut new_state.state;
+            // 1. swap out the current state with a dummy
+            // 2. update current state
+            // 3. put updated state into `Arc` and swap back into the cache
+            let mut current = {
+                let mut dummy = Arc::default();
+                std::mem::swap(entry.get_mut(), &mut dummy);
+                // use unwrap_or_clone to make updates cheaper when nobody is using the state
+                Arc::unwrap_or_clone(dummy)
+            };
+            let pool = &mut current.state;
 
             match event.data {
                 UniswapV3Event::Burn(burn) => {
@@ -469,8 +475,8 @@ fn append_events(pools: &mut HashMap<H160, Arc<PoolInfo>>, events: Vec<Event<Uni
                 }
             }
 
-            let mut new_state = Arc::new(new_state);
-            std::mem::swap(entry.get_mut(), &mut new_state);
+            // `current` has now been updated and can be swapped back into the cache
+            std::mem::swap(entry.get_mut(), &mut Arc::new(current));
         }
     }
 }
