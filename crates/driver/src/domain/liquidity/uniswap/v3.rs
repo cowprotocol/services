@@ -2,7 +2,6 @@ use {
     crate::{
         boundary,
         domain::{eth, liquidity},
-        infra::blockchain::Contracts,
     },
     derivative::Derivative,
     std::collections::BTreeMap,
@@ -64,13 +63,13 @@ impl Pool {
         &self,
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
-        contracts: &Contracts,
+        receiver: &eth::Address,
     ) -> Option<eth::Interaction> {
         let tokens_match = (input.0.token == self.tokens.0 && output.0.token == self.tokens.1)
             || (input.0.token == self.tokens.1 && output.0.token == self.tokens.0);
 
         tokens_match.then_some(boundary::liquidity::uniswap::v3::to_interaction(
-            self, input, output, contracts,
+            self, input, output, receiver,
         ))
     }
 }

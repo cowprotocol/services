@@ -3,7 +3,6 @@ use {
     crate::{
         boundary,
         domain::{eth, liquidity},
-        infra::blockchain::Contracts,
     },
     itertools::Itertools,
 };
@@ -37,14 +36,14 @@ impl Pool {
         &self,
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
-        contracts: &Contracts,
+        receiver: &eth::Address,
     ) -> Result<eth::Interaction, liquidity::InvalidSwap> {
         if !self.reserves.has_tokens(&input.0.token, &output.0.token) {
             return Err(liquidity::InvalidSwap);
         }
 
         Ok(boundary::liquidity::balancer::v2::weighted::to_interaction(
-            self, input, output, contracts,
+            self, input, output, receiver,
         ))
     }
 }

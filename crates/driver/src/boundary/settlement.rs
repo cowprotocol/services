@@ -10,7 +10,7 @@ use {
             eth,
             liquidity,
         },
-        infra::{blockchain::Contracts, Ethereum},
+        infra::Ethereum,
     },
     anyhow::{anyhow, Context, Ok, Result},
     app_data::AppDataHash,
@@ -140,8 +140,11 @@ impl Settlement {
         let slippage_context = slippage_calculator.context(&external_prices);
 
         for interaction in solution.interactions() {
-            let boundary_interaction =
-                to_boundary_interaction(&slippage_context, eth.contracts(), interaction)?;
+            let boundary_interaction = to_boundary_interaction(
+                &slippage_context,
+                settlement_contract.address().into(),
+                interaction,
+            )?;
             settlement.encoder.append_to_execution_plan_internalizable(
                 Arc::new(boundary_interaction),
                 interaction.internalize(),
@@ -349,7 +352,7 @@ fn to_boundary_signature(signature: &order::Signature) -> model::signature::Sign
 
 pub fn to_boundary_interaction(
     slippage_context: &SlippageContext,
-    contracts: &Contracts,
+    settlement_contract: eth::ContractAddress,
     interaction: &competition::solution::Interaction,
 ) -> Result<InteractionData> {
     match interaction {
@@ -383,19 +386,19 @@ pub fn to_boundary_interaction(
 
             let interaction = match &liquidity.liquidity.kind {
                 liquidity::Kind::UniswapV2(pool) => pool
-                    .swap(&input, &output, contracts)
+                    .swap(&input, &output, &settlement_contract.into())
                     .context("invalid uniswap V2 execution")?,
                 liquidity::Kind::UniswapV3(pool) => pool
-                    .swap(&input, &output, contracts)
+                    .swap(&input, &output, &settlement_contract.into())
                     .context("invalid uniswap v3 execution")?,
                 liquidity::Kind::BalancerV2Stable(pool) => pool
-                    .swap(&input, &output, contracts)
+                    .swap(&input, &output, &settlement_contract.into())
                     .context("invalid balancer v2 stable execution")?,
                 liquidity::Kind::BalancerV2Weighted(pool) => pool
-                    .swap(&input, &output, contracts)
+                    .swap(&input, &output, &settlement_contract.into())
                     .context("invalid balancer v2 weighted execution")?,
                 liquidity::Kind::Swapr(pool) => pool
-                    .swap(&input, &output, contracts)
+                    .swap(&input, &output, &settlement_contract.into())
                     .context("invalid swapr execution")?,
                 liquidity::Kind::ZeroEx(limit_order) => limit_order
                     .to_interaction(&input)

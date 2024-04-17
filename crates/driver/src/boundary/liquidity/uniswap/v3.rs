@@ -8,13 +8,10 @@ use {
                 uniswap::v3::{Fee, Liquidity, LiquidityNet, Pool, SqrtPrice, Tick},
             },
         },
-        infra::{
-            self,
-            blockchain::{Contracts, Ethereum},
-        },
+        infra::{self, blockchain::Ethereum},
     },
     anyhow::Context,
-    contracts::UniswapV3SwapRouter,
+    contracts::{GPv2Settlement, UniswapV3SwapRouter},
     ethrpc::current_block::BlockRetrieving,
     shared::{
         http_solver::model::TokenAmount,
@@ -78,14 +75,14 @@ pub fn to_interaction(
     pool: &liquidity::uniswap::v3::Pool,
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
-    contracts: &Contracts,
+    receiver: &eth::Address,
 ) -> eth::Interaction {
     let web3 = ethrpc::dummy::web3();
 
     let handler = UniswapV3SettlementHandler::new(
         UniswapV3SwapRouter::at(&web3, pool.router.0),
-        contracts.settlement().clone(),
-        Mutex::new(Allowances::empty(contracts.settlement().address())),
+        GPv2Settlement::at(&web3, receiver.0),
+        Mutex::new(Allowances::empty(receiver.0)),
         pool.fee.0,
     );
 

@@ -52,7 +52,7 @@ pub fn encode_interactions(
 
         let boundary_interaction = boundary::settlement::to_boundary_interaction(
             &slippage_context,
-            eth.contracts(),
+            eth.contracts().settlement().address().into(),
             interaction,
         )?;
         settlement

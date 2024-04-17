@@ -5,10 +5,7 @@ use {
             eth,
             liquidity::{self, balancer},
         },
-        infra::{
-            self,
-            blockchain::{Contracts, Ethereum},
-        },
+        infra::{self, blockchain::Ethereum},
     },
     anyhow::{Context, Result},
     contracts::{
@@ -18,6 +15,7 @@ use {
         BalancerV2Vault,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
+        GPv2Settlement,
     },
     ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
     shared::{
@@ -41,6 +39,7 @@ pub mod stable;
 pub mod weighted;
 
 struct Pool {
+    vault: eth::ContractAddress,
     id: balancer::v2::Id,
 }
 
@@ -48,16 +47,17 @@ fn to_interaction(
     pool: &Pool,
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
-    contracts: &Contracts,
+    receiver: &eth::Address,
 ) -> eth::Interaction {
+    let web3 = ethrpc::dummy::web3();
     let handler = balancer_v2::SettlementHandler::new(
         pool.id.into(),
         // Note that this code assumes `receiver == sender`. This assumption is
         // also baked into the Balancer V2 logic in the `shared` crate, so to
         // change this assumption, we would need to change it there as well.
-        contracts.settlement().clone(),
-        contracts.vault().clone(),
-        Allowances::empty(contracts.settlement().address()),
+        GPv2Settlement::at(&web3, receiver.0),
+        BalancerV2Vault::at(&web3, pool.vault.into()),
+        Allowances::empty(receiver.0),
     );
 
     let interaction = handler.swap(
