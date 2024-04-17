@@ -1,6 +1,9 @@
 use {
     self::solution::settlement,
-    super::{time, time::Remaining, Mempools},
+    super::{
+        time::{self, Remaining},
+        Mempools,
+    },
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -8,7 +11,7 @@ use {
             blockchain::Ethereum,
             notify,
             observe,
-            solver::{self, Solver},
+            solver::{self, SolutionMerging, Solver},
             Simulator,
         },
         util::Bytes,
@@ -16,6 +19,7 @@ use {
     futures::{stream::FuturesUnordered, StreamExt},
     itertools::Itertools,
     std::{
+        cmp::Reverse,
         collections::{HashMap, HashSet},
         sync::Mutex,
     },
@@ -98,10 +102,13 @@ impl Competition {
             }
         });
 
-        let merged = merge(solutions, auction);
+        let all_solutions = match self.solver.solution_merging() {
+            SolutionMerging::Allowed => merge(solutions, auction),
+            SolutionMerging::Forbidden => solutions.collect(),
+        };
 
         // Encode solutions into settlements (streamed).
-        let encoded = merged
+        let encoded = all_solutions
             .into_iter()
             .map(|solution| async move {
                 let id = solution.id().clone();
@@ -119,7 +126,7 @@ impl Competition {
                     .ok()
             });
 
-        // Merge settlements as they arrive until there are no more new settlements or
+        // Encode settlements as they arrive until there are no more new settlements or
         // timeout is reached.
         let mut settlements = Vec::new();
         let future = async {
@@ -322,8 +329,7 @@ impl Competition {
 }
 
 /// Creates a vector with all possible combinations of the given solutions.
-/// The result is sorted by the number of merges, so the first elements are the
-/// original solutions.
+/// The result is sorted descending by score.
 fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
     for solution in solutions {
@@ -346,10 +352,12 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 
     // Sort merged solutions descending by score.
     merged.sort_by_key(|solution| {
-        solution
-            .scoring(&auction.prices())
-            .map(|score| score.0)
-            .unwrap_or_default()
+        Reverse(
+            solution
+                .scoring(&auction.prices())
+                .map(|score| score.0)
+                .unwrap_or_default(),
+        )
     });
     merged
 }

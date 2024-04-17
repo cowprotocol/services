@@ -7,13 +7,11 @@ pub mod zeroex;
 
 #[cfg(test)]
 use derivative::Derivative;
-#[cfg(test)]
-use model::order::Order;
 use {
     crate::settlement::SettlementEncoder,
     anyhow::Result,
     model::{
-        order::{OrderKind, OrderUid},
+        order::{Order, OrderKind, OrderUid},
         TokenPair,
     },
     num::rational::Ratio,
@@ -247,8 +245,35 @@ impl Settleable for LimitOrder {
 impl From<Order> for LimitOrder {
     fn from(order: Order) -> Self {
         order_converter::OrderConverter::test(H160([0x42; 20]))
-            .normalize_limit_order(crate::order_balance_filter::BalancedOrder::full(order))
+            .normalize_limit_order(BalancedOrder::full(order))
             .unwrap()
+    }
+}
+
+/// An order processed by `balance_orders`.
+///
+/// To ensure that all orders passed to solvers are settleable we need to
+/// make a choice for which orders to include when the user only has enough
+/// sell token balance for some of them.
+#[derive(Debug, Clone)]
+pub struct BalancedOrder {
+    pub order: Order,
+    /// The amount of sell token balance that is usable by this order.
+    ///
+    /// The field might be larger than the order's sell_amount + fee_amount .
+    ///
+    /// The field might be smaller than the order's sell_amount + fee_amount for
+    /// partially fillable orders. But it is always greater than 0 because no
+    /// balance being available at all would make an order unsettleable.
+    pub available_sell_token_balance: U256,
+}
+
+impl BalancedOrder {
+    pub fn full(order: Order) -> Self {
+        Self {
+            order,
+            available_sell_token_balance: U256::MAX,
+        }
     }
 }
 
