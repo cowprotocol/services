@@ -261,8 +261,8 @@ impl Auction {
                             hash: Default::default(),
                             maker_token: limit_order.order.maker_token,
                             taker_token: limit_order.order.taker_token,
-                            maker_amount: limit_order.order.maker_amount.into(),
-                            taker_amount: limit_order.order.taker_amount.into(),
+                            maker_amount: limit_order.fillable.maker.into(),
+                            taker_amount: limit_order.fillable.taker.into(),
                             taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
                         })
                     }
