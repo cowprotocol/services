@@ -15,9 +15,14 @@ use {
             serialize,
         },
     },
+    app_data::AppDataHash,
     indexmap::IndexMap,
-    model::{interaction::InteractionData, signature::Signature},
-    primitive_types::H160,
+    model::{
+        interaction::InteractionData,
+        order::{BuyTokenDestination, SellTokenSource},
+        signature::Signature,
+    },
+    primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
@@ -124,6 +129,7 @@ impl Auction {
                         receiver: order.receiver.map(Into::into),
                         owner: order.signature.signer.into(),
                         partially_fillable: order.is_partial(),
+                        executed: order.executed,
                         class: match order.kind {
                             order::Kind::Market => Class::Market,
                             order::Kind::Limit { .. } => Class::Limit,
@@ -141,6 +147,8 @@ impl Auction {
                             .cloned()
                             .map(Into::into)
                             .collect::<Vec<_>>(),
+                        sell_token_balance: order.sell_token_balance.into(),
+                        buy_token_destination: order.buy_token_balance.into(),
                         fee_policies: (fee_handler == FeeHandler::Solver).then_some(
                             order
                                 .protocol_fees
@@ -149,6 +157,7 @@ impl Auction {
                                 .map(Into::into)
                                 .collect(),
                         ),
+                        app_data: AppDataHash(order.app_data.0.into()),
                         signature: order.signature.to_boundary_signature(),
                         valid_to: order.valid_to.into(),
                     }
@@ -334,9 +343,14 @@ struct Order {
     receiver: Option<H160>,
     owner: H160,
     partially_fillable: bool,
+    #[serde_as(as = "serialize::U256")]
+    executed: U256,
     pre_interactions: Vec<InteractionData>,
     post_interactions: Vec<InteractionData>,
+    sell_token_balance: SellTokenSource,
+    buy_token_destination: BuyTokenDestination,
     class: Class,
+    app_data: AppDataHash,
     #[serde(flatten)]
     signature: Signature,
 }

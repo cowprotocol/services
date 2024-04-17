@@ -4298,6 +4298,7 @@ dependencies = [
 name = "solvers-dto"
 version = "0.1.0"
 dependencies = [
+ "app-data",
  "bigdecimal",
  "bytes-hex",
  "chrono",

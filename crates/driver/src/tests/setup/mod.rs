@@ -27,10 +27,12 @@ use {
             setup::blockchain::Blockchain,
         },
     },
+    app_data::AppDataHash,
     bigdecimal::FromPrimitive,
     ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
     hyper::StatusCode,
+    model::order::{BuyTokenDestination, SellTokenSource},
     primitive_types::H160,
     secp256k1::SecretKey,
     std::{
@@ -121,6 +123,9 @@ pub struct Order {
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
     pub owner: H160,
+    pub sell_token_balance: SellTokenSource,
+    pub buy_token_destination: BuyTokenDestination,
+    pub app_data: AppDataHash,
 }
 
 impl Order {
@@ -277,6 +282,9 @@ impl Default for Order {
                 max_volume_factor: 0.06,
             }],
             owner: Default::default(),
+            sell_token_balance: Default::default(),
+            buy_token_destination: Default::default(),
+            app_data: Default::default(),
         }
     }
 }

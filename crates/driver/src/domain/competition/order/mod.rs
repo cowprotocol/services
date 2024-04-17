@@ -6,7 +6,9 @@ use {
         util::{self, conv::u256::U256Ext, Bytes},
     },
     bigdecimal::Zero,
+    model::order::{BuyTokenDestination, SellTokenSource},
     num::CheckedDiv,
+    primitive_types::U256,
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -28,6 +30,7 @@ pub struct Order {
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
+    pub executed: U256,
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     /// These are set by the user and included in the settlement transaction.
@@ -333,6 +336,26 @@ pub enum SellTokenBalance {
     External,
 }
 
+impl From<SellTokenBalance> for SellTokenSource {
+    fn from(value: SellTokenBalance) -> Self {
+        match value {
+            SellTokenBalance::Erc20 => Self::Erc20,
+            SellTokenBalance::Internal => Self::Internal,
+            SellTokenBalance::External => Self::External,
+        }
+    }
+}
+
+impl From<SellTokenSource> for SellTokenBalance {
+    fn from(value: SellTokenSource) -> Self {
+        match value {
+            SellTokenSource::Erc20 => Self::Erc20,
+            SellTokenSource::External => Self::External,
+            SellTokenSource::Internal => Self::Internal,
+        }
+    }
+}
+
 impl SellTokenBalance {
     /// Returns the hash value for the specified source.
     pub fn hash(&self) -> eth::H256 {
@@ -350,6 +373,24 @@ impl SellTokenBalance {
 pub enum BuyTokenBalance {
     Erc20,
     Internal,
+}
+
+impl From<BuyTokenBalance> for BuyTokenDestination {
+    fn from(value: BuyTokenBalance) -> Self {
+        match value {
+            BuyTokenBalance::Erc20 => Self::Erc20,
+            BuyTokenBalance::Internal => Self::Internal,
+        }
+    }
+}
+
+impl From<BuyTokenDestination> for BuyTokenBalance {
+    fn from(value: BuyTokenDestination) -> Self {
+        match value {
+            BuyTokenDestination::Erc20 => Self::Erc20,
+            BuyTokenDestination::Internal => Self::Internal,
+        }
+    }
 }
 
 /// The address which placed the order.
@@ -430,6 +471,7 @@ mod tests {
                     available: available.amount.into(),
                 })
                 .unwrap_or(Partial::No),
+            executed: Default::default(),
             pre_interactions: Default::default(),
             post_interactions: Default::default(),
             sell_token_balance: SellTokenBalance::Erc20,

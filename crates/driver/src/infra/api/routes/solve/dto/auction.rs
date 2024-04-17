@@ -64,6 +64,7 @@ impl Auction {
                     } else {
                         competition::order::Partial::No
                     },
+                    executed: order.executed,
                     pre_interactions: order
                         .pre_interactions
                         .into_iter()

@@ -126,17 +126,24 @@ impl Solver {
                 "owner": if config.quote { H160::zero() } else { quote.order.owner },
                 "preInteractions":  json!([]),
                 "postInteractions":  json!([]),
+                "sellTokenBalance": quote.order.sell_token_balance,
+                "buyTokenDestination": quote.order.buy_token_destination,
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",
                     order::Side::Buy => "buy",
                 },
                 "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
+                "executed": match quote.order.partial {
+                    Partial::Yes { executed } => executed.to_string(),
+                    Partial::No => "0".to_owned(),
+                },
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
+                "appData": quote.order.app_data,
                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });

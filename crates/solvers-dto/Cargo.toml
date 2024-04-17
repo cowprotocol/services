@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 bytes-hex = { path = "../bytes-hex" }
+app-data = { path = "../app-data" }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true }
 hex = { workspace = true }
