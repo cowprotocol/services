@@ -5,6 +5,7 @@ use {
             eth,
             liquidity::{self, balancer},
         },
+        infra::blockchain::Contracts,
     },
     solver::liquidity::{balancer_v2, StablePoolOrder},
 };
@@ -68,15 +69,7 @@ pub fn to_interaction(
     pool: &liquidity::balancer::v2::stable::Pool,
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
-    receiver: &eth::Address,
+    contracts: &Contracts,
 ) -> eth::Interaction {
-    super::to_interaction(
-        &super::Pool {
-            vault: pool.vault,
-            id: pool.id,
-        },
-        input,
-        output,
-        receiver,
-    )
+    super::to_interaction(&super::Pool { id: pool.id }, input, output, contracts)
 }

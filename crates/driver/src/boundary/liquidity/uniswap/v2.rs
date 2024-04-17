@@ -5,10 +5,13 @@ use {
             eth,
             liquidity::{self, uniswap},
         },
-        infra::{self, blockchain::Ethereum},
+        infra::{
+            self,
+            blockchain::{Contracts, Ethereum},
+        },
     },
     async_trait::async_trait,
-    contracts::{GPv2Settlement, IUniswapLikeRouter},
+    contracts::IUniswapLikeRouter,
     ethrpc::{current_block::CurrentBlockStream, Web3},
     shared::{
         http_solver::model::TokenAmount,
@@ -88,12 +91,12 @@ pub fn to_interaction(
     pool: &liquidity::uniswap::v2::Pool,
     input: &liquidity::MaxInput,
     output: &liquidity::ExactOutput,
-    receiver: &eth::Address,
+    contracts: &Contracts,
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
         IUniswapLikeRouter::at(&ethrpc::dummy::web3(), pool.router.into()),
-        GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
-        Mutex::new(Allowances::empty(receiver.0)),
+        contracts.settlement().clone(),
+        Mutex::new(Allowances::empty(contracts.settlement().address())),
     );
 
     let (_, interaction) = handler.settle(

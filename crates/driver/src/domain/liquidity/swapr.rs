@@ -1,6 +1,9 @@
-use crate::domain::{
-    eth,
-    liquidity::{self, uniswap},
+use crate::{
+    domain::{
+        eth,
+        liquidity::{self, uniswap},
+    },
+    infra::blockchain::Contracts,
 };
 
 /// The famous Uniswap V2 constant product pool with a twist of lemon,
@@ -25,12 +28,12 @@ impl Pool {
         &self,
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
-        receiver: &eth::Address,
+        contracts: &Contracts,
     ) -> Result<eth::Interaction, liquidity::InvalidSwap> {
         // Note that swap interactions are identical in Swapr and Uniswap V2
         // pools. The only difference is the input/output computation uses
         // different fees.
-        self.base.swap(input, output, receiver)
+        self.base.swap(input, output, contracts)
     }
 }
 
