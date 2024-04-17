@@ -16,7 +16,10 @@ use {
     primitive_types::{H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    std::collections::{BTreeMap, BTreeSet, HashMap},
+    std::{
+        collections::{BTreeMap, BTreeSet, HashMap},
+        sync::Arc,
+    },
     web3::types::AccessList,
 };
 
@@ -117,7 +120,7 @@ pub struct StablePoolParameters {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ConcentratedPoolParameters {
-    pub pool: PoolInfo,
+    pub pool: Arc<PoolInfo>,
 }
 
 #[serde_as]
@@ -606,7 +609,7 @@ mod tests {
         };
         let concentrated_pool_model = AmmModel {
             parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
-                pool: PoolInfo {
+                pool: Arc::new(PoolInfo {
                     address: H160::from_low_u64_be(1),
                     tokens: vec![
                         Token {
@@ -619,7 +622,7 @@ mod tests {
                         },
                     ],
                     ..Default::default()
-                },
+                }),
             }),
             fee: BigRational::new(3.into(), 1000.into()),
             cost: TokenAmount {

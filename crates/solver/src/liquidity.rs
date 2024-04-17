@@ -442,7 +442,7 @@ impl Settleable for StablePoolOrder {
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct ConcentratedLiquidity {
     pub tokens: TokenPair,
-    pub pool: PoolInfo,
+    pub pool: Arc<PoolInfo>,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }

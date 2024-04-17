@@ -56,7 +56,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
             )?,
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
-            tick: Tick(pool.pool.state.tick.try_into()?),
+            tick: Tick(pool.pool.state.tick.clone().try_into()?),
             liquidity_net: pool
                 .pool
                 .state
