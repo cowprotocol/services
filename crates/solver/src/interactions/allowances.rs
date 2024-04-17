@@ -389,27 +389,21 @@ mod tests {
         let web3 = mock::web3();
         web3.transport()
             .mock()
-            .expect_execute_batch()
-            .returning(move |calls| {
-                Ok(calls
-                    .into_iter()
-                    .map(|(method, params)| {
-                        assert_eq!(method, "eth_call");
+            .expect_execute()
+            .returning(move |method, params| {
+                assert_eq!(method, "eth_call");
 
-                        let call =
-                            serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
-                        assert_eq!(call.data.unwrap(), allowance_call_data(owner, spender));
+                let call = serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
+                assert_eq!(call.data.unwrap(), allowance_call_data(owner, spender));
+                let to = call.to.unwrap();
 
-                        let to = call.to.unwrap();
-                        if to == addr!("1111111111111111111111111111111111111111") {
-                            Ok(allowance_return_data(1337.into()))
-                        } else if to == addr!("2222222222222222222222222222222222222222") {
-                            Err(web3::Error::Decoder("test error".to_string()))
-                        } else {
-                            panic!("call to unexpected token {to:?}")
-                        }
-                    })
-                    .collect())
+                if to == addr!("1111111111111111111111111111111111111111") {
+                    Ok(allowance_return_data(1337.into()))
+                } else if to == addr!("2222222222222222222222222222222222222222") {
+                    Err(web3::Error::Decoder("test error".to_string()))
+                } else {
+                    panic!("call to unexpected token {to:?}")
+                }
             });
 
         let allowances = fetch_allowances(
@@ -431,25 +425,5 @@ mod tests {
                 },
             },
         );
-    }
-
-    #[tokio::test]
-    async fn fetch_fails_on_batch_errors() {
-        let web3 = mock::web3();
-        web3.transport()
-            .mock()
-            .expect_execute_batch()
-            .returning(|_| Err(web3::Error::Decoder("test error".to_string())));
-
-        let allowances = fetch_allowances(
-            web3,
-            H160([1; 20]),
-            hashmap! {
-                H160([2; 20]) => hashset![H160([0x11; 20]), H160([0x22; 20])],
-            },
-        )
-        .await;
-
-        assert!(allowances.is_err());
     }
 }
