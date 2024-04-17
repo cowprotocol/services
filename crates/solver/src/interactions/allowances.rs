@@ -136,11 +136,17 @@ impl Interaction for Approval {
 pub struct AllowanceManager {
     web3: Web3,
     owner: H160,
+    erc20: Arc<ERC20>,
 }
 
 impl AllowanceManager {
     pub fn new(web3: Web3, owner: H160) -> Self {
-        Self { web3, owner }
+        // Only instantiate a single contract instance to generate calldata.
+        // The actual call will be done with the web3 instance using the respective
+        // `token` as the `to` address. (performance optimization)
+        let erc20 = Arc::new(ERC20::at(&web3, owner));
+
+        Self { web3, owner, erc20 }
     }
 }
 
@@ -149,6 +155,7 @@ impl AllowanceManaging for AllowanceManager {
     async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances> {
         Ok(fetch_allowances(
             self.web3.clone(),
+            self.erc20.clone(),
             self.owner,
             hashmap! { spender => tokens },
         )
@@ -166,7 +173,13 @@ impl AllowanceManaging for AllowanceManager {
                 .insert(request.token);
         }
 
-        let allowances = fetch_allowances(self.web3.clone(), self.owner, spender_tokens).await?;
+        let allowances = fetch_allowances(
+            self.web3.clone(),
+            self.erc20.clone(),
+            self.owner,
+            spender_tokens,
+        )
+        .await?;
         let mut result = Vec::new();
         for request in requests {
             let allowance = allowances
@@ -181,6 +194,7 @@ impl AllowanceManaging for AllowanceManager {
 
 async fn fetch_allowances<T>(
     web3: ethcontract::Web3<T>,
+    erc20: Arc<ERC20>,
     owner: H160,
     spender_tokens: HashMap<H160, HashSet<H160>>,
 ) -> Result<HashMap<H160, Allowances>>
@@ -189,11 +203,6 @@ where
     T::Batch: Send,
     T::Out: Send,
 {
-    // Only instantiate a single contract instance to generate calldata.
-    // The actual call will be done with the web3 instance using the respective
-    // `token` as the `to` address. (performance optimization)
-    let erc20 = Arc::new(ERC20::at(&web3, owner));
-
     let futures = spender_tokens
         .into_iter()
         .flat_map(|(spender, tokens)| tokens.into_iter().map(move |token| (spender, token)))
@@ -406,8 +415,11 @@ mod tests {
                 }
             });
 
+        let erc20 = Arc::new(ERC20::at(&web3, Default::default()));
+
         let allowances = fetch_allowances(
             web3,
+            erc20,
             owner,
             hashmap! {
                 spender => hashset![H160([0x11; 20]), H160([0x22; 20])],
