@@ -397,16 +397,9 @@ fn append_events(pools: &mut HashMap<H160, Arc<PoolInfo>>, events: Vec<Event<Uni
             .address;
 
         if let Entry::Occupied(mut entry) = pools.entry(address) {
-            // Because contents of `Arc`s can't be modified we:
-            // 1. swap out the current state with a dummy
-            // 2. update current state
-            // 3. put updated state into `Arc` and swap back into the cache
-            let mut current = {
-                let mut dummy = Arc::default();
-                std::mem::swap(entry.get_mut(), &mut dummy);
-                // use unwrap_or_clone to make updates cheaper when nobody is using the state
-                Arc::unwrap_or_clone(dummy)
-            };
+            // Clones and updates the current state if something still has strong references
+            // to that Arc otherwise it will just mutate the original in place.
+            let current = Arc::make_mut(entry.get_mut());
             let pool = &mut current.state;
 
             match event.data {
@@ -474,9 +467,6 @@ fn append_events(pools: &mut HashMap<H160, Arc<PoolInfo>>, events: Vec<Event<Uni
                     pool.sqrt_price = swap.sqrt_price_x96;
                 }
             }
-
-            // `current` has now been updated and can be swapped back into the cache
-            std::mem::swap(entry.get_mut(), &mut Arc::new(current));
         }
     }
 }
