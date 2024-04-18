@@ -14,7 +14,6 @@ use {
             solver::Solver,
             Simulator,
         },
-        util::conv::u256::U256Ext,
     },
     futures::future::try_join_all,
     itertools::Itertools,
@@ -95,7 +94,7 @@ impl Solution {
                             buy: solution.prices
                                 [&fulfillment.order().buy.token.wrap(solution.weth)],
                         };
-                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        let fulfillment = fulfillment.with_protocol_fees(prices)?;
                         trades.push(Trade::Fulfillment(fulfillment))
                     }
                     order::Kind::Liquidity => {
@@ -152,29 +151,7 @@ impl Solution {
                     .get(&trade.order().buy.token.wrap(self.weth))
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
-            let custom_prices = scoring::CustomClearingPrices {
-                sell: match trade.order().side {
-                    order::Side::Sell => trade
-                        .executed()
-                        .0
-                        .checked_mul(uniform_prices.sell)
-                        .ok_or(error::Math::Overflow)?
-                        .checked_ceil_div(&uniform_prices.buy)
-                        .ok_or(error::Math::DivisionByZero)?,
-                    order::Side::Buy => trade.executed().0,
-                },
-                buy: match trade.order().side {
-                    order::Side::Sell => trade.executed().0 + trade.fee().0,
-                    order::Side::Buy => {
-                        (trade.executed().0)
-                            .checked_mul(uniform_prices.buy)
-                            .ok_or(error::Math::Overflow)?
-                            .checked_div(uniform_prices.sell)
-                            .ok_or(error::Math::DivisionByZero)?
-                            + trade.fee().0
-                    }
-                },
-            };
+            let custom_prices = trade.calculate_custom_prices(&uniform_prices)?;
             trades.push(scoring::Trade::new(
                 trade.order().sell,
                 trade.order().buy,

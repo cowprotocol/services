@@ -1,7 +1,10 @@
 use {
     crate::util::Bytes,
     itertools::Itertools,
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        ops::{Div, Mul, Sub},
+    },
 };
 
 pub mod allowance;
@@ -194,6 +197,54 @@ impl TokenAmount {
                 / 1000000000000000000u128)
                 .into(),
         )
+    }
+}
+
+impl Sub<Self> for TokenAmount {
+    type Output = TokenAmount;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0.sub(rhs.0).into()
+    }
+}
+
+impl num::CheckedSub for TokenAmount {
+    fn checked_sub(&self, other: &Self) -> Option<Self> {
+        self.0.checked_sub(other.0).map(Into::into)
+    }
+}
+
+impl Mul<Self> for TokenAmount {
+    type Output = TokenAmount;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.0.mul(rhs.0).into()
+    }
+}
+
+impl num::CheckedMul for TokenAmount {
+    fn checked_mul(&self, other: &Self) -> Option<Self> {
+        self.0.checked_mul(other.0).map(Into::into)
+    }
+}
+
+impl num::CheckedAdd for TokenAmount {
+    fn checked_add(&self, other: &Self) -> Option<Self> {
+        self.0.checked_add(other.0).map(Into::into)
+    }
+}
+
+impl Div<Self> for TokenAmount {
+    type Output = TokenAmount;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.0.div(rhs.0).into()
+    }
+}
+
+impl num::CheckedDiv for TokenAmount {
+    fn checked_div(&self, other: &Self) -> Option<Self> {
+        self.0.checked_div(other.0).map(Into::into)
     }
 }
 
