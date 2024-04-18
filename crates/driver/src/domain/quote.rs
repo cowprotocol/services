@@ -133,7 +133,6 @@ impl Order {
                 },
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
-                executed: Default::default(),
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),
                 sell_token_balance: competition::order::SellTokenBalance::Erc20,

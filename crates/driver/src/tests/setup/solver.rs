@@ -133,10 +133,6 @@ impl Solver {
                     order::Side::Buy => "buy",
                 },
                 "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
-                "executed": match quote.order.partial {
-                    Partial::Yes { executed } => executed.to_string(),
-                    Partial::No => "0".to_owned(),
-                },
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",

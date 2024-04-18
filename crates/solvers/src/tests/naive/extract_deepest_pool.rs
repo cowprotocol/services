@@ -35,7 +35,6 @@ async fn test() {
                     "kind": "sell",
                     "owner": "0x5b1e2c2762667331bc91648052f646d1b0d35984",
                     "partiallyFillable": false,
-                    "executed": "0",
                     "preInteractions": [],
                     "postInteractions": [],
                     "sellTokenBalance": "erc20",

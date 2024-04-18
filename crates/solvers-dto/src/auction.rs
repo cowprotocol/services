@@ -45,8 +45,6 @@ pub struct Order {
     pub receiver: Option<H160>,
     pub owner: H160,
     pub partially_fillable: bool,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed: U256,
     pub pre_interactions: Vec<InteractionData>,
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_balance: SellTokenSource,

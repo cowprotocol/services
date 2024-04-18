@@ -21,7 +21,7 @@ use {
         interaction::InteractionData,
         order::{BuyTokenDestination, SellTokenSource},
     },
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
@@ -128,7 +128,6 @@ impl Auction {
                         receiver: order.receiver.map(Into::into),
                         owner: order.signature.signer.into(),
                         partially_fillable: order.is_partial(),
-                        executed: order.executed,
                         class: match order.kind {
                             order::Kind::Market => Class::Market,
                             order::Kind::Limit { .. } => Class::Limit,
@@ -348,8 +347,6 @@ struct Order {
     receiver: Option<H160>,
     owner: H160,
     partially_fillable: bool,
-    #[serde_as(as = "serialize::U256")]
-    executed: U256,
     pre_interactions: Vec<InteractionData>,
     post_interactions: Vec<InteractionData>,
     sell_token_balance: SellTokenSource,

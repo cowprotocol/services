@@ -8,7 +8,6 @@ use {
     bigdecimal::Zero,
     model::order::{BuyTokenDestination, SellTokenSource},
     num::CheckedDiv,
-    primitive_types::U256,
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -30,7 +29,6 @@ pub struct Order {
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
-    pub executed: U256,
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     /// These are set by the user and included in the settlement transaction.
@@ -452,7 +450,6 @@ mod tests {
                     available: available.amount.into(),
                 })
                 .unwrap_or(Partial::No),
-            executed: Default::default(),
             pre_interactions: Default::default(),
             post_interactions: Default::default(),
             sell_token_balance: SellTokenBalance::Erc20,
