@@ -109,3 +109,10 @@ impl EtherExt for i32 {
         Ether(BigRational::from_i32(self).unwrap())
     }
 }
+
+impl EtherExt for f64 {
+    fn ether(self) -> Ether {
+        assert!(self >= 0.0, "Ether supports non-negative values only");
+        Ether(BigRational::from_f64(self).unwrap())
+    }
+}
