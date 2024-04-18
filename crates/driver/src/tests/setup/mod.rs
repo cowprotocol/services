@@ -123,7 +123,7 @@ pub struct Order {
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
     pub owner: H160,
-    pub sell_token_balance: SellTokenSource,
+    pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub app_data: AppDataHash,
 }
@@ -242,10 +242,6 @@ impl Order {
         }
     }
 
-    pub fn owner(self, owner: H160) -> Self {
-        Self { owner, ..self }
-    }
-
     pub fn executed(self, executed: Option<eth::U256>) -> Self {
         Self { executed, ..self }
     }
@@ -281,8 +277,8 @@ impl Default for Order {
                 factor: 0.0,
                 max_volume_factor: 0.06,
             }],
-            owner: Default::default(),
-            sell_token_balance: Default::default(),
+            owner: eth::H160::from_str(TRADER_ADDRESS).unwrap(),
+            sell_token_source: Default::default(),
             buy_token_destination: Default::default(),
             app_data: Default::default(),
         }

@@ -1,13 +1,10 @@
-use {
-    crate::{
-        domain::{competition::order, eth},
-        infra::config::file::FeeHandler,
-        tests::{
-            self,
-            setup::{ab_order, ab_pool, ab_solution, test_solver, TRADER_ADDRESS},
-        },
+use crate::{
+    domain::competition::order,
+    infra::config::file::FeeHandler,
+    tests::{
+        self,
+        setup::{ab_order, ab_pool, ab_solution, test_solver},
     },
-    std::str::FromStr,
 };
 
 #[tokio::test]
@@ -15,7 +12,6 @@ use {
 async fn solver_fee() {
     for side in [order::Side::Buy, order::Side::Sell] {
         let order = ab_order()
-            .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap())
             .kind(order::Kind::Limit)
             .side(side)
             .solver_fee(Some(500.into()));

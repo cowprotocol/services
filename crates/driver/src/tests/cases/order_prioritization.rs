@@ -1,13 +1,9 @@
-use {
-    crate::{
-        domain::eth,
-        infra::config::file::FeeHandler,
-        tests::{
-            cases::EtherExt,
-            setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order, TRADER_ADDRESS},
-        },
+use crate::{
+    infra::config::file::FeeHandler,
+    tests::{
+        cases::EtherExt,
+        setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order},
     },
-    std::str::FromStr,
 };
 
 /// Test that orders are sorted correctly before being sent to the solver:
@@ -17,7 +13,7 @@ use {
 #[tokio::test]
 #[ignore]
 async fn sorting() {
-    let base_order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let base_order = ab_order();
     let test = setup()
         .solvers(vec![
             test_solver().fee_handler(FeeHandler::Driver)
@@ -48,7 +44,7 @@ async fn sorting() {
 #[tokio::test]
 #[ignore]
 async fn filtering() {
-    let base_order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let base_order = ab_order();
     let test = setup()
         .pool(ab_pool())
         // Orders with better price ratios come first.
@@ -73,7 +69,6 @@ async fn filtering() {
             .unfunded()
             .filtered()
             .limit()
-                .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap())
         )
         .solution(ab_solution())
         .done()

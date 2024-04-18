@@ -1,12 +1,6 @@
-use {
-    crate::{
-        domain::eth,
-        tests::{
-            setup,
-            setup::{ab_order, ab_pool, ab_solution, TRADER_ADDRESS},
-        },
-    },
-    std::str::FromStr,
+use crate::tests::{
+    setup,
+    setup::{ab_order, ab_pool, ab_solution},
 };
 
 /// Test that the best-scoring solution is picked when the /solve endpoint
@@ -14,7 +8,7 @@ use {
 #[tokio::test]
 #[ignore]
 async fn valid() {
-    let order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let order = ab_order();
     let test = setup()
         .pool(ab_pool())
         .order(order.clone())
@@ -32,7 +26,7 @@ async fn valid() {
 #[tokio::test]
 #[ignore]
 async fn invalid() {
-    let order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let order = ab_order();
     let test = setup()
         .pool(ab_pool())
         .order(order.clone())

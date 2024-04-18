@@ -1,19 +1,13 @@
-use {
-    crate::{
-        domain::eth,
-        tests::{
-            setup,
-            setup::{eth_order, eth_solution, weth_pool, TRADER_ADDRESS},
-        },
-    },
-    std::str::FromStr,
+use crate::tests::{
+    setup,
+    setup::{eth_order, eth_solution, weth_pool},
 };
 
 /// Test that buying ETH automatically wraps and unwraps WETH.
 #[tokio::test]
 #[ignore]
 async fn test() {
-    let order = eth_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let order = eth_order();
     let test = setup()
         .pool(weth_pool())
         .order(order.clone())

@@ -1,12 +1,9 @@
-use {
-    crate::{
-        domain::eth,
-        tests::{
-            setup,
-            setup::{ab_order, ab_pool, ab_solution, test_solver, TRADER_ADDRESS},
-        },
+use crate::{
+    domain::eth,
+    tests::{
+        setup,
+        setup::{ab_order, ab_pool, ab_solution, test_solver},
     },
-    std::str::FromStr,
 };
 
 /// Test that the `/solve` request errors when solver balance is too low.
@@ -15,7 +12,7 @@ use {
 async fn test_unfunded() {
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()))
+        .order(ab_order())
         .solution(ab_solution())
         .solvers(vec![test_solver()
             .name("unfunded")
@@ -34,7 +31,7 @@ async fn test_unfunded() {
 async fn test_just_enough_funded() {
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap()))
+        .order(ab_order())
         .solution(ab_solution())
         .solvers(vec![test_solver()
             .name("barely_funded")

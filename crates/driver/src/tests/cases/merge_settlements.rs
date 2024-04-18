@@ -1,32 +1,25 @@
-use {
-    crate::{
-        domain::eth,
-        tests::{
-            cases::EtherExt,
-            setup::{
-                self,
-                ab_order,
-                ab_pool,
-                ab_solution,
-                cd_order,
-                cd_pool,
-                cd_solution,
-                test_solver,
-                Solution,
-                Test,
-                TRADER_ADDRESS,
-            },
-        },
+use crate::tests::{
+    cases::EtherExt,
+    setup::{
+        self,
+        ab_order,
+        ab_pool,
+        ab_solution,
+        cd_order,
+        cd_pool,
+        cd_solution,
+        test_solver,
+        Solution,
+        Test,
     },
-    std::str::FromStr,
 };
 
 /// Test that settlements can be merged.
 #[tokio::test]
 #[ignore]
 async fn possible() {
-    let ab_order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
-    let cd_order = cd_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let ab_order = ab_order();
+    let cd_order = cd_order();
     let test: Test = setup::setup()
         .solvers(vec![test_solver().merge_solutions()])
         .pool(cd_pool())
@@ -56,7 +49,7 @@ async fn possible() {
 #[tokio::test]
 #[ignore]
 async fn impossible() {
-    let order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let order = ab_order();
     let test = setup::setup()
         .solvers(vec![test_solver().merge_solutions()])
         .pool(ab_pool())
@@ -83,8 +76,8 @@ async fn impossible() {
 #[tokio::test]
 #[ignore]
 async fn possible_but_forbidden() {
-    let ab_order = ab_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
-    let cd_order = cd_order().owner(eth::H160::from_str(TRADER_ADDRESS).unwrap());
+    let ab_order = ab_order();
+    let cd_order = cd_order();
     let test: Test = setup::setup()
         .pool(cd_pool())
         .pool(ab_pool())

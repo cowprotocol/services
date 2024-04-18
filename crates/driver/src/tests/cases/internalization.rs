@@ -1,12 +1,6 @@
-use {
-    crate::{
-        domain::eth,
-        tests::{
-            setup,
-            setup::{ab_order, ab_pool, ab_solution, TRADER_ADDRESS},
-        },
-    },
-    std::str::FromStr,
+use crate::tests::{
+    setup,
+    setup::{ab_order, ab_pool, ab_solution},
 };
 
 /// Test that internalized interactions pass verification if they use trusted
@@ -17,7 +11,6 @@ async fn valid_internalization() {
     let test = setup()
         .pool(ab_pool())
         .order(ab_order()
-            .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap())
             .internalize()
         )
         // Marks "A" as trusted and hence OK to use for internalization.
@@ -39,7 +32,6 @@ async fn untrusted_internalization() {
     let test = setup()
         .pool(ab_pool())
         .order(ab_order()
-            .owner(eth::H160::from_str(TRADER_ADDRESS).unwrap())
             .internalize()
         )
         .solution(ab_solution())
