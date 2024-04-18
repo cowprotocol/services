@@ -4,7 +4,7 @@ use {
             competition,
             competition::{
                 order,
-                order::{fees, Side},
+                order::{fees, signature::Scheme, Side},
             },
             eth::{self},
             liquidity,
@@ -20,7 +20,6 @@ use {
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, SellTokenSource},
-        signature::Signature,
     },
     primitive_types::{H160, U256},
     serde::Serialize,
@@ -158,7 +157,13 @@ impl Auction {
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.0.into()),
-                        signature: order.signature.to_boundary_signature(),
+                        signature: order.signature.data.clone().into(),
+                        signing_scheme: match order.signature.scheme {
+                            Scheme::Eip712 => SigningScheme::Eip712,
+                            Scheme::EthSign => SigningScheme::EthSign,
+                            Scheme::Eip1271 => SigningScheme::Eip1271,
+                            Scheme::PreSign => SigningScheme::PreSign,
+                        },
                         valid_to: order.valid_to.into(),
                     }
                 })
@@ -351,8 +356,18 @@ struct Order {
     buy_token_destination: BuyTokenDestination,
     class: Class,
     app_data: AppDataHash,
-    #[serde(flatten)]
-    signature: Signature,
+    signing_scheme: SigningScheme,
+    #[serde(with = "bytes_hex")]
+    signature: Vec<u8>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SigningScheme {
+    Eip712,
+    EthSign,
+    Eip1271,
+    PreSign,
 }
 
 #[derive(Debug, Serialize)]

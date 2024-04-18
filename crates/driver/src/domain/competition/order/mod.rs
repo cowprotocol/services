@@ -346,16 +346,6 @@ impl From<SellTokenBalance> for SellTokenSource {
     }
 }
 
-impl From<SellTokenSource> for SellTokenBalance {
-    fn from(value: SellTokenSource) -> Self {
-        match value {
-            SellTokenSource::Erc20 => Self::Erc20,
-            SellTokenSource::External => Self::External,
-            SellTokenSource::Internal => Self::Internal,
-        }
-    }
-}
-
 impl SellTokenBalance {
     /// Returns the hash value for the specified source.
     pub fn hash(&self) -> eth::H256 {
@@ -380,15 +370,6 @@ impl From<BuyTokenBalance> for BuyTokenDestination {
         match value {
             BuyTokenBalance::Erc20 => Self::Erc20,
             BuyTokenBalance::Internal => Self::Internal,
-        }
-    }
-}
-
-impl From<BuyTokenDestination> for BuyTokenBalance {
-    fn from(value: BuyTokenDestination) -> Self {
-        match value {
-            BuyTokenDestination::Erc20 => Self::Erc20,
-            BuyTokenDestination::Internal => Self::Internal,
         }
     }
 }

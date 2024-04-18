@@ -1630,6 +1630,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "clap",
  "contracts",

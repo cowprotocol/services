@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 app-data = { path = "../app-data" }
+bytes-hex = { path = "../bytes-hex" }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
