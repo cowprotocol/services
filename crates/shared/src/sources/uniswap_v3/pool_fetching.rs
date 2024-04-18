@@ -397,11 +397,18 @@ fn append_events(pools: &mut HashMap<H160, Arc<PoolInfo>>, events: Vec<Event<Uni
             .address;
 
         if let Entry::Occupied(mut entry) = pools.entry(address) {
+            let old_allocation = Arc::as_ptr(entry.get());
+
             // Clones and updates the current state if something still has strong references
             // to that Arc otherwise it will just mutate the original in place.
             let current = Arc::make_mut(entry.get_mut());
-            let pool = &mut current.state;
 
+            match old_allocation == current as *const _ {
+                true => metrics().uniswapv3_pool_updates_fast.inc(),
+                false => metrics().uniswapv3_pool_updates_slow.inc(),
+            }
+
+            let pool = &mut current.state;
             match event.data {
                 UniswapV3Event::Burn(burn) => {
                     let tick_lower = BigInt::from(burn.tick_lower);
@@ -494,6 +501,19 @@ impl Maintaining for UniswapV3PoolFetcher {
     fn name(&self) -> &str {
         "UniswapV3PoolFetcher"
     }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Debug)]
+struct Metrics {
+    /// Counts how often uniswap v3 pools got updates with the fast path
+    uniswapv3_pool_updates_fast: prometheus::IntCounter,
+    /// Counts how often uniswap v3 pools got updates with the slow path
+    uniswapv3_pool_updates_slow: prometheus::IntCounter,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .expect("unexpected error getting metrics instance")
 }
 
 #[cfg(test)]
