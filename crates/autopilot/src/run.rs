@@ -607,7 +607,7 @@ pub async fn run(args: Arguments) {
         max_blocks_wait: args.max_blocks_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
-        persistence: Arc::new(persistence.clone()),
+        persistence: Arc::new(persistence),
         liveness: liveness.clone(),
     };
     run.run_forever().await;
