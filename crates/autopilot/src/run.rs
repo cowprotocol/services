@@ -604,6 +604,7 @@ pub async fn run(args: Arguments) {
         submission_deadline: args.submission_deadline as u64,
         additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
+        max_blocks_wait: args.max_blocks_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
         persistence: Arc::new(persistence.clone()),

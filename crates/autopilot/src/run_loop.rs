@@ -43,6 +43,7 @@ pub struct RunLoop {
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
     pub max_settlement_transaction_wait: Duration,
+    pub max_blocks_wait: u64,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
@@ -420,12 +421,19 @@ impl RunLoop {
 
         let eth = self.eth.clone();
         let persistence = self.persistence.clone();
+        let max_blocks_wait = self.max_blocks_wait;
         let (cancellation_tx, cancellation_rx) = watch::channel(false);
         let settlement_tx_wait_task = tokio::spawn(async move {
             let tag = auction_id.to_be_bytes();
-            Self::wait_for_settlement_transaction(eth, persistence, &tag, cancellation_rx)
-                .await
-                .map_err(SettleError::Failure)
+            Self::wait_for_settlement_transaction(
+                eth,
+                persistence,
+                &tag,
+                max_blocks_wait,
+                cancellation_rx,
+            )
+            .await
+            .map_err(SettleError::Failure)
         });
 
         let duration = self.max_settlement_transaction_wait;
@@ -475,10 +483,10 @@ impl RunLoop {
         eth: Arc<infra::Ethereum>,
         persistence: Arc<infra::Persistence>,
         tag: &[u8],
+        max_blocks_wait: u64,
         mut cancellation_rx: watch::Receiver<bool>,
     ) -> Result<Option<Transaction>> {
         let start_offset = MAX_REORG_BLOCK_COUNT;
-        let max_blocks_wait = 20;
         let current = eth.current_block().borrow().number;
         let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_blocks_wait);
