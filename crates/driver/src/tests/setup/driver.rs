@@ -227,6 +227,7 @@ async fn create_config_file(
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
                fee-handler = {}
+               merge-solutions = {}
                "#,
             solver.name,
             addr,
@@ -240,6 +241,7 @@ async fn create_config_file(
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
+            solver.merge_solutions,
         )
         .unwrap();
     }

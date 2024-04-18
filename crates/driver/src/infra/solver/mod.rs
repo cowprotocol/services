@@ -107,6 +107,7 @@ pub struct Config {
     /// Use limit orders for quoting
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
+    pub merge_solutions: SolutionMerging,
 }
 
 impl Solver {
@@ -164,6 +165,10 @@ impl Solver {
     /// Use limit orders for quoting instead of market orders
     pub fn quote_using_limit_orders(&self) -> bool {
         self.config.quote_using_limit_orders
+    }
+
+    pub fn solution_merging(&self) -> SolutionMerging {
+        self.config.merge_solutions
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -225,6 +230,14 @@ impl Solver {
         };
         tokio::task::spawn(future.in_current_span());
     }
+}
+
+/// Controls whether or not the driver is allowed to merge multiple solutions
+/// of the same solver to produce an overall better solution.
+#[derive(Debug, Clone, Copy)]
+pub enum SolutionMerging {
+    Allowed,
+    Forbidden,
 }
 
 #[derive(Debug, Error)]

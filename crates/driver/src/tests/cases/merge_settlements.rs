@@ -1,6 +1,17 @@
 use crate::tests::{
     cases::EtherExt,
-    setup::{self, ab_order, ab_pool, ab_solution, cd_order, cd_pool, cd_solution, Solution, Test},
+    setup::{
+        self,
+        ab_order,
+        ab_pool,
+        ab_solution,
+        cd_order,
+        cd_pool,
+        cd_solution,
+        test_solver,
+        Solution,
+        Test,
+    },
 };
 
 /// Test that settlements can be merged.
@@ -10,6 +21,7 @@ async fn possible() {
     let ab_order = ab_order();
     let cd_order = cd_order();
     let test: Test = setup::setup()
+        .solvers(vec![test_solver().merge_solutions()])
         .pool(cd_pool())
         .pool(ab_pool())
         .order(ab_order.clone())
@@ -39,6 +51,7 @@ async fn possible() {
 async fn impossible() {
     let order = ab_order();
     let test = setup::setup()
+        .solvers(vec![test_solver().merge_solutions()])
         .pool(ab_pool())
         .order(order.clone())
         .order(order.clone().rename("reduced order").reduce_amount("1e-3".ether().into_wei()))
@@ -55,6 +68,29 @@ async fn impossible() {
     // Only the first A-B order gets settled.
 
     test.solve().await.ok().orders(&[order]);
+    test.reveal().await.ok().calldata();
+    test.settle().await.ok().await.ab_order_executed().await;
+}
+
+/// Test that mergable solutions don't get merged if feature was not enabled.
+#[tokio::test]
+#[ignore]
+async fn possible_but_forbidden() {
+    let ab_order = ab_order();
+    let cd_order = cd_order();
+    let test: Test = setup::setup()
+        .pool(cd_pool())
+        .pool(ab_pool())
+        .order(ab_order.clone())
+        .order(cd_order.clone())
+        .solution(cd_solution())
+        .solution(ab_solution())
+        .done()
+        .await;
+
+    // Even though the solutions could be combined (see test "possible") they were
+    // not because solution merging is not enabled by default.
+    test.solve().await.ok().orders(&[ab_order]);
     test.reveal().await.ok().calldata();
     test.settle().await.ok().await.ab_order_executed().await;
 }
