@@ -459,7 +459,9 @@ impl RunLoop {
             },
             settle_result = driver_settle_task => {
                 // When driver returns any result, the blocks fetching task has to be stopped.
-                let _ = cancellation_tx.send(true);
+                if let Err(err) = cancellation_tx.send(true) {
+                    tracing::warn!(?err, "failed to cancel settlement transaction await task");
+                }
                 settle_result
                     .map_err(|err| SettleError::Failure(err.into()))
                     .and_then(|res| res.map(|response| response.tx_hash))
