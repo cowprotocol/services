@@ -21,6 +21,7 @@ axum = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["clock"], default-features = false }
 derivative = { workspace = true }
+derive_more = { workspace = true }
 ethabi = "18.0"
 ethereum-types = { workspace = true }
 ethrpc = { path = "../ethrpc" }
