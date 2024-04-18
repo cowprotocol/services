@@ -1,5 +1,8 @@
 use {
-    super::{competition, eth},
+    super::{
+        competition::{self, solution::settlement},
+        eth,
+    },
     crate::{
         domain::{competition::solution::Settlement, eth::TxStatus},
         infra::{self, observe, solver::Solver, Ethereum},
@@ -79,7 +82,7 @@ impl Mempools {
     ) -> Result<eth::TxId, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
-        if settlement.boundary.revertable()
+        if settlement.may_revert()
             && matches!(self.revert_protection(), RevertProtection::Enabled)
             && mempool.may_revert()
         {
@@ -87,15 +90,7 @@ impl Mempools {
         }
 
         let deadline = mempool.config().deadline();
-        let tx = eth::Tx {
-            // boundary.tx() does not populate the access list
-            access_list: settlement.access_list.clone(),
-            ..settlement.boundary.tx(
-                settlement.auction_id,
-                self.ethereum.contracts().settlement(),
-                competition::solution::settlement::Internalization::Enable,
-            )
-        };
+        let tx = settlement.transaction(settlement::Internalization::Enable);
 
         // Instantiate block stream and skip the current block before we submit the
         // settlement. This way we only run iterations in blocks that can potentially
