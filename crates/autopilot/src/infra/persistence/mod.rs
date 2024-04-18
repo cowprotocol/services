@@ -6,6 +6,7 @@ use {
     },
     anyhow::Context,
     chrono::Utc,
+    primitive_types::H256,
     std::sync::Arc,
     tracing::Instrument,
 };
@@ -124,6 +125,18 @@ impl Persistence {
         }
 
         ex.commit().await.context("commit")
+    }
+
+    /// Retrieves the recent settlement transaction hashes for the provided
+    /// blocks range.
+    pub async fn recent_settlement_tx_hashes(
+        &self,
+        block_range: std::ops::Range<u64>,
+    ) -> Result<Vec<H256>, Error> {
+        self.postgres
+            .recent_settlement_tx_hashes(block_range)
+            .await
+            .map_err(Error::DbError)
     }
 }
 

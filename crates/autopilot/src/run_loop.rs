@@ -22,20 +22,20 @@ use {
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
-    shared::token_list::AutoUpdatingTokenList,
+    shared::{event_handling::MAX_REORG_BLOCK_COUNT, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::Mutex,
+    tokio::sync::{watch, Mutex},
     tracing::Instrument,
-    web3::types::TransactionReceipt,
+    web3::types::{Transaction, TransactionReceipt},
 };
 
 pub struct RunLoop {
-    pub eth: infra::Ethereum,
-    pub persistence: infra::Persistence,
+    pub eth: Arc<infra::Ethereum>,
+    pub persistence: Arc<infra::Persistence>,
     pub drivers: Vec<infra::Driver>,
 
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -277,7 +277,7 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver, solution).await {
+            match self.settle(driver.clone(), solution, auction_id).await {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -298,7 +298,7 @@ impl RunLoop {
         &self,
         id: domain::auction::Id,
         auction: &domain::Auction,
-    ) -> Vec<Participant<'_>> {
+    ) -> Vec<Participant> {
         let request = solve::Request::new(
             id,
             auction,
@@ -333,7 +333,10 @@ impl RunLoop {
             solutions.into_iter().filter_map(|solution| match solution {
                 Ok(solution) => {
                     Metrics::solution_ok(driver);
-                    Some(Participant { driver, solution })
+                    Some(Participant {
+                        driver: driver.clone(),
+                        solution,
+                    })
                 }
                 Err(err) => {
                     Metrics::solution_err(driver, &err);
@@ -405,20 +408,55 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    async fn settle(&self, driver: &infra::Driver, solved: &Solution) -> Result<(), SettleError> {
+    async fn settle(
+        &self,
+        driver: infra::Driver,
+        solved: &Solution,
+        auction_id: i64,
+    ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
             .store_order_events(order_ids, OrderEventLabel::Executing);
 
+        let eth = self.eth.clone();
+        let persistence = self.persistence.clone();
+        let (cancellation_tx, cancellation_rx) = watch::channel(false);
+        let settlement_tx_wait_task = tokio::spawn(async move {
+            let tag = auction_id.to_be_bytes();
+            Self::wait_for_settlement_transaction(eth, persistence, &tag, cancellation_rx)
+                .await
+                .map_err(SettleError::Failure)
+        });
+
+        let duration = self.max_settlement_transaction_wait;
         let request = settle::Request {
             solution_id: solved.id,
         };
-
-        let tx_hash = driver
-            .settle(&request, self.max_settlement_transaction_wait)
-            .await
-            .map_err(SettleError::Failure)?
-            .tx_hash;
+        let driver_settle_task = tokio::spawn(async move {
+            driver
+                .clone()
+                .settle(request, duration)
+                .await
+                .map_err(SettleError::Failure)
+        });
+        // Wait for either the settlement transaction to be mined or the driver returned
+        // a result.
+        let tx_hash = tokio::select! {
+            transaction_result = settlement_tx_wait_task => {
+                transaction_result
+                    .map_err(|err| SettleError::Failure(err.into()))
+                    .and_then(|res| res.and_then(|tx| {
+                        tx.map(|tx| tx.hash).ok_or(SettleError::Failure(anyhow::anyhow!("settlement transaction await task reached deadline")))
+                    }))
+            },
+            settle_result = driver_settle_task => {
+                // When driver returns any result, the blocks fetching task has to be stopped.
+                let _ = cancellation_tx.send(true);
+                settle_result
+                    .map_err(|err| SettleError::Failure(err.into()))
+                    .and_then(|res| res.map(|response| response.tx_hash))
+            }
+        }?;
 
         *self.in_flight_orders.lock().await = Some(InFlightOrders {
             tx_hash,
@@ -427,6 +465,54 @@ impl RunLoop {
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
+    }
+
+    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    ///
+    /// Returns None if no transaction was found within the deadline or the task
+    /// is cancelled.
+    async fn wait_for_settlement_transaction(
+        eth: Arc<infra::Ethereum>,
+        persistence: Arc<infra::Persistence>,
+        tag: &[u8],
+        mut cancellation_rx: watch::Receiver<bool>,
+    ) -> Result<Option<Transaction>> {
+        let start_offset = MAX_REORG_BLOCK_COUNT;
+        let max_blocks_wait = 20;
+        let current = eth.current_block().borrow().number;
+        let start = current.saturating_sub(start_offset);
+        let deadline = current.saturating_add(max_blocks_wait);
+        tracing::debug!(%current, %start, %deadline, ?tag, "waiting for tag");
+        let mut seen_transactions: HashSet<H256> = Default::default();
+        loop {
+            if eth.current_block().borrow().number > deadline {
+                break;
+            }
+            let mut hashes = persistence
+                .recent_settlement_tx_hashes(start..deadline + 1)
+                .await?;
+            hashes.retain(|hash| !seen_transactions.contains(hash));
+            for hash in hashes {
+                let tx = match eth.transaction(hash).await {
+                    Ok(Some(tx)) => tx,
+                    Ok(None) | Err(_) => {
+                        tracing::warn!(?hash, "unable to fetch a tx");
+                        continue;
+                    }
+                };
+                if tx.input.0.ends_with(tag) {
+                    return Ok(Some(tx));
+                }
+                seen_transactions.insert(hash);
+                tokio::select! {
+                    _ = cancellation_rx.changed() => {
+                        return Ok(None);
+                    }
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {},
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying
@@ -468,8 +554,8 @@ pub struct InFlightOrders {
     orders: HashSet<domain::OrderUid>,
 }
 
-struct Participant<'a> {
-    driver: &'a infra::Driver,
+struct Participant {
+    driver: infra::Driver,
     solution: Solution,
 }
 
