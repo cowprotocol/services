@@ -121,6 +121,7 @@ async fn combined_protocol_fees(web3: Web3) {
             "--protocol-fee-exempt-addresses={:?}",
             trader_exempt.address()
         ),
+        "--enable-multiple-fees=true".to_string(),
     ];
     let services = Services::new(onchain.contracts()).await;
     services
@@ -184,7 +185,8 @@ async fn combined_protocol_fees(web3: Web3) {
     );
     let partner_fee_order = OrderCreation {
         sell_amount,
-        buy_amount: to_wei(5),
+        // to make sure the order is out-of-market
+        buy_amount: partner_fee_quote.quote.buy_amount * 3 / 2,
         app_data: partner_fee_app_data.clone(),
         ..sell_order_from_quote(&partner_fee_quote)
     }
@@ -211,6 +213,9 @@ async fn combined_protocol_fees(web3: Web3) {
     onchain
         .mint_token_to_weth_uni_v2_pool(&limit_order_token, to_wei(1000))
         .await;
+    onchain
+        .mint_token_to_weth_uni_v2_pool(&partner_fee_order_token, to_wei(1000))
+        .await;
 
     tracing::info!("Waiting for liquidity state to update");
     wait_for_condition(TIMEOUT, || async {
@@ -229,19 +234,26 @@ async fn combined_protocol_fees(web3: Web3) {
         new_market_order_quote.quote.buy_amount != market_quote_before.quote.buy_amount
     })
     .await
-    .unwrap();
+    .expect("Timeout waiting for eviction of the cached liquidity");
 
-    let [market_quote_after, limit_quote_after] =
-        futures::future::try_join_all([&market_order_token, &limit_order_token].map(|token| {
-            get_quote(
-                &services,
-                onchain.contracts().weth.address(),
-                token.address(),
-                OrderKind::Sell,
-                sell_amount,
-                quote_valid_to,
-            )
-        }))
+    let [market_quote_after, limit_quote_after, partner_fee_quote_after] =
+        futures::future::try_join_all(
+            [
+                &market_order_token,
+                &limit_order_token,
+                &partner_fee_order_token,
+            ]
+            .map(|token| {
+                get_quote(
+                    &services,
+                    onchain.contracts().weth.address(),
+                    token.address(),
+                    OrderKind::Sell,
+                    sell_amount,
+                    quote_valid_to,
+                )
+            }),
+        )
         .await
         .unwrap()
         .try_into()
@@ -283,7 +295,9 @@ async fn combined_protocol_fees(web3: Web3) {
         .into_iter()
         .all(std::convert::identity)
     };
-    wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+    wait_for_condition(TIMEOUT, metadata_updated)
+        .await
+        .expect("Timeout waiting for the orders to trade");
 
     tracing::info!("Checking executions...");
     let market_price_improvement_order = services
@@ -301,12 +315,18 @@ async fn combined_protocol_fees(web3: Web3) {
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
     let partner_fee_executed_surplus_fee_in_buy_token =
-        surplus_fee_in_buy_token(&partner_fee_order, &partner_fee_quote.quote);
+        surplus_fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
         partner_fee_executed_surplus_fee_in_buy_token
             >= partner_fee_quote.quote.buy_amount * 2 / 100
     );
+    let limit_quote_diff = partner_fee_quote_after
+        .quote
+        .buy_amount
+        .saturating_sub(partner_fee_order.data.buy_amount);
+    // see `limit_surplus_policy.factor`, which is 0.3
+    assert!(partner_fee_executed_surplus_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
     let limit_executed_surplus_fee_in_buy_token =
@@ -342,7 +362,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly three elements");
+        .expect("Expected exactly four elements");
     assert_approximately_eq!(
         market_executed_surplus_fee_in_buy_token,
         market_order_token_balance
@@ -414,7 +434,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         // applied
         policy_order_class: FeePolicyOrderClass::Any,
     };
-    let protocol_fees_config = ProtocolFeesConfig(vec![protocol_fee]).to_string();
+    // Protocol fee set twice to test that only one policy will apply if the
+    // autopilot is not configured to support multiple fees
+    let protocol_fees_config =
+        ProtocolFeesConfig(vec![protocol_fee.clone(), protocol_fee]).to_string();
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -543,11 +566,13 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
 struct ProtocolFeesConfig(Vec<ProtocolFee>);
 
+#[derive(Clone)]
 struct ProtocolFee {
     policy: FeePolicyKind,
     policy_order_class: FeePolicyOrderClass,
 }
 
+#[derive(Clone)]
 enum FeePolicyOrderClass {
     Market,
     Limit,

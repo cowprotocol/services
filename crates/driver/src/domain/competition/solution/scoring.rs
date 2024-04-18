@@ -15,14 +15,18 @@ use {
         domain::{
             competition::{
                 auction,
-                order::fees::Quote,
-                solution::{fee, fee::adjust_quote_to_order_limits},
+                order::{fees::Quote, FeePolicy},
+                solution::{
+                    error,
+                    fee::{self, adjust_quote_to_order_limits},
+                },
                 PriceLimits,
             },
-            eth::{self},
+            eth::{self, TokenAmount},
         },
         util::conv::u256::U256Ext,
     },
+    bigdecimal::Zero,
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -66,7 +70,7 @@ pub struct Trade {
     side: Side,
     executed: order::TargetAmount,
     custom_price: CustomClearingPrices,
-    policies: Vec<order::FeePolicy>,
+    policies: Vec<FeePolicy>,
 }
 
 impl Trade {
@@ -76,7 +80,7 @@ impl Trade {
         side: Side,
         executed: order::TargetAmount,
         custom_price: CustomClearingPrices,
-        policies: Vec<order::FeePolicy>,
+        policies: Vec<FeePolicy>,
     ) -> Self {
         Self {
             sell,
@@ -158,17 +162,74 @@ impl Trade {
         Ok(price.in_eth(surplus.amount))
     }
 
-    /// Protocol fee is defined by fee policies attached to the order.
+    /// Protocol fees is defined by fee policies attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fee(&self) -> Result<eth::Asset, Error> {
-        // TODO: support multiple fee policies
-        if self.policies.len() > 1 {
-            return Err(Error::MultipleFeePolicies);
+    fn protocol_fees(&self) -> Result<eth::Asset, Error> {
+        let mut current_trade = self.clone();
+        let mut amount = TokenAmount::default();
+        for (i, protocol_fee) in self.policies.iter().enumerate().rev() {
+            let fee = current_trade.protocol_fee(protocol_fee)?;
+            // Do not need to calculate the last custom prices because in the last iteration
+            // the prices are not used anymore to calculate the protocol fee
+            amount += fee;
+            if !i.is_zero() {
+                current_trade.custom_price = self
+                    .calculate_custom_prices(amount)
+                    .map_err(|e| Error::CustomPrice(e.to_string()))?;
+            }
         }
 
-        let protocol_fee = |policy: &order::FeePolicy| match policy {
-            order::FeePolicy::Surplus {
+        Ok(eth::Asset {
+            token: self.surplus_token(),
+            amount,
+        })
+    }
+
+    /// Derive new custom prices (given the current custom prices) to exclude
+    /// the protocol fee from the trade.
+    ///
+    /// For this to work properly, `executed` amount is used to build actual
+    /// traded amounts. Note how the clearing prices actually represent the
+    /// traded amounts of a trade (as seen from the user perspective).
+    pub fn calculate_custom_prices(
+        &self,
+        protocol_fee: TokenAmount,
+    ) -> Result<CustomClearingPrices, error::Scoring> {
+        Ok(match self.side {
+            Side::Sell => CustomClearingPrices {
+                sell: self
+                    .executed
+                    .0
+                    .checked_mul(self.custom_price.sell)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(self.custom_price.buy)
+                    .ok_or(Math::DivisionByZero)?
+                    .checked_add(protocol_fee.0)
+                    .ok_or(Math::Overflow)?,
+                buy: self.executed.0,
+            },
+            Side::Buy => CustomClearingPrices {
+                sell: self.executed.0,
+                buy: self
+                    .executed
+                    .0
+                    .checked_mul(self.custom_price.buy)
+                    .ok_or(Math::Overflow)?
+                    .checked_div(self.custom_price.sell)
+                    .ok_or(Math::DivisionByZero)?
+                    .checked_sub(protocol_fee.0)
+                    .ok_or(Math::Negative)?,
+            },
+        })
+    }
+
+    /// Protocol fee is defined by a fee policy attached to the order.
+    ///
+    /// Denominated in SURPLUS token
+    fn protocol_fee(&self, fee_policy: &FeePolicy) -> Result<TokenAmount, Error> {
+        match fee_policy {
+            FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
             } => {
@@ -177,9 +238,9 @@ impl Trade {
                     self.surplus_fee(surplus, *factor)?.amount,
                     self.volume_fee(*max_volume_factor)?.amount,
                 );
-                Ok::<eth::TokenAmount, Error>(fee)
+                Ok::<TokenAmount, Error>(fee)
             }
-            order::FeePolicy::PriceImprovement {
+            FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
                 quote,
@@ -191,14 +252,8 @@ impl Trade {
                 );
                 Ok(fee)
             }
-            order::FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
-        };
-
-        let protocol_fee = self.policies.first().map(protocol_fee).transpose();
-        Ok(eth::Asset {
-            token: self.surplus_token(),
-            amount: protocol_fee?.unwrap_or(0.into()),
-        })
+            FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
+        }
     }
 
     fn price_improvement(&self, quote: &Quote) -> Result<eth::Asset, Error> {
@@ -330,7 +385,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_protocol_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let protocol_fee = self.protocol_fee()?;
+        let protocol_fee = self.protocol_fees()?;
         let price = prices
             .get(&protocol_fee.token)
             .ok_or(Error::MissingPrice(protocol_fee.token))?;
@@ -360,10 +415,10 @@ pub struct CustomClearingPrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("multiple fee policies are not supported yet")]
-    MultipleFeePolicies,
     #[error("missing native price for token {0:?}")]
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
+    #[error("failed to calculate custom price {0:?}")]
+    CustomPrice(String),
 }
