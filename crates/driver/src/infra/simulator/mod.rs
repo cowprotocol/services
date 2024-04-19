@@ -152,7 +152,7 @@ pub enum SimulatorError {
     Blockchain(#[from] blockchain::Error),
     #[error("enso error: {0:?}")]
     Enso(#[from] enso::Error),
-    #[error("the simulated gas {0:?} exceeded the gas limit {1:}")]
+    #[error("the simulated gas {0} exceeded the gas limit {1}")]
     GasExceeded(eth::Gas, eth::Gas),
 }
 
