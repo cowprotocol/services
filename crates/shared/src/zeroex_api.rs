@@ -32,7 +32,7 @@ use {
         time::Duration,
     },
     thiserror::Error,
-    tokio::sync::{watch, Mutex, RwLock},
+    tokio::sync::{watch, Mutex},
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -492,13 +492,12 @@ impl ZeroExApi for DefaultZeroExApi {
         &self,
         query: &OrdersQuery,
     ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
-        let mut results = Vec::default();
-
         let mut cache = self.orders_cache.lock().await;
         if let Some(records) = cache.cache_get(query) {
             return Ok(records.clone());
         }
 
+        let mut results = Vec::default();
         let mut page = 1;
         loop {
             let response = self
