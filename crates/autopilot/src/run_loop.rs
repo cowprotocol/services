@@ -28,7 +28,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::{watch, Mutex},
+    tokio::sync::Mutex,
     tracing::Instrument,
     web3::types::{Transaction, TransactionReceipt},
 };
@@ -277,7 +277,7 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver.clone(), solution, auction_id).await {
+            match self.settle(driver, solution, auction_id).await {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -298,7 +298,7 @@ impl RunLoop {
         &self,
         id: domain::auction::Id,
         auction: &domain::Auction,
-    ) -> Vec<Participant> {
+    ) -> Vec<Participant<'_>> {
         let request = solve::Request::new(
             id,
             auction,
@@ -333,10 +333,7 @@ impl RunLoop {
             solutions.into_iter().filter_map(|solution| match solution {
                 Ok(solution) => {
                     Metrics::solution_ok(driver);
-                    Some(Participant {
-                        driver: driver.clone(),
-                        solution,
-                    })
+                    Some(Participant { driver, solution })
                 }
                 Err(err) => {
                     Metrics::solution_err(driver, &err);
@@ -410,7 +407,7 @@ impl RunLoop {
     /// transaction has been mined.
     async fn settle(
         &self,
-        driver: infra::Driver,
+        driver: &infra::Driver,
         solved: &Solution,
         auction_id: i64,
     ) -> Result<(), SettleError> {
@@ -418,55 +415,34 @@ impl RunLoop {
         self.persistence
             .store_order_events(order_ids, OrderEventLabel::Executing);
 
-        let eth = self.eth.clone();
-        let persistence = self.persistence.clone();
-        let max_blocks_wait = self.submission_deadline;
-        let (cancellation_tx, cancellation_rx) = watch::channel(false);
-        let settlement_tx_wait_task = tokio::spawn(async move {
-            let tag = auction_id.to_be_bytes();
-            Self::wait_for_settlement_transaction(
-                eth,
-                persistence,
-                &tag,
-                max_blocks_wait,
-                cancellation_rx,
-            )
-            .await
-            .map_err(SettleError::Failure)
-        });
-
-        let duration = self.max_settlement_transaction_wait;
+        let tag = auction_id.to_be_bytes();
+        let settlement_tx_wait_task =
+            self.wait_for_settlement_transaction(&tag, self.submission_deadline);
         let request = settle::Request {
             solution_id: solved.id,
         };
-        let driver_settle_task = tokio::spawn(async move {
-            driver
-                .clone()
-                .settle(request, duration)
-                .await
-                .map_err(SettleError::Failure)
-        });
+        let driver_settle_task = driver.settle(&request, self.max_settlement_transaction_wait);
         // Wait for either the settlement transaction to be mined or the driver returned
         // a result.
-        let tx_hash = tokio::select! {
-            transaction_result = settlement_tx_wait_task => {
-                transaction_result
-                    .map_err(|err| SettleError::Failure(err.into()))
-                    .and_then(|res| res.and_then(|tx| {
-                        tx.map(|tx| tx.hash).ok_or(SettleError::Failure(anyhow::anyhow!("settlement transaction await task reached deadline")))
-                    }))
-            },
-            settle_result = driver_settle_task => {
-                // When driver returns any result, the blocks fetching task has to be stopped.
-                if let Err(err) = cancellation_tx.send(true) {
-                    tracing::warn!(?err, "failed to cancel settlement transaction await task");
-                }
-                settle_result
-                    .map_err(|err| SettleError::Failure(err.into()))
-                    .and_then(|res| res.map(|response| response.tx_hash))
+        let tx_hash = match futures::future::select(
+            Box::pin(settlement_tx_wait_task),
+            Box::pin(driver_settle_task),
+        )
+        .await
+        {
+            futures::future::Either::Left((res, _)) => {
+                res.map_err(SettleError::Failure).and_then(|maybe_tx| {
+                    maybe_tx
+                        .map(|tx| tx.hash)
+                        .ok_or(SettleError::Failure(anyhow::anyhow!(
+                            "settlement transaction await task reached deadline"
+                        )))
+                })
             }
+            futures::future::Either::Right((res, _)) => res
+                .map_err(SettleError::Failure)
+                .map(|response| response.tx_hash),
         }?;
-
         *self.in_flight_orders.lock().await = Some(InFlightOrders {
             tx_hash,
             orders: solved.orders.keys().copied().collect(),
@@ -481,28 +457,27 @@ impl RunLoop {
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
     async fn wait_for_settlement_transaction(
-        eth: infra::Ethereum,
-        persistence: infra::Persistence,
+        &self,
         tag: &[u8],
         max_blocks_wait: u64,
-        mut cancellation_rx: watch::Receiver<bool>,
     ) -> Result<Option<Transaction>> {
         let start_offset = MAX_REORG_BLOCK_COUNT;
-        let current = eth.current_block().borrow().number;
+        let current = self.eth.current_block().borrow().number;
         let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %start, %deadline, ?tag, "waiting for tag");
         let mut seen_transactions: HashSet<H256> = Default::default();
         loop {
-            if eth.current_block().borrow().number > deadline {
+            if self.eth.current_block().borrow().number > deadline {
                 break;
             }
-            let mut hashes = persistence
+            let mut hashes = self
+                .persistence
                 .recent_settlement_tx_hashes(start..deadline + 1)
                 .await?;
             hashes.retain(|hash| !seen_transactions.contains(hash));
             for hash in hashes {
-                let tx = match eth.transaction(hash).await {
+                let tx = match self.eth.transaction(hash).await {
                     Ok(Some(tx)) => tx,
                     Ok(None) | Err(_) => {
                         tracing::warn!(?hash, "unable to fetch a tx");
@@ -513,12 +488,7 @@ impl RunLoop {
                     return Ok(Some(tx));
                 }
                 seen_transactions.insert(hash);
-                tokio::select! {
-                    _ = cancellation_rx.changed() => {
-                        return Ok(None);
-                    }
-                    _ = tokio::time::sleep(Duration::from_secs(5)) => {},
-                }
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
         Ok(None)
@@ -563,8 +533,8 @@ pub struct InFlightOrders {
     orders: HashSet<domain::OrderUid>,
 }
 
-struct Participant {
-    driver: infra::Driver,
+struct Participant<'a> {
+    driver: &'a infra::Driver,
     solution: Solution,
 }
 

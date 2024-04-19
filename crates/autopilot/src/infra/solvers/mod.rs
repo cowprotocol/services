@@ -12,7 +12,6 @@ pub mod dto;
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 
-#[derive(Clone)]
 pub struct Driver {
     pub name: String,
     pub url: Url,
@@ -41,10 +40,10 @@ impl Driver {
 
     pub async fn settle(
         &self,
-        request: settle::Request,
+        request: &settle::Request,
         timeout: std::time::Duration,
     ) -> Result<settle::Response> {
-        self.request_response("settle", &request, Some(timeout))
+        self.request_response("settle", request, Some(timeout))
             .await
     }
 

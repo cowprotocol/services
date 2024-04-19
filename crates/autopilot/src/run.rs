@@ -606,7 +606,7 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
-        persistence,
+        persistence: persistence.clone(),
         liveness: liveness.clone(),
     };
     run.run_forever().await;
