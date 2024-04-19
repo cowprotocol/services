@@ -92,7 +92,7 @@ impl Eip712TypedZeroExOrder {
             },
             order: Order {
                 chain_id,
-                expiry: NaiveDateTime::MAX.timestamp() as u64,
+                expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
                 fee_recipient: self.fee_recipient,
                 maker: self.maker,
                 maker_token: self.maker_token,

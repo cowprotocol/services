@@ -223,7 +223,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         sender: Default::default(),
         fee_recipient: zeroex.address(),
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     }
     .to_order_record(chain_id, zeroex.address(), zeroex_maker);
@@ -263,7 +263,7 @@ fn create_zeroex_liquidity_orders(
         sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     let usdt_weth_order = Eip712TypedZeroExOrder {
@@ -280,7 +280,7 @@ fn create_zeroex_liquidity_orders(
         sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     let usdc_weth_order = Eip712TypedZeroExOrder {
@@ -297,7 +297,7 @@ fn create_zeroex_liquidity_orders(
         sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     [typed_order, usdt_weth_order, usdc_weth_order]
