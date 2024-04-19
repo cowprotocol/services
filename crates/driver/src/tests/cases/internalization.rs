@@ -10,9 +10,7 @@ use crate::tests::{
 async fn valid_internalization() {
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order()
-            .internalize()
-        )
+        .order(ab_order().internalize())
         // Marks "A" as trusted and hence OK to use for internalization.
         .trust("A")
         .solution(ab_solution())
@@ -31,9 +29,7 @@ async fn valid_internalization() {
 async fn untrusted_internalization() {
     let test = setup()
         .pool(ab_pool())
-        .order(ab_order()
-            .internalize()
-        )
+        .order(ab_order().internalize())
         .solution(ab_solution())
         // Note: does not mark "A" as trusted, despite the order being internalized.
         .done()

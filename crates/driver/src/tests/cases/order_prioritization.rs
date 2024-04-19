@@ -13,23 +13,21 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn sorting() {
-    let base_order = ab_order();
     let test = setup()
         .solvers(vec![
             test_solver().fee_handler(FeeHandler::Driver)
         ])
         .pool(ab_pool())
         // Orders with better price ratios come first.
-        .order(base_order.clone())
-        .order(base_order.clone().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
+        .order(ab_order())
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
         // Limit orders come after market orders.
         .order(
-            base_order
-                .clone()
+            ab_order()
                 .rename("third order")
                 .limit()
         )
-        .order(base_order.reduce_amount("1e-3".ether().into_wei()).rename("fourth order").limit())
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("fourth order").limit())
         .solution(ab_solution())
         .done()
         .await;
@@ -44,15 +42,14 @@ async fn sorting() {
 #[tokio::test]
 #[ignore]
 async fn filtering() {
-    let base_order = ab_order();
     let test = setup()
         .pool(ab_pool())
         // Orders with better price ratios come first.
-        .order(base_order.clone())
-        .order(base_order.clone().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
+        .order(ab_order())
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
         // Filter out the next order, because the trader doesn't have enough balance to cover it.
         .order(
-            base_order
+            ab_order()
                 .rename("third order")
                 .multiply_amount("0.1".ether().into_wei())
                 .filtered()
