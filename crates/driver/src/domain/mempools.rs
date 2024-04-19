@@ -127,7 +127,7 @@ impl Mempools {
                     TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
                     TxStatus::Pending => {
                         // Check if transaction still simulates
-                        if let Err(err) = self.ethereum.estimate_gas(&tx).await {
+                        if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
                                 tracing::info!(
                                     ?hash,
