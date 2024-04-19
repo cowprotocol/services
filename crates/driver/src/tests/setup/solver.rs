@@ -126,7 +126,7 @@ impl Solver {
                 "owner": if config.quote { H160::zero() } else { quote.order.owner },
                 "preInteractions":  json!([]),
                 "postInteractions":  json!([]),
-                "sellTokenBalance": quote.order.sell_token_source,
+                "sellTokenSource": quote.order.sell_token_source,
                 "buyTokenDestination": quote.order.buy_token_destination,
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",

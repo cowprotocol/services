@@ -47,7 +47,7 @@ pub struct Order {
     pub partially_fillable: bool,
     pub pre_interactions: Vec<InteractionData>,
     pub post_interactions: Vec<InteractionData>,
-    pub sell_token_balance: SellTokenSource,
+    pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub class: Class,
     pub app_data: AppDataHash,

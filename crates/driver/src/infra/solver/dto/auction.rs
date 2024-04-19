@@ -145,7 +145,7 @@ impl Auction {
                             .cloned()
                             .map(Into::into)
                             .collect::<Vec<_>>(),
-                        sell_token_balance: order.sell_token_balance.into(),
+                        sell_token_source: order.sell_token_balance.into(),
                         buy_token_destination: order.buy_token_balance.into(),
                         fee_policies: (fee_handler == FeeHandler::Solver).then_some(
                             order
@@ -349,7 +349,7 @@ struct Order {
     partially_fillable: bool,
     pre_interactions: Vec<InteractionData>,
     post_interactions: Vec<InteractionData>,
-    sell_token_balance: SellTokenSource,
+    sell_token_source: SellTokenSource,
     buy_token_destination: BuyTokenDestination,
     class: Class,
     app_data: AppDataHash,

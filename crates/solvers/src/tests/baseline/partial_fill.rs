@@ -48,7 +48,7 @@ async fn test() {
                     "partiallyFillable": true,
                     "preInteractions": [],
                     "postInteractions": [],
-                    "sellTokenBalance": "erc20",
+                    "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "class": "limit",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
