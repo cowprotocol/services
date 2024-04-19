@@ -62,38 +62,54 @@ impl Solver {
                 order::Side::Buy if config.quote => {
                     "22300745198530623141535718272648361505980416".to_owned()
                 }
-                order::Side::Buy => match quote.order.fee_policy {
-                    // If the fees are handler in the driver, for volume based fee, we artificially
-                    // reduce the limit sell amount for buy orders before sending to solvers. This
-                    // allows driver to withhold volume based fee and not violate original limit
-                    // prices.
-                    fee::Policy::Volume { factor } if config.fee_handler == FeeHandler::Driver => {
-                        eth::TokenAmount(quote.sell_amount())
-                            .apply_factor(1.0 / (1.0 + factor))
-                            .unwrap()
-                            .0
-                            .to_string()
+                order::Side::Buy => {
+                    let mut current_sell_amount = quote.sell_amount();
+                    for fee_policy in &quote.order.fee_policy {
+                        match fee_policy {
+                            // If the fees are handled in the driver, for volume based fee, we
+                            // artificially reduce the limit sell amount
+                            // for buy orders before sending to solvers. This
+                            // allows driver to withhold volume based fee and not violate original
+                            // limit prices.
+                            fee::Policy::Volume { factor }
+                                if config.fee_handler == FeeHandler::Driver =>
+                            {
+                                current_sell_amount = eth::TokenAmount(current_sell_amount)
+                                    .apply_factor(1.0 / (1.0 + factor))
+                                    .unwrap()
+                                    .0;
+                            }
+                            _ => {}
+                        }
                     }
-                    _ => quote.sell_amount().to_string(),
-                },
+                    current_sell_amount.to_string()
+                }
                 _ => quote.sell_amount().to_string(),
             };
             let buy_amount = match quote.order.side {
                 order::Side::Sell if config.quote => "1".to_owned(),
-                order::Side::Sell => match quote.order.fee_policy {
-                    // If the fees are handler in the driver, for volume based fee, we artificially
-                    // increase the limit buy amount for sell orders before sending to solvers. This
-                    // allows driver to withhold volume based fee and not violate original limit
-                    // prices.
-                    fee::Policy::Volume { factor } if config.fee_handler == FeeHandler::Driver => {
-                        eth::TokenAmount(quote.buy_amount())
-                            .apply_factor(1.0 / (1.0 - factor))
-                            .unwrap()
-                            .0
-                            .to_string()
+                order::Side::Sell => {
+                    let mut current_buy_amount = quote.buy_amount();
+                    for fee_policy in &quote.order.fee_policy {
+                        match fee_policy {
+                            // If the fees are handled in the driver, for volume based fee, we
+                            // artificially increase the limit buy
+                            // amount for sell orders before sending to solvers. This
+                            // allows driver to withhold volume based fee and not violate original
+                            // limit prices.
+                            fee::Policy::Volume { factor }
+                                if config.fee_handler == FeeHandler::Driver =>
+                            {
+                                current_buy_amount = eth::TokenAmount(current_buy_amount)
+                                    .apply_factor(1.0 / (1.0 - factor))
+                                    .unwrap()
+                                    .0;
+                            }
+                            _ => {}
+                        }
                     }
-                    _ => quote.buy_amount().to_string(),
-                },
+                    current_buy_amount.to_string()
+                }
                 _ => quote.buy_amount().to_string(),
             };
 
@@ -123,7 +139,13 @@ impl Solver {
                         order::Kind::Market => json!([]),
                         order::Kind::Liquidity => json!([]),
                         order::Kind::Limit { .. } => {
-                            json!([quote.order.fee_policy.to_json_value()])
+                            let fee_policies_json: Vec<serde_json::Value> = quote
+                                .order
+                                .fee_policy
+                                .iter()
+                                .map(|policy| policy.to_json_value())
+                                .collect();
+                            json!(fee_policies_json)
                         }
                     },
                 );

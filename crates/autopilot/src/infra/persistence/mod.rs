@@ -1,9 +1,12 @@
 use {
-    crate::{boundary, database::Postgres, domain},
+    crate::{
+        boundary,
+        database::{order_events::store_order_events, Postgres},
+        domain,
+    },
     anyhow::Context,
     chrono::Utc,
     std::sync::Arc,
-    tokio::time::Instant,
     tracing::Instrument,
 };
 
@@ -100,18 +103,10 @@ impl Persistence {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
-                let start = Instant::now();
-                let events_count = order_uids.len();
-                match boundary::store_order_events(&db, order_uids, label, Utc::now()).await {
-                    Ok(_) => {
-                        tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to insert order events");
-                    }
-                }
+                let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
+                store_order_events(&mut tx, order_uids, label, Utc::now()).await;
             }
-                .instrument(tracing::Span::current()),
+            .instrument(tracing::Span::current()),
         );
     }
 
