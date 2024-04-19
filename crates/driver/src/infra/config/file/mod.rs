@@ -505,6 +505,8 @@ struct ZeroExConfig {
     pub api_key: Option<String>,
     #[serde(with = "humantime_serde", default = "default_http_timeout")]
     pub http_timeout: Duration,
+    #[serde(with = "humantime_serde", default = "default_cache_lifespan")]
+    pub cache_lifespan: Duration,
 }
 
 fn default_zeroex_base_url() -> String {
@@ -513,4 +515,8 @@ fn default_zeroex_base_url() -> String {
 
 fn default_http_timeout() -> Duration {
     Duration::from_secs(10)
+}
+
+fn default_cache_lifespan() -> Duration {
+    Duration::from_secs(120)
 }

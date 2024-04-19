@@ -238,6 +238,14 @@ pub struct Arguments {
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
 
+    #[clap(
+        long,
+        env,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub zeroex_api_cache_lifespan: Duration,
+
     /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_internal_buffers: bool,
@@ -411,6 +419,7 @@ impl Display for Arguments {
             disabled_paraswap_dexs,
             zeroex_url,
             zeroex_api_key,
+            zeroex_api_cache_lifespan,
             use_internal_buffers,
             balancer_factories,
             disabled_one_inch_protocols,
@@ -461,6 +470,11 @@ impl Display for Arguments {
         display_list(f, "disabled_paraswap_dexs", disabled_paraswap_dexs)?;
         display_option(f, "zeroex_url", zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", zeroex_api_key)?;
+        writeln!(
+            f,
+            "zeroex_api_cache_lifespan: {:?}",
+            zeroex_api_cache_lifespan
+        )?;
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
         display_list(

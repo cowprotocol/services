@@ -248,6 +248,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     base_url: config.base_url,
                     api_key: config.api_key,
                     http_timeout: config.http_timeout,
+                    cache_lifespan: config.cache_lifespan,
                 }),
         },
         mempools: config

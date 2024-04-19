@@ -241,4 +241,5 @@ pub struct ZeroEx {
     #[derivative(Debug = "ignore")]
     pub api_key: Option<String>,
     pub http_timeout: Duration,
+    pub cache_lifespan: Duration,
 }
