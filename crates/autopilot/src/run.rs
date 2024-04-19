@@ -593,7 +593,7 @@ pub async fn run(args: Arguments) {
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
     let run = RunLoop {
-        eth: Arc::new(eth),
+        eth,
         solvable_orders_cache,
         drivers: args
             .drivers
@@ -606,7 +606,7 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
-        persistence: Arc::new(persistence),
+        persistence,
         liveness: liveness.clone(),
     };
     run.run_forever().await;

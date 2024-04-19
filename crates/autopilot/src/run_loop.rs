@@ -34,8 +34,8 @@ use {
 };
 
 pub struct RunLoop {
-    pub eth: Arc<infra::Ethereum>,
-    pub persistence: Arc<infra::Persistence>,
+    pub eth: infra::Ethereum,
+    pub persistence: infra::Persistence,
     pub drivers: Vec<infra::Driver>,
 
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -481,8 +481,8 @@ impl RunLoop {
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
     async fn wait_for_settlement_transaction(
-        eth: Arc<infra::Ethereum>,
-        persistence: Arc<infra::Persistence>,
+        eth: infra::Ethereum,
+        persistence: infra::Persistence,
         tag: &[u8],
         max_blocks_wait: u64,
         mut cancellation_rx: watch::Receiver<bool>,
