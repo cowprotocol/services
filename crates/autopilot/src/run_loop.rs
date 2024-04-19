@@ -416,11 +416,11 @@ impl RunLoop {
             .store_order_events(order_ids, OrderEventLabel::Executing);
 
         let tag = auction_id.to_be_bytes();
-        let settlement_tx_wait_task =
-            self.wait_for_settlement_transaction(&tag, self.submission_deadline);
         let request = settle::Request {
             solution_id: solved.id,
         };
+        let settlement_tx_wait_task =
+            self.wait_for_settlement_transaction(&tag, self.submission_deadline);
         let driver_settle_task = driver.settle(&request, self.max_settlement_transaction_wait);
         // Wait for either the settlement transaction to be mined or the driver returned
         // a result.
