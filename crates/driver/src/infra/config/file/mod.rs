@@ -518,5 +518,5 @@ fn default_http_timeout() -> Duration {
 }
 
 fn default_cache_lifespan() -> Duration {
-    Duration::from_secs(120)
+    Duration::from_secs(12)
 }
