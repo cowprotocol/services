@@ -178,10 +178,6 @@ pub struct Arguments {
     )]
     pub max_settlement_transaction_wait: Duration,
 
-    /// The amount blocks to wait for a settlement to appear on chain.
-    #[clap(long, env, default_value = "20")]
-    pub max_blocks_wait: u64,
-
     /// Run the autopilot in a shadow mode by specifying an upstream CoW
     /// protocol deployment to pull auctions from. This will cause the autopilot
     /// to start a run loop where it performs solver competition on driver,
@@ -270,7 +266,6 @@ impl std::fmt::Display for Arguments {
             native_price_estimation_results_required,
             auction_update_interval,
             max_settlement_transaction_wait,
-            max_blocks_wait,
             s3,
             protocol_fee_exempt_addresses,
         } = self;
@@ -357,7 +352,6 @@ impl std::fmt::Display for Arguments {
             "max_settlement_transaction_wait: {:?}",
             max_settlement_transaction_wait
         )?;
-        writeln!(f, "max_blocks_wait: {:?}", max_blocks_wait)?;
         writeln!(f, "s3: {:?}", s3)?;
         Ok(())
     }

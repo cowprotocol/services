@@ -43,7 +43,6 @@ pub struct RunLoop {
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
     pub max_settlement_transaction_wait: Duration,
-    pub max_blocks_wait: u64,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
@@ -421,7 +420,7 @@ impl RunLoop {
 
         let eth = self.eth.clone();
         let persistence = self.persistence.clone();
-        let max_blocks_wait = self.max_blocks_wait;
+        let max_blocks_wait = self.submission_deadline;
         let (cancellation_tx, cancellation_rx) = watch::channel(false);
         let settlement_tx_wait_task = tokio::spawn(async move {
             let tag = auction_id.to_be_bytes();
