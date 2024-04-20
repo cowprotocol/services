@@ -365,7 +365,7 @@ pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
     block_stream: CurrentBlockStream,
-    orders_cache: Mutex<TimedCache<OrdersQuery, Vec<OrderRecord>>>,
+    orders_cache: Mutex<TimedCache<OrdersQuery, RwLock<Vec<OrderRecord>>>>,
 }
 
 impl DefaultZeroExApi {
@@ -495,7 +495,8 @@ impl ZeroExApi for DefaultZeroExApi {
         let mut results = Vec::default();
 
         let mut cache = self.orders_cache.lock().await;
-        if let Some(records) = cache.cache_get(query) {
+        if let Some(records_lock) = cache.cache_get(query) {
+            let records = records_lock.read().await;
             return Ok(records.clone());
         }
 
@@ -511,7 +512,7 @@ impl ZeroExApi for DefaultZeroExApi {
         }
         retain_valid_orders(&mut results);
 
-        cache.cache_set(query.clone(), results.clone());
+        cache.cache_set(query.clone(), RwLock::new(results.clone()));
 
         Ok(results)
     }
