@@ -241,7 +241,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "12s",
+        default_value = "2m",
         value_parser = humantime::parse_duration,
     )]
     pub zeroex_api_cache_lifespan: Duration,
