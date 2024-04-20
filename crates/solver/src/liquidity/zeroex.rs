@@ -101,15 +101,6 @@ impl ZeroExLiquidity {
     ) {
         let mut receiver = blocks_stream.clone();
         loop {
-            if let Err(err) = receiver.changed().await {
-                tracing::error!(
-                    ?err,
-                    "failed to receive block update during 0x liquidity fetching"
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                continue;
-            }
-
             let queries = &[
                 // orders fillable by anyone
                 OrdersQuery::default(),
@@ -131,8 +122,18 @@ impl ZeroExLiquidity {
                 })
                 .collect();
 
-            let mut cache = orderbook_cache.write().await;
-            *cache = zeroex_orders;
+            {
+                let mut cache = orderbook_cache.write().await;
+                *cache = zeroex_orders;
+            }
+
+            while let Err(err) = receiver.changed().await {
+                tracing::error!(
+                    ?err,
+                    "failed to receive block update during 0x liquidity fetching"
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
         }
     }
 }
