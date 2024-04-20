@@ -11,7 +11,8 @@ use {
     },
     anyhow::Result,
     contracts::{GPv2Settlement, IZeroEx},
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    futures::StreamExt,
     model::{order::OrderKind, TokenPair},
     primitive_types::{H160, U256},
     shared::{
@@ -99,8 +100,8 @@ impl ZeroExLiquidity {
         orderbook_cache: Arc<OrderbookCache>,
         gpv2_address: H160,
     ) {
-        let mut receiver = blocks_stream.clone();
-        loop {
+        let mut block_stream = into_stream(blocks_stream);
+        while block_stream.next().await.is_some() {
             let queries = &[
                 // orders fillable by anyone
                 OrdersQuery::default(),
@@ -122,18 +123,8 @@ impl ZeroExLiquidity {
                 })
                 .collect();
 
-            {
-                let mut cache = orderbook_cache.write().await;
-                *cache = zeroex_orders;
-            }
-
-            while let Err(err) = receiver.changed().await {
-                tracing::error!(
-                    ?err,
-                    "failed to receive block update during 0x liquidity fetching"
-                );
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
+            let mut cache = orderbook_cache.write().await;
+            *cache = zeroex_orders;
         }
     }
 }
