@@ -11,6 +11,7 @@ use {
     },
     anyhow::Result,
     contracts::{GPv2Settlement, IZeroEx},
+    ethrpc::current_block::CurrentBlockStream,
     model::{order::OrderKind, TokenPair},
     primitive_types::{H160, U256},
     shared::{
@@ -23,25 +24,39 @@ use {
         collections::{HashMap, HashSet},
         sync::Arc,
     },
+    tokio::sync::RwLock,
 };
 
+type OrderbookCache = RwLock<Vec<OrderRecord>>;
+
 pub struct ZeroExLiquidity {
-    pub api: Arc<dyn ZeroExApi>,
     pub zeroex: Arc<IZeroEx>,
-    pub gpv2: GPv2Settlement,
     pub allowance_manager: Box<dyn AllowanceManaging>,
+    pub orderbook_cache: Arc<OrderbookCache>,
 }
 
 type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 
 impl ZeroExLiquidity {
-    pub fn new(web3: Web3, api: Arc<dyn ZeroExApi>, zeroex: IZeroEx, gpv2: GPv2Settlement) -> Self {
-        let allowance_manager = AllowanceManager::new(web3, gpv2.address());
+    pub async fn new(
+        web3: Web3,
+        api: Arc<dyn ZeroExApi>,
+        zeroex: IZeroEx,
+        gpv2: GPv2Settlement,
+        blocks_stream: CurrentBlockStream,
+    ) -> Self {
+        let gpv2_address = gpv2.address();
+        let allowance_manager = AllowanceManager::new(web3, gpv2_address);
+        let orderbook_cache = Arc::new(RwLock::new(vec![]));
+        let cache = orderbook_cache.clone();
+        tokio::spawn(async move {
+            Self::run_orderbook_fetching(api, blocks_stream, cache, gpv2_address).await
+        });
+
         Self {
-            api,
             zeroex: Arc::new(zeroex),
-            gpv2,
             allowance_manager: Box::new(allowance_manager),
+            orderbook_cache,
         }
     }
 
@@ -77,6 +92,49 @@ impl ZeroExLiquidity {
         };
         Some(Liquidity::LimitOrder(limit_order))
     }
+
+    async fn run_orderbook_fetching(
+        api: Arc<dyn ZeroExApi>,
+        blocks_stream: CurrentBlockStream,
+        orderbook_cache: Arc<OrderbookCache>,
+        gpv2_address: H160,
+    ) {
+        let mut receiver = blocks_stream.clone();
+        loop {
+            if let Err(err) = receiver.changed().await {
+                tracing::error!(
+                    ?err,
+                    "failed to receive block update during 0x liquidity fetching"
+                );
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            }
+
+            let queries = &[
+                // orders fillable by anyone
+                OrdersQuery::default(),
+                // orders fillable only by our settlement contract
+                OrdersQuery {
+                    sender: Some(gpv2_address),
+                    ..Default::default()
+                },
+            ];
+            let zeroex_orders_results =
+                futures::future::join_all(queries.iter().map(|query| api.get_orders(query))).await;
+            let zeroex_orders = zeroex_orders_results
+                .into_iter()
+                .flat_map(|result| {
+                    result.unwrap_or_else(|err| {
+                        tracing::error!(?err, "ZeroExResponse error during liqudity fetching");
+                        vec![]
+                    })
+                })
+                .collect();
+
+            let mut cache = orderbook_cache.write().await;
+            *cache = zeroex_orders;
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -86,29 +144,8 @@ impl LiquidityCollecting for ZeroExLiquidity {
         pairs: HashSet<TokenPair>,
         _block: Block,
     ) -> Result<Vec<Liquidity>> {
-        let queries = &[
-            // orders fillable by anyone
-            OrdersQuery::default(),
-            // orders fillable only by our settlement contract
-            OrdersQuery {
-                sender: Some(self.gpv2.address()),
-                ..Default::default()
-            },
-        ];
-
-        let zeroex_orders_results =
-            futures::future::join_all(queries.iter().map(|query| self.api.get_orders(query))).await;
-        let zeroex_orders = zeroex_orders_results
-            .into_iter()
-            .flat_map(|result| match result {
-                Ok(order_record_vec) => order_record_vec,
-                Err(err) => {
-                    tracing::warn!("ZeroExResponse error during liqudity fetching: {}", err);
-                    vec![]
-                }
-            });
-
-        let order_buckets = generate_order_buckets(zeroex_orders, pairs);
+        let zeroex_orders = self.orderbook_cache.read().await.clone();
+        let order_buckets = generate_order_buckets(zeroex_orders.into_iter(), pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
