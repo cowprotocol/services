@@ -145,7 +145,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
         _block: Block,
     ) -> Result<Vec<Liquidity>> {
         let zeroex_orders = self.orderbook_cache.read().await.clone();
-        let order_buckets = generate_order_buckets(zeroex_orders.into_iter(), pairs);
+        let order_buckets = generate_order_buckets(zeroex_orders, pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
@@ -168,12 +168,13 @@ impl LiquidityCollecting for ZeroExLiquidity {
 }
 
 fn generate_order_buckets(
-    zeroex_orders: impl Iterator<Item = OrderRecord>,
+    zeroex_orders: Vec<OrderRecord>,
     relevant_pairs: HashSet<TokenPair>,
 ) -> OrderBuckets {
     // divide orders in buckets
     let mut buckets = OrderBuckets::default();
     zeroex_orders
+        .into_iter()
         .filter(
             |record| match TokenPair::new(record.order.taker_token, record.order.maker_token) {
                 Some(pair) => relevant_pairs.contains(&pair),
@@ -286,8 +287,7 @@ pub mod tests {
         let order_1 = order_with_tokens(token_a, token_b);
         let order_2 = order_with_tokens(token_b, token_a);
         let order_3 = order_with_tokens(token_b, token_a);
-        let order_buckets =
-            generate_order_buckets([order_1, order_2, order_3].into_iter(), relevant_pairs);
+        let order_buckets = generate_order_buckets(vec![order_1, order_2, order_3], relevant_pairs);
         assert_eq!(order_buckets.keys().len(), 2);
         assert_eq!(order_buckets[&(token_a, token_b)].len(), 1);
         assert_eq!(order_buckets[&(token_b, token_a)].len(), 2);
@@ -312,8 +312,7 @@ pub mod tests {
         let order_1 = order_with_tokens(token_ignore, token_b);
         let order_2 = order_with_tokens(token_a, token_ignore);
         let order_3 = order_with_tokens(token_ignore, token_ignore);
-        let order_buckets =
-            generate_order_buckets([order_1, order_2, order_3].into_iter(), relevant_pairs);
+        let order_buckets = generate_order_buckets(vec![order_1, order_2, order_3], relevant_pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 1);
         assert_eq!(filtered_zeroex_orders.len(), 0);
     }
@@ -339,8 +338,7 @@ pub mod tests {
         let order_1 = order_with_fillable_amount(1_000);
         let order_2 = order_with_fillable_amount(100);
         let order_3 = order_with_fillable_amount(10_000);
-        let order_buckets =
-            generate_order_buckets([order_1, order_2, order_3].into_iter(), relevant_pairs);
+        let order_buckets = generate_order_buckets(vec![order_1, order_2, order_3], relevant_pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 1);
         assert_eq!(filtered_zeroex_orders.len(), 2);
         assert_eq!(
@@ -378,8 +376,7 @@ pub mod tests {
         let order_1 = order_with_amount(10_000_000, 1_000_000);
         let order_2 = order_with_amount(1_000, 100);
         let order_3 = order_with_amount(100_000, 1_000);
-        let order_buckets =
-            generate_order_buckets([order_1, order_2, order_3].into_iter(), relevant_pairs);
+        let order_buckets = generate_order_buckets(vec![order_1, order_2, order_3], relevant_pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 1);
         assert_eq!(filtered_zeroex_orders.len(), 2);
         // First item in the list will be on the basis of maker_amount/taker_amount
