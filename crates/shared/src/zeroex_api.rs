@@ -10,7 +10,6 @@ use {
         interaction::{EncodedInteraction, Interaction},
     },
     anyhow::{Context, Result},
-    cached::{Cached, TimedCache},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
@@ -29,10 +28,9 @@ use {
     std::{
         collections::HashSet,
         fmt::{self, Display, Formatter},
-        time::Duration,
     },
     thiserror::Error,
-    tokio::sync::{watch, Mutex, RwLock},
+    tokio::sync::watch,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -139,7 +137,7 @@ impl Display for Slippage {
 /// These parameters are currently incomplete, and missing parameters can be
 /// added incrementally as needed.
 /// https://0x.org/docs/api#signed-order
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct OrdersQuery {
     /// The address of the party that is allowed to fill the order.
     /// If set to a specific party, the order cannot be filled by anyone else.
@@ -365,7 +363,6 @@ pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
     block_stream: CurrentBlockStream,
-    orders_cache: Mutex<TimedCache<OrdersQuery, RwLock<Vec<OrderRecord>>>>,
 }
 
 impl DefaultZeroExApi {
@@ -381,7 +378,6 @@ impl DefaultZeroExApi {
         client_builder: ClientBuilder,
         base_url: impl IntoUrl,
         api_key: Option<String>,
-        cache_lifespan: Duration,
         block_stream: CurrentBlockStream,
     ) -> Result<Self> {
         let client_builder = if let Some(api_key) = api_key {
@@ -400,7 +396,6 @@ impl DefaultZeroExApi {
             client: client_builder.build().unwrap(),
             base_url: base_url.into_url().context("zeroex api url")?,
             block_stream,
-            orders_cache: Mutex::new(TimedCache::with_lifespan(cache_lifespan.as_secs())),
         })
     }
 
@@ -415,7 +410,6 @@ impl DefaultZeroExApi {
             Client::builder(),
             std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
             std::env::var("ZEROEX_API_KEY").ok(),
-            Duration::from_secs(60),
             block_stream,
         )
         .unwrap()
@@ -493,13 +487,6 @@ impl ZeroExApi for DefaultZeroExApi {
         query: &OrdersQuery,
     ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
         let mut results = Vec::default();
-
-        let mut cache = self.orders_cache.lock().await;
-        if let Some(records_lock) = cache.cache_get(query) {
-            let records = records_lock.read().await;
-            return Ok(records.clone());
-        }
-
         let mut page = 1;
         loop {
             let response = self
@@ -511,9 +498,6 @@ impl ZeroExApi for DefaultZeroExApi {
             page += 1;
         }
         retain_valid_orders(&mut results);
-
-        cache.cache_set(query.clone(), RwLock::new(results.clone()));
-
         Ok(results)
     }
 }

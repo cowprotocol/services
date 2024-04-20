@@ -499,7 +499,6 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             factory.shared_args.zeroex_api_key.clone(),
-            factory.shared_args.zeroex_api_cache_lifespan,
             factory.network.block_stream.clone(),
         )
         .unwrap();

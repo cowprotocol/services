@@ -93,7 +93,6 @@ pub async fn collector(
         http_client_factory.builder(),
         config.base_url.clone(),
         config.api_key.clone(),
-        config.cache_lifespan,
         blocks,
     )?);
     Ok(Box::new(ZeroExLiquidity::new(
