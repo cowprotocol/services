@@ -4,9 +4,9 @@
 
 use {
     crate::interactions::Erc20ApproveInteraction,
-    anyhow::{anyhow, bail, ensure, Context as _, Result},
+    anyhow::{anyhow, ensure, Context as _, Result},
     contracts::{dummy_contract, ERC20},
-    ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256},
+    ethcontract::{H160, U256},
     ethrpc::Web3,
     maplit::hashmap,
     shared::{
@@ -16,11 +16,11 @@ use {
     std::{
         collections::{HashMap, HashSet},
         slice,
+        sync::Arc,
     },
-    web3::error::TransportError,
+    web3::types::CallRequest,
 };
 
-const MAX_BATCH_SIZE: usize = 100;
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait AllowanceManaging: Send + Sync {
@@ -136,11 +136,17 @@ impl Interaction for Approval {
 pub struct AllowanceManager {
     web3: Web3,
     owner: H160,
+    erc20: Arc<ERC20>,
 }
 
 impl AllowanceManager {
     pub fn new(web3: Web3, owner: H160) -> Self {
-        Self { web3, owner }
+        // Only instantiate a single contract instance to generate calldata.
+        // The actual call will be done with the web3 instance using the respective
+        // `token` as the `to` address. (performance optimization)
+        let erc20 = Arc::new(ERC20::at(&web3, owner));
+
+        Self { web3, owner, erc20 }
     }
 }
 
@@ -149,6 +155,7 @@ impl AllowanceManaging for AllowanceManager {
     async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances> {
         Ok(fetch_allowances(
             self.web3.clone(),
+            self.erc20.clone(),
             self.owner,
             hashmap! { spender => tokens },
         )
@@ -166,7 +173,13 @@ impl AllowanceManaging for AllowanceManager {
                 .insert(request.token);
         }
 
-        let allowances = fetch_allowances(self.web3.clone(), self.owner, spender_tokens).await?;
+        let allowances = fetch_allowances(
+            self.web3.clone(),
+            self.erc20.clone(),
+            self.owner,
+            spender_tokens,
+        )
+        .await?;
         let mut result = Vec::new();
         for request in requests {
             let allowance = allowances
@@ -181,6 +194,7 @@ impl AllowanceManaging for AllowanceManager {
 
 async fn fetch_allowances<T>(
     web3: ethcontract::Web3<T>,
+    erc20: Arc<ERC20>,
     owner: H160,
     spender_tokens: HashMap<H160, HashSet<H160>>,
 ) -> Result<HashMap<H160, Allowances>>
@@ -189,25 +203,26 @@ where
     T::Batch: Send,
     T::Out: Send,
 {
-    let mut batch = CallBatch::new(web3.transport());
-    let results: Vec<_> = spender_tokens
+    let futures = spender_tokens
         .into_iter()
         .flat_map(|(spender, tokens)| tokens.into_iter().map(move |token| (spender, token)))
         .map(|(spender, token)| {
-            let allowance = ERC20::at(&web3, token)
-                .allowance(owner, spender)
-                .batch_call(&mut batch);
-            (spender, token, allowance)
-        })
-        .collect();
+            let web3 = web3.clone();
+            let erc20 = erc20.clone();
 
-    batch.execute_all(MAX_BATCH_SIZE).await;
+            async move {
+                let calldata = erc20.allowance(owner, spender).m.tx.data.unwrap();
+                let req = CallRequest::builder().to(token).data(calldata).build();
+                let allowance = web3.eth().call(req, None).await;
+                (spender, token, allowance)
+            }
+        });
+    let results: Vec<_> = futures::future::join_all(futures).await;
 
     let mut allowances = HashMap::new();
     for (spender, token, allowance) in results {
-        let allowance = match allowance.await {
-            Ok(value) => value,
-            Err(err) if is_batch_error(&err.inner) => bail!(err),
+        let allowance = match allowance {
+            Ok(value) => U256::from(value.0.as_slice()),
             Err(err) => {
                 tracing::warn!("error retrieving allowance for token {:?}: {}", token, err);
                 continue;
@@ -222,20 +237,6 @@ where
     }
 
     Ok(allowances)
-}
-
-fn is_batch_error(err: &ExecutionError) -> bool {
-    match &err {
-        ExecutionError::Web3(web3::Error::Transport(TransportError::Message(message))) => {
-            // Currently, there is no sure-fire way to determine if a Web3 error
-            // is caused because of a failing batch request, or some a call
-            // specific error, so we test that the method starts with "Batch"
-            // string as a best guess.
-            // <https://github.com/gnosis/ethcontract-rs/issues/550>
-            message.starts_with("Batch")
-        }
-        _ => false,
-    }
 }
 
 #[cfg(test)]
@@ -397,31 +398,28 @@ mod tests {
         let web3 = mock::web3();
         web3.transport()
             .mock()
-            .expect_execute_batch()
-            .returning(move |calls| {
-                Ok(calls
-                    .into_iter()
-                    .map(|(method, params)| {
-                        assert_eq!(method, "eth_call");
+            .expect_execute()
+            .returning(move |method, params| {
+                assert_eq!(method, "eth_call");
 
-                        let call =
-                            serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
-                        assert_eq!(call.data.unwrap(), allowance_call_data(owner, spender));
+                let call = serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
+                assert_eq!(call.data.unwrap(), allowance_call_data(owner, spender));
+                let to = call.to.unwrap();
 
-                        let to = call.to.unwrap();
-                        if to == addr!("1111111111111111111111111111111111111111") {
-                            Ok(allowance_return_data(1337.into()))
-                        } else if to == addr!("2222222222222222222222222222222222222222") {
-                            Err(web3::Error::Decoder("test error".to_string()))
-                        } else {
-                            panic!("call to unexpected token {to:?}")
-                        }
-                    })
-                    .collect())
+                if to == addr!("1111111111111111111111111111111111111111") {
+                    Ok(allowance_return_data(1337.into()))
+                } else if to == addr!("2222222222222222222222222222222222222222") {
+                    Err(web3::Error::Decoder("test error".to_string()))
+                } else {
+                    panic!("call to unexpected token {to:?}")
+                }
             });
+
+        let erc20 = Arc::new(ERC20::at(&web3, Default::default()));
 
         let allowances = fetch_allowances(
             web3,
+            erc20,
             owner,
             hashmap! {
                 spender => hashset![H160([0x11; 20]), H160([0x22; 20])],
@@ -439,25 +437,5 @@ mod tests {
                 },
             },
         );
-    }
-
-    #[tokio::test]
-    async fn fetch_fails_on_batch_errors() {
-        let web3 = mock::web3();
-        web3.transport()
-            .mock()
-            .expect_execute_batch()
-            .returning(|_| Err(web3::Error::Decoder("test error".to_string())));
-
-        let allowances = fetch_allowances(
-            web3,
-            H160([1; 20]),
-            hashmap! {
-                H160([2; 20]) => hashset![H160([0x11; 20]), H160([0x22; 20])],
-            },
-        )
-        .await;
-
-        assert!(allowances.is_err());
     }
 }
