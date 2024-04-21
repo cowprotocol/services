@@ -1,7 +1,7 @@
 use {
     crate::{
         interaction::{EncodedInteraction, Interaction},
-        sources::uniswap_v3::pool_fetching::PoolInfo,
+        sources::uniswap_v3::pool_fetching::PoolInfoHandle,
     },
     derivative::Derivative,
     ethcontract::{Bytes, H160},
@@ -16,10 +16,7 @@ use {
     primitive_types::{H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    std::{
-        collections::{BTreeMap, BTreeSet, HashMap},
-        sync::Arc,
-    },
+    std::collections::{BTreeMap, BTreeSet, HashMap},
     web3::types::AccessList,
 };
 
@@ -120,7 +117,7 @@ pub struct StablePoolParameters {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ConcentratedPoolParameters {
-    pub pool: Arc<PoolInfo>,
+    pub pool: PoolInfoHandle,
 }
 
 #[serde_as]
@@ -468,7 +465,7 @@ pub enum InternalizationStrategy {
 mod tests {
     use {
         super::*,
-        crate::sources::uniswap_v3::graph_api::Token,
+        crate::sources::uniswap_v3::{graph_api::Token, pool_fetching::PoolInfo},
         app_data::AppDataHash,
         ethcontract::H256,
         maplit::btreemap,
@@ -609,7 +606,7 @@ mod tests {
         };
         let concentrated_pool_model = AmmModel {
             parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
-                pool: Arc::new(PoolInfo {
+                pool: PoolInfo {
                     address: H160::from_low_u64_be(1),
                     tokens: vec![
                         Token {
@@ -622,7 +619,8 @@ mod tests {
                         },
                     ],
                     ..Default::default()
-                }),
+                }
+                .into(),
             }),
             fee: BigRational::new(3.into(), 1000.into()),
             cost: TokenAmount {

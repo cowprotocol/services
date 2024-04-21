@@ -29,7 +29,7 @@ use {
                 swap::fixed_point::Bfp,
             },
             uniswap_v2::pool_fetching::Pool,
-            uniswap_v3::pool_fetching::PoolInfo,
+            uniswap_v3::pool_fetching::PoolInfoHandle,
         },
     },
     std::{collections::BTreeMap, sync::Arc},
@@ -68,7 +68,7 @@ impl Liquidity {
             Liquidity::BalancerWeighted(amm) => Some(amm.address),
             Liquidity::BalancerStable(amm) => Some(amm.address),
             Liquidity::LimitOrder(_) => None,
-            Liquidity::Concentrated(amm) => Some(amm.pool.address),
+            Liquidity::Concentrated(amm) => Some(amm.pool.read_lock().address),
         }
     }
 }
@@ -442,7 +442,7 @@ impl Settleable for StablePoolOrder {
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct ConcentratedLiquidity {
     pub tokens: TokenPair,
-    pub pool: Arc<PoolInfo>,
+    pub pool: PoolInfoHandle,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }

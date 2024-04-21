@@ -50,7 +50,7 @@ use {
             pool_fetching::{PoolInfo, PoolState, PoolStats},
         },
     },
-    std::{collections::BTreeMap, sync::Arc},
+    std::collections::BTreeMap,
 };
 
 pub struct Legacy {
@@ -312,7 +312,7 @@ fn to_boundary_auction(
                 };
                 (
                     AmmParameters::Concentrated(ConcentratedPoolParameters {
-                        pool: Arc::new(PoolInfo {
+                        pool: PoolInfo {
                             address: liquidity.address,
                             tokens: vec![token(state.tokens.get().0), token(state.tokens.get().1)],
                             state: PoolState {
@@ -334,7 +334,8 @@ fn to_boundary_auction(
                             gas_stats: PoolStats {
                                 mean_gas: liquidity.gas.0,
                             },
-                        }),
+                        }
+                        .into(),
                     }),
                     to_big_rational(&state.fee.0),
                 )
