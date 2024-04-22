@@ -1,7 +1,7 @@
 use {
     crate::{
         interaction::{EncodedInteraction, Interaction},
-        sources::uniswap_v3::pool_fetching::PoolInfoHandle,
+        sources::uniswap_v3::pool_fetching::PoolInfo,
     },
     derivative::Derivative,
     ethcontract::{Bytes, H160},
@@ -117,7 +117,7 @@ pub struct StablePoolParameters {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ConcentratedPoolParameters {
-    pub pool: PoolInfoHandle,
+    pub pool: PoolInfo,
 }
 
 #[serde_as]
@@ -471,7 +471,7 @@ pub enum InternalizationStrategy {
 mod tests {
     use {
         super::*,
-        crate::sources::uniswap_v3::{graph_api::Token, pool_fetching::PoolInfo},
+        crate::sources::uniswap_v3::graph_api::Token,
         app_data::AppDataHash,
         ethcontract::H256,
         maplit::btreemap,
@@ -625,8 +625,7 @@ mod tests {
                         },
                     ],
                     ..Default::default()
-                }
-                .into(),
+                },
             }),
             fee: BigRational::new(3.into(), 1000.into()),
             cost: TokenAmount {
