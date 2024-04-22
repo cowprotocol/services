@@ -22,7 +22,7 @@ use {
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
     std::{
-        collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         ops::Neg,
         sync::{Arc, Mutex, RwLock},
     },
@@ -423,8 +423,8 @@ fn append_events(pools: &mut HashMap<H160, PoolInfoHandle>, events: Vec<Event<Un
             .expect("metadata must exist for mined blocks")
             .address;
 
-        if let Entry::Occupied(entry) = pools.entry(address) {
-            let mut current = entry.get().0.write().unwrap();
+        if let Some(entry) = pools.get_mut(&address) {
+            let mut current = entry.0.write().unwrap();
             let pool = &mut current.state;
 
             match event.data {
