@@ -93,9 +93,9 @@ pub async fn collector(
         http_client_factory.builder(),
         config.base_url.clone(),
         config.api_key.clone(),
-        blocks,
+        blocks.clone(),
     )?);
-    Ok(Box::new(ZeroExLiquidity::new(
-        web3, api, contract, settlement,
-    )))
+    Ok(Box::new(
+        ZeroExLiquidity::new(web3, api, contract, settlement, blocks).await,
+    ))
 }
