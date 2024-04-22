@@ -605,6 +605,12 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::ScoringFailed(ScoreKind::InvalidClearingPrices) => {
             AuctionResult::Rejected(SolverRejectionReason::InvalidClearingPrices)
         }
+        Kind::ScoringFailed(ScoreKind::InvalidExecutedAmount) => {
+            AuctionResult::Rejected(SolverRejectionReason::InvalidExecutedAmount)
+        }
+        Kind::ScoringFailed(ScoreKind::MissingPrice(token_address)) => {
+            AuctionResult::Rejected(SolverRejectionReason::MissingPrice(token_address.0))
+        }
         Kind::NonBufferableTokensUsed(tokens) => {
             AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
                 tokens.iter().map(|token| token.0).collect(),
