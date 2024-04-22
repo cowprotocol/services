@@ -36,6 +36,14 @@ pub fn to_domain(
             solvers_dto::notification::Kind::InvalidClearingPrices => {
                 notification::Kind::ScoringFailed(notification::ScoreKind::InvalidClearingPrices)
             }
+            solvers_dto::notification::Kind::MissingPrice { token_address } => {
+                notification::Kind::ScoringFailed(notification::ScoreKind::MissingPrice(
+                    (*token_address).into(),
+                ))
+            }
+            solvers_dto::notification::Kind::InvalidExecutedAmount => {
+                notification::Kind::ScoringFailed(notification::ScoreKind::InvalidExecutedAmount)
+            }
             solvers_dto::notification::Kind::NonBufferableTokensUsed { tokens } => {
                 notification::Kind::NonBufferableTokensUsed(
                     tokens

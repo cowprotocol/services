@@ -151,7 +151,9 @@ impl Solution {
                     .get(&trade.order().buy.token.wrap(self.weth))
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
-            let custom_prices = trade.calculate_custom_prices(&uniform_prices)?;
+            let custom_prices = trade
+                .calculate_custom_prices(&uniform_prices)
+                .map_err(error::Scoring::CalculateCustomPrices)?;
             trades.push(scoring::Trade::new(
                 trade.order().sell,
                 trade.order().buy,
@@ -163,7 +165,7 @@ impl Solution {
         }
 
         let scoring = scoring::Scoring::new(trades);
-        Ok(scoring.score(prices)?)
+        scoring.score(prices).map_err(error::Scoring::from)
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -499,7 +501,29 @@ pub mod error {
         InvalidClearingPrices,
         #[error(transparent)]
         Math(#[from] Math),
+        #[error("failed to calculate custom prices")]
+        CalculateCustomPrices(#[source] Trade),
+        #[error("missing native price for token {0:?}")]
+        MissingPrice(TokenAddress),
+    }
+
+    impl From<scoring::Error> for Scoring {
+        fn from(value: scoring::Error) -> Self {
+            match value {
+                scoring::Error::MissingPrice(e) => Self::MissingPrice(e),
+                scoring::Error::Math(e) => Self::Math(e),
+                scoring::Error::Scoring(e) => e,
+            }
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Trade {
+        #[error("orders with non solver determined gas cost fees are not supported")]
+        ProtocolFeeOnStaticOrder,
+        #[error("invalid executed amount")]
+        InvalidExecutedAmount,
         #[error(transparent)]
-        Score(#[from] scoring::Error),
+        Math(#[from] Math),
     }
 }
