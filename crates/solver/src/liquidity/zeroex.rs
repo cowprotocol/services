@@ -136,9 +136,11 @@ impl LiquidityCollecting for ZeroExLiquidity {
         pairs: HashSet<TokenPair>,
         _block: Block,
     ) -> Result<Vec<Liquidity>> {
-        let zeroex_orders = self.orderbook_cache.read().await;
-        let order_buckets = generate_order_buckets(zeroex_orders.as_slice(), pairs);
-        let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
+        let filtered_zeroex_orders = {
+            let zeroex_orders = self.orderbook_cache.read().await;
+            let order_buckets = generate_order_buckets(zeroex_orders.as_slice(), pairs);
+            get_useful_orders(order_buckets, 5)
+        };
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
             .map(|o| o.order.taker_token)
