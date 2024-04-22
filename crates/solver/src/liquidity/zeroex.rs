@@ -21,7 +21,7 @@ use {
         ethrpc::Web3,
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
-        zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
+        zeroex_api::{OrderRecord, OrdersQuery, ZeroExApi},
     },
     std::{
         collections::{HashMap, HashSet},
@@ -85,7 +85,7 @@ impl ZeroExLiquidity {
             partially_fillable: true,
             user_fee: U256::zero(),
             settlement_handling: Arc::new(OrderSettlementHandler {
-                order: record.order().clone(),
+                order_record: record,
                 zeroex: self.zeroex.clone(),
                 allowances,
             }),
@@ -208,7 +208,7 @@ fn get_useful_orders(
 
 #[derive(Clone)]
 pub struct OrderSettlementHandler {
-    pub order: Order,
+    pub order_record: OrderRecord,
     pub zeroex: Arc<IZeroEx>,
     allowances: Arc<Allowances>,
 }
@@ -226,15 +226,16 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         if execution.filled > u128::MAX.into() {
             anyhow::bail!("0x only supports executed amounts of size u128");
         }
-        let approval = self
-            .allowances
-            .approve_token(TokenAmount::new(self.order.taker_token, execution.filled))?;
+        let approval = self.allowances.approve_token(TokenAmount::new(
+            self.order_record.order().taker_token,
+            execution.filled,
+        ))?;
         if let Some(approval) = approval {
             encoder.append_to_execution_plan(Arc::new(approval));
         }
         encoder.append_to_execution_plan(Arc::new(ZeroExInteraction {
             taker_token_fill_amount: execution.filled.as_u128(),
-            order: self.order.clone(),
+            order: self.order_record.order().clone(),
             zeroex: self.zeroex.clone(),
         }));
         Ok(())
@@ -251,7 +252,7 @@ pub mod tests {
             baseline_solver::BaseTokens,
             http_solver::model::InternalizationStrategy,
             interaction::Interaction,
-            zeroex_api::OrderMetadata,
+            zeroex_api::{self, OrderMetadata},
         },
     };
 
@@ -268,7 +269,7 @@ pub mod tests {
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_tokens = |token_a, token_b| {
             OrderRecord::new(
-                Order {
+                zeroex_api::Order {
                     taker_token: token_a,
                     maker_token: token_b,
                     ..Default::default()
@@ -293,7 +294,7 @@ pub mod tests {
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_tokens = |token_a, token_b| {
             OrderRecord::new(
-                Order {
+                zeroex_api::Order {
                     taker_token: token_a,
                     maker_token: token_b,
                     ..Default::default()
@@ -316,7 +317,7 @@ pub mod tests {
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_fillable_amount = |remaining_fillable_taker_amount| {
             OrderRecord::new(
-                Order {
+                zeroex_api::Order {
                     taker_token: token_a,
                     maker_token: token_b,
                     taker_amount: 100_000_000,
@@ -356,7 +357,7 @@ pub mod tests {
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
         let order_with_amount = |taker_amount, remaining_fillable_taker_amount| {
             OrderRecord::new(
-                Order {
+                zeroex_api::Order {
                     taker_token: token_a,
                     maker_token: token_b,
                     taker_amount,
@@ -388,13 +389,16 @@ pub mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx, H160::default()));
         let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 99.into() });
-        let order = Order {
-            taker_amount: 100,
-            taker_token: sell_token,
-            ..Default::default()
-        };
+        let order_record = OrderRecord::new(
+            zeroex_api::Order {
+                taker_amount: 100,
+                taker_token: sell_token,
+                ..Default::default()
+            },
+            OrderMetadata::default(),
+        );
         let handler = OrderSettlementHandler {
-            order: order.clone(),
+            order_record: order_record.clone(),
             zeroex: zeroex.clone(),
             allowances: Arc::new(allowances),
         };
@@ -413,7 +417,7 @@ pub mod tests {
                 }
                 .encode(),
                 ZeroExInteraction {
-                    order,
+                    order: order_record.order().clone(),
                     taker_token_fill_amount: 100,
                     zeroex: zeroex.clone(),
                 }
@@ -427,13 +431,16 @@ pub mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = Arc::new(contracts::dummy_contract!(IZeroEx, H160::default()));
         let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 100.into() });
-        let order = Order {
-            taker_amount: 100,
-            taker_token: sell_token,
-            ..Default::default()
-        };
+        let order_record = OrderRecord::new(
+            zeroex_api::Order {
+                taker_amount: 100,
+                taker_token: sell_token,
+                ..Default::default()
+            },
+            OrderMetadata::default(),
+        );
         let handler = OrderSettlementHandler {
-            order: order.clone(),
+            order_record: order_record.clone(),
             zeroex: zeroex.clone(),
             allowances: Arc::new(allowances),
         };
@@ -446,7 +453,7 @@ pub mod tests {
         assert_eq!(
             interactions,
             [ZeroExInteraction {
-                order,
+                order: order_record.order().clone(),
                 taker_token_fill_amount: 100,
                 zeroex: zeroex.clone(),
             }
