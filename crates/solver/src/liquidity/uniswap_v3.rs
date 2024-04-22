@@ -129,8 +129,6 @@ impl LiquidityCollecting for UniswapV3Liquidity {
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
         for pool in self.pool_fetcher.fetch(&pairs, block).await? {
-            let pool_cloned = pool.clone();
-            let pool = pool.read_lock();
             ensure!(
                 pool.tokens.len() == 2,
                 "two tokens required for uniswap v3 pools"
@@ -147,7 +145,7 @@ impl LiquidityCollecting for UniswapV3Liquidity {
                     inner: self.inner.clone(),
                     fee: ratio_to_u32(pool.state.fee)?,
                 }),
-                pool: pool_cloned,
+                pool,
             }))
         }
         self.cache_allowances(tokens).await?;

@@ -206,7 +206,7 @@ impl HttpTradeFinder {
                 AmmParameters::WeightedProduct(params) => tokens.extend(params.reserves.keys()),
                 AmmParameters::Stable(params) => tokens.extend(params.reserves.keys()),
                 AmmParameters::Concentrated(params) => {
-                    tokens.extend(params.pool.read_lock().tokens.iter().map(|token| token.id))
+                    tokens.extend(params.pool.tokens.iter().map(|token| token.id))
                 }
             }
         }
@@ -343,20 +343,15 @@ impl HttpTradeFinder {
         };
         Ok(pools
             .into_iter()
-            .map(|pool| {
-                let parameters =
-                    AmmParameters::Concentrated(ConcentratedPoolParameters { pool: pool.clone() });
-                let pool = pool.read_lock();
-                AmmModel {
-                    fee: BigRational::from((
-                        BigInt::from(*pool.state.fee.numer()),
-                        BigInt::from(*pool.state.fee.denom()),
-                    )),
-                    cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas),
-                    address: pool.address,
-                    parameters,
-                    mandatory: false,
-                }
+            .map(|pool| AmmModel {
+                fee: BigRational::from((
+                    BigInt::from(*pool.state.fee.numer()),
+                    BigInt::from(*pool.state.fee.denom()),
+                )),
+                cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas),
+                address: pool.address,
+                parameters: AmmParameters::Concentrated(ConcentratedPoolParameters { pool }),
+                mandatory: false,
             })
             .collect())
     }
