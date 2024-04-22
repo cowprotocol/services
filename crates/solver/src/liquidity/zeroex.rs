@@ -10,6 +10,7 @@ use {
         settlement::SettlementEncoder,
     },
     anyhow::Result,
+    arc_swap::ArcSwap,
     contracts::{GPv2Settlement, IZeroEx},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::StreamExt,
@@ -25,10 +26,9 @@ use {
         collections::{HashMap, HashSet},
         sync::Arc,
     },
-    tokio::sync::RwLock,
 };
 
-type OrderbookCache = RwLock<Vec<OrderRecord>>;
+type OrderbookCache = ArcSwap<Vec<OrderRecord>>;
 
 pub struct ZeroExLiquidity {
     pub zeroex: Arc<IZeroEx>,
@@ -48,7 +48,7 @@ impl ZeroExLiquidity {
     ) -> Self {
         let gpv2_address = gpv2.address();
         let allowance_manager = AllowanceManager::new(web3, gpv2_address);
-        let orderbook_cache = Arc::new(RwLock::new(vec![]));
+        let orderbook_cache = Arc::new(ArcSwap::from_pointee(Vec::new()));
         let cache = orderbook_cache.clone();
         tokio::spawn(async move {
             Self::run_orderbook_fetching(api, blocks_stream, cache, gpv2_address).await
@@ -123,8 +123,7 @@ impl ZeroExLiquidity {
                 })
                 .collect();
 
-            let mut cache = orderbook_cache.write().await;
-            *cache = zeroex_orders;
+            orderbook_cache.store(Arc::new(zeroex_orders));
         }
     }
 }
@@ -136,8 +135,8 @@ impl LiquidityCollecting for ZeroExLiquidity {
         pairs: HashSet<TokenPair>,
         _block: Block,
     ) -> Result<Vec<Liquidity>> {
-        let zeroex_orders = self.orderbook_cache.read().await.clone();
-        let order_buckets = generate_order_buckets(zeroex_orders, pairs);
+        let zeroex_orders = self.orderbook_cache.load().clone();
+        let order_buckets = generate_order_buckets((*zeroex_orders).clone(), pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()

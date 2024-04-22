@@ -12,6 +12,7 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
+arc-swap = "1.7.1"
 async-trait = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
