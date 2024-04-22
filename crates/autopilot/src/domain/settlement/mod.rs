@@ -44,6 +44,7 @@ impl Settlement {
         domain_separator: &eth::DomainSeparator,
     ) -> Result<Self, Error> {
         let function = contracts::GPv2Settlement::raw_contract()
+            .interface
             .abi
             .function("settle")
             .unwrap();
