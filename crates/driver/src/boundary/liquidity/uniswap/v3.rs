@@ -34,32 +34,30 @@ use {
 };
 
 pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liquidity::Liquidity> {
-    anyhow::ensure!(
-        pool.pool.tokens.len() == 2,
-        "Uniswap V3 pools should have exactly 2 tokens",
-    );
-
     let handler = pool
         .settlement_handling
         .as_any()
         .downcast_ref::<uniswap_v3::UniswapV3SettlementHandler>()
         .expect("downcast uniswap settlement handler");
 
+    let pool = pool.pool.read_lock();
+
+    anyhow::ensure!(
+        pool.tokens.len() == 2,
+        "Uniswap V3 pools should have exactly 2 tokens",
+    );
+
     Ok(liquidity::Liquidity {
         id,
-        gas: eth::Gas(pool.pool.gas_stats.mean_gas),
+        gas: eth::Gas(pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
             router: handler.inner.router.address().into(),
-            address: pool.pool.address.into(),
-            tokens: liquidity::TokenPair::new(
-                pool.pool.tokens[0].id.into(),
-                pool.pool.tokens[1].id.into(),
-            )?,
-            sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
-            liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
-            tick: Tick(pool.pool.state.tick.try_into()?),
+            address: pool.address.into(),
+            tokens: liquidity::TokenPair::new(pool.tokens[0].id.into(), pool.tokens[1].id.into())?,
+            sqrt_price: SqrtPrice(pool.state.sqrt_price),
+            liquidity: Liquidity(pool.state.liquidity.as_u128()),
+            tick: Tick(pool.state.tick.clone().try_into()?),
             liquidity_net: pool
-                .pool
                 .state
                 .liquidity_net
                 .iter()
@@ -67,7 +65,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liqui
                     Ok((Tick(key.try_into()?), LiquidityNet(value.try_into()?)))
                 })
                 .collect::<Result<BTreeMap<_, _>>>()?,
-            fee: Fee(pool.pool.state.fee),
+            fee: Fee(pool.state.fee),
         }),
     })
 }
