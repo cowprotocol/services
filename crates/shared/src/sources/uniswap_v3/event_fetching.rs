@@ -41,6 +41,7 @@ impl ParseLog for UniswapV3Event {
                 H256(BURN_TOPIC) => Ok(UniswapV3Event::Burn(
                     log.clone().decode(
                         UniswapV3Pool::raw_contract()
+                            .interface
                             .abi
                             .event("Burn")
                             .expect("generated event decode"),
@@ -49,6 +50,7 @@ impl ParseLog for UniswapV3Event {
                 H256(MINT_TOPIC) => Ok(UniswapV3Event::Mint(
                     log.clone().decode(
                         UniswapV3Pool::raw_contract()
+                            .interface
                             .abi
                             .event("Mint")
                             .expect("generated event decode"),
@@ -57,6 +59,7 @@ impl ParseLog for UniswapV3Event {
                 H256(SWAP_TOPIC) => Ok(UniswapV3Event::Swap(
                     log.clone().decode(
                         UniswapV3Pool::raw_contract()
+                            .interface
                             .abi
                             .event("Swap")
                             .expect("generated event decode"),
