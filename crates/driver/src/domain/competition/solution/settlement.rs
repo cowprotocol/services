@@ -4,7 +4,7 @@ use {
         boundary,
         domain::{
             competition::{self, auction, order, solution},
-            eth::{self},
+            eth,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
     },
@@ -35,13 +35,31 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settlement {
     pub auction_id: auction::Id,
-    /// Necessary for the boundary integration, to allow executing settlements.
-    pub boundary: boundary::Settlement,
-    /// The access list used by the settlement.
-    pub access_list: eth::AccessList,
+    /// The prepared on-chain transaction for this settlement
+    transaction: SettlementTx,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
     solution: Solution,
+}
+
+#[derive(Debug, Clone)]
+struct SettlementTx {
+    /// Transaction with all internalizable interactions omitted
+    internalized: eth::Tx,
+    /// Full Transaction without internalizing any interactions
+    uninternalized: eth::Tx,
+    /// Whether this settlement has interactions that could make it revert
+    may_revert: bool,
+}
+
+impl SettlementTx {
+    fn with_access_list(self, access_list: eth::AccessList) -> Self {
+        Self {
+            internalized: self.internalized.set_access_list(access_list.clone()),
+            uninternalized: self.uninternalized.set_access_list(access_list),
+            ..self
+        }
+    }
 }
 
 impl Settlement {
@@ -71,14 +89,27 @@ impl Settlement {
 
         // Encode the solution into a settlement.
         let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-        Self::new(auction.id().unwrap(), solution, boundary, eth, simulator).await
+        let tx = SettlementTx {
+            internalized: boundary.tx(
+                auction.id().unwrap(),
+                eth.contracts().settlement(),
+                Internalization::Enable,
+            ),
+            uninternalized: boundary.tx(
+                auction.id().unwrap(),
+                eth.contracts().settlement(),
+                Internalization::Disable,
+            ),
+            may_revert: boundary.revertable(),
+        };
+        Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
     }
 
     /// Create a new settlement and ensure that it is valid.
     async fn new(
         auction_id: auction::Id,
         solution: Solution,
-        settlement: boundary::Settlement,
+        transaction: SettlementTx,
         eth: &Ethereum,
         simulator: &Simulator,
     ) -> Result<Self, Error> {
@@ -98,7 +129,7 @@ impl Settlement {
                 return Ok(Default::default());
             }
             let tx = eth::Tx {
-                from: settlement.solver,
+                from: solution.solver().address(),
                 to: trade.order().receiver(),
                 value: 1.into(),
                 input: Default::default(),
@@ -113,19 +144,17 @@ impl Settlement {
 
         // Simulate the settlement and get the access list and gas.
         let (access_list, gas) = Self::simulate(
-            auction_id,
-            settlement.clone(),
+            transaction.internalized.clone(),
             &partial_access_list,
             eth,
             simulator,
-            Internalization::Enable,
         )
         .await?;
         let price = eth.gas_price().await?;
         let gas = Gas::new(gas, eth.block_gas_limit(), price)?;
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
-        if eth.balance(settlement.solver).await? < gas.required_balance() {
+        if eth.balance(solution.solver().address()).await? < gas.required_balance() {
             return Err(Error::SolverAccountInsufficientBalance(
                 gas.required_balance(),
             ));
@@ -144,12 +173,10 @@ impl Settlement {
             // the interactions are internalized. To ensure that this doesn't happen, check
             // that the settlement simulates even when internalizations are disabled.
             Self::simulate(
-                auction_id,
-                settlement.clone(),
+                transaction.uninternalized.clone(),
                 &partial_access_list,
                 eth,
                 simulator,
-                Internalization::Disable,
             )
             .await?;
         }
@@ -157,8 +184,7 @@ impl Settlement {
         Ok(Self {
             auction_id,
             solution,
-            boundary: settlement,
-            access_list,
+            transaction: transaction.with_access_list(access_list),
             gas,
         })
     }
@@ -167,17 +193,13 @@ impl Settlement {
     /// ensures that the settlement does not revert, and calculates the
     /// access list and gas needed to settle the solution.
     async fn simulate(
-        auction_id: auction::Id,
-        settlement: boundary::Settlement,
+        tx: eth::Tx,
         partial_access_list: &eth::AccessList,
         eth: &Ethereum,
         simulator: &Simulator,
-        internalization: Internalization,
     ) -> Result<(eth::AccessList, eth::Gas), Error> {
         // Add the partial access list to the settlement tx.
-        let tx = settlement
-            .tx(auction_id, eth.contracts().settlement(), internalization)
-            .set_access_list(partial_access_list.to_owned());
+        let tx = tx.set_access_list(partial_access_list.to_owned());
 
         // Simulate the full access list, passing the partial access
         // list into the simulation.
@@ -192,15 +214,17 @@ impl Settlement {
     }
 
     /// The calldata for this settlement.
-    pub fn calldata(
-        &self,
-        contract: &contracts::GPv2Settlement,
-        internalization: Internalization,
-    ) -> Vec<u8> {
-        self.boundary
-            .tx(self.auction_id, contract, internalization)
-            .input
-            .into()
+    pub fn transaction(&self, internalization: Internalization) -> &eth::Tx {
+        match internalization {
+            Internalization::Enable => &self.transaction.internalized,
+            Internalization::Disable => &self.transaction.uninternalized,
+        }
+    }
+
+    /// Whether the settlement contains interactions that could possibly revert
+    /// on chain
+    pub fn may_revert(&self) -> bool {
+        self.transaction.may_revert
     }
 
     /// Score as defined per CIP38. Equal to surplus + protocol fees.
@@ -215,7 +239,7 @@ impl Settlement {
 
     /// Address of the solver which generated this settlement.
     pub fn solver(&self) -> eth::Address {
-        self.boundary.solver
+        self.solution.solver().address()
     }
 
     /// The settled user orders with their in/out amounts.
@@ -245,7 +269,12 @@ impl Settlement {
 
     /// The uniform price vector this settlement proposes
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
-        self.boundary.clearing_prices()
+        self.solution
+            .clearing_prices()
+            .expect("settlement cannot exist without prices")
+            .iter()
+            .map(|asset| (asset.token, asset.amount))
+            .collect()
     }
 }
 
