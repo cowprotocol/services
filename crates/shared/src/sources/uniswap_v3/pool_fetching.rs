@@ -246,6 +246,9 @@ impl PoolsCheckpointHandler {
             let checkpoint = self.pools_checkpoint.lock().unwrap();
             (checkpoint.missing_pools.clone(), checkpoint.block_number)
         };
+        if missing_pools.is_empty() {
+            return Ok(());
+        }
         tracing::debug!("currently missing pools are {:?}", missing_pools);
 
         let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
