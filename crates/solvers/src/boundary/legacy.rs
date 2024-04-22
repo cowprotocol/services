@@ -334,7 +334,8 @@ fn to_boundary_auction(
                             gas_stats: PoolStats {
                                 mean_gas: liquidity.gas.0,
                             },
-                        },
+                        }
+                        .into(),
                     }),
                     to_big_rational(&state.fee.0),
                 )
