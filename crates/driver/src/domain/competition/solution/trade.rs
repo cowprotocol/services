@@ -37,7 +37,7 @@ impl Fulfillment {
         order: competition::Order,
         executed: order::TargetAmount,
         fee: Fee,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, error::Trade> {
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -54,7 +54,7 @@ impl Fulfillment {
                 executed
                     .0
                     .checked_add(fee.0)
-                    .ok_or(Error::InvalidExecutedAmount)?,
+                    .ok_or(error::Trade::InvalidExecutedAmount)?,
             );
             match order.partial {
                 order::Partial::Yes { available } => executed_with_fee <= available,
@@ -76,7 +76,7 @@ impl Fulfillment {
                 fee,
             })
         } else {
-            Err(Error::InvalidExecutedAmount)
+            Err(error::Trade::InvalidExecutedAmount)
         }
     }
 
@@ -86,7 +86,7 @@ impl Fulfillment {
     pub fn calculate_custom_prices(
         &self,
         uniform_prices: &ClearingPrices,
-    ) -> Result<scoring::CustomClearingPrices, error::Scoring> {
+    ) -> Result<scoring::CustomClearingPrices, error::Trade> {
         Ok(scoring::CustomClearingPrices {
             sell: match self.order().side {
                 Side::Sell => self
@@ -147,7 +147,7 @@ impl Fulfillment {
     }
 
     /// The effective amount that left the user's wallet including all fees.
-    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Error> {
+    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Trade> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
             order::Side::Buy => self
@@ -164,7 +164,7 @@ impl Fulfillment {
     }
 
     /// The effective amount the user received after all fees.
-    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, Error> {
+    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Trade> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
             order::Side::Sell => self
@@ -187,7 +187,7 @@ impl Fulfillment {
         limit_sell: eth::U256,
         limit_buy: eth::U256,
         prices: ClearingPrices,
-    ) -> Result<eth::TokenAmount, Error> {
+    ) -> Result<eth::TokenAmount, error::Trade> {
         let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
@@ -206,7 +206,7 @@ impl Fulfillment {
                 // surplus_fee is always expressed in sell token
                 self.surplus_fee()
                     .map(|fee| fee.0)
-                    .ok_or(Error::ProtocolFeeOnStaticOrder)?,
+                    .ok_or(error::Trade::ProtocolFeeOnStaticOrder)?,
             )
             .ok_or(Math::Overflow)?;
         let surplus = match self.order().side {
@@ -279,7 +279,7 @@ pub struct Jit {
 }
 
 impl Jit {
-    pub fn new(order: order::Jit, executed: order::TargetAmount) -> Result<Self, Error> {
+    pub fn new(order: order::Jit, executed: order::TargetAmount) -> Result<Self, error::Trade> {
         // If the order is partially fillable, the executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -291,7 +291,7 @@ impl Jit {
         if is_valid {
             Ok(Self { order, executed })
         } else {
-            Err(Error::InvalidExecutedAmount)
+            Err(error::Trade::InvalidExecutedAmount)
         }
     }
 
@@ -311,14 +311,4 @@ pub struct Execution {
     pub sell: eth::Asset,
     /// The total amount being bought.
     pub buy: eth::Asset,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("orders with non solver determined gas cost fees are not supported")]
-    ProtocolFeeOnStaticOrder,
-    #[error("invalid executed amount")]
-    InvalidExecutedAmount,
-    #[error(transparent)]
-    Math(#[from] Math),
 }
