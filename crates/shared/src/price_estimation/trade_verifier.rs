@@ -358,7 +358,11 @@ struct SettleOutput {
 
 impl SettleOutput {
     fn decode(output: &[u8], kind: OrderKind) -> Result<Self> {
-        let function = Solver::raw_contract().abi.function("swap").unwrap();
+        let function = Solver::raw_contract()
+            .interface
+            .abi
+            .function("swap")
+            .unwrap();
         let tokens = function.decode_output(output).context("decode")?;
         let (gas_used, balances): (U256, Vec<U256>) = Tokenize::from_token(Token::Tuple(tokens))?;
 

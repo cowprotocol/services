@@ -179,6 +179,7 @@ impl DecodedSettlement {
 
     pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
         let function = GPv2Settlement::raw_contract()
+            .interface
             .abi
             .function("settle")
             .unwrap();
