@@ -419,6 +419,6 @@ pub enum Error {
     MissingPrice(eth::TokenAddress),
     #[error(transparent)]
     Math(#[from] Math),
-    #[error("scoring: failed to calculate custom price {0:?}")]
+    #[error("scoring: failed to calculate custom price for the applied fee policy {0:?}")]
     Scoring(#[source] error::Scoring),
 }
