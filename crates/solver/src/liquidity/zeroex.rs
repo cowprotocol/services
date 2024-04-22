@@ -48,7 +48,7 @@ impl ZeroExLiquidity {
     ) -> Self {
         let gpv2_address = gpv2.address();
         let allowance_manager = AllowanceManager::new(web3, gpv2_address);
-        let orderbook_cache = Arc::new(ArcSwap::from_pointee(Vec::new()));
+        let orderbook_cache: Arc<OrderbookCache> = Default::default();
         let cache = orderbook_cache.clone();
         tokio::spawn(async move {
             Self::run_orderbook_fetching(api, blocks_stream, cache, gpv2_address).await
