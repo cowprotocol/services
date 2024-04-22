@@ -134,7 +134,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
         _block: Block,
     ) -> Result<Vec<Liquidity>> {
         let zeroex_order_buckets = self.orderbook_cache.load();
-        let filtered_zeroex_orders = get_useful_orders(zeroex_order_buckets.as_ref(), pairs, 5);
+        let filtered_zeroex_orders = get_useful_orders(zeroex_order_buckets.as_ref(), &pairs, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
             .map(|o| o.order().taker_token)
@@ -173,7 +173,7 @@ fn group_by_token_pair(
 /// Get the `orders_per_type` best priced and biggest volume orders.
 fn get_useful_orders(
     order_buckets: &OrderBuckets,
-    relevant_pairs: HashSet<TokenPair>,
+    relevant_pairs: &HashSet<TokenPair>,
     orders_per_type: usize,
 ) -> Vec<OrderRecord> {
     let mut filtered_zeroex_orders = vec![];
@@ -281,7 +281,7 @@ pub mod tests {
         let order_2 = order_with_tokens(token_b, token_a);
         let order_3 = order_with_tokens(token_b, token_a);
         let order_buckets = group_by_token_pair(vec![order_1, order_2, order_3].into_iter());
-        let useful_orders = get_useful_orders(&order_buckets, relevant_pairs, 1);
+        let useful_orders = get_useful_orders(&order_buckets, &relevant_pairs, 1);
         assert_eq!(order_buckets.keys().len(), 2);
         assert_eq!(useful_orders.len(), 3);
     }
@@ -306,7 +306,7 @@ pub mod tests {
         let order_2 = order_with_tokens(token_a, token_ignore);
         let order_3 = order_with_tokens(token_ignore, token_ignore);
         let order_buckets = group_by_token_pair(vec![order_1, order_2, order_3].into_iter());
-        let filtered_zeroex_orders = get_useful_orders(&order_buckets, relevant_pairs, 1);
+        let filtered_zeroex_orders = get_useful_orders(&order_buckets, &relevant_pairs, 1);
         assert_eq!(filtered_zeroex_orders.len(), 0);
     }
 
@@ -334,7 +334,7 @@ pub mod tests {
         let order_2 = order_with_fillable_amount(100);
         let order_3 = order_with_fillable_amount(10_000);
         let order_buckets = group_by_token_pair(vec![order_1, order_2, order_3].into_iter());
-        let filtered_zeroex_orders = get_useful_orders(&order_buckets, relevant_pairs, 1);
+        let filtered_zeroex_orders = get_useful_orders(&order_buckets, &relevant_pairs, 1);
         assert_eq!(filtered_zeroex_orders.len(), 2);
         assert_eq!(
             filtered_zeroex_orders[0]
@@ -374,7 +374,7 @@ pub mod tests {
         let order_2 = order_with_amount(1_000, 100);
         let order_3 = order_with_amount(100_000, 1_000);
         let order_buckets = group_by_token_pair(vec![order_1, order_2, order_3].into_iter());
-        let filtered_zeroex_orders = get_useful_orders(&order_buckets, relevant_pairs, 1);
+        let filtered_zeroex_orders = get_useful_orders(&order_buckets, &relevant_pairs, 1);
         assert_eq!(filtered_zeroex_orders.len(), 2);
         // First item in the list will be on the basis of maker_amount/taker_amount
         // ratio
