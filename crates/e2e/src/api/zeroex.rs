@@ -84,13 +84,8 @@ impl Eip712TypedZeroExOrder {
         verifying_contract: H160,
         signer: TestAccount,
     ) -> OrderRecord {
-        OrderRecord {
-            metadata: OrderMetadata {
-                created_at: DateTime::<Utc>::MIN_UTC,
-                order_hash: self.hash_struct().to_vec(),
-                remaining_fillable_taker_amount: self.remaining_fillable_taker_amount,
-            },
-            order: Order {
+        OrderRecord::new(
+            Order {
                 chain_id,
                 expiry: NaiveDateTime::MAX.timestamp() as u64,
                 fee_recipient: self.fee_recipient,
@@ -111,7 +106,12 @@ impl Eip712TypedZeroExOrder {
                     signer,
                 ),
             },
-        }
+            OrderMetadata {
+                created_at: DateTime::<Utc>::MIN_UTC,
+                order_hash: self.hash_struct().to_vec(),
+                remaining_fillable_taker_amount: self.remaining_fillable_taker_amount,
+            },
+        )
     }
 
     fn sign(

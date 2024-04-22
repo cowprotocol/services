@@ -68,24 +68,24 @@ impl ZeroExLiquidity {
         allowances: Arc<Allowances>,
     ) -> Option<Liquidity> {
         let sell_amount: U256 = record.remaining_maker_amount().ok()?.into();
-        if sell_amount.is_zero() || record.metadata.remaining_fillable_taker_amount == 0 {
+        if sell_amount.is_zero() || record.metadata().remaining_fillable_taker_amount == 0 {
             // filter out orders with 0 amounts to prevent errors in the solver
             return None;
         }
 
         let limit_order = LimitOrder {
             id: LimitOrderId::Liquidity(LiquidityOrderId::ZeroEx(hex::encode(
-                &record.metadata.order_hash,
+                &record.metadata().order_hash,
             ))),
-            sell_token: record.order.maker_token,
-            buy_token: record.order.taker_token,
+            sell_token: record.order().maker_token,
+            buy_token: record.order().taker_token,
             sell_amount,
-            buy_amount: record.metadata.remaining_fillable_taker_amount.into(),
+            buy_amount: record.metadata().remaining_fillable_taker_amount.into(),
             kind: OrderKind::Buy,
             partially_fillable: true,
             user_fee: U256::zero(),
             settlement_handling: Arc::new(OrderSettlementHandler {
-                order: record.order,
+                order: record.order().clone(),
                 zeroex: self.zeroex.clone(),
                 allowances,
             }),
@@ -140,7 +140,7 @@ impl LiquidityCollecting for ZeroExLiquidity {
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
-            .map(|o| o.order.taker_token)
+            .map(|o| o.order().taker_token)
             .collect();
 
         let allowances = Arc::new(
@@ -166,15 +166,15 @@ fn generate_order_buckets(
     let mut buckets = OrderBuckets::default();
     zeroex_orders
         .into_iter()
-        .filter(
-            |record| match TokenPair::new(record.order.taker_token, record.order.maker_token) {
+        .filter(|record| {
+            match TokenPair::new(record.order().taker_token, record.order().maker_token) {
                 Some(pair) => relevant_pairs.contains(&pair),
                 None => false,
-            },
-        )
+            }
+        })
         .for_each(|order| {
             let bucket = buckets
-                .entry((order.order.taker_token, order.order.maker_token))
+                .entry((order.order().taker_token, order.order().maker_token))
                 .or_default();
             bucket.push(order);
         });
@@ -193,13 +193,13 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
         // best priced orders are those that have the maximum maker_amount /
         // taker_amount ratio
         orders.sort_by(|order_1, order_2| {
-            let price_1 = order_1.order.maker_amount as f64 / order_1.order.taker_amount as f64;
-            let price_2 = order_2.order.maker_amount as f64 / order_2.order.taker_amount as f64;
+            let price_1 = order_1.order().maker_amount as f64 / order_1.order().taker_amount as f64;
+            let price_2 = order_2.order().maker_amount as f64 / order_2.order().taker_amount as f64;
             price_1.total_cmp(&price_2)
         });
         filtered_zeroex_orders.extend(orders.drain(orders.len() - orders_per_type..));
 
-        orders.sort_by_key(|order| order.metadata.remaining_fillable_taker_amount);
+        orders.sort_by_key(|order| order.metadata().remaining_fillable_taker_amount);
         filtered_zeroex_orders.extend(orders.into_iter().rev().take(orders_per_type));
     }
     filtered_zeroex_orders
@@ -265,15 +265,15 @@ pub mod tests {
         let token_a = H160([0x00; 20]);
         let token_b = H160([0xff; 20]);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
-        let order = Order::default();
-        let metadata = OrderMetadata::default();
-        let order_with_tokens = |token_a, token_b| OrderRecord {
-            order: Order {
-                taker_token: token_a,
-                maker_token: token_b,
-                ..order.clone()
-            },
-            metadata: metadata.clone(),
+        let order_with_tokens = |token_a, token_b| {
+            OrderRecord::new(
+                Order {
+                    taker_token: token_a,
+                    maker_token: token_b,
+                    ..Default::default()
+                },
+                OrderMetadata::default(),
+            )
         };
         let order_1 = order_with_tokens(token_a, token_b);
         let order_2 = order_with_tokens(token_b, token_a);
@@ -290,15 +290,15 @@ pub mod tests {
         let token_b = H160([0xff; 20]);
         let token_ignore = H160([0x11; 20]);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
-        let order = Order::default();
-        let metadata = OrderMetadata::default();
-        let order_with_tokens = |token_a, token_b| OrderRecord {
-            order: Order {
-                taker_token: token_a,
-                maker_token: token_b,
-                ..order.clone()
-            },
-            metadata: metadata.clone(),
+        let order_with_tokens = |token_a, token_b| {
+            OrderRecord::new(
+                Order {
+                    taker_token: token_a,
+                    maker_token: token_b,
+                    ..Default::default()
+                },
+                OrderMetadata::default(),
+            )
         };
         let order_1 = order_with_tokens(token_ignore, token_b);
         let order_2 = order_with_tokens(token_a, token_ignore);
@@ -313,18 +313,20 @@ pub mod tests {
         let token_a = H160([0x00; 20]);
         let token_b = H160([0xff; 20]);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
-        let order_with_fillable_amount = |remaining_fillable_taker_amount| OrderRecord {
-            order: Order {
-                taker_token: token_a,
-                maker_token: token_b,
-                taker_amount: 100_000_000,
-                maker_amount: 100_000_000,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                remaining_fillable_taker_amount,
-                ..Default::default()
-            },
+        let order_with_fillable_amount = |remaining_fillable_taker_amount| {
+            OrderRecord::new(
+                Order {
+                    taker_token: token_a,
+                    maker_token: token_b,
+                    taker_amount: 100_000_000,
+                    maker_amount: 100_000_000,
+                    ..Default::default()
+                },
+                OrderMetadata {
+                    remaining_fillable_taker_amount,
+                    ..Default::default()
+                },
+            )
         };
         let order_1 = order_with_fillable_amount(1_000);
         let order_2 = order_with_fillable_amount(100);
@@ -334,13 +336,13 @@ pub mod tests {
         assert_eq!(filtered_zeroex_orders.len(), 2);
         assert_eq!(
             filtered_zeroex_orders[0]
-                .metadata
+                .metadata()
                 .remaining_fillable_taker_amount,
             10_000
         );
         assert_eq!(
             filtered_zeroex_orders[1]
-                .metadata
+                .metadata()
                 .remaining_fillable_taker_amount,
             1_000
         );
@@ -351,18 +353,20 @@ pub mod tests {
         let token_a = H160([0x00; 20]);
         let token_b = H160([0xff; 20]);
         let relevant_pairs = get_relevant_pairs(token_a, token_b);
-        let order_with_amount = |taker_amount, remaining_fillable_taker_amount| OrderRecord {
-            order: Order {
-                taker_token: token_a,
-                maker_token: token_b,
-                taker_amount,
-                maker_amount: 100_000_000,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                remaining_fillable_taker_amount,
-                ..Default::default()
-            },
+        let order_with_amount = |taker_amount, remaining_fillable_taker_amount| {
+            OrderRecord::new(
+                Order {
+                    taker_token: token_a,
+                    maker_token: token_b,
+                    taker_amount,
+                    maker_amount: 100_000_000,
+                    ..Default::default()
+                },
+                OrderMetadata {
+                    remaining_fillable_taker_amount,
+                    ..Default::default()
+                },
+            )
         };
         let order_1 = order_with_amount(10_000_000, 1_000_000);
         let order_2 = order_with_amount(1_000, 100);
@@ -372,10 +376,10 @@ pub mod tests {
         assert_eq!(filtered_zeroex_orders.len(), 2);
         // First item in the list will be on the basis of maker_amount/taker_amount
         // ratio
-        assert_eq!(filtered_zeroex_orders[0].order.taker_amount, 1_000);
+        assert_eq!(filtered_zeroex_orders[0].order().taker_amount, 1_000);
         // Second item in the list will be on the basis of
         // remaining_fillable_taker_amount
-        assert_eq!(filtered_zeroex_orders[1].order.taker_amount, 10_000_000);
+        assert_eq!(filtered_zeroex_orders[1].order().taker_amount, 10_000_000);
     }
 
     #[tokio::test]
