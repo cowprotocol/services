@@ -119,11 +119,7 @@ mod tests {
     async fn all_settlement_tx_hashes(
         ex: &mut PgConnection,
     ) -> Result<Vec<TransactionHash>, sqlx::Error> {
-        const QUERY: &str = r#"
-SELECT tx_hash
-FROM settlements
-WHERE
-    "#;
+        const QUERY: &str = "SELECT tx_hash FROM settlements";
         sqlx::query_scalar::<_, TransactionHash>(QUERY)
             .fetch_all(ex)
             .await
