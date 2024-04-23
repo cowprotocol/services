@@ -177,7 +177,7 @@ services:
     depends_on:
       - chain
     command: >
-      sh -c "while true; do
+      sh -c "while [ ! -f /tmp/ready ]; do
                if curl -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' http://chain:8545 ; then
                  echo 'Chain is ready.';
                  touch /tmp/ready;
