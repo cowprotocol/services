@@ -1248,7 +1248,7 @@ mod tests {
         assert_eq!(time, order.cancellation_timestamp.unwrap());
 
         // Cancel again and verify that cancellation timestamp was not changed.
-        let irrelevant_time = Utc.timestamp_opt(1234567890, 1_000_000_000).unwrap();
+        let irrelevant_time = Utc.timestamp_opt(1234564319, 1_000_000_000).unwrap();
         assert_ne!(irrelevant_time, time);
         cancel_order(&mut db, &order.uid, time).await.unwrap();
         let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();

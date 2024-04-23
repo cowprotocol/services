@@ -24,7 +24,7 @@ use {
         fmt::{self, Debug, Display},
         str::FromStr,
     },
-    strum::{AsRefStr, EnumString, EnumVariantNames},
+    strum::{AsRefStr, EnumString, VariantNames},
     web3::signing::{self, Key, SecretKeyRef},
 };
 
@@ -875,7 +875,7 @@ pub enum OrderKind {
     Hash,
     EnumString,
     AsRefStr,
-    EnumVariantNames,
+    VariantNames,
 )]
 #[strum(ascii_case_insensitive)]
 #[serde(tag = "class", rename_all = "lowercase")]
