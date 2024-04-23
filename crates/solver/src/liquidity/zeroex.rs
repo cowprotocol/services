@@ -201,7 +201,7 @@ fn get_useful_orders(
         filtered_zeroex_orders.extend(orders.drain(orders.len() - orders_per_type..));
 
         orders.sort_by_key(|order| order.metadata().remaining_fillable_taker_amount);
-        filtered_zeroex_orders.extend(orders.iter().rev().take(orders_per_type).cloned());
+        filtered_zeroex_orders.extend(orders.into_iter().rev().take(orders_per_type));
     }
     filtered_zeroex_orders
 }
