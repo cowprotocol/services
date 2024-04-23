@@ -127,14 +127,11 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// Retrieves the recent settlement transaction hashes for the provided
-    /// blocks range.
-    pub async fn recent_settlement_tx_hashes(
-        &self,
-        block_range: std::ops::Range<u64>,
-    ) -> Result<Vec<H256>, Error> {
+    /// Retrieves the transaction hash for the settlement with the given
+    /// auction_id.
+    pub async fn find_tx_hash_by_auction_id(&self, auction_id: i64) -> Result<Option<H256>, Error> {
         self.postgres
-            .recent_settlement_tx_hashes(block_range)
+            .find_tx_hash_by_auction_id(auction_id)
             .await
             .map_err(Error::DbError)
     }

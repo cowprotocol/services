@@ -22,7 +22,7 @@ use {
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
-    shared::{event_handling::MAX_REORG_BLOCK_COUNT, token_list::AutoUpdatingTokenList},
+    shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
@@ -415,11 +415,12 @@ impl RunLoop {
         self.persistence
             .store_order_events(order_ids, OrderEventLabel::Executing);
 
-        let tag = auction_id.to_be_bytes();
         let request = settle::Request {
             solution_id: solved.id,
         };
-        let tx_hash = self.wait_for_settlement(driver, &tag, request).await?;
+        let tx_hash = self
+            .wait_for_settlement(driver, auction_id, request)
+            .await?;
         *self.in_flight_orders.lock().await = Some(InFlightOrders {
             tx_hash,
             orders: solved.orders.keys().copied().collect(),
@@ -434,11 +435,11 @@ impl RunLoop {
     async fn wait_for_settlement(
         &self,
         driver: &infra::Driver,
-        tag: &[u8],
+        auction_id: i64,
         request: settle::Request,
     ) -> Result<H256, SettleError> {
         match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(tag, self.submission_deadline)),
+            Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
             Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
         )
         .await
@@ -456,41 +457,29 @@ impl RunLoop {
     /// is cancelled.
     async fn wait_for_settlement_transaction(
         &self,
-        tag: &[u8],
+        auction_id: i64,
         max_blocks_wait: u64,
     ) -> Result<H256, SettleError> {
-        let start_offset = MAX_REORG_BLOCK_COUNT;
         let current = self.eth.current_block().borrow().number;
-        let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_blocks_wait);
-        tracing::debug!(%current, %start, %deadline, ?tag, "waiting for tag");
-        let mut seen_transactions: HashSet<H256> = Default::default();
+        tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
         loop {
             if self.eth.current_block().borrow().number > deadline {
                 break;
             }
-            let Ok(mut hashes) = self
+
+            match self
                 .persistence
-                .recent_settlement_tx_hashes(start..deadline + 1)
+                .find_tx_hash_by_auction_id(auction_id)
                 .await
-                .inspect_err(|err| {
-                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes")
-                })
-            else {
-                continue;
-            };
-            hashes.retain(|hash| !seen_transactions.contains(hash));
-            for hash in hashes {
-                let Ok(Some(tx)) = self.eth.transaction(hash).await else {
-                    tracing::warn!(?hash, "unable to fetch a tx");
-                    continue;
-                };
-                if tx.input.0.ends_with(tag) {
-                    return Ok(tx.hash);
+            {
+                Ok(Some(hash)) => return Ok(hash),
+                Err(err) => {
+                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
                 }
-                seen_transactions.insert(hash);
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                Ok(None) => {}
             }
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
         Err(SettleError::Failure(anyhow::anyhow!(
             "settlement transaction await reached deadline"
