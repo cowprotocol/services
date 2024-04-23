@@ -31,7 +31,7 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 hyper = { workspace = true }
 lazy_static = { workspace = true }
-indexmap = { version = "2", features = ["serde"] }
+indexmap = { workspace = true, features = ["serde"] }
 itertools = { workspace = true }
 num = { workspace = true }
 number = { path = "../number" }
@@ -48,7 +48,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 toml = { workspace = true }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
-url = { version = "2.3", features = ["serde"] }
+url = { workspace = true, features = ["serde"] }
 web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
