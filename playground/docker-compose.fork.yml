@@ -124,6 +124,8 @@ services:
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
     volumes:
       - ./driver.toml:/driver.toml
     ports:
@@ -177,7 +179,7 @@ services:
                if curl -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' http://chain:8545 ; then
                  echo 'Chain is ready.';
                  touch /tmp/ready;
-                 sleep 30s;
+                 sleep 15s; # sleep for a while to make sure all the dependant services are aware of the health status
                else
                  echo 'Chain is not ready, retrying...';
                  sleep 5s;
