@@ -380,7 +380,6 @@ pub async fn run(args: Arguments) {
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             &PriceEstimatorSource::for_args(
-                args.order_quoting.price_estimators.as_slice(),
                 &args.order_quoting.price_estimation_drivers,
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
@@ -390,7 +389,6 @@ pub async fn run(args: Arguments) {
     let price_estimator = price_estimator_factory
         .price_estimator(
             &PriceEstimatorSource::for_args(
-                args.order_quoting.price_estimators.as_slice(),
                 &args.order_quoting.price_estimation_drivers,
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
@@ -401,7 +399,6 @@ pub async fn run(args: Arguments) {
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
             &PriceEstimatorSource::for_args(
-                args.order_quoting.price_estimators.as_slice(),
                 &args.order_quoting.price_estimation_drivers,
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),

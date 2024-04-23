@@ -62,6 +62,7 @@ pub struct Eip712TypedZeroExOrder {
     pub taker_token: H160,
     pub maker_amount: u128,
     pub taker_amount: u128,
+    pub remaining_fillable_taker_amount: u128,
     pub taker_token_fee_amount: u128,
     pub maker: H160,
     pub taker: H160,
@@ -83,15 +84,10 @@ impl Eip712TypedZeroExOrder {
         verifying_contract: H160,
         signer: TestAccount,
     ) -> OrderRecord {
-        OrderRecord {
-            metadata: OrderMetadata {
-                created_at: DateTime::<Utc>::MIN_UTC,
-                order_hash: self.hash_struct().to_vec(),
-                remaining_fillable_taker_amount: self.taker_amount,
-            },
-            order: Order {
+        OrderRecord::new(
+            Order {
                 chain_id,
-                expiry: NaiveDateTime::MAX.timestamp() as u64,
+                expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
                 fee_recipient: self.fee_recipient,
                 maker: self.maker,
                 maker_token: self.maker_token,
@@ -110,7 +106,12 @@ impl Eip712TypedZeroExOrder {
                     signer,
                 ),
             },
-        }
+            OrderMetadata {
+                created_at: DateTime::<Utc>::MIN_UTC,
+                order_hash: self.hash_struct().to_vec(),
+                remaining_fillable_taker_amount: self.remaining_fillable_taker_amount,
+            },
+        )
     }
 
     fn sign(

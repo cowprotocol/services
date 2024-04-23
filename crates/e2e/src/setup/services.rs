@@ -94,7 +94,6 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
-            "--price-estimators=None".to_string(),
             "--native-price-estimators=test_quoter".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),

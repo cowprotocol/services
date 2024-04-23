@@ -1,6 +1,9 @@
 use {
     self::solution::settlement,
-    super::{time, time::Remaining, Mempools},
+    super::{
+        time::{self, Remaining},
+        Mempools,
+    },
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -16,6 +19,7 @@ use {
     futures::{stream::FuturesUnordered, StreamExt},
     itertools::Itertools,
     std::{
+        cmp::Reverse,
         collections::{HashMap, HashSet},
         sync::Mutex,
     },
@@ -242,17 +246,13 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
             internalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )
-                .into(),
+                .transaction(settlement::Internalization::Enable)
+                .input
+                .clone(),
             uninternalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Disable,
-                )
-                .into(),
+                .transaction(settlement::Internalization::Disable)
+                .input
+                .clone(),
         })
     }
 
@@ -278,17 +278,13 @@ impl Competition {
             Err(_) => Err(Error::SubmissionError),
             Ok(tx_hash) => Ok(Settled {
                 internalized_calldata: settlement
-                    .calldata(
-                        self.eth.contracts().settlement(),
-                        settlement::Internalization::Enable,
-                    )
-                    .into(),
+                    .transaction(settlement::Internalization::Enable)
+                    .input
+                    .clone(),
                 uninternalized_calldata: settlement
-                    .calldata(
-                        self.eth.contracts().settlement(),
-                        settlement::Internalization::Disable,
-                    )
-                    .into(),
+                    .transaction(settlement::Internalization::Disable)
+                    .input
+                    .clone(),
                 tx_hash,
             }),
         }
@@ -309,24 +305,18 @@ impl Competition {
         settlement: &Settlement,
     ) -> Result<(), infra::simulator::Error> {
         self.simulator
-            .gas(eth::Tx {
-                from: self.solver.address(),
-                to: settlement.solver(),
-                value: eth::Ether(0.into()),
-                input: crate::util::Bytes(settlement.calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )),
-                access_list: settlement.access_list.clone(),
-            })
+            .gas(
+                settlement
+                    .transaction(settlement::Internalization::Enable)
+                    .clone(),
+            )
             .await
             .map(|_| ())
     }
 }
 
 /// Creates a vector with all possible combinations of the given solutions.
-/// The result is sorted by the number of merges, so the first elements are the
-/// original solutions.
+/// The result is sorted descending by score.
 fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
     for solution in solutions {
@@ -349,10 +339,12 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
 
     // Sort merged solutions descending by score.
     merged.sort_by_key(|solution| {
-        solution
-            .scoring(&auction.prices())
-            .map(|score| score.0)
-            .unwrap_or_default()
+        Reverse(
+            solution
+                .scoring(&auction.prices())
+                .map(|score| score.0)
+                .unwrap_or_default(),
+        )
     });
     merged
 }
@@ -373,7 +365,7 @@ pub struct Amounts {
     pub buy: eth::TokenAmount,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PriceLimits {
     pub sell: eth::TokenAmount,
     pub buy: eth::TokenAmount,

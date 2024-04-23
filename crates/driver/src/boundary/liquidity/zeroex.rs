@@ -2,7 +2,7 @@ use {
     crate::{
         domain::liquidity::{
             self,
-            zeroex::{self, Order, ZeroExSignature},
+            zeroex::{self, Amounts, Order, ZeroExSignature},
         },
         infra::{self, Ethereum},
     },
@@ -37,30 +37,36 @@ pub fn to_domain(
         .clone();
 
     let signature = ZeroExSignature {
-        r: handler.order.signature.r,
-        s: handler.order.signature.s,
-        v: handler.order.signature.v,
-        signature_type: handler.order.signature.signature_type,
+        r: handler.order_record.order().signature.r,
+        s: handler.order_record.order().signature.s,
+        v: handler.order_record.order().signature.v,
+        signature_type: handler.order_record.order().signature.signature_type,
     };
 
     let order = Order {
-        maker: handler.order.maker,
-        taker: handler.order.taker,
-        sender: handler.order.sender,
-        maker_token: handler.order.maker_token,
-        taker_token: handler.order.taker_token,
-        maker_amount: handler.order.maker_amount,
-        taker_amount: handler.order.taker_amount,
-        taker_token_fee_amount: handler.order.taker_token_fee_amount,
-        fee_recipient: handler.order.fee_recipient,
-        pool: handler.order.pool,
-        expiry: handler.order.expiry,
-        salt: handler.order.salt,
+        maker: handler.order_record.order().maker,
+        taker: handler.order_record.order().taker,
+        sender: handler.order_record.order().sender,
+        maker_token: handler.order_record.order().maker_token,
+        taker_token: handler.order_record.order().taker_token,
+        amounts: Amounts {
+            maker: handler.order_record.order().maker_amount,
+            taker: handler.order_record.order().taker_amount,
+        },
+        taker_token_fee_amount: handler.order_record.order().taker_token_fee_amount,
+        fee_recipient: handler.order_record.order().fee_recipient,
+        pool: handler.order_record.order().pool,
+        expiry: handler.order_record.order().expiry,
+        salt: handler.order_record.order().salt,
         signature,
     };
 
     let domain = zeroex::LimitOrder {
         order,
+        fillable: Amounts {
+            maker: limit_order.sell_amount.as_u128(),
+            taker: limit_order.buy_amount.as_u128(),
+        },
         zeroex: handler.zeroex.clone(),
     };
 
@@ -87,9 +93,9 @@ pub async fn collector(
         http_client_factory.builder(),
         config.base_url.clone(),
         config.api_key.clone(),
-        blocks,
+        blocks.clone(),
     )?);
-    Ok(Box::new(ZeroExLiquidity::new(
-        web3, api, contract, settlement,
-    )))
+    Ok(Box::new(
+        ZeroExLiquidity::new(web3, api, contract, settlement, blocks).await,
+    ))
 }

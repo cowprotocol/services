@@ -1,6 +1,6 @@
 use {
     chrono::{NaiveDateTime, Utc},
-    contracts::{IZeroEx, ERC20},
+    contracts::{i_zero_ex::Contract, IZeroEx, ERC20},
     driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
@@ -18,7 +18,14 @@ use {
         },
         tx,
     },
-    ethcontract::{prelude::U256, H256},
+    ethcontract::{
+        errors::MethodError,
+        prelude::U256,
+        transaction::TransactionResult,
+        Account,
+        Bytes,
+        H256,
+    },
     ethrpc::Web3,
     hex_literal::hex,
     model::{
@@ -78,24 +85,31 @@ async fn zero_ex_liquidity(web3: Web3) {
     let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
     tx!(
         usdt_whale,
-        token_usdt.transfer(zeroex_maker.address(), amount * 2)
+        // With a lower amount 0x contract shows much lower fillable amount
+        token_usdt.transfer(zeroex_maker.address(), amount * 4)
     );
+    // Required for the remaining fillable taker amount
+    tx!(usdc_whale, token_usdc.transfer(solver.address(), amount));
 
-    // Approve GPv2 for trading
     tx!(
         trader.account(),
         token_usdc.approve(onchain.contracts().allowance, amount)
     );
     tx!(
         zeroex_maker.account(),
-        token_usdt.approve(zeroex.address(), amount * 2)
+        // With a lower amount 0x contract shows much lower fillable amount
+        token_usdt.approve(zeroex.address(), amount * 4)
+    );
+    tx!(
+        solver.account(),
+        token_usdc.approve(zeroex.address(), amount)
     );
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
         sell_amount: amount,
         buy_token: token_usdt.address(),
-        buy_amount: amount - to_wei_with_exp(1, 8),
+        buy_amount: amount,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -106,19 +120,15 @@ async fn zero_ex_liquidity(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
 
-    let zeroex_api_port = {
-        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
-            order.clone(),
-            zeroex_maker,
-            zeroex.address(),
-            onchain.contracts().gp_settlement.address(),
-            chain_id,
-            onchain.contracts().weth.address(),
-        );
-
-        ZeroExApi::new(zeroex_liquidity_orders).run().await
-    };
+    let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+    let zeroex_liquidity_orders = create_zeroex_liquidity_orders(
+        order.clone(),
+        zeroex_maker.clone(),
+        zeroex.address(),
+        chain_id,
+        onchain.contracts().weth.address(),
+    );
+    let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
@@ -128,7 +138,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         onchain.contracts(),
         vec![SolverEngine {
             name: "test_solver".into(),
-            account: solver,
+            account: solver.clone(),
             endpoint: solver_endpoint,
         }],
         colocation::LiquidityProvider::ZeroEx {
@@ -184,64 +194,184 @@ async fn zero_ex_liquidity(web3: Web3) {
     })
     .await
     .unwrap();
+
+    let zeroex_order_amounts = get_zeroex_order_amounts(&zeroex, &zeroex_liquidity_orders[0])
+        .await
+        .unwrap();
+    // [`relative-slippage`] config value is set to 0.1
+    // crates/e2e/src/setup/colocation.rs:110 which is then applied to the
+    // original filled amount crates/solver/src/liquidity/slippage.rs:110
+    let expected_filled_amount = amount.as_u128() + amount.as_u128() / 10u128;
+    assert_eq!(zeroex_order_amounts.filled, expected_filled_amount);
+    assert!(zeroex_order_amounts.fillable > 0u128);
+    assert_eq!(
+        zeroex_order_amounts.fillable,
+        amount.as_u128() * 2 - expected_filled_amount
+    );
+
+    // Fill the remaining part of the 0x order
+    let zeroex_order = Eip712TypedZeroExOrder {
+        maker_token: token_usdt.address(),
+        taker_token: token_usdc.address(),
+        maker_amount: zeroex_order_amounts.fillable,
+        taker_amount: zeroex_order_amounts.fillable,
+        // doesn't participate in the hash calculation
+        remaining_fillable_taker_amount: 0u128,
+        taker_token_fee_amount: 0,
+        maker: zeroex_maker.address(),
+        taker: Default::default(),
+        sender: Default::default(),
+        fee_recipient: zeroex.address(),
+        pool: H256::default(),
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
+        salt: U256::from(Utc::now().timestamp()),
+    }
+    .to_order_record(chain_id, zeroex.address(), zeroex_maker);
+    fill_or_kill_zeroex_limit_order(&zeroex, &zeroex_order, solver.account().clone())
+        .await
+        .unwrap();
+    let zeroex_order_amounts = get_zeroex_order_amounts(&zeroex, &zeroex_order)
+        .await
+        .unwrap();
+    assert_eq!(
+        zeroex_order_amounts.filled,
+        amount.as_u128() * 2 - expected_filled_amount
+    );
+    assert_eq!(zeroex_order_amounts.fillable, 0u128);
 }
 
 fn create_zeroex_liquidity_orders(
     order_creation: OrderCreation,
     zeroex_maker: TestAccount,
     zeroex_addr: H160,
-    gpv2_addr: H160,
     chain_id: u64,
     weth_address: H160,
-) -> Vec<shared::zeroex_api::OrderRecord> {
+) -> [shared::zeroex_api::OrderRecord; 3] {
     let typed_order = Eip712TypedZeroExOrder {
         maker_token: order_creation.buy_token,
         taker_token: order_creation.sell_token,
         // fully covers execution costs
         maker_amount: order_creation.buy_amount.as_u128() * 3,
         taker_amount: order_creation.sell_amount.as_u128() * 2,
+        // makes 0x order partially filled, but the amount is higher than the cowswap order to
+        // make sure the 0x order is not overfilled in the end of the e2e test
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128() * 3 / 2,
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
-        taker: gpv2_addr,
-        sender: gpv2_addr,
+        // Makes it possible for anyone to fill the order
+        taker: Default::default(),
+        sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     let usdt_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token: order_creation.buy_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+        // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
         taker_amount: order_creation.sell_amount.as_u128(),
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
-        taker: gpv2_addr,
-        sender: gpv2_addr,
+        taker: Default::default(),
+        sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token: order_creation.sell_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config value to provide
+        // the value comes from the `--amount-to-estimate-prices-with` config to provide
         // sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
         taker_amount: order_creation.sell_amount.as_u128(),
+        remaining_fillable_taker_amount: order_creation.sell_amount.as_u128(),
         taker_token_fee_amount: 0,
         maker: zeroex_maker.address(),
-        taker: gpv2_addr,
-        sender: gpv2_addr,
+        taker: Default::default(),
+        sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     [typed_order, usdt_weth_order, usdc_weth_order]
         .map(|order| order.to_order_record(chain_id, zeroex_addr, zeroex_maker.clone()))
-        .to_vec()
+}
+
+#[derive(Debug)]
+struct ZeroExOrderAmounts {
+    filled: u128,
+    fillable: u128,
+}
+
+async fn get_zeroex_order_amounts(
+    zeroex: &Contract,
+    zeroex_order: &shared::zeroex_api::OrderRecord,
+) -> Result<ZeroExOrderAmounts, MethodError> {
+    zeroex
+        .get_limit_order_relevant_state(
+            (
+                zeroex_order.order().maker_token,
+                zeroex_order.order().taker_token,
+                zeroex_order.order().maker_amount,
+                zeroex_order.order().taker_amount,
+                zeroex_order.order().taker_token_fee_amount,
+                zeroex_order.order().maker,
+                zeroex_order.order().taker,
+                zeroex_order.order().sender,
+                zeroex_order.order().fee_recipient,
+                Bytes(zeroex_order.order().pool.0),
+                zeroex_order.order().expiry,
+                zeroex_order.order().salt,
+            ),
+            (
+                zeroex_order.order().signature.signature_type,
+                zeroex_order.order().signature.v,
+                Bytes(zeroex_order.order().signature.r.0),
+                Bytes(zeroex_order.order().signature.s.0),
+            ),
+        )
+        .call()
+        .await
+        .map(|((_, _, filled), fillable, _)| ZeroExOrderAmounts { filled, fillable })
+}
+
+async fn fill_or_kill_zeroex_limit_order(
+    zeroex: &Contract,
+    zeroex_order: &shared::zeroex_api::OrderRecord,
+    from_account: Account,
+) -> Result<TransactionResult, MethodError> {
+    zeroex
+        .fill_or_kill_limit_order(
+            (
+                zeroex_order.order().maker_token,
+                zeroex_order.order().taker_token,
+                zeroex_order.order().maker_amount,
+                zeroex_order.order().taker_amount,
+                zeroex_order.order().taker_token_fee_amount,
+                zeroex_order.order().maker,
+                zeroex_order.order().taker,
+                zeroex_order.order().sender,
+                zeroex_order.order().fee_recipient,
+                Bytes(zeroex_order.order().pool.0),
+                zeroex_order.order().expiry,
+                zeroex_order.order().salt,
+            ),
+            (
+                zeroex_order.order().signature.signature_type,
+                zeroex_order.order().signature.v,
+                Bytes(zeroex_order.order().signature.r.0),
+                Bytes(zeroex_order.order().signature.s.0),
+            ),
+            zeroex_order.order().taker_amount,
+        )
+        .from(from_account)
+        .send()
+        .await
 }

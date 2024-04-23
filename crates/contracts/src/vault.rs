@@ -7,7 +7,11 @@ use {
 };
 
 fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {
-    let function = match BalancerV2Vault::raw_contract().abi.function(function_name) {
+    let function = match BalancerV2Vault::raw_contract()
+        .interface
+        .abi
+        .function(function_name)
+    {
         Ok(function) => function,
         Err(_) => return Bytes([0u8; 32]),
     };

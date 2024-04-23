@@ -51,6 +51,11 @@ pub enum Kind {
 pub enum ScoreKind {
     /// No clearing prices are present for all trades.
     InvalidClearingPrices,
+    /// The amount executed is invalid: out of range or the fee doesn't match
+    /// its execution with fee
+    InvalidExecutedAmount,
+    /// missing native price for the surplus token
+    MissingPrice(TokenAddress),
 }
 
 #[derive(Debug)]

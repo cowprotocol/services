@@ -16,6 +16,7 @@ use {
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,
+        maintenance::ServiceMaintenance,
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     },
     solver::{
@@ -139,6 +140,10 @@ async fn init_liquidity(
         .await
         .context("failed to initialise UniswapV3 liquidity")?,
     );
+
+    let update_task = ServiceMaintenance::new(vec![pool_fetcher.clone()])
+        .run_maintenance_on_new_block(eth.current_block().clone());
+    tokio::task::spawn(update_task);
 
     Ok(UniswapV3Liquidity::new(
         router,
