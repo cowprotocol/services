@@ -82,6 +82,7 @@ services:
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
       - BASELINE_SOURCES=None
+      - RUST_BACKTRACE=1
     depends_on:
       - db-migrations
     ports:
@@ -110,6 +111,7 @@ services:
       - DRIVERS=baseline|http://driver/baseline
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
+      - RUST_BACKTRACE=1
     depends_on:
       orderbook:
         condition: service_started
@@ -127,7 +129,6 @@ services:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
       - RUST_BACKTRACE=1
-      - TOML_TRACE_ERROR=1
     volumes:
       - ./driver.toml:/driver.toml
     ports:
@@ -147,6 +148,7 @@ services:
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
+      - RUST_BACKTRACE=1
     volumes:
       - ./baseline.toml:/baseline.toml
     ports:
