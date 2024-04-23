@@ -16,39 +16,39 @@ path = "src/main.rs"
 
 [dependencies]
 app-data = { path = "../app-data" }
-async-trait = "0.1"
-axum = "0.6"
-bigdecimal = "0.3"
-chrono = { version = "0.4", features = ["clock"], default-features = false }
+async-trait = { workspace = true }
+axum = { workspace = true }
+bigdecimal = { workspace = true }
+chrono = { workspace = true, features = ["clock"], default-features = false }
 derivative = { workspace = true }
 ethabi = "18.0"
-ethereum-types = "0.14"
+ethereum-types = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-futures = "0.3"
-hex = "0.4"
-hex-literal = "0.4"
+futures = { workspace = true }
+hex = { workspace = true }
+hex-literal = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
-hyper = "0.14"
+hyper = { workspace = true }
 lazy_static = { workspace = true }
-indexmap = { version = "2", features = ["serde"] }
-itertools = "0.11"
-num = "0.4"
+indexmap = { workspace = true, features = ["serde"] }
+itertools = { workspace = true }
+num = { workspace = true }
 number = { path = "../number" }
-prometheus = "0.13"
+prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-rand = "0.8"
-reqwest = "0.11"
-serde = "1.0"
-serde_json = "1.0"
-serde_with = "3.0"
+rand = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
 tap = "1.0.1"
-thiserror = "1.0"
-tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
-toml = "0.7"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = { workspace = true }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
-url = { version = "2.3", features = ["serde"] }
+url = { workspace = true, features = ["serde"] }
 web3 = { workspace = true, features = ["http"] }
 
 # These still use { workspace = true } because they're used at
@@ -75,4 +75,4 @@ maplit = { workspace = true }
 mockall = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 tokio = { workspace = true, features = ["test-util", "process"] }
-tempfile = "3.4"
+tempfile = { workspace = true }

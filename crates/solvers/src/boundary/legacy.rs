@@ -334,8 +334,7 @@ fn to_boundary_auction(
                             gas_stats: PoolStats {
                                 mean_gas: liquidity.gas.0,
                             },
-                        }
-                        .into(),
+                        },
                     }),
                     to_big_rational(&state.fee.0),
                 )
@@ -604,6 +603,12 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         }
         Kind::ScoringFailed(ScoreKind::InvalidClearingPrices) => {
             AuctionResult::Rejected(SolverRejectionReason::InvalidClearingPrices)
+        }
+        Kind::ScoringFailed(ScoreKind::InvalidExecutedAmount) => {
+            AuctionResult::Rejected(SolverRejectionReason::InvalidExecutedAmount)
+        }
+        Kind::ScoringFailed(ScoreKind::MissingPrice(token_address)) => {
+            AuctionResult::Rejected(SolverRejectionReason::MissingPrice(token_address.0))
         }
         Kind::NonBufferableTokensUsed(tokens) => {
             AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(

@@ -25,12 +25,13 @@
 use {
     super::{
         error::Math,
-        trade::{self, ClearingPrices, Fee, Fulfillment},
+        trade::{ClearingPrices, Fee, Fulfillment},
     },
     crate::domain::{
         competition::{
             order,
             order::{FeePolicy, Side},
+            solution::error::Trade,
             PriceLimits,
         },
         eth::{self},
@@ -288,7 +289,7 @@ pub enum Error {
     #[error(transparent)]
     Math(#[from] Math),
     #[error(transparent)]
-    Fulfillment(#[from] trade::Error),
+    Fulfillment(#[from] Trade),
 }
 
 // todo: should be removed once integration tests are implemented

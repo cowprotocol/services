@@ -12,7 +12,7 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace= true }
+async-trait = { workspace = true }
 ethereum-types = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
@@ -24,11 +24,11 @@ primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["cookies"] }
-scopeguard = "1"
+scopeguard = "1.2.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = [] }
-tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-stream = { workspace = true }
 web3 = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }

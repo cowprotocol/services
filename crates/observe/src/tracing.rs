@@ -21,7 +21,10 @@ pub fn initialize_reentrant(env_filter: &str) {
     // The tracing subscriber below is global object so initializing it again in the
     // same process by a different thread would fail.
     static ONCE: Once = Once::new();
-    ONCE.call_once(|| set_tracing_subscriber(env_filter, LevelFilter::ERROR));
+    ONCE.call_once(|| {
+        set_tracing_subscriber(env_filter, LevelFilter::ERROR);
+        std::panic::set_hook(Box::new(tracing_panic_hook));
+    });
 }
 
 fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
