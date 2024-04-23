@@ -111,8 +111,10 @@ services:
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
     depends_on:
-      - driver
-      - orderbook
+      orderbook:
+        condition: service_started
+      chain-check:
+          condition: service_healthy
 
   driver:
     build:
