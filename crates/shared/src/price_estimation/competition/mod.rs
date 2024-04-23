@@ -1,5 +1,5 @@
 use {
-    super::native::NativePriceEstimating,
+    super::{native::NativePriceEstimating, QuoteVerificationMode},
     crate::price_estimation::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
@@ -32,7 +32,7 @@ pub struct CompetitionEstimator<T> {
     stages: Vec<PriceEstimationStage<T>>,
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
-    prefer_verified_estimates: bool,
+    verification_mode: QuoteVerificationMode,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
@@ -43,16 +43,16 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             stages,
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
-            prefer_verified_estimates: false,
+            verification_mode: QuoteVerificationMode::Unverified,
         }
     }
 
     /// Configures if verified price estimates should be ranked higher than
     /// unverified ones even if the price is worse.
     /// Per default verified quotes do not get preferred.
-    pub fn prefer_verified_estimates(self, prefer: bool) -> Self {
+    pub fn with_verification(self, mode: QuoteVerificationMode) -> Self {
         Self {
-            prefer_verified_estimates: prefer,
+            verification_mode: mode,
             ..self
         }
     }
@@ -538,7 +538,7 @@ mod tests {
             ],
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
-            prefer_verified_estimates: false,
+            verification_mode: QuoteVerificationMode::Unverified,
         };
 
         racing.estimate(query).await.unwrap();

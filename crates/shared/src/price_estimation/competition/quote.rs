@@ -6,6 +6,7 @@ use {
         PriceEstimating,
         PriceEstimationError,
         Query,
+        QuoteVerificationMode,
     },
     anyhow::Context,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
@@ -42,7 +43,7 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                         &a.1,
                         &b.1,
                         &context,
-                        self.prefer_verified_estimates,
+                        !matches!(self.verification_mode, QuoteVerificationMode::Unverified),
                     )
                 })
                 .with_context(|| "all price estimates reported 0 gas cost")
@@ -141,7 +142,11 @@ mod tests {
         super::*,
         crate::{
             gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+            price_estimation::{
+                native::MockNativePriceEstimating,
+                MockPriceEstimating,
+                QuoteVerificationMode,
+            },
         },
         gas_estimation::GasPrice1559,
         model::order::OrderKind,
@@ -187,7 +192,7 @@ mod tests {
         ranking: PriceRanking,
         kind: OrderKind,
         estimates: Vec<PriceEstimateResult>,
-        prefer_verified_estimates: bool,
+        verification: QuoteVerificationMode,
     ) -> PriceEstimateResult {
         fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
             let mut estimator = MockPriceEstimating::new();
@@ -206,7 +211,7 @@ mod tests {
                 .collect()],
             ranking.clone(),
         )
-        .prefer_verified_estimates(prefer_verified_estimates);
+        .with_verification(verification);
 
         priority
             .estimate(Arc::new(Query {
@@ -232,7 +237,7 @@ mod tests {
                 // User effectively receives `99_999` `buy_token`.
                 price(107_999, 2_000),
             ],
-            false,
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(104_000, 1_000));
@@ -246,7 +251,7 @@ mod tests {
                 // User effectively pays `100_002` `sell_token`.
                 price(92_002, 2_000),
             ],
-            false,
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(96_000, 1_000));
@@ -270,7 +275,7 @@ mod tests {
                 // gets discarded because it quotes 0 gas.
                 price(104_000, 0),
             ],
-            false,
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(104_000, 1_000));
@@ -287,7 +292,7 @@ mod tests {
                 // gets discarded because it quotes 0 gas.
                 price(99_000, 0),
             ],
-            false,
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(96_000, 1_000));
@@ -305,7 +310,7 @@ mod tests {
                 error(PriceEstimationError::RateLimited),
                 error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
             ],
-            false,
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, error(PriceEstimationError::RateLimited));
@@ -321,7 +326,7 @@ mod tests {
                 price(1, 1_000_000),
                 error(PriceEstimationError::RateLimited),
             ],
-            false,
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, price(1, 1_000_000));
@@ -349,7 +354,7 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            true,
+            QuoteVerificationMode::Prefer,
         )
         .await;
         assert_eq!(best, worse_verified_quote.clone());
@@ -361,7 +366,19 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            false,
+            QuoteVerificationMode::RequireWhenPossible,
+        )
+        .await;
+        assert_eq!(best, worse_verified_quote.clone());
+
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                better_unverified_quote.clone(),
+                worse_verified_quote.clone(),
+            ],
+            QuoteVerificationMode::Unverified,
         )
         .await;
         assert_eq!(best, better_unverified_quote);

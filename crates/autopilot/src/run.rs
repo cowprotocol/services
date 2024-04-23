@@ -460,26 +460,30 @@ pub async fn run(args: Arguments) {
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let quoter = Arc::new(OrderQuoter::new(
-        price_estimator,
-        native_price_estimator.clone(),
-        gas_price_estimator,
-        Arc::new(db.clone()),
-        order_quoting::Validity {
-            eip1271_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.eip1271_onchain_quote_validity,
-            )
-            .unwrap(),
-            presign_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.presign_onchain_quote_validity,
-            )
-            .unwrap(),
-            standard_quote: chrono::Duration::from_std(
-                args.order_quoting.standard_offchain_quote_validity,
-            )
-            .unwrap(),
-        },
-    ));
+    let quoter = Arc::new(
+        OrderQuoter::new(
+            price_estimator,
+            native_price_estimator.clone(),
+            gas_price_estimator,
+            Arc::new(db.clone()),
+            order_quoting::Validity {
+                eip1271_onchain_quote: chrono::Duration::from_std(
+                    args.order_quoting.eip1271_onchain_quote_validity,
+                )
+                .unwrap(),
+                presign_onchain_quote: chrono::Duration::from_std(
+                    args.order_quoting.presign_onchain_quote_validity,
+                )
+                .unwrap(),
+                standard_quote: chrono::Duration::from_std(
+                    args.order_quoting.standard_offchain_quote_validity,
+                )
+                .unwrap(),
+            },
+            balance_fetcher.clone(),
+        )
+        .with_quote_verification(args.price_estimation.quote_verification),
+    );
 
     if let Some(ethflow_contract) = args.ethflow_contract {
         let start_block = determine_ethflow_indexing_start(

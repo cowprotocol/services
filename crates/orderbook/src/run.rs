@@ -415,30 +415,30 @@ pub async fn run(args: Arguments) {
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
-        let quoter = OrderQuoter::new(
-            price_estimator,
-            native_price_estimator.clone(),
-            gas_price_estimator.clone(),
-            Arc::new(postgres.clone()),
-            order_quoting::Validity {
-                eip1271_onchain_quote: chrono::Duration::from_std(
-                    args.order_quoting.eip1271_onchain_quote_validity,
-                )
-                .unwrap(),
-                presign_onchain_quote: chrono::Duration::from_std(
-                    args.order_quoting.presign_onchain_quote_validity,
-                )
-                .unwrap(),
-                standard_quote: chrono::Duration::from_std(
-                    args.order_quoting.standard_offchain_quote_validity,
-                )
-                .unwrap(),
-            },
-        );
-        match args.enforce_verified_quotes {
-            true => Arc::new(quoter.enforce_verification(balance_fetcher.clone())),
-            false => Arc::new(quoter),
-        }
+        Arc::new(
+            OrderQuoter::new(
+                price_estimator,
+                native_price_estimator.clone(),
+                gas_price_estimator.clone(),
+                Arc::new(postgres.clone()),
+                order_quoting::Validity {
+                    eip1271_onchain_quote: chrono::Duration::from_std(
+                        args.order_quoting.eip1271_onchain_quote_validity,
+                    )
+                    .unwrap(),
+                    presign_onchain_quote: chrono::Duration::from_std(
+                        args.order_quoting.presign_onchain_quote_validity,
+                    )
+                    .unwrap(),
+                    standard_quote: chrono::Duration::from_std(
+                        args.order_quoting.standard_offchain_quote_validity,
+                    )
+                    .unwrap(),
+                },
+                balance_fetcher.clone(),
+            )
+            .with_quote_verification(args.price_estimation.quote_verification),
+        )
     };
     let optimal_quoter = create_quoter(price_estimator);
     let fast_quoter = create_quoter(fast_price_estimator);
@@ -465,7 +465,7 @@ pub async fn run(args: Arguments) {
             app_data_validator.clone(),
             args.max_gas_per_order,
         )
-        .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
+        .with_quote_verification(args.price_estimation.quote_verification),
     );
     let ipfs = args
         .ipfs_gateway

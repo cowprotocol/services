@@ -11,7 +11,7 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{PriceEstimationError, Verification},
+        price_estimation::{PriceEstimationError, QuoteVerificationMode, Verification},
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
@@ -251,7 +251,7 @@ pub struct OrderValidator {
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
-    request_verified_quotes: bool,
+    quote_verification: QuoteVerificationMode,
     max_gas_per_order: u64,
 }
 
@@ -339,13 +339,13 @@ impl OrderValidator {
             max_limit_orders_per_user,
             code_fetcher,
             app_data_validator,
-            request_verified_quotes: false,
+            quote_verification: QuoteVerificationMode::Unverified,
             max_gas_per_order,
         }
     }
 
-    pub fn with_verified_quotes(mut self, enable: bool) -> Self {
-        self.request_verified_quotes = enable;
+    pub fn with_quote_verification(mut self, mode: QuoteVerificationMode) -> Self {
+        self.quote_verification = mode;
         self
     }
 
@@ -561,7 +561,8 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let verification = self.request_verified_quotes.then_some(Verification {
+        let verify_quotes = !matches!(self.quote_verification, QuoteVerificationMode::Unverified);
+        let verification = verify_quotes.then_some(Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
