@@ -12,6 +12,7 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
+arc-swap = "1.7.1"
 async-trait = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
@@ -19,7 +20,7 @@ contracts = { path = "../contracts" }
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-flate2 = "1.0"
+flate2 = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 observe = { path = "../observe" }

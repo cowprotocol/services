@@ -27,7 +27,7 @@ impl Uploader {
         let uploader = Self {
             bucket: config.bucket,
             filename_prefix: config.filename_prefix,
-            client: Client::new(&aws_config::load_from_env().await),
+            client: Client::new(&aws_config::from_env().load().await),
         };
         uploader.assert_credentials_are_usable().await;
         uploader

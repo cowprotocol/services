@@ -424,10 +424,6 @@ impl RunLoop {
             tx_hash,
             orders: solved.orders.keys().copied().collect(),
         });
-
-        let order_uids = solved.orders.keys().copied().collect();
-        self.persistence
-            .store_order_events(order_uids, OrderEventLabel::Traded);
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())

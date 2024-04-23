@@ -71,7 +71,15 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "protocolFees": match quote.order.kind {
                 order::Kind::Market => json!([]),
                 order::Kind::Liquidity => json!([]),
-                order::Kind::Limit { .. } => json!([quote.order.fee_policy.to_json_value()]),
+                        order::Kind::Limit { .. } => {
+                            let fee_policies_json: Vec<serde_json::Value> = quote
+                                .order
+                                .fee_policy
+                                .iter()
+                                .map(|policy| policy.to_json_value())
+                                .collect();
+                            json!(fee_policies_json)
+                        }
             },
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
@@ -219,6 +227,7 @@ async fn create_config_file(
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
                fee-handler = {}
+               merge-solutions = {}
                "#,
             solver.name,
             addr,
@@ -232,6 +241,7 @@ async fn create_config_file(
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
+            solver.merge_solutions,
         )
         .unwrap();
     }

@@ -1,5 +1,5 @@
 use {
-    super::{trade_surplus_in_native_token_with_prices, ExternalPrices, Trade, TradeExecution},
+    super::{Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
     anyhow::{bail, ensure, Context as _, Result},
     itertools::Either,
@@ -7,8 +7,6 @@ use {
         interaction::InteractionData,
         order::{Order, OrderClass, OrderKind},
     },
-    num::{BigRational, One},
-    number::conversions::big_rational_to_u256,
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext,
@@ -17,7 +15,7 @@ use {
         interaction::Interaction,
     },
     std::{
-        collections::{hash_map::Entry, HashMap, HashSet},
+        collections::{HashMap, HashSet},
         iter,
         sync::Arc,
     },
@@ -102,7 +100,7 @@ impl SettlementEncoder {
     ///
     /// The prices must be provided up front in order to ensure that all tokens
     /// included in the settlement are known when encoding trades.
-    pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
+    pub(crate) fn new(clearing_prices: HashMap<H160, U256>) -> Self {
         // Explicitly define a token ordering based on the supplied clearing
         // prices. This is done since `HashMap::keys` returns an iterator in
         // arbitrary order ([1]), meaning that we can't rely that the ordering
@@ -136,39 +134,13 @@ impl SettlementEncoder {
         result
     }
 
-    // Returns a copy of self without any liquidity provision interaction.
-    pub fn without_onchain_liquidity(&self) -> Self {
-        SettlementEncoder {
-            tokens: self.tokens.clone(),
-            clearing_prices: self.clearing_prices.clone(),
-            trades: self.trades.clone(),
-            execution_plan: self
-                .execution_plan
-                .iter()
-                // Instead of simply dropping the executions we mark all the interactions as
-                // internalizable.
-                .map(|(execution, _)| (execution.clone(), true))
-                .collect(),
-            pre_interactions: self.pre_interactions.clone(),
-            post_interactions: self.post_interactions.clone(),
-            unwraps: self.unwraps.clone(),
-        }
-    }
-
-    pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
+    pub(crate) fn clearing_prices(&self) -> &HashMap<H160, U256> {
         &self.clearing_prices
     }
 
-    pub fn all_trades(&self) -> impl Iterator<Item = PricedTrade> + '_ {
+    pub(crate) fn all_trades(&self) -> impl Iterator<Item = PricedTrade> + '_ {
         self.trades
             .iter()
-            .map(move |trade| self.compute_trade_token_prices(trade))
-    }
-
-    pub fn user_trades(&self) -> impl Iterator<Item = PricedTrade> + '_ {
-        self.trades
-            .iter()
-            .filter(|trade| trade.data.order.is_user_order())
             .map(move |trade| self.compute_trade_token_prices(trade))
     }
 
@@ -194,7 +166,7 @@ impl SettlementEncoder {
         }
     }
 
-    pub fn has_interactions(&self) -> bool {
+    pub(crate) fn has_interactions(&self) -> bool {
         self.execution_plan
             .iter()
             .any(|(_, internalizable)| !internalizable)
@@ -405,7 +377,7 @@ impl SettlementEncoder {
         self.execution_plan.push((interaction, internalizable));
     }
 
-    pub fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
+    pub(crate) fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
         for existing_unwrap in self.unwraps.iter_mut() {
             if existing_unwrap.merge(&unwrap).is_ok() {
                 return;
@@ -417,7 +389,7 @@ impl SettlementEncoder {
         self.unwraps.push(unwrap);
     }
 
-    pub fn add_token_equivalency(&mut self, token_a: H160, token_b: H160) -> Result<()> {
+    pub(crate) fn add_token_equivalency(&mut self, token_a: H160, token_b: H160) -> Result<()> {
         let (new_token, existing_price) = match (
             self.clearing_prices.get(&token_a),
             self.clearing_prices.get(&token_b),
@@ -469,14 +441,6 @@ impl SettlementEncoder {
         self.tokens.binary_search(&token).ok()
     }
 
-    /// Returns the total surplus denominated in the native asset for this
-    /// solution.
-    pub fn total_surplus(&self, external_prices: &ExternalPrices) -> Option<BigRational> {
-        self.user_trades().try_fold(num::zero(), |acc, trade| {
-            Some(acc + trade.surplus_in_native_token(external_prices)?)
-        })
-    }
-
     fn drop_unnecessary_tokens_and_prices(&mut self) {
         let traded_tokens: HashSet<_> = self
             .trades
@@ -505,13 +469,7 @@ impl SettlementEncoder {
         self.sort_tokens_and_update_indices();
     }
 
-    pub fn contains_internalized_interactions(&self) -> bool {
-        self.execution_plan
-            .iter()
-            .any(|(_, internalizable)| *internalizable)
-    }
-
-    pub fn finish(
+    pub(crate) fn finish(
         mut self,
         internalization_strategy: InternalizationStrategy,
     ) -> EncodedSettlement {
@@ -612,117 +570,17 @@ impl SettlementEncoder {
             ],
         }
     }
-
-    // Merge other into self so that the result contains both settlements.
-    // Fails if the settlements cannot be merged for example because the same limit
-    // order is used in both or more than one token has a different clearing
-    // prices (a single token difference is scaled)
-    pub fn merge(mut self, mut other: Self) -> Result<Self> {
-        let scaling_factor = self.price_scaling_factor(&other);
-        // Make sure we always scale prices up to avoid precision issues
-        if scaling_factor < BigRational::one() {
-            return other.merge(self);
-        }
-
-        for (key, value) in &other.clearing_prices {
-            let scaled_price = big_rational_to_u256(&(value.to_big_rational() * &scaling_factor))
-                .context("Invalid price scaling factor")?;
-            match self.clearing_prices.entry(*key) {
-                Entry::Occupied(entry) => ensure!(
-                    *entry.get() == scaled_price,
-                    "different price after scaling"
-                ),
-                Entry::Vacant(entry) => {
-                    entry.insert(scaled_price);
-                    self.tokens.push(*key);
-                }
-            }
-        }
-
-        for that in other.trades.iter() {
-            ensure!(
-                self.trades
-                    .iter()
-                    .all(|this| this.data.order.metadata.uid != that.data.order.metadata.uid),
-                "duplicate trade"
-            );
-        }
-
-        self.trades.append(&mut other.trades);
-        self.sort_tokens_and_update_indices();
-
-        self.execution_plan.append(&mut other.execution_plan);
-        self.pre_interactions.append(&mut other.pre_interactions);
-        self.post_interactions.append(&mut other.post_interactions);
-
-        for unwrap in other.unwraps {
-            self.add_unwrap(unwrap);
-        }
-
-        Ok(self)
-    }
-
-    fn price_scaling_factor(&self, other: &Self) -> BigRational {
-        let self_keys: HashSet<_> = self.clearing_prices().keys().collect();
-        let other_keys: HashSet<_> = other.clearing_prices().keys().collect();
-        let common_tokens: Vec<_> = self_keys.intersection(&other_keys).collect();
-        match common_tokens.first() {
-            Some(token) => {
-                let price_in_self = self
-                    .clearing_prices
-                    .get(token)
-                    .expect("common token should be present")
-                    .to_big_rational();
-                let price_in_other = other
-                    .clearing_prices
-                    .get(token)
-                    .expect("common token should be present")
-                    .to_big_rational();
-                price_in_self / price_in_other
-            }
-            None => U256::one().to_big_rational(),
-        }
-    }
-
-    /// Drops all UnwrapWethInteractions for the given token address.
-    /// This can be used in case the settlement contracts ETH buffer is big
-    /// enough.
-    pub fn drop_unwrap(&mut self, token: H160) {
-        self.unwraps.retain(|unwrap| unwrap.weth.address() != token);
-    }
-
-    /// Calculates how much of a given token this settlement will unwrap during
-    /// the execution.
-    pub fn amount_to_unwrap(&self, token: H160) -> U256 {
-        self.unwraps.iter().fold(U256::zero(), |sum, unwrap| {
-            if unwrap.weth.address() == token {
-                sum.checked_add(unwrap.amount)
-                    .expect("no settlement would pay out that much ETH at once")
-            } else {
-                sum
-            }
-        })
-    }
 }
 
+#[cfg(test)]
 impl PricedTrade<'_> {
-    pub fn surplus_in_native_token(&self, external_prices: &ExternalPrices) -> Option<BigRational> {
-        trade_surplus_in_native_token_with_prices(
-            &self.data.order,
-            self.data.executed_amount,
-            external_prices,
-            self.sell_token_price,
-            self.buy_token_price,
-        )
-    }
-
     pub fn executed_amounts(&self) -> Option<TradeExecution> {
         self.data
             .executed_amounts(self.sell_token_price, self.buy_token_price)
     }
 }
 
-pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
+pub(crate) fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
     let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
         (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
@@ -1005,129 +863,6 @@ pub mod tests {
     }
 
     #[test]
-    fn merge_ok_with_liquidity_orders() {
-        let weth = dummy_contract!(WETH9, H160::zero());
-        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
-        let mut encoder0 = SettlementEncoder::new(prices);
-        let mut order13 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(33.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .build();
-        let mut order12 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(23.into())
-            .with_buy_token(token(2))
-            .with_buy_amount(11.into())
-            .with_class(OrderClass::Liquidity)
-            .build();
-        order13.metadata.uid.0[0] = 0;
-        order12.metadata.uid.0[0] = 2;
-        encoder0
-            .add_trade(order13.clone(), 11.into(), 0.into())
-            .unwrap();
-        encoder0
-            .add_trade(order12.clone(), 11.into(), 0.into())
-            .unwrap();
-        encoder0.append_to_execution_plan(Arc::new(TestInteraction));
-        encoder0.add_unwrap(UnwrapWethInteraction {
-            weth: weth.clone(),
-            amount: 1.into(),
-        });
-
-        let prices = hashmap! { token(2) => 2.into(), token(4) => 4.into() };
-        let mut encoder1 = SettlementEncoder::new(prices);
-        let mut order24 = OrderBuilder::default()
-            .with_sell_token(token(2))
-            .with_sell_amount(44.into())
-            .with_buy_token(token(4))
-            .with_buy_amount(22.into())
-            .build();
-        let mut order23 = OrderBuilder::default()
-            .with_sell_token(token(2))
-            .with_sell_amount(19.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .with_class(OrderClass::Liquidity)
-            .build();
-        order24.metadata.uid.0[0] = 1;
-        order23.metadata.uid.0[0] = 4;
-        encoder1
-            .add_trade(order24.clone(), 22.into(), 0.into())
-            .unwrap();
-        encoder1
-            .add_trade(order23.clone(), 11.into(), 0.into())
-            .unwrap();
-        encoder1.append_to_execution_plan(Arc::new(TestInteraction));
-        encoder1.add_unwrap(UnwrapWethInteraction {
-            weth,
-            amount: 2.into(),
-        });
-
-        let merged = encoder0.merge(encoder1).unwrap();
-        let prices = hashmap! {
-            token(1) => 1.into(), token(3) => 3.into(),
-            token(2) => 2.into(), token(4) => 4.into(),
-        };
-        assert_eq!(merged.clearing_prices, prices);
-        assert_eq!(merged.tokens, [token(1), token(2), token(3), token(4)]);
-        assert_eq!(
-            merged.trades,
-            [
-                EncoderTrade {
-                    data: Trade {
-                        order: order13,
-                        executed_amount: 11.into(),
-                        fee: 0.into()
-                    },
-                    tokens: TokenReference::Indexed {
-                        sell_token_index: 0,
-                        buy_token_index: 2,
-                    },
-                },
-                EncoderTrade {
-                    data: Trade {
-                        order: order12,
-                        executed_amount: 11.into(),
-                        fee: 0.into()
-                    },
-                    tokens: TokenReference::CustomPrice {
-                        sell_token_price: 11.into(),
-                        buy_token_price: 23.into(),
-                    },
-                },
-                EncoderTrade {
-                    data: Trade {
-                        order: order24,
-                        executed_amount: 22.into(),
-                        fee: 0.into()
-                    },
-                    tokens: TokenReference::Indexed {
-                        sell_token_index: 1,
-                        buy_token_index: 3,
-                    },
-                },
-                EncoderTrade {
-                    data: Trade {
-                        order: order23,
-                        executed_amount: 11.into(),
-                        fee: 0.into()
-                    },
-                    tokens: TokenReference::CustomPrice {
-                        sell_token_price: 11.into(),
-                        buy_token_price: 19.into(),
-                    },
-                },
-            ],
-        );
-
-        assert_eq!(merged.trades.len(), 4);
-        assert_eq!(merged.execution_plan.len(), 2);
-        assert_eq!(merged.unwraps[0].amount, 3.into());
-    }
-
-    #[test]
     fn trades_add_interactions_to_the_encoded_and_later_get_encoded() {
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder = SettlementEncoder::new(prices);
@@ -1196,186 +931,6 @@ pub mod tests {
             encoded.interactions,
             [vec![i1.clone(), i1], vec![], vec![i2.clone(), i2]]
         );
-    }
-
-    #[test]
-    fn merge_preserves_post_interactions() {
-        let mut encoder0 = SettlementEncoder::new(Default::default());
-        encoder0.post_interactions.push(InteractionData {
-            target: H160([1; 20]),
-            value: U256::zero(),
-            call_data: vec![0xa],
-        });
-
-        let mut encoder1 = SettlementEncoder::new(Default::default());
-        encoder1.post_interactions.push(InteractionData {
-            target: H160([1; 20]),
-            value: U256::zero(),
-            call_data: vec![0xa],
-        });
-        encoder1.post_interactions.push(InteractionData {
-            target: H160([2; 20]),
-            value: U256::one(),
-            call_data: vec![0xb],
-        });
-
-        let merged = encoder0.merge(encoder1).unwrap();
-        assert_eq!(
-            merged.post_interactions,
-            vec![
-                InteractionData {
-                    target: H160([1; 20]),
-                    value: U256::zero(),
-                    call_data: vec![0xa],
-                },
-                InteractionData {
-                    target: H160([1; 20]),
-                    value: U256::zero(),
-                    call_data: vec![0xa],
-                },
-                InteractionData {
-                    target: H160([2; 20]),
-                    value: U256::one(),
-                    call_data: vec![0xb],
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn merge_preserves_pre_interactions() {
-        let mut encoder0 = SettlementEncoder::new(Default::default());
-        encoder0.pre_interactions.push(InteractionData {
-            target: H160([1; 20]),
-            value: U256::zero(),
-            call_data: vec![0xa],
-        });
-
-        let mut encoder1 = SettlementEncoder::new(Default::default());
-        encoder1.pre_interactions.push(InteractionData {
-            target: H160([1; 20]),
-            value: U256::zero(),
-            call_data: vec![0xa],
-        });
-        encoder1.pre_interactions.push(InteractionData {
-            target: H160([2; 20]),
-            value: U256::one(),
-            call_data: vec![0xb],
-        });
-
-        let merged = encoder0.merge(encoder1).unwrap();
-        assert_eq!(
-            merged.pre_interactions,
-            vec![
-                InteractionData {
-                    target: H160([1; 20]),
-                    value: U256::zero(),
-                    call_data: vec![0xa],
-                },
-                InteractionData {
-                    target: H160([1; 20]),
-                    value: U256::zero(),
-                    call_data: vec![0xa],
-                },
-                InteractionData {
-                    target: H160([2; 20]),
-                    value: U256::one(),
-                    call_data: vec![0xb],
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn merge_fails_because_price_is_different() {
-        let prices = hashmap! { token(1) => 1.into(), token(2) => 2.into() };
-        let encoder0 = SettlementEncoder::new(prices);
-        let prices = hashmap! { token(1) => 1.into(), token(2) => 4.into() };
-        let encoder1 = SettlementEncoder::new(prices);
-        assert!(encoder0.merge(encoder1).is_err());
-    }
-
-    #[test]
-    fn merge_scales_prices_if_only_one_token_used_twice() {
-        let prices = hashmap! { token(1) => 2.into(), token(2) => 2.into() };
-        let encoder0 = SettlementEncoder::new(prices);
-        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
-        let mut encoder1 = SettlementEncoder::new(prices);
-        let mut order = Order::default();
-        order.data.buy_token = token(1);
-        order.data.sell_token = token(3);
-
-        encoder1.trades = vec![EncoderTrade {
-            data: Trade {
-                order: order.clone(),
-                ..Default::default()
-            },
-            tokens: TokenReference::CustomPrice {
-                sell_token_price: 3.into(),
-                buy_token_price: 5.into(),
-            },
-        }];
-        let merged = encoder0.merge(encoder1).unwrap();
-        let prices = hashmap! {
-            token(1) => 2.into(),
-            token(2) => 2.into(),
-            token(3) => 6.into(),
-        };
-        assert_eq!(merged.clearing_prices, prices);
-        assert_eq!(
-            merged.trades,
-            vec![EncoderTrade {
-                data: Trade {
-                    order,
-                    ..Default::default()
-                },
-                tokens: TokenReference::CustomPrice {
-                    // no price was changed, because custom price orders have their prices outside
-                    // of UCP vector and their value is not correlated with UCP whatsoever.
-                    sell_token_price: 3.into(),
-                    buy_token_price: 5.into(),
-                },
-            }],
-        );
-    }
-
-    #[test]
-    fn merge_always_scales_smaller_price_up() {
-        let prices = hashmap! { token(1) => 1.into(), token(2) => 1_000_000.into() };
-        let encoder0 = SettlementEncoder::new(prices);
-        let prices = hashmap! { token(1) => 1_000_000.into(), token(3) => 900_000.into() };
-        let encoder1 = SettlementEncoder::new(prices);
-
-        let merge01 = encoder0.clone().merge(encoder1.clone()).unwrap();
-        let merge10 = encoder1.merge(encoder0).unwrap();
-        assert_eq!(merge10.clearing_prices, merge01.clearing_prices);
-
-        // If scaled down 900k would have become 0
-        assert_eq!(
-            *merge10.clearing_prices.get(&token(3)).unwrap(),
-            900_000.into()
-        );
-    }
-
-    #[test]
-    fn merge_fails_because_trade_used_twice() {
-        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
-        let order13 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(33.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .build();
-
-        let mut encoder0 = SettlementEncoder::new(prices.clone());
-        encoder0
-            .add_trade(order13.clone(), 11.into(), 0.into())
-            .unwrap();
-
-        let mut encoder1 = SettlementEncoder::new(prices);
-        encoder1.add_trade(order13, 11.into(), 0.into()).unwrap();
-
-        assert!(encoder0.merge(encoder1).is_err());
     }
 
     #[test]

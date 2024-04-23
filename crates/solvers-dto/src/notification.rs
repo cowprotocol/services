@@ -40,6 +40,11 @@ pub enum Kind {
         succeeded_once: bool,
     },
     InvalidClearingPrices,
+    #[serde(rename_all = "camelCase")]
+    MissingPrice {
+        token_address: H160,
+    },
+    InvalidExecutedAmount,
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
     },

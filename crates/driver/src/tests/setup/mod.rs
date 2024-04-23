@@ -119,7 +119,7 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
-    pub fee_policy: fee::Policy,
+    pub fee_policy: Vec<fee::Policy>,
 }
 
 impl Order {
@@ -202,7 +202,7 @@ impl Order {
         }
     }
 
-    pub fn fee_policy(self, fee_policy: fee::Policy) -> Self {
+    pub fn fee_policy(self, fee_policy: Vec<fee::Policy>) -> Self {
         Self { fee_policy, ..self }
     }
 
@@ -267,10 +267,10 @@ impl Default for Order {
             expected_amounts: Default::default(),
             filtered: Default::default(),
             funded: true,
-            fee_policy: fee::Policy::Surplus {
+            fee_policy: vec![fee::Policy::Surplus {
                 factor: 0.0,
                 max_volume_factor: 0.06,
-            },
+            }],
         }
     }
 }
@@ -289,6 +289,9 @@ pub struct Solver {
     timeouts: infra::solver::Timeouts,
     /// Determines whether the `solver` or the `driver` handles the fees
     fee_handler: FeeHandler,
+    /// Whether or not solver is allowed to combine multiple solutions into a
+    /// new one.
+    merge_solutions: bool,
 }
 
 pub fn test_solver() -> Solver {
@@ -309,6 +312,7 @@ pub fn test_solver() -> Solver {
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
         fee_handler: FeeHandler::default(),
+        merge_solutions: false,
     }
 }
 
@@ -340,6 +344,11 @@ impl Solver {
 
     pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
         self.fee_handler = fee_handler;
+        self
+    }
+
+    pub fn merge_solutions(mut self) -> Self {
+        self.merge_solutions = true;
         self
     }
 }

@@ -1,5 +1,6 @@
 use {
     super::{
+        BalancedOrder,
         Exchange,
         LimitOrder,
         LimitOrderExecution,
@@ -7,11 +8,7 @@ use {
         LiquidityOrderId,
         SettlementHandling,
     },
-    crate::{
-        interactions::UnwrapWethInteraction,
-        order_balance_filter::BalancedOrder,
-        settlement::SettlementEncoder,
-    },
+    crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder},
     anyhow::{ensure, Result},
     contracts::WETH9,
     model::order::{Order, OrderClass, BUY_ETH_ADDRESS},

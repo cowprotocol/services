@@ -21,7 +21,7 @@ use {
     },
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
-    std::collections::HashSet,
+    std::{collections::HashSet, sync::Arc},
     thiserror::Error,
     tokio::sync::watch,
 };
@@ -116,7 +116,7 @@ pub struct Order {
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be
     /// filled.
-    #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
+    #[derivative(Default(value = "NaiveDateTime::MAX.and_utc().timestamp() as u64"))]
     #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the
@@ -161,24 +161,39 @@ pub struct Order {
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
-pub struct OrderRecord {
+pub struct OrderRecord(Arc<Inner>);
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
+struct Inner {
+    pub order: Order,
     #[serde(rename = "metaData")]
     pub metadata: OrderMetadata,
-    pub order: Order,
 }
 
 impl OrderRecord {
+    pub fn new(order: Order, metadata: OrderMetadata) -> Self {
+        OrderRecord(Arc::new(Inner { metadata, order }))
+    }
+
+    pub fn metadata(&self) -> &OrderMetadata {
+        &self.0.metadata
+    }
+
+    pub fn order(&self) -> &Order {
+        &self.0.order
+    }
+
     /// Scales the `maker_amount` according to how much of the partially
     /// fillable amount was already used.
     pub fn remaining_maker_amount(&self) -> Result<u128> {
-        if self.metadata.remaining_fillable_taker_amount > self.order.taker_amount {
+        if self.metadata().remaining_fillable_taker_amount > self.order().taker_amount {
             anyhow::bail!("remaining taker amount bigger than total taker amount");
         }
 
         // all numbers are at most u128::MAX so none of these operations can overflow
-        let scaled_maker_amount = U256::from(self.order.maker_amount)
-            * U256::from(self.metadata.remaining_fillable_taker_amount)
-            / U256::from(self.order.taker_amount);
+        let scaled_maker_amount = U256::from(self.order().maker_amount)
+            * U256::from(self.metadata().remaining_fillable_taker_amount)
+            / U256::from(self.order().taker_amount);
 
         // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
         // in an u128
@@ -351,10 +366,10 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let mut included_orders = HashSet::new();
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
-        let expiry = Utc.timestamp_opt(order.order.expiry as i64, 0).unwrap();
+        let expiry = Utc.timestamp_opt(order.order().expiry as i64, 0).unwrap();
 
         // only keep orders which are still valid and unique
-        expiry > now && included_orders.insert(order.metadata.order_hash.clone())
+        expiry > now && included_orders.insert(order.metadata().order_hash.clone())
     });
 }
 
@@ -496,18 +511,18 @@ mod tests {
             valid_order.clone(),
             // valid but duplicate
             valid_order.clone(),
-            OrderRecord {
-                order: Order {
+            OrderRecord::new(
+                Order {
                     // already expired
                     expiry: 0,
                     ..Default::default()
                 },
-                metadata: OrderMetadata {
+                OrderMetadata {
                     // unique order_hash
                     order_hash: [2].into(),
                     ..Default::default()
                 },
-            },
+            ),
         ];
         retain_valid_orders(&mut orders);
         assert_eq!(vec![valid_order], orders);
@@ -524,16 +539,8 @@ mod tests {
                 total: 1015,
                 page: 1,
                 per_page: 1000,
-                records: vec![OrderRecord {
-                    metadata: OrderMetadata {
-                        order_hash:
-                            hex::decode(
-                                "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
-                            ).unwrap(),
-                        remaining_fillable_taker_amount: 262467000000000000u128,
-                        created_at: DateTime::from_utc(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
-                    },
-                    order: Order {
+                records: vec![OrderRecord::new(
+                    Order {
                         chain_id: 1u64,
                         expiry: 1646463524u64,
                         fee_recipient: addr!("86003b044f70dac0abc80ac8957305b6370893ed"),
@@ -560,56 +567,64 @@ mod tests {
                         taker_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         taker_token_fee_amount: 0u128,
                         verifying_contract: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    }
-                }],
+                    },
+                    OrderMetadata {
+                        order_hash:
+                            hex::decode(
+                                "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
+                            ).unwrap(),
+                        remaining_fillable_taker_amount: 262467000000000000u128,
+                        created_at: DateTime::from_naive_utc_and_offset(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
+                    },
+                )],
             }
         );
     }
 
     #[test]
     fn compute_remaining_maker_amount() {
-        let bogous_order = OrderRecord {
-            order: Order {
+        let bogous_order = OrderRecord::new(
+            Order {
                 taker_amount: u128::MAX - 1,
                 maker_amount: u128::MAX,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
+            OrderMetadata {
                 // remaining amount bigger than total amount
                 remaining_fillable_taker_amount: u128::MAX,
                 ..Default::default()
             },
-        };
+        );
         assert!(bogous_order.remaining_maker_amount().is_err());
 
-        let biggest_unfilled_order = OrderRecord {
-            order: Order {
+        let biggest_unfilled_order = OrderRecord::new(
+            Order {
                 taker_amount: u128::MAX,
                 maker_amount: u128::MAX,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
+            OrderMetadata {
                 remaining_fillable_taker_amount: u128::MAX,
                 ..Default::default()
             },
-        };
+        );
         assert_eq!(
             u128::MAX,
             // none of the operations overflow with u128::MAX for all values
             biggest_unfilled_order.remaining_maker_amount().unwrap()
         );
 
-        let biggest_partially_filled_order = OrderRecord {
-            order: Order {
+        let biggest_partially_filled_order = OrderRecord::new(
+            Order {
                 taker_amount: u128::MAX,
                 maker_amount: u128::MAX,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
+            OrderMetadata {
                 remaining_fillable_taker_amount: u128::MAX / 2,
                 ..Default::default()
             },
-        };
+        );
         assert_eq!(
             u128::MAX / 2,
             biggest_partially_filled_order

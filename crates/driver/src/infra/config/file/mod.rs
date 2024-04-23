@@ -193,6 +193,11 @@ struct SolverConfig {
     /// Use limit orders for quoting
     #[serde(default)]
     quote_using_limit_orders: bool,
+
+    /// If enabled driver tries to merge multiple solutions for the same
+    /// auction together.
+    #[serde(default)]
+    merge_solutions: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

@@ -84,28 +84,28 @@ impl Auction {
                     //
                     // https://github.com/cowprotocol/services/issues/2440
                     if fee_handler == FeeHandler::Driver {
-                        if let Some(fees::FeePolicy::Volume { factor }) =
-                            order.protocol_fees.first()
-                        {
-                            match order.side {
-                                Side::Buy => {
-                                    // reduce sell amount by factor
-                                    available.sell.amount = available
-                                        .sell
-                                        .amount
-                                        .apply_factor(1.0 / (1.0 + factor))
-                                        .unwrap_or_default();
-                                }
-                                Side::Sell => {
-                                    // increase buy amount by factor
-                                    available.buy.amount = available
-                                        .buy
-                                        .amount
-                                        .apply_factor(1.0 / (1.0 - factor))
-                                        .unwrap_or_default();
+                        order.protocol_fees.iter().for_each(|protocol_fee| {
+                            if let fees::FeePolicy::Volume { factor } = protocol_fee {
+                                match order.side {
+                                    Side::Buy => {
+                                        // reduce sell amount by factor
+                                        available.sell.amount = available
+                                            .sell
+                                            .amount
+                                            .apply_factor(1.0 / (1.0 + factor))
+                                            .unwrap_or_default();
+                                    }
+                                    Side::Sell => {
+                                        // increase buy amount by factor
+                                        available.buy.amount = available
+                                            .buy
+                                            .amount
+                                            .apply_factor(1.0 / (1.0 - factor))
+                                            .unwrap_or_default();
+                                    }
                                 }
                             }
-                        }
+                        })
                     }
                     Order {
                         uid: order.uid.into(),
@@ -261,8 +261,8 @@ impl Auction {
                             hash: Default::default(),
                             maker_token: limit_order.order.maker_token,
                             taker_token: limit_order.order.taker_token,
-                            maker_amount: limit_order.order.maker_amount.into(),
-                            taker_amount: limit_order.order.taker_amount.into(),
+                            maker_amount: limit_order.fillable.maker.into(),
+                            taker_amount: limit_order.fillable.taker.into(),
                             taker_token_fee_amount: limit_order.order.taker_token_fee_amount.into(),
                         })
                     }

@@ -9,10 +9,10 @@ license = "MIT OR Apache-2.0"
 atty = "0.2.14"
 futures = { workspace = true }
 once_cell = { workspace = true }
-pin-project-lite = "0.2"
+pin-project-lite = "0.2.14"
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
-time = { version = "0.3", features = ["macros"] }
+time = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
