@@ -114,7 +114,7 @@ services:
       orderbook:
         condition: service_started
       chain-check:
-          condition: service_healthy
+        condition: service_healthy
 
   driver:
     build:
@@ -176,17 +176,20 @@ services:
     image: curlimages/curl:latest
     depends_on:
       - chain
-    command: >
-      sh -c "while [ ! -f /tmp/ready ]; do
-               if curl -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' http://chain:8545 ; then
-                 echo 'Chain is ready.';
-                 touch /tmp/ready;
-                 sleep 15s; # sleep for a while to make sure all the dependant services are aware of the health status
-               else
-                 echo 'Chain is not ready, retrying...';
-                 sleep 5s;
-               fi;
-             done"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while [ ! -f /tmp/ready ]; do
+          if curl -X POST -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545; then
+            echo 'Chain is ready.';
+            touch /tmp/ready;
+            sleep 15s;
+          else
+            echo 'Chain is not ready, retrying...';
+            sleep 5s;
+          fi;
+        done
     healthcheck:
       test: [ "CMD", "test", "-f", "/tmp/ready" ]
       interval: 10s
