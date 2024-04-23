@@ -111,6 +111,7 @@ services:
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
     depends_on:
+      - driver
       - orderbook
 
   driver:
@@ -127,6 +128,9 @@ services:
       - ./driver.toml:/driver.toml
     ports:
       - 9000:80
+    depends_on:
+      chain-check:
+        condition: service_healthy
 
   # baseline (solver engine)
   baseline:
@@ -163,5 +167,28 @@ services:
         - ETH_RPC_URL=http://127.0.0.1:8545
     ports:
       - 8001:80
+
+  chain-check:
+    image: curlimages/curl:latest
+    depends_on:
+      - chain
+    command: >
+      sh -c "while true; do
+               if curl -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' http://chain:8545 ; then
+                 echo 'Chain is ready.';
+                 touch /tmp/ready;
+                 sleep 30s;
+               else
+                 echo 'Chain is not ready, retrying...';
+                 sleep 5s;
+               fi;
+             done"
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/tmp/ready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   postgres:
