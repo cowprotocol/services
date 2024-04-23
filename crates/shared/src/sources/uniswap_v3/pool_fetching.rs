@@ -221,6 +221,9 @@ impl PoolsCheckpointHandler {
     async fn update_missing_pools(&self) -> Result<()> {
         let (missing_pools, block_number) = {
             let checkpoint = self.pools_checkpoint.lock().unwrap();
+            if checkpoint.missing_pools.is_empty() {
+                return Ok(());
+            }
             (checkpoint.missing_pools.clone(), checkpoint.block_number)
         };
         tracing::debug!("currently missing pools are {:?}", missing_pools);
