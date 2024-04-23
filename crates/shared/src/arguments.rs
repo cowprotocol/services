@@ -4,7 +4,6 @@
 use {
     crate::{
         gas_price_estimation::GasEstimatorType,
-        price_estimation::PriceEstimators,
         sources::{
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
@@ -71,9 +70,6 @@ pub struct LegacySolver {
 // as both crates can create orders
 #[derive(clap::Parser)]
 pub struct OrderQuotingArguments {
-    #[clap(long, env, default_value_t)]
-    pub price_estimators: PriceEstimators,
-
     /// A list of external drivers used for price estimation in the following
     /// format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
@@ -217,27 +213,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
     pub pool_cache_delay_between_retries: Duration,
 
-    /// The ParaSwap API base url to use.
-    #[clap(long, env, default_value = super::paraswap_api::DEFAULT_URL)]
-    pub paraswap_api_url: String,
-
-    /// Special partner authentication for Paraswap API (allowing higher rater
-    /// limits)
-    #[clap(long, env)]
-    pub paraswap_partner: Option<String>,
-
-    /// The list of disabled ParaSwap DEXs. By default, the `ParaSwapPool4`
-    /// DEX (representing a private market maker) is disabled as it increases
-    /// price by 1% if built transactions don't actually get executed.
-    #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
-    pub disabled_paraswap_dexs: Vec<String>,
-
-    #[clap(long, env)]
-    pub zeroex_url: Option<String>,
-
-    #[clap(long, env)]
-    pub zeroex_api_key: Option<String>,
-
     /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_internal_buffers: bool,
@@ -247,20 +222,6 @@ pub struct Arguments {
     /// supported Balancer V2 factory kinds if not specified.
     #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
-
-    /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
-    /// (representing a private market maker) is disabled as it seems to
-    /// produce invalid swaps.
-    #[clap(long, env, default_value = "PMM1", use_value_delimiter = true)]
-    pub disabled_one_inch_protocols: Vec<String>,
-
-    /// Which address should receive the rewards for referring trades to 1Inch.
-    #[structopt(long, env)]
-    pub one_inch_referrer_address: Option<H160>,
-
-    /// The list of disabled 0x sources.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub disabled_zeroex_sources: Vec<String>,
 
     /// Deny list of balancer pool ids.
     #[clap(long, env, use_value_delimiter = true)]
@@ -354,7 +315,6 @@ impl Display for OrderQuotingArguments {
         let Self {
             eip1271_onchain_quote_validity,
             presign_onchain_quote_validity,
-            price_estimators,
             price_estimation_drivers,
             price_estimation_legacy_solvers,
             standard_offchain_quote_validity,
@@ -370,7 +330,6 @@ impl Display for OrderQuotingArguments {
             "presign_onchain_quote_validity_second: {:?}",
             presign_onchain_quote_validity
         )?;
-        writeln!(f, "price_estimators: {}", price_estimators)?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         display_list(
             f,
@@ -407,15 +366,8 @@ impl Display for Arguments {
             pool_cache_maximum_recent_block_age,
             pool_cache_maximum_retries,
             pool_cache_delay_between_retries,
-            paraswap_partner,
-            disabled_paraswap_dexs,
-            zeroex_url,
-            zeroex_api_key,
             use_internal_buffers,
             balancer_factories,
-            disabled_one_inch_protocols,
-            one_inch_referrer_address,
-            disabled_zeroex_sources,
             balancer_pool_deny_list,
             solver_competition_auth,
             network_block_interval,
@@ -423,7 +375,6 @@ impl Display for Arguments {
             native_token_address,
             balancer_v2_vault_address,
             custom_univ2_baseline_sources,
-            paraswap_api_url,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
         } = self;
@@ -457,23 +408,8 @@ impl Display for Arguments {
             "pool_cache_delay_between_retries: {:?}",
             pool_cache_delay_between_retries
         )?;
-        display_secret_option(f, "paraswap_partner", paraswap_partner)?;
-        display_list(f, "disabled_paraswap_dexs", disabled_paraswap_dexs)?;
-        display_option(f, "zeroex_url", zeroex_url)?;
-        display_secret_option(f, "zeroex_api_key", zeroex_api_key)?;
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
-        display_list(
-            f,
-            "disabled_one_inch_protocols",
-            disabled_one_inch_protocols,
-        )?;
-        display_option(
-            f,
-            "one_inch_referrer_address",
-            &one_inch_referrer_address.map(|a| format!("{a:?}")),
-        )?;
-        display_list(f, "disabled_zeroex_sources", disabled_zeroex_sources)?;
         writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
         display_secret_option(f, "solver_competition_auth", solver_competition_auth)?;
         display_option(
@@ -501,7 +437,6 @@ impl Display for Arguments {
             "custom_univ2_baseline_sources",
             custom_univ2_baseline_sources,
         )?;
-        writeln!(f, "paraswap_api_url: {}", paraswap_api_url)?;
         writeln!(
             f,
             "liquidity_fetcher_max_age_update: {:?}",

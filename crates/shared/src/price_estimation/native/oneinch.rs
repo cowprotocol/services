@@ -153,12 +153,11 @@ async fn get_current_prices(
 mod tests {
     use {
         super::*,
-        crate::{
-            price_estimation::oneinch::BASE_URL,
-            token_info::{MockTokenInfoFetching, TokenInfo},
-        },
+        crate::token_info::{MockTokenInfoFetching, TokenInfo},
         std::{env, str::FromStr},
     };
+
+    const BASE_URL: &str = "https://api.1inch.dev/";
 
     #[tokio::test]
     #[ignore]
