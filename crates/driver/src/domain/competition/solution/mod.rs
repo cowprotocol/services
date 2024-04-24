@@ -152,7 +152,7 @@ impl Solution {
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
             let custom_prices = trade
-                .calculate_custom_prices(&uniform_prices)
+                .custom_prices(&uniform_prices)
                 .map_err(error::Scoring::CalculateCustomPrices)?;
             trades.push(scoring::Trade::new(
                 trade.order().sell,

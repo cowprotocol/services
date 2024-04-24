@@ -1,15 +1,12 @@
 use {
     super::error::Math,
-    crate::{
-        domain::{
-            competition::{
-                self,
-                order::{self, Side},
-                solution::{error, scoring},
-            },
-            eth::{self},
+    crate::domain::{
+        competition::{
+            self,
+            order::{self, Side},
+            solution::{error, scoring},
         },
-        util::conv::u256::U256Ext,
+        eth::{self},
     },
 };
 
@@ -83,32 +80,13 @@ impl Fulfillment {
     /// Custom prices are calculated using the uniform clearing prices and the
     /// fee. So that custom prices represent the actual traded amounts as
     /// seen from the user perspective: the amount going in/out of their wallet
-    pub fn calculate_custom_prices(
+    pub fn custom_prices(
         &self,
         uniform_prices: &ClearingPrices,
     ) -> Result<scoring::CustomClearingPrices, error::Trade> {
         Ok(scoring::CustomClearingPrices {
-            sell: match self.order().side {
-                Side::Sell => self
-                    .executed()
-                    .0
-                    .checked_mul(uniform_prices.sell)
-                    .ok_or(Math::Overflow)?
-                    .checked_ceil_div(&uniform_prices.buy)
-                    .ok_or(Math::DivisionByZero)?,
-                Side::Buy => self.executed().0,
-            },
-            buy: match self.order().side {
-                Side::Sell => self.executed().0 + self.fee().0,
-                Side::Buy => {
-                    (self.executed().0)
-                        .checked_mul(uniform_prices.buy)
-                        .ok_or(Math::Overflow)?
-                        .checked_div(uniform_prices.sell)
-                        .ok_or(Math::DivisionByZero)?
-                        + self.fee().0
-                }
-            },
+            sell: self.buy_amount(uniform_prices)?.into(),
+            buy: self.sell_amount(uniform_prices)?.into(),
         })
     }
 

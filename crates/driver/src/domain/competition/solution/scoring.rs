@@ -27,6 +27,7 @@ use {
         util::conv::u256::U256Ext,
     },
     bigdecimal::Zero,
+    num::{CheckedAdd, CheckedSub},
 };
 
 /// Scoring contains trades with values as they are expected by the settlement
@@ -186,41 +187,65 @@ impl Trade {
         })
     }
 
+    /// The effective amount that left the user's wallet including all fees.
+    ///
+    /// Note how the `executed` amount is used to build actual traded amounts.
+    fn sell_amount(&self) -> Result<eth::TokenAmount, error::Scoring> {
+        Ok(match self.side {
+            order::Side::Sell => self.executed.0,
+            order::Side::Buy => self
+                .executed
+                .0
+                .checked_mul(self.custom_price.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(self.custom_price.sell)
+                .ok_or(Math::DivisionByZero)?,
+        }
+        .into())
+    }
+
+    /// The effective amount the user received after all fees.
+    ///
+    /// Note how the `executed` amount is used to build actual traded amounts.
+    fn buy_amount(&self) -> Result<eth::TokenAmount, error::Scoring> {
+        Ok(match self.side {
+            order::Side::Sell => self
+                .executed
+                .0
+                .checked_mul(self.custom_price.sell)
+                .ok_or(Math::Overflow)?
+                .checked_div(self.custom_price.buy)
+                .ok_or(Math::DivisionByZero)?,
+            order::Side::Buy => self.executed.0,
+        }
+        .into())
+    }
+
     /// Derive new custom prices (given the current custom prices) to exclude
     /// the protocol fee from the trade.
     ///
-    /// For this to work properly, `executed` amount is used to build actual
-    /// traded amounts. Note how the clearing prices actually represent the
-    /// traded amounts of a trade (as seen from the user perspective).
+    /// Note how the custom prices are expressed over actual traded amounts.
     pub fn calculate_custom_prices(
         &self,
         protocol_fee: TokenAmount,
     ) -> Result<CustomClearingPrices, error::Scoring> {
-        Ok(match self.side {
-            Side::Sell => CustomClearingPrices {
-                sell: self
-                    .executed
-                    .0
-                    .checked_mul(self.custom_price.sell)
-                    .ok_or(Math::Overflow)?
-                    .checked_div(self.custom_price.buy)
-                    .ok_or(Math::DivisionByZero)?
-                    .checked_add(protocol_fee.0)
+        Ok(CustomClearingPrices {
+            sell: match self.side {
+                Side::Sell => self
+                    .buy_amount()?
+                    .checked_add(&protocol_fee)
                     .ok_or(Math::Overflow)?,
-                buy: self.executed.0,
-            },
-            Side::Buy => CustomClearingPrices {
-                sell: self.executed.0,
-                buy: self
-                    .executed
-                    .0
-                    .checked_mul(self.custom_price.buy)
-                    .ok_or(Math::Overflow)?
-                    .checked_div(self.custom_price.sell)
-                    .ok_or(Math::DivisionByZero)?
-                    .checked_sub(protocol_fee.0)
+                Side::Buy => self.buy_amount()?,
+            }
+            .0,
+            buy: match self.side {
+                Side::Sell => self.sell_amount()?,
+                Side::Buy => self
+                    .sell_amount()?
+                    .checked_sub(&protocol_fee)
                     .ok_or(Math::Negative)?,
-            },
+            }
+            .0,
         })
     }
 
