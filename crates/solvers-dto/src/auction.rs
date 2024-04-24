@@ -10,7 +10,7 @@ use {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Auction {
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub id: Option<i64>,
@@ -24,7 +24,7 @@ pub struct Auction {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde_as(as = "serialize::Hex")]
     pub uid: [u8; 56],
@@ -56,7 +56,7 @@ pub enum Class {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
@@ -72,7 +72,7 @@ pub enum FeePolicy {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
@@ -84,7 +84,7 @@ pub struct Quote {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Token {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,
@@ -97,7 +97,7 @@ pub struct Token {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),
@@ -108,7 +108,7 @@ pub enum Liquidity {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ConstantProductPool {
     pub id: String,
     pub address: H160,
@@ -121,7 +121,7 @@ pub struct ConstantProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ConstantProductReserve {
     #[serde_as(as = "HexOrDecimalU256")]
     pub balance: U256,
@@ -129,7 +129,7 @@ pub struct ConstantProductReserve {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct WeightedProductPool {
     pub id: String,
     pub address: H160,
@@ -143,7 +143,7 @@ pub struct WeightedProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct WeightedProductReserve {
     #[serde_as(as = "HexOrDecimalU256")]
     pub balance: U256,
@@ -160,7 +160,7 @@ pub enum WeightedProductVersion {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct StablePool {
     pub id: String,
     pub address: H160,
@@ -174,7 +174,7 @@ pub struct StablePool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct StableReserve {
     #[serde_as(as = "HexOrDecimalU256")]
     pub balance: U256,
@@ -183,7 +183,7 @@ pub struct StableReserve {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ConcentratedLiquidityPool {
     pub id: String,
     pub address: H160,
@@ -203,7 +203,7 @@ pub struct ConcentratedLiquidityPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ForeignLimitOrder {
     pub id: String,
     pub address: H160,

@@ -70,7 +70,7 @@ type BlockNo = u64;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Tx {
     pub from: H160,
     pub to: H160,
