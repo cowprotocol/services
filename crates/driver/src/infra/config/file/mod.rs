@@ -1,6 +1,6 @@
 pub use load::load;
 use {
-    crate::{domain::eth, util::serialize},
+    crate::{domain::eth, infra::persistence::S3, util::serialize},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -225,6 +225,10 @@ struct SolverConfig {
     /// auction together.
     #[serde(default)]
     merge_solutions: bool,
+
+    /// S3 path for storing the auctions with liquidity
+    #[serde(default)]
+    s3: Option<S3>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

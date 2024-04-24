@@ -10,7 +10,11 @@ use {
             liquidity,
             time::Remaining,
         },
-        infra::{blockchain::Ethereum, config::file::FeeHandler},
+        infra::{
+            blockchain::Ethereum,
+            config::file::FeeHandler,
+            persistence::{Persistence, S3},
+        },
         util,
     },
     anyhow::Result,
@@ -85,6 +89,7 @@ pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
+    persistence: Persistence,
 }
 
 #[derive(Debug, Clone)]
@@ -108,10 +113,12 @@ pub struct Config {
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
     pub merge_solutions: SolutionMerging,
+    /// S3 path for storing the auctions with liquidity
+    pub s3: Option<S3>,
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum) -> Result<Self> {
+    pub async fn new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -124,12 +131,15 @@ impl Solver {
             headers.insert(header_name, val.parse()?);
         }
 
+        let persistence = Persistence::build(&config).await;
+
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()?,
             config,
             eth,
+            persistence,
         })
     }
 
@@ -229,6 +239,19 @@ impl Solver {
             }
         };
         tokio::task::spawn(future.in_current_span());
+    }
+
+    /// Store the auction with liquidity in a S3 bucket
+    pub fn store_auction_with_liquidity(
+        &self,
+        auction: &Auction,
+        liquidity: &[liquidity::Liquidity],
+    ) {
+        let Some(auction_id) = auction.id() else {
+            return;
+        };
+        self.persistence
+            .archive_auction(auction_id, auction, liquidity);
     }
 }
 

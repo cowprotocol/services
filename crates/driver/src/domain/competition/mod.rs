@@ -79,6 +79,8 @@ impl Competition {
                 }
             })?;
 
+        self.solver
+            .store_auction_with_liquidity(auction, &liquidity);
         observe::postprocessing(&solutions, auction.deadline().driver());
 
         // Discard solutions that don't have unique ID.

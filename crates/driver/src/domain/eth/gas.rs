@@ -71,6 +71,10 @@ impl GasPrice {
             .into()
     }
 
+    pub fn base(&self) -> FeePerGas {
+        self.base
+    }
+
     pub fn max(&self) -> FeePerGas {
         self.max
     }
