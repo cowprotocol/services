@@ -40,6 +40,11 @@ pub enum Kind {
         succeeded_once: bool,
     },
     InvalidClearingPrices,
+    #[serde(rename_all = "camelCase")]
+    MissingPrice {
+        token_address: H160,
+    },
+    InvalidExecutedAmount,
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
     },
@@ -65,7 +70,7 @@ type BlockNo = u64;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Tx {
     pub from: H160,
     pub to: H160,

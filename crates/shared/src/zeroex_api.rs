@@ -5,14 +5,10 @@
 //! <https://api.0x.org/>
 
 use {
-    crate::{
-        debug_bytes,
-        interaction::{EncodedInteraction, Interaction},
-    },
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
-    ethcontract::{Bytes, H160, H256, U256},
+    ethcontract::{H160, H256, U256},
     ethrpc::current_block::{BlockInfo, CurrentBlockStream},
     number::serialization::HexOrDecimalU256,
     reqwest::{
@@ -25,111 +21,18 @@ use {
     },
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
-    std::{
-        collections::HashSet,
-        fmt::{self, Display, Formatter},
-    },
+    std::{collections::HashSet, sync::Arc},
     thiserror::Error,
     tokio::sync::watch,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
 
-// 0x requires an address as an affiliate.
-// Hence we hand over the settlement contract address
-const AFFILIATE_ADDRESS: &str = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
-
 // The `Display` implementation for `H160` unfortunately does not print
 // the full address ad instead uses ellipsis (e.g. "0xeeee…eeee"). This
 // helper just works around that.
 fn addr2str(addr: H160) -> String {
     format!("{addr:#x}")
-}
-
-/// A 0x API quote query parameters.
-///
-/// These parameters are currently incomplete, and missing parameters can be
-/// added incrementally as needed.
-#[derive(Clone, Debug, Default)]
-pub struct SwapQuery {
-    /// Contract address of a token to sell.
-    pub sell_token: H160,
-    /// Contract address of a token to buy.
-    pub buy_token: H160,
-    /// Amount of a token to sell, set in atoms.
-    pub sell_amount: Option<U256>,
-    /// Amount of a token to sell, set in atoms.
-    pub buy_amount: Option<U256>,
-    /// Limit of price slippage you are willing to accept.
-    pub slippage_percentage: Option<Slippage>,
-    /// The taker address to use.
-    pub taker_address: Option<H160>,
-    /// List of sources to exclude.
-    pub excluded_sources: Vec<String>,
-    /// Wether or not the taker intends on filling the quote.
-    pub intent_on_filling: bool,
-    /// Requests trade routes which aim to protect against high slippage and MEV
-    /// attacks.
-    pub enable_slippage_protection: bool,
-}
-
-impl SwapQuery {
-    /// Encodes the swap query as a url with get parameters.
-    fn format_url(&self, base_url: &Url, endpoint: &str) -> Url {
-        let mut url = crate::url::join(base_url, &format!("swap/v1/{endpoint}"));
-        url.query_pairs_mut()
-            .append_pair("sellToken", &addr2str(self.sell_token))
-            .append_pair("buyToken", &addr2str(self.buy_token))
-            .append_pair("intentOnFilling", &self.intent_on_filling.to_string())
-            .append_pair(
-                "enableSlippageProtection",
-                &self.enable_slippage_protection.to_string(),
-            );
-        if let Some(amount) = self.sell_amount {
-            url.query_pairs_mut()
-                .append_pair("sellAmount", &amount.to_string());
-        }
-        if let Some(amount) = self.buy_amount {
-            url.query_pairs_mut()
-                .append_pair("buyAmount", &amount.to_string());
-        }
-        if let Some(slippage_percentage) = self.slippage_percentage {
-            url.query_pairs_mut()
-                .append_pair("slippagePercentage", &slippage_percentage.to_string());
-        }
-        if let Some(taker) = self.taker_address {
-            url.query_pairs_mut()
-                .append_pair("takerAddress", &addr2str(taker));
-        }
-        if !self.excluded_sources.is_empty() {
-            url.query_pairs_mut()
-                .append_pair("excludedSources", &self.excluded_sources.join(","));
-        }
-        url.query_pairs_mut()
-            .append_pair("affiliateAddress", AFFILIATE_ADDRESS);
-        // We do not provide a takerAddress so validation does not make sense.
-        url.query_pairs_mut().append_pair("skipValidation", "true");
-        url
-    }
-}
-
-/// A 0x slippage amount.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
-pub struct Slippage(f64);
-
-impl Slippage {
-    pub const ONE_PERCENT: Self = Self(0.01);
-
-    /// Creates a slippage amount from the specified slippage factor.
-    pub fn new(factor: f64) -> Self {
-        Slippage(factor)
-    }
-}
-
-impl Display for Slippage {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 /// 0x API orders query parameters.
@@ -213,7 +116,7 @@ pub struct Order {
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be
     /// filled.
-    #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
+    #[derivative(Default(value = "NaiveDateTime::MAX.and_utc().timestamp() as u64"))]
     #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the
@@ -258,24 +161,39 @@ pub struct Order {
 }
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
-pub struct OrderRecord {
+pub struct OrderRecord(Arc<Inner>);
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Eq, PartialEq)]
+struct Inner {
+    pub order: Order,
     #[serde(rename = "metaData")]
     pub metadata: OrderMetadata,
-    pub order: Order,
 }
 
 impl OrderRecord {
+    pub fn new(order: Order, metadata: OrderMetadata) -> Self {
+        OrderRecord(Arc::new(Inner { metadata, order }))
+    }
+
+    pub fn metadata(&self) -> &OrderMetadata {
+        &self.0.metadata
+    }
+
+    pub fn order(&self) -> &Order {
+        &self.0.order
+    }
+
     /// Scales the `maker_amount` according to how much of the partially
     /// fillable amount was already used.
     pub fn remaining_maker_amount(&self) -> Result<u128> {
-        if self.metadata.remaining_fillable_taker_amount > self.order.taker_amount {
+        if self.metadata().remaining_fillable_taker_amount > self.order().taker_amount {
             anyhow::bail!("remaining taker amount bigger than total taker amount");
         }
 
         // all numbers are at most u128::MAX so none of these operations can overflow
-        let scaled_maker_amount = U256::from(self.order.maker_amount)
-            * U256::from(self.metadata.remaining_fillable_taker_amount)
-            / U256::from(self.order.taker_amount);
+        let scaled_maker_amount = U256::from(self.order().maker_amount)
+            * U256::from(self.metadata().remaining_fillable_taker_amount)
+            / U256::from(self.order().taker_amount);
 
         // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
         // in an u128
@@ -293,63 +211,10 @@ pub struct OrdersResponse {
     pub records: Vec<OrderRecord>,
 }
 
-/// A Ox API `price` response.
-#[serde_as]
-#[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
-#[derivative(Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct PriceResponse {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-    pub allowance_target: H160,
-    #[serde_as(as = "DisplayFromStr")]
-    pub price: f64,
-    #[serde_as(as = "DisplayFromStr")]
-    pub estimated_gas: u64,
-}
-
-/// A Ox API `swap` response.
-#[serde_as]
-#[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
-#[derivative(Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SwapResponse {
-    #[serde(flatten)]
-    pub price: PriceResponse,
-    pub to: H160,
-    #[derivative(Debug(format_with = "debug_bytes"))]
-    #[serde(with = "bytes_hex")]
-    pub data: Vec<u8>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub value: U256,
-}
-
-impl Interaction for SwapResponse {
-    fn encode(&self) -> EncodedInteraction {
-        (self.to, self.value, Bytes(self.data.clone()))
-    }
-}
-
 /// Abstract 0x API. Provides a mockable implementation.
 #[async_trait::async_trait]
 #[mockall::automock]
 pub trait ZeroExApi: Send + Sync {
-    /// Retrieve a swap for the specified parameters from the 0x API.
-    ///
-    /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
-    async fn get_swap(
-        &self,
-        query: SwapQuery,
-        set_block_retriever_header: bool,
-    ) -> Result<SwapResponse, ZeroExResponseError>;
-
-    /// Pricing for RFQT liquidity.
-    /// - https://0x.org/docs/guides/rfqt-in-the-0x-api
-    /// - https://0x.org/docs/api#get-swapv1price
-    async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError>;
-
     /// Retrieves all current limit orders.
     async fn get_orders(
         &self,
@@ -465,23 +330,6 @@ pub enum ZeroExResponseError {
 
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
-    async fn get_swap(
-        &self,
-        query: SwapQuery,
-        set_current_block_header: bool,
-    ) -> Result<SwapResponse, ZeroExResponseError> {
-        self.request(
-            query.format_url(&self.base_url, "quote"),
-            set_current_block_header,
-        )
-        .await
-    }
-
-    async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError> {
-        self.request(query.format_url(&self.base_url, "price"), false)
-            .await
-    }
-
     async fn get_orders(
         &self,
         query: &OrdersQuery,
@@ -518,10 +366,10 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let mut included_orders = HashSet::new();
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
-        let expiry = Utc.timestamp_opt(order.order.expiry as i64, 0).unwrap();
+        let expiry = Utc.timestamp_opt(order.order().expiry as i64, 0).unwrap();
 
         // only keep orders which are still valid and unique
-        expiry > now && included_orders.insert(order.metadata.order_hash.clone())
+        expiry > now && included_orders.insert(order.metadata().order_hash.clone())
     });
 }
 
@@ -609,72 +457,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn zeroex_swap() {
-        let zeroex_client = DefaultZeroExApi::test();
-        let swap_query = SwapQuery {
-            sell_token: testlib::tokens::WETH,
-            buy_token: testlib::tokens::USDC,
-            sell_amount: Some(U256::from_f64_lossy(1e18)),
-            slippage_percentage: Some(Slippage::new(0.012345678)),
-            ..Default::default()
-        };
-
-        let price_response = zeroex_client.get_swap(swap_query, false).await;
-        dbg!(&price_response);
-        assert!(price_response.is_ok());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_api_e2e_private() {
-        let zeroex_client = DefaultZeroExApi::test();
-        let swap_query = SwapQuery {
-            sell_token: testlib::tokens::WETH,
-            buy_token: testlib::tokens::USDC,
-            sell_amount: Some(U256::from_f64_lossy(1e18)),
-            slippage_percentage: Some(Slippage::ONE_PERCENT),
-            ..Default::default()
-        };
-
-        let price_response = zeroex_client.get_price(swap_query.clone()).await;
-        dbg!(&price_response);
-        assert!(price_response.is_ok());
-        let swap_response = zeroex_client.get_swap(swap_query, false).await;
-        dbg!(&swap_response);
-        assert!(swap_response.is_ok());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn excluded_sources() {
-        let zeroex = DefaultZeroExApi::test();
-        let query = SwapQuery {
-            sell_token: testlib::tokens::WETH,
-            buy_token: addr!("c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f"), // SNX
-            sell_amount: Some(U256::from_f64_lossy(1000e18)),
-            slippage_percentage: Some(Slippage::ONE_PERCENT),
-            ..Default::default()
-        };
-
-        let swap = zeroex.get_swap(query.clone(), false).await;
-        dbg!(&swap);
-        assert!(swap.is_ok());
-
-        let swap = zeroex
-            .get_swap(
-                SwapQuery {
-                    excluded_sources: vec!["Balancer_V2".to_string()],
-                    ..query
-                },
-                false,
-            )
-            .await;
-        dbg!(&swap);
-        assert!(swap.is_ok());
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn test_get_orders() {
         let api = DefaultZeroExApi::test();
         let result = api.get_orders(&OrdersQuery::default()).await;
@@ -729,18 +511,18 @@ mod tests {
             valid_order.clone(),
             // valid but duplicate
             valid_order.clone(),
-            OrderRecord {
-                order: Order {
+            OrderRecord::new(
+                Order {
                     // already expired
                     expiry: 0,
                     ..Default::default()
                 },
-                metadata: OrderMetadata {
+                OrderMetadata {
                     // unique order_hash
                     order_hash: [2].into(),
                     ..Default::default()
                 },
-            },
+            ),
         ];
         retain_valid_orders(&mut orders);
         assert_eq!(vec![valid_order], orders);
@@ -757,16 +539,8 @@ mod tests {
                 total: 1015,
                 page: 1,
                 per_page: 1000,
-                records: vec![OrderRecord {
-                    metadata: OrderMetadata {
-                        order_hash:
-                            hex::decode(
-                                "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
-                            ).unwrap(),
-                        remaining_fillable_taker_amount: 262467000000000000u128,
-                        created_at: DateTime::from_utc(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
-                    },
-                    order: Order {
+                records: vec![OrderRecord::new(
+                    Order {
                         chain_id: 1u64,
                         expiry: 1646463524u64,
                         fee_recipient: addr!("86003b044f70dac0abc80ac8957305b6370893ed"),
@@ -793,82 +567,64 @@ mod tests {
                         taker_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         taker_token_fee_amount: 0u128,
                         verifying_contract: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    }
-                }],
+                    },
+                    OrderMetadata {
+                        order_hash:
+                            hex::decode(
+                                "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
+                            ).unwrap(),
+                        remaining_fillable_taker_amount: 262467000000000000u128,
+                        created_at: DateTime::from_naive_utc_and_offset(NaiveDate::from_ymd_opt(2022, 2, 26).unwrap().and_hms_nano_opt(6, 59, 0, 440_000_000).unwrap(), Utc),
+                    },
+                )],
             }
         );
     }
 
     #[test]
-    fn deserialize_swap_response() {
-        let swap = serde_json::from_str::<SwapResponse>(
-                r#"{"price":"13.12100257517027783","guaranteedPrice":"12.98979254941857505","to":"0xdef1c0ded9bec7f1a1670819833240f027b25eff","data":"0xd9627aa40000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000001206e6c0056936e100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006810e776880c02933d47db1b9fc05908e5386b96869584cd0000000000000000000000001000000000000000000000000000000000000011000000000000000000000000000000000000000000000092415e982f60d431ba","value":"0","gas":"111000","estimatedGas":"111000","gasPrice":"10000000000","protocolFee":"0","minimumProtocolFee":"0","buyTokenAddress":"0x6810e776880c02933d47db1b9fc05908e5386b96","sellTokenAddress":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","buyAmount":"1312100257517027783","sellAmount":"100000000000000000","sources":[{"name":"0x","proportion":"0"},{"name":"Uniswap","proportion":"0"},{"name":"Uniswap_V2","proportion":"0"},{"name":"Eth2Dai","proportion":"0"},{"name":"Kyber","proportion":"0"},{"name":"Curve","proportion":"0"},{"name":"Balancer","proportion":"0"},{"name":"Balancer_V2","proportion":"0"},{"name":"Bancor","proportion":"0"},{"name":"mStable","proportion":"0"},{"name":"Mooniswap","proportion":"0"},{"name":"Swerve","proportion":"0"},{"name":"SnowSwap","proportion":"0"},{"name":"SushiSwap","proportion":"1"},{"name":"Shell","proportion":"0"},{"name":"MultiHop","proportion":"0"},{"name":"DODO","proportion":"0"},{"name":"DODO_V2","proportion":"0"},{"name":"CREAM","proportion":"0"},{"name":"LiquidityProvider","proportion":"0"},{"name":"CryptoCom","proportion":"0"},{"name":"Linkswap","proportion":"0"},{"name":"MakerPsm","proportion":"0"},{"name":"KyberDMM","proportion":"0"},{"name":"Smoothy","proportion":"0"},{"name":"Component","proportion":"0"},{"name":"Saddle","proportion":"0"},{"name":"xSigma","proportion":"0"},{"name":"Uniswap_V3","proportion":"0"},{"name":"Curve_V2","proportion":"0"}],"orders":[{"makerToken":"0x6810e776880c02933d47db1b9fc05908e5386b96","takerToken":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","makerAmount":"1312100257517027783","takerAmount":"100000000000000000","fillData":{"tokenAddressPath":["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","0x6810e776880c02933d47db1b9fc05908e5386b96"],"router":"0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f"},"source":"SushiSwap","sourcePathId":"0xf070a63548deb1c57a1540d63c986e01c1718a7a091d20da7020aa422c01b3de","type":0}],"allowanceTarget":"0xdef1c0ded9bec7f1a1670819833240f027b25eff","sellTokenToEthRate":"1","buyTokenToEthRate":"13.05137210499988309"}"#,
-            )
-            .unwrap();
-
-        assert_eq!(
-                swap,
-                SwapResponse {
-                    price: PriceResponse {
-                        sell_amount: U256::from_dec_str("100000000000000000").unwrap(),
-                        buy_amount: U256::from_dec_str("1312100257517027783").unwrap(),
-                        allowance_target: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                        price: 13.121_002_575_170_278_f64,
-                        estimated_gas: 111000,
-                    },
-                    to: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    data: hex::decode(
-                        "d9627aa40000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000001206e6c0056936e100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006810e776880c02933d47db1b9fc05908e5386b96869584cd0000000000000000000000001000000000000000000000000000000000000011000000000000000000000000000000000000000000000092415e982f60d431ba"
-                    ).unwrap(),
-                    value: U256::from_dec_str("0").unwrap(),
-                }
-            );
-    }
-
-    #[test]
     fn compute_remaining_maker_amount() {
-        let bogous_order = OrderRecord {
-            order: Order {
+        let bogous_order = OrderRecord::new(
+            Order {
                 taker_amount: u128::MAX - 1,
                 maker_amount: u128::MAX,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
+            OrderMetadata {
                 // remaining amount bigger than total amount
                 remaining_fillable_taker_amount: u128::MAX,
                 ..Default::default()
             },
-        };
+        );
         assert!(bogous_order.remaining_maker_amount().is_err());
 
-        let biggest_unfilled_order = OrderRecord {
-            order: Order {
+        let biggest_unfilled_order = OrderRecord::new(
+            Order {
                 taker_amount: u128::MAX,
                 maker_amount: u128::MAX,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
+            OrderMetadata {
                 remaining_fillable_taker_amount: u128::MAX,
                 ..Default::default()
             },
-        };
+        );
         assert_eq!(
             u128::MAX,
             // none of the operations overflow with u128::MAX for all values
             biggest_unfilled_order.remaining_maker_amount().unwrap()
         );
 
-        let biggest_partially_filled_order = OrderRecord {
-            order: Order {
+        let biggest_partially_filled_order = OrderRecord::new(
+            Order {
                 taker_amount: u128::MAX,
                 maker_amount: u128::MAX,
                 ..Default::default()
             },
-            metadata: OrderMetadata {
+            OrderMetadata {
                 remaining_fillable_taker_amount: u128::MAX / 2,
                 ..Default::default()
             },
-        };
+        );
         assert_eq!(
             u128::MAX / 2,
             biggest_partially_filled_order

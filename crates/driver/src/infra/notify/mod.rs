@@ -33,7 +33,16 @@ pub fn scoring_failed(
         solution::error::Scoring::InvalidClearingPrices => {
             notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
-        solution::error::Scoring::Math(_) | solution::error::Scoring::Score(_) => return,
+        solution::error::Scoring::Math(_)
+        | solution::error::Scoring::CalculateCustomPrices(
+            solution::error::Trade::Math(_) | solution::error::Trade::ProtocolFeeOnStaticOrder,
+        ) => return,
+        solution::error::Scoring::CalculateCustomPrices(
+            solution::error::Trade::InvalidExecutedAmount,
+        ) => notification::Kind::ScoringFailed(ScoreKind::InvalidExecutedAmount),
+        solution::error::Scoring::MissingPrice(token) => {
+            notification::Kind::ScoringFailed(ScoreKind::MissingPrice(*token))
+        }
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);

@@ -13,29 +13,29 @@ name = "solvers"
 path = "src/main.rs"
 
 [dependencies]
-axum = "0.6"
+axum = { workspace = true }
 bigdecimal = { version = "0.3", features = ["serde"] }
-chrono = { version = "0.4", features = ["serde"], default-features = false }
-clap = { version = "4", features = ["derive", "env"] }
-ethereum-types = "0.14"
+chrono = { workspace = true, features = ["serde"], default-features = false }
+clap = { workspace = true, features = ["derive", "env"] }
+ethereum-types = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-futures = "0.3"
-hex = "0.4"
-hyper = "0.14"
-itertools = "0.11"
-num = "0.4"
+futures = { workspace = true }
+hex = { workspace = true }
+hyper = { workspace = true }
+itertools = { workspace = true }
+num = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rate-limit = { path = "../rate-limit" }
-reqwest = "0.11"
+reqwest = { workspace = true }
 s3 = { path = "../s3" }
-serde = "1"
-serde_json = "1"
-serde_with = "3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
-thiserror = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
-toml = "0.7"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = { workspace = true }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
 web3 = { workspace = true }
@@ -52,6 +52,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 glob = "0.3"
-tempfile = "3"
+tempfile = { workspace = true }
 hex-literal = { workspace = true }
 ethcontract = { workspace = true }

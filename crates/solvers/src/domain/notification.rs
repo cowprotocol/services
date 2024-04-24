@@ -56,4 +56,6 @@ pub enum Settlement {
 #[derive(Debug)]
 pub enum ScoreKind {
     InvalidClearingPrices,
+    InvalidExecutedAmount,
+    MissingPrice(TokenAddress),
 }

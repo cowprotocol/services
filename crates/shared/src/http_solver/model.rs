@@ -387,6 +387,12 @@ pub enum SolverRejectionReason {
     /// Not all trades have clearing prices
     InvalidClearingPrices,
 
+    /// Invalid executed amount
+    InvalidExecutedAmount,
+
+    /// Missing price for the token address
+    MissingPrice(H160),
+
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
 

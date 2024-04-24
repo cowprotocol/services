@@ -33,11 +33,11 @@ use {
         },
     },
     std::{collections::BTreeMap, sync::Arc},
-    strum::{EnumVariantNames, IntoStaticStr},
+    strum::IntoStaticStr,
 };
 
 /// Defines the different types of liquidity our solvers support
-#[derive(Clone, IntoStaticStr, EnumVariantNames, Debug)]
+#[derive(Clone, IntoStaticStr, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Liquidity {
     ConstantProduct(ConstantProductOrder),

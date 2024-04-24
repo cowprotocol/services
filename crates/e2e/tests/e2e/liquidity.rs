@@ -223,7 +223,7 @@ async fn zero_ex_liquidity(web3: Web3) {
         sender: Default::default(),
         fee_recipient: zeroex.address(),
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     }
     .to_order_record(chain_id, zeroex.address(), zeroex_maker);
@@ -263,7 +263,7 @@ fn create_zeroex_liquidity_orders(
         sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     let usdt_weth_order = Eip712TypedZeroExOrder {
@@ -280,7 +280,7 @@ fn create_zeroex_liquidity_orders(
         sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     let usdc_weth_order = Eip712TypedZeroExOrder {
@@ -297,7 +297,7 @@ fn create_zeroex_liquidity_orders(
         sender: Default::default(),
         fee_recipient: zeroex_addr,
         pool: H256::default(),
-        expiry: NaiveDateTime::MAX.timestamp() as u64,
+        expiry: NaiveDateTime::MAX.and_utc().timestamp() as u64,
         salt: U256::from(Utc::now().timestamp()),
     };
     [typed_order, usdt_weth_order, usdc_weth_order]
@@ -317,24 +317,24 @@ async fn get_zeroex_order_amounts(
     zeroex
         .get_limit_order_relevant_state(
             (
-                zeroex_order.order.maker_token,
-                zeroex_order.order.taker_token,
-                zeroex_order.order.maker_amount,
-                zeroex_order.order.taker_amount,
-                zeroex_order.order.taker_token_fee_amount,
-                zeroex_order.order.maker,
-                zeroex_order.order.taker,
-                zeroex_order.order.sender,
-                zeroex_order.order.fee_recipient,
-                Bytes(zeroex_order.order.pool.0),
-                zeroex_order.order.expiry,
-                zeroex_order.order.salt,
+                zeroex_order.order().maker_token,
+                zeroex_order.order().taker_token,
+                zeroex_order.order().maker_amount,
+                zeroex_order.order().taker_amount,
+                zeroex_order.order().taker_token_fee_amount,
+                zeroex_order.order().maker,
+                zeroex_order.order().taker,
+                zeroex_order.order().sender,
+                zeroex_order.order().fee_recipient,
+                Bytes(zeroex_order.order().pool.0),
+                zeroex_order.order().expiry,
+                zeroex_order.order().salt,
             ),
             (
-                zeroex_order.order.signature.signature_type,
-                zeroex_order.order.signature.v,
-                Bytes(zeroex_order.order.signature.r.0),
-                Bytes(zeroex_order.order.signature.s.0),
+                zeroex_order.order().signature.signature_type,
+                zeroex_order.order().signature.v,
+                Bytes(zeroex_order.order().signature.r.0),
+                Bytes(zeroex_order.order().signature.s.0),
             ),
         )
         .call()
@@ -350,26 +350,26 @@ async fn fill_or_kill_zeroex_limit_order(
     zeroex
         .fill_or_kill_limit_order(
             (
-                zeroex_order.order.maker_token,
-                zeroex_order.order.taker_token,
-                zeroex_order.order.maker_amount,
-                zeroex_order.order.taker_amount,
-                zeroex_order.order.taker_token_fee_amount,
-                zeroex_order.order.maker,
-                zeroex_order.order.taker,
-                zeroex_order.order.sender,
-                zeroex_order.order.fee_recipient,
-                Bytes(zeroex_order.order.pool.0),
-                zeroex_order.order.expiry,
-                zeroex_order.order.salt,
+                zeroex_order.order().maker_token,
+                zeroex_order.order().taker_token,
+                zeroex_order.order().maker_amount,
+                zeroex_order.order().taker_amount,
+                zeroex_order.order().taker_token_fee_amount,
+                zeroex_order.order().maker,
+                zeroex_order.order().taker,
+                zeroex_order.order().sender,
+                zeroex_order.order().fee_recipient,
+                Bytes(zeroex_order.order().pool.0),
+                zeroex_order.order().expiry,
+                zeroex_order.order().salt,
             ),
             (
-                zeroex_order.order.signature.signature_type,
-                zeroex_order.order.signature.v,
-                Bytes(zeroex_order.order.signature.r.0),
-                Bytes(zeroex_order.order.signature.s.0),
+                zeroex_order.order().signature.signature_type,
+                zeroex_order.order().signature.v,
+                Bytes(zeroex_order.order().signature.r.0),
+                Bytes(zeroex_order.order().signature.s.0),
             ),
-            zeroex_order.order.taker_amount,
+            zeroex_order.order().taker_amount,
         )
         .from(from_account)
         .send()

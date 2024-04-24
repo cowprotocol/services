@@ -246,17 +246,13 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
             internalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )
-                .into(),
+                .transaction(settlement::Internalization::Enable)
+                .input
+                .clone(),
             uninternalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Disable,
-                )
-                .into(),
+                .transaction(settlement::Internalization::Disable)
+                .input
+                .clone(),
         })
     }
 
@@ -282,17 +278,13 @@ impl Competition {
             Err(_) => Err(Error::SubmissionError),
             Ok(tx_hash) => Ok(Settled {
                 internalized_calldata: settlement
-                    .calldata(
-                        self.eth.contracts().settlement(),
-                        settlement::Internalization::Enable,
-                    )
-                    .into(),
+                    .transaction(settlement::Internalization::Enable)
+                    .input
+                    .clone(),
                 uninternalized_calldata: settlement
-                    .calldata(
-                        self.eth.contracts().settlement(),
-                        settlement::Internalization::Disable,
-                    )
-                    .into(),
+                    .transaction(settlement::Internalization::Disable)
+                    .input
+                    .clone(),
                 tx_hash,
             }),
         }
@@ -313,16 +305,11 @@ impl Competition {
         settlement: &Settlement,
     ) -> Result<(), infra::simulator::Error> {
         self.simulator
-            .gas(eth::Tx {
-                from: self.solver.address(),
-                to: settlement.solver(),
-                value: eth::Ether(0.into()),
-                input: crate::util::Bytes(settlement.calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )),
-                access_list: settlement.access_list.clone(),
-            })
+            .gas(
+                settlement
+                    .transaction(settlement::Internalization::Enable)
+                    .clone(),
+            )
             .await
             .map(|_| ())
     }
@@ -378,7 +365,7 @@ pub struct Amounts {
     pub buy: eth::TokenAmount,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PriceLimits {
     pub sell: eth::TokenAmount,
     pub buy: eth::TokenAmount,
