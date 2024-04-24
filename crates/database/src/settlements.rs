@@ -1,26 +1,7 @@
 use {
     crate::{events::EventIndex, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection},
-    std::ops::Range,
 };
-
-pub async fn recent_settlement_tx_hashes(
-    ex: &mut PgConnection,
-    block_range: Range<i64>,
-) -> Result<Vec<TransactionHash>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT tx_hash
-FROM settlements
-WHERE
-    block_number >= $1 AND
-    block_number < $2
-    "#;
-    sqlx::query_scalar::<_, TransactionHash>(QUERY)
-        .bind(block_range.start)
-        .bind(block_range.end)
-        .fetch_all(ex)
-        .await
-}
 
 pub async fn get_hash_by_event(
     ex: &mut PgConnection,
@@ -37,6 +18,22 @@ WHERE
         .bind(event.block_number)
         .bind(event.log_index)
         .fetch_one(ex)
+        .await
+}
+
+pub async fn get_hash_by_auction_id(
+    ex: &mut PgConnection,
+    auction_id: i64,
+) -> Result<Option<TransactionHash>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT tx_hash
+FROM settlements
+WHERE
+    auction_id = $1
+    "#;
+    sqlx::query_scalar::<_, TransactionHash>(QUERY)
+        .bind(auction_id)
+        .fetch_optional(ex)
         .await
 }
 
@@ -119,6 +116,15 @@ mod tests {
         sqlx::Connection,
     };
 
+    async fn all_settlement_tx_hashes(
+        ex: &mut PgConnection,
+    ) -> Result<Vec<TransactionHash>, sqlx::Error> {
+        const QUERY: &str = "SELECT tx_hash FROM settlements";
+        sqlx::query_scalar::<_, TransactionHash>(QUERY)
+            .fetch_all(ex)
+            .await
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_gets_event() {
@@ -164,17 +170,15 @@ mod tests {
         .await
         .unwrap();
 
-        let results = recent_settlement_tx_hashes(&mut db, 0..1).await.unwrap();
-        assert_eq!(results, &[ByteArray([0u8; 32])]);
-
-        let results = recent_settlement_tx_hashes(&mut db, 1..5).await.unwrap();
-        assert_eq!(results, &[ByteArray([1u8; 32]), ByteArray([2u8; 32])]);
-
-        let results = recent_settlement_tx_hashes(&mut db, 2..5).await.unwrap();
-        assert_eq!(results, &[ByteArray([2u8; 32])]);
-
-        let results = recent_settlement_tx_hashes(&mut db, 3..5).await.unwrap();
-        assert_eq!(results, &[]);
+        let results = all_settlement_tx_hashes(&mut db).await.unwrap();
+        assert_eq!(
+            results,
+            &[
+                ByteArray([0u8; 32]),
+                ByteArray([1u8; 32]),
+                ByteArray([2u8; 32])
+            ]
+        );
     }
 
     #[tokio::test]
