@@ -14,17 +14,17 @@ services:
       # with simple bytecode that always returns a solidity `true` value, alleviating
       # the requirement to register a solver's private key for the sake of testing on
       # a fork.
-      test: [
-        "CMD",
-        "/usr/local/bin/cast",
-        "rpc",
-        "-r",
-        "http://127.0.0.1:8545",
-        "anvil_setCode",
-        "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE",
-        "0x600160005260206000F3"
-      ]
-      interval: 1m30s
+      test: [ "CMD-SHELL", "
+          response=$$(wget -qO- --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545);
+          block=$$(echo $$response | sed -n 's/.*\"result\":\"\\([^\"\\]*\\)\".*/\\1/p');
+          if [ -n \"$$block\" ] && [ \"$$block\" != \"0x0\" ] && [ \"$$block\" != \"null\" ]; then
+            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE '0x600160005260206000F3';
+            exit 0;
+          else
+            exit 1;
+          fi;
+        " ]
+      interval: 5s
       timeout: 30s
       retries: 5
       start_period: 5s
@@ -115,7 +115,7 @@ services:
     depends_on:
       orderbook:
         condition: service_started
-      chain-check:
+      chain:
         condition: service_healthy
 
   driver:
@@ -134,7 +134,7 @@ services:
     ports:
       - 9000:80
     depends_on:
-      chain-check:
+      chain:
         condition: service_healthy
 
   # baseline (solver engine)
@@ -173,31 +173,6 @@ services:
         - ETH_RPC_URL=http://127.0.0.1:8545
     ports:
       - 8001:80
-
-  chain-check:
-    image: curlimages/curl:latest
-    depends_on:
-      - chain
-    command:
-      - /bin/sh
-      - -c
-      - |
-        while [ ! -f /tmp/ready ]; do
-          if curl -X POST -H 'Content-Type: application/json' --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' http://chain:8545; then
-            echo 'Chain is ready.';
-            touch /tmp/ready;
-            sleep 15s; # sleep for a while to make sure all the dependant services are aware of the health status
-          else
-            echo 'Chain is not ready, retrying...';
-            sleep 5s;
-          fi;
-        done
-    healthcheck:
-      test: [ "CMD", "test", "-f", "/tmp/ready" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 volumes:
   postgres:
