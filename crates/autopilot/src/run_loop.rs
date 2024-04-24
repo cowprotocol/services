@@ -479,7 +479,7 @@ impl RunLoop {
                 }
                 Ok(None) => {}
             }
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::time::sleep(Duration::from_secs(3)).await;
         }
         Err(SettleError::Failure(anyhow::anyhow!(
             "settlement transaction await reached deadline"
