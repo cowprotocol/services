@@ -2,9 +2,7 @@ use {
     super::TestAccount,
     crate::setup::{
         colocation::{self, SolverEngine},
-        wait_for_condition,
-        Contracts,
-        TIMEOUT,
+        wait_for_condition, Contracts, TIMEOUT,
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
@@ -97,7 +95,6 @@ impl<'a> Services<'a> {
             "--native-price-estimators=test_quoter".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
-            "--trade-simulator=Web3".to_string(),
             "--simulation-node-url=http://localhost:8545".to_string(),
         ]
         .into_iter()
@@ -155,7 +152,7 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--enforce-verified-quotes=true".to_string(),
+            "--quote-verification=enforce-when-possible".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

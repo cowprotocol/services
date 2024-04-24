@@ -210,7 +210,7 @@ pub enum QuoteVerificationMode {
     Prefer,
     /// Quotes get discarded if they can't be verified.
     /// Some scenarios like missing sell token balance are exempt.
-    RequireWhenPossible,
+    EnforceWhenPossible,
 }
 
 impl Display for Arguments {
