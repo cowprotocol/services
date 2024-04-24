@@ -1,7 +1,12 @@
 use {
     super::{compare_error, CompetitionEstimator, PriceRanking},
     crate::price_estimation::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query, QuoteVerificationMode
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+        QuoteVerificationMode,
     },
     anyhow::Context,
     futures::future::{BoxFuture, FutureExt, TryFutureExt},
@@ -137,7 +142,11 @@ mod tests {
         super::*,
         crate::{
             gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating, QuoteVerificationMode},
+            price_estimation::{
+                native::MockNativePriceEstimating,
+                MockPriceEstimating,
+                QuoteVerificationMode,
+            },
         },
         gas_estimation::GasPrice1559,
         model::order::OrderKind,

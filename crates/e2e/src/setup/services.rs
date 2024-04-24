@@ -2,7 +2,9 @@ use {
     super::TestAccount,
     crate::setup::{
         colocation::{self, SolverEngine},
-        wait_for_condition, Contracts, TIMEOUT,
+        wait_for_condition,
+        Contracts,
+        TIMEOUT,
     },
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
