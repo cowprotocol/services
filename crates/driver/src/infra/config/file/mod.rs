@@ -50,6 +50,9 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    #[serde(default)]
+    encoding: encoding::Strategy,
 }
 
 #[serde_as]
@@ -117,6 +120,29 @@ enum Mempool {
         #[serde(default = "default_soft_cancellations_flag")]
         use_soft_cancellations: bool,
     },
+}
+
+pub mod encoding {
+    use {crate::domain::competition, serde::Deserialize};
+
+    /// Which logic to use to encode solutions into settlement transactions.
+    #[derive(Debug, Deserialize, Default)]
+    pub enum Strategy {
+        /// Legacy solver crate strategy
+        #[default]
+        Boundary,
+        /// New encoding strategy
+        Domain,
+    }
+
+    impl Strategy {
+        pub fn to_domain(&self) -> competition::solution::encoding::Strategy {
+            match self {
+                Self::Boundary => competition::solution::encoding::Strategy::Boundary,
+                Self::Domain => competition::solution::encoding::Strategy::Domain,
+            }
+        }
+    }
 }
 
 fn default_additional_tip_percentage() -> f64 {
