@@ -126,11 +126,7 @@ pub struct Single {
 impl Single {
     /// Creates a full solution for a single order solution given gas and sell
     /// token prices.
-    pub fn into_solution(
-        self,
-        gas_price: auction::GasPrice,
-        sell_token: auction::Price,
-    ) -> Option<Solution> {
+    pub fn into_solution(self, fee: eth::SellTokenAmount) -> Option<Solution> {
         let Self {
             order,
             input,
@@ -144,7 +140,7 @@ impl Single {
         }
 
         let fee = if order.solver_determines_fee() {
-            Fee::Surplus(sell_token.ether_value(eth::Ether(gas.0.checked_mul(gas_price.0 .0)?))?)
+            Fee::Surplus(fee)
         } else {
             Fee::Protocol
         };
@@ -299,7 +295,7 @@ pub enum Fee {
     Protocol,
 
     /// An additional surplus fee that is charged by the solver.
-    Surplus(U256),
+    Surplus(eth::SellTokenAmount),
 }
 
 impl Fee {
@@ -307,7 +303,7 @@ impl Fee {
     pub fn surplus(&self) -> Option<U256> {
         match self {
             Fee::Protocol => None,
-            Fee::Surplus(fee) => Some(*fee),
+            Fee::Surplus(fee) => Some(fee.0),
         }
     }
 }

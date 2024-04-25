@@ -437,7 +437,7 @@ fn to_domain_solution(
                     match order.solver_determines_fee() {
                         true => execution
                             .exec_fee_amount
-                            .map(solution::Fee::Surplus)
+                            .map(|fee| solution::Fee::Surplus(fee.into()))
                             .context("no surplus fee")?,
                         false => solution::Fee::Protocol,
                     },

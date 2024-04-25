@@ -45,6 +45,16 @@ impl From<U256> for Ether {
     }
 }
 
+/// A token amount in wei, always representing the sell token of an order.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SellTokenAmount(pub U256);
+
+impl From<U256> for SellTokenAmount {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
 /// Like [`Gas`] but can be negative to encode a gas discount.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SignedGas(i64);
