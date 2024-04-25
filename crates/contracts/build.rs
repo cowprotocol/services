@@ -14,6 +14,7 @@ const MAINNET: &str = "1";
 const GOERLI: &str = "5";
 const GNOSIS: &str = "100";
 const SEPOLIA: &str = "11155111";
+const ARBITRUM: &str = "42161";
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
@@ -59,6 +60,13 @@ fn main() {
                     address: addr("0x0b7795E18767259CC253a2dF471db34c72B49516"),
                     // <https://sepolia.etherscan.io/tx/0x558a7608a770b5c4f68fffa9b02e7908a40f61b557b435ea768a4c62cb79ae25>
                     deployment_information: Some(DeploymentInformation::BlockNumber(4718739)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0x6DFE75B5ddce1ADE279D4fa6BD6AeF3cBb6f49dB"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(204747458)),
                 },
             )
     });
@@ -109,6 +117,13 @@ fn main() {
                     address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
                     // <https://sepolia.etherscan.io/tx/0xb22509c6725dd69a975ecb96a0c594901eeee6a279cc66d9d5191022a7039ee6>
                     deployment_information: Some(DeploymentInformation::BlockNumber(3418831)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(222832)),
                 },
             )
     });
@@ -204,6 +219,13 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(3424893)),
                 },
             )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0xc7E5ED1054A24Ef31D827E6F86caA58B3Bc168d7"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(72222060)),
+                },
+            )
     });
     generate_contract_with_config("BalancerV2WeightedPool2TokensFactory", |builder| {
         builder
@@ -224,6 +246,13 @@ fn main() {
                     address: addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
                     // <https://goerli.etherscan.io/tx/0x5d5aa13cce6f81c36c69ad5aae6f5cb9cc6f8605a5eb1dc99815b5d74ae0796a>
                     deployment_information: Some(DeploymentInformation::BlockNumber(4716924)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0xCF0a32Bbef8F064969F21f7e02328FB577382018"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(222864)),
                 },
             )
         // Not available on Sepolia
@@ -258,6 +287,13 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(25415344)),
                 },
             )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0xEF44D6786b2b4d544b7850Fe67CE6381626Bf2D6"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(14244664)),
+                },
+            )
         // Not available on Sepolia
         // <https://docs.balancer.fi/reference/contracts/deployment-addresses/sepolia.html>
     });
@@ -279,6 +315,13 @@ fn main() {
                     address: addr("0xb48Cc42C45d262534e46d5965a9Ac496F1B7a830"),
                     // <https://goerli.etherscan.io/tx/0x7dcb9e2026789e194e6e78605ac6a65e00392ba5d73e084d468e3dfbb188ea70>
                     deployment_information: Some(DeploymentInformation::BlockNumber(6993037)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0x142B9666a0a3A30477b052962ddA81547E7029ab"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(222870)),
                 },
             )
         // Not available on Sepolia
@@ -327,6 +370,13 @@ fn main() {
                         deployment_information: Some(DeploymentInformation::BlockNumber(3419649)),
                     },
                 )
+                .add_network(
+                    ARBITRUM,
+                    Network {
+                        address: addr("0x1802953277FD955f9a254B80Aa0582f193cF1d77"),
+                        deployment_information: Some(DeploymentInformation::BlockNumber(4859669)),
+                    },
+                )
         },
     );
     generate_contract_with_config("BalancerV2ComposableStablePoolFactory", |builder| {
@@ -346,6 +396,13 @@ fn main() {
                     address: addr("0xB848f50141F3D4255b37aC288C25C109104F2158"),
                     // <https://goerli.etherscan.io/tx/0x068e47605db29b7f9e5a8ba8bc7075fe3beab9801b4891b8656d6845f6477721>
                     deployment_information: Some(DeploymentInformation::BlockNumber(7542764)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0xaEb406b0E430BF5Ea2Dc0B9Fe62E4E53f74B3a33"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(23227044)),
                 },
             )
         // Not available on Sepolia and Gnosis Chain
@@ -377,6 +434,13 @@ fn main() {
                     address: addr("0xC128468b7Ce63eA702C1f104D55A2566b13D3ABD"),
                     // <https://gnosisscan.io/tx/0x2abd7c865f8ab432b340f7de897192c677ffa254908fdec14091e0cd06962963>
                     deployment_information: Some(DeploymentInformation::BlockNumber(26365805)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0x1c99324EDC771c82A0DCCB780CC7DDA0045E50e7"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(58948370)),
                 },
             )
         // Not available on Sepolia (only version ≥ 4)
@@ -418,6 +482,13 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(3425277)),
                 },
             )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0x2498A2B0d6462d2260EAC50aE1C3e03F4829BA95"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(72235860)),
+                },
+            )
     });
     generate_contract_with_config("BalancerV2ComposableStablePoolFactoryV5", |builder| {
         builder
@@ -453,6 +524,13 @@ fn main() {
                     address: addr("0xa523f47A933D5020b23629dDf689695AA94612Dc"),
                     // <https://sepolia.etherscan.io/tx/0x2c155dde7c480929991dd2a3344d9fdd20252f235370d46d0887b151dc0416bd>
                     deployment_information: Some(DeploymentInformation::BlockNumber(3872211)),
+                },
+            )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0xA8920455934Da4D853faac1f94Fe7bEf72943eF1"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(110212282)),
                 },
             )
     });
@@ -506,6 +584,13 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(4717469)),
                 },
             )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(204702129)),
+                },
+            )
     });
     generate_contract_with_config("GPv2Settlement", |builder| {
         builder
@@ -542,6 +627,13 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(4717488)),
                 },
             )
+            .add_network(
+                ARBITRUM,
+                Network {
+                    address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
+                    deployment_information: Some(DeploymentInformation::BlockNumber(204704802)),
+                },
+            )
     });
     generate_contract("GnosisSafe");
     generate_contract_with_config("GnosisSafeCompatibilityFallbackHandler", |builder| {
@@ -559,13 +651,16 @@ fn main() {
             .add_network_str(GOERLI, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(SEPOLIA, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(ARBITRUM, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
     });
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
     generate_contract_with_config("PancakeRouter", |builder| {
-        builder.add_network_str(MAINNET, "0xEfF92A263d31888d860bD50809A8D171709b7b1c")
+        builder
+            .add_network_str(MAINNET, "0xEfF92A263d31888d860bD50809A8D171709b7b1c")
+            .add_network_str(ARBITRUM, "0x8cFe327CEc66d1C090Dd72bd0FF11d690C33a2Eb")
     });
     generate_contract_with_config("SushiSwapRouter", |builder| {
         // <https://docs.sushi.com/docs/Products/Classic%20AMM/Deployment%20Addresses>
@@ -573,12 +668,14 @@ fn main() {
             .add_network_str(MAINNET, "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F")
             .add_network_str(GOERLI, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str(GNOSIS, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
+            .add_network_str(ARBITRUM, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
     });
     generate_contract_with_config("SwaprRouter", |builder| {
         // <https://swapr.gitbook.io/swapr/contracts>
         builder
             .add_network_str(MAINNET, "0xb9960d9bca016e9748be75dd52f02188b9d0829f")
             .add_network_str(GNOSIS, "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
+            .add_network_str(ARBITRUM, "0x530476d5583724A89c8841eB6Da76E7Af4C0F17E")
     });
     generate_contract("ISwaprPair");
     generate_contract_with_config("UniswapV2Factory", |builder| {
@@ -587,6 +684,7 @@ fn main() {
             .add_network_str(MAINNET, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str(GOERLI, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
+            .add_network_str(ARBITRUM, "0x6554AD1Afaa3f4ce16dc31030403590F467417A6")
         // Not available on Sepolia
     });
     generate_contract_with_config("UniswapV2Router02", |builder| {
@@ -595,6 +693,7 @@ fn main() {
             .add_network_str(MAINNET, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str(GOERLI, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
+            .add_network_str(ARBITRUM, "0xaedE1EFe768bD8A1663A7608c63290C60B85e71c")
         // Not available on Sepolia
     });
     generate_contract_with_config("UniswapV3SwapRouter", |builder| {
@@ -603,6 +702,7 @@ fn main() {
             .add_network_str(MAINNET, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(GOERLI, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
             .add_network_str(SEPOLIA, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
+            .add_network_str(ARBITRUM, "0xE592427A0AEce92De3Edee1F18E0157C05861564")
         // Not available on Gnosis Chain
     });
     generate_contract("UniswapV3Pool");
@@ -614,6 +714,7 @@ fn main() {
             .add_network_str(GOERLI, "0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6")
             .add_network_str(GNOSIS, "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d")
             .add_network_str(SEPOLIA, "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14")
+            .add_network_str(ARBITRUM, "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1")
     });
     generate_contract_with_config("IUniswapV3Factory", |builder| {
         // <https://github.com/Uniswap/v3-periphery/blob/697c2474757ea89fec12a4e6db16a574fe259610/deploys.md>
@@ -621,6 +722,7 @@ fn main() {
             .add_network_str(MAINNET, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str(GOERLI, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str(SEPOLIA, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
+            .add_network_str(ARBITRUM, "0x1F98431c8aD98523631AE4a59f267346ea31F984")
         // Not available on Gnosis Chain
     });
     generate_contract_with_config("IZeroEx", |builder| {
@@ -629,6 +731,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
             .add_network_str(SEPOLIA, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
+            .add_network_str(ARBITRUM, "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
             .add_method_alias(
                 "_transformERC20((address,address,address,uint256,uint256,(uint32,bytes)[],bool,\
                  address))",
@@ -657,6 +760,7 @@ fn main() {
             .add_network_str(GOERLI, "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
             .add_network_str(GNOSIS, "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
             .add_network_str(SEPOLIA, "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59")
+        // TODO add cow protocol token
     });
 
     // Unofficial Uniswap v2 liquidity on the Sepolia testnet.
@@ -667,7 +771,9 @@ fn main() {
 
     // Chainalysis oracle for sanctions screening
     generate_contract_with_config("ChainalysisOracle", |builder| {
-        builder.add_network_str(MAINNET, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
+        builder
+            .add_network_str(MAINNET, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
+            .add_network_str(ARBITRUM, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
     });
 
     // Support contracts used for trade and token simulations.
