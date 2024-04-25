@@ -109,7 +109,9 @@ impl Settlement {
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
 
-        let approvals = solution.approvals(eth).await?;
+        let approvals = solution
+            .approvals(eth, settlement::Internalization::Enable)
+            .await?;
         for approval in approvals {
             settlement
                 .encoder
