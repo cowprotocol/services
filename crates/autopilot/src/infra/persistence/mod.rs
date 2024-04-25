@@ -6,6 +6,7 @@ use {
     },
     anyhow::Context,
     chrono::Utc,
+    primitive_types::H256,
     std::sync::Arc,
     tracing::Instrument,
 };
@@ -124,6 +125,15 @@ impl Persistence {
         }
 
         ex.commit().await.context("commit")
+    }
+
+    /// Retrieves the transaction hash for the settlement with the given
+    /// auction_id.
+    pub async fn find_tx_hash_by_auction_id(&self, auction_id: i64) -> Result<Option<H256>, Error> {
+        self.postgres
+            .find_tx_hash_by_auction_id(auction_id)
+            .await
+            .map_err(Error::DbError)
     }
 }
 
