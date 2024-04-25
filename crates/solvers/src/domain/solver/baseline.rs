@@ -32,7 +32,7 @@ pub struct Config {
     pub max_hops: usize,
     pub max_partial_attempts: usize,
     pub solution_gas_offset: eth::SignedGas,
-    pub native_token_price_estimation_amount: eth::U256,
+    pub native_token_price_estimation_amount: eth::U256, // todo remove
 }
 
 struct Inner {
@@ -130,34 +130,35 @@ impl Inner {
                 continue;
             };
 
-            let sell_token = user_order.get().sell.token;
-            let sell_token_price = match auction.tokens.reference_price(&sell_token) {
-                Some(price) => price,
-                None if sell_token == self.weth.0.into() => {
-                    // Early return if the sell token is native token
-                    auction::Price(eth::Ether(eth::U256::exp10(18)))
-                }
-                None => {
-                    // Estimate the price of the sell token in the native token
-                    let native_price_request = self.native_price_request(user_order);
-                    if let Some(route) = boundary_solver.route(native_price_request, self.max_hops)
-                    {
-                        // how many units of buy_token are bought for one unit of sell_token
-                        // (buy_amount / sell_amount).
-                        let price = self.native_token_price_estimation_amount.to_f64_lossy()
-                            / route.input().amount.to_f64_lossy();
-                        let Some(price) = to_normalized_price(price) else {
-                            continue;
-                        };
+            // let sell_token = user_order.get().sell.token;
+            // let sell_token_price = match auction.tokens.reference_price(&sell_token) {
+            //     Some(price) => price,
+            //     None if sell_token == self.weth.0.into() => {
+            //         // Early return if the sell token is native token
+            //         auction::Price(eth::Ether(eth::U256::exp10(18)))
+            //     }
+            //     None => {
+            //         // Estimate the price of the sell token in the native token
+            //         let native_price_request = self.native_price_request(user_order);
+            //         if let Some(route) = boundary_solver.route(native_price_request,
+            // self.max_hops)         {
+            //             // how many units of buy_token are bought for one unit of
+            // sell_token             // (buy_amount / sell_amount).
+            //             let price =
+            // self.native_token_price_estimation_amount.to_f64_lossy()
+            //                 / route.input().amount.to_f64_lossy();
+            //             let Some(price) = to_normalized_price(price) else {
+            //                 continue;
+            //             };
 
-                        auction::Price(eth::Ether(price))
-                    } else {
-                        // This is to allow quotes to be generated for tokens for which the sell
-                        // token price is not available, so we default to fee=0
-                        auction::Price(eth::Ether(eth::U256::MAX))
-                    }
-                }
-            };
+            //             auction::Price(eth::Ether(price))
+            //         } else {
+            //             // This is to allow quotes to be generated for tokens for which
+            // the sell             // token price is not available, so we
+            // default to fee=0
+            // auction::Price(eth::Ether(eth::U256::MAX))         }
+            //     }
+            // };
 
             let solution = self.requests_for_order(user_order).find_map(|request| {
                 tracing::trace!(order =% order.uid, ?request, "finding route");
@@ -189,6 +190,41 @@ impl Inner {
                 }
 
                 let gas = route.gas() + self.solution_gas_offset;
+
+                // determine the price of the sell token in the native token
+                let sell_token = user_order.get().sell.token;
+                let sell_token_price = match auction.tokens.reference_price(&sell_token) {
+                    Some(price) => price,
+                    None if sell_token == self.weth.0.into() => {
+                        // Early return if the sell token is native token
+                        auction::Price(eth::Ether(eth::U256::exp10(18)))
+                    }
+                    None => {
+                        // Estimate the price of the sell token in the native token
+                        let gas_cost = eth::Ether(
+                            gas.0
+                                .checked_mul(auction.gas_price.0 .0)
+                                .unwrap_or_default(),
+                        );
+                        let native_price_request = self.native_price_request(user_order, gas_cost);
+                        if let Some(route) =
+                            boundary_solver.route(native_price_request, self.max_hops)
+                        {
+                            // how many units of buy_token are bought for one unit of sell_token
+                            // (buy_amount / sell_amount).
+                            let price = self.native_token_price_estimation_amount.to_f64_lossy()
+                                / route.input().amount.to_f64_lossy();
+                            match to_normalized_price(price) {
+                                Some(price) => auction::Price(eth::Ether(price)),
+                                None => auction::Price(eth::Ether(eth::U256::MAX)),
+                            }
+                        } else {
+                            // This is to allow quotes to be generated for tokens for which the sell
+                            // token price is not available, so we default to fee=0
+                            auction::Price(eth::Ether(eth::U256::MAX))
+                        }
+                    }
+                };
 
                 Some(
                     solution::Single {
@@ -241,7 +277,7 @@ impl Inner {
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
     }
 
-    fn native_price_request(&self, order: UserOrder) -> Request {
+    fn native_price_request(&self, order: UserOrder, gas_cost: eth::Ether) -> Request {
         let sell = eth::Asset {
             token: order.get().sell.token,
             // Note that we intentionally do not use [`eth::U256::max_value()`]
@@ -258,7 +294,7 @@ impl Inner {
 
         let buy = eth::Asset {
             token: self.weth.0.into(),
-            amount: self.native_token_price_estimation_amount,
+            amount: gas_cost.0,
         };
 
         Request {
