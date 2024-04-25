@@ -1630,6 +1630,7 @@ dependencies = [
  "async-trait",
  "axum",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "clap",
  "contracts",
@@ -4298,7 +4299,9 @@ dependencies = [
 name = "solvers-dto"
 version = "0.1.0"
 dependencies = [
+ "app-data",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "hex",
  "number",

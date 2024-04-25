@@ -1,6 +1,6 @@
 use {
     super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
-    crate::{domain::competition::order, infra::time, tests::hex_address},
+    crate::{domain::competition::order, tests::hex_address},
     rand::seq::SliceRandom,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -81,7 +81,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                             json!(fee_policies_json)
                         }
             },
-            "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
+            "validTo": quote.order.valid_to,
             "kind": match quote.order.side {
                 order::Side::Sell => "sell",
                 order::Side::Buy => "buy",
