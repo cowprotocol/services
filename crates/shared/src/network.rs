@@ -11,17 +11,20 @@ pub fn network_name(chain_id: u64) -> &'static str {
         5 => "Ethereum / Goerli",
         100 => "xDAI",
         11155111 => "Ethereum / Sepolia",
+        42161 => "Arbitrum / Mainnet",
         _ => panic!("Unknown network (chain_id={chain_id})"),
     }
 }
 
 /// The expected time between blocks on the network.
 pub fn block_interval(chain_id: u64) -> Option<Duration> {
-    Some(Duration::from_secs(match chain_id {
-        1 => 12,
-        5 => 12,
-        100 => 5,
-        11155111 => 12,
+    match chain_id {
+        1 => Duration::from_secs(12),
+        5 => Duration::from_secs(12),
+        100 => Duration::from_secs(5),
+        11155111 => Duration::from_secs(12),
+        42161 => Duration::from_millis(250),
         _ => return None,
-    }))
+    }
+    .into()
 }
