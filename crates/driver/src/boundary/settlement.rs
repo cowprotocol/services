@@ -29,6 +29,7 @@ use {
         },
         DomainSeparator,
     },
+    number::conversions::big_decimal_to_big_rational,
     shared::{
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, TokenAmount},
@@ -123,7 +124,7 @@ impl Settlement {
         }
 
         let slippage_calculator = SlippageCalculator {
-            relative: to_big_decimal(solution.solver().slippage().relative.clone()),
+            relative: big_decimal_to_big_rational(&solution.solver().slippage().relative),
             absolute: solution.solver().slippage().absolute.map(Into::into),
         };
         let external_prices = ExternalPrices::try_from_auction_prices(
@@ -394,13 +395,4 @@ pub fn to_boundary_interaction(
             })
         }
     }
-}
-
-fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
-    let (x, exp) = value.into_bigint_and_exponent();
-    let numerator_bytes = x.to_bytes_le();
-    let base = num::bigint::BigInt::from_bytes_le(numerator_bytes.0, &numerator_bytes.1);
-    let ten = num::BigRational::new(10.into(), 1.into());
-    let numerator = num::BigRational::new(base, 1.into());
-    numerator / ten.pow(exp.try_into().expect("should not overflow"))
 }

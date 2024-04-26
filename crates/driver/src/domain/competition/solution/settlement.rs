@@ -107,14 +107,14 @@ impl Settlement {
             }
             encoding::Strategy::Domain => SettlementTx {
                 internalized: encoding::tx(
-                    auction.id().unwrap(),
+                    auction,
                     &solution,
                     eth.contracts().settlement(),
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
                 )?,
                 uninternalized: encoding::tx(
-                    auction.id().unwrap(),
+                    auction,
                     &solution,
                     eth.contracts().settlement(),
                     solution.approvals(eth, Internalization::Disable).await?,

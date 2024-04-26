@@ -3,7 +3,7 @@
 use {
     super::AmmOrderExecution,
     anyhow::{Context as _, Result},
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     num::{BigInt, BigRational, CheckedDiv, Integer as _, ToPrimitive as _},
     once_cell::sync::OnceCell,
     shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
@@ -26,27 +26,6 @@ impl<'a> SlippageContext<'a> {
     /// Returns the external prices used for the slippage context.
     pub fn prices(&self) -> &ExternalPrices {
         self.prices
-    }
-
-    /// Computes the slippage amount for the specified token amount.
-    pub fn slippage(&self, token: H160, amount: U256) -> Result<SlippageAmount> {
-        let (relative, absolute) = self.calculator.compute(
-            self.prices.price(&token),
-            number::conversions::u256_to_big_int(&amount),
-        )?;
-        let slippage = SlippageAmount::from_num(&relative, &absolute)?;
-
-        if *relative < self.calculator.relative {
-            tracing::debug!(
-                ?token,
-                %amount,
-                relative = ?slippage.relative,
-                absolute = %slippage.absolute,
-                "reducing relative to respect maximum absolute slippage",
-            );
-        }
-
-        Ok(slippage)
     }
 
     /// Applies slippage to the specified AMM execution.
@@ -107,16 +86,6 @@ impl<'a> SlippageContext<'a> {
 
         execution.input_max.amount = slippage.add_to_amount(execution.input_max.amount);
         Ok(execution)
-    }
-
-    /// Applies slippage to an input amount.
-    pub fn apply_to_amount_in(&self, token: H160, amount: U256) -> Result<U256> {
-        Ok(self.slippage(token, amount)?.add_to_amount(amount))
-    }
-
-    /// Applies slippage to an output amount.
-    pub fn apply_to_amount_out(&self, token: H160, amount: U256) -> Result<U256> {
-        Ok(self.slippage(token, amount)?.sub_from_amount(amount))
     }
 }
 
@@ -235,54 +204,6 @@ mod tests {
         shared::externalprices,
         testlib::tokens::{GNO, USDC, WETH},
     };
-
-    #[test]
-    fn errors_on_missing_token_price() {
-        let calculator = SlippageCalculator::from_bps(10, Some(1_000.into()));
-        assert!(calculator
-            .context(&externalprices! { native_token: WETH, })
-            .slippage(USDC, 1_000_000.into(),)
-            .is_err());
-    }
-
-    #[test]
-    fn test_out_amount_with_slippage() {
-        let slippage = SlippageContext::default();
-        for (amount, expected) in [
-            (0.into(), 0.into()),
-            (100.into(), 99.into()),
-            (1000.into(), 999.into()),
-            (10000.into(), 9990.into()),
-            (10001.into(), 9990.into()),
-            (
-                U256::MAX,
-                U256::from_dec_str(
-                    "115676297148078879228147414023679219945\
-                     416714680974923475418126423905216510295",
-                )
-                .unwrap(),
-            ),
-        ] {
-            let amount_with_slippage = slippage.apply_to_amount_out(WETH, amount).unwrap();
-            assert_eq!(amount_with_slippage, expected);
-        }
-    }
-
-    #[test]
-    fn test_in_amount_with_slippage() {
-        let slippage = SlippageContext::default();
-        for (amount, expected) in [
-            (0.into(), 0.into()),
-            (100.into(), 101.into()),
-            (1000.into(), 1001.into()),
-            (10000.into(), 10010.into()),
-            (10001.into(), 10012.into()),
-            (U256::MAX, U256::MAX),
-        ] {
-            let amount_with_slippage = slippage.apply_to_amount_in(WETH, amount).unwrap();
-            assert_eq!(amount_with_slippage, expected);
-        }
-    }
 
     #[test]
     fn amm_execution_slippage() {

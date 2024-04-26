@@ -1,5 +1,5 @@
 use {
-    super::{error::Math, interaction::Liquidity, settlement, trade::ClearingPrices},
+    super::{error::Math, interaction::Liquidity, settlement, slippage, trade::ClearingPrices},
     crate::{
         domain::{
             competition::{
@@ -7,11 +7,12 @@ use {
                 order::{self, Partial},
             },
             eth::{self, allowance, Ether},
-            liquidity::{self, ExactOutput, MaxInput},
+            liquidity,
         },
         util::Bytes,
     },
     allowance::Allowance,
+    number::conversions::big_decimal_to_big_rational,
 };
 
 /// The type of strategy used to encode the solution.
@@ -27,6 +28,8 @@ pub enum Strategy {
 pub enum Error {
     #[error("invalid interaction: {0:?}")]
     InvalidInteractionExecution(competition::solution::interaction::Liquidity),
+    #[error("missing auction id")]
+    MissingAuctionId,
     #[error("invalid clearing price: {0:?}")]
     InvalidClearingPrice(eth::TokenAddress),
     #[error(transparent)]
@@ -34,7 +37,7 @@ pub enum Error {
 }
 
 pub fn tx(
-    auction_id: competition::auction::Id,
+    auction: &competition::Auction,
     solution: &super::Solution,
     contract: &contracts::GPv2Settlement,
     approvals: impl Iterator<Item = eth::allowance::Approval>,
@@ -150,7 +153,14 @@ pub fn tx(
         interactions.push(approve(&approval.0))
     }
 
-    // Encode interaction
+    // Encode interactions
+    let slippage = slippage::Parameters {
+        relative: big_decimal_to_big_rational(&solution.solver().slippage().relative),
+        max: solution.solver().slippage().absolute.map(Ether::into),
+        // TODO configure min slippage
+        min: None,
+        prices: auction.prices().clone(),
+    };
     for interaction in solution.interactions() {
         if matches!(internalization, settlement::Internalization::Enable)
             && interaction.internalize()
@@ -165,7 +175,7 @@ pub fn tx(
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {
-                liquidity_interaction(liquidity, contract)?
+                liquidity_interaction(liquidity, &slippage, contract)?
             }
         })
     }
@@ -185,7 +195,7 @@ pub fn tx(
 
     // Encode the auction id into the calldata
     let mut calldata = tx.data.unwrap().0;
-    calldata.extend(auction_id.to_be_bytes());
+    calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     Ok(eth::Tx {
         from: solution.solver().address(),
@@ -198,11 +208,13 @@ pub fn tx(
 
 fn liquidity_interaction(
     liquidity: &Liquidity,
+    slippage: &slippage::Parameters,
     settlement: &contracts::GPv2Settlement,
 ) -> Result<eth::Interaction, Error> {
-    // Todo account for slippage
-    let input = MaxInput(liquidity.input);
-    let output = ExactOutput(liquidity.output);
+    let (input, output) = slippage.apply_to(&slippage::Interaction {
+        input: liquidity.input,
+        output: liquidity.output,
+    })?;
 
     match liquidity.liquidity.kind.clone() {
         liquidity::Kind::UniswapV2(pool) => pool
