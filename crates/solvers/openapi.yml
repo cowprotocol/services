@@ -3,7 +3,7 @@ info:
   title: Solver Engine API
   description: The API implemented by solver engines interacting with the reference driver implementation.
   license:
-    name: ''
+    name: MIT OR Apache-2.0
   version: 0.1.0
 paths:
   /notify:

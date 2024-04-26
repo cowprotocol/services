@@ -106,6 +106,7 @@ pub fn generate_openapi_yaml() -> Result<String, serde_yaml::Error> {
                            driver implementation.",
             title = "Solver Engine API",
             version = "0.1.0",
+            license(name = "MIT OR Apache-2.0")
         )
     )]
     pub struct ApiDoc;
