@@ -266,6 +266,7 @@ pub struct Liquidity {
     /// A rough approximation of gas units required to use this liquidity
     /// on-chain.
     pub gas_estimate: U256,
+    #[serde(flatten)]
     pub parameter: LiquidityParameters,
 }
 

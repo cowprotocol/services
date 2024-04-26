@@ -233,6 +233,7 @@ pub enum OrderKind {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub struct Interaction {
     pub internalize: bool,
+    #[serde(flatten)]
     pub interaction_type: InteractionType,
 }
 
