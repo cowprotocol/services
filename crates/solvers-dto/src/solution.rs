@@ -231,10 +231,9 @@ pub enum OrderKind {
 /// specified by CIP-2.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub struct Interaction {
-    pub internalize: bool,
-    #[serde(flatten)]
-    pub interaction_type: InteractionType,
+pub enum Interaction {
+    Liquidity(LiquidityInteraction),
+    Custom(CustomInteraction),
 }
 
 impl ToSchema<'static> for Interaction {
@@ -280,6 +279,7 @@ pub enum InteractionType {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiquidityInteraction {
+    pub internalize: bool,
     /// The ID of executed liquidity provided in the auction input.
     pub id: String,
     pub input_token: H160,
@@ -338,6 +338,7 @@ impl ToSchema<'static> for LiquidityInteraction {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomInteraction {
+    pub internalize: bool,
     pub target: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,

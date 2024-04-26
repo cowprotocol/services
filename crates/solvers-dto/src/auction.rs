@@ -248,26 +248,15 @@ impl ToSchema<'static> for TokenInfo {
     }
 }
 
-/// On-chain liquidity that can be used in a solution. This liquidity is
-/// provided to facilitate onboarding new solvers. Additional liquidity that is
-/// not included in this set may still be used in solutions.
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Liquidity {
-    /// An opaque ID used for uniquely identifying the liquidity within a single
-    /// auction (note that they are **not** guaranteed to be unique across
-    /// auctions). This ID is used in the solution for matching interactions
-    /// with the executed liquidity.
-    pub id: String,
-    /// The Ethereum public address of the liquidity. The actual address that is
-    /// specified is dependent on the kind of liquidity.
-    pub address: H160,
-    /// A rough approximation of gas units required to use this liquidity
-    /// on-chain.
-    pub gas_estimate: U256,
-    #[serde(flatten)]
-    pub parameter: LiquidityParameters,
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum Liquidity {
+    ConstantProduct(ConstantProductPool),
+    WeightedProduct(WeightedProductPool),
+    Stable(StablePool),
+    ConcentratedLiquidity(ConcentratedLiquidityPool),
+    LimitOrder(ForeignLimitOrder),
 }
 
 impl ToSchema<'static> for Liquidity {
@@ -360,7 +349,11 @@ impl ToSchema<'static> for LiquidityParameters {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConstantProductPool {
+    pub id: String,
+    pub address: H160,
     pub router: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub gas_estimate: U256,
     pub tokens: HashMap<H160, ConstantProductReserve>,
     pub fee: BigDecimal,
 }
@@ -414,7 +407,11 @@ pub struct ConstantProductReserve {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WeightedProductPool {
+    pub id: String,
+    pub address: H160,
     pub balancer_pool_id: H256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub gas_estimate: U256,
     pub tokens: HashMap<H160, WeightedProductReserve>,
     pub fee: BigDecimal,
     pub version: WeightedProductVersion,
@@ -498,7 +495,11 @@ pub enum WeightedProductVersion {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct StablePool {
+    pub id: String,
+    pub address: H160,
     pub balancer_pool_id: H256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub gas_estimate: U256,
     pub tokens: HashMap<H160, StableReserve>,
     pub amplification_parameter: BigDecimal,
     pub fee: BigDecimal,
@@ -566,7 +567,11 @@ pub struct StableReserve {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConcentratedLiquidityPool {
+    pub id: String,
+    pub address: H160,
     pub router: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub gas_estimate: U256,
     pub tokens: Vec<H160>,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sqrt_price: U256,
@@ -625,7 +630,10 @@ impl ToSchema<'static> for ConcentratedLiquidityPool {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ForeignLimitOrder {
-    // todo: seems like this is not used anywhere.
+    pub id: String,
+    pub address: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub gas_estimate: U256,
     #[serde_as(as = "serialize::Hex")]
     pub hash: [u8; 32],
     pub maker_token: H160,
