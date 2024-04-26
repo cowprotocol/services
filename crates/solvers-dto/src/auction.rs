@@ -259,6 +259,8 @@ pub enum Liquidity {
     LimitOrder(ForeignLimitOrder),
 }
 
+// todo: Currently, it strictly follows the manual api schema. This has to be
+// automated and deleted.
 impl ToSchema<'static> for Liquidity {
     fn schema() -> (&'static str, RefOr<Schema>) {
         (

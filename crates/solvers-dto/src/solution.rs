@@ -236,6 +236,8 @@ pub enum Interaction {
     Custom(CustomInteraction),
 }
 
+// todo: Currently, it strictly follows the manual api schema. This has to be
+// automated and deleted.
 impl ToSchema<'static> for Interaction {
     fn schema() -> (&'static str, RefOr<Schema>) {
         (
