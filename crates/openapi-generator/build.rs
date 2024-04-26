@@ -3,7 +3,7 @@
 
 use std::fs;
 
-const SOLVERS_OPENAPI_PATH: &str = "../solvers/openapi_gen.yml";
+const SOLVERS_OPENAPI_PATH: &str = "../solvers/openapi.yml";
 
 fn main() {
     let openapi_yaml =
