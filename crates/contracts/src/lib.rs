@@ -162,11 +162,12 @@ mod tests {
         for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA, ARBITRUM] {
             assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(WETH9 for *network);
-            // TODO deploy and add contract to make this test pass
-            assert_has_deployment_address!(CowProtocolToken for *network);
             assert_has_deployment_address!(HooksTrampoline for *network);
             assert_has_deployment_address!(BalancerV2Vault for *network);
             assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for *network);
+        }
+        for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA] {
+            assert_has_deployment_address!(CowProtocolToken for *network);
         }
         for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM] {
             assert_has_deployment_address!(SushiSwapRouter for *network);

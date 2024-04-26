@@ -760,7 +760,6 @@ fn main() {
             .add_network_str(GOERLI, "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
             .add_network_str(GNOSIS, "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
             .add_network_str(SEPOLIA, "0x0625aFB445C3B6B7B929342a04A22599fd5dBB59")
-        // TODO add cow protocol token
     });
 
     // Unofficial Uniswap v2 liquidity on the Sepolia testnet.
