@@ -1,11 +1,22 @@
 use {
-    crate::{Address, OrderUid, TransactionHash},
+    crate::{auction::AuctionId, fee_policies::FeePolicyKind, Address, OrderUid, TransactionHash},
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
 };
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
+type FeePolicyRow = (
+    AuctionId,
+    OrderUid,
+    FeePolicyKind,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+);
+
+#[derive(Clone, Debug, Default, PartialEq, sqlx::FromRow)]
 pub struct TradesQueryRow {
     pub block_number: i64,
     pub log_index: i64,
@@ -17,6 +28,7 @@ pub struct TradesQueryRow {
     pub buy_token: Address,
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
+    pub fee_policies: Vec<FeePolicyRow>,
 }
 
 pub fn trades<'a>(
@@ -38,14 +50,18 @@ SELECT
     settlement.tx_hash
 FROM trades t
 LEFT OUTER JOIN LATERAL (
-    SELECT tx_hash FROM settlements s
+    SELECT tx_hash,auction_id FROM settlements s
     WHERE s.block_number = t.block_number
     AND   s.log_index > t.log_index
     ORDER BY s.log_index ASC
     LIMIT 1
 ) AS settlement ON true
 JOIN orders o
-ON o.uid = t.order_uid"#;
+ON o.uid = t.order_uid
+JOIN fee_policies f
+ON f.auction_id = settlement.auction_id
+AND f.order_uid = t.order_uid
+"#;
     const QUERY: &str = const_format::concatcp!(
         COMMON_QUERY,
         " WHERE ($1 IS NULL OR o.owner = $1)",
@@ -343,7 +359,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    //#[ignore]
     async fn postgres_trades_having_same_settlement_with_and_without_orders() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
