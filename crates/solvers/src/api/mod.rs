@@ -51,10 +51,7 @@ impl Api {
 pub fn generate_openapi_yaml() -> Result<String, serde_yaml::Error> {
     #[derive(OpenApi)]
     #[openapi(
-        paths(
-            routes::solve::solve,
-            routes::notify::notify,
-        ),
+        paths(routes::solve::solve, routes::notify::notify,),
         components(schemas(
             solvers_dto::auction::Auction,
             solvers_dto::auction::TokenInfo,
@@ -108,7 +105,7 @@ pub fn generate_openapi_yaml() -> Result<String, serde_yaml::Error> {
                            driver implementation.",
             title = "Solver Engine API",
             version = "0.1.0",
-        ),
+        )
     )]
     pub struct ApiDoc;
 

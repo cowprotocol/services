@@ -65,18 +65,22 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
             .liquidity
             .iter()
             .map(|liquidity| match &liquidity.parameter {
-                LiquidityParameters::ConstantProduct(parameter) => constant_product_pool::to_domain(
-                    liquidity.id.clone(),
-                    liquidity.address,
-                    liquidity.gas_estimate,
-                    parameter,
-                ),
-                LiquidityParameters::WeightedProduct(parameter) => weighted_product_pool::to_domain(
-                    liquidity.id.clone(),
-                    liquidity.address,
-                    liquidity.gas_estimate,
-                    parameter,
-                ),
+                LiquidityParameters::ConstantProduct(parameter) => {
+                    constant_product_pool::to_domain(
+                        liquidity.id.clone(),
+                        liquidity.address,
+                        liquidity.gas_estimate,
+                        parameter,
+                    )
+                }
+                LiquidityParameters::WeightedProduct(parameter) => {
+                    weighted_product_pool::to_domain(
+                        liquidity.id.clone(),
+                        liquidity.address,
+                        liquidity.gas_estimate,
+                        parameter,
+                    )
+                }
                 LiquidityParameters::Stable(parameter) => stable_pool::to_domain(
                     liquidity.id.clone(),
                     liquidity.address,
