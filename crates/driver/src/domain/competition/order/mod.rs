@@ -8,6 +8,9 @@ use {
     bigdecimal::Zero,
     model::order::{BuyTokenDestination, SellTokenSource},
     num::CheckedDiv,
+    number::serialization::HexOrDecimalU256,
+    serde::Serialize,
+    serde_with::serde_as,
 };
 pub use {fees::FeePolicy, signature::Signature};
 
@@ -15,7 +18,8 @@ pub mod fees;
 pub mod signature;
 
 /// An order in the auction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Order {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
@@ -70,8 +74,10 @@ impl From<SellAmount> for eth::U256 {
 
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TargetAmount(pub eth::U256);
+#[serde_as]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct TargetAmount(#[serde_as(as = "HexOrDecimalU256")] pub eth::U256);
 
 impl From<eth::U256> for TargetAmount {
     fn from(value: eth::U256) -> Self {
@@ -228,11 +234,13 @@ impl Available {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Partial {
     /// A partially order doesn't require the full amount to be traded.
     /// E.g. only 10% of the requested amount may be traded, if this leads
     /// to the most optimal solution.
+    #[serde(rename_all = "camelCase")]
     Yes {
         /// The available amount that can be used from the order.
         ///
@@ -240,6 +248,7 @@ pub enum Partial {
         /// executed as well as the trader's balance.
         available: TargetAmount,
     },
+    #[serde(rename_all = "camelCase")]
     No,
 }
 
@@ -247,8 +256,9 @@ pub enum Partial {
 pub const UID_LEN: usize = 56;
 
 /// UID of an order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Uid(pub Bytes<[u8; UID_LEN]>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(transparent)]
+pub struct Uid(#[serde(with = "bytes_hex")] pub Bytes<[u8; UID_LEN]>);
 
 impl Default for Uid {
     fn default() -> Self {
@@ -263,7 +273,8 @@ impl PartialEq<[u8; UID_LEN]> for Uid {
 }
 
 // TODO These doc comments are incorrect for limit orders
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Side {
     /// Buy an exact amount. The sell amount can vary due to e.g. partial fills
     /// or slippage.
@@ -291,8 +302,9 @@ pub const APP_DATA_LEN: usize = 32;
 /// This is a hash allowing arbitrary user data to be associated with an order.
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AppData(pub Bytes<[u8; APP_DATA_LEN]>);
+#[derive(Debug, Default, Clone, Copy, Serialize)]
+#[serde(transparent)]
+pub struct AppData(#[serde(with = "bytes_hex")] pub Bytes<[u8; APP_DATA_LEN]>);
 
 impl From<[u8; APP_DATA_LEN]> for AppData {
     fn from(inner: [u8; APP_DATA_LEN]) -> Self {
@@ -306,7 +318,8 @@ impl From<AppData> for [u8; APP_DATA_LEN] {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Kind {
     /// Order intended to be immediately executed. This is the "regular" type of
     /// order.
@@ -327,7 +340,8 @@ pub enum Kind {
 }
 
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SellTokenBalance {
     Erc20,
     Internal,
@@ -357,7 +371,8 @@ impl SellTokenBalance {
 }
 
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum BuyTokenBalance {
     Erc20,
     Internal,

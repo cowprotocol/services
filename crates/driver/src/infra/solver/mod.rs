@@ -113,7 +113,8 @@ pub struct Config {
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
     pub merge_solutions: SolutionMerging,
-    /// S3 path for storing the auctions with liquidity
+    /// S3 configuration for storing the auction in the form they are sent to
+    /// the solver engine
     pub s3: Option<S3>,
 }
 

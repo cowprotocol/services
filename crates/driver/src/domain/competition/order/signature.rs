@@ -1,12 +1,15 @@
 use {
     crate::{domain::eth, util::Bytes},
     model::signature::EcdsaSignature,
+    serde::Serialize,
 };
 
 /// Signature over the order data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Signature {
     pub scheme: Scheme,
+    #[serde(with = "bytes_hex")]
     pub data: Bytes<Vec<u8>>,
     /// The address used to sign and place this order.
     pub signer: eth::Address,
@@ -34,7 +37,8 @@ impl Signature {
 /// The scheme used for signing the order. This is used by the solver and
 /// the protocol, the driver does not care about the details of signature
 /// verification.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Scheme {
     Eip712,
     EthSign,

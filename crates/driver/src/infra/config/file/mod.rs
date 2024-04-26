@@ -226,7 +226,8 @@ struct SolverConfig {
     #[serde(default)]
     merge_solutions: bool,
 
-    /// S3 path for storing the auctions with liquidity
+    /// S3 configuration for storing the auction in the form they are sent to
+    /// the solver engine
     #[serde(default)]
     s3: Option<S3>,
 }

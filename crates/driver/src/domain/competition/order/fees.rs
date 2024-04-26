@@ -1,10 +1,12 @@
-use crate::domain::eth;
+use {crate::domain::eth, serde_with::serde_derive::Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     /// If the order receives more than limit price, take the protocol fee as a
     /// percentage of the difference. The fee is taken in `sell` token for
     /// `buy` orders and in `buy` token for `sell` orders.
+    #[serde(rename_all = "camelCase")]
     Surplus {
         /// Factor of surplus the protocol charges as a fee.
         /// Surplus is the difference between executed price and limit price
@@ -20,6 +22,7 @@ pub enum FeePolicy {
     /// A price improvement corresponds to a situation where the order is
     /// executed at a better price than the top quote. The protocol fee in such
     /// case is calculated as a percentage of this price improvement.
+    #[serde(rename_all = "camelCase")]
     PriceImprovement {
         /// Price improvement is the difference between executed price and the
         /// best quote or limit price, whichever is better for the user.
@@ -39,6 +42,7 @@ pub enum FeePolicy {
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
     /// token for `buy` orders.
+    #[serde(rename_all = "camelCase")]
     Volume {
         /// Percentage of the order's volume should be taken as a protocol
         /// fee.
@@ -46,7 +50,8 @@ pub enum FeePolicy {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Quote {
     pub sell: eth::Asset,
     pub buy: eth::Asset,

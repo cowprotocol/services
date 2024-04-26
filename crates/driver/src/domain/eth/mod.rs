@@ -1,6 +1,8 @@
 use {
     crate::util::Bytes,
     itertools::Itertools,
+    serde::Serialize,
+    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         ops::{Div, Mul, Sub},
@@ -11,6 +13,7 @@ pub mod allowance;
 mod eip712;
 mod gas;
 
+use number::serialization::HexOrDecimalU256;
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
@@ -118,7 +121,8 @@ impl From<H256> for StorageKey {
 }
 
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
 pub struct Address(pub H160);
 
 impl From<H160> for Address {
@@ -136,7 +140,8 @@ impl From<Address> for H160 {
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
 /// A smart contract address.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
 pub struct ContractAddress(pub H160);
 
 impl From<H160> for ContractAddress {
@@ -160,7 +165,8 @@ impl From<ContractAddress> for Address {
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
 pub struct TokenAddress(pub ContractAddress);
 
 impl TokenAddress {
@@ -177,8 +183,10 @@ impl TokenAddress {
 /// An ERC20 token amount.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TokenAmount(pub U256);
+#[serde_as]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct TokenAmount(#[serde_as(as = "HexOrDecimalU256")] pub U256);
 
 impl TokenAmount {
     /// Applies a factor to the token amount.
@@ -332,15 +340,18 @@ impl From<TokenAddress> for ContractAddress {
 
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub amount: TokenAmount,
     pub token: TokenAddress,
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Ether(pub U256);
+#[serde_as]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct Ether(#[serde_as(as = "HexOrDecimalU256")] pub U256);
 
 impl From<U256> for Ether {
     fn from(value: U256) -> Self {
@@ -403,10 +414,12 @@ impl From<u64> for BlockNo {
 }
 
 /// An onchain transaction which interacts with a smart contract.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,
+    #[serde(with = "bytes_hex")]
     pub call_data: Bytes<Vec<u8>>,
 }
 
