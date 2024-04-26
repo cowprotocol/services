@@ -31,6 +31,7 @@ reqwest = { workspace = true }
 s3 = { path = "../s3" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { versio = "1.0" }
 serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 thiserror = { workspace = true }
@@ -38,6 +39,8 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 toml = { workspace = true }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
+utoipa = { version = "4.2.0", features = ["yaml", "axum_extras"] }
+utoipauto = "0.1.10"
 web3 = { workspace = true }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and

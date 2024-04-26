@@ -12,3 +12,5 @@ mod tests;
 mod util;
 
 pub use self::run::{run, start};
+
+pub use api::generate_openapi_yaml;

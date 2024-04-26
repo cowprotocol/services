@@ -50,13 +50,13 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
                     amount: order.buy_amount,
                 },
                 side: match order.kind {
-                    Kind::Buy => order::Side::Buy,
-                    Kind::Sell => order::Side::Sell,
+                    OrderKind::Buy => order::Side::Buy,
+                    OrderKind::Sell => order::Side::Sell,
                 },
                 class: match order.class {
-                    Class::Market => order::Class::Market,
-                    Class::Limit => order::Class::Limit,
-                    Class::Liquidity => order::Class::Liquidity,
+                    OrderClass::Market => order::Class::Market,
+                    OrderClass::Limit => order::Class::Limit,
+                    OrderClass::Liquidity => order::Class::Liquidity,
                 },
                 partially_fillable: order.partially_fillable,
             })
@@ -64,18 +64,39 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
         liquidity: auction
             .liquidity
             .iter()
-            .map(|liquidity| match liquidity {
-                Liquidity::ConstantProduct(liquidity) => {
-                    constant_product_pool::to_domain(liquidity)
+            .map(|liquidity| match &liquidity.parameter {
+                LiquidityParameters::ConstantProduct(parameter) => constant_product_pool::to_domain(
+                    liquidity.id.clone(),
+                    liquidity.address,
+                    liquidity.gas_estimate,
+                    parameter,
+                ),
+                LiquidityParameters::WeightedProduct(parameter) => weighted_product_pool::to_domain(
+                    liquidity.id.clone(),
+                    liquidity.address,
+                    liquidity.gas_estimate,
+                    parameter,
+                ),
+                LiquidityParameters::Stable(parameter) => stable_pool::to_domain(
+                    liquidity.id.clone(),
+                    liquidity.address,
+                    liquidity.gas_estimate,
+                    parameter,
+                ),
+                LiquidityParameters::ConcentratedLiquidity(parameter) => {
+                    concentrated_liquidity_pool::to_domain(
+                        liquidity.id.clone(),
+                        liquidity.address,
+                        liquidity.gas_estimate,
+                        parameter,
+                    )
                 }
-                Liquidity::WeightedProduct(liquidity) => {
-                    weighted_product_pool::to_domain(liquidity)
-                }
-                Liquidity::Stable(liquidity) => stable_pool::to_domain(liquidity),
-                Liquidity::ConcentratedLiquidity(liquidity) => {
-                    concentrated_liquidity_pool::to_domain(liquidity)
-                }
-                Liquidity::LimitOrder(liquidity) => Ok(foreign_limit_order::to_domain(liquidity)),
+                LiquidityParameters::LimitOrder(parameter) => Ok(foreign_limit_order::to_domain(
+                    liquidity.id.clone(),
+                    liquidity.address,
+                    liquidity.gas_estimate,
+                    parameter,
+                )),
             })
             .try_collect()?,
         gas_price: auction::GasPrice(eth::Ether(auction.effective_gas_price)),
@@ -84,9 +105,18 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
 }
 
 mod constant_product_pool {
-    use {super::*, itertools::Itertools};
+    use {
+        super::*,
+        crate::domain::eth::{H160, U256},
+        itertools::Itertools,
+    };
 
-    pub fn to_domain(pool: &ConstantProductPool) -> Result<liquidity::Liquidity, Error> {
+    pub fn to_domain(
+        id: String,
+        address: H160,
+        gas_estimate: U256,
+        pool: &ConstantProductPool,
+    ) -> Result<liquidity::Liquidity, Error> {
         let reserves = {
             let (a, b) = pool
                 .tokens
@@ -102,9 +132,9 @@ mod constant_product_pool {
         };
 
         Ok(liquidity::Liquidity {
-            id: liquidity::Id(pool.id.clone()),
-            address: pool.address,
-            gas: eth::Gas(pool.gas_estimate),
+            id: liquidity::Id(id),
+            address,
+            gas: eth::Gas(gas_estimate),
             state: liquidity::State::ConstantProduct(liquidity::constant_product::Pool {
                 reserves,
                 fee: conv::decimal_to_rational(&pool.fee).ok_or("invalid constant product fee")?,
@@ -114,8 +144,16 @@ mod constant_product_pool {
 }
 
 mod weighted_product_pool {
-    use super::*;
-    pub fn to_domain(pool: &WeightedProductPool) -> Result<liquidity::Liquidity, Error> {
+    use {
+        super::*,
+        crate::domain::eth::{H160, U256},
+    };
+    pub fn to_domain(
+        id: String,
+        address: H160,
+        gas_estimate: U256,
+        pool: &WeightedProductPool,
+    ) -> Result<liquidity::Liquidity, Error> {
         let reserves = {
             let entries = pool
                 .tokens
@@ -139,9 +177,9 @@ mod weighted_product_pool {
         };
 
         Ok(liquidity::Liquidity {
-            id: liquidity::Id(pool.id.clone()),
-            address: pool.address,
-            gas: eth::Gas(pool.gas_estimate),
+            id: liquidity::Id(id),
+            address,
+            gas: eth::Gas(gas_estimate),
             state: liquidity::State::WeightedProduct(liquidity::weighted_product::Pool {
                 reserves,
                 fee: conv::decimal_to_rational(&pool.fee).ok_or("invalid weighted product fee")?,
@@ -155,9 +193,17 @@ mod weighted_product_pool {
 }
 
 mod stable_pool {
-    use super::*;
+    use {
+        super::*,
+        crate::domain::eth::{H160, U256},
+    };
 
-    pub fn to_domain(pool: &StablePool) -> Result<liquidity::Liquidity, Error> {
+    pub fn to_domain(
+        id: String,
+        address: H160,
+        gas_estimate: U256,
+        pool: &StablePool,
+    ) -> Result<liquidity::Liquidity, Error> {
         let reserves = {
             let entries = pool
                 .tokens
@@ -178,9 +224,9 @@ mod stable_pool {
         };
 
         Ok(liquidity::Liquidity {
-            id: liquidity::Id(pool.id.clone()),
-            address: pool.address,
-            gas: eth::Gas(pool.gas_estimate),
+            id: liquidity::Id(id),
+            address,
+            gas: eth::Gas(gas_estimate),
             state: liquidity::State::Stable(liquidity::stable::Pool {
                 reserves,
                 amplification_parameter: conv::decimal_to_rational(&pool.amplification_parameter)
@@ -192,9 +238,18 @@ mod stable_pool {
 }
 
 mod concentrated_liquidity_pool {
-    use {super::*, itertools::Itertools};
+    use {
+        super::*,
+        crate::domain::eth::{H160, U256},
+        itertools::Itertools,
+    };
 
-    pub fn to_domain(pool: &ConcentratedLiquidityPool) -> Result<liquidity::Liquidity, Error> {
+    pub fn to_domain(
+        id: String,
+        address: H160,
+        gas_estimate: U256,
+        pool: &ConcentratedLiquidityPool,
+    ) -> Result<liquidity::Liquidity, Error> {
         let tokens = {
             let (a, b) = pool
                 .tokens
@@ -208,9 +263,9 @@ mod concentrated_liquidity_pool {
         };
 
         Ok(liquidity::Liquidity {
-            id: liquidity::Id(pool.id.clone()),
-            address: pool.address,
-            gas: eth::Gas(pool.gas_estimate),
+            id: liquidity::Id(id),
+            address,
+            gas: eth::Gas(gas_estimate),
             state: liquidity::State::Concentrated(liquidity::concentrated::Pool {
                 tokens,
                 sqrt_price: liquidity::concentrated::SqrtPrice(pool.sqrt_price),
@@ -236,13 +291,21 @@ mod concentrated_liquidity_pool {
 }
 
 mod foreign_limit_order {
-    use super::*;
+    use {
+        super::*,
+        crate::domain::eth::{H160, U256},
+    };
 
-    pub fn to_domain(order: &ForeignLimitOrder) -> liquidity::Liquidity {
+    pub fn to_domain(
+        id: String,
+        address: H160,
+        gas_estimate: U256,
+        order: &ForeignLimitOrder,
+    ) -> liquidity::Liquidity {
         liquidity::Liquidity {
-            id: liquidity::Id(order.id.clone()),
-            address: order.address,
-            gas: eth::Gas(order.gas_estimate),
+            id: liquidity::Id(id),
+            address,
+            gas: eth::Gas(gas_estimate),
             state: liquidity::State::LimitOrder(liquidity::limit_order::LimitOrder {
                 maker: eth::Asset {
                     token: eth::TokenAddress(order.maker_token),

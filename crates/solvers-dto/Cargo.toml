@@ -11,5 +11,7 @@ chrono = { workspace = true }
 hex = { workspace = true }
 number = { path = "../number"}
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_with = { workspace = true }
+utoipa = { version = "4.2.0" }
 web3 = { workspace = true }

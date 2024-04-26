@@ -50,8 +50,8 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                     app_data: trade.order.app_data.0,
                                     fee_amount: 0.into(),
                                     kind: match trade.order.side {
-                                        crate::domain::order::Side::Buy => Kind::Buy,
-                                        crate::domain::order::Side::Sell => Kind::Sell,
+                                        crate::domain::order::Side::Buy => OrderKind::Buy,
+                                        crate::domain::order::Side::Sell => OrderKind::Sell,
                                     },
                                     partially_fillable: trade.order.partially_fillable,
                                     sell_token_balance: SellTokenBalance::Erc20,
@@ -68,22 +68,22 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                     .interactions
                     .iter()
                     .map(|interaction| match interaction {
-                        solution::Interaction::Liquidity(interaction) => {
-                            Interaction::Liquidity(LiquidityInteraction {
+                        solution::Interaction::Liquidity(interaction) => Interaction {
+                            internalize: interaction.internalize,
+                            interaction_type: InteractionType::Liquidity(LiquidityInteraction {
                                 id: interaction.liquidity.id.0.clone(),
                                 input_token: interaction.input.token.0,
                                 input_amount: interaction.input.amount,
                                 output_token: interaction.output.token.0,
                                 output_amount: interaction.output.amount,
-                                internalize: interaction.internalize,
-                            })
-                        }
-                        solution::Interaction::Custom(interaction) => {
-                            Interaction::Custom(CustomInteraction {
+                            }),
+                        },
+                        solution::Interaction::Custom(interaction) => Interaction {
+                            internalize: interaction.internalize,
+                            interaction_type: InteractionType::Custom(CustomInteraction {
                                 target: interaction.target,
                                 value: interaction.value.0,
                                 calldata: interaction.calldata.clone(),
-                                internalize: interaction.internalize,
                                 allowances: interaction
                                     .allowances
                                     .iter()
@@ -109,8 +109,8 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                         amount: o.amount,
                                     })
                                     .collect(),
-                            })
-                        }
+                            }),
+                        },
                     })
                     .collect(),
                 gas: solution.gas.map(|gas| gas.0.as_u64()),

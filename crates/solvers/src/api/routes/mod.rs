@@ -2,8 +2,8 @@ use serde::Serialize;
 
 mod healthz;
 mod metrics;
-mod notify;
-mod solve;
+pub mod notify;
+pub mod solve;
 
 pub(super) use {healthz::healthz, metrics::metrics, notify::notify, solve::solve};
 
