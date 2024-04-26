@@ -12,7 +12,6 @@ async fn sell_order() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
@@ -154,7 +153,6 @@ async fn buy_order() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                native-token-price-estimation-amount = "1000000000000000000"
             "#
             .to_owned(),
         ),
