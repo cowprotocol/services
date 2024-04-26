@@ -30,7 +30,14 @@ pub struct Arguments {
 }
 
 impl Arguments {
+    /// Simply uses `eth_getBlock` to get the data from the current block.
     pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
+        Arc::new(web3)
+    }
+
+    /// Uses a mix of `eth_getBlock` and an `eth_call` executing a helper
+    /// contract to work around some flaky node client implementations.
+    pub fn retriever_advanced(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
         Arc::new(retriever::BlockRetriever(web3))
     }
 
