@@ -4330,7 +4330,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "utoipa",
- "utoipauto",
  "web3",
 ]
 
@@ -5205,38 +5204,6 @@ dependencies = [
  "quote",
  "regex",
  "syn 2.0.60",
-]
-
-[[package]]
-name = "utoipauto"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c8b0206d46c52c964fbbecbf0f4015941000ce1122a3cc6103a64496bc9997e"
-dependencies = [
- "utoipauto-macro",
-]
-
-[[package]]
-name = "utoipauto-core"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f188b14783527b8694a62ac420f945049a8ad02ae403c59cd6d6d46ce70e7d00"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.60",
-]
-
-[[package]]
-name = "utoipauto-macro"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8441b6e9e8e22128550e718d08b9da55182e85920e3d307894300cb9fcd4791b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.60",
- "utoipauto-core",
 ]
 
 [[package]]
