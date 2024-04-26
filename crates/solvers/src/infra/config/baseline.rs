@@ -43,11 +43,6 @@ struct Config {
     /// computed trade route to arrive at a gas estimate for a whole settlement.
     #[serde(default = "default_gas_offset")]
     solution_gas_offset: i64,
-
-    /// The amount of the native token to use to estimate native price of a
-    /// token
-    #[serde_as(as = "serialize::U256")]
-    native_token_price_estimation_amount: eth::U256,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -83,7 +78,6 @@ pub async fn load(path: &Path) -> baseline::Config {
         max_hops: config.max_hops,
         max_partial_attempts: config.max_partial_attempts,
         solution_gas_offset: config.solution_gas_offset.into(),
-        native_token_price_estimation_amount: config.native_token_price_estimation_amount,
     }
 }
 
