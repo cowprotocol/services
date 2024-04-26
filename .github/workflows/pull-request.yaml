@@ -167,6 +167,17 @@ jobs:
       - uses: actions/checkout@v3
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+      - run: cargo build -p openapi-generator
+      - name: Check for unstaged changes in generated YAML files
+        run: |
+          git diff --exit-code crates/solvers/openapi.yml || { echo "::error ::OpenAPI spec contains changes: crates/solvers/openapi.yml"; exit 1; }
       - run: npm install @apidevtools/swagger-cli
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
