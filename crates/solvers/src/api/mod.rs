@@ -48,6 +48,7 @@ impl Api {
     }
 }
 
+// migrate to utoipauto once the issue is solved https://github.com/ProbablyClem/utoipauto/issues/23
 pub fn generate_openapi_yaml() -> Result<String, serde_yaml::Error> {
     #[derive(OpenApi)]
     #[openapi(
