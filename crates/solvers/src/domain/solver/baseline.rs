@@ -158,11 +158,11 @@ impl Inner {
                 let gas_cost = eth::Ether(gas.0.checked_mul(auction.gas_price.0 .0)?);
                 let sell_token = user_order.get().sell.token;
                 let fee = match auction.tokens.reference_price(&sell_token) {
-                    Some(price) => Some(price.ether_value(gas_cost)?),
+                    Some(price) => price.ether_value(gas_cost),
                     None if sell_token == self.weth.0.into() => {
                         // Early return if the sell token is native token
                         let price = auction::Price(eth::Ether(eth::U256::exp10(18)));
-                        Some(price.ether_value(gas_cost)?)
+                        price.ether_value(gas_cost)
                     }
                     None => boundary_solver
                         .route(
