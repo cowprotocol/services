@@ -1,5 +1,4 @@
-use {crate::util::bytes::Bytes, web3::types::AccessList};
-
+use {crate::util::bytes::Bytes, derive_more::From, web3::types::AccessList};
 mod chain;
 
 pub use {
@@ -44,6 +43,10 @@ impl From<U256> for Ether {
         Self(value)
     }
 }
+
+/// A token amount in wei, always representing the sell token of an order.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, From)]
+pub struct SellTokenAmount(pub U256);
 
 /// Like [`Gas`] but can be negative to encode a gas discount.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
