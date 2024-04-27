@@ -1,5 +1,6 @@
 use {
     super::serialize,
+    app_data::AppDataHash,
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
     serde::Deserialize,
@@ -25,7 +26,7 @@ use {
 /// The abstract auction to be solved by the searcher.
 #[serde_as]
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Auction {
     /// An opaque identifier for the auction. Will be set to `null` for requests
     /// that are not part of an auction (when quoting token prices for example).
@@ -53,7 +54,7 @@ pub struct Auction {
 /// CoW Protocol order information relevant to execution.
 #[serde_as]
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Order {
     #[schema(value_type = OrderUid)]
     #[serde_as(as = "serialize::Hex")]
@@ -65,17 +66,74 @@ pub struct Order {
     #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub full_sell_amount: U256,
     #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub full_buy_amount: U256,
+    pub fee_policies: Option<Vec<FeePolicy>>,
+    pub valid_to: u32,
     pub kind: OrderKind,
+    pub receiver: Option<H160>,
+    pub owner: H160,
     /// Whether or not this order can be partially filled. If this is false,
     /// then the order is a "fill-or-kill" order, meaning it needs to be
     /// completely filled or not at all.
     pub partially_fillable: bool,
+     pub pre_interactions: Vec<InteractionData>,
+    pub post_interactions: Vec<InteractionData>,
+    pub sell_token_source: SellTokenSource,
+    pub buy_token_destination: BuyTokenDestination,
     pub class: OrderClass,
-    /// Any protocol fee policies that apply to the order.
-    pub fee_policies: Option<Vec<FeePolicy>>,
+    pub app_data: AppDataHash,
+    pub signing_scheme: SigningScheme,
+    #[serde(with = "bytes_hex")]
+    pub signature: Vec<u8>,
+}
+
+/// Destination for which the buyAmount should be transferred to order's
+/// receiver to upon fulfillment
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuyTokenDestination {
+    /// Pay trade proceeds as an ERC20 token transfer
+    Erc20,
+    /// Pay trade proceeds as a Vault internal balance transfer
+    Internal,
+}
+
+/// Source from which the sellAmount should be drawn upon order fulfillment
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SellTokenSource {
+    /// Direct ERC20 allowances to the Vault relayer contract
+    Erc20,
+    /// Internal balances to the Vault with GPv2 relayer approval
+    External,
+    /// ERC20 allowances to the Vault with GPv2 relayer approval
+    Internal,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionData {
+    pub target: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub value: U256,
+    #[serde(with = "bytes_hex")]
+    pub call_data: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SigningScheme {
+    Eip712,
+    EthSign,
+    Eip1271,
+    PreSign,
 }
 
 /// How the CoW Protocol order was classified.
@@ -97,7 +155,7 @@ pub enum OrderClass {
 
 /// A fee policy that applies to an order.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     /// If the order receives more than limit price, pay the protocol a factor
     /// of the difference.
@@ -143,7 +201,7 @@ impl ToSchema<'static> for FeePolicy {
 
 #[serde_as]
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HexOrDecimalU256")]
     #[schema(value_type = TokenAmount)]
@@ -159,7 +217,7 @@ pub struct Quote {
 /// Information about a token relevant to the auction.
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenInfo {
     /// The ERC20.decimals value for this token. This may be missing for ERC20
     /// tokens that don't implement the optional metadata extension.
@@ -250,7 +308,7 @@ impl ToSchema<'static> for TokenInfo {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),
@@ -349,7 +407,7 @@ impl ToSchema<'static> for LiquidityParameters {
 /// A UniswapV2-like constant product liquidity pool for a token pair.
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ConstantProductPool {
     pub id: String,
     pub address: H160,
@@ -397,7 +455,7 @@ impl ToSchema<'static> for ConstantProductPool {
 /// A reserve of tokens in an on-chain liquidity pool.
 #[serde_as]
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 #[schema(title = "TokenReserve")]
 pub struct ConstantProductReserve {
     #[serde_as(as = "HexOrDecimalU256")]
@@ -407,7 +465,7 @@ pub struct ConstantProductReserve {
 /// A Balancer-like weighted product liquidity pool of N tokens.
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct WeightedProductPool {
     pub id: String,
     pub address: H160,
@@ -477,7 +535,7 @@ impl ToSchema<'static> for WeightedProductPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct WeightedProductReserve {
     #[serde_as(as = "HexOrDecimalU256")]
     pub balance: U256,
@@ -495,7 +553,7 @@ pub enum WeightedProductVersion {
 /// A Curve-like stable pool of N tokens.
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct StablePool {
     pub id: String,
     pub address: H160,
@@ -558,7 +616,7 @@ impl ToSchema<'static> for StablePool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct StableReserve {
     #[serde_as(as = "HexOrDecimalU256")]
     pub balance: U256,
@@ -567,7 +625,7 @@ pub struct StableReserve {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ConcentratedLiquidityPool {
     pub id: String,
     pub address: H160,
@@ -630,7 +688,7 @@ impl ToSchema<'static> for ConcentratedLiquidityPool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct ForeignLimitOrder {
     pub id: String,
     pub address: H160,
