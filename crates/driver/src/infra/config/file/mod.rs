@@ -534,9 +534,9 @@ enum BalancerV2Preset {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Logic {
     /// Use legacy submissions logic (default)
-    #[default]
     Boundary,
     /// Use Driver domain native submission logic
+    #[default] // TODO revert before merging!!!
     Native,
 }
 
