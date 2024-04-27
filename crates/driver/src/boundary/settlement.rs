@@ -110,7 +110,7 @@ impl Settlement {
         }
 
         let approvals = solution
-            .approvals(eth, settlement::Internalization::Enable)
+            .approvals(eth, settlement::Internalization::Disable)
             .await?;
         for approval in approvals {
             settlement

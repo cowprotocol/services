@@ -82,7 +82,10 @@ pub fn tx(
                     app_data: trade.order().app_data.0 .0.into(),
                     fee_amount: eth::U256::zero(),
                     flags: order_flags(trade.order()),
-                    executed_amount: trade.executed().0,
+                    executed_amount: match trade.order().side {
+                        order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                        order::Side::Buy => trade.executed().into(),
+                    },
                     signature: trade.order().signature.data.clone(),
                 });
 
