@@ -51,7 +51,7 @@ pub fn tx(
 
     // Encode uniform clearing price vector
     for (token, price) in solution.prices.clone() {
-        tokens.push(token.0.into());
+        tokens.push(token.into());
         clearing_prices.push(price);
     }
 
@@ -59,8 +59,8 @@ pub fn tx(
     for trade in solution.trades() {
         match trade {
             super::Trade::Fulfillment(trade) => {
-                tokens.push(trade.order().sell.token.0.into());
-                tokens.push(trade.order().buy.token.0.into());
+                tokens.push(trade.order().sell.token.into());
+                tokens.push(trade.order().buy.token.into());
 
                 let uniform_prices = ClearingPrices {
                     sell: solution
@@ -80,7 +80,7 @@ pub fn tx(
                     receiver: trade.order().receiver.unwrap_or_default().into(),
                     sell_amount: trade.order().sell.amount.into(),
                     buy_amount: trade.order().buy.amount.into(),
-                    valid_to: trade.order().valid_to.0.into(),
+                    valid_to: trade.order().valid_to.into(),
                     app_data: trade.order().app_data.0 .0.into(),
                     fee_amount: eth::U256::zero(),
                     flags: order_flags(trade.order()),
@@ -109,7 +109,7 @@ pub fn tx(
                     receiver: trade.order().receiver.into(),
                     sell_amount: trade.order().sell.amount.into(),
                     buy_amount: trade.order().buy.amount.into(),
-                    valid_to: trade.order().valid_to.0.into(),
+                    valid_to: trade.order().valid_to.into(),
                     app_data: trade.order().app_data.0 .0.into(),
                     fee_amount: eth::U256::zero(),
                     flags: jit_order_flags(trade.order()),
@@ -169,8 +169,8 @@ pub fn tx(
 
     let tx = contract
         .settle(
-            tokens.clone(),
-            clearing_prices.clone(),
+            tokens,
+            clearing_prices,
             trades.iter().map(codec::trade).collect(),
             [
                 pre_interactions.iter().map(codec::interaction).collect(),
