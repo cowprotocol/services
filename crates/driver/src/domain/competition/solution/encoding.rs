@@ -189,7 +189,7 @@ pub fn tx(
 
     // Encode WETH unwrap
     if !native_unwrap.0.is_zero() {
-        interactions.push(unwrap(native_unwrap, &contracts.weth()));
+        interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 
     let tx = contracts
