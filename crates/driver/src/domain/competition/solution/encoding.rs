@@ -40,11 +40,13 @@ pub fn tx(
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
 ) -> Result<eth::Tx, Error> {
-    let mut tokens = Vec::new();
-    let mut clearing_prices = Vec::new();
-    let mut trades: Vec<Trade> = Vec::new();
+    let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
+    let mut clearing_prices =
+        Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
+    let mut trades: Vec<Trade> = Vec::with_capacity(solution.trades().len());
     let mut pre_interactions = Vec::new();
-    let mut interactions = Vec::new();
+    let mut interactions =
+        Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
     let mut post_interactions = Vec::new();
 
     // Encode uniform clearing price vector
