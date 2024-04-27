@@ -135,7 +135,7 @@ impl Settlement {
                 input: Default::default(),
                 access_list: Default::default(),
             };
-            Result::<_, Error>::Ok(simulator.access_list(tx).await?)
+            Result::<_, Error>::Ok(simulator.access_list(&tx).await?)
         }))
         .await?;
         let partial_access_list = partial_access_lists
@@ -203,11 +203,11 @@ impl Settlement {
 
         // Simulate the full access list, passing the partial access
         // list into the simulation.
-        let access_list = simulator.access_list(tx.clone()).await?;
+        let access_list = simulator.access_list(&tx).await?;
         let tx = tx.set_access_list(access_list.clone());
 
         // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(tx.clone()).await;
+        let gas = simulator.gas(&tx).await;
 
         observe::simulated(eth, &tx, &gas);
         Ok((access_list, gas?))
