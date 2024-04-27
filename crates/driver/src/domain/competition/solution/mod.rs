@@ -278,9 +278,6 @@ impl Solution {
         internalization: settlement::Internalization,
     ) -> impl Iterator<Item = eth::allowance::Required> {
         let mut normalized = HashMap::new();
-        // TODO: we need to carry the "internalize" flag with the allowances,
-        // since we don't want to include approvals for interactions that are
-        // meant to be internalized anyway.
         let allowances = self.interactions.iter().flat_map(|interaction| {
             if interaction.internalize()
                 && matches!(internalization, settlement::Internalization::Enable)
