@@ -9,6 +9,7 @@ use {
             eth::{self, allowance, Ether},
             liquidity,
         },
+        infra,
         util::Bytes,
     },
     allowance::Allowance,
@@ -38,7 +39,7 @@ pub enum Error {
 pub fn tx(
     auction: &competition::Auction,
     solution: &super::Solution,
-    contract: &contracts::GPv2Settlement,
+    contracts: &infra::blockchain::Contracts,
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
 ) -> Result<eth::Tx, Error> {
@@ -50,6 +51,7 @@ pub fn tx(
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
     let mut post_interactions = Vec::new();
+    let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
     for (token, price) in solution.prices.clone() {
@@ -72,6 +74,12 @@ pub fn tx(
                         .clearing_price(trade.order().buy.token)
                         .ok_or(Error::InvalidClearingPrice(trade.order().buy.token))?,
                 };
+
+                // Account for the WETH unwrap if necessary
+                if trade.order().buy.token == eth::ETH_TOKEN {
+                    native_unwrap += trade.buy_amount(&uniform_prices)?;
+                }
+
                 let custom_prices = trade.custom_prices(&uniform_prices)?;
                 (
                     Price {
@@ -174,12 +182,18 @@ pub fn tx(
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {
-                liquidity_interaction(liquidity, &slippage, contract)?
+                liquidity_interaction(liquidity, &slippage, contracts.settlement())?
             }
         })
     }
 
-    let tx = contract
+    // Encode WETH unwrap
+    if !native_unwrap.0.is_zero() {
+        interactions.push(unwrap(native_unwrap, &contracts.weth()));
+    }
+
+    let tx = contracts
+        .settlement()
         .settle(
             tokens,
             clearing_prices,
@@ -198,7 +212,7 @@ pub fn tx(
 
     Ok(eth::Tx {
         from: solution.solver().address(),
-        to: contract.address().into(),
+        to: contracts.settlement().address().into(),
         input: calldata.into(),
         value: Ether(0.into()),
         access_list: Default::default(),
@@ -252,6 +266,15 @@ fn approve(allowance: &Allowance) -> eth::Interaction {
         ]
         .concat()
         .into(),
+    }
+}
+
+fn unwrap(amount: eth::TokenAmount, weth: &contracts::WETH9) -> eth::Interaction {
+    let tx = weth.withdraw(amount.into()).into_inner();
+    eth::Interaction {
+        target: tx.to.unwrap().into(),
+        value: tx.value.unwrap().into(),
+        call_data: tx.data.unwrap().0.into(),
     }
 }
 
