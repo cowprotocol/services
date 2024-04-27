@@ -1,15 +1,13 @@
-use {
-    crate::{
-        domain::{
-            competition::{
-                self,
-                order::{self, Side},
-                solution::{error::{self, Math}},
-            },
-            eth::{self},
+use crate::{
+    domain::{
+        competition::{
+            self,
+            order::{self, Side},
+            solution::error::{self, Math},
         },
-        util::conv::u256::U256Ext,
+        eth::{self},
     },
+    util::conv::u256::U256Ext,
 };
 
 /// A trade which executes an order as part of this solution.
