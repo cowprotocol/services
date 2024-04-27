@@ -127,6 +127,7 @@ pub mod encoding {
 
     /// Which logic to use to encode solutions into settlement transactions.
     #[derive(Debug, Deserialize, Default)]
+    #[serde(rename_all = "kebab-case")]
     pub enum Strategy {
         /// Legacy solver crate strategy
         #[default]

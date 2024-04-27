@@ -1,4 +1,3 @@
-
 /// The type of strategy used to encode the solution.
 #[derive(Debug, Copy, Clone)]
 pub enum Strategy {
