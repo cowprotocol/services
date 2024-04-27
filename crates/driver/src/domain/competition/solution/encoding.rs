@@ -1,5 +1,5 @@
 use {
-    super::{error::Math, settlement, trade::ClearingPrices},
+    super::{error::Math, interaction::Liquidity, settlement, trade::ClearingPrices},
     crate::{
         domain::{
             competition::{
@@ -57,10 +57,10 @@ pub fn tx(
 
     // Encode trades with custom clearing prices
     for trade in solution.trades() {
-        match trade {
+        let (price, trade) = match trade {
             super::Trade::Fulfillment(trade) => {
-                tokens.push(trade.order().sell.token.into());
-                tokens.push(trade.order().buy.token.into());
+                pre_interactions.extend(trade.order().pre_interactions.clone());
+                post_interactions.extend(trade.order().post_interactions.clone());
 
                 let uniform_prices = ClearingPrices {
                     sell: solution
@@ -71,53 +71,78 @@ pub fn tx(
                         .ok_or(Error::InvalidClearingPrice(trade.order().buy.token))?,
                 };
                 let custom_prices = trade.custom_prices(&uniform_prices)?;
-                clearing_prices.push(custom_prices.sell);
-                clearing_prices.push(custom_prices.buy);
-
-                trades.push(Trade {
-                    sell_token_index: (tokens.len() - 2).into(),
-                    buy_token_index: (tokens.len() - 1).into(),
-                    receiver: trade.order().receiver.unwrap_or_default().into(),
-                    sell_amount: trade.order().sell.amount.into(),
-                    buy_amount: trade.order().buy.amount.into(),
-                    valid_to: trade.order().valid_to.into(),
-                    app_data: trade.order().app_data.0 .0.into(),
-                    fee_amount: eth::U256::zero(),
-                    flags: order_flags(trade.order()),
-                    executed_amount: match trade.order().side {
-                        order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
-                        order::Side::Buy => trade.executed().into(),
+                (
+                    Price {
+                        sell_token: trade.order().sell.token.into(),
+                        sell_price: custom_prices.sell,
+                        buy_token: trade.order().buy.token.into(),
+                        buy_price: custom_prices.buy,
                     },
-                    signature: trade.order().signature.data.clone(),
-                });
-
-                pre_interactions.extend(trade.order().pre_interactions.clone());
-                post_interactions.extend(trade.order().post_interactions.clone());
+                    Trade {
+                        sell_token_index: (tokens.len() - 2).into(),
+                        buy_token_index: (tokens.len() - 1).into(),
+                        receiver: trade.order().receiver.unwrap_or_default().into(),
+                        sell_amount: trade.order().sell.amount.into(),
+                        buy_amount: trade.order().buy.amount.into(),
+                        valid_to: trade.order().valid_to.into(),
+                        app_data: trade.order().app_data.0 .0.into(),
+                        fee_amount: eth::U256::zero(),
+                        flags: Flags {
+                            side: trade.order().side,
+                            partially_fillable: matches!(
+                                trade.order().partial,
+                                Partial::Yes { .. }
+                            ),
+                            signing_scheme: trade.order().signature.scheme,
+                            sell_token_balance: trade.order().sell_token_balance,
+                            buy_token_balance: trade.order().buy_token_balance,
+                        },
+                        executed_amount: match trade.order().side {
+                            order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                            order::Side::Buy => trade.executed().into(),
+                        },
+                        signature: trade.order().signature.data.clone(),
+                    },
+                )
             }
             super::Trade::Jit(trade) => {
-                tokens.push(trade.order().sell.token.0.into());
-                tokens.push(trade.order().buy.token.0.into());
-
-                // Jit orders are matched at limit price, so the sell token is worth buy.amount
-                // and vice versa
-                clearing_prices.push(trade.order().buy.amount.into());
-                clearing_prices.push(trade.order().sell.amount.into());
-
-                trades.push(Trade {
-                    sell_token_index: (tokens.len() - 2).into(),
-                    buy_token_index: (tokens.len() - 1).into(),
-                    receiver: trade.order().receiver.into(),
-                    sell_amount: trade.order().sell.amount.into(),
-                    buy_amount: trade.order().buy.amount.into(),
-                    valid_to: trade.order().valid_to.into(),
-                    app_data: trade.order().app_data.0 .0.into(),
-                    fee_amount: eth::U256::zero(),
-                    flags: jit_order_flags(trade.order()),
-                    executed_amount: trade.executed().0,
-                    signature: trade.order().signature.data.clone(),
-                });
+                (
+                    Price {
+                        // Jit orders are matched at limit price, so the sell token is worth
+                        // buy.amount and vice versa
+                        sell_token: trade.order().sell.token.0.into(),
+                        sell_price: trade.order().buy.amount.into(),
+                        buy_token: trade.order().buy.token.0.into(),
+                        buy_price: trade.order().sell.amount.into(),
+                    },
+                    Trade {
+                        sell_token_index: (tokens.len() - 2).into(),
+                        buy_token_index: (tokens.len() - 1).into(),
+                        receiver: trade.order().receiver.into(),
+                        sell_amount: trade.order().sell.amount.into(),
+                        buy_amount: trade.order().buy.amount.into(),
+                        valid_to: trade.order().valid_to.into(),
+                        app_data: trade.order().app_data.0 .0.into(),
+                        fee_amount: eth::U256::zero(),
+                        flags: Flags {
+                            side: trade.order().side,
+                            partially_fillable: trade.order().partially_fillable,
+                            signing_scheme: trade.order().signature.scheme,
+                            sell_token_balance: trade.order().sell_token_balance,
+                            buy_token_balance: trade.order().buy_token_balance,
+                        },
+                        executed_amount: trade.executed().0,
+                        signature: trade.order().signature.data.clone(),
+                    },
+                )
             }
-        }
+        };
+        tokens.push(price.sell_token);
+        tokens.push(price.buy_token);
+        clearing_prices.push(price.sell_price);
+        clearing_prices.push(price.buy_price);
+
+        trades.push(trade);
     }
 
     // Encode allowances
@@ -139,30 +164,8 @@ pub fn tx(
                 target: interaction.target.0.into(),
                 call_data: interaction.call_data.clone(),
             },
-            competition::solution::Interaction::Liquidity(interaction) => {
-                // Todo account for slippage
-                let input = MaxInput(interaction.input);
-                let output = ExactOutput(interaction.output);
-
-                match interaction.liquidity.kind.clone() {
-                    liquidity::Kind::UniswapV2(pool) => {
-                        pool.swap(&input, &output, &contract.address().into()).ok()
-                    }
-                    liquidity::Kind::UniswapV3(pool) => {
-                        pool.swap(&input, &output, &contract.address().into()).ok()
-                    }
-                    liquidity::Kind::BalancerV2Stable(pool) => {
-                        pool.swap(&input, &output, &contract.address().into()).ok()
-                    }
-                    liquidity::Kind::BalancerV2Weighted(pool) => {
-                        pool.swap(&input, &output, &contract.address().into()).ok()
-                    }
-                    liquidity::Kind::Swapr(pool) => {
-                        pool.swap(&input, &output, &contract.address().into()).ok()
-                    }
-                    liquidity::Kind::ZeroEx(limit_order) => limit_order.to_interaction(&input).ok(),
-                }
-                .ok_or(Error::InvalidInteractionExecution(interaction.clone()))?
+            competition::solution::Interaction::Liquidity(liquidity) => {
+                liquidity_interaction(liquidity, &contract)?
             }
         })
     }
@@ -193,64 +196,33 @@ pub fn tx(
     })
 }
 
-fn order_flags(order: &competition::Order) -> eth::U256 {
-    let mut result = 0u8;
-    // The kind is encoded as 1 bit in position 0.
-    result |= match order.side {
-        order::Side::Sell => 0b0,
-        order::Side::Buy => 0b1,
-    };
-    // The order fill kind is encoded as 1 bit in position 1.
-    result |= (matches!(order.partial, Partial::Yes { .. }) as u8) << 1;
-    // The order sell token balance is encoded as 2 bits in position 2.
-    result |= match order.sell_token_balance {
-        order::SellTokenBalance::Erc20 => 0b00,
-        order::SellTokenBalance::External => 0b10,
-        order::SellTokenBalance::Internal => 0b11,
-    } << 2;
-    // The order buy token balance is encoded as 1 bit in position 4.
-    result |= match order.buy_token_balance {
-        order::BuyTokenBalance::Erc20 => 0b0,
-        order::BuyTokenBalance::Internal => 0b1,
-    } << 4;
-    // The signing scheme is encoded as a 2 bits in position 5.
-    result |= match order.signature.scheme {
-        order::signature::Scheme::Eip712 => 0b00,
-        order::signature::Scheme::EthSign => 0b01,
-        order::signature::Scheme::Eip1271 => 0b10,
-        order::signature::Scheme::PreSign => 0b11,
-    } << 5;
-    result.into()
-}
+fn liquidity_interaction(
+    liquidity: &Liquidity,
+    settlement: &contracts::GPv2Settlement,
+) -> Result<eth::Interaction, Error> {
+    // Todo account for slippage
+    let input = MaxInput(liquidity.input);
+    let output = ExactOutput(liquidity.output);
 
-fn jit_order_flags(order: &order::Jit) -> eth::U256 {
-    let mut result = 0u8;
-    // The kind is encoded as 1 bit in position 0.
-    result |= match order.side {
-        order::Side::Sell => 0b0,
-        order::Side::Buy => 0b1,
-    };
-    // The order fill kind is encoded as 1 bit in position 1.
-    result |= (order.partially_fillable as u8) << 1;
-    // The order sell token balance is encoded as 2 bits in position 2.
-    result |= match order.sell_token_balance {
-        order::SellTokenBalance::Erc20 => 0b00,
-        order::SellTokenBalance::External => 0b10,
-        order::SellTokenBalance::Internal => 0b11,
-    } << 2;
-    // The order buy token balance is encoded as 1 bit in position 4.
-    result |= match order.buy_token_balance {
-        order::BuyTokenBalance::Erc20 => 0b0,
-        order::BuyTokenBalance::Internal => 0b1,
-    } << 4;
-    // The signing scheme is encoded as a 2 bits in position 5.
-    result |= match order.signature.scheme {
-        order::signature::Scheme::Eip712 => 0b00,
-        order::signature::Scheme::EthSign => 0b01,
-        order::signature::Scheme::Eip1271 => 0b10,
-        order::signature::Scheme::PreSign => 0b11,
-    } << 5;
-    result.into()
+    match liquidity.liquidity.kind.clone() {
+        liquidity::Kind::UniswapV2(pool) => pool
+            .swap(&input, &output, &settlement.address().into())
+            .ok(),
+        liquidity::Kind::UniswapV3(pool) => pool
+            .swap(&input, &output, &settlement.address().into())
+            .ok(),
+        liquidity::Kind::BalancerV2Stable(pool) => pool
+            .swap(&input, &output, &settlement.address().into())
+            .ok(),
+        liquidity::Kind::BalancerV2Weighted(pool) => pool
+            .swap(&input, &output, &settlement.address().into())
+            .ok(),
+        liquidity::Kind::Swapr(pool) => pool
+            .swap(&input, &output, &settlement.address().into())
+            .ok(),
+        liquidity::Kind::ZeroEx(limit_order) => limit_order.to_interaction(&input).ok(),
+    }
+    .ok_or(Error::InvalidInteractionExecution(liquidity.clone()))
 }
 
 fn approve(allowance: &Allowance) -> eth::Interaction {
@@ -281,14 +253,32 @@ struct Trade {
     valid_to: u32,
     app_data: Bytes<[u8; 32]>,
     fee_amount: eth::U256,
-    flags: eth::U256,
+    flags: Flags,
     executed_amount: eth::U256,
     signature: Bytes<Vec<u8>>,
 }
 
-mod codec {
-    use crate::domain::eth;
+struct Price {
+    sell_token: eth::H160,
+    sell_price: eth::U256,
+    buy_token: eth::H160,
+    buy_price: eth::U256,
+}
 
+struct Flags {
+    side: order::Side,
+    partially_fillable: bool,
+    signing_scheme: order::signature::Scheme,
+    sell_token_balance: order::SellTokenBalance,
+    buy_token_balance: order::BuyTokenBalance,
+}
+
+impl Flags {}
+
+mod codec {
+    use crate::domain::{competition::order, eth};
+
+    // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L16
     type Trade = (
         eth::U256,                    // sellTokenIndex
         eth::U256,                    // buyTokenIndex
@@ -313,12 +303,44 @@ mod codec {
             trade.valid_to,
             ethcontract::Bytes(trade.app_data.into()),
             trade.fee_amount,
-            trade.flags,
+            flags(&trade.flags),
             trade.executed_amount,
             ethcontract::Bytes(trade.signature.0.clone()),
         )
     }
 
+    // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Trade.sol#L58
+    fn flags(flags: &super::Flags) -> eth::U256 {
+        let mut result = 0u8;
+        // The kind is encoded as 1 bit in position 0.
+        result |= match flags.side {
+            order::Side::Sell => 0b0,
+            order::Side::Buy => 0b1,
+        };
+        // The order fill kind is encoded as 1 bit in position 1.
+        result |= (flags.partially_fillable as u8) << 1;
+        // The order sell token balance is encoded as 2 bits in position 2.
+        result |= match flags.sell_token_balance {
+            order::SellTokenBalance::Erc20 => 0b00,
+            order::SellTokenBalance::External => 0b10,
+            order::SellTokenBalance::Internal => 0b11,
+        } << 2;
+        // The order buy token balance is encoded as 1 bit in position 4.
+        result |= match flags.buy_token_balance {
+            order::BuyTokenBalance::Erc20 => 0b0,
+            order::BuyTokenBalance::Internal => 0b1,
+        } << 4;
+        // The signing scheme is encoded as a 2 bits in position 5.
+        result |= match flags.signing_scheme {
+            order::signature::Scheme::Eip712 => 0b00,
+            order::signature::Scheme::EthSign => 0b01,
+            order::signature::Scheme::Eip1271 => 0b10,
+            order::signature::Scheme::PreSign => 0b11,
+        } << 5;
+        result.into()
+    }
+
+    // cf. https://github.com/cowprotocol/contracts/blob/v1.5.0/src/contracts/libraries/GPv2Interaction.sol#L9
     type Interaction = (
         eth::H160,                   // target
         eth::U256,                   // value
