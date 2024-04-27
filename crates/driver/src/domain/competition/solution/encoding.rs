@@ -98,7 +98,7 @@ pub fn tx(
                             buy_token_balance: trade.order().buy_token_balance,
                         },
                         executed_amount: match trade.order().side {
-                            order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                            order::Side::Sell => trade.executed().0 + trade.fee().0,
                             order::Side::Buy => trade.executed().into(),
                         },
                         signature: trade.order().signature.data.clone(),
@@ -160,12 +160,12 @@ pub fn tx(
 
         interactions.push(match interaction {
             competition::solution::Interaction::Custom(interaction) => eth::Interaction {
-                value: interaction.value.into(),
+                value: interaction.value,
                 target: interaction.target.0.into(),
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {
-                liquidity_interaction(liquidity, &contract)?
+                liquidity_interaction(liquidity, contract)?
             }
         })
     }
