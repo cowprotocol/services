@@ -32,7 +32,7 @@ reqwest = { workspace = true }
 s3 = { path = "../s3" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { versio = "1.0" }
+serde_yaml =  "0.9.34+deprecated"
 serde_with = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 thiserror = { workspace = true }
