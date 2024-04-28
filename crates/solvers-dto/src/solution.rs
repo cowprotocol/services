@@ -528,19 +528,3 @@ impl ToSchema<'static> for SigningScheme {
         )
     }
 }
-
-/// Signature bytes.
-#[derive(ToSchema)]
-#[schema(
-    example = "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-)]
-#[allow(dead_code)]
-pub struct Signature(String);
-
-/// 32 bytes of arbitrary application specific data that can be added to an
-/// order. This can also be used to ensure uniqueness between two orders with
-/// otherwise the exact same parameters.
-#[derive(ToSchema)]
-#[schema(example = "0x0000000000000000000000000000000000000000000000000000000000000000")]
-#[allow(dead_code)]
-pub struct AppData(String);
