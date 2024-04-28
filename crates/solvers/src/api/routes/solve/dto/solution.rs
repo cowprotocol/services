@@ -1,6 +1,6 @@
 use {
     crate::domain::{order, solution},
-    solvers_dto::solution::*,
+    solvers_dto::{common::SigningScheme, solution::*},
 };
 
 /// Creates a new solution DTO from its domain object.

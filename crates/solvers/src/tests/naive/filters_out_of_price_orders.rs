@@ -34,7 +34,7 @@ async fn sell_orders_on_both_sides() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 },
                 // Reasonable order a -> b
@@ -59,7 +59,7 @@ async fn sell_orders_on_both_sides() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 },
                 // Reasonable order a -> b
@@ -84,7 +84,7 @@ async fn sell_orders_on_both_sides() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 },
                 // Unreasonable order a -> b
@@ -109,7 +109,7 @@ async fn sell_orders_on_both_sides() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 },
             ],

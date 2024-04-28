@@ -2,6 +2,7 @@
 //! communicate with the driver.
 
 pub mod auction;
+pub mod common;
 pub mod notification;
 pub mod solution;
 

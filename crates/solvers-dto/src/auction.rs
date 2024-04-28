@@ -1,5 +1,6 @@
 use {
     super::serialize,
+    crate::common,
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     number::serialization::HexOrDecimalU256,
@@ -66,36 +67,42 @@ pub struct Order {
     #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
+    #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_sell_amount: U256,
     #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+    #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_buy_amount: U256,
     pub fee_policies: Option<Vec<FeePolicy>>,
     pub valid_to: u32,
     pub kind: OrderKind,
+    #[schema(value_type = Address)]
     pub receiver: Option<H160>,
+    #[schema(value_type = Address)]
     pub owner: H160,
     /// Whether or not this order can be partially filled. If this is false,
     /// then the order is a "fill-or-kill" order, meaning it needs to be
     /// completely filled or not at all.
     pub partially_fillable: bool,
-     pub pre_interactions: Vec<InteractionData>,
+    pub pre_interactions: Vec<InteractionData>,
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub class: OrderClass,
+    #[schema(value_type = AppData)]
     pub app_data: AppDataHash,
-    pub signing_scheme: SigningScheme,
+    pub signing_scheme: common::SigningScheme,
     #[serde(with = "bytes_hex")]
+    #[schema(value_type = Signature)]
     pub signature: Vec<u8>,
 }
 
 /// Destination for which the buyAmount should be transferred to order's
 /// receiver to upon fulfillment
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
@@ -105,7 +112,7 @@ pub enum BuyTokenDestination {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfillment
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
@@ -117,23 +124,17 @@ pub enum SellTokenSource {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InteractionData {
+    #[schema(value_type = Address)]
     pub target: H160,
+    #[schema(value_type = TokenAmount)]
     #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
+    #[schema(value_type = String, example = "0x01020304")]
     #[serde(with = "bytes_hex")]
     pub call_data: Vec<u8>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SigningScheme {
-    Eip712,
-    EthSign,
-    Eip1271,
-    PreSign,
 }
 
 /// How the CoW Protocol order was classified.
@@ -695,6 +696,7 @@ pub struct ForeignLimitOrder {
     #[serde_as(as = "HexOrDecimalU256")]
     pub gas_estimate: U256,
     #[serde_as(as = "serialize::Hex")]
+    // todo: not used/not a part of the API schema for some reason
     pub hash: [u8; 32],
     pub maker_token: H160,
     pub taker_token: H160,
@@ -831,6 +833,14 @@ pub struct I32(String);
 )]
 #[allow(dead_code)]
 pub struct OrderUid(String);
+
+/// Signature bytes.
+#[derive(ToSchema)]
+#[schema(
+    example = "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+)]
+#[allow(dead_code)]
+pub struct Signature(String);
 
 /// If the order receives more than limit price, pay the protocol a factor of
 /// the difference.

@@ -33,7 +33,7 @@ async fn test() {
                     "buyTokenDestination": "erc20",
                     "class": "limit",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 },
             ],

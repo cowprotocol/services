@@ -52,7 +52,7 @@ async fn uniswap() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 }
             ],
@@ -183,7 +183,7 @@ async fn balancer_weighted() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 }
             ],
@@ -353,7 +353,7 @@ async fn balancer_weighted_v3plus() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 }
             ],
@@ -494,7 +494,7 @@ async fn distant_convergence() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 }
             ],
@@ -635,7 +635,7 @@ async fn same_path() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 }
             ],
@@ -826,7 +826,7 @@ async fn balancer_stable() {
                     "buyTokenDestination": "erc20",
                     "class": "market",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 },
             ],

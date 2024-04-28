@@ -242,7 +242,7 @@ components:
           type: string
         signingScheme:
           type: string
-          enum: ["eip712", "ethsign", "presign", "eip1271"]
+          enum: ["eip712", "ethSign", "preSign", "eip1271"]
         signature:
           description: Hex encoded bytes with `0x` prefix.
           type: string

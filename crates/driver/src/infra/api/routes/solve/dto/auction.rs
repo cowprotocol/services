@@ -285,7 +285,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,

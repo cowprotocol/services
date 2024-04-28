@@ -156,7 +156,6 @@ components:
           description: A map of token addresses to token information.
           additionalProperties:
             $ref: '#/components/schemas/TokenInfo'
-      additionalProperties: false
     BalancerPoolId:
       type: string
       description: |-
@@ -170,6 +169,14 @@ components:
     BuyTokenBalance:
       type: string
       description: Where should the buy token be transferred to?
+      enum:
+      - erc20
+      - internal
+    BuyTokenDestination:
+      type: string
+      description: |-
+        Destination for which the buyAmount should be transferred to order's
+        receiver to upon fulfillment
       enum:
       - erc20
       - internal
@@ -346,6 +353,20 @@ components:
         - $ref: '#/components/schemas/LiquidityInteraction'
         - $ref: '#/components/schemas/CustomInteraction'
       description: An interaction to execute as part of a settlement.
+    InteractionData:
+      type: object
+      required:
+      - target
+      - value
+      - callData
+      properties:
+        callData:
+          type: string
+          example: '0x01020304'
+        target:
+          $ref: '#/components/schemas/Address'
+        value:
+          $ref: '#/components/schemas/TokenAmount'
     JitOrder:
       type: object
       description: A just-in-time liquidity order included in a settlement.
@@ -390,7 +411,7 @@ components:
         signature:
           $ref: '#/components/schemas/Signature'
         signingScheme:
-          $ref: '#/components/schemas/SigningScheme'
+          $ref: '#/components/schemas/common.SigningScheme'
         validTo:
           type: integer
           format: int32
@@ -483,38 +504,78 @@ components:
       - sellToken
       - buyToken
       - sellAmount
+      - fullSellAmount
       - buyAmount
+      - fullBuyAmount
+      - validTo
       - kind
+      - receiver
+      - owner
       - partiallyFillable
+      - preInteractions
+      - postInteractions
+      - sellTokenSource
+      - buyTokenDestination
       - class
+      - appData
+      - signingScheme
+      - signature
       properties:
+        appData:
+          $ref: '#/components/schemas/AppData'
         buyAmount:
           $ref: '#/components/schemas/TokenAmount'
         buyToken:
           $ref: '#/components/schemas/Token'
+        buyTokenDestination:
+          $ref: '#/components/schemas/BuyTokenDestination'
         class:
           $ref: '#/components/schemas/OrderClass'
         feePolicies:
           type: array
           items:
             $ref: '#/components/schemas/FeePolicy'
-          description: Any protocol fee policies that apply to the order.
           nullable: true
+        fullBuyAmount:
+          $ref: '#/components/schemas/TokenAmount'
+        fullSellAmount:
+          $ref: '#/components/schemas/TokenAmount'
         kind:
           $ref: '#/components/schemas/OrderKind'
+        owner:
+          $ref: '#/components/schemas/Address'
         partiallyFillable:
           type: boolean
           description: |-
             Whether or not this order can be partially filled. If this is false,
             then the order is a "fill-or-kill" order, meaning it needs to be
             completely filled or not at all.
+        postInteractions:
+          type: array
+          items:
+            $ref: '#/components/schemas/InteractionData'
+        preInteractions:
+          type: array
+          items:
+            $ref: '#/components/schemas/InteractionData'
+        receiver:
+          $ref: '#/components/schemas/Address'
         sellAmount:
           $ref: '#/components/schemas/TokenAmount'
         sellToken:
           $ref: '#/components/schemas/Token'
+        sellTokenSource:
+          $ref: '#/components/schemas/SellTokenSource'
+        signature:
+          $ref: '#/components/schemas/Signature'
+        signingScheme:
+          $ref: '#/components/schemas/common.SigningScheme'
         uid:
           $ref: '#/components/schemas/OrderUid'
-      additionalProperties: false
+        validTo:
+          type: integer
+          format: int32
+          minimum: 0
     OrderClass:
       type: string
       description: How the CoW Protocol order was classified.
@@ -569,7 +630,6 @@ components:
           $ref: '#/components/schemas/TokenAmount'
         sellAmount:
           $ref: '#/components/schemas/TokenAmount'
-      additionalProperties: false
     SellTokenBalance:
       type: string
       description: Where should the sell token be drawn from?
@@ -577,6 +637,13 @@ components:
       - erc20
       - internal
       - external
+    SellTokenSource:
+      type: string
+      description: Source from which the sellAmount should be drawn upon order fulfillment
+      enum:
+      - erc20
+      - external
+      - internal
     Signature:
       type: string
       description: Signature bytes.

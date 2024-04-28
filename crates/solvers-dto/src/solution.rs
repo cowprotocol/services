@@ -1,5 +1,6 @@
 use {
     super::serialize,
+    crate::common,
     number::serialization::HexOrDecimalU256,
     serde::Serialize,
     serde_json::Value,
@@ -214,7 +215,7 @@ pub struct JitOrder {
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
-    pub signing_scheme: SigningScheme,
+    pub signing_scheme: common::SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     #[schema(value_type = Signature)]
     pub signature: Vec<u8>,
@@ -503,44 +504,3 @@ impl ToSchema<'static> for BuyTokenBalance {
         )
     }
 }
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SigningScheme {
-    Eip712,
-    EthSign,
-    PreSign,
-    Eip1271,
-}
-
-impl ToSchema<'static> for SigningScheme {
-    fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "SigningScheme",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some("How was the order signed?"))
-                    .schema_type(SchemaType::String)
-                    .enum_values(Some(["eip712", "ethSign", "preSign", "eip1271"]))
-                    .build(),
-            )
-            .into(),
-        )
-    }
-}
-
-/// Signature bytes.
-#[derive(ToSchema)]
-#[schema(
-    example = "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-)]
-#[allow(dead_code)]
-pub struct Signature(String);
-
-/// 32 bytes of arbitrary application specific data that can be added to an
-/// order. This can also be used to ensure uniqueness between two orders with
-/// otherwise the exact same parameters.
-#[derive(ToSchema)]
-#[schema(example = "0x0000000000000000000000000000000000000000000000000000000000000000")]
-#[allow(dead_code)]
-pub struct AppData(String);
