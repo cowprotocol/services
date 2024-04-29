@@ -3,7 +3,7 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, encoding, order, solution},
+            competition::{self, auction, order, solution},
             eth,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
