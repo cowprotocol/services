@@ -78,4 +78,3 @@ mockall = { workspace = true }
 solvers-dto = { path = "../solvers-dto" }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tempfile = { workspace = true }
-testlib = { path = "../testlib" }

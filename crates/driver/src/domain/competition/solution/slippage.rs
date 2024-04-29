@@ -114,12 +114,15 @@ impl Parameters {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::domain::eth::Asset,
-        num::rational::Ratio,
-        testlib::tokens::{GNO, USDC},
-    };
+    use {super::*, crate::domain::eth::Asset, num::rational::Ratio};
+
+    const GNO: H160 = H160(hex_literal::hex!(
+        "6810e776880c02933d47db1b9fc05908e5386b96"
+    ));
+
+    const USDC: H160 = H160(hex_literal::hex!(
+        "A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    ));
 
     #[test]
     fn test_input_price() {

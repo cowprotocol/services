@@ -1670,7 +1670,6 @@ dependencies = [
  "solvers-dto",
  "tap",
  "tempfile",
- "testlib",
  "thiserror",
  "tokio",
  "toml",
