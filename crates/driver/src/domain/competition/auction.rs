@@ -416,7 +416,7 @@ impl Price {
 
     /// Convert an amount of ETH into a token amount using this price.
     ///
-    /// Converting 1 ETH into GNO
+    /// Converting 1 ETH into a token worth 0.1 ETH (like GNO)
     ///
     /// # Examples
     /// ```

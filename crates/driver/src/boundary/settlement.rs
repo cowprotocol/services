@@ -29,7 +29,6 @@ use {
         },
         DomainSeparator,
     },
-    number::conversions::big_decimal_to_big_rational,
     shared::{
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, TokenAmount},
@@ -124,7 +123,7 @@ impl Settlement {
         }
 
         let slippage_calculator = SlippageCalculator {
-            relative: big_decimal_to_big_rational(&solution.solver().slippage().relative),
+            relative: solution.solver().slippage().relative.clone(),
             absolute: solution.solver().slippage().absolute.map(Into::into),
         };
         let external_prices = ExternalPrices::try_from_auction_prices(

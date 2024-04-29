@@ -14,6 +14,7 @@ use {
         util,
     },
     anyhow::Result,
+    num::BigRational,
     reqwest::header::HeaderName,
     std::collections::HashMap,
     tap::TapFallible,
@@ -53,7 +54,7 @@ impl std::fmt::Display for Name {
 
 #[derive(Debug, Clone)]
 pub struct Slippage {
-    pub relative: bigdecimal::BigDecimal,
+    pub relative: BigRational,
     pub absolute: Option<eth::Ether>,
 }
 

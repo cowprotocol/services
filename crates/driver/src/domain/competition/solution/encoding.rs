@@ -12,7 +12,6 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
-    number::conversions::big_decimal_to_big_rational,
 };
 
 /// The type of strategy used to encode the solution.
@@ -155,7 +154,7 @@ pub fn tx(
 
     // Encode interactions
     let slippage = slippage::Parameters {
-        relative: big_decimal_to_big_rational(&solution.solver().slippage().relative),
+        relative: solution.solver().slippage().relative.clone(),
         max: solution.solver().slippage().absolute.map(Ether::into),
         // TODO configure min slippage
         min: None,

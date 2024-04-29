@@ -33,6 +33,7 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
+    num::BigRational,
     primitive_types::H160,
     secp256k1::SecretKey,
     std::{
@@ -314,7 +315,7 @@ pub fn test_solver() -> Solver {
         )
         .unwrap(),
         slippage: infra::solver::Slippage {
-            relative: bigdecimal::BigDecimal::from_f64(0.3).unwrap(),
+            relative: BigRational::from_f64(0.3).unwrap(),
             absolute: Some(183.into()),
         },
         timeouts: infra::solver::Timeouts {
