@@ -1,6 +1,6 @@
 mod dto;
 
-pub use dto::{Auction, AuctionError};
+pub use dto::AuctionError;
 use {
     crate::infra::{
         api::{Error, State},
@@ -23,27 +23,17 @@ async fn route(
     let handle_request = async {
         observe::auction(auction_id);
         let start = Instant::now();
-        let auction = auction.0;
-        let domain_auction = auction
-            .clone()
+        let auction = auction
+            .0
             .into_domain(state.eth(), state.tokens(), state.timeouts())
             .await
             .tap_err(|err| {
                 observe::invalid_dto(err, "auction");
             })?;
         tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
-        let domain_auction = state.pre_processor().prioritize(domain_auction).await;
+        let auction = state.pre_processor().prioritize(auction).await;
         let competition = state.competition();
-        let result = match competition.solve(&domain_auction).await {
-            Ok((result, liquidity)) => {
-                state
-                    .solver()
-                    .persistence()
-                    .archive_auction(auction, liquidity);
-                Ok(result)
-            }
-            Err(e) => Err(e),
-        };
+        let result = competition.solve(&auction).await;
         observe::solved(state.solver().name(), &result);
         Ok(axum::Json(dto::Solved::new(result?, &competition.solver)))
     };

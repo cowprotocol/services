@@ -5,7 +5,7 @@ use {
         Mempools,
     },
     crate::{
-        domain::{competition::solution::Settlement, eth, Liquidity},
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             blockchain::Ethereum,
@@ -55,10 +55,7 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(
-        &self,
-        auction: &Auction,
-    ) -> Result<(Option<Solved>, Vec<Liquidity>), Error> {
+    pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -208,7 +205,7 @@ impl Competition {
         let settlement = match settlement {
             Some(settlement) => settlement,
             // Don't wait for the deadline because we can't produce a solution anyway.
-            None => return Ok((score, liquidity)),
+            None => return Ok(score),
         };
 
         // Re-simulate the solution on every new block until the deadline ends to make
@@ -240,7 +237,7 @@ impl Competition {
             let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
-        Ok((score, liquidity))
+        Ok(score)
     }
 
     pub async fn reveal(&self) -> Result<Revealed, Error> {

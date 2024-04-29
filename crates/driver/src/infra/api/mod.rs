@@ -1,4 +1,3 @@
-pub use routes::Auction;
 use {
     crate::{
         domain::{self, Mempools},

@@ -202,6 +202,7 @@ impl Solver {
             self.config.fee_handler,
         ))
         .unwrap();
+        self.persistence.archive_auction(auction.id(), &body);
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
