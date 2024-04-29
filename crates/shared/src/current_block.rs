@@ -4,7 +4,7 @@ use {
     anyhow::Result,
     clap::Parser,
     ethrpc::{
-        current_block::{current_block_stream, retriever, BlockRetrieving, CurrentBlockStream},
+        current_block::{current_block_stream, BlockRetrieving, CurrentBlockStream},
         Web3,
     },
     std::{
@@ -31,7 +31,7 @@ pub struct Arguments {
 
 impl Arguments {
     pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
-        Arc::new(retriever::BlockRetriever(web3))
+        Arc::new(web3)
     }
 
     pub async fn stream(&self, web3: Web3) -> Result<CurrentBlockStream> {

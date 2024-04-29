@@ -683,9 +683,6 @@ fn main() {
     generate_contract("AnyoneAuthenticator");
     generate_contract("Swapper");
 
-    // Support contract used for global block stream.
-    generate_contract("FetchBlock");
-
     // Contract for batching multiple `eth_call`s into a single one.
     generate_contract("Multicall");
 
