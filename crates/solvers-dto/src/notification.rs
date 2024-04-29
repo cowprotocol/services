@@ -25,59 +25,48 @@ pub struct Notification {
 // serde(flatten) has a conflict with the current API schema
 impl ToSchema<'static> for Notification {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "Notification",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some(
-                        "A notification that informs the solver how its solution performed in the \
-                         auction. Depending on the notification type additional meta data may be \
-                         attached but this is not guaranteed to be stable.",
-                    ))
-                    .schema_type(SchemaType::Object)
-                    .property(
-                        "auctionId",
-                        ObjectBuilder::new()
-                            .description(Some(
-                                "The auction ID of the auction that the solution was providedfor.",
-                            ))
-                            .schema_type(SchemaType::String),
-                    )
-                    .property(
-                        "solutionId",
-                        ObjectBuilder::new()
-                            .description(Some(
-                                "The solution ID within the auction for which the notification \
-                                 applies",
-                            ))
-                            .schema_type(SchemaType::Number),
-                    )
-                    .property(
-                        "kind",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .enum_values(Some([
-                                "timeout",
-                                "emptySolution",
-                                "duplicatedSolutionId",
-                                "simulationFailed",
-                                "invalidClearingPrices",
-                                "missingPrice",
-                                "invalidExecutedAmount",
-                                "nonBufferableTokensUsed",
-                                "solverAccountInsufficientBalance",
-                                "success",
-                                "revert",
-                                "driverError",
-                                "cancelled",
-                                "fail",
-                                "postprocessingTimedOut",
-                            ])),
-                    )
-                    .build(),
-            )
-            .into(),
-        )
+        let auction_id = ObjectBuilder::new()
+            .description(Some(
+                "The auction ID of the auction that the solution was providedfor.",
+            ))
+            .schema_type(SchemaType::String);
+        let solution_id = ObjectBuilder::new()
+            .description(Some(
+                "The solution ID within the auction for which the notification applies",
+            ))
+            .schema_type(SchemaType::Number);
+        let kind = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .enum_values(Some([
+                "timeout",
+                "emptySolution",
+                "duplicatedSolutionId",
+                "simulationFailed",
+                "invalidClearingPrices",
+                "missingPrice",
+                "invalidExecutedAmount",
+                "nonBufferableTokensUsed",
+                "solverAccountInsufficientBalance",
+                "success",
+                "revert",
+                "driverError",
+                "cancelled",
+                "fail",
+                "postprocessingTimedOut",
+            ]));
+        let notification = ObjectBuilder::new()
+            .description(Some(
+                "A notification that informs the solver how its solution performed in the \
+                 auction. Depending on the notification type additional meta data may be attached \
+                 but this is not guaranteed to be stable.",
+            ))
+            .schema_type(SchemaType::Object)
+            .property("auctionId", auction_id)
+            .property("solutionId", solution_id)
+            .property("kind", kind)
+            .build();
+
+        ("Notification", Schema::Object(notification).into())
     }
 }
 

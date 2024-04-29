@@ -59,19 +59,15 @@ pub enum Trade {
 
 impl ToSchema<'static> for Trade {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "Trade",
-            Schema::OneOf(
-                OneOfBuilder::new()
-                    .description(Some(
-                        "A trade for a CoW Protocol order included in a solution.",
-                    ))
-                    .item(Ref::from_schema_name("Fulfillment"))
-                    .item(Ref::from_schema_name("JitTrade"))
-                    .build(),
-            )
-            .into(),
-        )
+        let trade = OneOfBuilder::new()
+            .description(Some(
+                "A trade for a CoW Protocol order included in a solution.",
+            ))
+            .item(Ref::from_schema_name("Fulfillment"))
+            .item(Ref::from_schema_name("JitTrade"))
+            .build();
+
+        ("Trade", Schema::OneOf(trade).into())
     }
 }
 
@@ -90,49 +86,36 @@ pub struct Fulfillment {
 
 impl ToSchema<'static> for Fulfillment {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "Fulfillment",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some("A trade which fulfills an order from the auction."))
-                    .required("kind")
-                    .required("order")
-                    .property(
-                        "kind",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .enum_values(Some(["fulfillment"])),
-                    )
-                    .property(
-                        "order",
-                        AllOfBuilder::new()
-                            .item(Ref::from_schema_name("OrderUid"))
-                            .description(Some(
-                                "A reference by UID of the order to execute in a solution. The \
-                                 order must be included in the auction input.",
-                            )),
-                    )
-                    .property(
-                        "executedAmount",
-                        AllOfBuilder::new()
-                            .description(Some(
-                                "The amount of the order that was executed. This is denoted in \
-                                 'sellToken' for sell orders, and 'buyToken' for buy orders.",
-                            ))
-                            .item(Ref::from_schema_name("TokenAmount")),
-                    )
-                    .property(
-                        "fee",
-                        ObjectBuilder::new().description(Some(
-                            "The sell token amount that should be taken as a fee for this trade. \
-                             This only gets returned for limit orders and only refers to the \
-                             actual amount filled by the trade.",
-                        )),
-                    )
-                    .build(),
-            )
-            .into(),
-        )
+        let kind = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["fulfillment"]));
+        let order = AllOfBuilder::new()
+            .item(Ref::from_schema_name("OrderUid"))
+            .description(Some(
+                "A reference by UID of the order to execute in a solution. The order must be \
+                 included in the auction input.",
+            ));
+        let executed_amount = AllOfBuilder::new()
+            .description(Some(
+                "The amount of the order that was executed. This is denoted in 'sellToken' for \
+                 sell orders, and 'buyToken' for buy orders.",
+            ))
+            .item(Ref::from_schema_name("TokenAmount"));
+        let fee = ObjectBuilder::new().description(Some(
+            "The sell token amount that should be taken as a fee for this trade. This only gets \
+             returned for limit orders and only refers to the actual amount filled by the trade.",
+        ));
+        let fulfillment = ObjectBuilder::new()
+            .description(Some("A trade which fulfills an order from the auction."))
+            .required("kind")
+            .required("order")
+            .property("kind", kind)
+            .property("order", order)
+            .property("executedAmount", executed_amount)
+            .property("fee", fee)
+            .build();
+
+        ("Fulfillment", Schema::Object(fulfillment).into())
     }
 }
 
@@ -147,41 +130,31 @@ pub struct JitTrade {
 
 impl ToSchema<'static> for JitTrade {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "JitTrade",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some("A trade with a JIT order."))
-                    .required("kind")
-                    .required("order")
-                    .required("executedAmount")
-                    .property(
-                        "kind",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .enum_values(Some(["jit"])),
-                    )
-                    .property(
-                        "order",
-                        AllOfBuilder::new()
-                            .description(Some(
-                                "The just-in-time liquidity order to execute in a solution.",
-                            ))
-                            .item(Ref::from_schema_name("JitOrder")),
-                    )
-                    .property(
-                        "executedAmount",
-                        AllOfBuilder::new()
-                            .description(Some(
-                                "The amount of the order that was executed. This is denoted in \
-                                 'sellToken' for sell orders, and 'buyToken' for buy orders.",
-                            ))
-                            .item(Ref::from_schema_name("TokenAmount")),
-                    )
-                    .build(),
-            )
-            .into(),
-        )
+        let kind = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["jit"]));
+        let order = AllOfBuilder::new()
+            .description(Some(
+                "The just-in-time liquidity order to execute in a solution.",
+            ))
+            .item(Ref::from_schema_name("JitOrder"));
+        let executed_amount = AllOfBuilder::new()
+            .description(Some(
+                "The amount of the order that was executed. This is denoted in 'sellToken' for \
+                 sell orders, and 'buyToken' for buy orders.",
+            ))
+            .item(Ref::from_schema_name("TokenAmount"));
+        let jit_trade = ObjectBuilder::new()
+            .description(Some("A trade with a JIT order."))
+            .required("kind")
+            .required("order")
+            .required("executedAmount")
+            .property("kind", kind)
+            .property("order", order)
+            .property("executedAmount", executed_amount)
+            .build();
+
+        ("JitTrade", Schema::Object(jit_trade).into())
     }
 }
 
@@ -237,32 +210,26 @@ pub enum Interaction {
 // automated and deleted.
 impl ToSchema<'static> for Interaction {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "Interaction",
-            Schema::AllOf(
-                AllOfBuilder::new()
-                    .description(Some("An interaction to execute as part of a settlement."))
-                    .item(
-                        ObjectBuilder::new().property(
-                            "internalize",
-                            ObjectBuilder::new()
-                                .schema_type(SchemaType::Boolean)
-                                .description(Some(
-                                    "A flag indicating that the interaction should be \
-                                     'internalized', as specified by CIP-2.",
-                                ))
-                                .build(),
-                        ),
-                    )
-                    .item(
-                        OneOfBuilder::new()
-                            .item(Ref::from_schema_name("LiquidityInteraction"))
-                            .item(Ref::from_schema_name("CustomInteraction")),
-                    )
-                    .build(),
+        let internalize = ObjectBuilder::new().property(
+            "internalize",
+            ObjectBuilder::new()
+                .schema_type(SchemaType::Boolean)
+                .description(Some(
+                    "A flag indicating that the interaction should be 'internalized', as \
+                     specified by CIP-2.",
+                )),
+        );
+        let interaction = AllOfBuilder::new()
+            .description(Some("An interaction to execute as part of a settlement."))
+            .item(internalize)
+            .item(
+                OneOfBuilder::new()
+                    .item(Ref::from_schema_name("LiquidityInteraction"))
+                    .item(Ref::from_schema_name("CustomInteraction")),
             )
-            .into(),
-        )
+            .build();
+
+        ("Interaction", Schema::AllOf(interaction).into())
     }
 }
 
@@ -289,42 +256,36 @@ pub struct LiquidityInteraction {
 
 impl ToSchema<'static> for LiquidityInteraction {
     fn schema() -> (&'static str, RefOr<Schema>) {
+        let kind = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["liquidity"]));
+        let id = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .description(Some(
+                "The ID of executed liquidity provided in the auction input.",
+            ));
+        let liquidity_interaction = ObjectBuilder::new()
+            .description(Some(
+                "Interaction representing the execution of liquidity that was passed in with the \
+                 auction.",
+            ))
+            .required("kind")
+            .required("id")
+            .required("inputToken")
+            .required("outputToken")
+            .required("inputAmount")
+            .required("outputAmount")
+            .property("kind", kind)
+            .property("id", id)
+            .property("inputToken", Ref::from_schema_name("Token"))
+            .property("outputToken", Ref::from_schema_name("Token"))
+            .property("inputAmount", Ref::from_schema_name("TokenAmount"))
+            .property("outputAmount", Ref::from_schema_name("TokenAmount"))
+            .build();
+
         (
             "LiquidityInteraction",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some(
-                        "Interaction representing the execution of liquidity that was passed in \
-                         with the auction.",
-                    ))
-                    .required("kind")
-                    .required("id")
-                    .required("inputToken")
-                    .required("outputToken")
-                    .required("inputAmount")
-                    .required("outputAmount")
-                    .property(
-                        "kind",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .enum_values(Some(["liquidity"])),
-                    )
-                    .property(
-                        "id",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .description(Some(
-                                "The ID of executed liquidity provided in the auction input.",
-                            ))
-                            .build(),
-                    )
-                    .property("inputToken", Ref::from_schema_name("Token"))
-                    .property("outputToken", Ref::from_schema_name("Token"))
-                    .property("inputAmount", Ref::from_schema_name("TokenAmount"))
-                    .property("outputAmount", Ref::from_schema_name("TokenAmount"))
-                    .build(),
-            )
-            .into(),
+            Schema::Object(liquidity_interaction).into(),
         )
     }
 }
@@ -349,60 +310,43 @@ pub struct CustomInteraction {
 
 impl ToSchema<'static> for CustomInteraction {
     fn schema() -> (&'static str, RefOr<Schema>) {
+        let kind = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["custom"]));
+        let call_data = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .description(Some("The EVM calldata bytes."))
+            .example(Some(Value::String("0x01020304".to_string())));
+        let allowances = ArrayBuilder::new()
+            .items(Ref::from_schema_name("Allowance"))
+            .description(Some(
+                "ERC20 allowances that are required for this custom interaction.",
+            ));
+        let asset = ArrayBuilder::new()
+            .items(Ref::from_schema_name("Asset"))
+            .build();
+        let custom_interaction = ObjectBuilder::new()
+            .description(Some(
+                "A searcher-specified custom interaction to be included in the final settlement.",
+            ))
+            .required("kind")
+            .required("target")
+            .required("value")
+            .required("callData")
+            .required("inputs")
+            .required("outputs")
+            .property("kind", kind)
+            .property("target", Ref::from_schema_name("Address"))
+            .property("value", Ref::from_schema_name("TokenAmount"))
+            .property("callData", call_data)
+            .property("allowances", allowances)
+            .property("inputs", asset.clone())
+            .property("outputs", asset)
+            .build();
+
         (
             "CustomInteraction",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some(
-                        "A searcher-specified custom interaction to be included in the final \
-                         settlement.",
-                    ))
-                    .required("kind")
-                    .required("target")
-                    .required("value")
-                    .required("callData")
-                    .required("inputs")
-                    .required("outputs")
-                    .property(
-                        "kind",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .enum_values(Some(["custom"])),
-                    )
-                    .property("target", Ref::from_schema_name("Address"))
-                    .property("value", Ref::from_schema_name("TokenAmount"))
-                    .property(
-                        "callData",
-                        ObjectBuilder::new()
-                            .schema_type(SchemaType::String)
-                            .description(Some("The EVM calldata bytes."))
-                            .example(Some(Value::String("0x01020304".to_string())))
-                            .build(),
-                    )
-                    .property(
-                        "allowances",
-                        ArrayBuilder::new()
-                            .items(Ref::from_schema_name("Allowance"))
-                            .description(Some(
-                                "ERC20 allowances that are required for this custom interaction.",
-                            ))
-                            .build(),
-                    )
-                    .property(
-                        "inputs",
-                        ArrayBuilder::new()
-                            .items(Ref::from_schema_name("Asset"))
-                            .build(),
-                    )
-                    .property(
-                        "outputs",
-                        ArrayBuilder::new()
-                            .items(Ref::from_schema_name("Asset"))
-                            .build(),
-                    )
-                    .build(),
-            )
-            .into(),
+            Schema::Object(custom_interaction).into(),
         )
     }
 }
@@ -445,16 +389,15 @@ pub enum SellTokenBalance {
 
 impl ToSchema<'static> for SellTokenBalance {
     fn schema() -> (&'static str, RefOr<Schema>) {
+        let sell_token_balance = ObjectBuilder::new()
+            .description(Some("Where should the sell token be drawn from?"))
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["erc20", "internal", "external"]))
+            .build();
+
         (
             "SellTokenBalance",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some("Where should the sell token be drawn from?"))
-                    .schema_type(SchemaType::String)
-                    .enum_values(Some(["erc20", "internal", "external"]))
-                    .build(),
-            )
-            .into(),
+            Schema::Object(sell_token_balance).into(),
         )
     }
 }
@@ -469,17 +412,13 @@ pub enum BuyTokenBalance {
 
 impl ToSchema<'static> for BuyTokenBalance {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "BuyTokenBalance",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some("Where should the buy token be transferred to?"))
-                    .schema_type(SchemaType::String)
-                    .enum_values(Some(["erc20", "internal"]))
-                    .build(),
-            )
-            .into(),
-        )
+        let buy_token_balance = ObjectBuilder::new()
+            .description(Some("Where should the buy token be transferred to?"))
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["erc20", "internal"]))
+            .build();
+
+        ("BuyTokenBalance", Schema::Object(buy_token_balance).into())
     }
 }
 
@@ -494,16 +433,12 @@ pub enum SigningScheme {
 
 impl ToSchema<'static> for SigningScheme {
     fn schema() -> (&'static str, RefOr<Schema>) {
-        (
-            "SigningScheme",
-            Schema::Object(
-                ObjectBuilder::new()
-                    .description(Some("How was the order signed?"))
-                    .schema_type(SchemaType::String)
-                    .enum_values(Some(["eip712", "ethSign", "preSign", "eip1271"]))
-                    .build(),
-            )
-            .into(),
-        )
+        let signing_scheme = ObjectBuilder::new()
+            .description(Some("How was the order signed?"))
+            .schema_type(SchemaType::String)
+            .enum_values(Some(["eip712", "ethSign", "preSign", "eip1271"]))
+            .build();
+
+        ("SigningScheme", Schema::Object(signing_scheme).into())
     }
 }
