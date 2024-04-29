@@ -1,10 +1,7 @@
-use serde::Serialize;
-
 /// A Unix timestamp denominated in seconds since epoch.
 ///
 /// https://en.wikipedia.org/wiki/Unix_time
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Timestamp(pub u32);
 
 impl From<u32> for Timestamp {

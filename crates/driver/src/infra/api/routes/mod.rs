@@ -6,6 +6,7 @@ mod reveal;
 mod settle;
 mod solve;
 
+pub use solve::Auction;
 pub(super) use {
     healthz::healthz,
     info::info,

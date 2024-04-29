@@ -1,11 +1,10 @@
 use {
     crate::{
-        domain::{
-            competition::{auction::Id, Auction},
-            liquidity,
-        },
-        infra::solver::Config,
+        domain::liquidity::{self},
+        infra::{api::Auction, solver::Config},
     },
+    number::serialization::HexOrDecimalU256,
+    primitive_types::U256,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::sync::Arc,
@@ -15,9 +14,54 @@ use {
 #[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuctionWithLiquidity {
-    pub auction: Auction,
-    pub liquidity: Vec<liquidity::Liquidity>,
+struct AuctionWithLiquidity {
+    auction: Auction,
+    liquidity: Vec<Liquidity>,
+}
+
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Liquidity {
+    id: usize,
+    #[serde_as(as = "HexOrDecimalU256")]
+    gas: U256,
+    kind: Kind,
+}
+
+impl From<liquidity::Liquidity> for Liquidity {
+    fn from(value: liquidity::Liquidity) -> Self {
+        Self {
+            id: value.id.into(),
+            gas: value.gas.into(),
+            kind: value.kind.into(),
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+enum Kind {
+    UniswapV2,
+    UniswapV3,
+    BalancerV2Stable,
+    BalancerV2Weighted,
+    Swapr,
+    ZeroEx,
+}
+
+impl From<liquidity::Kind> for Kind {
+    fn from(value: liquidity::Kind) -> Self {
+        match value {
+            liquidity::Kind::UniswapV2(_) => Self::UniswapV2,
+            liquidity::Kind::UniswapV3(_) => Self::UniswapV3,
+            liquidity::Kind::BalancerV2Stable(_) => Self::BalancerV2Stable,
+            liquidity::Kind::BalancerV2Weighted(_) => Self::BalancerV2Weighted,
+            liquidity::Kind::Swapr(_) => Self::Swapr,
+            liquidity::Kind::ZeroEx(_) => Self::ZeroEx,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -60,18 +104,19 @@ impl Persistence {
 
     /// Saves the given auction with liquidity with fire and forget mentality
     /// (non-blocking operation)
-    pub fn archive_auction(&self, id: Id, auction: &Auction, liquidity: &[liquidity::Liquidity]) {
+    pub fn archive_auction(&self, auction: Auction, liquidity: Vec<liquidity::Liquidity>) {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
+        let auction_id = auction.id();
         let auction_with_liquidity = AuctionWithLiquidity {
-            auction: auction.clone(),
-            liquidity: liquidity.to_vec(),
+            auction,
+            liquidity: liquidity.into_iter().map(Into::into).collect(),
         };
         tokio::spawn(
             async move {
                 match uploader
-                    .upload(id.to_string(), auction_with_liquidity)
+                    .upload(auction_id.to_string(), auction_with_liquidity)
                     .await
                 {
                     Ok(key) => {

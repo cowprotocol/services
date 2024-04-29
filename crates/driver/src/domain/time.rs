@@ -4,7 +4,6 @@ use {
         solver::Timeouts,
         {self},
     },
-    serde::Serialize,
     thiserror::Error,
 };
 
@@ -13,8 +12,7 @@ use {
 /// driver deadline.
 /// The solvers are expected to return the solution to the driver before the
 /// solvers deadline.
-#[derive(Copy, Clone, Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Deadline {
     driver: chrono::DateTime<chrono::Utc>,
     solvers: chrono::DateTime<chrono::Utc>,

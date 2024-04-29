@@ -12,9 +12,6 @@ use {
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
-    number::serialization::HexOrDecimalU256,
-    serde::Serialize,
-    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -25,8 +22,7 @@ use {
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
 /// solving them.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
@@ -350,8 +346,7 @@ impl AuctionProcessor {
 }
 
 /// The tokens that are used in an auction.
-#[derive(Debug, Default, Clone, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Default, Clone)]
 pub struct Tokens(HashMap<eth::TokenAddress, Token>);
 
 impl Tokens {
@@ -371,16 +366,13 @@ impl Tokens {
     }
 }
 
-#[serde_as]
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,
     pub address: eth::TokenAddress,
     pub price: Option<Price>,
     /// The balance of this token available in our settlement contract.
-    #[serde_as(as = "HexOrDecimalU256")]
     pub available_balance: eth::U256,
     /// Is this token well-known and trusted by the protocol?
     pub trusted: bool,
@@ -388,8 +380,7 @@ pub struct Token {
 
 /// The price of a token in wei. This represents how much wei is needed to buy
 /// 10**18 of another token.
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy)]
 pub struct Price(eth::Ether);
 
 impl Price {
@@ -439,8 +430,7 @@ impl From<eth::U256> for Price {
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
 
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy)]
 pub struct Id(pub i64);
 
 impl Id {

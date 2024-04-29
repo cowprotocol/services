@@ -1,11 +1,7 @@
 // TODO Remove dead_code
 #![allow(dead_code)]
 
-use {
-    crate::domain::eth,
-    serde::{Serialize, Serializer},
-    std::cmp::Ordering,
-};
+use {crate::domain::eth, std::cmp::Ordering};
 
 pub mod balancer;
 pub mod swapr;
@@ -13,8 +9,7 @@ pub mod uniswap;
 pub mod zeroex;
 
 /// A source of liquidity which can be used by the solver.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct Liquidity {
     pub id: Id,
     /// Estimation of gas needed to use this liquidity on-chain.
@@ -22,8 +17,7 @@ pub struct Liquidity {
     pub kind: Kind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Id(pub usize);
 
 impl From<usize> for Id {
@@ -77,15 +71,6 @@ impl From<&Kind> for &'static str {
             Kind::Swapr(_) => "Swapr",
             Kind::ZeroEx(_) => "ZeroExLimitOrder",
         }
-    }
-}
-
-impl Serialize for Kind {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.into())
     }
 }
 

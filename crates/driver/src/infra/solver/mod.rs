@@ -144,6 +144,10 @@ impl Solver {
         })
     }
 
+    pub fn persistence(&self) -> Persistence {
+        self.persistence.clone()
+    }
+
     pub fn name(&self) -> &Name {
         &self.config.name
     }
@@ -240,19 +244,6 @@ impl Solver {
             }
         };
         tokio::task::spawn(future.in_current_span());
-    }
-
-    /// Store the auction with liquidity in a S3 bucket
-    pub fn store_auction_with_liquidity(
-        &self,
-        auction: &Auction,
-        liquidity: &[liquidity::Liquidity],
-    ) {
-        let Some(auction_id) = auction.id() else {
-            return;
-        };
-        self.persistence
-            .archive_auction(auction_id, auction, liquidity);
     }
 }
 

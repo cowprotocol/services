@@ -2,24 +2,6 @@
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Bytes<T>(pub T);
 
-impl AsRef<[u8]> for Bytes<Vec<u8>> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
-impl AsRef<[u8]> for Bytes<[u8; 56]> {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl AsRef<[u8]> for Bytes<[u8; 32]> {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
 impl<T> std::fmt::Debug for Bytes<T>
 where
     T: AsRef<[u8]>,

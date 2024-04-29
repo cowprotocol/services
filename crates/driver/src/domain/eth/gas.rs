@@ -2,9 +2,6 @@ use {
     super::{Ether, U256},
     bigdecimal::Zero,
     derive_more::Display,
-    number::serialization::HexOrDecimalU256,
-    serde::Serialize,
-    serde_with::serde_as,
     std::{ops, ops::Add},
 };
 
@@ -12,9 +9,8 @@ use {
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this
 /// amount as well as the transaction's [`EffectiveGasPrice`].
-#[serde_as]
-#[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq, Serialize)]
-pub struct Gas(#[serde_as(as = "HexOrDecimalU256")] pub U256);
+#[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq)]
+pub struct Gas(pub U256);
 
 impl From<U256> for Gas {
     fn from(value: U256) -> Self {
@@ -55,7 +51,7 @@ impl Zero for Gas {
 /// An EIP-1559 gas price estimate.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy)]
 pub struct GasPrice {
     /// The maximum total fee that should be charged.
     max: FeePerGas,
@@ -134,8 +130,7 @@ impl From<EffectiveGasPrice> for GasPrice {
 /// `{max,max_priority,base}_fee_per_gas` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy, Ord, Eq, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, Ord, Eq, PartialEq, PartialOrd)]
 pub struct FeePerGas(pub Ether);
 
 impl FeePerGas {
