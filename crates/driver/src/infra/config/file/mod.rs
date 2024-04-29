@@ -130,9 +130,9 @@ pub mod encoding {
     #[serde(rename_all = "kebab-case")]
     pub enum Strategy {
         /// Legacy solver crate strategy
-        #[default]
         Boundary,
         /// New encoding strategy
+        #[default]
         Domain,
     }
 
@@ -528,16 +528,6 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Logic {
-    /// Use legacy submissions logic (default)
-    Boundary,
-    /// Use Driver domain native submission logic
-    #[default] // TODO revert before merging!!!
-    Native,
 }
 
 #[derive(Clone, Debug, Deserialize)]

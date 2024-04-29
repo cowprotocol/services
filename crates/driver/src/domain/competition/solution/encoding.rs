@@ -61,7 +61,7 @@ pub fn tx(
 
     // Encode trades with custom clearing prices
     for trade in solution.trades() {
-        let (price, trade) = match trade {
+        let (price, mut trade) = match trade {
             super::Trade::Fulfillment(trade) => {
                 pre_interactions.extend(trade.order().pre_interactions.clone());
                 post_interactions.extend(trade.order().post_interactions.clone());
@@ -89,8 +89,9 @@ pub fn tx(
                         buy_price: custom_prices.buy,
                     },
                     Trade {
-                        sell_token_index: (tokens.len() - 2).into(),
-                        buy_token_index: (tokens.len() - 1).into(),
+                        // indices are set below
+                        sell_token_index: Default::default(),
+                        buy_token_index: Default::default(),
                         receiver: trade.order().receiver.unwrap_or_default().into(),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
@@ -111,7 +112,7 @@ pub fn tx(
                             order::Side::Sell => trade.executed().0 + trade.fee().0,
                             order::Side::Buy => trade.executed().into(),
                         },
-                        signature: trade.order().signature.data.clone(),
+                        signature: codec::signature(&trade.order().signature),
                     },
                 )
             }
@@ -126,8 +127,9 @@ pub fn tx(
                         buy_price: trade.order().sell.amount.into(),
                     },
                     Trade {
-                        sell_token_index: (tokens.len() - 2).into(),
-                        buy_token_index: (tokens.len() - 1).into(),
+                        // indices are set below
+                        sell_token_index: Default::default(),
+                        buy_token_index: Default::default(),
                         receiver: trade.order().receiver.into(),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
@@ -142,7 +144,7 @@ pub fn tx(
                             buy_token_balance: trade.order().buy_token_balance,
                         },
                         executed_amount: trade.executed().into(),
-                        signature: trade.order().signature.data.clone(),
+                        signature: codec::signature(&trade.order().signature),
                     },
                 )
             }
@@ -151,6 +153,9 @@ pub fn tx(
         tokens.push(price.buy_token);
         clearing_prices.push(price.sell_price);
         clearing_prices.push(price.buy_price);
+
+        trade.sell_token_index = (tokens.len() - 2).into();
+        trade.buy_token_index = (tokens.len() - 1).into();
 
         trades.push(trade);
     }
@@ -273,7 +278,7 @@ fn unwrap(amount: eth::TokenAmount, weth: &contracts::WETH9) -> eth::Interaction
     let tx = weth.withdraw(amount.into()).into_inner();
     eth::Interaction {
         target: tx.to.unwrap().into(),
-        value: tx.value.unwrap().into(),
+        value: Ether(0.into()),
         call_data: tx.data.unwrap().0.into(),
     }
 }
@@ -385,6 +390,20 @@ mod codec {
             interaction.value.0,
             ethcontract::Bytes(interaction.call_data.0.clone()),
         )
+    }
+
+    pub fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
+        match signature.scheme {
+            order::signature::Scheme::Eip712 | order::signature::Scheme::EthSign => {
+                signature.data.clone()
+            }
+            order::signature::Scheme::Eip1271 => {
+                super::Bytes([signature.signer.0.as_bytes(), signature.data.0.as_slice()].concat())
+            }
+            order::signature::Scheme::PreSign => {
+                super::Bytes(signature.signer.0.as_bytes().to_vec())
+            }
+        }
     }
 }
 
