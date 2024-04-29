@@ -17,6 +17,7 @@ axum = { workspace = true }
 bigdecimal = { version = "0.3", features = ["serde"] }
 chrono = { workspace = true, features = ["serde"], default-features = false }
 clap = { workspace = true, features = ["derive", "env"] }
+derive_more = { workspace = true }
 ethereum-types = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }

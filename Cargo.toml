@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.dependencies]
-anyhow = "1.0.82"
+anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
 bigdecimal = "0.3"
@@ -11,6 +11,7 @@ cached = { version = "0.49.3", default-features = false }
 chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.4", features = ["derive", "env"] }
 derivative = "2.2.0"
+derive_more = "0.99.17"
 ethcontract = { version = "0.25.6", default-features = false, features = ["aws-kms"] }
 ethcontract-generate = { version = "0.25.6", default-features = false }
 ethcontract-mock = { version = "0.25.6", default-features = false }

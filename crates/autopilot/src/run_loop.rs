@@ -277,7 +277,7 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver, solution).await {
+            match self.settle(driver, solution, auction_id).await {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -405,7 +405,12 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    async fn settle(&self, driver: &infra::Driver, solved: &Solution) -> Result<(), SettleError> {
+    async fn settle(
+        &self,
+        driver: &infra::Driver,
+        solved: &Solution,
+        auction_id: i64,
+    ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
             .store_order_events(order_ids, OrderEventLabel::Executing);
@@ -413,13 +418,9 @@ impl RunLoop {
         let request = settle::Request {
             solution_id: solved.id,
         };
-
-        let tx_hash = driver
-            .settle(&request, self.max_settlement_transaction_wait)
-            .await
-            .map_err(SettleError::Failure)?
-            .tx_hash;
-
+        let tx_hash = self
+            .wait_for_settlement(driver, auction_id, request)
+            .await?;
         *self.in_flight_orders.lock().await = Some(InFlightOrders {
             tx_hash,
             orders: solved.orders.keys().copied().collect(),
@@ -427,6 +428,62 @@ impl RunLoop {
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
+    }
+
+    /// Wait for either the settlement transaction to be mined or the driver
+    /// returned a result.
+    async fn wait_for_settlement(
+        &self,
+        driver: &infra::Driver,
+        auction_id: i64,
+        request: settle::Request,
+    ) -> Result<H256, SettleError> {
+        match futures::future::select(
+            Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
+            Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
+        )
+        .await
+        {
+            futures::future::Either::Left((res, _)) => res,
+            futures::future::Either::Right((res, _)) => {
+                res.map_err(SettleError::Failure).map(|tx| tx.tx_hash)
+            }
+        }
+    }
+
+    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    ///
+    /// Returns None if no transaction was found within the deadline or the task
+    /// is cancelled.
+    async fn wait_for_settlement_transaction(
+        &self,
+        auction_id: i64,
+        max_blocks_wait: u64,
+    ) -> Result<H256, SettleError> {
+        let current = self.eth.current_block().borrow().number;
+        let deadline = current.saturating_add(max_blocks_wait);
+        tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
+        loop {
+            if self.eth.current_block().borrow().number > deadline {
+                break;
+            }
+
+            match self
+                .persistence
+                .find_tx_hash_by_auction_id(auction_id)
+                .await
+            {
+                Ok(Some(hash)) => return Ok(hash),
+                Err(err) => {
+                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
+                }
+                Ok(None) => {}
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+        Err(SettleError::Failure(anyhow::anyhow!(
+            "settlement transaction await reached deadline"
+        )))
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying
