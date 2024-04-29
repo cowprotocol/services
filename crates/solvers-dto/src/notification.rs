@@ -11,19 +11,13 @@ use {
     web3::types::{AccessList, H160, H256, U256},
 };
 
-/// A notification that informs the solver how its solution performed in the
-/// auction. Depending on the notification type additional meta data may be
-/// attached but this is not guaranteed to be stable.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
-    /// The auction ID of the auction that the solution was provided for.
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub auction_id: Option<i64>,
-    /// The solution ID within the auction for which the notification applies
     pub solution_id: Option<SolutionId>,
-    /// The kind of notification.
     #[serde(flatten)]
     pub kind: Kind,
 }

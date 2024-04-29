@@ -315,6 +315,7 @@ components:
           $ref: '#/components/schemas/TokenAmount'
     Fulfillment:
       type: object
+      description: A trade which fulfills an order from the auction.
       required:
       - kind
       - order

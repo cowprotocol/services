@@ -50,7 +50,6 @@ pub struct Solution {
     pub gas: Option<u64>,
 }
 
-/// A trade for a CoW Protocol order included in a solution.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Trade {
@@ -76,7 +75,6 @@ impl ToSchema<'static> for Trade {
     }
 }
 
-/// A trade which fulfills an order from the auction.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +94,7 @@ impl ToSchema<'static> for Fulfillment {
             "Fulfillment",
             Schema::Object(
                 ObjectBuilder::new()
+                    .description(Some("A trade which fulfills an order from the auction."))
                     .required("kind")
                     .required("order")
                     .property(
@@ -227,8 +226,6 @@ pub enum OrderKind {
     Buy,
 }
 
-/// A flag indicating that the interaction should be "internalized", as
-/// specified by CIP-2.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Interaction {
@@ -275,8 +272,6 @@ pub enum InteractionType {
     Custom(CustomInteraction),
 }
 
-/// Interaction representing the execution of liquidity that was passed in with
-/// the auction.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -334,8 +329,6 @@ impl ToSchema<'static> for LiquidityInteraction {
     }
 }
 
-/// A searcher-specified custom interaction to be included in the final
-/// settlement.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -412,20 +405,6 @@ impl ToSchema<'static> for CustomInteraction {
             .into(),
         )
     }
-}
-
-/// An interaction that can be executed as part of an order's pre- or
-/// post-interactions.
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderInteraction {
-    pub target: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub value: U256,
-    #[serde(rename = "callData")]
-    #[serde_as(as = "serialize::Hex")]
-    pub calldata: Vec<u8>,
 }
 
 /// A token address with an amount.

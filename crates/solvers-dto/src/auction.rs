@@ -165,28 +165,18 @@ pub enum OrderClass {
     Liquidity,
 }
 
-/// A fee policy that applies to an order.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
-    /// If the order receives more than limit price, pay the protocol a factor
-    /// of the difference.
     #[serde(rename_all = "camelCase")]
     Surplus {
-        /// The factor of the user surplus that the protocol will request from
-        /// the solver after settling the order
         factor: f64,
         /// Never charge more than that percentage of the order volume.
         max_volume_factor: f64,
     },
-    /// A cut from the price improvement over the best quote is taken as a
-    /// protocol fee.
     #[serde(rename_all = "camelCase")]
     PriceImprovement {
-        /// The factor of the user surplus that the protocol will request from
-        /// the solver after settling the order.
         factor: f64,
-        /// Never charge more than that percentage of the order volume.
         max_volume_factor: f64,
         quote: Quote,
     },
@@ -226,29 +216,16 @@ pub struct Quote {
     pub fee: U256,
 }
 
-/// Information about a token relevant to the auction.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenInfo {
-    /// The ERC20.decimals value for this token. This may be missing for ERC20
-    /// tokens that don't implement the optional metadata extension.
     pub decimals: Option<u8>,
-    /// The ERC20.symbol value for this token. This may be missing for ERC20
-    /// tokens that don't implement the optional metadata extension.
     pub symbol: Option<String>,
-    /// The reference price of this token for the auction used for scoring. This
-    /// price is only included for tokens for which there are CoW Protocol
-    /// orders.
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub reference_price: Option<U256>,
-    /// The balance held by the Settlement contract that is available during a
-    /// settlement.
     #[serde_as(as = "HexOrDecimalU256")]
     pub available_balance: U256,
-    /// A flag which indicates that solvers are allowed to perform gas cost
-    /// optimizations for this token by not routing the trades via an AMM, and
-    /// instead use its available balances, as specified by CIP-2.
     pub trusted: bool,
 }
 
@@ -416,7 +393,6 @@ impl ToSchema<'static> for LiquidityParameters {
     }
 }
 
-/// A UniswapV2-like constant product liquidity pool for a token pair.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -474,7 +450,6 @@ pub struct ConstantProductReserve {
     pub balance: U256,
 }
 
-/// A Balancer-like weighted product liquidity pool of N tokens.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -562,7 +537,6 @@ pub enum WeightedProductVersion {
     V3Plus,
 }
 
-/// A Curve-like stable pool of N tokens.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -835,8 +809,6 @@ pub struct OrderUid(String);
 #[allow(dead_code)]
 pub struct Signature(String);
 
-/// If the order receives more than limit price, pay the protocol a factor of
-/// the difference.
 pub struct SurplusFee {
     pub factor: f64,
     pub max_volume_factor: f64,
@@ -888,8 +860,6 @@ impl ToSchema<'static> for SurplusFee {
     }
 }
 
-/// A cut from the price improvement over the best quote is taken as a protocol
-/// fee.
 pub struct PriceImprovement {
     pub factor: f64,
     pub max_volume_factor: f64,
