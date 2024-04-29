@@ -81,15 +81,15 @@ impl Simulator {
     /// Simulate the access list needed by a transaction. If the transaction
     /// already has an access list, the returned access list will be a
     /// superset of the existing one.
-    pub async fn access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
+    pub async fn access_list(&self, tx: &eth::Tx) -> Result<eth::AccessList, Error> {
         if self.disable_access_lists {
-            return Ok(tx.access_list);
+            return Ok(tx.access_list.clone());
         }
         let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx.clone(), tenderly::GenerateAccessList::Yes)
+                    .simulate(tx, tenderly::GenerateAccessList::Yes)
                     .await
                     .map_err(with(tx.clone(), block))?
                     .access_list
@@ -105,11 +105,11 @@ impl Simulator {
                 .await
                 .map_err(with(tx.clone(), block))?,
         };
-        Ok(tx.access_list.merge(access_list))
+        Ok(tx.access_list.clone().merge(access_list))
     }
 
     /// Simulate the gas needed by a transaction.
-    pub async fn gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+    pub async fn gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
@@ -117,22 +117,22 @@ impl Simulator {
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx.clone(), tenderly::GenerateAccessList::No)
+                    .simulate(tx, tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
                     .await
-                    .map_err(with(tx, block))?
+                    .map_err(with(tx.clone(), block))?
                     .gas
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(tx.clone())
+                .estimate_gas(tx)
                 .await
-                .map_err(with(tx, block))?,
+                .map_err(with(tx.clone(), block))?,
             Inner::Enso(enso) => enso
                 .simulate(tx.clone())
                 .measure("enso_simulate_gas")
                 .await
-                .map_err(with(tx, block))?,
+                .map_err(with(tx.clone(), block))?,
         })
     }
 }
@@ -152,6 +152,8 @@ pub enum SimulatorError {
     Blockchain(#[from] blockchain::Error),
     #[error("enso error: {0:?}")]
     Enso(#[from] enso::Error),
+    #[error("the simulated gas {0} exceeded the gas limit {1} provided in the solution")]
+    GasExceeded(eth::Gas, eth::Gas),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -192,6 +194,7 @@ where
             }
             SimulatorError::Enso(enso::Error::Http(_)) => None,
             SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
+            SimulatorError::GasExceeded(..) => Some(tx),
         };
         match tx {
             Some(tx) => Error::Revert(RevertError { err, tx, block }),

@@ -1630,10 +1630,12 @@ dependencies = [
  "async-trait",
  "axum",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "clap",
  "contracts",
  "derivative",
+ "derive_more",
  "ethabi",
  "ethcontract",
  "ethereum-types",
@@ -4261,6 +4263,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "derive_more",
  "ethcontract",
  "ethereum-types",
  "ethrpc",
@@ -4298,7 +4301,9 @@ dependencies = [
 name = "solvers-dto"
 version = "0.1.0"
 dependencies = [
+ "app-data",
  "bigdecimal",
+ "bytes-hex",
  "chrono",
  "hex",
  "number",

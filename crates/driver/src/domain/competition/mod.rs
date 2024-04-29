@@ -11,6 +11,7 @@ use {
             blockchain::Ethereum,
             notify,
             observe,
+            simulator::{RevertError, SimulatorError},
             solver::{self, SolutionMerging, Solver},
             Simulator,
         },
@@ -304,14 +305,16 @@ impl Competition {
         &self,
         settlement: &Settlement,
     ) -> Result<(), infra::simulator::Error> {
-        self.simulator
-            .gas(
-                settlement
-                    .transaction(settlement::Internalization::Enable)
-                    .clone(),
-            )
-            .await
-            .map(|_| ())
+        let tx = settlement.transaction(settlement::Internalization::Enable);
+        let gas_needed_for_tx = self.simulator.gas(tx).await?;
+        if gas_needed_for_tx > settlement.gas.limit {
+            return Err(infra::simulator::Error::Revert(RevertError {
+                err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
+                tx: tx.clone(),
+                block: self.eth.current_block().borrow().number.into(),
+            }));
+        }
+        Ok(())
     }
 }
 
