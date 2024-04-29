@@ -273,7 +273,6 @@ struct Flags {
     buy_token_balance: order::BuyTokenBalance,
 }
 
-
 mod codec {
     use crate::domain::{competition::order, eth};
 
