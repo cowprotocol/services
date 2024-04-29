@@ -72,20 +72,17 @@ impl SolverEngine {
     pub async fn solve(&self, auction: serde_json::Value) -> serde_json::Value {
         let client = reqwest::Client::new();
         let url = shared::url::join(&self.url, "solve");
-        tracing::info!("newlog 1");
         let response = client.post(url).json(&auction).send().await.unwrap();
-        tracing::info!("newlog 2");
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap();
-            tracing::info!("newlog text={:?}", text);
-            panic!("HTTP {}: {:?}", status, text,);
-        }
-        tracing::info!("newlog 3");
 
-        let json = response.json().await.unwrap();
-        tracing::info!("newlog json={:?}", json);
-        json
+        if !response.status().is_success() {
+            panic!(
+                "HTTP {}: {:?}",
+                response.status(),
+                response.text().await.unwrap(),
+            );
+        }
+
+        response.json().await.unwrap()
     }
 }
 

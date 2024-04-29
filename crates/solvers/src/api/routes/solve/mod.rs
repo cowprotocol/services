@@ -23,7 +23,6 @@ pub async fn solve(
     axum::http::StatusCode,
     axum::response::Json<Response<dto::Solutions>>,
 ) {
-    tracing::info!("newlog received auction={:?}", auction);
     let handle_request = async {
         let auction = match dto::auction::to_domain(&auction) {
             Ok(value) => value,
