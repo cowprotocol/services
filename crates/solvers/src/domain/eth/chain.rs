@@ -7,6 +7,7 @@ pub enum ChainId {
     Goerli = 5,
     Gnosis = 100,
     Sepolia = 11155111,
+    ArbitrumOne = 42161,
 }
 
 impl ChainId {
@@ -23,6 +24,7 @@ impl ChainId {
             5 => Ok(Self::Goerli),
             100 => Ok(Self::Gnosis),
             11155111 => Ok(Self::Sepolia),
+            42161 => Ok(Self::ArbitrumOne),
             _ => Err(UnsupportedChain),
         }
     }
@@ -34,6 +36,7 @@ impl ChainId {
             ChainId::Goerli => "5",
             ChainId::Gnosis => "100",
             ChainId::Sepolia => "11155111",
+            ChainId::ArbitrumOne => "42161",
         }
     }
 
