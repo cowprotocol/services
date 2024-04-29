@@ -169,6 +169,7 @@ mod tests {
             max_input.0.amount,
             (eth::U256::exp10(18) + eth::U256::exp10(18)).into()
         );
+        assert_eq!(exact_output.0.amount, interaction.output.amount);
 
         // max cap
         let max_cap = Parameters {
@@ -181,6 +182,7 @@ mod tests {
             max_input.0.amount,
             (eth::U256::exp10(18) + eth::U256::exp10(16)).into()
         );
+        assert_eq!(exact_output.0.amount, interaction.output.amount);
     }
 
     #[test]
@@ -227,6 +229,7 @@ mod tests {
             max_input.0.amount,
             (eth::U256::exp10(18) + eth::U256::exp10(18)).into()
         );
+        assert_eq!(exact_output.0.amount, interaction.output.amount);
 
         // max cap
         let max_cap = Parameters {
@@ -239,6 +242,7 @@ mod tests {
             max_input.0.amount,
             (eth::U256::exp10(18) + eth::U256::exp10(16)).into()
         );
+        assert_eq!(exact_output.0.amount, interaction.output.amount);
     }
 
     #[test]
