@@ -1,9 +1,9 @@
 use {
-    super::{trade::ClearingPrices, Error, Solution},
+    super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, encoding, order, solution},
+            competition::{self, auction, order, solution},
             eth,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
@@ -106,9 +106,23 @@ impl Settlement {
                     may_revert: boundary.revertable(),
                 }
             }
-            encoding::Strategy::Domain => {
-                todo!("domain encoding")
-            }
+            encoding::Strategy::Domain => SettlementTx {
+                internalized: encoding::tx(
+                    auction.id().unwrap(),
+                    &solution,
+                    eth.contracts().settlement(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                )?,
+                uninternalized: encoding::tx(
+                    auction.id().unwrap(),
+                    &solution,
+                    eth.contracts().settlement(),
+                    solution.approvals(eth, Internalization::Disable).await?,
+                    Internalization::Disable,
+                )?,
+                may_revert: solution.revertable(),
+            },
         };
         Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
     }

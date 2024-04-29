@@ -73,6 +73,7 @@ pub fn encoding_failed(
             "Settlement gas limit exceeded: used {}, limit {}",
             used.0, limit.0
         )),
+        solution::Error::Encoding(_) => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);
