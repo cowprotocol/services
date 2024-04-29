@@ -74,7 +74,7 @@ impl Inner {
         self: Arc<Self>,
         query: Arc<Query>,
     ) -> Result<Estimate, PriceEstimationError> {
-        if let (Some(verifier), Some(verification)) = (&self.verifier, &query.verification) {
+        if let Some(verifier) = &self.verifier {
             let trade = self.finder.get_trade(&query).await?;
             let price_query = PriceQuery {
                 sell_token: query.sell_token,
@@ -84,14 +84,12 @@ impl Inner {
             };
 
             return verifier
-                .verify(&price_query, verification, trade.clone())
+                .verify(&price_query, &query.verification, trade.clone())
                 .await
                 .map_err(PriceEstimationError::EstimatorInternal);
         }
 
-        if query.verification.is_some() {
-            tracing::warn!("verified quote requested but no verifier configured");
-        }
+        tracing::warn!("verified quote requested but no verifier configured");
 
         let quote = self.finder.get_quote(&query).await?;
         Ok(Estimate {

@@ -34,7 +34,7 @@ pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,
     pub side: OrderQuoteSide,
-    pub verification: Option<Verification>,
+    pub verification: Verification,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
 }
@@ -261,9 +261,7 @@ pub struct QuoteSearchParameters {
     pub kind: OrderKind,
     pub signing_scheme: QuoteSigningScheme,
     pub additional_gas: u64,
-    /// If this is `Some` the quotes are expected to pass simulations using the
-    /// contained parameters.
-    pub verification: Option<Verification>,
+    pub verification: Verification,
 }
 
 impl QuoteSearchParameters {
@@ -462,17 +460,20 @@ impl OrderQuoter {
         parameters: &QuoteParameters,
         sell_amount: U256,
     ) -> Result<(), CalculateQuoteError> {
-        if matches!(self.quote_verification, QuoteVerificationMode::Unverified) {
-            return Ok(()); // verification is not expected
-        }
-        let Some(verification) = &parameters.verification else {
-            return Ok(()); // no verification requested
-        };
-        if estimate.verified {
-            return Ok(()); // successfully verified
+        if estimate.verified
+            || !matches!(
+                self.quote_verification,
+                QuoteVerificationMode::EnforceWhenPossible
+            )
+        {
+            // verification was successful or not strictly required
+            return Ok(());
         }
 
-        let balance = match self.get_balance(verification, parameters.sell_token).await {
+        let balance = match self
+            .get_balance(&parameters.verification, parameters.sell_token)
+            .await
+        {
             Ok(balance) => balance,
             Err(err) => {
                 tracing::warn!(?err, "could not fetch balance for verification");
@@ -696,10 +697,10 @@ mod tests {
                     value: NonZeroU256::try_from(100).unwrap(),
                 },
             },
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
         };
@@ -714,10 +715,10 @@ mod tests {
             .expect_estimate()
             .withf(|q| {
                 **q == price_estimation::Query {
-                    verification: Some(Verification {
+                    verification: Verification {
                         from: H160([3; 20]),
                         ..Default::default()
-                    }),
+                    },
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -828,10 +829,10 @@ mod tests {
                     value: NonZeroU256::try_from(100).unwrap(),
                 },
             },
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
                 verification_gas_limit: 1,
@@ -849,10 +850,10 @@ mod tests {
             .expect_estimate()
             .withf(|q| {
                 **q == price_estimation::Query {
-                    verification: Some(Verification {
+                    verification: Verification {
                         from: H160([3; 20]),
                         ..Default::default()
-                    }),
+                    },
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -961,10 +962,10 @@ mod tests {
             side: OrderQuoteSide::Buy {
                 buy_amount_after_fee: NonZeroU256::try_from(42).unwrap(),
             },
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
         };
@@ -979,10 +980,10 @@ mod tests {
             .expect_estimate()
             .withf(|q| {
                 **q == price_estimation::Query {
-                    verification: Some(Verification {
+                    verification: Verification {
                         from: H160([3; 20]),
                         ..Default::default()
-                    }),
+                    },
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
@@ -1092,10 +1093,10 @@ mod tests {
                     value: NonZeroU256::try_from(100).unwrap(),
                 },
             },
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
         };
@@ -1163,10 +1164,10 @@ mod tests {
                     value: NonZeroU256::try_from(100_000).unwrap(),
                 },
             },
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
         };
@@ -1237,10 +1238,10 @@ mod tests {
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1317,10 +1318,10 @@ mod tests {
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1393,10 +1394,10 @@ mod tests {
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip712,
             additional_gas: 0,
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([3; 20]),
                 ..Default::default()
-            }),
+            },
         };
 
         let mut storage = MockQuoteStoring::new();

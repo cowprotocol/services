@@ -561,15 +561,14 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let verify_quotes = !matches!(self.quote_verification, QuoteVerificationMode::Unverified);
-        let verification = verify_quotes.then_some(Verification {
+        let verification = Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
             pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
             post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
-        });
+        };
 
         let quote_parameters = QuoteSearchParameters {
             sell_token: data.sell_token,
@@ -2017,10 +2016,10 @@ mod tests {
                 verification_gas_limit: default_verification_gas_limit(),
             },
             additional_gas: 0,
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([0xf0; 20]),
                 ..Default::default()
-            }),
+            },
         };
         let quote_data = Quote {
             fee_amount: 6.into(),
@@ -2053,10 +2052,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_calculates_fresh_quote_when_not_found() {
-        let verification = Some(Verification {
+        let verification = Verification {
             from: H160([0xf0; 20]),
             ..Default::default()
-        });
+        };
 
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter

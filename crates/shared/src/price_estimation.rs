@@ -333,7 +333,7 @@ pub struct Query {
     /// buy_token.
     pub in_amount: NonZeroU256,
     pub kind: OrderKind,
-    pub verification: Option<Verification>,
+    pub verification: Verification,
     /// Signals whether responses from that were valid on previous blocks can be
     /// used to answer the query.
     #[serde(skip_serializing)]
