@@ -91,6 +91,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     false => SolutionMerging::Forbidden,
                 },
                 s3: config.s3.map(Into::into),
+                solver_native_token: config.native_token.to_domain(),
             }
         }))
         .await,

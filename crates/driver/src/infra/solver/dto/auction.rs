@@ -9,7 +9,7 @@ use {
             eth::{self},
             liquidity,
         },
-        infra::config::file::FeeHandler,
+        infra::{config::file::FeeHandler, solver::SolverNativeToken},
         util::{
             conv::{rational_to_big_decimal, u256::U256Ext},
             serialize,
@@ -33,6 +33,7 @@ impl Auction {
         liquidity: &[liquidity::Liquidity],
         weth: eth::WethAddress,
         fee_handler: FeeHandler,
+        solver_native_token: SolverNativeToken,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -80,7 +81,7 @@ impl Auction {
                 .orders()
                 .iter()
                 .map(|order| {
-                    let mut available = order.available(weth);
+                    let mut available = order.available();
                     // In case of volume based fees, fee withheld by driver might be higher than the
                     // surplus of the solution. This would lead to violating limit prices when
                     // driver tries to withhold the volume based fee. To avoid this, we artificially
@@ -89,6 +90,10 @@ impl Auction {
                     // fee.
                     //
                     // https://github.com/cowprotocol/services/issues/2440
+                    if solver_native_token == SolverNativeToken::WrapNativeToken {
+                        available.buy.token = available.buy.token.wrap(weth)
+                    }
+
                     if fee_handler == FeeHandler::Driver {
                         order.protocol_fees.iter().for_each(|protocol_fee| {
                             if let fees::FeePolicy::Volume { factor } = protocol_fee {

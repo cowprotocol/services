@@ -1,6 +1,6 @@
 pub use load::load;
 use {
-    crate::{domain::eth, util::serialize},
+    crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -122,6 +122,30 @@ enum Mempool {
     },
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+enum SolverNativeToken {
+    /// Wrap ETH address and keep inserting unwrap interactions
+    #[default]
+    WrapNativeToken,
+    /// Send 0xeeee address but keep inserting unwrap interactions
+    NativeToken,
+    /// Send 0xeeee and let solver handle unwraps entirely
+    NativeTokenFullyHandedBySolver,
+}
+
+impl SolverNativeToken {
+    pub fn to_domain(&self) -> infra::solver::SolverNativeToken {
+        match self {
+            SolverNativeToken::WrapNativeToken => infra::solver::SolverNativeToken::WrapNativeToken,
+            SolverNativeToken::NativeToken => infra::solver::SolverNativeToken::NativeToken,
+            SolverNativeToken::NativeTokenFullyHandedBySolver => {
+                infra::solver::SolverNativeToken::NativeTokenFullyHandedBySolver
+            }
+        }
+    }
+}
+
 pub mod encoding {
     use {crate::domain::competition, serde::Deserialize};
 
@@ -230,6 +254,10 @@ struct SolverConfig {
     /// the solver engine
     #[serde(default)]
     s3: Option<S3>,
+
+    /// Whether the native token is wrapped or not when sent to the solvers
+    #[serde(default)]
+    native_token: SolverNativeToken,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

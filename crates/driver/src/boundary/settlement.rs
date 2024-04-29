@@ -10,7 +10,7 @@ use {
             eth,
             liquidity,
         },
-        infra::Ethereum,
+        infra::{solver::SolverNativeToken, Ethereum},
     },
     anyhow::{anyhow, Context, Ok, Result},
     app_data::AppDataHash,
@@ -57,6 +57,7 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         auction: &competition::Auction,
+        solver_native_token: SolverNativeToken,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
@@ -104,8 +105,12 @@ impl Settlement {
                 ),
             };
 
-            let boundary_limit_order = order_converter
-                .normalize_limit_order(solver::liquidity::BalancedOrder::full(boundary_order))?;
+            let allow_unwrap_native_token =
+                solver_native_token != SolverNativeToken::NativeTokenFullyHandedBySolver;
+            let boundary_limit_order = order_converter.normalize_limit_order(
+                solver::liquidity::BalancedOrder::full(boundary_order),
+                allow_unwrap_native_token,
+            )?;
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
 
