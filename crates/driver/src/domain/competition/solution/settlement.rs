@@ -3,7 +3,7 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{self, auction, encoding, order, solution},
             eth,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
@@ -88,6 +88,7 @@ impl Settlement {
             return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
+        // Encode the solution into a settlement.
         let tx = match encoding {
             encoding::Strategy::Boundary => {
                 let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;

@@ -323,9 +323,7 @@ impl Solution {
     /// meaningful in relation to each others.
     ///
     /// The rule which relates two prices for tokens X and Y is:
-    /// ```
     /// amount_x * price_x = amount_y * price_y
-    /// ```
     pub fn clearing_prices(&self) -> Result<Vec<eth::Asset>, Error> {
         let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
             token,
