@@ -446,16 +446,8 @@ impl RunLoop {
         {
             futures::future::Either::Left((res, _)) => res,
             futures::future::Either::Right((driver_result, onchain_task)) => {
-                let driver_tx_hash = driver_result.map_err(SettleError::Failure)?.tx_hash;
-                let onchain_tx_hash = onchain_task.await?;
-                if onchain_tx_hash != driver_tx_hash {
-                    tracing::warn!(
-                        ?driver_tx_hash,
-                        ?onchain_tx_hash,
-                        "driver and onchain tx hashes do not match"
-                    );
-                }
-                Ok(onchain_tx_hash)
+                driver_result.map_err(SettleError::Failure)?;
+                onchain_task.await
             }
         }
     }

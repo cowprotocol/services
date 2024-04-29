@@ -129,10 +129,6 @@ paths:
       responses:
         200:
           description: Execution accepted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SettleResponse"
         400:
           $ref: "#/components/responses/BadRequest"
         500:
