@@ -8,7 +8,6 @@ use {
     num::{BigRational, CheckedDiv, CheckedMul},
     number::conversions::big_rational_to_u256,
     shared::conversions::U256Ext,
-    std::cmp,
 };
 
 #[derive(Clone)]
@@ -49,9 +48,10 @@ impl Parameters {
                 big_rational_to_u256(&relative).map_err(|_| super::error::Math::DivisionByZero)?;
 
             // Final slippage considers min/max caps
-            let slippage = cmp::max(
+            let slippage = num::clamp(
+                relative,
                 self.min.unwrap_or_default(),
-                cmp::min(relative, self.max.unwrap_or(U256::max_value())),
+                self.max.unwrap_or(U256::max_value()),
             );
 
             tracing::debug!(
@@ -70,9 +70,10 @@ impl Parameters {
                 big_rational_to_u256(&relative).map_err(|_| super::error::Math::DivisionByZero)?;
 
             // Final slippage considers min/max caps
-            let slippage = cmp::max(
+            let slippage = num::clamp(
+                relative,
                 self.min.unwrap_or_default(),
-                cmp::min(relative, self.max.unwrap_or(U256::max_value())),
+                self.max.unwrap_or(U256::max_value()),
             );
 
             tracing::debug!(
