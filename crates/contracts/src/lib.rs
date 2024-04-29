@@ -96,7 +96,7 @@ mod tests {
     const GOERLI: u64 = 5;
     const GNOSIS: u64 = 100;
     const SEPOLIA: u64 = 11155111;
-    const ARBITRUM: u64 = 42161;
+    const ARBITRUM_ONE: u64 = 42161;
 
     use {
         super::*,
@@ -159,7 +159,7 @@ mod tests {
             }};
         }
 
-        for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_address!(GPv2Settlement for *network);
             assert_has_deployment_address!(WETH9 for *network);
             assert_has_deployment_address!(HooksTrampoline for *network);
@@ -169,21 +169,21 @@ mod tests {
         for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA] {
             assert_has_deployment_address!(CowProtocolToken for *network);
         }
-        for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM_ONE] {
             assert_has_deployment_address!(SushiSwapRouter for *network);
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
-        for network in &[MAINNET, GOERLI, SEPOLIA, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_address!(UniswapV3SwapRouter for *network);
             assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
-        for network in &[MAINNET, GOERLI, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, ARBITRUM_ONE] {
             assert_has_deployment_address!(BalancerV2WeightedPool2TokensFactory for *network);
             assert_has_deployment_address!(BalancerV2LiquidityBootstrappingPoolFactory for *network);
         }
 
-        for network in &[MAINNET, ARBITRUM] {
+        for network in &[MAINNET, ARBITRUM_ONE] {
             assert_has_deployment_address!(PancakeRouter for *network);
         }
 
@@ -191,15 +191,15 @@ mod tests {
             assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
         }
 
-        for network in &[MAINNET, SEPOLIA, ARBITRUM] {
+        for network in &[MAINNET, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_address!(IZeroEx for *network);
         }
 
-        for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM_ONE] {
             assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for *network);
         }
 
-        for network in &[MAINNET, GNOSIS, ARBITRUM] {
+        for network in &[MAINNET, GNOSIS, ARBITRUM_ONE] {
             assert_has_deployment_address!(SwaprRouter for *network);
         }
 
@@ -224,17 +224,17 @@ mod tests {
             }};
         }
 
-        for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, GNOSIS, SEPOLIA, ARBITRUM_ONE] {
             assert_has_deployment_information!(GPv2Settlement for *network);
             assert_has_deployment_information!(BalancerV2Vault for *network);
         }
         for network in &[MAINNET, GOERLI] {
             assert_has_deployment_information!(BalancerV2WeightedPoolFactory for *network);
         }
-        for network in &[MAINNET, GOERLI, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, ARBITRUM_ONE] {
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
         }
-        for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM] {
+        for network in &[MAINNET, GOERLI, GNOSIS, ARBITRUM_ONE] {
             assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for *network);
         }
     }
