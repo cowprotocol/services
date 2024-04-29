@@ -1,5 +1,5 @@
 use {
-    self::solution::settlement,
+    self::solution::{encoding, settlement},
     super::{
         time::{self, Remaining},
         Mempools,
@@ -50,6 +50,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
+    pub encoding: encoding::Strategy,
 }
 
 impl Competition {
@@ -114,7 +115,9 @@ impl Competition {
             .map(|solution| async move {
                 let id = solution.id().clone();
                 observe::encoding(&id);
-                let settlement = solution.encode(auction, &self.eth, &self.simulator).await;
+                let settlement = solution
+                    .encode(auction, &self.eth, &self.simulator, self.encoding)
+                    .await;
                 (id, settlement)
             })
             .collect::<FuturesUnordered<_>>()

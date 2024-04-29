@@ -22,6 +22,7 @@ use {
     thiserror::Error,
 };
 
+pub mod encoding;
 pub mod fee;
 pub mod interaction;
 pub mod scoring;
@@ -302,8 +303,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
+        encoding: encoding::Strategy,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator).await
+        Settlement::encode(self, auction, eth, simulator, encoding).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
