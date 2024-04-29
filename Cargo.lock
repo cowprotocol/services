@@ -4263,6 +4263,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "derive_more",
  "ethcontract",
  "ethereum-types",
  "ethrpc",

@@ -189,6 +189,9 @@ impl Inner {
                 }
 
                 let gas = route.gas() + self.solution_gas_offset;
+                let fee = sell_token_price
+                    .ether_value(eth::Ether(gas.0.checked_mul(auction.gas_price.0 .0)?))?
+                    .into();
 
                 Some(
                     solution::Single {
@@ -198,7 +201,7 @@ impl Inner {
                         interactions,
                         gas,
                     }
-                    .into_solution(auction.gas_price, sell_token_price)?
+                    .into_solution(fee)?
                     .with_id(solution::Id(i as u64))
                     .with_buffers_internalizations(&auction.tokens),
                 )

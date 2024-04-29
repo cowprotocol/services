@@ -22,6 +22,7 @@ use {
     thiserror::Error,
 };
 
+pub mod encoding;
 pub mod fee;
 pub mod interaction;
 pub mod scoring;
@@ -142,24 +143,19 @@ impl Solution {
                 order::Side::Buy => trade.executed(),
             };
             let uniform_prices = ClearingPrices {
-                sell: *self
-                    .prices
-                    .get(&trade.order().sell.token.wrap(self.weth))
+                sell: self
+                    .clearing_price(trade.order().sell.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
-                buy: *self
-                    .prices
-                    .get(&trade.order().buy.token.wrap(self.weth))
+                buy: self
+                    .clearing_price(trade.order().buy.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
-            let custom_prices = trade
-                .calculate_custom_prices(&uniform_prices)
-                .map_err(error::Scoring::CalculateCustomPrices)?;
             trades.push(scoring::Trade::new(
                 trade.order().sell,
                 trade.order().buy,
                 trade.order().side,
                 executed,
-                custom_prices,
+                trade.custom_prices(&uniform_prices)?,
                 trade.order().protocol_fees.clone(),
             ))
         }
@@ -307,8 +303,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
+        encoding: encoding::Strategy,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator).await
+        Settlement::encode(self, auction, eth, simulator, encoding).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
