@@ -9,7 +9,7 @@ pub fn network_name(chain_id: u64) -> &'static str {
         5 => "Ethereum / Goerli",
         100 => "xDAI",
         11155111 => "Ethereum / Sepolia",
-        42161 => "Arbitrum / Mainnet",
+        42161 => "Arbitrum One",
         _ => panic!("Unknown network (chain_id={chain_id})"),
     }
 }
