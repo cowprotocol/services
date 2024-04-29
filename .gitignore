@@ -4,3 +4,4 @@
 /.vscode
 /.idea
 **/testing.*.toml
+/playground/.env
