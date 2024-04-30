@@ -213,6 +213,7 @@ pub async fn init(
     vault: Option<&BalancerV2Vault>,
     uniswapv3_factory: Option<&IUniswapV3Factory>,
     base_tokens: &BaseTokens,
+    settlement_contract: H160,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
     let web3 = ethrpc::instrumented::instrument_with_label(&web3, "tokenOwners".into());
     let finders = args
@@ -298,7 +299,11 @@ pub async fn init(
         args.whitelisted_owners.clone(),
     )));
 
-    Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
+    Ok(Arc::new(TokenOwnerFinder {
+        web3,
+        proposers,
+        settlement_contract,
+    }))
 }
 
 /// A `TokenOwnerFinding` implementation that queries a node with proposed owner
@@ -306,6 +311,7 @@ pub async fn init(
 pub struct TokenOwnerFinder {
     pub web3: Web3,
     pub proposers: Vec<Arc<dyn TokenOwnerProposing>>,
+    pub settlement_contract: H160,
 }
 
 impl TokenOwnerFinder {
@@ -342,18 +348,23 @@ impl TokenOwnerFinding for TokenOwnerFinder {
         futures::pin_mut!(stream);
 
         while let Some(chunk) = stream.next().await {
-            let futures = chunk.into_iter().map(|owner| {
-                let call = instance.balance_of(owner).call();
-                async move {
-                    match call.await {
-                        Ok(balance) => Ok((owner, balance)),
-                        Err(err) if EthcontractErrorType::is_contract_err(&err) => {
-                            Ok((owner, 0.into()))
+            let futures = chunk
+                .into_iter()
+                // The token balance assertions of the bad token test assume the token
+                // owner is not the settlement contract.
+                .filter(|owner| *owner != self.settlement_contract)
+                .map(|owner| {
+                    let call = instance.balance_of(owner).call();
+                    async move {
+                        match call.await {
+                            Ok(balance) => Ok((owner, balance)),
+                            Err(err) if EthcontractErrorType::is_contract_err(&err) => {
+                                Ok((owner, 0.into()))
+                            }
+                            Err(err) => Err(err),
                         }
-                        Err(err) => Err(err),
                     }
-                }
-            });
+                });
             let balances = futures::future::try_join_all(futures).await?;
 
             if let Some(holder) = balances

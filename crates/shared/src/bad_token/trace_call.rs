@@ -627,6 +627,7 @@ mod tests {
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
+            settlement_contract: Default::default(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
@@ -705,6 +706,7 @@ mod tests {
         );
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
+            settlement_contract: settlement.address(),
             proposers: vec![univ3],
         });
         let token_cache = super::TraceCallDetector {
@@ -831,6 +833,7 @@ mod tests {
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
             proposers: vec![solver_token_finder],
+            settlement_contract: settlement.address(),
         });
         let token_cache = TraceCallDetector {
             web3,
