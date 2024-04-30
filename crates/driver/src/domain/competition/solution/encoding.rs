@@ -7,7 +7,7 @@ use {
                 order::{self, Partial},
             },
             eth::{self, allowance, Ether},
-            liquidity::{self, ExactOutput, MaxInput},
+            liquidity,
         },
         util::Bytes,
     },
