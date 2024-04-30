@@ -110,14 +110,14 @@ impl Settlement {
                 internalized: encoding::tx(
                     auction,
                     &solution,
-                    eth.contracts().settlement(),
+                    eth.contracts(),
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
                 )?,
                 uninternalized: encoding::tx(
                     auction,
                     &solution,
-                    eth.contracts().settlement(),
+                    eth.contracts(),
                     solution.approvals(eth, Internalization::Disable).await?,
                     Internalization::Disable,
                 )?,

@@ -530,16 +530,6 @@ enum BalancerV2Preset {
     BalancerV2,
 }
 
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Logic {
-    /// Use legacy submissions logic (default)
-    #[default]
-    Boundary,
-    /// Use Driver domain native submission logic
-    Native,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct ZeroExConfig {

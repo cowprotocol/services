@@ -9,6 +9,7 @@ use {
             eth::{self, allowance, Ether},
             liquidity,
         },
+        infra,
         util::Bytes,
     },
     allowance::Allowance,
@@ -38,7 +39,7 @@ pub enum Error {
 pub fn tx(
     auction: &competition::Auction,
     solution: &super::Solution,
-    contract: &contracts::GPv2Settlement,
+    contracts: &infra::blockchain::Contracts,
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
 ) -> Result<eth::Tx, Error> {
@@ -50,6 +51,7 @@ pub fn tx(
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
     let mut post_interactions = Vec::new();
+    let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
     for (token, price) in solution.prices.clone() {
@@ -59,7 +61,7 @@ pub fn tx(
 
     // Encode trades with custom clearing prices
     for trade in solution.trades() {
-        let (price, trade) = match trade {
+        let (price, mut trade) = match trade {
             super::Trade::Fulfillment(trade) => {
                 pre_interactions.extend(trade.order().pre_interactions.clone());
                 post_interactions.extend(trade.order().post_interactions.clone());
@@ -72,6 +74,12 @@ pub fn tx(
                         .clearing_price(trade.order().buy.token)
                         .ok_or(Error::InvalidClearingPrice(trade.order().buy.token))?,
                 };
+
+                // Account for the WETH unwrap if necessary
+                if trade.order().buy.token == eth::ETH_TOKEN {
+                    native_unwrap += trade.buy_amount(&uniform_prices)?;
+                }
+
                 let custom_prices = trade.custom_prices(&uniform_prices)?;
                 (
                     Price {
@@ -81,8 +89,9 @@ pub fn tx(
                         buy_price: custom_prices.buy,
                     },
                     Trade {
-                        sell_token_index: (tokens.len() - 2).into(),
-                        buy_token_index: (tokens.len() - 1).into(),
+                        // indices are set below
+                        sell_token_index: Default::default(),
+                        buy_token_index: Default::default(),
                         receiver: trade.order().receiver.unwrap_or_default().into(),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
@@ -103,7 +112,7 @@ pub fn tx(
                             order::Side::Sell => trade.executed().0 + trade.fee().0,
                             order::Side::Buy => trade.executed().into(),
                         },
-                        signature: trade.order().signature.data.clone(),
+                        signature: codec::signature(&trade.order().signature),
                     },
                 )
             }
@@ -118,8 +127,9 @@ pub fn tx(
                         buy_price: trade.order().sell.amount.into(),
                     },
                     Trade {
-                        sell_token_index: (tokens.len() - 2).into(),
-                        buy_token_index: (tokens.len() - 1).into(),
+                        // indices are set below
+                        sell_token_index: Default::default(),
+                        buy_token_index: Default::default(),
                         receiver: trade.order().receiver.into(),
                         sell_amount: trade.order().sell.amount.into(),
                         buy_amount: trade.order().buy.amount.into(),
@@ -134,7 +144,7 @@ pub fn tx(
                             buy_token_balance: trade.order().buy_token_balance,
                         },
                         executed_amount: trade.executed().into(),
-                        signature: trade.order().signature.data.clone(),
+                        signature: codec::signature(&trade.order().signature),
                     },
                 )
             }
@@ -143,6 +153,9 @@ pub fn tx(
         tokens.push(price.buy_token);
         clearing_prices.push(price.sell_price);
         clearing_prices.push(price.buy_price);
+
+        trade.sell_token_index = (tokens.len() - 2).into();
+        trade.buy_token_index = (tokens.len() - 1).into();
 
         trades.push(trade);
     }
@@ -174,12 +187,18 @@ pub fn tx(
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {
-                liquidity_interaction(liquidity, &slippage, contract)?
+                liquidity_interaction(liquidity, &slippage, contracts.settlement())?
             }
         })
     }
 
-    let tx = contract
+    // Encode WETH unwrap
+    if !native_unwrap.0.is_zero() {
+        interactions.push(unwrap(native_unwrap, contracts.weth()));
+    }
+
+    let tx = contracts
+        .settlement()
         .settle(
             tokens,
             clearing_prices,
@@ -198,7 +217,7 @@ pub fn tx(
 
     Ok(eth::Tx {
         from: solution.solver().address(),
-        to: contract.address().into(),
+        to: contracts.settlement().address().into(),
         input: calldata.into(),
         value: Ether(0.into()),
         access_list: Default::default(),
@@ -255,6 +274,15 @@ fn approve(allowance: &Allowance) -> eth::Interaction {
     }
 }
 
+fn unwrap(amount: eth::TokenAmount, weth: &contracts::WETH9) -> eth::Interaction {
+    let tx = weth.withdraw(amount.into()).into_inner();
+    eth::Interaction {
+        target: tx.to.unwrap().into(),
+        value: Ether(0.into()),
+        call_data: tx.data.unwrap().0.into(),
+    }
+}
+
 struct Trade {
     sell_token_index: eth::U256,
     buy_token_index: eth::U256,
@@ -302,7 +330,7 @@ mod codec {
         ethcontract::Bytes<Vec<u8>>,  // signature
     );
 
-    pub fn trade(trade: &super::Trade) -> Trade {
+    pub(super) fn trade(trade: &super::Trade) -> Trade {
         (
             trade.sell_token_index,
             trade.buy_token_index,
@@ -356,12 +384,26 @@ mod codec {
         ethcontract::Bytes<Vec<u8>>, // signature
     );
 
-    pub fn interaction(interaction: &eth::Interaction) -> Interaction {
+    pub(super) fn interaction(interaction: &eth::Interaction) -> Interaction {
         (
             interaction.target.0,
             interaction.value.0,
             ethcontract::Bytes(interaction.call_data.0.clone()),
         )
+    }
+
+    pub(super) fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
+        match signature.scheme {
+            order::signature::Scheme::Eip712 | order::signature::Scheme::EthSign => {
+                signature.data.clone()
+            }
+            order::signature::Scheme::Eip1271 => {
+                super::Bytes([signature.signer.0.as_bytes(), signature.data.0.as_slice()].concat())
+            }
+            order::signature::Scheme::PreSign => {
+                super::Bytes(signature.signer.0.as_bytes().to_vec())
+            }
+        }
     }
 }
 
