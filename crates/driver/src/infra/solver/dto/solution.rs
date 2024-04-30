@@ -227,8 +227,10 @@ pub struct Solution {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
+    #[serde(default)]
     pre_interactions: Vec<Interaction>,
     interactions: Vec<Interaction>,
+    #[serde(default)]
     post_interactions: Vec<Interaction>,
     // TODO: remove this once all solvers are updated to not return the score
     // https://github.com/cowprotocol/services/issues/2588
