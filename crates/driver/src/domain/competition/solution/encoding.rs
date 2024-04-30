@@ -112,9 +112,9 @@ pub fn tx(
                     Price {
                         // Jit orders are matched at limit price, so the sell token is worth
                         // buy.amount and vice versa
-                        sell_token: trade.order().sell.token.0.into(),
+                        sell_token: trade.order().sell.token.into(),
                         sell_price: trade.order().buy.amount.into(),
-                        buy_token: trade.order().buy.token.0.into(),
+                        buy_token: trade.order().buy.token.into(),
                         buy_price: trade.order().sell.amount.into(),
                     },
                     Trade {
@@ -133,7 +133,7 @@ pub fn tx(
                             sell_token_balance: trade.order().sell_token_balance,
                             buy_token_balance: trade.order().buy_token_balance,
                         },
-                        executed_amount: trade.executed().0,
+                        executed_amount: trade.executed().into(),
                         signature: trade.order().signature.data.clone(),
                     },
                 )
