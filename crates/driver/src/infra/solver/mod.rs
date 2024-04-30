@@ -113,7 +113,7 @@ pub struct Config {
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
     pub merge_solutions: SolutionMerging,
-    /// S3 configuration for storing the auction in the form they are sent to
+    /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     pub s3: Option<S3>,
 }
@@ -202,7 +202,11 @@ impl Solver {
             self.config.fee_handler,
         ))
         .unwrap();
-        self.persistence.archive_auction(auction.id(), &body);
+        // Only auctions with IDs are real auctions (/quote requests don't have an ID,
+        // and it makes no sense to store them)
+        if let Some(id) = auction.id() {
+            self.persistence.archive_auction(id, &body);
+        };
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self

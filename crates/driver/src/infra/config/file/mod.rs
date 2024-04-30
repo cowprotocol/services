@@ -1,6 +1,6 @@
 pub use load::load;
 use {
-    crate::{domain::eth, infra::persistence::S3, util::serialize},
+    crate::{domain::eth, util::serialize},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -226,7 +226,7 @@ struct SolverConfig {
     #[serde(default)]
     merge_solutions: bool,
 
-    /// S3 configuration for storing the auction in the form they are sent to
+    /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     #[serde(default)]
     s3: Option<S3>,
@@ -238,6 +238,17 @@ pub enum FeeHandler {
     #[default]
     Driver,
     Solver,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct S3 {
+    /// Name of the AWS S3 bucket in which the auctions will be stored
+    pub bucket: String,
+
+    /// Prepended to the auction id to form the final instance filename on AWS
+    /// S3 bucket. Something like "staging/mainnet/"
+    pub prefix: String,
 }
 
 #[serde_as]

@@ -1,21 +1,29 @@
 use {
-    crate::{domain::competition::auction::Id, infra::solver::Config},
-    serde::Deserialize,
+    crate::{
+        domain::competition::auction::Id,
+        infra::{config::file, solver::Config},
+    },
     std::sync::Arc,
     tracing::Instrument,
 };
 
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Clone, Debug, Default)]
 pub struct S3 {
-    /// The s3_instance_upload_* arguments configure how auction instances
-    /// should be uploaded to AWS S3.
-    /// They must either all be set or all not set.
+    /// Name of the AWS S3 bucket in which the auctions will be stored
     pub bucket: String,
 
-    /// Prepended to the auction id to form the final instance filename on S3.
-    /// Something like "staging/mainnet/"
+    /// Prepended to the auction id to form the final instance filename on AWS
+    /// S3 bucket. Something like "staging/mainnet/"
     pub prefix: String,
+}
+
+impl From<file::S3> for S3 {
+    fn from(value: file::S3) -> Self {
+        Self {
+            bucket: value.bucket,
+            prefix: value.prefix,
+        }
+    }
 }
 
 impl From<S3> for s3::Config {
@@ -45,19 +53,16 @@ impl Persistence {
 
     /// Saves the given auction with liquidity with fire and forget mentality
     /// (non-blocking operation)
-    pub fn archive_auction(&self, auction_id: Option<Id>, body: &str) {
+    pub fn archive_auction(&self, auction_id: Id, body: &str) {
         let Some(uploader) = self.s3.clone() else {
-            return;
-        };
-        let Some(id) = auction_id else {
             return;
         };
         let body = body.to_string();
         tokio::spawn(
             async move {
-                match uploader.upload(id.to_string(), body).await {
+                match uploader.upload(auction_id.to_string(), body).await {
                     Ok(key) => {
-                        tracing::info!(?key, "uploaded auction to s3");
+                        tracing::debug!(?key, "uploaded auction with liquidity to s3");
                     }
                     Err(err) => {
                         tracing::warn!(?err, "failed to upload auction to s3");
