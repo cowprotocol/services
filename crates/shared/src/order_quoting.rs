@@ -366,6 +366,7 @@ impl OrderQuoter {
         storage: Arc<dyn QuoteStoring>,
         validity: Validity,
         balance_fetcher: Arc<dyn BalanceFetching>,
+        quote_verification: QuoteVerificationMode,
     ) -> Self {
         Self {
             price_estimator,
@@ -375,14 +376,7 @@ impl OrderQuoter {
             now: Arc::new(Utc::now),
             validity,
             balance_fetcher,
-            quote_verification: QuoteVerificationMode::Unverified,
-        }
-    }
-
-    pub fn with_quote_verification(self, mode: QuoteVerificationMode) -> Self {
-        Self {
-            quote_verification: mode,
-            ..self
+            quote_verification,
         }
     }
 

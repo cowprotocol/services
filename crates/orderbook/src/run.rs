@@ -415,58 +415,53 @@ pub async fn run(args: Arguments) {
     };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
-        Arc::new(
-            OrderQuoter::new(
-                price_estimator,
-                native_price_estimator.clone(),
-                gas_price_estimator.clone(),
-                Arc::new(postgres.clone()),
-                order_quoting::Validity {
-                    eip1271_onchain_quote: chrono::Duration::from_std(
-                        args.order_quoting.eip1271_onchain_quote_validity,
-                    )
-                    .unwrap(),
-                    presign_onchain_quote: chrono::Duration::from_std(
-                        args.order_quoting.presign_onchain_quote_validity,
-                    )
-                    .unwrap(),
-                    standard_quote: chrono::Duration::from_std(
-                        args.order_quoting.standard_offchain_quote_validity,
-                    )
-                    .unwrap(),
-                },
-                balance_fetcher.clone(),
-            )
-            .with_quote_verification(args.price_estimation.quote_verification),
-        )
+        Arc::new(OrderQuoter::new(
+            price_estimator,
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+            Arc::new(postgres.clone()),
+            order_quoting::Validity {
+                eip1271_onchain_quote: chrono::Duration::from_std(
+                    args.order_quoting.eip1271_onchain_quote_validity,
+                )
+                .unwrap(),
+                presign_onchain_quote: chrono::Duration::from_std(
+                    args.order_quoting.presign_onchain_quote_validity,
+                )
+                .unwrap(),
+                standard_quote: chrono::Duration::from_std(
+                    args.order_quoting.standard_offchain_quote_validity,
+                )
+                .unwrap(),
+            },
+            balance_fetcher.clone(),
+            args.price_estimation.quote_verification,
+        ))
     };
     let optimal_quoter = create_quoter(price_estimator);
     let fast_quoter = create_quoter(fast_price_estimator);
 
     let app_data_validator = Validator::new(args.app_data_size_limit);
     let chainalysis_oracle = contracts::ChainalysisOracle::deployed(&web3).await.ok();
-    let order_validator = Arc::new(
-        OrderValidator::new(
-            native_token.clone(),
-            Arc::new(order_validation::banned::Users::new(
-                chainalysis_oracle,
-                args.banned_users,
-            )),
-            validity_configuration,
-            args.eip1271_skip_creation_validation,
-            bad_token_detector.clone(),
-            hooks_contract,
-            optimal_quoter.clone(),
-            balance_fetcher,
-            signature_validator,
-            Arc::new(postgres.clone()),
-            args.max_limit_orders_per_user,
-            Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
-            app_data_validator.clone(),
-            args.max_gas_per_order,
-        )
-        .with_quote_verification(args.price_estimation.quote_verification),
-    );
+    let order_validator = Arc::new(OrderValidator::new(
+        native_token.clone(),
+        Arc::new(order_validation::banned::Users::new(
+            chainalysis_oracle,
+            args.banned_users,
+        )),
+        validity_configuration,
+        args.eip1271_skip_creation_validation,
+        bad_token_detector.clone(),
+        hooks_contract,
+        optimal_quoter.clone(),
+        balance_fetcher,
+        signature_validator,
+        Arc::new(postgres.clone()),
+        args.max_limit_orders_per_user,
+        Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
+        app_data_validator.clone(),
+        args.max_gas_per_order,
+    ));
     let ipfs = args
         .ipfs_gateway
         .map(|url| {

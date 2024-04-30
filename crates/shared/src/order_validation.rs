@@ -11,7 +11,7 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{PriceEstimationError, QuoteVerificationMode, Verification},
+        price_estimation::{PriceEstimationError, Verification},
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
@@ -251,7 +251,6 @@ pub struct OrderValidator {
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
-    quote_verification: QuoteVerificationMode,
     max_gas_per_order: u64,
 }
 
@@ -339,14 +338,8 @@ impl OrderValidator {
             max_limit_orders_per_user,
             code_fetcher,
             app_data_validator,
-            quote_verification: QuoteVerificationMode::Unverified,
             max_gas_per_order,
         }
-    }
-
-    pub fn with_quote_verification(mut self, mode: QuoteVerificationMode) -> Self {
-        self.quote_verification = mode;
-        self
     }
 
     async fn check_max_limit_orders(&self, owner: H160) -> Result<(), ValidationError> {
