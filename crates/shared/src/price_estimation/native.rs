@@ -15,8 +15,8 @@ pub type NativePriceEstimateResult = Result<NativePrice, PriceEstimationError>;
 
 pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U256> {
     match chain_id {
-        // Mainnet, Göŕli, Sepolia
-        1 | 5 | 11155111 => Some(10u128.pow(18).into()),
+        // Mainnet, Göŕli, Sepolia, Arbitrum
+        1 | 5 | 11155111 | 42161 => Some(10u128.pow(18).into()),
         // Gnosis chain
         100 => Some(10u128.pow(21).into()),
         _ => None,

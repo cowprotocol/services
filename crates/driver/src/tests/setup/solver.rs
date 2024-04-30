@@ -13,6 +13,7 @@ use {
         infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
         tests::hex_address,
     },
+    ethereum_types::H160,
     itertools::Itertools,
     serde_json::json,
     std::{
@@ -118,7 +119,15 @@ impl Solver {
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
                 "sellAmount": sell_amount,
+                "fullSellAmount": if config.quote { sell_amount } else { quote.sell_amount().to_string() },
                 "buyAmount": buy_amount,
+                "fullBuyAmount": if config.quote { buy_amount } else { quote.buy_amount().to_string() },
+                "validTo": quote.order.valid_to,
+                "owner": if config.quote { H160::zero() } else { quote.order.owner },
+                "preInteractions":  json!([]),
+                "postInteractions":  json!([]),
+                "sellTokenSource": quote.order.sell_token_source,
+                "buyTokenDestination": quote.order.buy_token_destination,
                 "kind": match quote.order.side {
                     order::Side::Sell => "sell",
                     order::Side::Buy => "buy",
@@ -130,6 +139,9 @@ impl Solver {
                     order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
+                "appData": quote.order.app_data,
+                "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(quote.order_signature(config.blockchain))) },
+                "signingScheme": if config.quote { "eip1271" } else { "eip712" },
             });
             if config.fee_handler == FeeHandler::Solver {
                 order.as_object_mut().unwrap().insert(

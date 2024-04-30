@@ -3,7 +3,4 @@ pub mod fee_policy;
 pub mod order;
 pub mod quote;
 
-pub use {
-    auction::{Auction, AuctionId, AuctionWithId},
-    fee_policy::FeePolicy,
-};
+pub use auction::{Auction, AuctionId, AuctionWithId};

@@ -4,6 +4,7 @@ use crate::{
 };
 
 pub mod file;
+pub use file::encoding;
 
 /// Configuration of infrastructural components.
 #[derive(Debug)]
@@ -15,4 +16,5 @@ pub struct Config {
     pub simulator: Option<simulator::Config>,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
+    pub encoding: encoding::Strategy,
 }
