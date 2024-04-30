@@ -413,6 +413,22 @@ impl Price {
     pub fn in_eth(self, amount: eth::TokenAmount) -> eth::Ether {
         (amount.0 * self.0 .0 / Self::BASE).into()
     }
+
+    /// Convert an amount of ETH into a token amount using this price.
+    ///
+    /// Converting 1 ETH into a token worth 0.1 ETH (like GNO)
+    ///
+    /// # Examples
+    /// ```
+    /// use driver::domain::{competition::auction::Price, eth};
+    ///
+    /// let amount = eth::Ether::from(eth::U256::exp10(18));
+    /// let price = Price::new(eth::Ether::from(eth::U256::exp10(17))).unwrap(); // 0.1ETH
+    /// assert_eq!(price.from_eth(amount), eth::U256::exp10(19).into());
+    /// ```
+    pub fn from_eth(self, amount: eth::Ether) -> eth::TokenAmount {
+        (amount.0 * eth::U256::from(Self::BASE) / self.0 .0).into()
+    }
 }
 
 impl From<Price> for eth::U256 {

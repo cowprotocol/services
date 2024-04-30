@@ -1,5 +1,5 @@
 use {
-    super::{error::Math, interaction::Liquidity, settlement, trade::ClearingPrices},
+    super::{error::Math, interaction::Liquidity, settlement, slippage, trade::ClearingPrices},
     crate::{
         domain::{
             competition::{
@@ -7,7 +7,7 @@ use {
                 order::{self, Partial},
             },
             eth::{self, allowance, Ether},
-            liquidity::{self, ExactOutput, MaxInput},
+            liquidity,
         },
         util::Bytes,
     },
@@ -27,6 +27,8 @@ pub enum Strategy {
 pub enum Error {
     #[error("invalid interaction: {0:?}")]
     InvalidInteractionExecution(competition::solution::interaction::Liquidity),
+    #[error("missing auction id")]
+    MissingAuctionId,
     #[error("invalid clearing price: {0:?}")]
     InvalidClearingPrice(eth::TokenAddress),
     #[error(transparent)]
@@ -34,7 +36,7 @@ pub enum Error {
 }
 
 pub fn tx(
-    auction_id: competition::auction::Id,
+    auction: &competition::Auction,
     solution: &super::Solution,
     contract: &contracts::GPv2Settlement,
     approvals: impl Iterator<Item = eth::allowance::Approval>,
@@ -110,9 +112,9 @@ pub fn tx(
                     Price {
                         // Jit orders are matched at limit price, so the sell token is worth
                         // buy.amount and vice versa
-                        sell_token: trade.order().sell.token.0.into(),
+                        sell_token: trade.order().sell.token.into(),
                         sell_price: trade.order().buy.amount.into(),
-                        buy_token: trade.order().buy.token.0.into(),
+                        buy_token: trade.order().buy.token.into(),
                         buy_price: trade.order().sell.amount.into(),
                     },
                     Trade {
@@ -131,7 +133,7 @@ pub fn tx(
                             sell_token_balance: trade.order().sell_token_balance,
                             buy_token_balance: trade.order().buy_token_balance,
                         },
-                        executed_amount: trade.executed().0,
+                        executed_amount: trade.executed().into(),
                         signature: trade.order().signature.data.clone(),
                     },
                 )
@@ -150,7 +152,14 @@ pub fn tx(
         interactions.push(approve(&approval.0))
     }
 
-    // Encode interaction
+    // Encode interactions
+    let slippage = slippage::Parameters {
+        relative: solution.solver().slippage().relative.clone(),
+        max: solution.solver().slippage().absolute.map(Ether::into),
+        // TODO configure min slippage
+        min: None,
+        prices: auction.prices().clone(),
+    };
     for interaction in solution.interactions() {
         if matches!(internalization, settlement::Internalization::Enable)
             && interaction.internalize()
@@ -165,7 +174,7 @@ pub fn tx(
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {
-                liquidity_interaction(liquidity, contract)?
+                liquidity_interaction(liquidity, &slippage, contract)?
             }
         })
     }
@@ -185,7 +194,7 @@ pub fn tx(
 
     // Encode the auction id into the calldata
     let mut calldata = tx.data.unwrap().0;
-    calldata.extend(auction_id.to_be_bytes());
+    calldata.extend(auction.id().ok_or(Error::MissingAuctionId)?.to_be_bytes());
 
     Ok(eth::Tx {
         from: solution.solver().address(),
@@ -198,11 +207,13 @@ pub fn tx(
 
 fn liquidity_interaction(
     liquidity: &Liquidity,
+    slippage: &slippage::Parameters,
     settlement: &contracts::GPv2Settlement,
 ) -> Result<eth::Interaction, Error> {
-    // Todo account for slippage
-    let input = MaxInput(liquidity.input);
-    let output = ExactOutput(liquidity.output);
+    let (input, output) = slippage.apply_to(&slippage::Interaction {
+        input: liquidity.input,
+        output: liquidity.output,
+    })?;
 
     match liquidity.liquidity.kind.clone() {
         liquidity::Kind::UniswapV2(pool) => pool
