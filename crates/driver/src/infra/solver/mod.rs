@@ -10,7 +10,11 @@ use {
             liquidity,
             time::Remaining,
         },
-        infra::{blockchain::Ethereum, config::file::FeeHandler},
+        infra::{
+            blockchain::Ethereum,
+            config::file::FeeHandler,
+            persistence::{Persistence, S3},
+        },
         util,
     },
     anyhow::Result,
@@ -86,6 +90,7 @@ pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
+    persistence: Persistence,
 }
 
 #[derive(Debug, Clone)]
@@ -109,10 +114,13 @@ pub struct Config {
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
     pub merge_solutions: SolutionMerging,
+    /// S3 configuration for storing the auctions in the form they are sent to
+    /// the solver engine
+    pub s3: Option<S3>,
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum) -> Result<Self> {
+    pub async fn new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -125,13 +133,20 @@ impl Solver {
             headers.insert(header_name, val.parse()?);
         }
 
+        let persistence = Persistence::build(&config).await;
+
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()?,
             config,
             eth,
+            persistence,
         })
+    }
+
+    pub fn persistence(&self) -> Persistence {
+        self.persistence.clone()
     }
 
     pub fn name(&self) -> &Name {
@@ -188,6 +203,11 @@ impl Solver {
             self.config.fee_handler,
         ))
         .unwrap();
+        // Only auctions with IDs are real auctions (/quote requests don't have an ID,
+        // and it makes no sense to store them)
+        if let Some(id) = auction.id() {
+            self.persistence.archive_auction(id, &body);
+        };
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self

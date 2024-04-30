@@ -90,6 +90,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     true => SolutionMerging::Allowed,
                     false => SolutionMerging::Forbidden,
                 },
+                s3: config.s3.map(Into::into),
             }
         }))
         .await,

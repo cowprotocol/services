@@ -7,7 +7,7 @@ use {
                 order::{self, Partial},
             },
             eth::{self, allowance, Ether},
-            liquidity,
+            liquidity::{self, ExactOutput, MaxInput},
         },
         util::Bytes,
     },
@@ -283,8 +283,6 @@ struct Flags {
     sell_token_balance: order::SellTokenBalance,
     buy_token_balance: order::BuyTokenBalance,
 }
-
-impl Flags {}
 
 mod codec {
     use crate::domain::{competition::order, eth};

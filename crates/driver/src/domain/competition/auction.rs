@@ -4,7 +4,7 @@ use {
         domain::{
             competition::{self, auction},
             eth,
-            liquidity,
+            liquidity::{self},
             time,
         },
         infra::{self, blockchain, observe, Ethereum},

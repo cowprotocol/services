@@ -88,6 +88,7 @@ impl Settlement {
             return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
+        // Encode the solution into a settlement.
         let tx = match encoding {
             encoding::Strategy::Boundary => {
                 let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
