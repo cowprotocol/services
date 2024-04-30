@@ -6,6 +6,7 @@ use {
         util::{self, conv::u256::U256Ext, Bytes},
     },
     bigdecimal::Zero,
+    model::order::{BuyTokenDestination, SellTokenSource},
     num::CheckedDiv,
 };
 pub use {fees::FeePolicy, signature::Signature};
@@ -333,6 +334,16 @@ pub enum SellTokenBalance {
     External,
 }
 
+impl From<SellTokenBalance> for SellTokenSource {
+    fn from(value: SellTokenBalance) -> Self {
+        match value {
+            SellTokenBalance::Erc20 => Self::Erc20,
+            SellTokenBalance::Internal => Self::Internal,
+            SellTokenBalance::External => Self::External,
+        }
+    }
+}
+
 impl SellTokenBalance {
     /// Returns the hash value for the specified source.
     pub fn hash(&self) -> eth::H256 {
@@ -350,6 +361,15 @@ impl SellTokenBalance {
 pub enum BuyTokenBalance {
     Erc20,
     Internal,
+}
+
+impl From<BuyTokenBalance> for BuyTokenDestination {
+    fn from(value: BuyTokenBalance) -> Self {
+        match value {
+            BuyTokenBalance::Erc20 => Self::Erc20,
+            BuyTokenBalance::Internal => Self::Internal,
+        }
+    }
 }
 
 /// The address which placed the order.

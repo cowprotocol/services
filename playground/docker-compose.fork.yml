@@ -14,17 +14,17 @@ services:
       # with simple bytecode that always returns a solidity `true` value, alleviating
       # the requirement to register a solver's private key for the sake of testing on
       # a fork.
-      test: [
-        "CMD",
-        "/usr/local/bin/cast",
-        "rpc",
-        "-r",
-        "http://127.0.0.1:8545",
-        "anvil_setCode",
-        "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE",
-        "0x600160005260206000F3"
-      ]
-      interval: 1m30s
+      test: [ "CMD-SHELL", "
+          response=$$(wget -qO- --header='Content-Type: application/json' --post-data='{\"jsonrpc\":\"2.0\", \"method\":\"eth_blockNumber\", \"params\":[], \"id\":1}' http://127.0.0.1:8545);
+          block=$$(echo $$response | sed -n 's/.*\"result\":\"\\([^\"\\]*\\)\".*/\\1/p');
+          if [ -n \"$$block\" ] && [ \"$$block\" != \"0x0\" ] && [ \"$$block\" != \"null\" ]; then
+            /usr/local/bin/cast rpc -r http://127.0.0.1:8545 anvil_setCode 0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE 0x600160005260206000F3;
+            exit 0;
+          else
+            exit 1;
+          fi;
+        " ]
+      interval: 5s
       timeout: 30s
       retries: 5
       start_period: 5s
@@ -82,6 +82,8 @@ services:
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
       - BASELINE_SOURCES=None
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
     depends_on:
       - db-migrations
     ports:
@@ -110,8 +112,13 @@ services:
       - DRIVERS=baseline|http://driver/baseline
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
     depends_on:
-      - orderbook
+      orderbook:
+        condition: service_started
+      chain:
+        condition: service_healthy
 
   driver:
     build:
@@ -123,10 +130,15 @@ services:
     environment:
       - ETHRPC=http://chain:8545
       - ADDR=0.0.0.0:80
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
     volumes:
       - ./driver.toml:/driver.toml
     ports:
       - 9000:80
+    depends_on:
+      chain:
+        condition: service_healthy
 
   # baseline (solver engine)
   baseline:
@@ -139,6 +151,8 @@ services:
     environment:
       - ADDR=0.0.0.0:80
       - LOG=solvers=trace,shared=trace
+      - RUST_BACKTRACE=1
+      - TOML_TRACE_ERROR=1
     volumes:
       - ./baseline.toml:/baseline.toml
     ports:
@@ -163,5 +177,6 @@ services:
         - ETH_RPC_URL=http://127.0.0.1:8545
     ports:
       - 8001:80
+
 volumes:
   postgres:

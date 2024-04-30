@@ -89,6 +89,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     true => SolutionMerging::Allowed,
                     false => SolutionMerging::Forbidden,
                 },
+                s3: config.s3.map(Into::into),
             }
         }))
         .await,
@@ -316,5 +317,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
+        encoding: config.encoding,
     }
 }

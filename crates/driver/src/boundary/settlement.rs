@@ -27,7 +27,6 @@ use {
             OrderUid,
             SellTokenSource,
         },
-        signature::EcdsaSignature,
         DomainSeparator,
     },
     shared::{
@@ -110,7 +109,9 @@ impl Settlement {
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
 
-        let approvals = solution.approvals(eth).await?;
+        let approvals = solution
+            .approvals(eth, settlement::Internalization::Disable)
+            .await?;
         for approval in approvals {
             settlement
                 .encoder
@@ -260,7 +261,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             is_liquidity_order: order.is_liquidity(),
             full_app_data: Default::default(),
         },
-        signature: to_boundary_signature(&order.signature),
+        signature: order.signature.to_boundary_signature(),
         interactions: Interactions {
             pre: order
                 .pre_interactions
@@ -321,32 +322,13 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         // encoding, so we just use the default values.
         ..Default::default()
     };
-    let signature = to_boundary_signature(&order.signature);
+    let signature = order.signature.to_boundary_signature();
 
     Order {
         data,
         metadata,
         signature,
         interactions: Interactions::default(),
-    }
-}
-
-fn to_boundary_signature(signature: &order::Signature) -> model::signature::Signature {
-    // TODO Different signing schemes imply different sizes of signature data, which
-    // indicates that I'm missing an invariant in my types and I need to fix
-    // that PreSign, for example, carries no data. Everything should be
-    // reflected in the types!
-    match signature.scheme {
-        order::signature::Scheme::Eip712 => model::signature::Signature::Eip712(
-            EcdsaSignature::from_bytes(signature.data.0.as_slice().try_into().unwrap()),
-        ),
-        order::signature::Scheme::EthSign => model::signature::Signature::EthSign(
-            EcdsaSignature::from_bytes(signature.data.0.as_slice().try_into().unwrap()),
-        ),
-        order::signature::Scheme::Eip1271 => {
-            model::signature::Signature::Eip1271(signature.data.clone().into())
-        }
-        order::signature::Scheme::PreSign => model::signature::Signature::PreSign,
     }
 }
 

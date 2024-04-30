@@ -258,7 +258,6 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
     }
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {

@@ -162,7 +162,7 @@ impl Ethereum {
     }
 
     /// Estimate gas used by a transaction.
-    pub async fn estimate_gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+    pub async fn estimate_gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
         self.web3
             .eth()
             .estimate_gas(
@@ -171,8 +171,8 @@ impl Ethereum {
                     to: Some(tx.to.into()),
                     gas_price: Some(eth::U256::zero()),
                     value: Some(tx.value.into()),
-                    data: Some(tx.input.into()),
-                    access_list: Some(tx.access_list.into()),
+                    data: Some(tx.input.clone().into()),
+                    access_list: Some(tx.access_list.clone().into()),
                     ..Default::default()
                 },
                 None,
