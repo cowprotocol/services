@@ -330,7 +330,7 @@ mod codec {
         ethcontract::Bytes<Vec<u8>>,  // signature
     );
 
-    pub fn trade(trade: &super::Trade) -> Trade {
+    pub(super) fn trade(trade: &super::Trade) -> Trade {
         (
             trade.sell_token_index,
             trade.buy_token_index,
@@ -384,7 +384,7 @@ mod codec {
         ethcontract::Bytes<Vec<u8>>, // signature
     );
 
-    pub fn interaction(interaction: &eth::Interaction) -> Interaction {
+    pub(super) fn interaction(interaction: &eth::Interaction) -> Interaction {
         (
             interaction.target.0,
             interaction.value.0,
@@ -392,7 +392,7 @@ mod codec {
         )
     }
 
-    pub fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
+    pub(super) fn signature(signature: &order::Signature) -> super::Bytes<Vec<u8>> {
         match signature.scheme {
             order::signature::Scheme::Eip712 | order::signature::Scheme::EthSign => {
                 signature.data.clone()
