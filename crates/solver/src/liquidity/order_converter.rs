@@ -39,7 +39,7 @@ impl OrderConverter {
             order,
             available_sell_token_balance,
         }: BalancedOrder,
-        allow_unwrap_native_token: bool,
+        manage_native_token_unwraps: bool,
     ) -> Result<LimitOrder> {
         let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             self.native_token.address()
@@ -80,7 +80,7 @@ impl OrderConverter {
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token: self.native_token.clone(),
-                allow_unwrap_native_token,
+                manage_native_token_unwraps,
             }),
             exchange: Exchange::GnosisProtocol,
         })
@@ -90,7 +90,7 @@ impl OrderConverter {
 struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
-    allow_unwrap_native_token: bool,
+    manage_native_token_unwraps: bool,
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
@@ -103,15 +103,15 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         execution: LimitOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        let allow_unwrap_native_token =
-            self.order.data.buy_token == BUY_ETH_ADDRESS && self.allow_unwrap_native_token;
-        if allow_unwrap_native_token {
+        let manage_native_token_unwraps =
+            self.order.data.buy_token == BUY_ETH_ADDRESS && self.manage_native_token_unwraps;
+        if manage_native_token_unwraps {
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
         let trade = encoder.add_trade(self.order.clone(), execution.filled, execution.fee)?;
 
-        if allow_unwrap_native_token {
+        if manage_native_token_unwraps {
             encoder.add_unwrap(UnwrapWethInteraction {
                 weth: self.native_token.clone(),
                 amount: trade.buy_amount,
@@ -209,7 +209,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token: native_token.clone(),
-            allow_unwrap_native_token: true,
+            manage_native_token_unwraps: true,
         };
 
         assert_settlement_encoded_with(
@@ -259,7 +259,7 @@ pub mod tests {
             let order_settlement_handler = OrderSettlementHandler {
                 order: order.clone(),
                 native_token: native_token.clone(),
-                allow_unwrap_native_token: true,
+                manage_native_token_unwraps: true,
             };
 
             assert_settlement_encoded_with(
@@ -307,7 +307,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token,
-            allow_unwrap_native_token: true,
+            manage_native_token_unwraps: true,
         };
 
         assert_settlement_encoded_with(

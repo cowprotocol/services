@@ -6,7 +6,7 @@ use {
             competition::{self, auction, order, solution},
             eth,
         },
-        infra::{blockchain::Ethereum, observe, solver::SolverNativeToken, Simulator},
+        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
     },
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap},
@@ -70,7 +70,7 @@ impl Settlement {
         eth: &Ethereum,
         simulator: &Simulator,
         encoding: encoding::Strategy,
-        solver_native_token: SolverNativeToken,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.

@@ -83,13 +83,13 @@ pub struct Timeouts {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SolverNativeToken {
+pub enum ManageNativeToken {
     /// Wrap ETH address and keep inserting unwrap interactions
     WrapNativeToken,
-    /// Send 0xeeee address but keep inserting unwrap interactions
+    /// Send native token address but keep inserting unwrap interactions
     NativeToken,
-    /// Send 0xeeee and let solver handle unwraps entirely
-    NativeTokenFullyHandedBySolver,
+    /// Send native token and let solver handle unwraps entirely
+    NativeTokenEntirely,
 }
 
 /// Solvers are controlled by the driver. Their job is to search for solutions
@@ -128,7 +128,7 @@ pub struct Config {
     /// the solver engine
     pub s3: Option<S3>,
     /// Whether the native token is wrapped or not when sent to the solvers
-    pub solver_native_token: SolverNativeToken,
+    pub solver_native_token: ManageNativeToken,
 }
 
 impl Solver {
@@ -199,7 +199,7 @@ impl Solver {
         self.config.merge_solutions
     }
 
-    pub fn solver_native_token(&self) -> SolverNativeToken {
+    pub fn solver_native_token(&self) -> ManageNativeToken {
         self.config.solver_native_token
     }
 

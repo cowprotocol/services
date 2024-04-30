@@ -11,7 +11,7 @@ use {
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::{Solver, SolverNativeToken},
+            solver::{ManageNativeToken, Solver},
             Simulator,
         },
     },
@@ -315,7 +315,7 @@ impl Solution {
         eth: &Ethereum,
         simulator: &Simulator,
         encoding: encoding::Strategy,
-        solver_native_token: SolverNativeToken,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
         Settlement::encode(self, auction, eth, simulator, encoding, solver_native_token).await
     }

@@ -124,23 +124,23 @@ enum Mempool {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum SolverNativeToken {
+enum ManageNativeToken {
     /// Wrap ETH address and keep inserting unwrap interactions
     #[default]
     WrapNativeToken,
-    /// Send 0xeeee address but keep inserting unwrap interactions
+    /// Send native token address but keep inserting unwrap interactions
     NativeToken,
-    /// Send 0xeeee and let solver handle unwraps entirely
-    NativeTokenFullyHandedBySolver,
+    /// Send native token and let solver handle unwraps entirely
+    NativeTokenEntirely,
 }
 
-impl SolverNativeToken {
-    pub fn to_domain(&self) -> infra::solver::SolverNativeToken {
+impl ManageNativeToken {
+    pub fn to_domain(&self) -> infra::solver::ManageNativeToken {
         match self {
-            SolverNativeToken::WrapNativeToken => infra::solver::SolverNativeToken::WrapNativeToken,
-            SolverNativeToken::NativeToken => infra::solver::SolverNativeToken::NativeToken,
-            SolverNativeToken::NativeTokenFullyHandedBySolver => {
-                infra::solver::SolverNativeToken::NativeTokenFullyHandedBySolver
+            ManageNativeToken::WrapNativeToken => infra::solver::ManageNativeToken::WrapNativeToken,
+            ManageNativeToken::NativeToken => infra::solver::ManageNativeToken::NativeToken,
+            ManageNativeToken::NativeTokenEntirely => {
+                infra::solver::ManageNativeToken::NativeTokenEntirely
             }
         }
     }
@@ -257,7 +257,7 @@ struct SolverConfig {
 
     /// Whether the native token is wrapped or not when sent to the solvers
     #[serde(default)]
-    native_token: SolverNativeToken,
+    manage_native_token: ManageNativeToken,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
