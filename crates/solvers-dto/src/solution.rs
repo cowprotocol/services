@@ -21,7 +21,11 @@ pub struct Solution {
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub prices: HashMap<H160, U256>,
     pub trades: Vec<Trade>,
+    #[serde(default)]
+    pub pre_interactions: Vec<Interaction>,
     pub interactions: Vec<Interaction>,
+    #[serde(default)]
+    pub post_interactions: Vec<Interaction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
 }

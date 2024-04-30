@@ -861,9 +861,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Trade"
+        preInteractions:
+          description: |
+            Interactions to encode before a settlement.
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
         interactions:
           description: |
             Interactions to encode within a settlement.
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        postInteractions:
+          description: |
+            Interactions to encode after a settlement.
           type: array
           items:
             $ref: "#/components/schemas/Interaction"

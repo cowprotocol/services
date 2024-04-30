@@ -109,7 +109,9 @@ async fn test() {
                         "executedAmount": "1001000000000000000000",
                     },
                 ],
+                "preInteractions": [],
                 "interactions": [],
+                "postInteractions": [],
                 "gas": 259417,
             }]
         }),

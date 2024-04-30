@@ -101,6 +101,7 @@ async fn uniswap() {
                         "executedAmount": "1000000000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -112,6 +113,7 @@ async fn uniswap() {
                         "outputAmount": "1000000000428620302"
                     }
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),
@@ -269,6 +271,7 @@ async fn balancer_weighted() {
                         "executedAmount": "1000000000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -289,6 +292,7 @@ async fn balancer_weighted() {
                         "outputAmount": "1000000000000337213"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 266391,
             }]
         }),
@@ -419,6 +423,7 @@ async fn balancer_weighted_v3plus() {
                         "executedAmount": "1000000000000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -430,6 +435,7 @@ async fn balancer_weighted_v3plus() {
                         "outputAmount": "1000000000000001964333"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 206391,
             }]
         }),
@@ -560,6 +566,7 @@ async fn distant_convergence() {
                         "executedAmount": "999999999999999843119"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -571,6 +578,7 @@ async fn distant_convergence() {
                         "outputAmount": "1000000000000015112015"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 206391,
             }]
         }),
@@ -737,6 +745,7 @@ async fn same_path() {
                         "executedAmount": "9056454904357528"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -748,6 +757,7 @@ async fn same_path() {
                         "outputAmount": "9056454904357528"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),
@@ -886,6 +896,7 @@ async fn balancer_stable() {
                             "executedAmount": "10000000000000000000"
                         }
                     ],
+                    "preInteractions": [],
                     "interactions": [
                         {
                             "kind": "liquidity",
@@ -897,6 +908,7 @@ async fn balancer_stable() {
                             "outputAmount": "10000000000000000000"
                         },
                     ],
+                    "postInteractions": [],
                     "gas": 289911,
                 },
             ]
