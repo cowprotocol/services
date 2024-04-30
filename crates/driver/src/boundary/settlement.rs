@@ -105,11 +105,9 @@ impl Settlement {
                 ),
             };
 
-            let manage_native_token_unwraps =
-                manage_native_token != ManageNativeToken::NativeTokenEntirely;
             let boundary_limit_order = order_converter.normalize_limit_order(
                 solver::liquidity::BalancedOrder::full(boundary_order),
-                manage_native_token_unwraps,
+                manage_native_token.insert_unwraps,
             )?;
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }

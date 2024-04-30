@@ -122,26 +122,29 @@ enum Mempool {
     },
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum ManageNativeToken {
-    /// Wrap ETH address and keep inserting unwrap interactions
-    #[default]
-    WrapNativeToken,
-    /// Send native token address but keep inserting unwrap interactions
-    NativeToken,
-    /// Send native token and let solver handle unwraps entirely
-    NativeTokenEntirely,
+struct ManageNativeToken {
+    /// If true wraps ETH address
+    wrap_address: bool,
+    /// If true inserts unwrap interactions
+    insert_unwraps: bool,
+}
+
+impl Default for ManageNativeToken {
+    fn default() -> Self {
+        Self {
+            wrap_address: true,
+            insert_unwraps: true,
+        }
+    }
 }
 
 impl ManageNativeToken {
     pub fn to_domain(&self) -> infra::solver::ManageNativeToken {
-        match self {
-            ManageNativeToken::WrapNativeToken => infra::solver::ManageNativeToken::WrapNativeToken,
-            ManageNativeToken::NativeToken => infra::solver::ManageNativeToken::NativeToken,
-            ManageNativeToken::NativeTokenEntirely => {
-                infra::solver::ManageNativeToken::NativeTokenEntirely
-            }
+        infra::solver::ManageNativeToken {
+            wrap_address: self.wrap_address,
+            insert_unwraps: self.insert_unwraps,
         }
     }
 }

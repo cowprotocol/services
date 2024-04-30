@@ -83,13 +83,11 @@ pub struct Timeouts {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ManageNativeToken {
-    /// Wrap ETH address and keep inserting unwrap interactions
-    WrapNativeToken,
-    /// Send native token address but keep inserting unwrap interactions
-    NativeToken,
-    /// Send native token and let solver handle unwraps entirely
-    NativeTokenEntirely,
+pub struct ManageNativeToken {
+    /// If true wraps ETH address
+    pub wrap_address: bool,
+    /// If true inserts unwrap interactions
+    pub insert_unwraps: bool,
 }
 
 /// Solvers are controlled by the driver. Their job is to search for solutions

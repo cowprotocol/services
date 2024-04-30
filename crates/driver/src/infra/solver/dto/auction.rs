@@ -83,7 +83,7 @@ impl Auction {
                 .map(|order| {
                     let mut available = order.available();
 
-                    if solver_native_token == ManageNativeToken::WrapNativeToken {
+                    if solver_native_token.wrap_address {
                         available.buy.token = available.buy.token.wrap(weth)
                     }
                     // In case of volume based fees, fee withheld by driver might be higher than the
