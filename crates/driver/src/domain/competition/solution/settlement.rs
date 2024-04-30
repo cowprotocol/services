@@ -77,8 +77,10 @@ impl Settlement {
         // Internalization rule: check that internalized interactions only use trusted
         // tokens.
         let untrusted_tokens = solution
-            .interactions
+            .pre_interactions
             .iter()
+            .chain(solution.interactions.iter())
+            .chain(solution.post_interactions.iter())
             .filter(|interaction| interaction.internalize())
             .flat_map(|interaction| interaction.inputs())
             .filter(|asset| !auction.tokens().get(asset.token).trusted)

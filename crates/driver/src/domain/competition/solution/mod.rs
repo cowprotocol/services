@@ -43,7 +43,9 @@ pub struct Solution {
     id: Id,
     trades: Vec<Trade>,
     prices: Prices,
+    pre_interactions: Vec<Interaction>,
     interactions: Vec<Interaction>,
+    post_interactions: Vec<Interaction>,
     solver: Solver,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
@@ -55,7 +57,9 @@ impl Solution {
         id: Id,
         trades: Vec<Trade>,
         prices: Prices,
+        pre_interactions: Vec<Interaction>,
         interactions: Vec<Interaction>,
+        post_interactions: Vec<Interaction>,
         solver: Solver,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
@@ -65,7 +69,9 @@ impl Solution {
             id,
             trades,
             prices,
+            pre_interactions,
             interactions,
+            post_interactions,
             solver,
             weth,
             gas,
@@ -245,7 +251,17 @@ impl Solution {
             id: Id::Merged([self.id.ids(), other.id.ids()].concat()),
             trades: [self.trades.clone(), other.trades.clone()].concat(),
             prices,
+            pre_interactions: [
+                self.pre_interactions.clone(),
+                other.pre_interactions.clone(),
+            ]
+            .concat(),
             interactions: [self.interactions.clone(), other.interactions.clone()].concat(),
+            post_interactions: [
+                self.post_interactions.clone(),
+                other.post_interactions.clone(),
+            ]
+            .concat(),
             solver: self.solver.clone(),
             weth: self.weth,
             // Same solver are guaranteed to have the same fee handler
@@ -278,15 +294,20 @@ impl Solution {
         internalization: settlement::Internalization,
     ) -> impl Iterator<Item = eth::allowance::Required> {
         let mut normalized = HashMap::new();
-        let allowances = self.interactions.iter().flat_map(|interaction| {
-            if interaction.internalize()
-                && matches!(internalization, settlement::Internalization::Enable)
-            {
-                vec![]
-            } else {
-                interaction.allowances()
-            }
-        });
+        let allowances = self
+            .pre_interactions
+            .iter()
+            .chain(self.interactions.iter())
+            .chain(self.post_interactions.iter())
+            .flat_map(|interaction| {
+                if interaction.internalize()
+                    && matches!(internalization, settlement::Internalization::Enable)
+                {
+                    vec![]
+                } else {
+                    interaction.allowances()
+                }
+            });
         for allowance in allowances {
             let amount = normalized
                 .entry((allowance.0.token, allowance.0.spender))
@@ -374,8 +395,10 @@ impl Solution {
 
     /// Whether there is a reasonable risk of this solution reverting on chain.
     pub fn revertable(&self) -> bool {
-        self.interactions
+        self.pre_interactions
             .iter()
+            .chain(self.interactions.iter())
+            .chain(self.post_interactions.iter())
             .any(|interaction| !interaction.internalize())
             || self.user_trades().any(|trade| {
                 matches!(
@@ -392,7 +415,9 @@ impl std::fmt::Debug for Solution {
             .field("id", &self.id)
             .field("trades", &self.trades)
             .field("prices", &self.prices)
+            .field("pre_interactions", &self.pre_interactions)
             .field("interactions", &self.interactions)
+            .field("post_interactions", &self.post_interactions)
             .field("solver", &self.solver.name())
             .finish()
     }

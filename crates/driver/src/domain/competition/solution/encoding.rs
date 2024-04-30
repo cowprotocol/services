@@ -5,6 +5,7 @@ use {
             competition::{
                 self,
                 order::{self, Partial},
+                solution::Interaction,
             },
             eth::{self, allowance, Ether},
             liquidity::{self, ExactOutput, MaxInput},
@@ -44,10 +45,12 @@ pub fn tx(
     let mut clearing_prices =
         Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut trades: Vec<Trade> = Vec::with_capacity(solution.trades().len());
-    let mut pre_interactions = Vec::new();
+    let mut pre_interactions =
+        encode_interactions(&solution.pre_interactions, internalization, contract)?;
+    let mut post_interactions =
+        encode_interactions(&solution.post_interactions, internalization, contract)?;
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
-    let mut post_interactions = Vec::new();
 
     // Encode uniform clearing price vector
     for (token, price) in solution.prices.clone() {
@@ -150,25 +153,11 @@ pub fn tx(
         interactions.push(approve(&approval.0))
     }
 
-    // Encode interaction
-    for interaction in solution.interactions() {
-        if matches!(internalization, settlement::Internalization::Enable)
-            && interaction.internalize()
-        {
-            continue;
-        }
-
-        interactions.push(match interaction {
-            competition::solution::Interaction::Custom(interaction) => eth::Interaction {
-                value: interaction.value,
-                target: interaction.target.0.into(),
-                call_data: interaction.call_data.clone(),
-            },
-            competition::solution::Interaction::Liquidity(liquidity) => {
-                liquidity_interaction(liquidity, contract)?
-            }
-        })
-    }
+    interactions.extend(encode_interactions(
+        solution.interactions(),
+        internalization,
+        contract,
+    )?);
 
     let tx = contract
         .settle(
@@ -194,6 +183,33 @@ pub fn tx(
         value: Ether(0.into()),
         access_list: Default::default(),
     })
+}
+
+fn encode_interactions(
+    interactions: &[Interaction],
+    internalization: settlement::Internalization,
+    contract: &contracts::GPv2Settlement,
+) -> Result<Vec<eth::Interaction>, Error> {
+    let mut encoded = vec![];
+    for interaction in interactions {
+        if matches!(internalization, settlement::Internalization::Enable)
+            && interaction.internalize()
+        {
+            continue;
+        }
+
+        encoded.push(match interaction {
+            competition::solution::Interaction::Custom(interaction) => eth::Interaction {
+                value: interaction.value,
+                target: interaction.target.0.into(),
+                call_data: interaction.call_data.clone(),
+            },
+            competition::solution::Interaction::Liquidity(liquidity) => {
+                liquidity_interaction(liquidity, contract)?
+            }
+        })
+    }
+    Ok(encoded)
 }
 
 fn liquidity_interaction(
