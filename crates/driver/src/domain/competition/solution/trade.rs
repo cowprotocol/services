@@ -1,16 +1,13 @@
-use {
-    super::error::Math,
-    crate::{
-        domain::{
-            competition::{
-                self,
-                order::{self, Side},
-                solution::{error, scoring},
-            },
-            eth::{self},
+use crate::{
+    domain::{
+        competition::{
+            self,
+            order::{self, Side},
+            solution::error::{self, Math},
         },
-        util::conv::u256::U256Ext,
+        eth::{self},
     },
+    util::conv::u256::U256Ext,
 };
 
 /// A trade which executes an order as part of this solution.
@@ -80,38 +77,6 @@ impl Fulfillment {
         }
     }
 
-    /// Custom prices are calculated using the uniform clearing prices and the
-    /// fee. So that custom prices represent the actual traded amounts as
-    /// seen from the user perspective: the amount going in/out of their wallet
-    pub fn calculate_custom_prices(
-        &self,
-        uniform_prices: &ClearingPrices,
-    ) -> Result<scoring::CustomClearingPrices, error::Trade> {
-        Ok(scoring::CustomClearingPrices {
-            sell: match self.order().side {
-                Side::Sell => self
-                    .executed()
-                    .0
-                    .checked_mul(uniform_prices.sell)
-                    .ok_or(Math::Overflow)?
-                    .checked_ceil_div(&uniform_prices.buy)
-                    .ok_or(Math::DivisionByZero)?,
-                Side::Buy => self.executed().0,
-            },
-            buy: match self.order().side {
-                Side::Sell => self.executed().0 + self.fee().0,
-                Side::Buy => {
-                    (self.executed().0)
-                        .checked_mul(uniform_prices.buy)
-                        .ok_or(Math::Overflow)?
-                        .checked_div(uniform_prices.sell)
-                        .ok_or(Math::DivisionByZero)?
-                        + self.fee().0
-                }
-            },
-        })
-    }
-
     pub fn order(&self) -> &competition::Order {
         &self.order
     }
@@ -147,7 +112,7 @@ impl Fulfillment {
     }
 
     /// The effective amount that left the user's wallet including all fees.
-    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Trade> {
+    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
             order::Side::Buy => self
@@ -164,7 +129,7 @@ impl Fulfillment {
     }
 
     /// The effective amount the user received after all fees.
-    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Trade> {
+    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
             order::Side::Sell => self
@@ -172,10 +137,20 @@ impl Fulfillment {
                 .0
                 .checked_mul(prices.sell)
                 .ok_or(Math::Overflow)?
-                .checked_div(prices.buy)
+                .checked_ceil_div(&prices.buy)
                 .ok_or(Math::DivisionByZero)?,
         };
         Ok(eth::TokenAmount(amount))
+    }
+
+    pub fn custom_prices(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<CustomClearingPrices, error::Math> {
+        Ok(CustomClearingPrices {
+            sell: self.buy_amount(prices)?.into(),
+            buy: self.sell_amount(prices)?.into(),
+        })
     }
 
     /// Returns the surplus denominated in the surplus token.
@@ -263,6 +238,18 @@ pub enum Fee {
 /// Uniform clearing prices at which the trade was executed.
 #[derive(Debug, Clone, Copy)]
 pub struct ClearingPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
+}
+
+/// Custom clearing prices at which the trade was executed.
+///
+/// These prices differ from uniform clearing prices, in that they are adjusted
+/// to account for all fees (gas cost and protocol fees).
+///
+/// These prices determine the actual traded amounts from the user perspective.
+#[derive(Debug, Clone)]
+pub struct CustomClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
 }
