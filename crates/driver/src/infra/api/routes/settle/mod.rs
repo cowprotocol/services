@@ -22,10 +22,7 @@ async fn route(
         observe::settling();
         let result = competition.settle().await;
         observe::settled(state.solver().name(), &result);
-        match result {
-            Err(err) => Err(err.into()),
-            Ok(_) => Ok(()),
-        }
+        result.map(|_| ()).map_err(Into::into)
     };
 
     handle_request

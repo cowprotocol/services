@@ -2,7 +2,7 @@ use {
     self::dto::{reveal, settle, solve},
     crate::util,
     anyhow::{anyhow, Context, Result},
-    reqwest::Client,
+    reqwest::{Client, StatusCode},
     std::time::Duration,
     url::Url,
 };
@@ -58,11 +58,11 @@ impl Driver {
             .send()
             .await
             .context("send")?;
-        let status = response.status().as_u16();
+        let status = response.status();
 
         tracing::trace!(%status, "solver response");
 
-        if status != 200 {
+        if status != StatusCode::OK {
             let text = response.text().await.context("read error response body")?;
             return Err(anyhow!("bad status {status}: {text}"));
         }
