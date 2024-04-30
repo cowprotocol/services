@@ -627,7 +627,7 @@ mod tests {
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let finder = Arc::new(TokenOwnerFinder {
             web3: web3.clone(),
-            settlement_contract: Default::default(),
+            settlement_contract: settlement.address(),
             proposers: vec![
                 Arc::new(UniswapLikePairProviderFinder {
                     inner: uniswap_v2::UniV2BaselineSourceParameters::from_baseline_source(
