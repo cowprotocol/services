@@ -1661,6 +1661,7 @@ dependencies = [
  "prometheus-metric-storage",
  "rand",
  "reqwest",
+ "s3",
  "secp256k1",
  "serde",
  "serde_json",

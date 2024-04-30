@@ -13,6 +13,7 @@ use {
         },
     },
     clap::Parser,
+    futures::future::join_all,
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
@@ -51,7 +52,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
     let serve = Api {
-        solvers: solvers(&config, &eth),
+        solvers: solvers(&config, &eth).await,
         liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
         mempools: Mempools::new(
@@ -134,12 +135,15 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
     Ethereum::new(ethrpc, config.contracts, gas).await
 }
 
-fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
-    config
-        .solvers
-        .iter()
-        .map(|config| Solver::new(config.clone(), eth.clone()).unwrap())
-        .collect()
+async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
+    join_all(
+        config
+            .solvers
+            .iter()
+            .map(|config| async move { Solver::new(config.clone(), eth.clone()).await.unwrap() })
+            .collect::<Vec<_>>(),
+    )
+    .await
 }
 
 async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
