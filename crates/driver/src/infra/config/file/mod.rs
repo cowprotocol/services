@@ -130,9 +130,9 @@ pub mod encoding {
     #[serde(rename_all = "kebab-case")]
     pub enum Strategy {
         /// Legacy solver crate strategy
+        #[default]
         Boundary,
         /// New encoding strategy
-        #[default]
         Domain,
     }
 
