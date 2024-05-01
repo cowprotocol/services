@@ -4,9 +4,7 @@ use utoipa::ToSchema;
 
 /// Signature bytes.
 #[derive(ToSchema)]
-#[schema(
-    example = "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-)]
+#[schema(example = "0x0000000000000000000000000000000")]
 #[allow(dead_code)]
 pub struct Signature(String);
 
@@ -14,7 +12,7 @@ pub struct Signature(String);
 /// order. This can also be used to ensure uniqueness between two orders with
 /// otherwise the exact same parameters.
 #[derive(ToSchema)]
-#[schema(example = "0x0000000000000000000000000000000000000000000000000000000000000000")]
+#[schema(example = "0x0000000000000000000000000000000")]
 #[allow(dead_code)]
 pub struct AppData(String);
 
@@ -26,12 +24,12 @@ pub struct TokenAmount(String);
 
 /// An Ethereum public address.
 #[derive(ToSchema)]
-#[schema(example = "0x0000000000000000000000000000000000000000")]
+#[schema(example = "0x0000000000000000000000000000000")]
 #[allow(dead_code)]
 pub struct Address(String);
 
 /// An ERC20 token address.
 #[derive(ToSchema)]
-#[schema(example = "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")]
+#[schema(example = "0xDEf1CA1fb7FBcDC777520aa7f396b4E")]
 #[allow(dead_code)]
 pub struct Token(String);

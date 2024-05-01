@@ -87,7 +87,7 @@ components:
     Address:
       type: string
       description: An Ethereum public address.
-      example: '0x0000000000000000000000000000000000000000'
+      example: '0x0000000000000000000000000000000'
     Allowance:
       type: object
       description: |-
@@ -110,7 +110,7 @@ components:
         32 bytes of arbitrary application specific data that can be added to an
         order. This can also be used to ensure uniqueness between two orders with
         otherwise the exact same parameters.
-      example: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      example: '0x0000000000000000000000000000000'
     Asset:
       type: object
       description: A token address with an amount.
@@ -161,7 +161,7 @@ components:
       description: |-
         A hex-encoded 32 byte string containing the pool address (0..20), the pool
         specialization (20..22) and the poolnonce (22..32).
-      example: 0xc88c76dd8b92408fe9bea1a54922a31e232d873c0002000000000000000005b2
+      example: '0xc88c76dd8b92408fe9bea1a54922a31'
     BigInt:
       type: string
       description: An arbitrary-precision integer value.
@@ -604,7 +604,7 @@ components:
         [0, 32) represent the order digest used for signing, bytes [32, 52)
         represent the owner address and bytes [52, 56) represent the order's
         `validTo` field.
-      example: 0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6
+      example: '0x30cff40d9f60caa68a37f0ee73253ad'
     PriceImprovement:
       type: object
       description: A cut from the price improvement over the best quote is taken as a protocol fee.
@@ -655,7 +655,7 @@ components:
     Signature:
       type: string
       description: Signature bytes.
-      example: '0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+      example: '0x0000000000000000000000000000000'
     SigningScheme:
       type: string
       description: How was the order signed?
@@ -755,7 +755,7 @@ components:
     Token:
       type: string
       description: An ERC20 token address.
-      example: 0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB
+      example: '0xDEf1CA1fb7FBcDC777520aa7f396b4E'
     TokenAmount:
       type: string
       description: Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
