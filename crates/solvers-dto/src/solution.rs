@@ -22,10 +22,10 @@ pub struct Solution {
     pub prices: HashMap<H160, U256>,
     pub trades: Vec<Trade>,
     #[serde(default)]
-    pub pre_interactions: Vec<Interaction>,
+    pub pre_interactions: Vec<InteractionData>,
     pub interactions: Vec<Interaction>,
     #[serde(default)]
-    pub post_interactions: Vec<Interaction>,
+    pub post_interactions: Vec<InteractionData>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
 }
@@ -96,6 +96,14 @@ pub enum Kind {
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub struct InteractionData {
+    pub target: H160,
+    pub value: U256,
+    pub calldata: Vec<u8>,
 }
 
 #[serde_as]

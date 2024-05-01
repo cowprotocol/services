@@ -2,9 +2,10 @@ use {
     crate::{
         domain::{competition, competition::order, eth, liquidity},
         infra::{solver::Config, Solver},
-        util::serialize,
+        util::{serialize, Bytes},
     },
     itertools::Itertools,
+    model::interaction::InteractionData,
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
@@ -121,9 +122,91 @@ impl Solutions {
                         .into_iter()
                         .map(|(address, price)| (address.into(), price))
                         .collect(),
-                    Self::interactions_into_domain(solution.pre_interactions, liquidity)?,
-                    Self::interactions_into_domain(solution.interactions, liquidity)?,
-                    Self::interactions_into_domain(solution.post_interactions, liquidity)?,
+                    solution
+                        .pre_interactions
+                        .into_iter()
+                        .map(|interaction| eth::Interaction {
+                            target: interaction.target.into(),
+                            value: interaction.value.into(),
+                            call_data: Bytes(interaction.call_data),
+                        })
+                        .collect(),
+                    solution
+                        .interactions
+                        .into_iter()
+                        .map(|interaction| match interaction {
+                            Interaction::Custom(interaction) => {
+                                Ok(competition::solution::Interaction::Custom(
+                                    competition::solution::interaction::Custom {
+                                        target: interaction.target.into(),
+                                        value: interaction.value.into(),
+                                        call_data: interaction.call_data.into(),
+                                        allowances: interaction
+                                            .allowances
+                                            .into_iter()
+                                            .map(|allowance| {
+                                                eth::Allowance {
+                                                    token: allowance.token.into(),
+                                                    spender: allowance.spender.into(),
+                                                    amount: allowance.amount,
+                                                }
+                                                .into()
+                                            })
+                                            .collect(),
+                                        inputs: interaction
+                                            .inputs
+                                            .into_iter()
+                                            .map(|input| eth::Asset {
+                                                amount: input.amount.into(),
+                                                token: input.token.into(),
+                                            })
+                                            .collect(),
+                                        outputs: interaction
+                                            .outputs
+                                            .into_iter()
+                                            .map(|input| eth::Asset {
+                                                amount: input.amount.into(),
+                                                token: input.token.into(),
+                                            })
+                                            .collect(),
+                                        internalize: interaction.internalize,
+                                    },
+                                ))
+                            }
+                            Interaction::Liquidity(interaction) => {
+                                let liquidity = liquidity
+                                    .iter()
+                                    .find(|liquidity| liquidity.id == interaction.id)
+                                    .ok_or(super::Error(
+                                        "invalid liquidity ID specified in interaction".to_owned(),
+                                    ))?
+                                    .to_owned();
+                                Ok(competition::solution::Interaction::Liquidity(
+                                    competition::solution::interaction::Liquidity {
+                                        liquidity,
+                                        input: eth::Asset {
+                                            amount: interaction.input_amount.into(),
+                                            token: interaction.input_token.into(),
+                                        },
+                                        output: eth::Asset {
+                                            amount: interaction.output_amount.into(),
+                                            token: interaction.output_token.into(),
+                                        },
+                                        internalize: interaction.internalize,
+                                    },
+                                ))
+                            }
+                        })
+                        .try_collect()?,
+                    solution
+                        .post_interactions
+                        .into_iter()
+                        .map(|interaction| eth::Interaction {
+                            target: interaction.target.into(),
+                            value: interaction.value.into(),
+                            call_data: Bytes(interaction.call_data),
+                        })
+                        .collect(),
                     solver.clone(),
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
@@ -139,76 +222,6 @@ impl Solutions {
                 })
             })
             .collect()
-    }
-
-    fn interactions_into_domain(
-        interactions: Vec<Interaction>,
-        liquidity: &[liquidity::Liquidity],
-    ) -> Result<Vec<competition::solution::Interaction>, super::Error> {
-        interactions
-            .into_iter()
-            .map(|interaction| match interaction {
-                Interaction::Custom(interaction) => Ok(competition::solution::Interaction::Custom(
-                    competition::solution::interaction::Custom {
-                        target: interaction.target.into(),
-                        value: interaction.value.into(),
-                        call_data: interaction.call_data.into(),
-                        allowances: interaction
-                            .allowances
-                            .into_iter()
-                            .map(|allowance| {
-                                eth::Allowance {
-                                    token: allowance.token.into(),
-                                    spender: allowance.spender.into(),
-                                    amount: allowance.amount,
-                                }
-                                .into()
-                            })
-                            .collect(),
-                        inputs: interaction
-                            .inputs
-                            .into_iter()
-                            .map(|input| eth::Asset {
-                                amount: input.amount.into(),
-                                token: input.token.into(),
-                            })
-                            .collect(),
-                        outputs: interaction
-                            .outputs
-                            .into_iter()
-                            .map(|input| eth::Asset {
-                                amount: input.amount.into(),
-                                token: input.token.into(),
-                            })
-                            .collect(),
-                        internalize: interaction.internalize,
-                    },
-                )),
-                Interaction::Liquidity(interaction) => {
-                    let liquidity = liquidity
-                        .iter()
-                        .find(|liquidity| liquidity.id == interaction.id)
-                        .ok_or(super::Error(
-                            "invalid liquidity ID specified in interaction".to_owned(),
-                        ))?
-                        .to_owned();
-                    Ok(competition::solution::Interaction::Liquidity(
-                        competition::solution::interaction::Liquidity {
-                            liquidity,
-                            input: eth::Asset {
-                                amount: interaction.input_amount.into(),
-                                token: interaction.input_token.into(),
-                            },
-                            output: eth::Asset {
-                                amount: interaction.output_amount.into(),
-                                token: interaction.output_token.into(),
-                            },
-                            internalize: interaction.internalize,
-                        },
-                    ))
-                }
-            })
-            .try_collect()
     }
 }
 
@@ -228,10 +241,10 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     #[serde(default)]
-    pre_interactions: Vec<Interaction>,
+    pre_interactions: Vec<InteractionData>,
     interactions: Vec<Interaction>,
     #[serde(default)]
-    post_interactions: Vec<Interaction>,
+    post_interactions: Vec<InteractionData>,
     // TODO: remove this once all solvers are updated to not return the score
     // https://github.com/cowprotocol/services/issues/2588
     #[allow(dead_code)]

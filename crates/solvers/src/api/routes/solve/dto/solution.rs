@@ -64,60 +64,72 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                         }
                     })
                     .collect(),
-                pre_interactions: interactions_from_domain(&solution.pre_interactions),
-                interactions: interactions_from_domain(&solution.interactions),
-                post_interactions: interactions_from_domain(&solution.post_interactions),
+                pre_interactions: interaction_data_from_domain(&solution.pre_interactions),
+                post_interactions: interaction_data_from_domain(&solution.post_interactions),
+                interactions: solution
+                    .interactions
+                    .iter()
+                    .map(|interaction| match interaction {
+                        solution::Interaction::Liquidity(interaction) => {
+                            Interaction::Liquidity(LiquidityInteraction {
+                                id: interaction.liquidity.id.0.clone(),
+                                input_token: interaction.input.token.0,
+                                input_amount: interaction.input.amount,
+                                output_token: interaction.output.token.0,
+                                output_amount: interaction.output.amount,
+                                internalize: interaction.internalize,
+                            })
+                        }
+                        solution::Interaction::Custom(interaction) => {
+                            Interaction::Custom(CustomInteraction {
+                                target: interaction.target,
+                                value: interaction.value.0,
+                                calldata: interaction.calldata.clone(),
+                                internalize: interaction.internalize,
+                                allowances: interaction
+                                    .allowances
+                                    .iter()
+                                    .map(|allowance| Allowance {
+                                        token: allowance.asset.token.0,
+                                        amount: allowance.asset.amount,
+                                        spender: allowance.spender,
+                                    })
+                                    .collect(),
+                                inputs: interaction
+                                    .inputs
+                                    .iter()
+                                    .map(|i| Asset {
+                                        token: i.token.0,
+                                        amount: i.amount,
+                                    })
+                                    .collect(),
+                                outputs: interaction
+                                    .outputs
+                                    .iter()
+                                    .map(|o| Asset {
+                                        token: o.token.0,
+                                        amount: o.amount,
+                                    })
+                                    .collect(),
+                            })
+                        }
+                    })
+                    .collect(),
                 gas: solution.gas.map(|gas| gas.0.as_u64()),
             })
             .collect(),
     }
 }
 
-fn interactions_from_domain(interactions: &[solution::Interaction]) -> Vec<Interaction> {
-    interactions
+fn interaction_data_from_domain(
+    interaction_data: &[solution::InteractionData],
+) -> Vec<InteractionData> {
+    interaction_data
         .iter()
-        .map(|interaction| match interaction {
-            solution::Interaction::Liquidity(interaction) => {
-                Interaction::Liquidity(LiquidityInteraction {
-                    id: interaction.liquidity.id.0.clone(),
-                    input_token: interaction.input.token.0,
-                    input_amount: interaction.input.amount,
-                    output_token: interaction.output.token.0,
-                    output_amount: interaction.output.amount,
-                    internalize: interaction.internalize,
-                })
-            }
-            solution::Interaction::Custom(interaction) => Interaction::Custom(CustomInteraction {
-                target: interaction.target,
-                value: interaction.value.0,
-                calldata: interaction.calldata.clone(),
-                internalize: interaction.internalize,
-                allowances: interaction
-                    .allowances
-                    .iter()
-                    .map(|allowance| Allowance {
-                        token: allowance.asset.token.0,
-                        amount: allowance.asset.amount,
-                        spender: allowance.spender,
-                    })
-                    .collect(),
-                inputs: interaction
-                    .inputs
-                    .iter()
-                    .map(|i| Asset {
-                        token: i.token.0,
-                        amount: i.amount,
-                    })
-                    .collect(),
-                outputs: interaction
-                    .outputs
-                    .iter()
-                    .map(|o| Asset {
-                        token: o.token.0,
-                        amount: o.amount,
-                    })
-                    .collect(),
-            }),
+        .map(|interaction| InteractionData {
+            target: interaction.target,
+            value: interaction.value.0,
+            calldata: interaction.calldata.clone(),
         })
         .collect()
 }
