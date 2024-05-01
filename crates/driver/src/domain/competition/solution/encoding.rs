@@ -161,7 +161,7 @@ pub fn tx(
         interactions.push(match interaction {
             competition::solution::Interaction::Custom(interaction) => eth::Interaction {
                 value: interaction.value,
-                target: interaction.target.0.into(),
+                target: interaction.target.into(),
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {
