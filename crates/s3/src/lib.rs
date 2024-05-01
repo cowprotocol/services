@@ -15,7 +15,7 @@ pub struct Config {
     pub filename_prefix: String,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Uploader {
     bucket: String,
     filename_prefix: String,

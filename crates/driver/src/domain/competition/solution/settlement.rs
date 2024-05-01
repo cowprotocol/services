@@ -1,5 +1,5 @@
 use {
-    super::{trade::ClearingPrices, Error, Solution},
+    super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -69,6 +69,7 @@ impl Settlement {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
+        encoding: encoding::Strategy,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.
@@ -88,19 +89,40 @@ impl Settlement {
         }
 
         // Encode the solution into a settlement.
-        let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-        let tx = SettlementTx {
-            internalized: boundary.tx(
-                auction.id().unwrap(),
-                eth.contracts().settlement(),
-                Internalization::Enable,
-            ),
-            uninternalized: boundary.tx(
-                auction.id().unwrap(),
-                eth.contracts().settlement(),
-                Internalization::Disable,
-            ),
-            may_revert: boundary.revertable(),
+        let tx = match encoding {
+            encoding::Strategy::Boundary => {
+                let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
+                SettlementTx {
+                    internalized: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Enable,
+                    ),
+                    uninternalized: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Disable,
+                    ),
+                    may_revert: boundary.revertable(),
+                }
+            }
+            encoding::Strategy::Domain => SettlementTx {
+                internalized: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                )?,
+                uninternalized: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Disable).await?,
+                    Internalization::Disable,
+                )?,
+                may_revert: solution.revertable(),
+            },
         };
         Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
     }
@@ -135,7 +157,7 @@ impl Settlement {
                 input: Default::default(),
                 access_list: Default::default(),
             };
-            Result::<_, Error>::Ok(simulator.access_list(tx).await?)
+            Result::<_, Error>::Ok(simulator.access_list(&tx).await?)
         }))
         .await?;
         let partial_access_list = partial_access_lists
@@ -203,11 +225,11 @@ impl Settlement {
 
         // Simulate the full access list, passing the partial access
         // list into the simulation.
-        let access_list = simulator.access_list(tx.clone()).await?;
+        let access_list = simulator.access_list(&tx).await?;
         let tx = tx.set_access_list(access_list.clone());
 
         // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(tx.clone()).await;
+        let gas = simulator.gas(&tx).await;
 
         observe::simulated(eth, &tx, &gas);
         Ok((access_list, gas?))

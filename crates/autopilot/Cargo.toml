@@ -25,7 +25,7 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 derivative = { workspace = true }
-derive_more = "0.99.17"
+derive_more = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }
@@ -46,7 +46,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["gzip", "json"] }
-s3 = {path = "../s3" }
+s3 = { path = "../s3" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

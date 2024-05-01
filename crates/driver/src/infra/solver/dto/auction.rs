@@ -4,9 +4,9 @@ use {
             competition,
             competition::{
                 order,
-                order::{fees, Side},
+                order::{fees, signature::Scheme, Side},
             },
-            eth,
+            eth::{self},
             liquidity,
         },
         infra::config::file::FeeHandler,
@@ -15,7 +15,13 @@ use {
             serialize,
         },
     },
+    app_data::AppDataHash,
     indexmap::IndexMap,
+    model::{
+        interaction::InteractionData,
+        order::{BuyTokenDestination, SellTokenSource},
+    },
+    primitive_types::H160,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
@@ -113,16 +119,34 @@ impl Auction {
                         buy_token: available.buy.token.into(),
                         sell_amount: available.sell.amount.into(),
                         buy_amount: available.buy.amount.into(),
+                        full_sell_amount: order.sell.amount.into(),
+                        full_buy_amount: order.buy.amount.into(),
                         kind: match order.side {
-                            competition::order::Side::Buy => Kind::Buy,
-                            competition::order::Side::Sell => Kind::Sell,
+                            Side::Buy => Kind::Buy,
+                            Side::Sell => Kind::Sell,
                         },
+                        receiver: order.receiver.map(Into::into),
+                        owner: order.signature.signer.into(),
                         partially_fillable: order.is_partial(),
                         class: match order.kind {
-                            competition::order::Kind::Market => Class::Market,
-                            competition::order::Kind::Limit { .. } => Class::Limit,
-                            competition::order::Kind::Liquidity => Class::Liquidity,
+                            order::Kind::Market => Class::Market,
+                            order::Kind::Limit { .. } => Class::Limit,
+                            order::Kind::Liquidity => Class::Liquidity,
                         },
+                        pre_interactions: order
+                            .pre_interactions
+                            .iter()
+                            .cloned()
+                            .map(Into::into)
+                            .collect::<Vec<_>>(),
+                        post_interactions: order
+                            .post_interactions
+                            .iter()
+                            .cloned()
+                            .map(Into::into)
+                            .collect::<Vec<_>>(),
+                        sell_token_source: order.sell_token_balance.into(),
+                        buy_token_destination: order.buy_token_balance.into(),
                         fee_policies: (fee_handler == FeeHandler::Solver).then_some(
                             order
                                 .protocol_fees
@@ -131,6 +155,15 @@ impl Auction {
                                 .map(Into::into)
                                 .collect(),
                         ),
+                        app_data: AppDataHash(order.app_data.0.into()),
+                        signature: order.signature.data.clone().into(),
+                        signing_scheme: match order.signature.scheme {
+                            Scheme::Eip712 => SigningScheme::Eip712,
+                            Scheme::EthSign => SigningScheme::EthSign,
+                            Scheme::Eip1271 => SigningScheme::Eip1271,
+                            Scheme::PreSign => SigningScheme::PreSign,
+                        },
+                        valid_to: order.valid_to.into(),
                     }
                 })
                 .collect(),
@@ -298,13 +331,40 @@ struct Order {
     buy_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
     sell_amount: eth::U256,
+    /// Original order `buy amount`
+    #[serde_as(as = "serialize::U256")]
+    full_buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
-    kind: Kind,
-    partially_fillable: bool,
-    class: Class,
+    /// Original order `sell amount`
+    #[serde_as(as = "serialize::U256")]
+    full_sell_amount: eth::U256,
     #[serde(skip_serializing_if = "Option::is_none")]
     fee_policies: Option<Vec<FeePolicy>>,
+    valid_to: u32,
+    kind: Kind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    receiver: Option<H160>,
+    owner: H160,
+    partially_fillable: bool,
+    pre_interactions: Vec<InteractionData>,
+    post_interactions: Vec<InteractionData>,
+    sell_token_source: SellTokenSource,
+    buy_token_destination: BuyTokenDestination,
+    class: Class,
+    app_data: AppDataHash,
+    signing_scheme: SigningScheme,
+    #[serde(with = "bytes_hex")]
+    signature: Vec<u8>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SigningScheme {
+    Eip712,
+    EthSign,
+    Eip1271,
+    PreSign,
 }
 
 #[derive(Debug, Serialize)]

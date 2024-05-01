@@ -26,12 +26,14 @@ use {
             },
             setup::blockchain::Blockchain,
         },
-        util::{self},
     },
-    bigdecimal::FromPrimitive,
+    app_data::AppDataHash,
+    bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::dyns::DynTransport,
     futures::future::join_all,
     hyper::StatusCode,
+    model::order::{BuyTokenDestination, SellTokenSource},
+    primitive_types::H160,
     secp256k1::SecretKey,
     std::{
         collections::{HashMap, HashSet},
@@ -96,7 +98,7 @@ pub struct Order {
     pub internalize: bool,
     pub side: order::Side,
     pub partial: Partial,
-    pub valid_for: util::Timestamp,
+    pub valid_to: u32,
     pub kind: order::Kind,
 
     // Currently used for limit orders to represent the surplus_fee calculated by the solver.
@@ -119,6 +121,10 @@ pub struct Order {
     /// order? True by default.
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
+    pub owner: H160,
+    pub sell_token_source: SellTokenSource,
+    pub buy_token_destination: BuyTokenDestination,
+    pub app_data: AppDataHash,
 }
 
 impl Order {
@@ -257,7 +263,7 @@ impl Default for Order {
             internalize: Default::default(),
             side: order::Side::Sell,
             partial: Default::default(),
-            valid_for: 100.into(),
+            valid_to: u32::MAX,
             kind: order::Kind::Market,
             solver_fee: Default::default(),
             name: Default::default(),
@@ -270,6 +276,10 @@ impl Default for Order {
                 factor: 0.0,
                 max_volume_factor: 0.06,
             }],
+            owner: eth::H160::from_str(TRADER_ADDRESS).unwrap(),
+            sell_token_source: Default::default(),
+            buy_token_destination: Default::default(),
+            app_data: Default::default(),
         }
     }
 }
@@ -283,7 +293,7 @@ pub struct Solver {
     /// The private key for this solver.
     private_key: ethcontract::PrivateKey,
     /// The slippage for this solver.
-    slippage: infra::solver::Slippage,
+    slippage: Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
     /// Determines whether the `solver` or the `driver` handles the fees
@@ -291,6 +301,12 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+}
+
+#[derive(Debug, Clone)]
+struct Slippage {
+    relative: BigDecimal,
+    absolute: Option<eth::Ether>,
 }
 
 pub fn test_solver() -> Solver {
@@ -302,8 +318,8 @@ pub fn test_solver() -> Solver {
                 .unwrap(),
         )
         .unwrap(),
-        slippage: infra::solver::Slippage {
-            relative: bigdecimal::BigDecimal::from_f64(0.3).unwrap(),
+        slippage: Slippage {
+            relative: BigDecimal::from_f64(0.3).unwrap(),
             absolute: Some(183.into()),
         },
         timeouts: infra::solver::Timeouts {
@@ -654,6 +670,9 @@ pub fn eth_solution() -> Solution {
     }
 }
 
+// Hardcoded trader account. Don't use this account for anything else!!!
+pub const TRADER_ADDRESS: &str = "d2525C68A663295BBE347B65C87c8e17De936a0a";
+
 impl Setup {
     /// Set an explicit name for this test. If a name is set, it will be logged
     /// before the test runs.
@@ -748,8 +767,7 @@ impl Setup {
         } = self;
 
         // Hardcoded trader account. Don't use this account for anything else!!!
-        let trader_address =
-            eth::H160::from_str("d2525C68A663295BBE347B65C87c8e17De936a0a").unwrap();
+        let trader_address = eth::H160::from_str(TRADER_ADDRESS).unwrap();
         let trader_secret_key = SecretKey::from_slice(
             &hex::decode("f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3")
                 .unwrap(),

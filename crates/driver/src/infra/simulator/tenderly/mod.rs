@@ -63,7 +63,7 @@ impl Tenderly {
 
     pub(super) async fn simulate(
         &self,
-        tx: eth::Tx,
+        tx: &eth::Tx,
         generate_access_list: GenerateAccessList,
     ) -> Result<Simulation, Error> {
         let res: dto::Response = self
@@ -73,7 +73,7 @@ impl Tenderly {
                 network_id: self.chain_id.to_string(),
                 from: tx.from.into(),
                 to: tx.to.into(),
-                input: tx.input.into(),
+                input: tx.input.clone().into(),
                 value: tx.value.into(),
                 save: self.config.save,
                 save_if_fails: self.config.save_if_fails,
@@ -81,7 +81,7 @@ impl Tenderly {
                 access_list: if tx.access_list.is_empty() {
                     None
                 } else {
-                    Some(tx.access_list.into())
+                    Some(tx.access_list.clone().into())
                 },
             })
             .send()
