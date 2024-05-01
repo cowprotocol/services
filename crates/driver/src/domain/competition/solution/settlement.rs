@@ -124,10 +124,7 @@ impl Settlement {
                             );
                         }
                     }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to encode domain settlement");
-                        panic!("Check encoding!");
-                    }
+                    Err(err) => tracing::warn!(?err, "failed to encode domain settlement"),
                 };
                 tx
             }
