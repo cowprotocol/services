@@ -889,7 +889,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        call_data:
+        callData:
           type: array
           items:
             $ref: "#/components/schemas/CallData"
