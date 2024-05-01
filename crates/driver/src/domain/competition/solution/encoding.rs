@@ -9,7 +9,7 @@ use {
             eth::{self, allowance, Ether},
             liquidity,
         },
-        infra,
+        infra::{self, solver::ManageNativeToken},
         util::Bytes,
     },
     allowance::Allowance,
@@ -42,6 +42,7 @@ pub fn tx(
     contracts: &infra::blockchain::Contracts,
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
+    solver_native_token: ManageNativeToken,
 ) -> Result<eth::Tx, Error> {
     let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut clearing_prices =
@@ -193,7 +194,7 @@ pub fn tx(
     }
 
     // Encode WETH unwrap
-    if !native_unwrap.0.is_zero() {
+    if !native_unwrap.0.is_zero() && solver_native_token.insert_unwraps {
         interactions.push(unwrap(native_unwrap, contracts.weth()));
     }
 

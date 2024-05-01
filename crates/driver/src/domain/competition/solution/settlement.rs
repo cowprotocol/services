@@ -117,6 +117,7 @@ impl Settlement {
                     eth.contracts(),
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
+                    solver_native_token,
                 ) {
                     Ok(domain) => {
                         if domain.input != tx.internalized.input {
@@ -138,6 +139,7 @@ impl Settlement {
                     eth.contracts(),
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
+                    solver_native_token,
                 )?,
                 uninternalized: encoding::tx(
                     auction,
@@ -145,6 +147,7 @@ impl Settlement {
                     eth.contracts(),
                     solution.approvals(eth, Internalization::Disable).await?,
                     Internalization::Disable,
+                    solver_native_token,
                 )?,
                 may_revert: solution.revertable(),
             },
