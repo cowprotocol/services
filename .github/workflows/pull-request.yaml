@@ -40,6 +40,17 @@ jobs:
           nitpicks: ".github/nitpicks.yml"
           token: "${{ secrets.GITHUB_TOKEN }}"
 
+  doc-tests:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --doc
+
   unit-tests:
     timeout-minutes: 60
     runs-on: ubuntu-latest

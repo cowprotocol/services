@@ -1,5 +1,5 @@
 use {
-    super::{trade::ClearingPrices, Error, Solution},
+    super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -69,6 +69,7 @@ impl Settlement {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
+        encoding: encoding::Strategy,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.
@@ -88,19 +89,40 @@ impl Settlement {
         }
 
         // Encode the solution into a settlement.
-        let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-        let tx = SettlementTx {
-            internalized: boundary.tx(
-                auction.id().unwrap(),
-                eth.contracts().settlement(),
-                Internalization::Enable,
-            ),
-            uninternalized: boundary.tx(
-                auction.id().unwrap(),
-                eth.contracts().settlement(),
-                Internalization::Disable,
-            ),
-            may_revert: boundary.revertable(),
+        let tx = match encoding {
+            encoding::Strategy::Boundary => {
+                let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
+                SettlementTx {
+                    internalized: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Enable,
+                    ),
+                    uninternalized: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Disable,
+                    ),
+                    may_revert: boundary.revertable(),
+                }
+            }
+            encoding::Strategy::Domain => SettlementTx {
+                internalized: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                )?,
+                uninternalized: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Disable).await?,
+                    Internalization::Disable,
+                )?,
+                may_revert: solution.revertable(),
+            },
         };
         Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
     }

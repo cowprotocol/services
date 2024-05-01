@@ -6,6 +6,7 @@ pub mod liquidity;
 pub mod mempool;
 pub mod notify;
 pub mod observe;
+pub mod persistence;
 pub mod simulator;
 pub mod solver;
 pub mod time;
