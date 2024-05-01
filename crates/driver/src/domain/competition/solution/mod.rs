@@ -27,6 +27,7 @@ pub mod fee;
 pub mod interaction;
 pub mod scoring;
 pub mod settlement;
+pub mod slippage;
 pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
