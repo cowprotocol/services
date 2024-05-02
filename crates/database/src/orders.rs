@@ -802,6 +802,7 @@ mod tests {
         chrono::{TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
         sqlx::Connection,
+        std::collections::HashSet,
     };
 
     async fn read_order_interactions(
@@ -1916,5 +1917,35 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(full_order.full_app_data, Some(full_app_data));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_get_missing_order_uids() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        for i in 1..5 {
+            let order = Order {
+                uid: ByteArray([i; 56]),
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
+        }
+        let missing_uids = (1..10)
+            .map(|i| ByteArray([i; 56]))
+            .collect::<Vec<OrderUid>>();
+        let expected = missing_uids[4..9]
+            .into_iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let actual = get_missing_order_uids(&mut db, missing_uids)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        assert_eq!(expected, actual);
     }
 }
