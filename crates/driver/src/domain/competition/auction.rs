@@ -54,7 +54,7 @@ impl Auction {
         }
 
         // Ensure that there are no orders with 0 amounts.
-        if orders.iter().any(|order| order.available(weth).is_zero()) {
+        if orders.iter().any(|order| order.available().is_zero()) {
             return Err(Error::InvalidAmounts);
         }
 
@@ -168,7 +168,7 @@ impl AuctionProcessor {
             Self::sort(&mut orders, tokens);
             let mut balances =
                 rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
-            Self::filter_orders(&mut balances, &mut orders, &eth);
+            Self::filter_orders(&mut balances, &mut orders);
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
         })
@@ -210,11 +210,7 @@ impl AuctionProcessor {
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner.
-    fn filter_orders(
-        balances: &mut Balances,
-        orders: &mut Vec<order::Order>,
-        eth: &infra::Ethereum,
-    ) {
+    fn filter_orders(balances: &mut Balances, orders: &mut Vec<order::Order>) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -223,7 +219,6 @@ impl AuctionProcessor {
         // to each order, and potentially scaling the order's `available` amount
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
-        let weth = eth.contracts().weth_address();
         orders.retain_mut(|order| {
             let remaining_balance = match balances.get_mut(&(
                 order.trader(),
@@ -238,7 +233,7 @@ impl AuctionProcessor {
                 }
             };
 
-            let max_sell = order::SellAmount(order.available(weth).sell.amount.0);
+            let max_sell = order::SellAmount(order.available().sell.amount.0);
 
             let allocated_balance = match order.partial {
                 order::Partial::Yes { .. } => max_sell.min(*remaining_balance),
@@ -271,7 +266,7 @@ impl AuctionProcessor {
                         .unwrap_or_default(),
                 );
             }
-            if order.available(weth).is_zero() {
+            if order.available().is_zero() {
                 observe::order_excluded_from_auction(
                     order,
                     observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,

@@ -262,15 +262,6 @@ pub struct Arguments {
     pub balancer_v2_vault_address: Option<H160>,
 }
 
-/// The kind of EVM code simulator to use.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, clap::ValueEnum)]
-#[clap(rename_all = "verbatim")]
-pub enum CodeSimulatorKind {
-    Web3,
-    Tenderly,
-    Web3ThenTenderly,
-}
-
 pub fn display_secret_option<T>(
     f: &mut Formatter<'_>,
     name: &str,

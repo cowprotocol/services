@@ -13,7 +13,7 @@ use {
         PriceEstimating,
     },
     crate::{
-        arguments::{self, CodeSimulatorKind, ExternalSolver, LegacySolver},
+        arguments::{self, ExternalSolver, LegacySolver},
         bad_token::BadTokenDetecting,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
@@ -102,67 +102,48 @@ impl<'a> PriceEstimatorFactory<'a> {
         network: Network,
         components: Components,
     ) -> Result<Self> {
-        let trade_verifier = args
-            .trade_simulator
-            .map(|kind| -> Result<Arc<dyn TradeVerifying>> {
-                let web3_simulator = || {
-                    network
-                        .simulation_web3
-                        .clone()
-                        .map(|web3| {
-                            ethrpc::instrumented::instrument_with_label(&web3, "simulator".into())
-                        })
-                        .context("missing simulation node configuration")
-                };
-                let tenderly_simulator = || -> anyhow::Result<_> {
-                    let tenderly_api = shared_args
-                        .tenderly
-                        .get_api_instance(&components.http_factory, "price_estimation".to_owned())?
-                        .context("missing Tenderly configuration")?;
-                    let simulator = TenderlyCodeSimulator::new(tenderly_api, network.chain_id);
-                    Ok(simulator)
-                };
-
-                let simulator = match kind {
-                    CodeSimulatorKind::Web3 => {
-                        Arc::new(web3_simulator()?) as Arc<dyn CodeSimulating>
-                    }
-                    CodeSimulatorKind::Tenderly => Arc::new(tenderly_simulator()?.save(
-                        args.tenderly_save_successful_trade_simulations,
-                        args.tenderly_save_failed_trade_simulations,
-                    )),
-                    CodeSimulatorKind::Web3ThenTenderly => {
-                        Arc::new(code_simulation::Web3ThenTenderly::new(
-                            web3_simulator()?,
-                            tenderly_simulator()?,
-                        ))
-                    }
-                };
-                let code_fetcher = ethrpc::instrumented::instrument_with_label(
-                    &network.web3,
-                    "codeFetching".into(),
-                );
-                let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
-
-                Ok(Arc::new(TradeVerifier::new(
-                    simulator,
-                    code_fetcher,
-                    network.block_stream.clone(),
-                    network.settlement,
-                    network.native_token,
-                    args.quote_inaccuracy_limit,
-                )))
-            })
-            .transpose()?;
-
         Ok(Self {
+            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components),
             args,
             shared_args,
             network,
             components,
-            trade_verifier,
             estimators: HashMap::new(),
         })
+    }
+
+    fn trade_verifier(
+        args: &'a Arguments,
+        shared_args: &arguments::Arguments,
+        network: &Network,
+        components: &Components,
+    ) -> Option<Arc<dyn TradeVerifying>> {
+        let web3 = network.simulation_web3.clone()?;
+        let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
+
+        let tenderly = shared_args
+            .tenderly
+            .get_api_instance(&components.http_factory, "price_estimation".to_owned())
+            .unwrap()
+            .map(|t| TenderlyCodeSimulator::new(t, network.chain_id));
+
+        let simulator: Arc<dyn CodeSimulating> = match tenderly {
+            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(web3, tenderly)),
+            None => Arc::new(web3),
+        };
+
+        let code_fetcher =
+            ethrpc::instrumented::instrument_with_label(&network.web3, "codeFetching".into());
+        let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
+
+        Some(Arc::new(TradeVerifier::new(
+            simulator,
+            code_fetcher,
+            network.block_stream.clone(),
+            network.settlement,
+            network.native_token,
+            args.quote_inaccuracy_limit,
+        )))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {
@@ -313,7 +294,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             vec![estimators],
             PriceRanking::BestBangForBuck { native, gas },
         )
-        .prefer_verified_estimates(self.args.prefer_verified_quotes);
+        .with_verification(self.args.quote_verification);
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -359,7 +340,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let competition_estimator =
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
-                .prefer_verified_estimates(self.args.prefer_verified_quotes)
+                .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),

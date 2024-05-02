@@ -1,5 +1,3 @@
-use model::order::QuoteAmounts;
-
 pub mod ethflow_events;
 pub mod event_retriever;
 
@@ -31,7 +29,14 @@ use {
     futures::{stream, StreamExt},
     itertools::multiunzip,
     model::{
-        order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderData,
+            OrderKind,
+            OrderUid,
+            QuoteAmounts,
+            SellTokenSource,
+        },
         signature::SigningScheme,
         DomainSeparator,
     },
@@ -559,7 +564,7 @@ async fn get_quote(
         // Orders indexed with errors are not eligible for automatic refunding.
         // Because we want to be generous with refunding EthFlow orders we therefore don't request a
         // verified quote here on purpose.
-        verification: None,
+        verification: Default::default(),
     };
     let fee_amount = match order_data.fee_amount.is_zero() {
         // If an ETHFlow order was created with 0 fee it means it has the semantics

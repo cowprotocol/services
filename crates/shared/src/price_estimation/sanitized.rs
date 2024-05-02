@@ -173,7 +173,7 @@ mod tests {
             // Will be estimated by the wrapped_estimator.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: H160::from_low_u64_le(1),
                     buy_token: H160::from_low_u64_le(2),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -192,7 +192,7 @@ mod tests {
             // `sanitized_estimator` will add cost of unwrapping ETH to Estimate.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: H160::from_low_u64_le(1),
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -211,7 +211,7 @@ mod tests {
             // Will cause buffer overflow of gas price in `sanitized_estimator`.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: H160::from_low_u64_le(1),
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
@@ -227,7 +227,7 @@ mod tests {
             // `sanitized_estimator` will add cost of wrapping ETH to Estimate.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: BUY_ETH_ADDRESS,
                     buy_token: H160::from_low_u64_le(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -247,7 +247,7 @@ mod tests {
             // identical.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: H160::from_low_u64_le(1),
                     buy_token: H160::from_low_u64_le(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -264,7 +264,7 @@ mod tests {
             // Can be estimated by `sanitized_estimator` because both tokens are the native token.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: BUY_ETH_ADDRESS,
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -281,7 +281,7 @@ mod tests {
             // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: native_token,
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -299,7 +299,7 @@ mod tests {
             // Can be estimated by `sanitized_estimator` because it is a native token wrap.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: BUY_ETH_ADDRESS,
                     buy_token: native_token,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -317,7 +317,7 @@ mod tests {
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: BAD_TOKEN,
                     buy_token: H160::from_low_u64_le(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
@@ -332,7 +332,7 @@ mod tests {
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
             (
                 Query {
-                    verification: None,
+                    verification: Default::default(),
                     sell_token: H160::from_low_u64_le(1),
                     buy_token: BAD_TOKEN,
                     in_amount: NonZeroU256::try_from(1).unwrap(),

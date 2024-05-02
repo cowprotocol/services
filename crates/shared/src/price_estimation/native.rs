@@ -62,7 +62,7 @@ impl NativePriceEstimator {
             buy_token: self.native_token,
             in_amount: self.price_estimation_amount,
             kind: OrderKind::Buy,
-            verification: None,
+            verification: Default::default(),
             block_dependent: false,
         }
     }

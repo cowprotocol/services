@@ -268,6 +268,7 @@ pub async fn run(args: Arguments) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
+        eth.contracts().settlement().address(),
     )
     .await
     .expect("failed to initialize token owner finders");
@@ -479,6 +480,8 @@ pub async fn run(args: Arguments) {
             )
             .unwrap(),
         },
+        balance_fetcher.clone(),
+        args.price_estimation.quote_verification,
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {

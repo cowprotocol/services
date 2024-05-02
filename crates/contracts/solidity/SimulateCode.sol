@@ -11,8 +11,7 @@ contract SimulateCode {
     /// contract that would be created**. This means we can use constructors to
     /// execute arbitrary code on the current state of the EVM, and "manually"
     /// return with some inline assembly that data (as this is the mechanism
-    /// used for contract creation). See the `FetchBlock.sol` contract for
-    /// another application of this trick.
+    /// used for contract creation).
     ///
     /// The contract does this to:
     /// 1. Deploy some arbitrary contract code
