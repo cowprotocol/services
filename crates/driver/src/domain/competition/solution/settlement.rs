@@ -92,7 +92,7 @@ impl Settlement {
         let tx = match encoding {
             encoding::Strategy::Boundary => {
                 let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-                SettlementTx {
+                let tx = SettlementTx {
                     internalized: boundary.tx(
                         auction.id().unwrap(),
                         eth.contracts().settlement(),
@@ -104,20 +104,42 @@ impl Settlement {
                         Internalization::Disable,
                     ),
                     may_revert: boundary.revertable(),
-                }
+                };
+
+                // To prepare rollout, ensure that the domain settlement encoding works and
+                // matches the boundary settlement encoding
+                match encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                ) {
+                    Ok(domain) => {
+                        if domain.input != tx.internalized.input {
+                            tracing::warn!(
+                                ?domain,
+                                boundary = ?tx.internalized,
+                                "boundary settlement does not match domain settlement"
+                            );
+                        }
+                    }
+                    Err(err) => tracing::warn!(?err, "failed to encode domain settlement"),
+                };
+                tx
             }
             encoding::Strategy::Domain => SettlementTx {
                 internalized: encoding::tx(
-                    auction.id().unwrap(),
+                    auction,
                     &solution,
-                    eth.contracts().settlement(),
+                    eth.contracts(),
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
                 )?,
                 uninternalized: encoding::tx(
-                    auction.id().unwrap(),
+                    auction,
                     &solution,
-                    eth.contracts().settlement(),
+                    eth.contracts(),
                     solution.approvals(eth, Internalization::Disable).await?,
                     Internalization::Disable,
                 )?,

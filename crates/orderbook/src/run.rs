@@ -219,6 +219,7 @@ pub async fn run(args: Arguments) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
+        settlement_contract.address(),
     )
     .await
     .expect("failed to initialize token owner finders");
