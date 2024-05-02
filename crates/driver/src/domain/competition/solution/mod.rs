@@ -11,7 +11,7 @@ use {
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::Solver,
+            solver::{ManageNativeToken, Solver},
             Simulator,
         },
     },
@@ -331,8 +331,9 @@ impl Solution {
         eth: &Ethereum,
         simulator: &Simulator,
         encoding: encoding::Strategy,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, encoding).await
+        Settlement::encode(self, auction, eth, simulator, encoding, solver_native_token).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary

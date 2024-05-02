@@ -6,7 +6,7 @@ use {
             competition::{self, auction, order, solution},
             eth,
         },
-        infra::{blockchain::Ethereum, observe, Simulator},
+        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
     },
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap},
@@ -70,6 +70,7 @@ impl Settlement {
         eth: &Ethereum,
         simulator: &Simulator,
         encoding: encoding::Strategy,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.
@@ -91,8 +92,10 @@ impl Settlement {
         // Encode the solution into a settlement.
         let tx = match encoding {
             encoding::Strategy::Boundary => {
-                let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-                SettlementTx {
+                let boundary =
+                    boundary::Settlement::encode(eth, &solution, auction, solver_native_token)
+                        .await?;
+                let tx = SettlementTx {
                     internalized: boundary.tx(
                         auction.id().unwrap(),
                         eth.contracts().settlement(),
@@ -104,7 +107,30 @@ impl Settlement {
                         Internalization::Disable,
                     ),
                     may_revert: boundary.revertable(),
-                }
+                };
+
+                // To prepare rollout, ensure that the domain settlement encoding works and
+                // matches the boundary settlement encoding
+                match encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                    solver_native_token,
+                ) {
+                    Ok(domain) => {
+                        if domain.input != tx.internalized.input {
+                            tracing::warn!(
+                                ?domain,
+                                boundary = ?tx.internalized,
+                                "boundary settlement does not match domain settlement"
+                            );
+                        }
+                    }
+                    Err(err) => tracing::warn!(?err, "failed to encode domain settlement"),
+                };
+                tx
             }
             encoding::Strategy::Domain => SettlementTx {
                 internalized: encoding::tx(
@@ -113,6 +139,7 @@ impl Settlement {
                     eth.contracts(),
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
+                    solver_native_token,
                 )?,
                 uninternalized: encoding::tx(
                     auction,
@@ -120,6 +147,7 @@ impl Settlement {
                     eth.contracts(),
                     solution.approvals(eth, Internalization::Disable).await?,
                     Internalization::Disable,
+                    solver_native_token,
                 )?,
                 may_revert: solution.revertable(),
             },

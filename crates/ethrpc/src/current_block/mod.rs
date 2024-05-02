@@ -1,12 +1,8 @@
-use std::fmt::Debug;
-
-pub mod retriever;
-
 use {
     crate::Web3,
     anyhow::{anyhow, ensure, Context as _, Result},
     primitive_types::{H256, U256},
-    std::{sync::Arc, time::Duration},
+    std::{fmt::Debug, sync::Arc, time::Duration},
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::Instrument,

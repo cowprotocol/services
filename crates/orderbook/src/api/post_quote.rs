@@ -5,7 +5,7 @@ use {
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
     shared::{
-        api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply},
+        api::{self, convert_json_response, error, rich_error, ApiReply, IntoWarpReply},
         order_quoting::CalculateQuoteError,
     },
     std::{convert::Infallible, sync::Arc},
@@ -65,6 +65,14 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
                     StatusCode::BAD_REQUEST,
                 )
             }
+            CalculateQuoteError::QuoteNotVerified => warp::reply::with_status(
+                error(
+                    "QuoteNotVerified",
+                    "No quote for this trade could be verified to be accurate. Orders for this \
+                     trade will likely not be executed.",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             CalculateQuoteError::Other(err) => {
                 tracing::error!(?err, "CalculateQuoteErrorWrapper");
                 shared::api::internal_error_reply()

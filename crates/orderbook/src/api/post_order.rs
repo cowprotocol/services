@@ -210,6 +210,14 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
+            ValidationError::QuoteNotVerified => with_status(
+                error(
+                    "QuoteNotVerified",
+                    "No quote for this trade could be verified to be accurate. Aborting the order \
+                     creation since it will likely not be executed.",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             ValidationError::ZeroAmount => with_status(
                 error("ZeroAmount", "Buy or sell amount is zero."),
                 StatusCode::BAD_REQUEST,
