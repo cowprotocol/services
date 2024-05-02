@@ -28,7 +28,7 @@ use {
         },
     },
     app_data::AppDataHash,
-    bigdecimal::FromPrimitive,
+    bigdecimal::{BigDecimal, FromPrimitive},
     ethcontract::{dyns::DynTransport, BlockId},
     futures::future::join_all,
     hyper::StatusCode,
@@ -294,7 +294,7 @@ pub struct Solver {
     /// The private key for this solver.
     private_key: ethcontract::PrivateKey,
     /// The slippage for this solver.
-    slippage: infra::solver::Slippage,
+    slippage: Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
     /// Determines whether the `solver` or the `driver` handles the fees
@@ -302,6 +302,12 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+}
+
+#[derive(Debug, Clone)]
+struct Slippage {
+    relative: BigDecimal,
+    absolute: Option<eth::Ether>,
 }
 
 pub fn test_solver() -> Solver {
@@ -313,8 +319,8 @@ pub fn test_solver() -> Solver {
                 .unwrap(),
         )
         .unwrap(),
-        slippage: infra::solver::Slippage {
-            relative: bigdecimal::BigDecimal::from_f64(0.3).unwrap(),
+        slippage: Slippage {
+            relative: BigDecimal::from_f64(0.3).unwrap(),
             absolute: Some(183.into()),
         },
         timeouts: infra::solver::Timeouts {
