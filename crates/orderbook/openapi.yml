@@ -1169,6 +1169,7 @@ components:
             [
               DuplicatedOrder,
               QuoteNotFound,
+              QuoteNotVerified,
               InvalidQuote,
               MissingFrom,
               WrongOwner,
@@ -1226,9 +1227,10 @@ components:
           type: string
           enum:
             [
+              "QuoteNotVerified",
               "UnsupportedToken",
               "ZeroAmount",
-              "UnsupportedOrderType"
+              "UnsupportedOrderType",
             ]
         description:
           type: string

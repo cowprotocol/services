@@ -80,6 +80,11 @@ impl TradeVerifier {
         verification: &Verification,
         trade: &Trade,
     ) -> Result<Estimate, Error> {
+        if verification.from.is_zero() {
+            // Don't waste time on common simulations which will always fail.
+            return Err(anyhow::anyhow!("trader is zero address").into());
+        }
+
         let start = std::time::Instant::now();
         let solver = dummy_contract!(Solver, trade.solver);
 
