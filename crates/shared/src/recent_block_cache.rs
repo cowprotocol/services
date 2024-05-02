@@ -618,7 +618,7 @@ mod tests {
             TestValue::new(2, "1"),
             TestValue::new(3, "1"),
         ];
-        *values.lock().unwrap() = initial_values.clone();
+        values.lock().unwrap().clone_from(&initial_values);
 
         let result = cache
             .fetch(test_keys(0..2), Block::Number(block_number))
@@ -638,7 +638,7 @@ mod tests {
             TestValue::new(2, "2"),
             TestValue::new(3, "2"),
         ];
-        *values.lock().unwrap() = updated_values.clone();
+        values.lock().unwrap().clone_from(&updated_values);
         cache.update_cache_at_block(block_number).await.unwrap();
         values.lock().unwrap().clear();
 
