@@ -3,10 +3,10 @@
 
 use std::fs;
 
-const SOLVERS_OPENAPI_PATH: &str = "../solvers/openapi.yml";
+const SOLVERS_OPENAPI_PATH: &str = "../solvers/openapi.json";
 
 fn main() {
-    let openapi_yaml = solvers::generate_openapi_yaml()
+    let openapi_yaml = solvers::generate_openapi_json()
         .expect("Error generating the solvers OpenAPI documentation");
     fs::write(SOLVERS_OPENAPI_PATH, openapi_yaml)
         .expect("Error writing the solvers OpenAPI documentation");

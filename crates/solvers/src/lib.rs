@@ -13,5 +13,5 @@ mod util;
 
 pub use {
     self::run::{run, start},
-    api::generate_openapi_yaml,
+    api::generate_openapi_json,
 };

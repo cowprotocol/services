@@ -687,7 +687,7 @@ pub struct Decimal(String);
 /// A hex-encoded 32 byte string containing the pool address (0..20), the pool
 /// specialization (20..22) and the poolnonce (22..32).
 #[derive(ToSchema)]
-#[schema(example = "0xc88c76dd8b92408fe9bea1a54922a31")]
+#[schema(example = "0xc88c76dd8b92408fe9bea1a54922a31e232d873c0002000000000000000005b2")]
 #[allow(dead_code)]
 pub struct BalancerPoolId(String);
 
@@ -728,13 +728,17 @@ pub struct I32(String);
 /// represent the owner address and bytes [52, 56) represent the order's
 /// `validTo` field.
 #[derive(ToSchema)]
-#[schema(example = "0x30cff40d9f60caa68a37f0ee73253ad")]
+#[schema(
+    example = "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
+)]
 #[allow(dead_code)]
 pub struct OrderUid(String);
 
 /// Signature bytes.
 #[derive(ToSchema)]
-#[schema(example = "0x0000000000000000000000000000000")]
+#[schema(
+    example = "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+)]
 #[allow(dead_code)]
 pub struct Signature(String);
 

@@ -2,6 +2,7 @@
 
 use {
     crate::domain::solver::Solver,
+    serde_json::Error,
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
     utoipa::OpenApi,
@@ -49,7 +50,7 @@ impl Api {
 }
 
 // migrate to utoipauto once the issue is solved https://github.com/ProbablyClem/utoipauto/issues/23
-pub fn generate_openapi_yaml() -> Result<String, serde_yaml::Error> {
+pub fn generate_openapi_json() -> Result<String, Error> {
     #[derive(OpenApi)]
     #[openapi(
         paths(routes::solve::solve, routes::notify::notify,),
@@ -116,5 +117,5 @@ pub fn generate_openapi_yaml() -> Result<String, serde_yaml::Error> {
     )]
     pub struct ApiDoc;
 
-    ApiDoc::openapi().to_yaml()
+    ApiDoc::openapi().to_pretty_json()
 }
