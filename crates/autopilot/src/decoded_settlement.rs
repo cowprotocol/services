@@ -43,7 +43,7 @@ pub struct DecodedSettlement {
     // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
-    pub trades: Vec<DecodedTrade>,
+    pub trades: Vec<TradeWithOrderUid>,
     pub interactions: [Vec<DecodedInteraction>; 3],
     /// Data that was appended to the regular call data of the `settle()` call
     /// as a form of on-chain meta data. This gets used to associated a
@@ -95,6 +95,12 @@ impl DecodedTrade {
             .context("cant recover owner")?;
         Ok(order.uid(domain_separator, &owner))
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TradeWithOrderUid {
+    pub inner: DecodedTrade,
+    pub order_uid: OrderUid,
 }
 
 /// Trade flags are encoded in a 256-bit integer field. For more information on
@@ -177,7 +183,7 @@ impl DecodedSettlement {
     /// id.
     pub const META_DATA_LEN: usize = 8;
 
-    pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
+    pub fn new(input: &[u8], domain_separator: &DomainSeparator) -> Result<Self, DecodingError> {
         let function = GPv2Settlement::raw_contract()
             .interface
             .abi
@@ -189,13 +195,18 @@ impl DecodedSettlement {
 
         // Decoding calldata without expecting metadata can succeed even if metadata
         // was appended. The other way around would not work so we do that first.
-        if let Ok(decoded) = Self::try_new(without_selector, function, true) {
+        if let Ok(decoded) = Self::try_new(without_selector, function, domain_separator, true) {
             return Ok(decoded);
         }
-        Self::try_new(without_selector, function, false).map_err(Into::into)
+        Self::try_new(without_selector, function, domain_separator, false).map_err(Into::into)
     }
 
-    fn try_new(data: &[u8], function: &Function, with_metadata: bool) -> Result<Self> {
+    fn try_new(
+        data: &[u8],
+        function: &Function,
+        domain_separator: &DomainSeparator,
+        with_metadata: bool,
+    ) -> Result<Self> {
         let metadata_len = if with_metadata {
             anyhow::ensure!(
                 data.len() % 32 == Self::META_DATA_LEN,
@@ -214,12 +225,10 @@ impl DecodedSettlement {
             .context("decoding tokenized settlement calldata failed")?;
 
         let (tokens, clearing_prices, trades, interactions) = decoded;
-        Ok(Self {
-            tokens,
-            clearing_prices,
-            trades: trades
-                .into_iter()
-                .map(|trade| DecodedTrade {
+        let trades = trades
+            .into_iter()
+            .filter_map(|trade| {
+                let trade = DecodedTrade {
                     sell_token_index: trade.0,
                     buy_token_index: trade.1,
                     receiver: trade.2,
@@ -231,8 +240,28 @@ impl DecodedSettlement {
                     flags: trade.8.into(),
                     executed_amount: trade.9,
                     signature: trade.10,
-                })
-                .collect(),
+                };
+                match trade.uid(domain_separator, &tokens) {
+                    Ok(order_uid) => Some(TradeWithOrderUid {
+                        inner: trade,
+                        order_uid,
+                    }),
+                    Err(err) => {
+                        tracing::error!(
+                            ?err,
+                            ?trade,
+                            "failed to calculate order uid, we don't know which order this trade \
+                             belongs to"
+                        );
+                        None
+                    }
+                }
+            })
+            .collect();
+        Ok(Self {
+            tokens,
+            clearing_prices,
+            trades,
             interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
             metadata: metadata.try_into().ok().map(Bytes),
         })
@@ -242,7 +271,12 @@ impl DecodedSettlement {
     /// solution.
     pub fn total_surplus(&self, external_prices: &ExternalPrices) -> U256 {
         self.trades.iter().fold(0.into(), |acc, trade| {
-            acc + match surplus(trade, &self.tokens, &self.clearing_prices, external_prices) {
+            acc + match surplus(
+                &trade.inner,
+                &self.tokens,
+                &self.clearing_prices,
+                external_prices,
+            ) {
                 Some(surplus) => surplus,
                 None => {
                     tracing::warn!("possible incomplete surplus calculation");
@@ -253,54 +287,32 @@ impl DecodedSettlement {
     }
 
     /// Returns fees for all trades.
-    pub fn all_fees(
-        &self,
-        external_prices: &ExternalPrices,
-        domain_separator: &DomainSeparator,
-    ) -> Vec<Fees> {
+    pub fn all_fees(&self, external_prices: &ExternalPrices) -> Vec<Fees> {
         self.trades
             .iter()
-            .filter_map(|trade| {
-                let order = match trade.uid(domain_separator, &self.tokens) {
-                    Ok(order) => order,
-                    Err(err) => {
-                        tracing::error!(
-                            ?err,
-                            ?trade,
-                            "failed to calculate order uid, we don't know which order this trade \
-                             belongs to"
-                        );
-                        return None;
-                    }
-                };
-
-                Some(self.fee(trade, order, external_prices).unwrap_or_else(|| {
+            .map(|trade| {
+                self.fee(trade, external_prices).unwrap_or_else(|| {
                     tracing::warn!("possible incomplete fee calculation");
                     // we should have an order execution for every trade
                     Fees {
-                        order,
+                        order: trade.order_uid,
                         kind: FeeKind::User,
                         sell: U256::zero(),
                         native: U256::zero(),
                     }
-                }))
+                })
             })
             .collect()
     }
 
-    fn fee(
-        &self,
-        trade: &DecodedTrade,
-        order: OrderUid,
-        external_prices: &ExternalPrices,
-    ) -> Option<Fees> {
-        let sell_index = trade.sell_token_index.as_u64() as usize;
-        let buy_index = trade.buy_token_index.as_u64() as usize;
+    fn fee(&self, trade: &TradeWithOrderUid, external_prices: &ExternalPrices) -> Option<Fees> {
+        let sell_index = trade.inner.sell_token_index.as_u64() as usize;
+        let buy_index = trade.inner.buy_token_index.as_u64() as usize;
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let (kind, fee) = match trade.fee_amount.is_zero() {
-            false => (FeeKind::User, trade.fee_amount),
+        let (kind, fee) = match trade.inner.fee_amount.is_zero() {
+            false => (FeeKind::User, trade.inner.fee_amount),
             true => {
                 // get executed(adjusted) prices
                 let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
@@ -313,13 +325,15 @@ impl DecodedSettlement {
                 let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
-                let fee = match trade.flags.order_kind() {
+                let fee = match trade.inner.flags.order_kind() {
                     OrderKind::Buy => {
                         let required_sell_amount = trade
+                            .inner
                             .executed_amount
                             .checked_mul(adjusted_buy_price)?
                             .checked_div(adjusted_sell_price)?;
                         let required_sell_amount_with_ucp = trade
+                            .inner
                             .executed_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
@@ -327,6 +341,7 @@ impl DecodedSettlement {
                     }
                     OrderKind::Sell => {
                         let received_buy_amount = trade
+                            .inner
                             .executed_amount
                             .checked_mul(adjusted_sell_price)?
                             .checked_div(adjusted_buy_price)?;
@@ -334,6 +349,7 @@ impl DecodedSettlement {
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
                         trade
+                            .inner
                             .executed_amount
                             .checked_sub(sell_amount_needed_with_ucp)?
                     }
@@ -349,7 +365,7 @@ impl DecodedSettlement {
         tracing::trace!(?native, "fee after conversion to native token");
 
         Some(Fees {
-            order,
+            order: trade.order_uid,
             kind,
             sell: fee,
             native: big_rational_to_u256(&native).ok()?,
@@ -614,7 +630,7 @@ mod tests {
             000000000405ff0dca143cb520000000000000000000000000000000000000000000001428c970000000000008000000000000000000000002dd35b4da6534230ff53048f7477f17f7f4e7a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
             000000000123432"
         );
-        let settlement = DecodedSettlement::new(&call_data).unwrap();
+        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
 
         //calculate surplus
         let auction_external_prices = BTreeMap::from([
@@ -722,7 +738,7 @@ mod tests {
             00000000007ff044"
         )
         .to_vec();
-        let settlement = DecodedSettlement::new(&call_data).unwrap();
+        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
 
         //calculate fees
         let auction_external_prices = BTreeMap::from([
@@ -739,7 +755,7 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let fees = settlement.all_fees(&external_prices, &MAINNET_DOMAIN_SEPARATOR);
+        let fees = settlement.all_fees(&external_prices);
         let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                                                   // competition
         assert_eq!(fee, 5163336903917741.);
@@ -812,7 +828,7 @@ mod tests {
             3c756cc200000000000000000000000000000000000000000000000000000000
             0000000000000000000000000000000000000000000000000000000000000000"
         );
-        let settlement = DecodedSettlement::new(&call_data).unwrap();
+        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
 
         //calculate fees
         let auction_external_prices = BTreeMap::from([
@@ -829,7 +845,7 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let fees = settlement.all_fees(&external_prices, &MAINNET_DOMAIN_SEPARATOR);
+        let fees = settlement.all_fees(&external_prices);
         let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                                                   // competition
         assert_eq!(fee, 3768095572151424.);
@@ -912,7 +928,7 @@ mod tests {
              d49c29bf00000000000000000000000000000000000000000000000000000000
              0000000000000000000000000000000000000000000000000000000000000000"
         );
-        let settlement = DecodedSettlement::new(&call_data).unwrap();
+        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
 
         //calculate fees
         let auction_external_prices = BTreeMap::from([
@@ -929,7 +945,7 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let fees = settlement.all_fees(&external_prices, &MAINNET_DOMAIN_SEPARATOR);
+        let fees = settlement.all_fees(&external_prices);
         let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                                                   // competition
         assert_eq!(fee, 20272027926965858.);
@@ -1002,24 +1018,30 @@ mod tests {
              0000000000000000000000000000000000000000000000000000000000000000"
         )
         .to_vec();
-
-        let original = DecodedSettlement::new(&call_data).unwrap();
+        let original = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
 
         // If not enough call data got appended we parse it like it didn't have any
         // Not enough metadata appended to the calldata.
         let metadata = [42; DecodedSettlement::META_DATA_LEN - 1];
         let with_metadata = [call_data.clone(), metadata.to_vec()].concat();
-        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+        assert_eq!(
+            original,
+            DecodedSettlement::new(&with_metadata, &MAINNET_DOMAIN_SEPARATOR).unwrap()
+        );
 
         // Same if too much metadata gets added.
         let metadata = [42; DecodedSettlement::META_DATA_LEN];
         let with_metadata = [call_data.clone(), vec![100], metadata.to_vec()].concat();
-        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+        assert_eq!(
+            original,
+            DecodedSettlement::new(&with_metadata, &MAINNET_DOMAIN_SEPARATOR).unwrap()
+        );
 
         // If we add exactly the expected number of bytes we can parse the metadata.
         let metadata = [42; DecodedSettlement::META_DATA_LEN];
         let with_metadata = [call_data, metadata.to_vec()].concat();
-        let with_metadata = DecodedSettlement::new(&with_metadata).unwrap();
+        let with_metadata =
+            DecodedSettlement::new(&with_metadata, &MAINNET_DOMAIN_SEPARATOR).unwrap();
         assert_eq!(with_metadata.metadata, Some(Bytes(metadata)));
 
         // Content of the remaining fields is identical to the original
@@ -1265,7 +1287,7 @@ mod tests {
         )
         .to_vec();
 
-        let decoded = DecodedSettlement::new(&call_data).unwrap();
+        let decoded = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
         let auction_external_prices = BTreeMap::from([
             (
                 addr!("31429d1856ad1377a8a0079410b297e1a9e214c2"),
@@ -1288,7 +1310,7 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let fees = decoded.all_fees(&external_prices, &MAINNET_DOMAIN_SEPARATOR);
+        let fees = decoded.all_fees(&external_prices);
         let fees = order_executions(fees);
         assert_eq!(fees[1].sell, 7487413756444483822u128.into());
     }

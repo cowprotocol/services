@@ -142,23 +142,29 @@ impl Inner {
             tracing::warn!(?hash, "no tx found, reorg happened");
             return Ok(false);
         };
+        let domain_separator = self.eth.contracts().settlement_domain_separator();
 
-        let (auction_id, auction_data) =
-            match Self::recover_auction_id_from_calldata(&mut ex, &transaction).await? {
-                AuctionIdRecoveryStatus::InvalidCalldata => {
-                    // To not get stuck on indexing the same transaction over and over again, we
-                    // insert the default auction ID (0)
-                    (Default::default(), None)
-                }
-                AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
-                AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
-                    auction_id,
-                    Some(
-                        self.fetch_auction_data(hash, settlement, auction_id, &mut ex)
-                            .await?,
-                    ),
+        let (auction_id, auction_data) = match Self::recover_auction_id_from_calldata(
+            &mut ex,
+            &transaction,
+            &model::DomainSeparator(domain_separator.0),
+        )
+        .await?
+        {
+            AuctionIdRecoveryStatus::InvalidCalldata => {
+                // To not get stuck on indexing the same transaction over and over again, we
+                // insert the default auction ID (0)
+                (Default::default(), None)
+            }
+            AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
+            AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
+                auction_id,
+                Some(
+                    self.fetch_auction_data(hash, settlement, auction_id, &mut ex)
+                        .await?,
                 ),
-            };
+            ),
+        };
 
         let update = SettlementUpdate {
             block_number: event.block_number,
@@ -214,11 +220,7 @@ impl Inner {
         // surplus and fees calculation
         let surplus = settlement.total_surplus(&external_prices);
         let (fee, order_executions) = {
-            let domain_separator = self.eth.contracts().settlement_domain_separator();
-            let all_fees = settlement.all_fees(
-                &external_prices,
-                &model::DomainSeparator(domain_separator.0),
-            );
+            let all_fees = settlement.all_fees(&external_prices);
             // total fee used for CIP20 rewards
             let fee = all_fees
                 .iter()
@@ -250,9 +252,10 @@ impl Inner {
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
         tx: &Transaction,
+        domain_separator: &model::DomainSeparator,
     ) -> Result<AuctionIdRecoveryStatus> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let settlement = match DecodedSettlement::new(&tx.input.0) {
+        let settlement = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement,
             Err(err) => {
                 tracing::warn!(
