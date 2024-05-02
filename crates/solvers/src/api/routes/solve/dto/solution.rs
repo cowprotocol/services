@@ -121,9 +121,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
     }
 }
 
-fn interaction_data_from_domain(
-    interaction_data: &[solution::InteractionData],
-) -> Vec<Call> {
+fn interaction_data_from_domain(interaction_data: &[solution::InteractionData]) -> Vec<Call> {
     interaction_data
         .iter()
         .map(|interaction| Call {
