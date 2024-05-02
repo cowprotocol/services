@@ -866,13 +866,13 @@ components:
             Interactions to encode before a settlement.
           type: array
           items:
-            $ref: "#/components/schemas/InteractionData"
+            $ref: "#/components/schemas/Call"
         interactions:
           description: |
             Interactions to encode within a settlement.
           type: array
           items:
-            $ref: "#/components/schemas/InteractionData"
+            $ref: "#/components/schemas/Call"
         postInteractions:
           description: |
             Interactions to encode after a settlement.
@@ -882,14 +882,14 @@ components:
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
-    InteractionData:
+    Call:
       type: object
       properties:
         target:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        callData:
+        calldata:
           type: array
           items:
             $ref: "#/components/schemas/CallData"

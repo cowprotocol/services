@@ -123,10 +123,10 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
 
 fn interaction_data_from_domain(
     interaction_data: &[solution::InteractionData],
-) -> Vec<InteractionData> {
+) -> Vec<Call> {
     interaction_data
         .iter()
-        .map(|interaction| InteractionData {
+        .map(|interaction| Call {
             target: interaction.target,
             value: interaction.value.0,
             calldata: interaction.calldata.clone(),
