@@ -190,6 +190,6 @@ jobs:
         run: |
           git diff --exit-code crates/solvers/openapi.json || { echo "::error ::OpenAPI spec contains changes: crates/solvers/openapi.json"; exit 1; }
       - run: npm install @apidevtools/swagger-cli
-      - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.json
-      - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.json
+      - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
+      - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.json
