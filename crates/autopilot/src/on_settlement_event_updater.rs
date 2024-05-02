@@ -218,7 +218,12 @@ impl Inner {
         );
 
         // surplus and fees calculation
-        let surplus = settlement.total_surplus(&external_prices);
+        let jit_order_uids = Postgres::get_missing_order_uids(
+            settlement.trades.iter().map(|trade| trade.order_uid),
+            ex,
+        )
+        .await?;
+        let surplus = settlement.total_surplus(&external_prices, jit_order_uids);
         let (fee, order_executions) = {
             let all_fees = settlement.all_fees(&external_prices);
             // total fee used for CIP20 rewards

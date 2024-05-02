@@ -15,6 +15,7 @@ use {
     num::BigRational,
     number::conversions::{big_rational_to_u256, u256_to_big_rational},
     shared::{conversions::U256Ext, external_prices::ExternalPrices},
+    std::collections::HashSet,
     web3::ethabi::{Function, Token},
 };
 
@@ -269,21 +270,26 @@ impl DecodedSettlement {
 
     /// Returns the total surplus denominated in the native asset for the
     /// solution.
-    pub fn total_surplus(&self, external_prices: &ExternalPrices) -> U256 {
-        self.trades.iter().fold(0.into(), |acc, trade| {
-            acc + match surplus(
-                &trade.inner,
-                &self.tokens,
-                &self.clearing_prices,
-                external_prices,
-            ) {
-                Some(surplus) => surplus,
-                None => {
+    pub fn total_surplus(
+        &self,
+        external_prices: &ExternalPrices,
+        jit_order_uids: HashSet<OrderUid>,
+    ) -> U256 {
+        self.trades
+            .iter()
+            .filter(|trade| !jit_order_uids.contains(&trade.order_uid))
+            .fold(0.into(), |acc, trade| {
+                acc + surplus(
+                    &trade.inner,
+                    &self.tokens,
+                    &self.clearing_prices,
+                    external_prices,
+                )
+                .unwrap_or_else(|| {
                     tracing::warn!("possible incomplete surplus calculation");
                     0.into()
-                }
-            }
-        })
+                })
+            })
     }
 
     /// Returns fees for all trades.
@@ -654,8 +660,10 @@ mod tests {
         let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
-        let surplus = settlement.total_surplus(&external_prices).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
-                                                                                 // competition
+        let surplus = settlement
+            .total_surplus(&external_prices, Default::default())
+            .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
+                             // competition
         assert_eq!(surplus, 33350701806766732.);
     }
 

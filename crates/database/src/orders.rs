@@ -755,6 +755,32 @@ pub async fn user_orders_with_quote(
         .await
 }
 
+pub async fn get_missing_order_uids(
+    ex: &mut PgConnection,
+    order_uids: Vec<OrderUid>,
+) -> Result<Vec<OrderUid>, sqlx::Error> {
+    let placeholders = (1..(order_uids.len() + 1))
+        .map(|i| format!("(${:?})", i))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        r#"
+WITH input_ids (id) AS (
+VALUES {})
+SELECT input_ids.id
+FROM input_ids
+LEFT JOIN orders ON orders.uid = input_ids.id
+WHERE orders.uid IS NULL
+"#,
+        placeholders
+    );
+    let mut query = sqlx::query_scalar(&query);
+    for order_uid in order_uids {
+        query = query.bind(order_uid)
+    }
+    query.fetch_all(ex).await
+}
+
 #[cfg(test)]
 mod tests {
     use {
