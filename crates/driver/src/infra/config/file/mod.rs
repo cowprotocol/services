@@ -225,6 +225,11 @@ struct SolverConfig {
     /// auction together.
     #[serde(default)]
     merge_solutions: bool,
+
+    /// S3 configuration for storing the auctions in the form they are sent to
+    /// the solver engine
+    #[serde(default)]
+    s3: Option<S3>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -233,6 +238,17 @@ pub enum FeeHandler {
     #[default]
     Driver,
     Solver,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct S3 {
+    /// Name of the AWS S3 bucket in which the auctions will be stored
+    pub bucket: String,
+
+    /// Prepended to the auction id to form the final instance filename on AWS
+    /// S3 bucket. Something like "staging/mainnet/"
+    pub prefix: String,
 }
 
 #[serde_as]
@@ -512,16 +528,6 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Logic {
-    /// Use legacy submissions logic (default)
-    #[default]
-    Boundary,
-    /// Use Driver domain native submission logic
-    Native,
 }
 
 #[derive(Clone, Debug, Deserialize)]
