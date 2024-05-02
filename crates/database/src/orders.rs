@@ -1926,6 +1926,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        // Insert orders with uids 1, 2, 3, 4, 5
         for i in 1..5 {
             let order = Order {
                 uid: ByteArray([i; 56]),
@@ -1933,19 +1934,17 @@ mod tests {
             };
             insert_order(&mut db, &order).await.unwrap();
         }
-        let missing_uids = (1..10)
+        let uids_to_check = (1..10)
             .map(|i| ByteArray([i; 56]))
             .collect::<Vec<OrderUid>>();
-        let expected = missing_uids[4..9]
-            .into_iter()
-            .cloned()
-            .collect::<HashSet<_>>();
-        let actual = get_missing_order_uids(&mut db, missing_uids)
+        // 5, 6, 7, 8, 9 are missing
+        let missing_uids = uids_to_check[4..9].iter().cloned().collect::<HashSet<_>>();
+        let actual = get_missing_order_uids(&mut db, uids_to_check)
             .await
             .unwrap()
             .into_iter()
             .collect::<HashSet<_>>();
 
-        assert_eq!(expected, actual);
+        assert_eq!(missing_uids, actual);
     }
 }
