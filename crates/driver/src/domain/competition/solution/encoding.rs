@@ -13,6 +13,7 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
+    itertools::Itertools,
 };
 
 /// The type of strategy used to encode the solution.
@@ -55,7 +56,7 @@ pub fn tx(
     let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
-    for (token, price) in solution.prices.clone() {
+    for (&token, &price) in solution.prices.iter().sorted() {
         tokens.push(token.into());
         clearing_prices.push(price);
     }
