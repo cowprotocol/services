@@ -132,14 +132,18 @@ pub async fn current_block_stream(
 /// every nth update of the original stream.
 pub fn throttle(blocks: CurrentBlockStream, updates_to_skip: NonZeroU64) -> CurrentBlockStream {
     let first_block = *blocks.borrow();
+
+    // `receiver` yields `first_block` immediately.
     let (sender, receiver) = watch::channel(first_block);
 
     let update_future = async move {
         let mut skipped_updates = 0;
-        let mut block_stream = into_stream(blocks);
 
-        // Stream yields initial block immediately so we skip that on purpose.
-        let _ = block_stream.next().await;
+        // The `block_stream` would yield `first_block` immediately and since `receiver`
+        // is already guaranteed to yield that block by construction we skip 1
+        // update right away to avoid yielding `first_block` twice from the
+        // throttled stream.
+        let mut block_stream = into_stream(blocks).skip(1);
 
         while let Some(block) = block_stream.next().await {
             if skipped_updates == updates_to_skip.get() {
