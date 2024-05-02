@@ -82,6 +82,14 @@ pub struct Timeouts {
     pub solving_share_of_deadline: util::Percent,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ManageNativeToken {
+    /// If true wraps ETH address
+    pub wrap_address: bool,
+    /// If true inserts unwrap interactions
+    pub insert_unwraps: bool,
+}
+
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
@@ -117,6 +125,8 @@ pub struct Config {
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     pub s3: Option<S3>,
+    /// Whether the native token is wrapped or not when sent to the solvers
+    pub solver_native_token: ManageNativeToken,
 }
 
 impl Solver {
@@ -187,6 +197,10 @@ impl Solver {
         self.config.merge_solutions
     }
 
+    pub fn solver_native_token(&self) -> ManageNativeToken {
+        self.config.solver_native_token
+    }
+
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
     pub async fn solve(
@@ -201,6 +215,7 @@ impl Solver {
             liquidity,
             weth,
             self.config.fee_handler,
+            self.config.solver_native_token,
         ))
         .unwrap();
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,

@@ -116,7 +116,13 @@ impl Competition {
                 let id = solution.id().clone();
                 observe::encoding(&id);
                 let settlement = solution
-                    .encode(auction, &self.eth, &self.simulator, self.encoding)
+                    .encode(
+                        auction,
+                        &self.eth,
+                        &self.simulator,
+                        self.encoding,
+                        self.solver.solver_native_token(),
+                    )
                     .await;
                 (id, settlement)
             })
