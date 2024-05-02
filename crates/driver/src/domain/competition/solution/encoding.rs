@@ -56,9 +56,13 @@ pub fn tx(
     let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
-    for (&token, &price) in solution.prices.iter().sorted() {
-        tokens.push(token.into());
-        clearing_prices.push(price);
+    for asset in solution
+        .clearing_prices()
+        .iter()
+        .sorted_by_cached_key(|asset| asset.token)
+    {
+        tokens.push(asset.token.into());
+        clearing_prices.push(asset.amount.into());
     }
 
     // Encode trades with custom clearing prices

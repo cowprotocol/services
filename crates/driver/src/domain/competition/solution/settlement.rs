@@ -321,7 +321,6 @@ impl Settlement {
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
-            .expect("settlement cannot exist without prices")
             .iter()
             .map(|asset| (asset.token, asset.amount))
             .collect()
