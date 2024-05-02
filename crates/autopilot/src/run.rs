@@ -480,6 +480,8 @@ pub async fn run(args: Arguments) {
             )
             .unwrap(),
         },
+        balance_fetcher.clone(),
+        args.price_estimation.quote_verification,
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {

@@ -560,7 +560,7 @@ mod tests {
 
         let sell_order = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -573,7 +573,7 @@ mod tests {
 
         let buy_order = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -615,7 +615,7 @@ mod tests {
         );
         let err = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -662,7 +662,7 @@ mod tests {
 
         let err = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -758,7 +758,7 @@ mod tests {
         );
 
         let query = Arc::new(Query {
-            verification: None,
+            verification: Default::default(),
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -856,7 +856,7 @@ mod tests {
 
         let result = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount1).unwrap(),
@@ -878,7 +878,7 @@ mod tests {
 
         let result = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount2).unwrap(),
