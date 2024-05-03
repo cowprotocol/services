@@ -499,7 +499,7 @@ mod tests {
 
         // Everything old from block 3 on is gone.
         for pool_id in pool_ids.iter().take(6).skip(3) {
-            assert!(pool_store.pools.get(pool_id).is_none());
+            assert!(!pool_store.pools.contains_key(pool_id));
         }
         for token in tokens.iter().take(7).skip(4) {
             assert!(pool_store.pools_by_token.get(token).unwrap().is_empty());
@@ -513,8 +513,7 @@ mod tests {
 
         assert!(pool_store
             .pools_by_token
-            .get(&new_pool.common.tokens[0])
-            .is_some());
+            .contains_key(&new_pool.common.tokens[0]));
         assert_eq!(pool_store.last_event_block(), new_pool.common.block_created);
     }
 
