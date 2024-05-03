@@ -75,6 +75,11 @@ pub struct OrderQuotingArguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<ExternalSolver>,
 
+    /// A list of external drivers used for native price estimation in the
+    /// following format: `<NAME>|<URL>,<NAME>|<URL>`
+    #[clap(long, env, use_value_delimiter = true)]
+    pub native_price_estimation_drivers: Vec<ExternalSolver>,
+
     /// A list of legacy solvers to be used for price estimation in the
     /// following format: `<NAME>|<URL>[|<ADDRESS>[|<USE_LIQUIITY>]]`.
     ///
@@ -307,6 +312,7 @@ impl Display for OrderQuotingArguments {
             eip1271_onchain_quote_validity,
             presign_onchain_quote_validity,
             price_estimation_drivers,
+            native_price_estimation_drivers,
             price_estimation_legacy_solvers,
             standard_offchain_quote_validity,
         } = self;
@@ -322,6 +328,11 @@ impl Display for OrderQuotingArguments {
             presign_onchain_quote_validity
         )?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
+        display_list(
+            f,
+            "native_price_estimation_drivers",
+            native_price_estimation_drivers,
+        )?;
         display_list(
             f,
             "price_estimation_legacy_solvers",
