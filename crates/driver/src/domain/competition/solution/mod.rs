@@ -326,7 +326,7 @@ impl Solution {
     ///
     /// The rule which relates two prices for tokens X and Y is:
     /// amount_x * price_x = amount_y * price_y
-    pub fn clearing_prices(&self) -> Result<Vec<eth::Asset>, Error> {
+    pub fn clearing_prices(&self) -> Vec<eth::Asset> {
         let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
             token,
             amount: amount.into(),
@@ -359,12 +359,12 @@ impl Solution {
                 amount: self.prices[&self.weth.into()].to_owned().into(),
             });
 
-            return Ok(prices);
+            return prices;
         }
 
         // TODO: We should probably filter out all unused prices to save gas.
 
-        Ok(prices.collect_vec())
+        prices.collect_vec()
     }
 
     /// Clearing price for the given token.
