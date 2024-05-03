@@ -206,7 +206,7 @@ impl Competition {
             })
             .unzip();
 
-        *self.settlement.lock().unwrap() = settlement.clone();
+        self.settlement.lock().unwrap().clone_from(&settlement);
 
         let settlement = match settlement {
             Some(settlement) => settlement,
