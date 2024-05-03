@@ -78,6 +78,7 @@ services:
       - PRICE_ESTIMATORS=None
       - NATIVE_PRICE_ESTIMATORS=baseline
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
       - BIND_ADDRESS=0.0.0.0:80
       - CHAIN_ID=$CHAIN
@@ -109,6 +110,7 @@ services:
       - NATIVE_PRICE_CACHE_MAX_AGE=20m
       - SOLVER_TIME_LIMIT=5
       - PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
+      - NATIVE_PRICE_ESTIMATION_DRIVERS=baseline|http://driver/baseline
       - DRIVERS=baseline|http://driver/baseline
       - SKIP_EVENT_SYNC=true
       - BASELINE_SOURCES=None

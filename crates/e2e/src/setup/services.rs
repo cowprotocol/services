@@ -192,6 +192,8 @@ impl<'a> Services<'a> {
                     "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
+                    "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                        .to_string(),
                 ],
                 args.autopilot,
             ]
@@ -202,6 +204,8 @@ impl<'a> Services<'a> {
             [
                 vec![
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                        .to_string(),
+                    "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                 ],
                 args.api,
@@ -243,9 +247,11 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
@@ -253,10 +259,14 @@ impl<'a> Services<'a> {
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
+                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
             ];
 
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                    .to_string(),
+                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
             (autopilot_args, api_args)
