@@ -132,7 +132,6 @@ impl Ethereum {
         let tx = web3::types::TransactionRequest {
             from: tx.from.into(),
             to: Some(tx.to.into()),
-            gas_price: Some(eth::U256::zero()),
             value: Some(tx.value.into()),
             data: Some(tx.input.into()),
             access_list: Some(tx.access_list.into()),
@@ -169,7 +168,6 @@ impl Ethereum {
                 web3::types::CallRequest {
                     from: Some(tx.from.into()),
                     to: Some(tx.to.into()),
-                    gas_price: Some(eth::U256::zero()),
                     value: Some(tx.value.into()),
                     data: Some(tx.input.clone().into()),
                     access_list: Some(tx.access_list.clone().into()),
