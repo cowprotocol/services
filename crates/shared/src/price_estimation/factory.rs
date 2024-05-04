@@ -30,7 +30,8 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{anyhow, Context as _, Result},
-    ethcontract::H160,
+    contracts::IZeroEx,
+    ethcontract::{errors::DeployError, H160},
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
@@ -96,14 +97,14 @@ impl PriceEstimatorSource {
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
-    pub fn new(
+    pub async fn new(
         args: &'a Arguments,
         shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components),
+            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await,
             args,
             shared_args,
             network,
@@ -112,13 +113,20 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn trade_verifier(
+    async fn trade_verifier(
         args: &'a Arguments,
         shared_args: &arguments::Arguments,
         network: &Network,
         components: &Components,
     ) -> Option<Arc<dyn TradeVerifying>> {
         let web3 = network.simulation_web3.clone()?;
+
+        let zeroex = match IZeroEx::deployed(&web3).await {
+            Ok(instance) => Some(instance),
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("can't find deployed zeroex contract: {err:?}"),
+        };
+
         let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
 
         let tenderly = shared_args
@@ -143,6 +151,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             network.settlement,
             network.native_token,
             args.quote_inaccuracy_limit,
+            zeroex,
         )))
     }
 

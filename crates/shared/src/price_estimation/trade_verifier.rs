@@ -13,6 +13,7 @@ use {
         dummy_contract,
         support::{Solver, Trader},
         GPv2Settlement,
+        IZeroEx,
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
@@ -49,6 +50,7 @@ pub struct TradeVerifier {
     settlement: H160,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
+    zeroex: Option<IZeroEx>,
 }
 
 impl TradeVerifier {
@@ -62,6 +64,7 @@ impl TradeVerifier {
         settlement: H160,
         native_token: H160,
         quote_inaccuracy_limit: f64,
+        zeroex: Option<IZeroEx>,
     ) -> Self {
         Self {
             simulator,
@@ -71,6 +74,7 @@ impl TradeVerifier {
             native_token,
             quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
                 .expect("can represent all finite values"),
+            zeroex,
         }
     }
 
@@ -166,8 +170,35 @@ impl TradeVerifier {
             .simulate(call, overrides, Some(block))
             .await
             .context("failed to simulate quote")
-            .map_err(Error::SimulationFailed)?;
-        let summary = SettleOutput::decode(&output, query.kind)
+            .map_err(Error::SimulationFailed);
+
+        if let Err(err) = &output {
+            // Check if the simulation failed because of a weird RFQ order. If so return a
+            // verified quote anyway because quoters could make up RFQ orders
+            // they don't intend to sign anyway to game the system and this way we can at
+            // least continue to verify quotes without losing quoters with
+            // market maker integration.
+            if self
+                .zeroex
+                .as_ref()
+                .is_some_and(|zeroex| trade.uses_zeroex_rfq_liquidity(zeroex))
+            {
+                let estimate = Estimate {
+                    out_amount: trade.out_amount,
+                    gas: trade.gas_estimate.context("no gas estimate")?,
+                    solver: solver.address(),
+                    verified: true,
+                };
+                tracing::warn!(
+                    ?estimate,
+                    ?err,
+                    "simulation failed due to 0x RFQ order; pass verification anyway"
+                );
+                return Ok(estimate);
+            }
+        };
+
+        let summary = SettleOutput::decode(&output?, query.kind)
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
         tracing::debug!(
