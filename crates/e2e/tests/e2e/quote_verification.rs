@@ -1,5 +1,4 @@
 use {
-    contracts::IZeroEx,
     e2e::setup::{run_forked_test_with_block_number, OnchainComponents},
     ethcontract::H160,
     ethrpc::Web3,
@@ -31,8 +30,8 @@ async fn forked_node_mainnet_verify_zeroex_quote() {
 /// The block number from which we will fetch state for the forked tests.
 const FORK_BLOCK_MAINNET: u64 = 19796077;
 
-/// Tests that quotes based on zeroex RFQ orders get verified.
-/// Based on an RFQ quote we saw on prod:
+/// Tests that quotes based on zeroex RFQ orders that require `tx.origin` to be
+/// 0x0000 get verified. Based on an RFQ quote we saw on prod:
 /// https://www.tdly.co/shared/simulation/7402de5e-e524-4e24-9af8-50d0a38c105b
 async fn forked_mainnet_verify_zeroex_quote(web3: Web3) {
     let block_stream = ethrpc::current_block::current_block_stream(
@@ -44,14 +43,15 @@ async fn forked_mainnet_verify_zeroex_quote(web3: Web3) {
     let onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let verifier = TradeVerifier::new(
+        web3.clone(),
         Arc::new(web3.clone()),
         Arc::new(web3.clone()),
         block_stream,
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
         0.0,
-        Some(IZeroEx::deployed(&web3).await.unwrap()),
-    );
+    )
+    .await;
 
     let verify_trade = |signature| {
         let verifier = verifier.clone();

@@ -11,13 +11,13 @@ use {
     contracts::{
         deployed_bytecode,
         dummy_contract,
-        support::{Solver, Trader},
+        support::{AnyoneAuthenticator, Solver, Trader},
         GPv2Settlement,
         IZeroEx,
         WETH9,
     },
-    ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride},
+    ethcontract::{errors::DeployError, tokens::Tokenize, BlockNumber, Bytes, H160, H256, U256},
+    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride, Web3},
     maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
@@ -44,10 +44,11 @@ pub trait TradeVerifying: Send + Sync + 'static {
 /// and determines a price estimate based off of that simulation.
 #[derive(Clone)]
 pub struct TradeVerifier {
+    web3: Web3,
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
     block_stream: CurrentBlockStream,
-    settlement: H160,
+    settlement: GPv2Settlement,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
     zeroex: Option<IZeroEx>,
@@ -57,24 +58,31 @@ impl TradeVerifier {
     const DEFAULT_GAS: u64 = 8_000_000;
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
-    pub fn new(
+    pub async fn new(
+        web3: Web3,
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
         block_stream: CurrentBlockStream,
         settlement: H160,
         native_token: H160,
         quote_inaccuracy_limit: f64,
-        zeroex: Option<IZeroEx>,
     ) -> Self {
+        let zeroex = match IZeroEx::deployed(&web3).await {
+            Ok(instance) => Some(instance),
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("can't find deployed zeroex contract: {err:?}"),
+        };
+
         Self {
             simulator,
             code_fetcher,
             block_stream,
-            settlement,
+            settlement: GPv2Settlement::at(&web3, settlement),
             native_token,
             quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
                 .expect("can represent all finite values"),
             zeroex,
+            web3,
         }
     }
 
@@ -90,14 +98,26 @@ impl TradeVerifier {
         }
 
         let start = std::time::Instant::now();
-        let solver = dummy_contract!(Solver, trade.solver);
+
+        // Use regular solver address or special address required by RFQ interaction of
+        // the trade.
+        let origin_required_by_trade = self
+            .zeroex
+            .as_ref()
+            .and_then(|zeroex| origin_required_by_rfq_interaction(trade, zeroex));
+        let solver = dummy_contract!(Solver, origin_required_by_trade.unwrap_or(trade.solver));
 
         let settlement = encode_settlement(query, verification, trade, self.native_token);
-        let settlement =
-            add_balance_queries(settlement, query, verification, self.settlement, &solver);
+        let settlement = add_balance_queries(
+            settlement,
+            query,
+            verification,
+            self.settlement.address(),
+            &solver,
+        );
 
-        let settlement_contract = dummy_contract!(GPv2Settlement, self.settlement);
-        let settlement = settlement_contract
+        let settlement = self
+            .settlement
             .methods()
             .settle(
                 settlement.tokens,
@@ -115,7 +135,7 @@ impl TradeVerifier {
         let simulation = solver
             .methods()
             .swap(
-                self.settlement,
+                self.settlement.address(),
                 verification.from,
                 query.sell_token,
                 sell_amount,
@@ -147,6 +167,26 @@ impl TradeVerifier {
             },
         };
 
+        let block = self.block_stream.borrow().number;
+        if origin_required_by_trade.is_some_and(|origin| origin != trade.solver) {
+            // If the trade requires a special tx.origin we also need to fake the
+            // authenticator and tx origin balance.
+            let (authenticator, balance) = futures::join!(
+                self.settlement.authenticator().call(),
+                self.web3
+                    .eth()
+                    .balance(trade.solver, Some(BlockNumber::Number(block.into())))
+            );
+            overrides.insert(
+                authenticator.unwrap(),
+                StateOverride {
+                    code: Some(deployed_bytecode!(AnyoneAuthenticator)),
+                    balance: Some(balance.unwrap()),
+                    ..Default::default()
+                },
+            );
+        }
+
         let trader_impl = self
             .code_fetcher
             .code(verification.from)
@@ -164,7 +204,6 @@ impl TradeVerifier {
             );
         }
 
-        let block = self.block_stream.borrow().number;
         let output = self
             .simulator
             .simulate(call, overrides, Some(block))
@@ -172,27 +211,27 @@ impl TradeVerifier {
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
 
+        // TODO remove as soon as quoter stop signign RFQ orders for `tx.origin: 0x0000`
         if let Err(err) = &output {
-            // Check if the simulation failed because of a weird RFQ order. If so return a
-            // verified quote anyway because quoters could make up RFQ orders
-            // they don't intend to sign anyway to game the system and this way we can at
-            // least continue to verify quotes without losing quoters with
-            // market maker integration.
-            if self
-                .zeroex
-                .as_ref()
-                .is_some_and(|zeroex| trade.uses_zeroex_rfq_liquidity(zeroex))
-            {
+            // Check if simulation failed only because the trade used a zeroex RFQ order
+            // that expects the tx origin to be the zero address.
+            // Those simulations will always fail but if you'd want to game the system it
+            // would be pretty simple by signing an RFQ order you later wouldn't execute
+            // so we just pretend the simulation was successful.
+            // Simulation failures for any other tx origin should actually lead to an
+            // error since we can mock the expected conditions reasonably well so a
+            // simulation failure definitely indicates a broken quote for those.
+            if origin_required_by_trade == Some(H160::zero()) {
                 let estimate = Estimate {
                     out_amount: trade.out_amount,
                     gas: trade.gas_estimate.context("no gas estimate")?,
-                    solver: solver.address(),
+                    solver: trade.solver,
                     verified: true,
                 };
                 tracing::warn!(
                     ?estimate,
                     ?err,
-                    "simulation failed due to 0x RFQ order; pass verification anyway"
+                    "quote used invalid zeroex RFQ order; pass verification anyway"
                 );
                 return Ok(estimate);
             }
@@ -219,6 +258,73 @@ impl TradeVerifier {
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade.solver, &summary)
     }
 }
+
+/// If the trade uses some zeroex RFQ interaction the function returns the
+/// address the orders expects the `tx.origin` to be.
+fn origin_required_by_rfq_interaction(trade: &Trade, zeroex: &IZeroEx) -> Option<H160> {
+    /// Public functions on [`IZeroEx`] which are used to settle RFQ orders.
+    const RFQ_FUNCTIONS: &[&str] = &["fillRfqOrder", "fillOrKillRfqOrder"];
+    let abi = &IZeroEx::raw_contract().interface.abi;
+
+    let calls_function = |i: &Interaction, fun| {
+        let signature = &abi.function(fun).unwrap().short_signature();
+        i.data.starts_with(signature.as_slice())
+    };
+
+    trade
+        .interactions
+        .iter()
+        .find(|i| {
+            i.target == zeroex.address() && RFQ_FUNCTIONS.iter().any(|fun| calls_function(i, fun))
+        })
+        .map(|i| {
+            // strip function signature bytes and only keep function arguments
+            let arguments = &i.data[4..];
+            let tokenized = abi
+                .function("fillRfqOrder")
+                .unwrap()
+                .decode_input(arguments)
+                .unwrap();
+            let (order, _, _) =
+                <(RfqOrder, ZeroExSignature, u128)>::from_token(Token::Tuple(tokenized)).unwrap();
+            // tx_origin
+            order.6
+        })
+}
+
+type RfqOrder = (
+    // maker_token
+    H160,
+    // taker_token
+    H160,
+    // maker_amount
+    u128,
+    // taker_amount
+    u128,
+    // maker
+    H160,
+    // taker
+    H160,
+    // txOrigin
+    H160,
+    // pool
+    H256,
+    // expiry
+    u64,
+    // salt
+    U256,
+);
+
+type ZeroExSignature = (
+    // signature_type
+    u8,
+    // v
+    u8,
+    // r
+    H256,
+    // s
+    H256,
+);
 
 #[async_trait::async_trait]
 impl TradeVerifying for TradeVerifier {

@@ -30,8 +30,7 @@ use {
         token_info::TokenInfoFetching,
     },
     anyhow::{anyhow, Context as _, Result},
-    contracts::IZeroEx,
-    ethcontract::{errors::DeployError, H160},
+    ethcontract::H160,
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
@@ -120,13 +119,6 @@ impl<'a> PriceEstimatorFactory<'a> {
         components: &Components,
     ) -> Option<Arc<dyn TradeVerifying>> {
         let web3 = network.simulation_web3.clone()?;
-
-        let zeroex = match IZeroEx::deployed(&web3).await {
-            Ok(instance) => Some(instance),
-            Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("can't find deployed zeroex contract: {err:?}"),
-        };
-
         let web3 = ethrpc::instrumented::instrument_with_label(&web3, "simulator".into());
 
         let tenderly = shared_args
@@ -136,23 +128,29 @@ impl<'a> PriceEstimatorFactory<'a> {
             .map(|t| TenderlyCodeSimulator::new(t, network.chain_id));
 
         let simulator: Arc<dyn CodeSimulating> = match tenderly {
-            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(web3, tenderly)),
-            None => Arc::new(web3),
+            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
+                web3.clone(),
+                tenderly,
+            )),
+            None => Arc::new(web3.clone()),
         };
 
         let code_fetcher =
             ethrpc::instrumented::instrument_with_label(&network.web3, "codeFetching".into());
         let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
 
-        Some(Arc::new(TradeVerifier::new(
-            simulator,
-            code_fetcher,
-            network.block_stream.clone(),
-            network.settlement,
-            network.native_token,
-            args.quote_inaccuracy_limit,
-            zeroex,
-        )))
+        Some(Arc::new(
+            TradeVerifier::new(
+                web3,
+                simulator,
+                code_fetcher,
+                network.block_stream.clone(),
+                network.settlement,
+                network.native_token,
+                args.quote_inaccuracy_limit,
+            )
+            .await,
+        ))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {
