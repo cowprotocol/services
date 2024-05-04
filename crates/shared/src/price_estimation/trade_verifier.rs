@@ -211,7 +211,8 @@ impl TradeVerifier {
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
 
-        // TODO remove as soon as quoter stop signign RFQ orders for `tx.origin: 0x0000`
+        // TODO remove as soon as quoters stop signign RFQ orders for `tx.origin:
+        // 0x0000`
         if let Err(err) = &output {
             // Check if simulation failed only because the trade used a zeroex RFQ order
             // that expects the tx origin to be the zero address.
@@ -259,8 +260,18 @@ impl TradeVerifier {
     }
 }
 
+// TODO delete as soon as we can convince solvers to simply make their solver
+// address the required `tx.origin` because we can get rid of a lot of trickery
+// then.
+//
 /// If the trade uses some zeroex RFQ interaction the function returns the
 /// address the orders expects the `tx.origin` to be.
+/// If multiple interactions require different `tx.origin` the first one will be
+/// returned. In that case the trade simulation will still fail because all
+/// interactions will get executed in the same tx which can only have a single
+/// origin so at least one interaction will revert.
+/// Returns `None` on any error which is okay since we'll detect the same error
+/// during the simulation as well.
 fn origin_required_by_rfq_interaction(trade: &Trade, zeroex: &IZeroEx) -> Option<H160> {
     /// Public functions on [`IZeroEx`] which are used to settle RFQ orders.
     const RFQ_FUNCTIONS: &[&str] = &["fillRfqOrder", "fillOrKillRfqOrder"];
@@ -271,25 +282,28 @@ fn origin_required_by_rfq_interaction(trade: &Trade, zeroex: &IZeroEx) -> Option
         i.data.starts_with(signature.as_slice())
     };
 
-    trade
-        .interactions
-        .iter()
-        .find(|i| {
-            i.target == zeroex.address() && RFQ_FUNCTIONS.iter().any(|fun| calls_function(i, fun))
-        })
-        .map(|i| {
-            // strip function signature bytes and only keep function arguments
-            let arguments = &i.data[4..];
-            let tokenized = abi
-                .function("fillRfqOrder")
-                .unwrap()
-                .decode_input(arguments)
-                .unwrap();
-            let (order, _, _) =
-                <(RfqOrder, ZeroExSignature, u128)>::from_token(Token::Tuple(tokenized)).unwrap();
-            // tx_origin
-            order.6
-        })
+    trade.interactions.iter().find_map(|i| {
+        let is_rfq_interaction =
+            i.target == zeroex.address() && RFQ_FUNCTIONS.iter().any(|fun| calls_function(i, fun));
+        if !is_rfq_interaction {
+            return None;
+        }
+        // strip function signature bytes and only keep function arguments
+        let arguments = &i.data[4..];
+
+        // `fillRfqOrder()` and `fillOrKillRfqOrder()` have the same signature so we can
+        // decode their calldata the same way.
+        let tokenized = abi
+            .function("fillRfqOrder")
+            .ok()?
+            .decode_input(arguments)
+            .ok()?;
+        let (order, _, _) =
+            <(RfqOrder, ZeroExSignature, u128)>::from_token(Token::Tuple(tokenized)).ok()?;
+
+        // tx_origin
+        Some(order.6)
+    })
 }
 
 type RfqOrder = (
