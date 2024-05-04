@@ -32,6 +32,8 @@ async fn forked_node_mainnet_verify_zeroex_quote() {
 const FORK_BLOCK_MAINNET: u64 = 19796077;
 
 /// Tests that quotes based on zeroex RFQ orders get verified.
+/// Based on an RFQ quote we saw on prod:
+/// https://www.tdly.co/shared/simulation/7402de5e-e524-4e24-9af8-50d0a38c105b
 async fn forked_mainnet_verify_zeroex_quote(web3: Web3) {
     let block_stream = ethrpc::current_block::current_block_stream(
         Arc::new(web3.clone()),
