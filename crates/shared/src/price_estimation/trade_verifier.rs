@@ -273,6 +273,40 @@ impl TradeVerifier {
 /// Returns `None` on any error which is okay since we'll detect the same error
 /// during the simulation as well.
 fn origin_required_by_rfq_interaction(trade: &Trade, zeroex: &IZeroEx) -> Option<H160> {
+    type RfqOrder = (
+        // maker_token
+        H160,
+        // taker_token
+        H160,
+        // maker_amount
+        u128,
+        // taker_amount
+        u128,
+        // maker
+        H160,
+        // taker
+        H160,
+        // txOrigin
+        H160,
+        // pool
+        H256,
+        // expiry
+        u64,
+        // salt
+        U256,
+    );
+
+    type ZeroExSignature = (
+        // signature_type
+        u8,
+        // v
+        u8,
+        // r
+        H256,
+        // s
+        H256,
+    );
+
     /// Public functions on [`IZeroEx`] which are used to settle RFQ orders.
     const RFQ_FUNCTIONS: &[&str] = &["fillRfqOrder", "fillOrKillRfqOrder"];
     let abi = &IZeroEx::raw_contract().interface.abi;
@@ -305,40 +339,6 @@ fn origin_required_by_rfq_interaction(trade: &Trade, zeroex: &IZeroEx) -> Option
         Some(order.6)
     })
 }
-
-type RfqOrder = (
-    // maker_token
-    H160,
-    // taker_token
-    H160,
-    // maker_amount
-    u128,
-    // taker_amount
-    u128,
-    // maker
-    H160,
-    // taker
-    H160,
-    // txOrigin
-    H160,
-    // pool
-    H256,
-    // expiry
-    u64,
-    // salt
-    U256,
-);
-
-type ZeroExSignature = (
-    // signature_type
-    u8,
-    // v
-    u8,
-    // r
-    H256,
-    // s
-    H256,
-);
 
 #[async_trait::async_trait]
 impl TradeVerifying for TradeVerifier {
