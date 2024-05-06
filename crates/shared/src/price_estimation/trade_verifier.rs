@@ -169,6 +169,7 @@ impl TradeVerifier {
             .map_err(Error::SimulationFailed);
 
         // TODO remove when quoters stop signign RFQ orders for `tx.origin: 0x0000`
+        // (#2693)
         if let Err(err) = &output {
             // Check if simulation failed only because the trade used a zeroex RFQ order
             // that expects the tx origin to be the zero address.
@@ -278,9 +279,8 @@ impl TradeVerifier {
     }
 }
 
-// TODO delete as soon as we can convince solvers to simply make their solver
-// address the required `tx.origin` because we can get rid of a lot of trickery
-// then.
+// TODO Delete once solvers can return the required `tx.origin` with their
+// quote. (#2692)
 //
 /// If the trade uses some zeroex RFQ interaction the function returns the
 /// address the orders expects the `tx.origin` to be.
