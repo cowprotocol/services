@@ -96,14 +96,14 @@ impl PriceEstimatorSource {
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
-    pub fn new(
+    pub async fn new(
         args: &'a Arguments,
         shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components),
+            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await,
             args,
             shared_args,
             network,
@@ -112,7 +112,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn trade_verifier(
+    async fn trade_verifier(
         args: &'a Arguments,
         shared_args: &arguments::Arguments,
         network: &Network,
@@ -128,22 +128,29 @@ impl<'a> PriceEstimatorFactory<'a> {
             .map(|t| TenderlyCodeSimulator::new(t, network.chain_id));
 
         let simulator: Arc<dyn CodeSimulating> = match tenderly {
-            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(web3, tenderly)),
-            None => Arc::new(web3),
+            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
+                web3.clone(),
+                tenderly,
+            )),
+            None => Arc::new(web3.clone()),
         };
 
         let code_fetcher =
             ethrpc::instrumented::instrument_with_label(&network.web3, "codeFetching".into());
         let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
 
-        Some(Arc::new(TradeVerifier::new(
-            simulator,
-            code_fetcher,
-            network.block_stream.clone(),
-            network.settlement,
-            network.native_token,
-            args.quote_inaccuracy_limit,
-        )))
+        Some(Arc::new(
+            TradeVerifier::new(
+                web3,
+                simulator,
+                code_fetcher,
+                network.block_stream.clone(),
+                network.settlement,
+                network.native_token,
+                args.quote_inaccuracy_limit,
+            )
+            .await,
+        ))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {

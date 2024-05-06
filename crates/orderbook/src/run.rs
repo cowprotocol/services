@@ -375,6 +375,7 @@ pub async fn run(args: Arguments) {
             gas_price: gas_price_estimator.clone(),
         },
     )
+    .await
     .expect("failed to initialize price estimator factory");
 
     let native_price_estimator = price_estimator_factory
