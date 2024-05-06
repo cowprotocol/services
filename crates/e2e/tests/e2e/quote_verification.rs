@@ -17,7 +17,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_bypass_verification_for_rfq_quotes() {
+async fn forked_node_bypass_verification_for_rfq_quotes() {
     run_forked_test_with_block_number(
         test_bypass_verification_for_rfq_quotes,
         std::env::var("FORK_URL_MAINNET")
