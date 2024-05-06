@@ -50,8 +50,7 @@ async fn forked_mainnet_verify_zeroex_quote(web3: Web3) {
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
         0.0,
-    )
-    .await;
+    );
 
     let verify_trade = |signature| {
         let verifier = verifier.clone();
@@ -88,6 +87,7 @@ async fn forked_mainnet_verify_zeroex_quote(web3: Web3) {
                         }],
                         solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
                             .unwrap(),
+                        tx_origin: Some(H160::zero()),
                     },
                 )
                 .await
