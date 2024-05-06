@@ -6,7 +6,6 @@ pub mod external;
 use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
-    contracts::{dummy_contract, ERC20},
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::interaction::InteractionData,
@@ -42,48 +41,18 @@ pub struct Quote {
 /// A trade.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
+    /// For sell orders: how many buy_tokens this trade will produce.
+    /// For buy orders: how many sell_tokens this trade will cost.
     pub out_amount: U256,
+    /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
+    /// Interactions needed to produce the expected `out_amount`.
     pub interactions: Vec<Interaction>,
+    /// Which solver provided this trade.
     pub solver: H160,
-}
-
-impl Trade {
-    /// Creates a new `Trade` instance for a swap with a DEX with the specified
-    /// required token approval target.
-    pub fn swap(
-        in_token: H160,
-        out_amount: U256,
-        gas_estimate: u64,
-        approval_target: Option<H160>,
-        swap: Interaction,
-        solver: H160,
-    ) -> Self {
-        let interactions = match approval_target {
-            Some(spender) => {
-                let token = dummy_contract!(ERC20, in_token);
-                let approve =
-                    |amount| Interaction::from_call(token.methods().approve(spender, amount));
-
-                // For approvals, reset the approval completely. Some tokens
-                // require this such as Tether USD.
-                vec![approve(U256::zero()), approve(U256::max_value()), swap]
-            }
-            None => vec![swap],
-        };
-
-        Self {
-            out_amount,
-            gas_estimate: Some(gas_estimate),
-            interactions,
-            solver,
-        }
-    }
-
-    /// Converts a trade into a set of interactions for settlements.
-    pub fn encode(&self) -> Vec<EncodedInteraction> {
-        self.interactions.iter().map(|i| i.encode()).collect()
-    }
+    /// If this is set the quote verification need to use this as the
+    /// `tx.origin` to make the quote pass the simulation.
+    pub tx_origin: Option<H160>,
 }
 
 /// Data for a raw GPv2 interaction.
@@ -177,85 +146,4 @@ impl Clone for TradeError {
 
 pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
     interactions.iter().cloned().map(Into::into).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, hex_literal::hex};
-
-    #[test]
-    fn trade_for_swap() {
-        let trade = Trade::swap(
-            H160([0xdd; 20]),
-            1.into(),
-            2,
-            Some(H160([0xee; 20])),
-            Interaction {
-                target: H160([0xaa; 20]),
-                value: 42.into(),
-                data: vec![1, 2, 3, 4],
-            },
-            H160([1; 20]),
-        );
-
-        assert_eq!(
-            trade.interactions,
-            [
-                Interaction {
-                    target: H160([0xdd; 20]),
-                    value: U256::zero(),
-                    data: hex!(
-                        "095ea7b3
-                         000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-                         0000000000000000000000000000000000000000000000000000000000000000"
-                    )
-                    .to_vec(),
-                },
-                Interaction {
-                    target: H160([0xdd; 20]),
-                    value: U256::zero(),
-                    data: hex!(
-                        "095ea7b3
-                         000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                    )
-                    .to_vec()
-                },
-                Interaction {
-                    target: H160([0xaa; 20]),
-                    value: 42.into(),
-                    data: vec![1, 2, 3, 4],
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn encode_trade_to_interactions() {
-        let trade = Trade {
-            out_amount: Default::default(),
-            gas_estimate: None,
-            interactions: vec![
-                Interaction {
-                    target: H160([0xaa; 20]),
-                    value: 42.into(),
-                    data: vec![1, 2, 3, 4],
-                },
-                Interaction {
-                    target: H160([0xbb; 20]),
-                    value: 43.into(),
-                    data: vec![5, 6, 7, 8],
-                },
-            ],
-            solver: H160([1; 20]),
-        };
-
-        assert_eq!(
-            trade.encode(),
-            vec![
-                (H160([0xaa; 20]), U256::from(42), Bytes(vec![1, 2, 3, 4])),
-                (H160([0xbb; 20]), U256::from(43), Bytes(vec![5, 6, 7, 8])),
-            ],
-        );
-    }
 }

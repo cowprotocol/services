@@ -114,6 +114,7 @@ impl From<dto::Quote> for Trade {
                 })
                 .collect(),
             solver: quote.solver,
+            tx_origin: quote.tx_origin,
         }
     }
 }
@@ -180,6 +181,8 @@ mod dto {
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
+        #[serde(default)]
+        pub tx_origin: Option<H160>,
     }
 
     #[serde_as]

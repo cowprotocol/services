@@ -10,7 +10,7 @@ use {
             eth,
             liquidity,
         },
-        infra::Ethereum,
+        infra::{solver::ManageNativeToken, Ethereum},
     },
     anyhow::{anyhow, Context, Ok, Result},
     app_data::AppDataHash,
@@ -57,6 +57,7 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         auction: &competition::Auction,
+        manage_native_token: ManageNativeToken,
     ) -> Result<Self> {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
@@ -71,7 +72,7 @@ impl Settlement {
 
         let mut settlement = solver::settlement::Settlement::new(
             solution
-                .clearing_prices()?
+                .clearing_prices()
                 .into_iter()
                 .map(|asset| (asset.token.into(), asset.amount.into()))
                 .collect(),
@@ -104,8 +105,10 @@ impl Settlement {
                 ),
             };
 
-            let boundary_limit_order = order_converter
-                .normalize_limit_order(solver::liquidity::BalancedOrder::full(boundary_order))?;
+            let boundary_limit_order = order_converter.normalize_limit_order(
+                solver::liquidity::BalancedOrder::full(boundary_order),
+                manage_native_token.insert_unwraps,
+            )?;
             settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
 
@@ -123,7 +126,7 @@ impl Settlement {
         }
 
         let slippage_calculator = SlippageCalculator {
-            relative: to_big_decimal(solution.solver().slippage().relative.clone()),
+            relative: solution.solver().slippage().relative.clone(),
             absolute: solution.solver().slippage().absolute.map(Into::into),
         };
         let external_prices = ExternalPrices::try_from_auction_prices(
@@ -394,13 +397,4 @@ pub fn to_boundary_interaction(
             })
         }
     }
-}
-
-fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
-    let (x, exp) = value.into_bigint_and_exponent();
-    let numerator_bytes = x.to_bytes_le();
-    let base = num::bigint::BigInt::from_bytes_le(numerator_bytes.0, &numerator_bytes.1);
-    let ten = num::BigRational::new(10.into(), 1.into());
-    let numerator = num::BigRational::new(base, 1.into());
-    numerator / ten.pow(exp.try_into().expect("should not overflow"))
 }

@@ -163,13 +163,10 @@ impl Order {
     /// Returns the order's available amounts to be passed to a solver engine.
     ///
     /// See [`Available`] for more details.
-    pub fn available(&self, weth: eth::WethAddress) -> Available {
+    pub fn available(&self) -> Available {
         let mut amounts = Available {
             sell: self.sell,
-            buy: eth::Asset {
-                token: self.buy.token.wrap(weth),
-                amount: self.buy.amount,
-            },
+            buy: self.buy,
         };
 
         let available = match self.partial {
@@ -429,7 +426,6 @@ mod tests {
             token: eth::H160::from_low_u64_be(0xbbbb).into(),
             amount: eth::U256::from(amount).into(),
         };
-        let weth = eth::WethAddress(eth::H160([0xef; 20]).into());
 
         let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| Order {
             uid: Default::default(),
@@ -463,49 +459,31 @@ mod tests {
         };
 
         assert_eq!(
-            order(1000, 1000, Some(sell(750))).available(weth).sell,
+            order(1000, 1000, Some(sell(750))).available().sell,
             sell(750)
         );
+        assert_eq!(order(1000, 1000, Some(sell(750))).available().buy, buy(750));
         assert_eq!(
-            order(1000, 1000, Some(sell(750))).available(weth).buy,
-            buy(750)
-        );
-        assert_eq!(
-            order(1000, 1000, Some(buy(750))).available(weth).sell,
+            order(1000, 1000, Some(buy(750))).available().sell,
             sell(750)
         );
-        assert_eq!(
-            order(1000, 1000, Some(buy(750))).available(weth).buy,
-            buy(750)
-        );
+        assert_eq!(order(1000, 1000, Some(buy(750))).available().buy, buy(750));
 
         assert_eq!(
-            order(1000, 100, Some(sell(901))).available(weth).sell,
+            order(1000, 100, Some(sell(901))).available().sell,
             sell(901)
         );
-        assert_eq!(
-            order(1000, 100, Some(sell(901))).available(weth).buy,
-            buy(91)
-        );
+        assert_eq!(order(1000, 100, Some(sell(901))).available().buy, buy(91));
 
-        assert_eq!(
-            order(100, 1000, Some(buy(901))).available(weth).sell,
-            sell(90)
-        );
-        assert_eq!(
-            order(100, 1000, Some(buy(901))).available(weth).buy,
-            buy(901)
-        );
+        assert_eq!(order(100, 1000, Some(buy(901))).available().sell, sell(90));
+        assert_eq!(order(100, 1000, Some(buy(901))).available().buy, buy(901));
 
-        assert_eq!(
-            order(1000, 1, Some(sell(500))).available(weth).sell,
-            sell(500)
-        );
-        assert_eq!(order(1000, 1, Some(sell(500))).available(weth).buy, buy(1));
+        assert_eq!(order(1000, 1, Some(sell(500))).available().sell, sell(500));
+        assert_eq!(order(1000, 1, Some(sell(500))).available().buy, buy(1));
 
-        assert_eq!(order(1, 1000, Some(buy(500))).available(weth).sell, sell(0));
-        assert_eq!(order(1, 1000, Some(buy(500))).available(weth).buy, buy(500));
+        assert_eq!(order(1, 1000, Some(buy(500))).available().sell, sell(0));
+        assert_eq!(order(1, 1000, Some(buy(500))).available().buy, buy(500));
 
-        assert_eq!(order(0, 0, Some(sell(0))).available(weth).sell, sell(0));
+        assert_eq!(order(0, 0, Some(sell(0))).available().sell, sell(0));
     }
 }

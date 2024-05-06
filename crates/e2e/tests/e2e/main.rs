@@ -20,6 +20,7 @@ mod partial_fill;
 mod partially_fillable_balance;
 mod partially_fillable_pool;
 mod protocol_fee;
+mod quote_verification;
 mod quoting;
 mod refunder;
 mod replace_order;

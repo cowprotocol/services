@@ -11,7 +11,7 @@ use {
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::Solver,
+            solver::{ManageNativeToken, Solver},
             Simulator,
         },
     },
@@ -27,6 +27,7 @@ pub mod fee;
 pub mod interaction;
 pub mod scoring;
 pub mod settlement;
+pub mod slippage;
 pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
@@ -314,8 +315,9 @@ impl Solution {
         eth: &Ethereum,
         simulator: &Simulator,
         encoding: encoding::Strategy,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, encoding).await
+        Settlement::encode(self, auction, eth, simulator, encoding, solver_native_token).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
@@ -324,7 +326,7 @@ impl Solution {
     ///
     /// The rule which relates two prices for tokens X and Y is:
     /// amount_x * price_x = amount_y * price_y
-    pub fn clearing_prices(&self) -> Result<Vec<eth::Asset>, Error> {
+    pub fn clearing_prices(&self) -> Vec<eth::Asset> {
         let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
             token,
             amount: amount.into(),
@@ -357,12 +359,12 @@ impl Solution {
                 amount: self.prices[&self.weth.into()].to_owned().into(),
             });
 
-            return Ok(prices);
+            return prices;
         }
 
         // TODO: We should probably filter out all unused prices to save gas.
 
-        Ok(prices.collect_vec())
+        prices.collect_vec()
     }
 
     /// Clearing price for the given token.

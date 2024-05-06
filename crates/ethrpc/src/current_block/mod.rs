@@ -15,7 +15,6 @@ use {
     },
 };
 
-pub mod retriever;
 pub type BlockNumberHash = (u64, H256);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
