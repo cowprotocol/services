@@ -16,7 +16,7 @@ use {
         IZeroEx,
         WETH9,
     },
-    ethcontract::{errors::DeployError, tokens::Tokenize, BlockNumber, Bytes, H160, H256, U256},
+    ethcontract::{errors::DeployError, tokens::Tokenize, Bytes, H160, H256, U256},
     ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride, Web3},
     maplit::hashmap,
     model::{
@@ -25,7 +25,7 @@ use {
     },
     num::BigRational,
     number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     web3::{ethabi::Token, types::CallRequest},
 };
 
@@ -155,55 +155,12 @@ impl TradeVerifier {
             ..Default::default()
         };
 
-        // Set up helper contracts impersonating trader and solver.
-        let mut overrides = hashmap! {
-            verification.from => StateOverride {
-                code: Some(deployed_bytecode!(Trader)),
-                ..Default::default()
-            },
-            solver.address() => StateOverride {
-                code: Some(deployed_bytecode!(Solver)),
-                ..Default::default()
-            },
-        };
+        let overrides = self
+            .prepare_state_overrides(&solver, verification, trade)
+            .await
+            .map_err(Error::SimulationFailed)?;
 
         let block = self.block_stream.borrow().number;
-        if origin_required_by_trade.is_some_and(|origin| origin != trade.solver) {
-            // If the trade requires a special tx.origin we also need to fake the
-            // authenticator and tx origin balance.
-            let (authenticator, balance) = futures::join!(
-                self.settlement.authenticator().call(),
-                self.web3
-                    .eth()
-                    .balance(trade.solver, Some(BlockNumber::Number(block.into())))
-            );
-            overrides.insert(
-                authenticator.unwrap(),
-                StateOverride {
-                    code: Some(deployed_bytecode!(AnyoneAuthenticator)),
-                    balance: Some(balance.unwrap()),
-                    ..Default::default()
-                },
-            );
-        }
-
-        let trader_impl = self
-            .code_fetcher
-            .code(verification.from)
-            .await
-            .context("failed to fetch trader code")
-            .map_err(Error::SimulationFailed)?;
-        if !trader_impl.0.is_empty() {
-            // Store `owner` implementation so `Trader` helper contract can proxy to it.
-            overrides.insert(
-                Self::TRADER_IMPL,
-                StateOverride {
-                    code: Some(trader_impl),
-                    ..Default::default()
-                },
-            );
-        }
-
         let output = self
             .simulator
             .simulate(call, overrides, Some(block))
@@ -211,8 +168,7 @@ impl TradeVerifier {
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
 
-        // TODO remove as soon as quoters stop signign RFQ orders for `tx.origin:
-        // 0x0000`
+        // TODO remove when quoters stop signign RFQ orders for `tx.origin: 0x0000`
         if let Err(err) = &output {
             // Check if simulation failed only because the trade used a zeroex RFQ order
             // that expects the tx origin to be the zero address.
@@ -257,6 +213,68 @@ impl TradeVerifier {
         );
 
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade.solver, &summary)
+    }
+
+    /// Configures all the state overrides that are needed to mock the given
+    /// trade.
+    async fn prepare_state_overrides(
+        &self,
+        solver: &Solver,
+        verification: &Verification,
+        trade: &Trade,
+    ) -> Result<HashMap<H160, StateOverride>> {
+        // Set up mocked trader.
+        let mut overrides = hashmap! {
+            verification.from => StateOverride {
+                code: Some(deployed_bytecode!(Trader)),
+                ..Default::default()
+            },
+        };
+
+        // If the trader is a smart contract we also need to store its implementation
+        // to proxy into it during the simulation.
+        let trader_impl = self
+            .code_fetcher
+            .code(verification.from)
+            .await
+            .context("failed to fetch trader code")?;
+        if !trader_impl.0.is_empty() {
+            overrides.insert(
+                Self::TRADER_IMPL,
+                StateOverride {
+                    code: Some(trader_impl),
+                    ..Default::default()
+                },
+            );
+        }
+
+        // Set up mocked solver.
+        let mut solver_override = StateOverride {
+            code: Some(deployed_bytecode!(Solver)),
+            ..Default::default()
+        };
+
+        // If the trade requires a special tx.origin we also need to fake the
+        // authenticator and tx origin balance.
+        if solver.address() != trade.solver {
+            let (authenticator, balance) = futures::join!(
+                self.settlement.authenticator().call(),
+                self.web3.eth().balance(trade.solver, None)
+            );
+            let authenticator = authenticator.context("could not fetch authenticator")?;
+            overrides.insert(
+                authenticator,
+                StateOverride {
+                    code: Some(deployed_bytecode!(AnyoneAuthenticator)),
+                    ..Default::default()
+                },
+            );
+            let balance = balance.context("could not fetch balance")?;
+            solver_override.balance = Some(balance);
+        }
+        overrides.insert(solver.address(), solver_override);
+
+        Ok(overrides)
     }
 }
 
