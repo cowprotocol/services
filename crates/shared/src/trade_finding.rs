@@ -6,7 +6,7 @@ pub mod external;
 use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
-    contracts::{dummy_contract, IZeroEx, ERC20},
+    contracts::{dummy_contract, ERC20},
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::interaction::InteractionData,
@@ -83,23 +83,6 @@ impl Trade {
     /// Converts a trade into a set of interactions for settlements.
     pub fn encode(&self) -> Vec<EncodedInteraction> {
         self.interactions.iter().map(|i| i.encode()).collect()
-    }
-
-    /// Returns whether the trade would get facilitated by a market maker via a
-    /// zeroex RFQ order.
-    pub fn uses_zeroex_rfq_liquidity(&self, zeroex: &IZeroEx) -> bool {
-        /// Public functions on [`IZeroEx`] which are used to settle RFQ orders.
-        const RFQ_FUNCTIONS: &[&str] = &["fillRfqOrder", "fillOrKillRfqOrder"];
-        let abi = &IZeroEx::raw_contract().interface.abi;
-
-        let calls_function = |i: &Interaction, fun| {
-            let signature = &abi.function(fun).unwrap().short_signature();
-            i.data.starts_with(signature.as_slice())
-        };
-
-        self.interactions.iter().any(|i| {
-            i.target == zeroex.address() && RFQ_FUNCTIONS.iter().any(|fun| calls_function(i, fun))
-        })
     }
 }
 
