@@ -70,7 +70,7 @@ impl TradeVerifier {
         let zeroex = match IZeroEx::deployed(&web3).await {
             Ok(instance) => Some(instance),
             Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("can't find deployed zeroex contract: {err:?}"),
+            Err(err) => panic!("Error loading deployed IZeroEx contract: {err:?}"),
         };
 
         Self {
