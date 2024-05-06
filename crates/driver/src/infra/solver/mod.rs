@@ -127,6 +127,8 @@ pub struct Config {
     pub s3: Option<S3>,
     /// Whether the native token is wrapped or not when sent to the solvers
     pub solver_native_token: ManageNativeToken,
+    /// Which `tx.origin` is required to make quote verification pass.
+    pub quote_tx_origin: Option<eth::Address>,
 }
 
 impl Solver {
@@ -199,6 +201,10 @@ impl Solver {
 
     pub fn solver_native_token(&self) -> ManageNativeToken {
         self.config.solver_native_token
+    }
+
+    pub fn quote_tx_origin(&self) -> &Option<eth::Address> {
+        &self.config.quote_tx_origin
     }
 
     /// Make a POST request instructing the solver to solve an auction.

@@ -96,14 +96,14 @@ impl PriceEstimatorSource {
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
-    pub async fn new(
+    pub fn new(
         args: &'a Arguments,
         shared_args: &'a arguments::Arguments,
         network: Network,
         components: Components,
     ) -> Result<Self> {
         Ok(Self {
-            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components).await,
+            trade_verifier: Self::trade_verifier(args, shared_args, &network, &components),
             args,
             shared_args,
             network,
@@ -112,7 +112,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    async fn trade_verifier(
+    fn trade_verifier(
         args: &'a Arguments,
         shared_args: &arguments::Arguments,
         network: &Network,
@@ -139,18 +139,15 @@ impl<'a> PriceEstimatorFactory<'a> {
             ethrpc::instrumented::instrument_with_label(&network.web3, "codeFetching".into());
         let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
 
-        Some(Arc::new(
-            TradeVerifier::new(
-                web3,
-                simulator,
-                code_fetcher,
-                network.block_stream.clone(),
-                network.settlement,
-                network.native_token,
-                args.quote_inaccuracy_limit,
-            )
-            .await,
-        ))
+        Some(Arc::new(TradeVerifier::new(
+            web3,
+            simulator,
+            code_fetcher,
+            network.block_stream.clone(),
+            network.settlement,
+            network.native_token,
+            args.quote_inaccuracy_limit,
+        )))
     }
 
     fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {

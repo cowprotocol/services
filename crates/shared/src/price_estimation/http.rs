@@ -296,6 +296,7 @@ impl HttpTradeFinder {
                 })
                 .collect(),
             solver: self.solver,
+            tx_origin: None,
         })
     }
 
