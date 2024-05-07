@@ -122,16 +122,6 @@ impl num::Zero for TokenAmount {
     }
 }
 
-/// A token amount in wei, always representing the sell token of an order.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SellTokenAmount(pub U256);
-
-impl From<U256> for SellTokenAmount {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
-
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
