@@ -11,12 +11,12 @@ use {
     contracts::{
         deployed_bytecode,
         dummy_contract,
-        support::{Solver, Trader},
+        support::{AnyoneAuthenticator, Solver, Trader},
         GPv2Settlement,
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride},
+    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride, Web3},
     maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
@@ -24,7 +24,7 @@ use {
     },
     num::BigRational,
     number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
     web3::{ethabi::Token, types::CallRequest},
 };
 
@@ -43,10 +43,11 @@ pub trait TradeVerifying: Send + Sync + 'static {
 /// and determines a price estimate based off of that simulation.
 #[derive(Clone)]
 pub struct TradeVerifier {
+    web3: Web3,
     simulator: Arc<dyn CodeSimulating>,
     code_fetcher: Arc<dyn CodeFetching>,
     block_stream: CurrentBlockStream,
-    settlement: H160,
+    settlement: GPv2Settlement,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
 }
@@ -56,6 +57,7 @@ impl TradeVerifier {
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
     pub fn new(
+        web3: Web3,
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
         block_stream: CurrentBlockStream,
@@ -67,10 +69,11 @@ impl TradeVerifier {
             simulator,
             code_fetcher,
             block_stream,
-            settlement,
+            settlement: GPv2Settlement::at(&web3, settlement),
             native_token,
             quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
                 .expect("can represent all finite values"),
+            web3,
         }
     }
 
@@ -86,14 +89,23 @@ impl TradeVerifier {
         }
 
         let start = std::time::Instant::now();
-        let solver = dummy_contract!(Solver, trade.solver);
+
+        // Use `tx_origin` if response indicates that a special address is needed for
+        // the simulation to pass. Otherwise just use the solver address.
+        let solver = trade.tx_origin.unwrap_or(trade.solver);
+        let solver = dummy_contract!(Solver, solver);
 
         let settlement = encode_settlement(query, verification, trade, self.native_token);
-        let settlement =
-            add_balance_queries(settlement, query, verification, self.settlement, &solver);
+        let settlement = add_balance_queries(
+            settlement,
+            query,
+            verification,
+            self.settlement.address(),
+            &solver,
+        );
 
-        let settlement_contract = dummy_contract!(GPv2Settlement, self.settlement);
-        let settlement = settlement_contract
+        let settlement = self
+            .settlement
             .methods()
             .settle(
                 settlement.tokens,
@@ -111,7 +123,7 @@ impl TradeVerifier {
         let simulation = solver
             .methods()
             .swap(
-                self.settlement,
+                self.settlement.address(),
                 verification.from,
                 query.sell_token,
                 sell_amount,
@@ -131,34 +143,10 @@ impl TradeVerifier {
             ..Default::default()
         };
 
-        // Set up helper contracts impersonating trader and solver.
-        let mut overrides = hashmap! {
-            verification.from => StateOverride {
-                code: Some(deployed_bytecode!(Trader)),
-                ..Default::default()
-            },
-            solver.address() => StateOverride {
-                code: Some(deployed_bytecode!(Solver)),
-                ..Default::default()
-            },
-        };
-
-        let trader_impl = self
-            .code_fetcher
-            .code(verification.from)
+        let overrides = self
+            .prepare_state_overrides(verification, trade)
             .await
-            .context("failed to fetch trader code")
             .map_err(Error::SimulationFailed)?;
-        if !trader_impl.0.is_empty() {
-            // Store `owner` implementation so `Trader` helper contract can proxy to it.
-            overrides.insert(
-                Self::TRADER_IMPL,
-                StateOverride {
-                    code: Some(trader_impl),
-                    ..Default::default()
-                },
-            );
-        }
 
         let block = self.block_stream.borrow().number;
         let output = self
@@ -166,8 +154,35 @@ impl TradeVerifier {
             .simulate(call, overrides, Some(block))
             .await
             .context("failed to simulate quote")
-            .map_err(Error::SimulationFailed)?;
-        let summary = SettleOutput::decode(&output, query.kind)
+            .map_err(Error::SimulationFailed);
+
+        // TODO remove when quoters stop signing zeroex RFQ orders for `tx.origin:
+        // 0x0000` (#2693)
+        if let Err(err) = &output {
+            // Currently we know that if a trade requests to be simulated from `tx.origin:
+            // 0x0000` it's because the solver signs zeroex RFQ orders which
+            // require that origin. However, setting this `tx.origin` actually
+            // results in invalid RFQ orders and until the solver signs orders
+            // for a different `tx.origin` we need to pretend these
+            // quotes actually simulated successfully to not lose these competitive quotes
+            // when we enable quote verification in prod.
+            if trade.tx_origin == Some(H160::zero()) {
+                let estimate = Estimate {
+                    out_amount: trade.out_amount,
+                    gas: trade.gas_estimate.context("no gas estimate")?,
+                    solver: trade.solver,
+                    verified: true,
+                };
+                tracing::warn!(
+                    ?estimate,
+                    ?err,
+                    "quote used invalid zeroex RFQ order; pass verification anyway"
+                );
+                return Ok(estimate);
+            }
+        };
+
+        let summary = SettleOutput::decode(&output?, query.kind)
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
         tracing::debug!(
@@ -186,6 +201,67 @@ impl TradeVerifier {
         );
 
         ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade.solver, &summary)
+    }
+
+    /// Configures all the state overrides that are needed to mock the given
+    /// trade.
+    async fn prepare_state_overrides(
+        &self,
+        verification: &Verification,
+        trade: &Trade,
+    ) -> Result<HashMap<H160, StateOverride>> {
+        // Set up mocked trader.
+        let mut overrides = hashmap! {
+            verification.from => StateOverride {
+                code: Some(deployed_bytecode!(Trader)),
+                ..Default::default()
+            },
+        };
+
+        // If the trader is a smart contract we also need to store its implementation
+        // to proxy into it during the simulation.
+        let trader_impl = self
+            .code_fetcher
+            .code(verification.from)
+            .await
+            .context("failed to fetch trader code")?;
+        if !trader_impl.0.is_empty() {
+            overrides.insert(
+                Self::TRADER_IMPL,
+                StateOverride {
+                    code: Some(trader_impl),
+                    ..Default::default()
+                },
+            );
+        }
+
+        // Set up mocked solver.
+        let mut solver_override = StateOverride {
+            code: Some(deployed_bytecode!(Solver)),
+            ..Default::default()
+        };
+
+        // If the trade requires a special tx.origin we also need to fake the
+        // authenticator and tx origin balance.
+        if trade.tx_origin.is_some_and(|origin| origin != trade.solver) {
+            let (authenticator, balance) = futures::join!(
+                self.settlement.authenticator().call(),
+                self.web3.eth().balance(trade.solver, None)
+            );
+            let authenticator = authenticator.context("could not fetch authenticator")?;
+            overrides.insert(
+                authenticator,
+                StateOverride {
+                    code: Some(deployed_bytecode!(AnyoneAuthenticator)),
+                    ..Default::default()
+                },
+            );
+            let balance = balance.context("could not fetch balance")?;
+            solver_override.balance = Some(balance);
+        }
+        overrides.insert(trade.tx_origin.unwrap_or(trade.solver), solver_override);
+
+        Ok(overrides)
     }
 }
 

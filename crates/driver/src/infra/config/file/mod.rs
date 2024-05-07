@@ -261,6 +261,10 @@ struct SolverConfig {
     /// Whether the native token is wrapped or not when sent to the solvers
     #[serde(default)]
     manage_native_token: ManageNativeToken,
+
+    /// Which `tx.origin` is required to make a quote simulation pass.
+    #[serde(default)]
+    quote_tx_origin: Option<eth::H160>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
