@@ -163,7 +163,6 @@ impl Ethereum {
 
     /// Estimate gas used by a transaction.
     pub async fn estimate_gas(&self, tx: &eth::Tx) -> Result<eth::Gas, Error> {
-
         self.web3
             .eth()
             .estimate_gas(
