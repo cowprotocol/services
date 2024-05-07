@@ -176,9 +176,7 @@ impl Trade {
             // the prices are not used anymore to calculate the protocol fee
             amount += fee;
             if !i.is_zero() {
-                current_trade.custom_price = self
-                    .calculate_custom_prices(amount)
-                    .map_err(Error::Scoring)?;
+                current_trade.custom_price = self.calculate_custom_prices(amount)?;
             }
         }
 
@@ -191,7 +189,7 @@ impl Trade {
     /// The effective amount that left the user's wallet including all fees.
     ///
     /// Note how the `executed` amount is used to build actual traded amounts.
-    fn sell_amount(&self) -> Result<eth::TokenAmount, error::Scoring> {
+    fn sell_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
             order::Side::Sell => self.executed.0,
             order::Side::Buy => self
@@ -208,7 +206,7 @@ impl Trade {
     /// The effective amount the user received after all fees.
     ///
     /// Note how the `executed` amount is used to build actual traded amounts.
-    fn buy_amount(&self) -> Result<eth::TokenAmount, error::Scoring> {
+    fn buy_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
             order::Side::Sell => self
                 .executed
@@ -229,7 +227,7 @@ impl Trade {
     pub fn calculate_custom_prices(
         &self,
         protocol_fee: TokenAmount,
-    ) -> Result<CustomClearingPrices, error::Scoring> {
+    ) -> Result<CustomClearingPrices, error::Math> {
         Ok(CustomClearingPrices {
             sell: match self.side {
                 Side::Sell => self
