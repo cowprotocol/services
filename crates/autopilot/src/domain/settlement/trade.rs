@@ -56,11 +56,16 @@ impl Trade {
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices, policies)?)
     }
 
-    /// Surplus based on custom clearing prices returns the surplus after all
-    /// fees have been applied and calculated over the price limits.
+    /// A general surplus function.
+    ///
+    /// Can return different types of surplus based on the input parameters.
     ///
     /// Denominated in SURPLUS token
-    fn surplus_over(&self, price_limits: PriceLimits) -> Result<eth::Asset, error::Math> {
+    fn surplus_over(
+        &self,
+        prices: &ClearingPrices,
+        price_limits: PriceLimits,
+    ) -> Result<eth::Asset, error::Math> {
         match self.side {
             order::Side::Buy => {
                 // scale limit sell to support partially fillable orders
@@ -74,9 +79,9 @@ impl Trade {
                 let sold = self
                     .executed
                     .0
-                    .checked_mul(self.prices.custom.buy)
+                    .checked_mul(prices.buy)
                     .ok_or(error::Math::Overflow)?
-                    .checked_div(self.prices.custom.sell)
+                    .checked_div(prices.sell)
                     .ok_or(error::Math::DivisionByZero)?;
                 limit_sell.checked_sub(sold).ok_or(error::Math::Negative)
             }
@@ -92,9 +97,9 @@ impl Trade {
                 let bought = self
                     .executed
                     .0
-                    .checked_mul(self.prices.custom.sell)
+                    .checked_mul(prices.sell)
                     .ok_or(error::Math::Overflow)?
-                    .checked_ceil_div(&self.prices.custom.buy)
+                    .checked_ceil_div(&prices.buy)
                     .ok_or(error::Math::DivisionByZero)?;
                 bought.checked_sub(limit_buy).ok_or(error::Math::Negative)
             }
@@ -116,6 +121,34 @@ impl Trade {
             .ok_or(Error::MissingPrice(surplus.token))?;
 
         Ok(price.in_eth(surplus.amount))
+    }
+
+    /// Total fee (protocol fee + network fee). Equal to a surplus difference
+    /// before and after applying the fees.
+    ///
+    /// Denominated in NATIVE token
+    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+        let fee = self
+            .surplus_over_limit_price_before_fee()?
+            .amount
+            .checked_sub(&self.surplus_over_limit_price()?.amount)
+            .ok_or(error::Math::Negative)?;
+        // We don't have to convert the fee to the sell token, we can just use the fee
+        // in surplus token. This is done just because it was done like this in
+        // the previous implementation
+        let fee_in_sell_token = match self.side {
+            order::Side::Buy => fee,
+            order::Side::Sell => fee
+                .checked_mul(&self.prices.uniform.buy.into())
+                .ok_or(error::Math::Overflow)?
+                .checked_div(&self.prices.uniform.sell.into())
+                .ok_or(error::Math::DivisionByZero)?,
+        };
+
+        let price = prices
+            .get(&self.sell.token)
+            .ok_or(Error::MissingPrice(self.sell.token))?;
+        Ok(price.in_eth(fee_in_sell_token))
     }
 
     /// Protocol fees is defined by fee policies attached to the order.
@@ -236,6 +269,39 @@ impl Trade {
     }
 
     fn price_improvement(&self, quote: &domain::fee::Quote) -> Result<eth::Asset, Error> {
+        let surplus = self.surplus_over_quote(quote);
+        // negative surplus is not error in this case, as solutions often have no
+        // improvement over quote which results in negative surplus
+        if let Err(error::Math::Negative) = surplus {
+            return Ok(eth::Asset {
+                token: self.surplus_token(),
+                amount: Default::default(),
+            });
+        }
+        Ok(surplus?)
+    }
+
+    /// Uses custom prices to calculate the surplus after the protocol fee and
+    /// network fee are applied.
+    fn surplus_over_limit_price(&self) -> Result<eth::Asset, error::Math> {
+        let limit_price = PriceLimits {
+            sell: self.sell.amount,
+            buy: self.buy.amount,
+        };
+        self.surplus_over(&self.prices.custom, limit_price)
+    }
+
+    /// Uses uniform prices to calculate the surplus as if the protocol fee and
+    /// network fee are not applied.
+    fn surplus_over_limit_price_before_fee(&self) -> Result<eth::Asset, error::Math> {
+        let limit_price = PriceLimits {
+            sell: self.sell.amount,
+            buy: self.buy.amount,
+        };
+        self.surplus_over(&self.prices.uniform, limit_price)
+    }
+
+    fn surplus_over_quote(&self, quote: &domain::fee::Quote) -> Result<eth::Asset, error::Math> {
         let quote = adjust_quote_to_order_limits(
             Order {
                 sell: self.sell.amount,
@@ -248,24 +314,7 @@ impl Trade {
                 fee: quote.fee.into(),
             },
         )?;
-        let surplus = self.surplus_over(quote);
-        // negative surplus is not error in this case, as solutions often have no
-        // improvement over quote which results in negative surplus
-        if let Err(error::Math::Negative) = surplus {
-            return Ok(eth::Asset {
-                token: self.surplus_token(),
-                amount: Default::default(),
-            });
-        }
-        Ok(surplus?)
-    }
-
-    fn surplus_over_limit_price(&self) -> Result<eth::Asset, Error> {
-        let limit_price = PriceLimits {
-            sell: self.sell.amount,
-            buy: self.buy.amount,
-        };
-        Ok(self.surplus_over(limit_price)?)
+        self.surplus_over(&self.prices.custom, quote)
     }
 
     /// Protocol fee as a cut of surplus, denominated in SURPLUS token
@@ -423,10 +472,7 @@ pub struct ClearingPrices {
 /// - test_adjust_quote_to_out_market_buy_order_limits
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
-fn adjust_quote_to_order_limits(
-    order: Order,
-    quote: Quote,
-) -> Result<PriceLimits, error::Math> {
+fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, error::Math> {
     match order.side {
         order::Side::Sell => {
             let quote_buy_amount = quote
