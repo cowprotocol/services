@@ -111,7 +111,7 @@ impl TenderlyApi for TenderlyHttpApi {
         #[rustfmt::skip]
         tracing::debug!(
             "resimulate by setting TENDERLY_API_KEY environment variable and running: \
-            curl -X POST --header \"X-ACCESS-KEY: $TENDERLY_API_KEY\" --json '{body}' {request_url} \
+            curl -X POST -H \"X-ACCESS-KEY: $TENDERLY_API_KEY\" -H \"Content-Type: application/json\" --data '{body}' {request_url} \
             | jq -r \".simulation.id\" \
             | read SIMULATION_ID; \
             echo {simulation_url} \
