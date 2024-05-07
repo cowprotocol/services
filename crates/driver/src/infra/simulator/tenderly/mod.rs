@@ -69,13 +69,7 @@ impl Tenderly {
         tx: &eth::Tx,
         generate_access_list: GenerateAccessList,
     ) -> Result<Simulation, Error> {
-        let gas_price = self
-            .eth
-            .gas_price()
-            .await
-            .ok()
-            .map(|gas| gas.effective().0 .0.as_u64())
-            .unwrap_or_default();
+        let gas_price = self.eth.simulation_gas_price().await;
 
         let res: dto::Response = self
             .client
@@ -94,7 +88,7 @@ impl Tenderly {
                 } else {
                     Some(tx.access_list.clone().into())
                 },
-                gas_price,
+                gas_price: gas_price.unwrap_or_default().as_u64(),
             })
             .send()
             .await?

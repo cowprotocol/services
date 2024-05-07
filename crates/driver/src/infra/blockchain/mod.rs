@@ -227,7 +227,7 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    async fn simulation_gas_price(&self) -> Option<eth::U256> {
+    pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
         // Some nodes don't pick a reasonable default value when you don't specify a gas
         // price and default to 0. Additionally some sneaky tokens have special code
         // paths that detect that case to try to behave differently during simulations
