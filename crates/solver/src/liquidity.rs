@@ -245,7 +245,7 @@ impl Settleable for LimitOrder {
 impl From<Order> for LimitOrder {
     fn from(order: Order) -> Self {
         order_converter::OrderConverter::test(H160([0x42; 20]))
-            .normalize_limit_order(BalancedOrder::full(order))
+            .normalize_limit_order(BalancedOrder::full(order), true)
             .unwrap()
     }
 }

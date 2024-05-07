@@ -10,6 +10,7 @@ use {
     super::{
         error::Math,
         order::{self, Side},
+        trade::CustomClearingPrices,
     },
     crate::{
         domain::{
@@ -424,18 +425,6 @@ impl Trade {
             Side::Sell => self.buy.token,
         }
     }
-}
-
-/// Custom clearing prices at which the trade was executed.
-///
-/// These prices differ from uniform clearing prices, in that they are adjusted
-/// to account for all fees (gas cost and protocol fees).
-///
-/// These prices determine the actual traded amounts from the user perspective.
-#[derive(Debug, Clone)]
-pub struct CustomClearingPrices {
-    pub sell: eth::U256,
-    pub buy: eth::U256,
 }
 
 #[derive(Debug, thiserror::Error)]

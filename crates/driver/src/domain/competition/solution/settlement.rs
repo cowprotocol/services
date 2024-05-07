@@ -1,12 +1,12 @@
 use {
-    super::{trade::ClearingPrices, Error, Solution},
+    super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         boundary,
         domain::{
             competition::{self, auction, order, solution},
             eth,
         },
-        infra::{blockchain::Ethereum, observe, Simulator},
+        infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
     },
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap},
@@ -69,6 +69,8 @@ impl Settlement {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
+        encoding: encoding::Strategy,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.
@@ -88,19 +90,67 @@ impl Settlement {
         }
 
         // Encode the solution into a settlement.
-        let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
-        let tx = SettlementTx {
-            internalized: boundary.tx(
-                auction.id().unwrap(),
-                eth.contracts().settlement(),
-                Internalization::Enable,
-            ),
-            uninternalized: boundary.tx(
-                auction.id().unwrap(),
-                eth.contracts().settlement(),
-                Internalization::Disable,
-            ),
-            may_revert: boundary.revertable(),
+        let tx = match encoding {
+            encoding::Strategy::Boundary => {
+                let boundary =
+                    boundary::Settlement::encode(eth, &solution, auction, solver_native_token)
+                        .await?;
+                let tx = SettlementTx {
+                    internalized: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Enable,
+                    ),
+                    uninternalized: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Disable,
+                    ),
+                    may_revert: boundary.revertable(),
+                };
+
+                // To prepare rollout, ensure that the domain settlement encoding works and
+                // matches the boundary settlement encoding
+                match encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                    solver_native_token,
+                ) {
+                    Ok(domain) => {
+                        if domain.input != tx.internalized.input {
+                            tracing::warn!(
+                                ?domain,
+                                boundary = ?tx.internalized,
+                                "boundary settlement does not match domain settlement"
+                            );
+                        }
+                    }
+                    Err(err) => tracing::warn!(?err, "failed to encode domain settlement"),
+                };
+                tx
+            }
+            encoding::Strategy::Domain => SettlementTx {
+                internalized: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                    solver_native_token,
+                )?,
+                uninternalized: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Disable).await?,
+                    Internalization::Disable,
+                    solver_native_token,
+                )?,
+                may_revert: solution.revertable(),
+            },
         };
         Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
     }
@@ -271,7 +321,6 @@ impl Settlement {
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
-            .expect("settlement cannot exist without prices")
             .iter()
             .map(|asset| (asset.token, asset.amount))
             .collect()

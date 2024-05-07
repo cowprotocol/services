@@ -12,6 +12,7 @@ use {
         },
     },
     futures::future::join_all,
+    number::conversions::big_decimal_to_big_rational,
     std::path::Path,
     tokio::fs,
 };
@@ -64,7 +65,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 endpoint: config.endpoint,
                 name: config.name.into(),
                 slippage: solver::Slippage {
-                    relative: config.slippage.relative,
+                    relative: big_decimal_to_big_rational(&config.slippage.relative),
                     absolute: config.slippage.absolute.map(eth::Ether),
                 },
                 liquidity: if config.skip_liquidity {
@@ -89,6 +90,9 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     true => SolutionMerging::Allowed,
                     false => SolutionMerging::Forbidden,
                 },
+                s3: config.s3.map(Into::into),
+                solver_native_token: config.manage_native_token.to_domain(),
+                quote_tx_origin: config.quote_tx_origin.map(eth::Address),
             }
         }))
         .await,
@@ -316,5 +320,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
+        encoding: config.encoding,
     }
 }

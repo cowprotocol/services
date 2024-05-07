@@ -11,7 +11,7 @@ use {
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
             simulator,
-            solver::Solver,
+            solver::{ManageNativeToken, Solver},
             Simulator,
         },
     },
@@ -22,10 +22,12 @@ use {
     thiserror::Error,
 };
 
+pub mod encoding;
 pub mod fee;
 pub mod interaction;
 pub mod scoring;
 pub mod settlement;
+pub mod slippage;
 pub mod trade;
 
 pub use {error::Error, interaction::Interaction, settlement::Settlement, trade::Trade};
@@ -142,24 +144,19 @@ impl Solution {
                 order::Side::Buy => trade.executed(),
             };
             let uniform_prices = ClearingPrices {
-                sell: *self
-                    .prices
-                    .get(&trade.order().sell.token.wrap(self.weth))
+                sell: self
+                    .clearing_price(trade.order().sell.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
-                buy: *self
-                    .prices
-                    .get(&trade.order().buy.token.wrap(self.weth))
+                buy: self
+                    .clearing_price(trade.order().buy.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
-            let custom_prices = trade
-                .custom_prices(&uniform_prices)
-                .map_err(error::Scoring::CalculateCustomPrices)?;
             trades.push(scoring::Trade::new(
                 trade.order().sell,
                 trade.order().buy,
                 trade.order().side,
                 executed,
-                custom_prices,
+                trade.custom_prices(&uniform_prices)?,
                 trade.order().protocol_fees.clone(),
             ))
         }
@@ -172,15 +169,17 @@ impl Solution {
     pub async fn approvals(
         &self,
         eth: &Ethereum,
+        internalization: settlement::Internalization,
     ) -> Result<impl Iterator<Item = eth::allowance::Approval>, Error> {
         let settlement_contract = &eth.contracts().settlement();
-        let allowances = try_join_all(self.allowances().map(|required| async move {
-            eth.erc20(required.0.token)
-                .allowance(settlement_contract.address().into(), required.0.spender)
-                .await
-                .map(|existing| (required, existing))
-        }))
-        .await?;
+        let allowances =
+            try_join_all(self.allowances(internalization).map(|required| async move {
+                eth.erc20(required.0.token)
+                    .allowance(settlement_contract.address().into(), required.0.spender)
+                    .await
+                    .map(|existing| (required, existing))
+            }))
+            .await?;
         let approvals = allowances.into_iter().filter_map(|(required, existing)| {
             required
                 .approval(&existing)
@@ -275,12 +274,20 @@ impl Solution {
     /// Return the allowances in a normalized form, where there is only one
     /// allowance per [`eth::allowance::Spender`], and they're ordered
     /// deterministically.
-    fn allowances(&self) -> impl Iterator<Item = eth::allowance::Required> {
+    fn allowances(
+        &self,
+        internalization: settlement::Internalization,
+    ) -> impl Iterator<Item = eth::allowance::Required> {
         let mut normalized = HashMap::new();
-        // TODO: we need to carry the "internalize" flag with the allowances,
-        // since we don't want to include approvals for interactions that are
-        // meant to be internalized anyway.
-        let allowances = self.interactions.iter().flat_map(Interaction::allowances);
+        let allowances = self.interactions.iter().flat_map(|interaction| {
+            if interaction.internalize()
+                && matches!(internalization, settlement::Internalization::Enable)
+            {
+                vec![]
+            } else {
+                interaction.allowances()
+            }
+        });
         for allowance in allowances {
             let amount = normalized
                 .entry((allowance.0.token, allowance.0.spender))
@@ -307,8 +314,10 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
+        encoding: encoding::Strategy,
+        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator).await
+        Settlement::encode(self, auction, eth, simulator, encoding, solver_native_token).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
@@ -316,10 +325,8 @@ impl Solution {
     /// meaningful in relation to each others.
     ///
     /// The rule which relates two prices for tokens X and Y is:
-    /// ```
     /// amount_x * price_x = amount_y * price_y
-    /// ```
-    pub fn clearing_prices(&self) -> Result<Vec<eth::Asset>, Error> {
+    pub fn clearing_prices(&self) -> Vec<eth::Asset> {
         let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
             token,
             amount: amount.into(),
@@ -352,12 +359,12 @@ impl Solution {
                 amount: self.prices[&self.weth.into()].to_owned().into(),
             });
 
-            return Ok(prices);
+            return prices;
         }
 
         // TODO: We should probably filter out all unused prices to save gas.
 
-        Ok(prices.collect_vec())
+        prices.collect_vec()
     }
 
     /// Clearing price for the given token.
@@ -365,6 +372,19 @@ impl Solution {
         // The clearing price of ETH is equal to WETH.
         let token = token.wrap(self.weth);
         self.prices.get(&token).map(ToOwned::to_owned)
+    }
+
+    /// Whether there is a reasonable risk of this solution reverting on chain.
+    pub fn revertable(&self) -> bool {
+        self.interactions
+            .iter()
+            .any(|interaction| !interaction.internalize())
+            || self.user_trades().any(|trade| {
+                matches!(
+                    trade.order().signature.scheme,
+                    order::signature::Scheme::Eip1271
+                )
+            })
     }
 }
 
@@ -475,6 +495,8 @@ pub mod error {
         SolverAccountInsufficientBalance(eth::Ether),
         #[error("attempted to merge settlements generated by different solvers")]
         DifferentSolvers,
+        #[error("encoding error: {0:?}")]
+        Encoding(#[from] encoding::Error),
     }
 
     #[derive(Debug, thiserror::Error)]

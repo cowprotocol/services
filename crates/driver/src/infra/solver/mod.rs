@@ -10,10 +10,15 @@ use {
             liquidity,
             time::Remaining,
         },
-        infra::{blockchain::Ethereum, config::file::FeeHandler},
+        infra::{
+            blockchain::Ethereum,
+            config::file::FeeHandler,
+            persistence::{Persistence, S3},
+        },
         util,
     },
     anyhow::Result,
+    num::BigRational,
     reqwest::header::HeaderName,
     std::collections::HashMap,
     tap::TapFallible,
@@ -53,7 +58,7 @@ impl std::fmt::Display for Name {
 
 #[derive(Debug, Clone)]
 pub struct Slippage {
-    pub relative: bigdecimal::BigDecimal,
+    pub relative: BigRational,
     pub absolute: Option<eth::Ether>,
 }
 
@@ -77,6 +82,14 @@ pub struct Timeouts {
     pub solving_share_of_deadline: util::Percent,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ManageNativeToken {
+    /// If true wraps ETH address
+    pub wrap_address: bool,
+    /// If true inserts unwrap interactions
+    pub insert_unwraps: bool,
+}
+
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
@@ -85,6 +98,7 @@ pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
+    persistence: Persistence,
 }
 
 #[derive(Debug, Clone)]
@@ -108,10 +122,17 @@ pub struct Config {
     /// TODO: Remove once all solvers are moved to use limit orders for quoting
     pub quote_using_limit_orders: bool,
     pub merge_solutions: SolutionMerging,
+    /// S3 configuration for storing the auctions in the form they are sent to
+    /// the solver engine
+    pub s3: Option<S3>,
+    /// Whether the native token is wrapped or not when sent to the solvers
+    pub solver_native_token: ManageNativeToken,
+    /// Which `tx.origin` is required to make quote verification pass.
+    pub quote_tx_origin: Option<eth::Address>,
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum) -> Result<Self> {
+    pub async fn new(config: Config, eth: Ethereum) -> Result<Self> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -124,13 +145,20 @@ impl Solver {
             headers.insert(header_name, val.parse()?);
         }
 
+        let persistence = Persistence::build(&config).await;
+
         Ok(Self {
             client: reqwest::ClientBuilder::new()
                 .default_headers(headers)
                 .build()?,
             config,
             eth,
+            persistence,
         })
+    }
+
+    pub fn persistence(&self) -> Persistence {
+        self.persistence.clone()
     }
 
     pub fn name(&self) -> &Name {
@@ -171,6 +199,14 @@ impl Solver {
         self.config.merge_solutions
     }
 
+    pub fn solver_native_token(&self) -> ManageNativeToken {
+        self.config.solver_native_token
+    }
+
+    pub fn quote_tx_origin(&self) -> &Option<eth::Address> {
+        &self.config.quote_tx_origin
+    }
+
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
     pub async fn solve(
@@ -185,8 +221,14 @@ impl Solver {
             liquidity,
             weth,
             self.config.fee_handler,
+            self.config.solver_native_token,
         ))
         .unwrap();
+        // Only auctions with IDs are real auctions (/quote requests don't have an ID,
+        // and it makes no sense to store them)
+        if let Some(id) = auction.id() {
+            self.persistence.archive_auction(id, &body);
+        };
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self

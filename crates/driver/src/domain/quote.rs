@@ -27,6 +27,8 @@ pub struct Quote {
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
+    /// Which `tx.origin` is required to make the quote simulation pass.
+    pub tx_origin: Option<eth::Address>,
 }
 
 impl Quote {
@@ -52,6 +54,7 @@ impl Quote {
             interactions: boundary::quote::encode_interactions(eth, solution.interactions())?,
             solver: solution.solver().address(),
             gas: solution.gas(),
+            tx_origin: *solution.solver().quote_tx_origin(),
         })
     }
 }

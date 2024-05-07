@@ -1,12 +1,9 @@
-use std::fmt::Debug;
-
-pub mod retriever;
-
 use {
     crate::Web3,
     anyhow::{anyhow, ensure, Context as _, Result},
+    futures::StreamExt,
     primitive_types::{H256, U256},
-    std::{sync::Arc, time::Duration},
+    std::{fmt::Debug, num::NonZeroU64, sync::Arc, time::Duration},
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
@@ -128,6 +125,45 @@ pub async fn current_block_stream(
 
     tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
     Ok(receiver)
+}
+
+/// Returns a stream that is synchronized to the passed in stream by only yields
+/// every nth update of the original stream.
+pub fn throttle(blocks: CurrentBlockStream, updates_to_skip: NonZeroU64) -> CurrentBlockStream {
+    let first_block = *blocks.borrow();
+
+    // `receiver` yields `first_block` immediately.
+    let (sender, receiver) = watch::channel(first_block);
+
+    let update_future = async move {
+        let mut skipped_updates = 0;
+
+        // The `block_stream` would yield `first_block` immediately and since `receiver`
+        // is already guaranteed to yield that block by construction we skip 1
+        // update right away to avoid yielding `first_block` twice from the
+        // throttled stream.
+        let mut block_stream = into_stream(blocks).skip(1);
+
+        while let Some(block) = block_stream.next().await {
+            if skipped_updates == updates_to_skip.get() {
+                // reset counter
+                skipped_updates = 0;
+            } else {
+                // Don't update the throttled stream because we didn't skip enough updates yet.
+                skipped_updates += 1;
+                continue;
+            }
+
+            if sender.send(block).is_err() {
+                tracing::debug!("exiting polling loop");
+                break;
+            }
+        }
+    };
+    tokio::task::spawn(
+        update_future.instrument(tracing::info_span!("current_block_stream_throttled")),
+    );
+    receiver
 }
 
 /// A method for creating a block stream with an initial value that never
@@ -273,6 +309,7 @@ mod tests {
         super::*,
         crate::{create_env_test_transport, create_test_transport},
         futures::StreamExt,
+        tokio::time::{timeout, Duration},
     };
 
     #[tokio::test]
@@ -323,5 +360,56 @@ mod tests {
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);
+    }
+
+    // Tests that a throttled block stream indeed skips the configured
+    // number of updates.
+    // Always awaits the next block on a timer to not get the test stuck
+    // when we want to assert that no new block is coming.
+    #[tokio::test]
+    async fn throttled_skips_blocks_test() {
+        let new_block = |number| BlockInfo {
+            number,
+            ..Default::default()
+        };
+        let (sender, receiver) = watch::channel(new_block(0));
+        const TIMEOUT: Duration = Duration::from_millis(10);
+
+        // stream that yields every other block
+        let throttled = throttle(receiver, 1.try_into().unwrap());
+        let mut stream = into_stream(throttled);
+
+        // Initial block of the original stream gets yielded immediately.
+        // which is consistent with an unthrottled stream.
+        let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
+        assert_eq!(block.number, 0);
+
+        // Doesn't yield the first block twice
+        let block = timeout(TIMEOUT, stream.next()).await;
+        assert!(block.is_err());
+
+        sender.send(new_block(1)).unwrap();
+
+        // first update gets skipped
+        let block = timeout(TIMEOUT, stream.next()).await;
+        assert!(block.is_err());
+
+        sender.send(new_block(2)).unwrap();
+
+        // second update gets forwarded
+        let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
+        assert_eq!(block.number, 2);
+
+        sender.send(new_block(3)).unwrap();
+
+        // third update getes skipped again
+        let block = timeout(TIMEOUT, stream.next()).await;
+        assert!(block.is_err());
+
+        sender.send(new_block(4)).unwrap();
+
+        // fourth update gets forwarded again
+        let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
+        assert_eq!(block.number, 4);
     }
 }

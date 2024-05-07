@@ -1,6 +1,6 @@
 pub use load::load;
 use {
-    crate::{domain::eth, util::serialize},
+    crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -50,6 +50,9 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    #[serde(default)]
+    encoding: encoding::Strategy,
 }
 
 #[serde_as]
@@ -117,6 +120,57 @@ enum Mempool {
         #[serde(default = "default_soft_cancellations_flag")]
         use_soft_cancellations: bool,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct ManageNativeToken {
+    /// If true wraps ETH address
+    wrap_address: bool,
+    /// If true inserts unwrap interactions
+    insert_unwraps: bool,
+}
+
+impl Default for ManageNativeToken {
+    fn default() -> Self {
+        Self {
+            wrap_address: true,
+            insert_unwraps: true,
+        }
+    }
+}
+
+impl ManageNativeToken {
+    pub fn to_domain(&self) -> infra::solver::ManageNativeToken {
+        infra::solver::ManageNativeToken {
+            wrap_address: self.wrap_address,
+            insert_unwraps: self.insert_unwraps,
+        }
+    }
+}
+
+pub mod encoding {
+    use {crate::domain::competition, serde::Deserialize};
+
+    /// Which logic to use to encode solutions into settlement transactions.
+    #[derive(Debug, Deserialize, Default)]
+    #[serde(rename_all = "kebab-case")]
+    pub enum Strategy {
+        /// Legacy solver crate strategy
+        #[default]
+        Boundary,
+        /// New encoding strategy
+        Domain,
+    }
+
+    impl Strategy {
+        pub fn to_domain(&self) -> competition::solution::encoding::Strategy {
+            match self {
+                Self::Boundary => competition::solution::encoding::Strategy::Boundary,
+                Self::Domain => competition::solution::encoding::Strategy::Domain,
+            }
+        }
+    }
 }
 
 fn default_additional_tip_percentage() -> f64 {
@@ -198,6 +252,19 @@ struct SolverConfig {
     /// auction together.
     #[serde(default)]
     merge_solutions: bool,
+
+    /// S3 configuration for storing the auctions in the form they are sent to
+    /// the solver engine
+    #[serde(default)]
+    s3: Option<S3>,
+
+    /// Whether the native token is wrapped or not when sent to the solvers
+    #[serde(default)]
+    manage_native_token: ManageNativeToken,
+
+    /// Which `tx.origin` is required to make a quote simulation pass.
+    #[serde(default)]
+    quote_tx_origin: Option<eth::H160>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -206,6 +273,17 @@ pub enum FeeHandler {
     #[default]
     Driver,
     Solver,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct S3 {
+    /// Name of the AWS S3 bucket in which the auctions will be stored
+    pub bucket: String,
+
+    /// Prepended to the auction id to form the final instance filename on AWS
+    /// S3 bucket. Something like "staging/mainnet/"
+    pub prefix: String,
 }
 
 #[serde_as]
@@ -485,16 +563,6 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-enum Logic {
-    /// Use legacy submissions logic (default)
-    #[default]
-    Boundary,
-    /// Use Driver domain native submission logic
-    Native,
 }
 
 #[derive(Clone, Debug, Deserialize)]
