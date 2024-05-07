@@ -1,7 +1,7 @@
 //! Framework for setting up tests.
 
 use {
-    self::{blockchain::Fulfillment, driver::Driver, solver::Solver as SolverInstance},
+    self::{driver::Driver, solver::Solver as SolverInstance},
     crate::{
         domain::{competition::order, eth, time},
         infra::{
@@ -24,7 +24,7 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
-            setup::blockchain::Blockchain,
+            setup::blockchain::{Blockchain, Trade},
         },
     },
     app_data::AppDataHash,
@@ -40,6 +40,7 @@ use {
         path::PathBuf,
         str::FromStr,
     },
+    strum::{Display, EnumString},
 };
 
 mod blockchain;
@@ -84,6 +85,19 @@ impl LiquidityQuote {
     }
 }
 
+#[derive(Debug, Display, EnumString, Clone, Copy, PartialEq)]
+pub enum SolverName {
+    One,
+    Two,
+    Three,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct JitOrder {
+    pub order: Order,
+    pub solver: SolverName,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Order {
     pub name: &'static str,
@@ -122,6 +136,8 @@ pub struct Order {
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
     pub owner: H160,
+    pub receiver: Option<H160>,
+    pub fee_amount: eth::U256,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub app_data: AppDataHash,
@@ -251,6 +267,14 @@ impl Order {
             _ => 0.into(),
         }
     }
+
+    fn receiver(self, receiver: Option<H160>) -> Self {
+        Self { receiver, ..self }
+    }
+
+    fn fee_amount(self, fee_amount: eth::U256) -> Self {
+        Self { fee_amount, ..self }
+    }
 }
 
 impl Default for Order {
@@ -277,6 +301,8 @@ impl Default for Order {
                 max_volume_factor: 0.06,
             }],
             owner: eth::H160::from_str(TRADER_ADDRESS).unwrap(),
+            receiver: Default::default(),
+            fee_amount: Default::default(),
             sell_token_source: Default::default(),
             buy_token_destination: Default::default(),
             app_data: Default::default(),
@@ -301,6 +327,11 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
+    /// Whether or not the solver is a JIT-order surplus capturing address
+    surplus_capturing_jit_order_owner: bool,
+    /// Whether or not the solver will be configured (token allowance) for JIT
+    /// orders
+    configure_for_jit_orders: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -328,11 +359,13 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
+        surplus_capturing_jit_order_owner: false,
+        configure_for_jit_orders: false,
     }
 }
 
 impl Solver {
-    fn address(&self) -> eth::H160 {
+    pub fn address(&self) -> eth::H160 {
         self.private_key.public_address()
     }
 
@@ -341,6 +374,31 @@ impl Solver {
             name: name.to_owned(),
             ..self
         }
+    }
+
+    pub fn set_surplus_capturing_jit_order_owner(
+        self,
+        surplus_capturing_jit_order_owner: bool,
+    ) -> Self {
+        Self {
+            surplus_capturing_jit_order_owner,
+            ..self
+        }
+    }
+
+    pub fn get_surplus_capturing_jit_order_owner(&self) -> bool {
+        self.surplus_capturing_jit_order_owner
+    }
+
+    pub fn set_configure_for_jit_orders(self, configure_for_jit_orders: bool) -> Self {
+        Self {
+            configure_for_jit_orders,
+            ..self
+        }
+    }
+
+    pub fn get_configure_for_jit_orders(&self) -> bool {
+        self.configure_for_jit_orders
     }
 
     pub fn solving_time_share(self, share: f64) -> Self {
@@ -468,6 +526,8 @@ pub fn setup() -> Setup {
         settlement_address: Default::default(),
         mempools: vec![Mempool::Public],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
+        jit_orders: Default::default(),
+        surplus_capturing_jit_order_owners: Default::default(),
     }
 }
 
@@ -491,6 +551,10 @@ pub struct Setup {
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
+    /// Whether the solver sends the solution as a JIT order
+    jit_orders: Vec<JitOrder>,
+    /// List of surplus capturing JIT-order owners
+    surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 /// The validity of a solution.
@@ -746,6 +810,15 @@ impl Setup {
         self
     }
 
+    pub fn set_surplus_capturing_jit_order_owners(
+        mut self,
+        surplus_capturing_jit_order_owners: Vec<H160>,
+    ) -> Self {
+        self.surplus_capturing_jit_order_owners
+            .extend(surplus_capturing_jit_order_owners);
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -763,6 +836,8 @@ impl Setup {
             orders,
             trusted,
             config_file,
+            jit_orders,
+            surplus_capturing_jit_order_owners,
             ..
         } = self;
 
@@ -777,20 +852,66 @@ impl Setup {
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            trader_address,
-            trader_secret_key,
+            main_trader_secret_key: trader_secret_key,
+            trader_secret_keys: self
+                .solvers
+                .iter()
+                .filter_map(|solver| {
+                    if solver.get_configure_for_jit_orders() {
+                        Some(*solver.private_key.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
             rpc_args: self.rpc_args,
         })
         .await;
         let mut solutions = Vec::new();
+        let mut specific_solutions: HashMap<String, Vec<blockchain::Solution>> = HashMap::new();
         for solution in self.solutions {
             let orders = solution
                 .orders
                 .iter()
-                .map(|solution_order| orders.iter().find(|o| o.name == *solution_order).unwrap());
-            solutions.push(blockchain.fulfill(orders, &solution).await);
+                .flat_map(|solution_order| orders.iter().filter(|o| o.name == *solution_order))
+                .cloned()
+                .collect::<Vec<_>>();
+            let solution_fulfillment = blockchain.fulfill(orders.iter(), &solution, false).await;
+            solutions.push(solution_fulfillment.clone());
+
+            // We want to extend the solution trades with the JIT-orders only for those
+            // solvers which are configured to send the JIT-order
+            let jit_orders = solution
+                .orders
+                .iter()
+                .flat_map(|solution_order| {
+                    jit_orders
+                        .iter()
+                        .filter(|o| o.order.name == *solution_order)
+                })
+                .fold(
+                    HashMap::new(),
+                    |mut acc: HashMap<String, Vec<Order>>, jit_order| {
+                        acc.entry(jit_order.solver.to_string())
+                            .or_default()
+                            .push(jit_order.order.clone());
+                        acc
+                    },
+                )
+                .into_iter()
+                .collect::<HashMap<_, _>>();
+            for (k, v) in jit_orders {
+                let mut solution_with_jit_order = solution_fulfillment.clone();
+                solution_with_jit_order
+                    .trades
+                    .extend(blockchain.fulfill(v.iter(), &solution, true).await.trades);
+                specific_solutions
+                    .entry(k)
+                    .or_default()
+                    .push(solution_with_jit_order);
+            }
         }
         let mut quotes = Vec::new();
         for order in orders {
@@ -798,14 +919,18 @@ impl Setup {
             quotes.push(quote);
         }
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
+            let specific_solutions = specific_solutions
+                .get(&solver.name.to_string())
+                .unwrap_or(&solutions);
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
-                solutions: &solutions,
+                solutions: specific_solutions,
                 trusted: &trusted,
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
+                private_key: solver.private_key.clone(),
             })
             .await;
 
@@ -828,11 +953,12 @@ impl Setup {
             driver,
             client: Default::default(),
             trader_address,
-            fulfillments: solutions.into_iter().flat_map(|s| s.fulfillments).collect(),
+            trades: solutions.into_iter().flat_map(|s| s.trades).collect(),
             trusted,
             deadline,
             quoted_orders: quotes,
             quote: self.quote,
+            surplus_capturing_jit_order_owners,
         }
     }
 
@@ -842,6 +968,12 @@ impl Setup {
             quote: true,
             ..self
         }
+    }
+
+    /// Solver send the solution as JIT order
+    pub fn jit_order(mut self, jit_order: JitOrder) -> Self {
+        self.jit_orders.push(jit_order);
+        self
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
@@ -855,11 +987,13 @@ pub struct Test {
     driver: Driver,
     client: reqwest::Client,
     trader_address: eth::H160,
-    fulfillments: Vec<Fulfillment>,
+    trades: Vec<Trade>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
     /// Is this testing the /quote endpoint?
     quote: bool,
+    /// List of surplus capturing JIT-order owners
+    surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 impl Test {
@@ -882,7 +1016,7 @@ impl Test {
         Solve {
             status,
             body,
-            fulfillments: &self.fulfillments,
+            trades: &self.trades,
             blockchain: &self.blockchain,
         }
     }
@@ -927,7 +1061,7 @@ impl Test {
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /quote");
         Quote {
-            fulfillments: &self.fulfillments,
+            trades: &self.trades,
             status,
             body,
         }
@@ -1007,13 +1141,13 @@ impl Test {
 pub struct Solve<'a> {
     status: StatusCode,
     body: String,
-    fulfillments: &'a [Fulfillment],
+    trades: &'a [Trade],
     blockchain: &'a Blockchain,
 }
 
 pub struct SolveOk<'a> {
     body: String,
-    fulfillments: &'a [Fulfillment],
+    trades: &'a [Trade],
     blockchain: &'a Blockchain,
 }
 
@@ -1023,7 +1157,7 @@ impl<'a> Solve<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
         SolveOk {
             body: self.body,
-            fulfillments: self.fulfillments,
+            trades: self.trades,
             blockchain: self.blockchain,
         }
     }
@@ -1074,20 +1208,24 @@ impl<'a> SolveOk<'a> {
         )
         .unwrap();
 
-        for (expected, fulfillment) in orders.iter().map(|expected_order| {
-            let fulfillment = self
-                .fulfillments
+        for (expected, quoted_order) in orders.iter().map(|expected_order| {
+            let quoted_order = self
+                .trades
                 .iter()
-                .find(|f| f.quoted_order.order.name == expected_order.name)
+                .filter_map(|trade| match trade {
+                    Trade::Fulfillment(fulfillment) => Some(&fulfillment.quoted_order),
+                    Trade::Jit(_) => None,
+                })
+                .find(|f| f.order.name == expected_order.name)
                 .unwrap_or_else(|| {
                     panic!(
                         "unexpected order {:?}: fulfillment not found in {:?}",
-                        expected_order.name, self.fulfillments,
+                        expected_order.name, self.trades,
                     )
                 });
-            (expected_order, fulfillment)
+            (expected_order, quoted_order)
         }) {
-            let uid = fulfillment.quoted_order.order_uid(self.blockchain);
+            let uid = quoted_order.order_uid(self.blockchain);
             let trade = trades
                 .get(&uid.to_string())
                 .expect("Didn't find expected trade in solution");
@@ -1097,7 +1235,7 @@ impl<'a> SolveOk<'a> {
 
             let (expected_sell, expected_buy) = match &expected.expected_amounts {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
-                None => (fulfillment.quoted_order.sell, fulfillment.quoted_order.buy),
+                None => (quoted_order.sell, quoted_order.buy),
             };
             assert!(u256(trade.get("sellAmount").unwrap()) == expected_sell);
             assert!(u256(trade.get("buyAmount").unwrap()) == expected_buy);
@@ -1155,7 +1293,7 @@ impl RevealOk {
 
 /// A /quote response.
 pub struct Quote<'a> {
-    fulfillments: &'a [Fulfillment],
+    trades: &'a [Trade],
     status: StatusCode,
     body: String,
 }
@@ -1165,14 +1303,14 @@ impl<'a> Quote<'a> {
     pub fn ok(self) -> QuoteOk<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
         QuoteOk {
-            fulfillments: self.fulfillments,
+            trades: self.trades,
             body: self.body,
         }
     }
 }
 
 pub struct QuoteOk<'a> {
-    fulfillments: &'a [Fulfillment],
+    trades: &'a [Trade],
     body: String,
 }
 
@@ -1180,15 +1318,16 @@ impl QuoteOk<'_> {
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {
-        assert_eq!(self.fulfillments.len(), 1);
-        let fulfillment = &self.fulfillments[0];
+        assert_eq!(self.trades.len(), 1);
+        let quoted_order = match &self.trades[0] {
+            Trade::Fulfillment(fulfillment) => &fulfillment.quoted_order,
+            Trade::Jit(jit) => &jit.quoted_order,
+        };
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let amount = result.get("amount").unwrap().as_str().unwrap().to_owned();
-        let expected = match fulfillment.quoted_order.order.side {
-            order::Side::Buy => (fulfillment.quoted_order.sell
-                - fulfillment.quoted_order.order.surplus_fee())
-            .to_string(),
-            order::Side::Sell => fulfillment.quoted_order.buy.to_string(),
+        let expected = match quoted_order.order.side {
+            order::Side::Buy => (quoted_order.sell - quoted_order.order.surplus_fee()).to_string(),
+            order::Side::Sell => quoted_order.buy.to_string(),
         };
         assert_eq!(amount, expected);
         self
@@ -1197,17 +1336,20 @@ impl QuoteOk<'_> {
     /// Check that the quote returns the expected interactions. This is
     /// based on the state of the blockchain and the test setup.
     pub fn interactions(self) -> Self {
-        assert_eq!(self.fulfillments.len(), 1);
-        let fulfillment = &self.fulfillments[0];
+        assert_eq!(self.trades.len(), 1);
+        let interactions = match &self.trades[0] {
+            Trade::Fulfillment(fulfillment) => fulfillment.interactions.as_slice(),
+            Trade::Jit(jit) => jit.interactions.as_slice(),
+        };
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        let interactions = result
+        let result_interactions = result
             .get("interactions")
             .unwrap()
             .as_array()
             .unwrap()
             .to_owned();
-        assert_eq!(interactions.len(), fulfillment.interactions.len());
-        for (interaction, expected) in interactions.iter().zip(&fulfillment.interactions) {
+        assert_eq!(result_interactions.len(), interactions.len());
+        for (interaction, expected) in result_interactions.iter().zip(interactions) {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();
             let calldata = interaction.get("callData").unwrap().as_str().unwrap();
