@@ -50,6 +50,7 @@ pub struct BlockInfo {
     pub parent_hash: H256,
     pub timestamp: u64,
     pub gas_limit: U256,
+    pub gas_price: U256,
 }
 
 impl TryFrom<Block<H256>> for BlockInfo {
@@ -62,6 +63,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
             parent_hash: value.parent_hash,
             timestamp: value.timestamp.as_u64(),
             gas_limit: value.gas_limit,
+            gas_price: value.base_fee_per_gas.context("no gas price")?,
         })
     }
 }
