@@ -21,6 +21,7 @@ pub struct Request {
     pub generate_access_list: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_list: Option<AccessList>,
+    pub gas_price: u64,
 }
 
 #[derive(Debug, Deserialize)]

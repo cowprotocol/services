@@ -1,4 +1,7 @@
-use {crate::domain::eth, thiserror::Error};
+use {
+    crate::{domain::eth, infra::Ethereum},
+    thiserror::Error,
+};
 
 mod dto;
 
@@ -9,7 +12,7 @@ pub(super) struct Tenderly {
     endpoint: reqwest::Url,
     client: reqwest::Client,
     config: Config,
-    chain_id: eth::ChainId,
+    eth: Ethereum,
 }
 
 #[derive(Debug, Clone)]
@@ -30,7 +33,7 @@ pub struct Config {
 }
 
 impl Tenderly {
-    pub(super) fn new(config: Config, chain_id: eth::ChainId) -> Self {
+    pub(super) fn new(config: Config, eth: Ethereum) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -57,7 +60,7 @@ impl Tenderly {
                 .build()
                 .unwrap(),
             config,
-            chain_id,
+            eth,
         }
     }
 
@@ -66,11 +69,19 @@ impl Tenderly {
         tx: &eth::Tx,
         generate_access_list: GenerateAccessList,
     ) -> Result<Simulation, Error> {
+        let gas_price = self
+            .eth
+            .gas_price()
+            .await
+            .ok()
+            .map(|gas| gas.effective().0 .0.as_u64())
+            .unwrap_or_default();
+
         let res: dto::Response = self
             .client
             .post(self.endpoint.clone())
             .json(&dto::Request {
-                network_id: self.chain_id.to_string(),
+                network_id: self.eth.network().to_string(),
                 from: tx.from.into(),
                 to: tx.to.into(),
                 input: tx.input.clone().into(),
@@ -83,6 +94,7 @@ impl Tenderly {
                 } else {
                     Some(tx.access_list.clone().into())
                 },
+                gas_price,
             })
             .send()
             .await?
