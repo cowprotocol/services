@@ -134,12 +134,15 @@ impl TradeVerifier {
             )
             .tx;
 
+        let block = *self.block_stream.borrow();
+
         let call = CallRequest {
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.
             from: Some(solver.address()),
             to: Some(solver.address()),
             data: simulation.data,
             gas: Some(Self::DEFAULT_GAS.into()),
+            gas_price: Some(block.gas_price),
             ..Default::default()
         };
 
@@ -148,10 +151,9 @@ impl TradeVerifier {
             .await
             .map_err(Error::SimulationFailed)?;
 
-        let block = self.block_stream.borrow().number;
         let output = self
             .simulator
-            .simulate(call, overrides, Some(block))
+            .simulate(call, overrides, Some(block.number))
             .await
             .context("failed to simulate quote")
             .map_err(Error::SimulationFailed);
