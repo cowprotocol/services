@@ -15,7 +15,9 @@ use {
         },
         util::{self, conv::u256::U256Ext},
     },
-    std::{collections::HashSet, iter},
+    anyhow::Context,
+    num::CheckedDiv,
+    std::{collections::HashSet, iter, ops::Mul},
 };
 
 /// A quote describing the expected outcome of an order.
@@ -33,22 +35,27 @@ impl Quote {
     fn new(eth: &Ethereum, order: &Order, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .clearing_price(order.tokens.sell)
-            .ok_or(QuotingFailed::ClearingSellMissing)?;
+            .ok_or(QuotingFailed::ClearingSellMissing)?
+            .to_big_rational();
         let buy_price = solution
             .clearing_price(order.tokens.buy)
-            .ok_or(QuotingFailed::ClearingBuyMissing)?;
+            .ok_or(QuotingFailed::ClearingBuyMissing)?
+            .to_big_rational();
+        let order_amount = order.amount.0.to_big_rational();
+
         let amount = match order.side {
-            order::Side::Sell => eth::U256::from_big_rational(
-                &(eth::U256::from(order.amount).to_big_rational() * sell_price.to_big_rational()
-                    / buy_price.to_big_rational()),
-            )?,
-            order::Side::Buy => eth::U256::from_big_rational(
-                &(eth::U256::from(order.amount).to_big_rational() * buy_price.to_big_rational()
-                    / sell_price.to_big_rational()),
-            )?,
+            order::Side::Sell => order_amount
+                .mul(sell_price)
+                .checked_div(&buy_price)
+                .context("div by zero: buy price")?,
+            order::Side::Buy => order_amount
+                .mul(&buy_price)
+                .checked_div(&sell_price)
+                .context("div by zero: sell price")?,
         };
+
         Ok(Self {
-            amount,
+            amount: eth::U256::from_big_rational(&amount)?,
             interactions: boundary::quote::encode_interactions(eth, solution.interactions())?,
             solver: solution.solver().address(),
             gas: solution.gas(),
