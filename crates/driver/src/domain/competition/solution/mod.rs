@@ -138,7 +138,7 @@ impl Solution {
             Trade::Fulfillment(_) => true,
             Trade::Jit(jit) => self
                 .solver
-                .cow_amm_addresses()
+                .surplus_capturing_jit_order_owners()
                 .contains(&jit.order().signature.signer.into()),
         }
     }

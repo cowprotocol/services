@@ -93,7 +93,10 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 s3: config.s3.map(Into::into),
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
-                cow_amm_addresses: config.cow_amm_addresses.into_iter().collect::<HashSet<_>>(),
+                surplus_capturing_jit_order_owners: config
+                    .surplus_capturing_jit_order_owners
+                    .into_iter()
+                    .collect::<HashSet<_>>(),
             }
         }))
         .await,

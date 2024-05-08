@@ -267,9 +267,9 @@ struct SolverConfig {
     #[serde(default)]
     quote_tx_origin: Option<eth::H160>,
 
-    /// List of CoW AMM addresses
+    /// List of surplus capturing JIT-order owners
     #[serde(default)]
-    cow_amm_addresses: Vec<H160>,
+    surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

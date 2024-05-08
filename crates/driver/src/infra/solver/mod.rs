@@ -125,8 +125,8 @@ pub struct Config {
     pub solver_native_token: ManageNativeToken,
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
-    /// List of CoW AMM addresses
-    pub cow_amm_addresses: HashSet<H160>,
+    /// List of surplus capturing JIT-order owners
+    pub surplus_capturing_jit_order_owners: HashSet<H160>,
 }
 
 impl Solver {
@@ -205,8 +205,8 @@ impl Solver {
         &self.config.quote_tx_origin
     }
 
-    pub fn cow_amm_addresses(&self) -> &HashSet<H160> {
-        &self.config.cow_amm_addresses
+    pub fn surplus_capturing_jit_order_owners(&self) -> &HashSet<H160> {
+        &self.config.surplus_capturing_jit_order_owners
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -246,7 +246,6 @@ impl Solver {
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
-
         let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
 
         super::observe::solutions(&solutions);
