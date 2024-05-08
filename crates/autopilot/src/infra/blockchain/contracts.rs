@@ -51,11 +51,11 @@ impl Contracts {
 
         let authenticator = contracts::GPv2AllowListAuthentication::at(
             web3,
-            deployment_address(
-                contracts::GPv2AllowListAuthentication::raw_contract(),
-                chain,
-            )
-            .expect("GPv2AllowListAuthentication missing"),
+            settlement
+                .authenticator()
+                .call()
+                .await
+                .expect("authenticator address"),
         );
 
         Self {
