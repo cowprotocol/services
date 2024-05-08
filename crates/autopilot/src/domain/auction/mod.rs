@@ -40,6 +40,11 @@ impl Price {
         }
     }
 
+    // TODO: Remove this method and use the `in_eth` function instead.
+    pub fn get(&self) -> eth::Ether {
+        self.0
+    }
+
     /// Apply this price to some token amount, converting that token into ETH.
     ///
     /// # Examples

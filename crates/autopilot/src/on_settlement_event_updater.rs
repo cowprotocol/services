@@ -41,7 +41,7 @@ use {
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    std::sync::Arc,
+    std::{collections::BTreeMap, sync::Arc},
     tokio::sync::Notify,
     web3::types::Transaction,
 };
@@ -52,6 +52,7 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
+    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
 }
@@ -68,9 +69,10 @@ enum AuctionIdRecoveryStatus {
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
         let inner = Arc::new(Inner {
             eth,
+            persistence,
             db,
             notify: Notify::new(),
         });
@@ -129,7 +131,7 @@ impl Inner {
             .context("acquire DB connection")?;
         let event = match database::settlements::get_settlement_without_auction(&mut ex)
             .await
-            .context("get_settlement_event_without_tx_info")?
+            .context("get_settlement_without_auction")?
         {
             Some(event) => event,
             None => return Ok(false),
@@ -154,7 +156,7 @@ impl Inner {
                 AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
                     auction_id,
                     Some(
-                        self.fetch_auction_data(hash, settlement, auction_id, &mut ex)
+                        self.fetch_auction_data(hash, settlement, auction_id)
                             .await?,
                     ),
                 ),
@@ -181,7 +183,6 @@ impl Inner {
         hash: H256,
         settlement: DecodedSettlement,
         auction_id: i64,
-        ex: &mut PgConnection,
     ) -> Result<AuctionData> {
         let receipt = self
             .eth
@@ -194,11 +195,16 @@ impl Inner {
         let effective_gas_price = receipt
             .effective_gas_price
             .with_context(|| format!("no effective gas price {hash:?}"))?;
-        let auction_external_prices = Postgres::get_auction_prices(ex, auction_id)
+        let auction_external_prices = self
+            .persistence
+            .auction_prices(auction_id)
             .await
             .with_context(|| {
                 format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?;
+            })?
+            .into_iter()
+            .map(|(token, price)| (token.0, price.get().into()))
+            .collect::<BTreeMap<_, _>>();
         let external_prices = ExternalPrices::try_from_auction_prices(
             self.eth.contracts().weth().address(),
             auction_external_prices.clone(),
