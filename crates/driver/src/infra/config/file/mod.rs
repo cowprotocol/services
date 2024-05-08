@@ -1,7 +1,6 @@
 pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
-    primitive_types::H160,
     reqwest::Url,
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -266,10 +265,6 @@ struct SolverConfig {
     /// Which `tx.origin` is required to make a quote simulation pass.
     #[serde(default)]
     quote_tx_origin: Option<eth::H160>,
-
-    /// List of surplus capturing JIT-order owners
-    #[serde(default)]
-    surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]

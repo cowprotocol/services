@@ -151,6 +151,12 @@ impl Auction {
             }),
             time::Deadline::new(self.deadline, timeouts),
             eth,
+            self.surplus_capturing_jit_order_owners
+                .unwrap_or_default()
+                .into_iter()
+                .map(Into::into)
+                .collect::<Vec<_>>()
+                .as_ref(),
         )
         .await
         .map_err(Into::into)
@@ -196,6 +202,7 @@ pub struct Auction {
     tokens: Vec<Token>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
+    surplus_capturing_jit_order_owners: Option<Vec<eth::H160>>,
 }
 
 impl Auction {

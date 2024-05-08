@@ -13,7 +13,7 @@ use {
     },
     futures::future::join_all,
     number::conversions::big_decimal_to_big_rational,
-    std::{collections::HashSet, path::Path},
+    std::path::Path,
     tokio::fs,
 };
 
@@ -93,10 +93,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 s3: config.s3.map(Into::into),
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
-                surplus_capturing_jit_order_owners: config
-                    .surplus_capturing_jit_order_owners
-                    .into_iter()
-                    .collect::<HashSet<_>>(),
             }
         }))
         .await,

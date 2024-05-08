@@ -48,6 +48,7 @@ pub struct Solution {
     solver: Solver,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
+    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
 }
 
 impl Solution {
@@ -61,6 +62,7 @@ impl Solution {
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -70,6 +72,7 @@ impl Solution {
             solver,
             weth,
             gas,
+            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners.clone(),
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -140,9 +143,8 @@ impl Solution {
                 order::Kind::Liquidity => false,
             },
             Trade::Jit(jit) => self
-                .solver
-                .surplus_capturing_jit_order_owners()
-                .contains(&jit.order().signature.signer.into()),
+                .surplus_capturing_jit_order_owners
+                .contains(&jit.order().signature.signer),
         }
     }
 
@@ -273,6 +275,11 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
+            surplus_capturing_jit_order_owners: self
+                .surplus_capturing_jit_order_owners
+                .union(&other.surplus_capturing_jit_order_owners)
+                .cloned()
+                .collect::<HashSet<_>>(),
         })
     }
 
