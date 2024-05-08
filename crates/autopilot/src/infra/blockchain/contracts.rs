@@ -5,6 +5,7 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
+    authenticator: contracts::GPv2AllowListAuthentication,
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: domain::eth::DomainSeparator,
@@ -48,11 +49,21 @@ impl Contracts {
                 .0,
         );
 
+        let authenticator = contracts::GPv2AllowListAuthentication::at(
+            web3,
+            settlement
+                .authenticator()
+                .call()
+                .await
+                .expect("authenticator address"),
+        );
+
         Self {
             settlement,
             weth,
             chainalysis_oracle,
             settlement_domain_separator,
+            authenticator,
         }
     }
 
@@ -70,6 +81,10 @@ impl Contracts {
 
     pub fn weth(&self) -> &contracts::WETH9 {
         &self.weth
+    }
+
+    pub fn authenticator(&self) -> &contracts::GPv2AllowListAuthentication {
+        &self.authenticator
     }
 }
 
