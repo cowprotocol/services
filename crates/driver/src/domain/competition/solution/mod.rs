@@ -393,10 +393,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
-        encoding: encoding::Strategy,
         solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, encoding, solver_native_token).await
+        Settlement::encode(self, auction, eth, simulator, solver_native_token).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary

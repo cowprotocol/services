@@ -50,7 +50,6 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
-    pub encoding: encoding::Strategy,
 }
 
 impl Competition {
@@ -120,7 +119,6 @@ impl Competition {
                         auction,
                         &self.eth,
                         &self.simulator,
-                        self.encoding,
                         self.solver.solver_native_token(),
                     )
                     .await;

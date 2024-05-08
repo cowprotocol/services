@@ -18,5 +18,4 @@ pub struct Config {
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
-    pub encoding: encoding::Strategy,
 }
