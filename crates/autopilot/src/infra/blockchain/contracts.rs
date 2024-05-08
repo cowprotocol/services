@@ -115,7 +115,7 @@ impl Contracts {
         let calldata = self
             .authenticator
             .methods()
-            .remove_solver(solver.0.into())
+            .remove_solver(solver.0)
             .tx
             .data
             .ok_or(Error::SolverRemovalBadCalldata)?;
