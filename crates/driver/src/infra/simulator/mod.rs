@@ -29,10 +29,10 @@ pub enum Config {
 
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config, chain: eth::ChainId, eth: Ethereum) -> Self {
+    pub fn tenderly(config: tenderly::Config, eth: Ethereum) -> Self {
         let eth = eth.with_metric_label("tenderlySimulator".into());
         Self {
-            inner: Inner::Tenderly(tenderly::Tenderly::new(config, chain)),
+            inner: Inner::Tenderly(tenderly::Tenderly::new(config, eth.clone())),
             eth,
             disable_access_lists: false,
             disable_gas: None,

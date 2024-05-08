@@ -138,6 +138,7 @@ impl Ethereum {
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
             gas: Some(MAX_BLOCK_SIZE.into()),
+            gas_price: self.simulation_gas_price().await,
             ..Default::default()
         };
         let json = self
@@ -171,6 +172,7 @@ impl Ethereum {
                     value: Some(tx.value.into()),
                     data: Some(tx.input.clone().into()),
                     access_list: Some(tx.access_list.clone().into()),
+                    gas_price: self.simulation_gas_price().await,
                     ..Default::default()
                 },
                 None,
@@ -223,6 +225,22 @@ impl Ethereum {
                 _ => eth::TxStatus::Pending,
             })
             .map_err(Into::into)
+    }
+
+    pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
+        // Some nodes don't pick a reasonable default value when you don't specify a gas
+        // price and default to 0. Additionally some sneaky tokens have special code
+        // paths that detect that case to try to behave differently during simulations
+        // than they normally would. To not rely on the node picking a reasonable
+        // default value we estimate the current gas price upfront. But because it's
+        // extremely rare that tokens behave that way we are fine with falling back to
+        // the node specific fallback value instead of failing the whole call.
+        self.inner
+            .gas
+            .estimate()
+            .await
+            .ok()
+            .map(|gas| gas.effective().0 .0)
     }
 }
 
