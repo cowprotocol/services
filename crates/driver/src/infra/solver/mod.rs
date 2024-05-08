@@ -246,6 +246,7 @@ impl Solver {
         let res = res?;
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
+
         let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
 
         super::observe::solutions(&solutions);

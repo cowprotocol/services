@@ -1,10 +1,21 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth, liquidity},
+        domain::{
+            competition,
+            competition::{order, order::signature::domain_separator},
+            eth,
+            liquidity,
+        },
         infra::{solver::Config, Solver},
         util::serialize,
     },
+    app_data::AppDataHash,
     itertools::Itertools,
+    model::{
+        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+        DomainSeparator,
+    },
+    primitive_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
@@ -91,23 +102,31 @@ impl Solutions {
                                                 competition::order::BuyTokenBalance::Internal
                                             }
                                         },
-                                        signature: competition::order::Signature {
-                                            scheme: match jit.order.signing_scheme {
-                                                SigningScheme::Eip712 => {
-                                                    competition::order::signature::Scheme::Eip712
-                                                }
-                                                SigningScheme::EthSign => {
-                                                    competition::order::signature::Scheme::EthSign
-                                                }
-                                                SigningScheme::PreSign => {
-                                                    competition::order::signature::Scheme::PreSign
-                                                }
-                                                SigningScheme::Eip1271 => {
-                                                    competition::order::signature::Scheme::Eip1271
-                                                }
-                                            },
-                                            data: jit.order.signature.into(),
-                                            signer: solver.address(),
+                                        signature: {
+                                            let mut signature = competition::order::Signature {
+                                                scheme: match jit.order.signing_scheme {
+                                                    SigningScheme::Eip712 => {
+                                                        competition::order::signature::Scheme::Eip712
+                                                    }
+                                                    SigningScheme::EthSign => {
+                                                        competition::order::signature::Scheme::EthSign
+                                                    }
+                                                    SigningScheme::PreSign => {
+                                                        competition::order::signature::Scheme::PreSign
+                                                    }
+                                                    SigningScheme::Eip1271 => {
+                                                        competition::order::signature::Scheme::Eip1271
+                                                    }
+                                                },
+                                                data: jit.order.signature.clone().into(),
+                                                signer: Default::default(),
+                                            };
+
+                                            // Recover the signer from the order signature
+                                            let signer = Self::recover_signer_from_jit_trade_order(&jit, &signature, &solver)?;
+                                            signature.signer = signer.into();
+
+                                            signature
                                         },
                                     },
                                     jit.executed_amount.into(),
@@ -203,6 +222,53 @@ impl Solutions {
                 })
             })
             .collect()
+    }
+
+    // Function to check that a JIT order signature is signed by the solver
+    fn recover_signer_from_jit_trade_order(
+        jit: &JitTrade,
+        signature: &competition::order::Signature,
+        solver: &Solver,
+    ) -> Result<H160, super::Error> {
+        let settlement_contract = solver.eth.contracts().settlement();
+        let domain = domain_separator(
+            solver.eth.network(),
+            settlement_contract.clone().address().into(),
+        );
+
+        let order_data = OrderData {
+            sell_token: jit.order.sell_token,
+            buy_token: jit.order.buy_token,
+            receiver: Some(jit.order.receiver),
+            sell_amount: jit.order.sell_amount,
+            buy_amount: jit.order.buy_amount,
+            valid_to: jit.order.valid_to,
+            app_data: AppDataHash(jit.order.app_data),
+            fee_amount: jit.order.fee_amount,
+            kind: match jit.order.kind {
+                Kind::Sell => OrderKind::Sell,
+                Kind::Buy => OrderKind::Buy,
+            },
+            partially_fillable: jit.order.partially_fillable,
+            sell_token_balance: match jit.order.sell_token_balance {
+                SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                SellTokenBalance::Internal => SellTokenSource::Internal,
+                SellTokenBalance::External => SellTokenSource::External,
+            },
+            buy_token_balance: match jit.order.buy_token_balance {
+                BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
+                BuyTokenBalance::Internal => BuyTokenDestination::Internal,
+            },
+        };
+
+        signature
+            .to_boundary_signature()
+            .recover_owner(
+                jit.order.signature.as_slice(),
+                &DomainSeparator(domain.0),
+                &order_data.hash_struct(),
+            )
+            .map_err(|e| super::Error(e.to_string()))
     }
 }
 

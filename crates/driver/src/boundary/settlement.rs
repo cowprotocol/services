@@ -97,7 +97,7 @@ impl Settlement {
                     )
                 }
                 competition::solution::Trade::Jit(trade) => (
-                    to_boundary_jit_order(&DomainSeparator(domain.0), trade.order())?,
+                    to_boundary_jit_order(&DomainSeparator(domain.0), trade.order()),
                     LimitOrderExecution {
                         filled: trade.executed().into(),
                         fee: 0.into(),
@@ -288,7 +288,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
     }
 }
 
-fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Result<Order> {
+fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order {
     let data = OrderData {
         sell_token: order.sell.token.into(),
         buy_token: order.buy.token.into(),
@@ -326,20 +326,13 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Result
         ..Default::default()
     };
     let signature = order.signature.to_boundary_signature();
-    let signer = signature
-        .recover_owner(&order.signature.data.0, domain, &data.hash_struct())
-        .expect("Invalid signer");
 
-    if signer != order.signature.signer.0 {
-        return Err(anyhow!("The signer is not the owner of the order"));
-    }
-
-    Ok(Order {
+    Order {
         data,
         metadata,
         signature,
         interactions: Interactions::default(),
-    })
+    }
 }
 
 pub fn to_boundary_interaction(
