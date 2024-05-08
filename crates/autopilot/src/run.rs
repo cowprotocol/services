@@ -163,6 +163,10 @@ pub async fn run(args: Arguments) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
+        authenticator_eoa: ethcontract::Account::Offline(
+            ethcontract::PrivateKey::from_raw(args.shared.authenticator_eoa.0).unwrap(),
+            None,
+        ),
     };
     let eth = ethereum(
         ethrpc,
