@@ -125,9 +125,6 @@ pub struct Arguments {
     pub ethrpc: crate::ethrpc::Arguments,
 
     #[clap(flatten)]
-    pub current_block: crate::current_block::Arguments,
-
-    #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
 
     #[clap(flatten)]
@@ -341,7 +338,6 @@ impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Self {
             ethrpc,
-            current_block,
             tenderly,
             logging,
             node_url,
@@ -371,7 +367,6 @@ impl Display for Arguments {
         } = self;
 
         write!(f, "{}", ethrpc)?;
-        write!(f, "{}", current_block)?;
         write!(f, "{}", tenderly)?;
         write!(f, "{}", logging)?;
         writeln!(f, "node_url: {}", node_url)?;

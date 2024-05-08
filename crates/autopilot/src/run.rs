@@ -99,9 +99,8 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
 async fn ethereum(
     ethrpc: infra::blockchain::Rpc,
     contracts: infra::blockchain::contracts::Addresses,
-    poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(ethrpc, contracts, poll_interval).await
+    infra::Ethereum::new(ethrpc, contracts).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -163,12 +162,7 @@ pub async fn run(args: Arguments) {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
     };
-    let eth = ethereum(
-        ethrpc,
-        contracts,
-        args.shared.current_block.block_stream_poll_interval,
-    )
-    .await;
+    let eth = ethereum(ethrpc, contracts).await;
 
     let vault_relayer = eth
         .contracts()
@@ -316,7 +310,7 @@ pub async fn run(args: Arguments) {
         )
         .expect("failed to create pool cache"),
     );
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
+    let block_retriever = Arc::new(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -369,7 +363,7 @@ pub async fn run(args: Arguments) {
             graph_url,
             web3.clone(),
             http_factory.create(),
-            block_retriever,
+            block_retriever.clone(),
             args.shared.max_pools_to_initialize_cache,
         )
         .await
@@ -388,8 +382,6 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,

@@ -3192,6 +3192,7 @@ dependencies = [
  "contracts",
  "database",
  "ethcontract",
+ "ethrpc",
  "futures",
  "gas-estimation",
  "hex",

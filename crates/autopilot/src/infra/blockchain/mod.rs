@@ -4,7 +4,6 @@ use {
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
     primitive_types::{H256, U256},
-    std::time::Duration,
     thiserror::Error,
     url::Url,
 };
@@ -77,12 +76,12 @@ impl Ethereum {
     ///
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
-    pub async fn new(rpc: Rpc, addresses: contracts::Addresses, poll_interval: Duration) -> Self {
+    pub async fn new(rpc: Rpc, addresses: contracts::Addresses) -> Self {
         let Rpc { web3, chain, url } = rpc;
         let contracts = Contracts::new(&web3, &chain, addresses).await;
 
         Self {
-            current_block: ethrpc::current_block::current_block_stream(url, poll_interval)
+            current_block: ethrpc::current_block::current_block_stream(url)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,

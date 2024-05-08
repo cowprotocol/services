@@ -28,6 +28,7 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { workspace = true }
+ethrpc = { path = "../ethrpc" }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 hex = { workspace = true }

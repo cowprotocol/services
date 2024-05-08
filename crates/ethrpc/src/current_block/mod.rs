@@ -82,7 +82,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
 /// being able to share the result with several consumers. Calling this function
 /// again would create a new poller so it is preferable to clone an existing
 /// stream instead.
-pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<CurrentBlockStream> {
+pub async fn current_block_stream(url: Url) -> Result<CurrentBlockStream> {
     // Build new Web3 specifically for the current block stream to avoid batching
     // requests together on chains with a very high block frequency.
     let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
@@ -90,8 +90,10 @@ pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<C
         url,
         "block_stream".into(),
     )));
+
+    let poll_interval = poll_interval(&web3).await?;
     let first_block = web3.current_block().await?;
-    tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
+    tracing::debug!(number=%first_block.number, hash=?first_block.hash, ?poll_interval, "initialized block stream");
 
     let (sender, receiver) = watch::channel(first_block);
     let update_future = async move {
@@ -112,7 +114,6 @@ pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<C
             }
 
             // The new block is different but might still have the same number.
-
             tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
             update_block_metrics(previous_block.number, block.number);
 
@@ -132,6 +133,33 @@ pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<C
 
     tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
     Ok(receiver)
+}
+
+/// Returns a reasonable poll interval for the given network.
+async fn poll_interval(web3: &Web3) -> Result<Duration> {
+    let chain = web3.eth().chain_id().await?;
+
+    let block_time = match chain.as_u64() {
+        1 => Duration::from_millis(12_000),
+        100 => Duration::from_millis(12_000),
+        11155111 => Duration::from_millis(20_000),
+        42161 => Duration::from_millis(250),
+        chain_id => {
+            tracing::error!(
+                chain_id,
+                "no block time configured; falling back to default"
+            );
+            Duration::from_millis(12_000)
+        }
+    };
+
+    // To not miss any blocks we need to poll faster than the average block time.
+    let poll_interval = block_time.mul_f64(0.5);
+
+    /// Maximum time between polling blocks even when the network produces block
+    /// slower than this.
+    const MAX_POLL_INTERVAL: Duration = Duration::from_millis(500);
+    Ok(poll_interval.min(MAX_POLL_INTERVAL))
 }
 
 /// Returns a stream that is synchronized to the passed in stream by only yields
@@ -324,9 +352,7 @@ mod tests {
     async fn mainnet() {
         observe::tracing::initialize_reentrant("shared=debug");
         let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
-        let receiver = current_block_stream(node, Duration::from_secs(1))
-            .await
-            .unwrap();
+        let receiver = current_block_stream(node).await.unwrap();
         let mut stream = into_stream(receiver);
         for _ in 0..3 {
             let block = stream.next().await.unwrap();

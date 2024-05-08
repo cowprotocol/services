@@ -82,12 +82,9 @@ impl Ethereum {
 
         Self {
             inner: Arc::new(Inner {
-                current_block: ethrpc::current_block::current_block_stream(
-                    url,
-                    std::time::Duration::from_millis(500),
-                )
-                .await
-                .expect("couldn't initialize current block stream"),
+                current_block: ethrpc::current_block::current_block_stream(url)
+                    .await
+                    .expect("couldn't initialize current block stream"),
                 chain,
                 contracts,
                 gas,

@@ -809,9 +809,7 @@ mod tests {
                 .await
                 .unwrap()
                 .pool_fetching,
-                current_block_stream(url, Duration::from_secs(1))
-                    .await
-                    .unwrap(),
+                current_block_stream(url).await.unwrap(),
             )
             .unwrap(),
         );
