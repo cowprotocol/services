@@ -1,11 +1,6 @@
 use {
     crate::{
-        domain::{
-            competition,
-            competition::{order, order::signature::domain_separator},
-            eth,
-            liquidity,
-        },
+        domain::{competition, competition::order, eth, liquidity},
         infra::{solver::Config, Solver},
         util::serialize,
     },
@@ -15,7 +10,6 @@ use {
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         DomainSeparator,
     },
-    primitive_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
     std::collections::HashMap,
@@ -123,8 +117,8 @@ impl Solutions {
                                             };
 
                                             // Recover the signer from the order signature
-                                            let signer = Self::recover_signer_from_jit_trade_order(&jit, &signature, &solver)?;
-                                            signature.signer = signer.into();
+                                            let signer = Self::recover_signer_from_jit_trade_order(&jit, &signature, solver.eth.contracts().settlement_domain_separator())?;
+                                            signature.signer = signer;
 
                                             signature
                                         },
@@ -224,18 +218,12 @@ impl Solutions {
             .collect()
     }
 
-    // Function to check that a JIT order signature is signed by the solver
+    /// Function to recover the signer of a JIT order
     fn recover_signer_from_jit_trade_order(
         jit: &JitTrade,
         signature: &competition::order::Signature,
-        solver: &Solver,
-    ) -> Result<H160, super::Error> {
-        let settlement_contract = solver.eth.contracts().settlement();
-        let domain = domain_separator(
-            solver.eth.network(),
-            settlement_contract.clone().address().into(),
-        );
-
+        domain: &eth::DomainSeparator,
+    ) -> Result<eth::Address, super::Error> {
         let order_data = OrderData {
             sell_token: jit.order.sell_token,
             buy_token: jit.order.buy_token,
@@ -269,6 +257,7 @@ impl Solutions {
                 &order_data.hash_struct(),
             )
             .map_err(|e| super::Error(e.to_string()))
+            .map(Into::into)
     }
 }
 

@@ -135,7 +135,10 @@ impl Solution {
 
     fn trade_count_for_scoring(&self, trade: &Trade) -> bool {
         match trade {
-            Trade::Fulfillment(_) => true,
+            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                order::Kind::Market | order::Kind::Limit { .. } => true,
+                order::Kind::Liquidity => false,
+            },
             Trade::Jit(jit) => self
                 .solver
                 .surplus_capturing_jit_order_owners()
@@ -146,33 +149,35 @@ impl Solution {
     /// JIT score calculation as per CIP38
     pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
-        for trade in self.trades() {
-            if self.trade_count_for_scoring(trade) {
-                // Solver generated fulfillment does not include the fee in the executed amount
-                // for sell orders.
-                let executed = match trade.side() {
-                    order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
-                    order::Side::Buy => trade.executed(),
-                };
-                let buy = trade.buy();
-                let sell = trade.sell();
-                let uniform_prices = ClearingPrices {
-                    sell: self
-                        .clearing_price(sell.token)
-                        .ok_or(error::Scoring::InvalidClearingPrices)?,
-                    buy: self
-                        .clearing_price(buy.token)
-                        .ok_or(error::Scoring::InvalidClearingPrices)?,
-                };
-                trades.push(scoring::Trade::new(
-                    sell,
-                    buy,
-                    trade.side(),
-                    executed,
-                    trade.custom_prices(&uniform_prices)?,
-                    trade.protocol_fees(),
-                ))
-            }
+        for trade in self
+            .trades()
+            .iter()
+            .filter(|trade| self.trade_count_for_scoring(trade))
+        {
+            // Solver generated fulfillment does not include the fee in the executed amount
+            // for sell orders.
+            let executed = match trade.side() {
+                order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                order::Side::Buy => trade.executed(),
+            };
+            let buy = trade.buy();
+            let sell = trade.sell();
+            let uniform_prices = ClearingPrices {
+                sell: self
+                    .clearing_price(sell.token)
+                    .ok_or(error::Scoring::InvalidClearingPrices)?,
+                buy: self
+                    .clearing_price(buy.token)
+                    .ok_or(error::Scoring::InvalidClearingPrices)?,
+            };
+            trades.push(scoring::Trade::new(
+                sell,
+                buy,
+                trade.side(),
+                executed,
+                trade.custom_prices(&uniform_prices)?,
+                trade.protocol_fees(),
+            ))
         }
 
         let scoring = scoring::Scoring::new(trades);
@@ -200,15 +205,13 @@ impl Solution {
         Ok(approvals)
     }
 
-    /// An empty solution has no user trades and a score of 0.
+    /// An empty solution has no trades which is allowed to capture surplus and
+    /// a score of 0.
     pub fn is_empty(&self) -> bool {
-        !self.trades.iter().any(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                order::Kind::Market | order::Kind::Limit { .. } => true,
-                order::Kind::Liquidity => false,
-            },
-            Trade::Jit(_) => true,
-        })
+        !self
+            .trades
+            .iter()
+            .any(|trade| self.trade_count_for_scoring(trade))
     }
 
     pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
