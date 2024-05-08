@@ -133,32 +133,46 @@ impl Solution {
         self.gas
     }
 
+    fn trade_count_for_scoring(&self, trade: &Trade) -> bool {
+        match trade {
+            Trade::Fulfillment(_) => true,
+            Trade::Jit(jit) => self
+                .solver
+                .cow_amm_addresses()
+                .contains(&jit.order().signature.signer.into()),
+        }
+    }
+
     /// JIT score calculation as per CIP38
     pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
-        for trade in self.user_trades() {
-            // Solver generated fulfillment does not include the fee in the executed amount
-            // for sell orders.
-            let executed = match trade.order().side {
-                order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
-                order::Side::Buy => trade.executed(),
-            };
-            let uniform_prices = ClearingPrices {
-                sell: self
-                    .clearing_price(trade.order().sell.token)
-                    .ok_or(error::Scoring::InvalidClearingPrices)?,
-                buy: self
-                    .clearing_price(trade.order().buy.token)
-                    .ok_or(error::Scoring::InvalidClearingPrices)?,
-            };
-            trades.push(scoring::Trade::new(
-                trade.order().sell,
-                trade.order().buy,
-                trade.order().side,
-                executed,
-                trade.custom_prices(&uniform_prices)?,
-                trade.order().protocol_fees.clone(),
-            ))
+        for trade in self.trades() {
+            if self.trade_count_for_scoring(trade) {
+                // Solver generated fulfillment does not include the fee in the executed amount
+                // for sell orders.
+                let executed = match trade.side() {
+                    order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
+                    order::Side::Buy => trade.executed(),
+                };
+                let buy = trade.buy();
+                let sell = trade.sell();
+                let uniform_prices = ClearingPrices {
+                    sell: self
+                        .clearing_price(sell.token)
+                        .ok_or(error::Scoring::InvalidClearingPrices)?,
+                    buy: self
+                        .clearing_price(buy.token)
+                        .ok_or(error::Scoring::InvalidClearingPrices)?,
+                };
+                trades.push(scoring::Trade::new(
+                    sell,
+                    buy,
+                    trade.side(),
+                    executed,
+                    trade.custom_prices(&uniform_prices)?,
+                    trade.protocol_fees(),
+                ))
+            }
         }
 
         let scoring = scoring::Scoring::new(trades);
@@ -188,7 +202,13 @@ impl Solution {
 
     /// An empty solution has no user trades and a score of 0.
     pub fn is_empty(&self) -> bool {
-        self.user_trades().next().is_none()
+        !self.trades.iter().any(|trade| match trade {
+            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                order::Kind::Market | order::Kind::Limit { .. } => true,
+                order::Kind::Liquidity => false,
+            },
+            Trade::Jit(_) => true,
+        })
     }
 
     pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {

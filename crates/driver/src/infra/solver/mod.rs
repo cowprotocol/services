@@ -20,8 +20,9 @@ use {
     anyhow::Result,
     derive_more::{From, Into},
     num::BigRational,
+    primitive_types::H160,
     reqwest::header::HeaderName,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -124,6 +125,8 @@ pub struct Config {
     pub solver_native_token: ManageNativeToken,
     /// Which `tx.origin` is required to make quote verification pass.
     pub quote_tx_origin: Option<eth::Address>,
+    /// List of CoW AMM addresses
+    pub cow_amm_addresses: HashSet<H160>,
 }
 
 impl Solver {
@@ -200,6 +203,10 @@ impl Solver {
 
     pub fn quote_tx_origin(&self) -> &Option<eth::Address> {
         &self.config.quote_tx_origin
+    }
+
+    pub fn cow_amm_addresses(&self) -> &HashSet<H160> {
+        &self.config.cow_amm_addresses
     }
 
     /// Make a POST request instructing the solver to solve an auction.
