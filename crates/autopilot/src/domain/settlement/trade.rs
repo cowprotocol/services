@@ -136,6 +136,8 @@ impl Trade {
         // We don't have to convert the fee to the sell token, we can just use the fee
         // in surplus token. This is done just because it was done like this in
         // the previous implementation
+        //
+        // https://github.com/cowprotocol/services/blob/main/crates/autopilot/src/decoded_settlement.rs#L345
         let fee_in_sell_token = match self.side {
             order::Side::Buy => fee,
             order::Side::Sell => fee
