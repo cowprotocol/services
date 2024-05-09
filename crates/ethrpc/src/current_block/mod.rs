@@ -141,7 +141,7 @@ async fn poll_interval(web3: &Web3) -> Result<Duration> {
 
     let block_time = match chain.as_u64() {
         1 => Duration::from_millis(12_000),
-        100 => Duration::from_millis(12_000),
+        100 => Duration::from_millis(5_000),
         11155111 => Duration::from_millis(20_000),
         42161 => Duration::from_millis(250),
         chain_id => {
