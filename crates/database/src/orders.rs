@@ -1935,12 +1935,8 @@ mod tests {
 
         insert_order(&mut db, &order2).await.unwrap();
 
-        assert!(orders_do_not_exist(&mut db, &[order1.uid])
-            .await
-            .unwrap());
-        assert!(!orders_do_not_exist(&mut db, &[order2.uid])
-            .await
-            .unwrap());
+        assert!(orders_do_not_exist(&mut db, &[order1.uid]).await.unwrap());
+        assert!(!orders_do_not_exist(&mut db, &[order2.uid]).await.unwrap());
         assert!(!orders_do_not_exist(&mut db, &[order1.uid, order2.uid])
             .await
             .unwrap());
