@@ -383,7 +383,7 @@ impl RunLoop {
 
         // make sure all non-auction orders are also non-database
         self.persistence
-            .all_orders_not_exist(&non_auction_orders)
+            .orders_do_not_exist(&non_auction_orders)
             .await
             .unwrap_or_else(|err| {
                 tracing::warn!(?err, "failed to check if all orders exist");

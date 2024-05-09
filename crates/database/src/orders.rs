@@ -755,7 +755,7 @@ pub async fn user_orders_with_quote(
         .await
 }
 
-pub async fn all_orders_not_exist(
+pub async fn orders_do_not_exist(
     ex: &mut PgConnection,
     uids: &[OrderUid],
 ) -> Result<bool, sqlx::Error> {
@@ -1929,12 +1929,19 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(all_orders_not_exist(&mut db, &[order1.uid, order2.uid])
+        assert!(orders_do_not_exist(&mut db, &[order1.uid, order2.uid])
             .await
             .unwrap());
 
         insert_order(&mut db, &order2).await.unwrap();
-        assert!(!all_orders_not_exist(&mut db, &[order1.uid, order2.uid])
+
+        assert!(orders_do_not_exist(&mut db, &[order1.uid])
+            .await
+            .unwrap());
+        assert!(!orders_do_not_exist(&mut db, &[order2.uid])
+            .await
+            .unwrap());
+        assert!(!orders_do_not_exist(&mut db, &[order1.uid, order2.uid])
             .await
             .unwrap());
     }
