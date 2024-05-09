@@ -372,11 +372,7 @@ impl RunLoop {
         auction: &domain::Auction,
         settlement: &Settlement,
     ) -> bool {
-        let auction_orders = auction
-            .orders
-            .iter()
-            .map(|o| OrderUid(o.uid.0))
-            .collect::<HashSet<_>>();
+        let auction_orders = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
         // all JIT orders will be non_auction_orders
         let non_auction_orders = settlement
