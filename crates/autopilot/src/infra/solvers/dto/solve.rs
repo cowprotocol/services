@@ -48,13 +48,10 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            surplus_capturing_jit_order_owners: (surplus_capturing_jit_order_owners.is_empty())
-                .then(|| {
-                    surplus_capturing_jit_order_owners
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                }),
+            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -68,8 +65,7 @@ pub struct Request {
     pub tokens: Vec<Token>,
     pub orders: Vec<Order>,
     pub deadline: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub surplus_capturing_jit_order_owners: Option<Vec<H160>>,
+    pub surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 #[serde_as]

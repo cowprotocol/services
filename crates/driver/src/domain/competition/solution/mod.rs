@@ -48,7 +48,6 @@ pub struct Solution {
     solver: Solver,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
-    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
 }
 
 impl Solution {
@@ -62,7 +61,6 @@ impl Solution {
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
-        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, error::Solution> {
         let solution = Self {
             id,
@@ -72,7 +70,6 @@ impl Solution {
             solver,
             weth,
             gas,
-            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners.clone(),
         };
 
         // Check that the solution includes clearing prices for all user trades.
@@ -136,25 +133,33 @@ impl Solution {
         self.gas
     }
 
-    fn trade_count_for_scoring(&self, trade: &Trade) -> bool {
+    fn trade_count_for_scoring(
+        &self,
+        trade: &Trade,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+    ) -> bool {
         match trade {
             Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
                 order::Kind::Market | order::Kind::Limit { .. } => true,
                 order::Kind::Liquidity => false,
             },
-            Trade::Jit(jit) => self
-                .surplus_capturing_jit_order_owners
-                .contains(&jit.order().signature.signer),
+            Trade::Jit(jit) => {
+                surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer)
+            }
         }
     }
 
     /// JIT score calculation as per CIP38
-    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
+    pub fn scoring(
+        &self,
+        prices: &auction::Prices,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+    ) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self
             .trades()
             .iter()
-            .filter(|trade| self.trade_count_for_scoring(trade))
+            .filter(|trade| self.trade_count_for_scoring(trade, surplus_capturing_jit_order_owners))
         {
             // Solver generated fulfillment does not include the fee in the executed amount
             // for sell orders.
@@ -209,11 +214,11 @@ impl Solution {
 
     /// An empty solution has no trades which is allowed to capture surplus and
     /// a score of 0.
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(&self, surplus_capturing_jit_order_owners: &HashSet<eth::Address>) -> bool {
         !self
             .trades
             .iter()
-            .any(|trade| self.trade_count_for_scoring(trade))
+            .any(|trade| self.trade_count_for_scoring(trade, surplus_capturing_jit_order_owners))
     }
 
     pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
@@ -275,11 +280,6 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            surplus_capturing_jit_order_owners: self
-                .surplus_capturing_jit_order_owners
-                .union(&other.surplus_capturing_jit_order_owners)
-                .cloned()
-                .collect::<HashSet<_>>(),
         })
     }
 

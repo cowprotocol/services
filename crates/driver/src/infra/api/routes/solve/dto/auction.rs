@@ -10,6 +10,7 @@ use {
     },
     serde::Deserialize,
     serde_with::serde_as,
+    std::collections::HashSet,
 };
 
 impl Auction {
@@ -151,12 +152,12 @@ impl Auction {
             }),
             time::Deadline::new(self.deadline, timeouts),
             eth,
-            self.surplus_capturing_jit_order_owners
+            &self
+                .surplus_capturing_jit_order_owners
                 .unwrap_or_default()
                 .into_iter()
                 .map(Into::into)
-                .collect::<Vec<_>>()
-                .as_ref(),
+                .collect::<HashSet<_>>(),
         )
         .await
         .map_err(Into::into)

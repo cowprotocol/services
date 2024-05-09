@@ -42,7 +42,7 @@ impl Auction {
         tokens: impl Iterator<Item = Token>,
         deadline: time::Deadline,
         eth: &Ethereum,
-        surplus_capturing_jit_order_owners: &[eth::Address],
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 

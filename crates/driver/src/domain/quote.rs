@@ -103,14 +103,10 @@ impl Order {
             solver::Liquidity::Skip => Default::default(),
         };
 
-        let solutions = solver
-            .solve(
-                &self
-                    .fake_auction(eth, tokens, solver.quote_using_limit_orders())
-                    .await?,
-                &liquidity,
-            )
+        let auction = self
+            .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
+        let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::new(
             eth,
             self,
@@ -118,7 +114,7 @@ impl Order {
             // first solution
             solutions
                 .into_iter()
-                .find(|solution| !solution.is_empty())
+                .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
                 .ok_or(QuotingFailed::NoSolutions)?,
         )
     }
@@ -182,7 +178,7 @@ impl Order {
             .into_iter(),
             self.deadline,
             eth,
-            &[],
+            &HashSet::default(),
         )
         .await
         .map_err(|err| match err {

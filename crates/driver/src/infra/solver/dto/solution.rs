@@ -205,7 +205,6 @@ impl Solutions {
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
-                    auction.surplus_capturing_jit_order_owners(),
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
