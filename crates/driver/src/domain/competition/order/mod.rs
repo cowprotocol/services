@@ -6,6 +6,7 @@ use {
         util::{self, conv::u256::U256Ext, Bytes},
     },
     bigdecimal::Zero,
+    derive_more::{From, Into},
     model::order::{BuyTokenDestination, SellTokenSource},
     num::CheckedDiv,
 };
@@ -47,14 +48,8 @@ pub struct Order {
 }
 
 /// An amount denominated in the sell token of an [`Order`].
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, From, Into)]
 pub struct SellAmount(pub eth::U256);
-
-impl From<eth::U256> for SellAmount {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
 
 impl From<eth::TokenAmount> for SellAmount {
     fn from(value: eth::TokenAmount) -> Self {
@@ -62,28 +57,10 @@ impl From<eth::TokenAmount> for SellAmount {
     }
 }
 
-impl From<SellAmount> for eth::U256 {
-    fn from(sell_amount: SellAmount) -> Self {
-        sell_amount.0
-    }
-}
-
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Into)]
 pub struct TargetAmount(pub eth::U256);
-
-impl From<eth::U256> for TargetAmount {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
-
-impl From<TargetAmount> for eth::U256 {
-    fn from(value: TargetAmount) -> Self {
-        value.0
-    }
-}
 
 impl From<eth::TokenAmount> for TargetAmount {
     fn from(value: eth::TokenAmount) -> Self {
@@ -370,14 +347,8 @@ impl From<BuyTokenBalance> for BuyTokenDestination {
 }
 
 /// The address which placed the order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Into)]
 pub struct Trader(eth::Address);
-
-impl From<Trader> for eth::Address {
-    fn from(value: Trader) -> Self {
-        value.0
-    }
-}
 
 /// A just-in-time order. JIT orders are added at solving time by the solver to
 /// generate a more optimal solution for the auction. Very similar to a regular

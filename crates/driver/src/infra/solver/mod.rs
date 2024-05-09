@@ -18,6 +18,7 @@ use {
         util,
     },
     anyhow::Result,
+    derive_more::{From, Into},
     num::BigRational,
     reqwest::header::HeaderName,
     std::collections::HashMap,
@@ -35,18 +36,12 @@ const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 /// The solver name. The user can configure this to be anything that they like.
 /// The name uniquely identifies each solver in case there's more than one of
 /// them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From, Into)]
 pub struct Name(pub String);
 
 impl Name {
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<String> for Name {
-    fn from(inner: String) -> Self {
-        Self(inner)
     }
 }
 
