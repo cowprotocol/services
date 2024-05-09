@@ -1,7 +1,7 @@
 use {
     crate::{
         database::competition::Competition,
-        domain::{self, auction::order::Class, OrderUid},
+        domain::{self, auction::order::Class, settlement::Settlement, OrderUid},
         infra::{
             self,
             solvers::dto::{reveal, settle, solve},
@@ -140,6 +140,23 @@ impl RunLoop {
                     return;
                 }
             };
+
+            // validate solution
+            let settlement = match Settlement::new(
+                &revealed.calldata.internalized.clone().into(),
+                self.eth.contracts().settlement_domain_separator(),
+            ) {
+                Ok(settlement) => settlement,
+                Err(err) => {
+                    tracing::error!(driver = %driver.name, ?err, "unexpected calldata format");
+                    return;
+                }
+            };
+
+            if !self.validate_settlement(&auction, &settlement).await {
+                tracing::error!(driver = %driver.name, "invalid settlement");
+                return;
+            }
 
             let order_uids = solution.order_ids().copied().collect();
             self.persistence
@@ -346,6 +363,36 @@ impl RunLoop {
         .into_iter()
         .flatten()
         .collect()
+    }
+
+    /// Settlement is allowed to contain orders that are part of the Auction or
+    /// JIT orders.
+    async fn validate_settlement(
+        &self,
+        auction: &domain::Auction,
+        settlement: &Settlement,
+    ) -> bool {
+        let auction_orders = auction
+            .orders
+            .iter()
+            .map(|o| OrderUid(o.uid.0))
+            .collect::<HashSet<_>>();
+
+        // all JIT orders will be non_auction_orders
+        let non_auction_orders = settlement
+            .order_uids()
+            .filter(|order| !auction_orders.contains(order))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        // make sure all non-auction orders are also non-database
+        self.persistence
+            .all_orders_not_exist(&non_auction_orders)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::warn!(?err, "failed to check if all orders exist");
+                false
+            })
     }
 
     /// Computes a driver's solutions for the solver competition.

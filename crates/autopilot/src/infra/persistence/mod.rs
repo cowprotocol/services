@@ -6,6 +6,7 @@ use {
     },
     anyhow::Context,
     chrono::Utc,
+    database::byte_array::ByteArray,
     number::conversions::big_decimal_to_u256,
     primitive_types::H256,
     std::{collections::HashMap, sync::Arc},
@@ -166,6 +167,34 @@ impl Persistence {
         }
 
         Ok(prices)
+    }
+
+    /// Returns true if all given orders do not exist in the database.
+    pub async fn all_orders_not_exist(
+        &self,
+        order_uids: &[domain::OrderUid],
+    ) -> Result<bool, Error> {
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .context("begin")
+            .map_err(Error::DbError)?;
+
+        let order_exist = database::orders::all_orders_not_exist(
+            &mut ex,
+            order_uids
+                .iter()
+                .map(|uid| ByteArray(uid.0))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .await
+        .context("fetch")
+        .map_err(Error::DbError)?;
+
+        Ok(order_exist)
     }
 }
 

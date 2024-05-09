@@ -755,6 +755,27 @@ pub async fn user_orders_with_quote(
         .await
 }
 
+pub async fn all_orders_not_exist(
+    ex: &mut PgConnection,
+    uids: &[OrderUid],
+) -> Result<bool, sqlx::Error> {
+    if uids.is_empty() {
+        return Ok(true);
+    }
+
+    let mut query_builder =
+        QueryBuilder::new("SELECT NOT EXISTS (SELECT 1 FROM orders WHERE uid IN (");
+
+    let mut separated = query_builder.separated(", ");
+    for value_type in uids {
+        separated.push_bind(value_type);
+    }
+    separated.push_unseparated(")) ");
+
+    let query = query_builder.build_query_scalar();
+    query.fetch_one(ex).await
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -1890,5 +1911,31 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(full_order.full_app_data, Some(full_app_data));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_all_orders_not_exist() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order1 = Order {
+            uid: ByteArray([1; 56]),
+            ..Default::default()
+        };
+        let order2 = Order {
+            uid: ByteArray([2; 56]),
+            ..Default::default()
+        };
+
+        assert!(all_orders_not_exist(&mut db, &[order1.uid, order2.uid])
+            .await
+            .unwrap());
+
+        insert_order(&mut db, &order2).await.unwrap();
+        assert!(!all_orders_not_exist(&mut db, &[order1.uid, order2.uid])
+            .await
+            .unwrap());
     }
 }

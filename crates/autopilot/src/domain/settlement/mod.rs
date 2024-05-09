@@ -32,6 +32,10 @@ impl Settlement {
     /// id.
     const META_DATA_LEN: usize = 8;
 
+    pub fn order_uids(&self) -> impl Iterator<Item = &order::OrderUid> {
+        self.trades.iter().map(|trade| trade.order_uid())
+    }
+
     pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
         self.trades
             .iter()
