@@ -13,13 +13,18 @@ use {
     trade::Trade,
 };
 
+pub mod auction2;
 mod tokenized;
 mod trade;
 pub mod transaction;
 pub use transaction::{Transaction, Tx};
+use {
+    super::{fee, OrderUid},
+    std::collections::HashMap,
+};
 
 /// Settlement originated from a calldata of a settlement transaction.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct Settlement {
     trades: Vec<Trade>,
@@ -33,6 +38,26 @@ impl Settlement {
     /// Number of bytes that may be appended to the calldata to store an auction
     /// id.
     const META_DATA_LEN: usize = 8;
+
+    pub fn order_uids(&self) -> impl Iterator<Item = &order::OrderUid> {
+        self.trades.iter().map(|trade| trade.order_uid())
+    }
+
+    pub fn score(
+        &self,
+        prices: &auction::Prices,
+        policies: &HashMap<OrderUid, Vec<fee::Policy>>,
+    ) -> Result<eth::Ether, trade::Error> {
+        self.trades
+            .iter()
+            .map(|trade| {
+                trade.score(
+                    prices,
+                    &policies.get(trade.order_uid()).cloned().unwrap_or_default(),
+                )
+            })
+            .sum()
+    }
 
     pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
         self.trades

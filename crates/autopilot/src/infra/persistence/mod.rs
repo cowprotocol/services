@@ -7,7 +7,7 @@ use {
     anyhow::Context,
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
-    primitive_types::H256,
+    primitive_types::{H160, H256},
     std::{collections::HashMap, sync::Arc},
     tracing::Instrument,
 };
@@ -161,11 +161,68 @@ impl Persistence {
             let price = big_decimal_to_u256(&price.price)
                 .ok_or(domain::auction::InvalidPrice)
                 .and_then(|p| domain::auction::Price::new(p.into()))
-                .map_err(Error::Price)?;
+                .map_err(AuctionError::Price)?;
             prices.insert(token, price);
         }
 
         Ok(prices)
+    }
+
+    /// Get auction data related to the given settlement.
+    pub async fn get_settlement_auction(
+        &self,
+        settlement: &domain::settlement::Settlement,
+    ) -> Result<domain::settlement::auction2::Auction, Error> {
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .context("begin")
+            .map_err(Error::DbError)?;
+
+        let auction = settlement.auction_id();
+
+        // auction prices
+        let db_prices = database::auction_prices::fetch(&mut ex, auction)
+            .await
+            .context("fetch auction prices")
+            .map_err(Error::DbError)?;
+
+        let mut prices = HashMap::new();
+        for price in db_prices {
+            let token = eth::H160(price.token.0).into();
+            let price = big_decimal_to_u256(&price.price)
+                .ok_or(domain::auction::InvalidPrice)
+                .and_then(|p| domain::auction::Price::new(p.into()))
+                .map_err(AuctionError::Price)?;
+            prices.insert(token, price);
+        }
+
+        // scores
+        let scores = database::settlement_scores::fetch(&mut ex, auction)
+            .await
+            .context("fetch scores")?
+            .ok_or(AuctionError::MissingScore)?;
+
+        // promised calldata
+        let calldata = database::settlement_call_data::fetch(&mut ex, auction)
+            .await
+            .context("fetch call data")?
+            .ok_or(AuctionError::MissingCalldata)?;
+
+        let settled_orders = settlement.order_uids();
+        //let missing_orders =
+
+        Ok(domain::settlement::auction2::Auction {
+            settlement: settlement.clone(),
+            prices,
+            winner: H160(scores.winner.0).into(),
+            winner_score: big_decimal_to_u256(&scores.winning_score).unwrap(),
+            winner_calldata: todo!(),
+            deadline: todo!(),
+            missing_orders: todo!(),
+        })
     }
 }
 
@@ -174,5 +231,15 @@ pub enum Error {
     #[error("failed to read data from database")]
     DbError(#[from] anyhow::Error),
     #[error(transparent)]
+    Auction(#[from] AuctionError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuctionError {
+    #[error(transparent)]
     Price(#[from] domain::auction::InvalidPrice),
+    #[error("score not found in the database")]
+    MissingScore,
+    #[error("calldata not found in the database")]
+    MissingCalldata,
 }

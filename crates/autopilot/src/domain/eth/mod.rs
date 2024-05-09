@@ -11,7 +11,7 @@ impl From<H160> for Address {
 }
 
 /// Block number.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct BlockNo(pub u64);
 
 impl From<u64> for BlockNo {

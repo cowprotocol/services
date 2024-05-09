@@ -5,7 +5,6 @@ use {
     crate::{
         domain::{auction, eth},
         infra,
-        util,
     },
 };
 
@@ -19,14 +18,14 @@ pub struct Tx {
 }
 
 impl Tx {
-    pub async fn new(tx: eth::TxId, eth: infra::Ethereum) -> Result<Self, Error> {
+    pub async fn new(tx: eth::TxId, eth: &infra::Ethereum) -> Result<Self, Error> {
         let (transaction, receipt) =
             tokio::try_join!(eth.transaction(tx), eth.transaction_receipt(tx),)?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
 
         let domain_separator = eth.contracts().settlement_domain_separator();
-        let settlement = Settlement::new(&transaction.input.0.clone(), domain_separator)?;
+        let settlement = Settlement::new(&transaction.input.clone(), domain_separator)?;
         Ok(Self {
             settlement,
             transaction,
@@ -41,6 +40,18 @@ impl Tx {
     pub fn solver(&self) -> eth::Address {
         self.transaction.solver
     }
+
+    pub fn calldata(&self) -> &eth::Calldata {
+        &self.transaction.input
+    }
+
+    pub fn block(&self) -> eth::BlockNo {
+        self.receipt.block
+    }
+
+    pub fn settlement(&self) -> &Settlement {
+        &self.settlement
+    }
 }
 
 /// An on-chain transaction that settles a settlement.
@@ -51,12 +62,8 @@ pub struct Transaction {
     /// The address of the solver that submitted the transaction.
     pub solver: eth::Address,
     /// The call data of the transaction.
-    pub input: CallData,
+    pub input: eth::Calldata,
 }
-
-/// Call data in a format expected by the settlement contract.
-#[derive(Debug)]
-pub struct CallData(pub util::Bytes<Vec<u8>>);
 
 /// A receipt of a transaction that settles a settlement.
 #[derive(Debug)]

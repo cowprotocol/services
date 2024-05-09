@@ -13,7 +13,7 @@ use {
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub struct Trade {
     order_uid: domain::OrderUid,
@@ -43,11 +43,14 @@ impl Trade {
         }
     }
 
+    pub fn order_uid(&self) -> &domain::OrderUid {
+        &self.order_uid
+    }
+
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    #[allow(dead_code)]
-    fn score(
+    pub fn score(
         &self,
         prices: &auction::Prices,
         policies: &[fee::Policy],
@@ -435,7 +438,7 @@ impl Trade {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Prices {
     pub uniform: ClearingPrices,
     /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
@@ -449,7 +452,7 @@ pub struct PriceLimits {
 }
 
 /// Uniform clearing prices at which the trade was executed.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
