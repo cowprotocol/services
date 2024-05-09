@@ -15,6 +15,9 @@ use {
 
 mod tokenized;
 mod trade;
+pub mod transaction;
+
+pub use transaction::{Transaction, Tx};
 
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
@@ -44,6 +47,10 @@ impl Settlement {
             .iter()
             .map(|trade| trade.native_fee(prices))
             .sum()
+    }
+
+    pub fn auction_id(&self) -> auction::Id {
+        self.auction_id
     }
 
     pub fn new(
