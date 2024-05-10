@@ -12,6 +12,7 @@ use {
         sync::Arc,
         time::Duration,
     },
+    url::Url,
 };
 
 /// Command line arguments for creating global block stream.
@@ -34,8 +35,8 @@ impl Arguments {
         Arc::new(web3)
     }
 
-    pub async fn stream(&self, web3: Web3) -> Result<CurrentBlockStream> {
-        current_block_stream(self.retriever(web3), self.block_stream_poll_interval).await
+    pub async fn stream(&self, rpc: Url) -> Result<CurrentBlockStream> {
+        current_block_stream(rpc, self.block_stream_poll_interval).await
     }
 }
 

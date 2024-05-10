@@ -1,12 +1,13 @@
 use {
-    crate::Web3,
+    crate::{http::HttpTransport, Web3, Web3Transport},
     anyhow::{anyhow, ensure, Context as _, Result},
     futures::StreamExt,
     primitive_types::{H256, U256},
-    std::{fmt::Debug, num::NonZeroU64, sync::Arc, time::Duration},
+    std::{fmt::Debug, num::NonZeroU64, time::Duration},
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
+    url::Url,
     web3::{
         helpers,
         types::{Block, BlockId, BlockNumber, U64},
@@ -81,11 +82,15 @@ impl TryFrom<Block<H256>> for BlockInfo {
 /// being able to share the result with several consumers. Calling this function
 /// again would create a new poller so it is preferable to clone an existing
 /// stream instead.
-pub async fn current_block_stream(
-    retriever: Arc<dyn BlockRetrieving>,
-    poll_interval: Duration,
-) -> Result<CurrentBlockStream> {
-    let first_block = retriever.current_block().await?;
+pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<CurrentBlockStream> {
+    // Build new Web3 specifically for the current block stream to avoid batching
+    // requests together on chains with a very high block frequency.
+    let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
+        Default::default(),
+        url,
+        "block_stream".into(),
+    )));
+    let first_block = web3.current_block().await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
 
     let (sender, receiver) = watch::channel(first_block);
@@ -93,7 +98,7 @@ pub async fn current_block_stream(
         let mut previous_block = first_block;
         loop {
             tokio::time::sleep(poll_interval).await;
-            let block = match retriever.current_block().await {
+            let block = match web3.current_block().await {
                 Ok(block) => block,
                 Err(err) => {
                     tracing::warn!("failed to get current block: {:?}", err);
@@ -309,7 +314,7 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
 mod tests {
     use {
         super::*,
-        crate::{create_env_test_transport, create_test_transport},
+        crate::create_env_test_transport,
         futures::StreamExt,
         tokio::time::{timeout, Duration},
     };
@@ -318,10 +323,8 @@ mod tests {
     #[ignore]
     async fn mainnet() {
         observe::tracing::initialize_reentrant("shared=debug");
-        let node = std::env::var("NODE_URL").unwrap();
-        let transport = create_test_transport(&node);
-        let web3 = Web3::new(transport);
-        let receiver = current_block_stream(Arc::new(web3), Duration::from_secs(1))
+        let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
+        let receiver = current_block_stream(node, Duration::from_secs(1))
             .await
             .unwrap();
         let mut stream = into_stream(receiver);

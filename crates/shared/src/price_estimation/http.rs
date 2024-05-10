@@ -788,14 +788,11 @@ mod tests {
 
         let client = Client::new();
 
-        let transport = HttpTransport::new(
-            client.clone(),
-            crate::url::join(
-                &Url::parse("https://mainnet.infura.io/v3/").unwrap(),
-                &infura_project_id,
-            ),
-            "main".into(),
+        let url = crate::url::join(
+            &Url::parse("https://mainnet.infura.io/v3/").unwrap(),
+            &infura_project_id,
         );
+        let transport = HttpTransport::new(client.clone(), url.clone(), "main".into());
         let web3 = Web3::new(DynTransport::new(transport));
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let version = chain_id.to_string();
@@ -812,7 +809,7 @@ mod tests {
                 .await
                 .unwrap()
                 .pool_fetching,
-                current_block_stream(Arc::new(web3.clone()), Duration::from_secs(1))
+                current_block_stream(url, Duration::from_secs(1))
                     .await
                     .unwrap(),
             )
