@@ -530,7 +530,7 @@ struct Participant<'a> {
     solution: Solution,
 }
 
-struct Solution {
+pub struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
@@ -545,6 +545,10 @@ impl Solution {
 
     pub fn orders(&self) -> &HashMap<domain::OrderUid, solve::TradedAmounts> {
         &self.orders
+    }
+
+    pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
+        &self.clearing_prices
     }
 }
 

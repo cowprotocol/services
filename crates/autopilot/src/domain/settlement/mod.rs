@@ -8,8 +8,10 @@ use {
             auction::{self, order},
             eth,
         },
+        run_loop,
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
+    std::collections::HashMap,
     trade::Trade,
 };
 
@@ -114,6 +116,66 @@ impl Settlement {
         }
 
         Ok(Self { trades, auction_id })
+    }
+
+    /// Build a settlement from a solved auction.
+    pub fn from_solution(
+        solution: &run_loop::Solution,
+        auction: &crate::domain::auction::Auction,
+        auction_id: auction::Id,
+    ) -> Self {
+        let auction_orders = auction
+            .orders
+            .iter()
+            .map(|o| (o.uid, o))
+            .collect::<HashMap<_, _>>();
+
+        let trades = solution
+            .orders()
+            .iter()
+            .map(|(order_id, amounts)| {
+                let order = auction_orders.get(order_id).unwrap();
+                let sell_token = &order.sell_token;
+                let buy_token = &order.buy_token;
+                trade::Trade::new(
+                    order.uid,
+                    eth::Asset {
+                        token: sell_token.clone().into(),
+                        amount: order.sell_amount.into(),
+                    },
+                    eth::Asset {
+                        token: buy_token.clone().into(),
+                        amount: order.buy_amount.into(),
+                    },
+                    order.side,
+                    match order.side {
+                        order::Side::Sell => amounts.sell_amount.into(),
+                        order::Side::Buy => amounts.buy_amount.into(),
+                    },
+                    trade::Prices {
+                        uniform: trade::ClearingPrices {
+                            sell: solution.clearing_prices()[sell_token],
+                            buy: solution.clearing_prices()[buy_token],
+                        },
+                        custom: trade::ClearingPrices {
+                            sell: match order.side {
+                                order::Side::Sell => amounts.buy_amount.into(),
+                                order::Side::Buy => amounts.sell_amount.into(),
+                            },
+                            buy: match order.side {
+                                order::Side::Sell => amounts.sell_amount.into(),
+                                order::Side::Buy => amounts.buy_amount.into(),
+                            }
+                        },
+                    },
+                )
+            })
+            .collect();
+
+        Self {
+            trades,
+            auction_id,
+        }
     }
 }
 
