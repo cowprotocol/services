@@ -180,15 +180,9 @@ impl Solution {
                     .map(|existing| (required, existing))
             }))
             .await?;
-        let approvals = allowances.into_iter().filter_map(|(required, existing)| {
-            required
-                .approval(&existing)
-                // As a gas optimization, we always approve the max amount possible. This minimizes
-                // the number of approvals necessary, and therefore minimizes the approval fees over time. This is a
-                // potential security issue, but its effects are minimized and only exploitable if
-                // solvers use insecure contracts.
-                .map(eth::allowance::Approval::max)
-        });
+        let approvals = allowances
+            .into_iter()
+            .filter_map(|(required, existing)| required.approval(&existing));
         Ok(approvals)
     }
 
