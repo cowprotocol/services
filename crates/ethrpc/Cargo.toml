@@ -33,6 +33,7 @@ web3 = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 maplit = { workspace = true }
