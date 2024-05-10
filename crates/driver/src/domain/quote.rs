@@ -271,7 +271,7 @@ mod encode {
             competition::solution,
             eth::{
                 self,
-                allowance::{Allowance, Required},
+                allowance::{Approval, Required},
             },
         },
         num::rational::Ratio,
@@ -305,6 +305,7 @@ mod encode {
             .allowances()
             .iter()
             .flat_map(|Required(allowance)| {
+                let approval = Approval(*allowance);
                 // When encoding approvals for quotes, reset the allowance instead
                 // of just setting it. This is required as some tokens only allow
                 // you to approve a non-0 value if the allowance was 0 to begin
@@ -315,11 +316,8 @@ mod encode {
                 // optimizations which is mostly inconsequential for quotes and not
                 // worth the performance hit.
                 vec![
-                    solution::encoding::approve(&Allowance {
-                        amount: 0.into(),
-                        ..*allowance
-                    }),
-                    solution::encoding::approve(allowance),
+                    solution::encoding::approve(&approval.revoke().0),
+                    solution::encoding::approve(&approval.max().0),
                 ]
             })
             .chain(std::iter::once(encoded))
