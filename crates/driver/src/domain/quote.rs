@@ -317,7 +317,7 @@ mod encode {
                 vec![
                     solution::encoding::approve(&Allowance {
                         amount: 0.into(),
-                        ..allowance.clone()
+                        ..*allowance
                     }),
                     solution::encoding::approve(allowance),
                 ]
