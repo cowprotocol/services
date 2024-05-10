@@ -29,7 +29,7 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    anyhow::{anyhow, Context as _, Result},
+    anyhow::{Context as _, Result},
     ethcontract::H160,
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
@@ -206,33 +206,24 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     fn create_native_estimator(
         &mut self,
-        source: NativePriceEstimatorSource,
-        external: &[PriceEstimatorSource],
+        source: &NativePriceEstimatorSource,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
-            NativePriceEstimatorSource::GenericPriceEstimator(estimator) => {
+            NativePriceEstimatorSource::Driver(driver) => {
                 let native_token_price_estimation_amount =
                     self.native_token_price_estimation_amount()?;
-                self.get_estimators(external, |entry| &entry.native)?
-                    .into_iter()
-                    .map(
-                        |(name, estimator)| -> (String, Arc<dyn NativePriceEstimating>) {
-                            (
-                                name,
-                                Arc::new(NativePriceEstimator::new(
-                                    Arc::new(self.sanitized(estimator)),
-                                    self.network.native_token,
-                                    native_token_price_estimation_amount,
-                                )),
-                            )
-                        },
-                    )
-                    .find(|external| external.0 == estimator)
-                    .ok_or(anyhow!(
-                        "Couldn't find generic price estimator with name {} to instantiate native \
-                         estimator",
-                        estimator
-                    ))
+                let estimator = self
+                    .get_estimator(&PriceEstimatorSource::External(driver.clone()))?
+                    .native
+                    .clone();
+                Ok((
+                    driver.name.clone(),
+                    Arc::new(NativePriceEstimator::new(
+                        Arc::new(self.sanitized(estimator)),
+                        self.network.native_token,
+                        native_token_price_estimation_amount,
+                    )),
+                ))
             }
             NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
                 "OneInchSpotPriceApi".into(),
@@ -324,7 +315,6 @@ impl<'a> PriceEstimatorFactory<'a> {
     pub fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
-        external: &[PriceEstimatorSource],
         results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
@@ -337,7 +327,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .map(|stage| {
                 stage
                     .iter()
-                    .map(|source| self.create_native_estimator(source.clone(), external))
+                    .map(|source| self.create_native_estimator(source))
                     .collect::<Result<Vec<_>>>()
             })
             .collect::<Result<Vec<Vec<_>>>>()?;

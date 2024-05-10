@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::{display_option, display_secret_option},
+        arguments::{display_option, display_secret_option, ExternalSolver},
         conversions::U256Ext,
         trade_finding::Interaction,
     },
@@ -19,6 +19,7 @@ use {
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
+        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -42,15 +43,15 @@ pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
-    GenericPriceEstimator(String),
+    Driver(ExternalSolver),
     OneInchSpotPriceApi,
 }
 
 impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let formatter = match self {
-            NativePriceEstimator::GenericPriceEstimator(s) => s,
-            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi",
+            NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
+            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
         };
         write!(f, "{}", formatter)
     }
@@ -59,14 +60,6 @@ impl Display for NativePriceEstimator {
 impl NativePriceEstimators {
     pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
-    }
-}
-
-impl Default for NativePriceEstimators {
-    fn default() -> Self {
-        Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
-            "Baseline".into(),
-        )]])
     }
 }
 
@@ -85,26 +78,32 @@ impl Display for NativePriceEstimators {
     }
 }
 
-impl From<&str> for NativePriceEstimators {
-    fn from(s: &str) -> Self {
-        Self(
+impl FromStr for NativePriceEstimators {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(
             s.split(';')
                 .map(|sub_list| {
                     sub_list
                         .split(',')
-                        .map(NativePriceEstimator::from)
-                        .collect::<Vec<NativePriceEstimator>>()
+                        .map(NativePriceEstimator::from_str)
+                        .collect::<Result<Vec<NativePriceEstimator>>>()
                 })
-                .collect::<Vec<Vec<NativePriceEstimator>>>(),
-        )
+                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
+        ))
     }
 }
 
-impl From<&str> for NativePriceEstimator {
-    fn from(s: &str) -> Self {
+impl FromStr for NativePriceEstimator {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
-            estimator => NativePriceEstimator::GenericPriceEstimator(estimator.into()),
+            "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
+            estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
+                estimator,
+            )?)),
         }
     }
 }
@@ -482,16 +481,19 @@ mod tests {
         // Arg::value_parser or #[arg(value_enum)]:
         // https://docs.rs/clap/latest/clap/_derive/index.html#arg-attributes
 
-        let parsed = |arg: &str| NativePriceEstimators::from(arg);
+        let parsed = |arg: &str| NativePriceEstimators::from_str(arg);
         let stringified = |arg: &NativePriceEstimators| format!("{arg}");
 
         for repr in [
-            &NativePriceEstimator::GenericPriceEstimator("Baseline".into()).to_string(),
+            &NativePriceEstimator::Driver(
+                ExternalSolver::from_str("Baseline|http://localhost:1234").unwrap(),
+            )
+            .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
             "one,two;three,four",
             &format!("one,two;{},four", NativePriceEstimator::OneInchSpotPriceApi),
         ] {
-            assert_eq!(stringified(&parsed(repr)), repr);
+            assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
     }
 }

@@ -90,7 +90,7 @@ pub struct Arguments {
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
-    #[clap(long, env, default_value_t)]
+    #[clap(long, env)]
     pub native_price_estimators: NativePriceEstimators,
 
     /// How many successful price estimates for each order will cause a fast

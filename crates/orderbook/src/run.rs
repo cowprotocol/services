@@ -380,10 +380,6 @@ pub async fn run(args: Arguments) {
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.native_price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
             args.fast_price_estimation_results_required,
         )
         .unwrap();
