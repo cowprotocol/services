@@ -70,9 +70,9 @@ impl Settlement {
 
         let tokenized = function
             .decode_input(calldata)
-            .map_err(|err| EncodingError::Decoding(err).with(auction_id))?;
+            .map_err(|err| error::Encoding::Decoding(err).with(auction_id))?;
         let tokenized = <tokenized::Settlement>::from_token(web3::ethabi::Token::Tuple(tokenized))
-            .map_err(|err| EncodingError::Tokenizing(err).with(auction_id))?;
+            .map_err(|err| error::Encoding::Tokenizing(err).with(auction_id))?;
 
         let (tokens, clearing_prices, decoded_trades, _interactions) = tokenized;
 
@@ -91,7 +91,7 @@ impl Settlement {
                 tokens.iter().position(|token| token == &buy_token).unwrap();
             trades.push(trade::Trade::new(
                 tokenized::order_uid(&trade, &tokens, domain_separator)
-                    .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?,
+                    .map_err(|err| error::Encoding::OrderUidRecover(err).with(auction_id))?,
                 eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
@@ -121,61 +121,63 @@ impl Settlement {
     /// Build a settlement from a solved auction.
     pub fn from_solution(
         solution: &run_loop::Solution,
-        auction: &crate::domain::auction::Auction,
+        auction: &auction::Auction,
         auction_id: auction::Id,
-    ) -> Self {
+    ) -> Result<Self, error::Solution> {
         let auction_orders = auction
             .orders
             .iter()
             .map(|o| (o.uid, o))
             .collect::<HashMap<_, _>>();
 
-        let trades = solution
-            .orders()
-            .iter()
-            .map(|(order_id, amounts)| {
-                let order = auction_orders.get(order_id).unwrap();
-                let sell_token = &order.sell_token;
-                let buy_token = &order.buy_token;
-                trade::Trade::new(
-                    order.uid,
-                    eth::Asset {
-                        token: sell_token.clone().into(),
-                        amount: order.sell_amount.into(),
+        let mut trades = Vec::with_capacity(solution.orders().len());
+        for (order_uid, traded) in solution.orders().iter() {
+            let order = auction_orders
+                .get(order_uid)
+                .ok_or(error::Solution::MissingOrder)?;
+            let sell_token = &order.sell_token;
+            let buy_token = &order.buy_token;
+            trades.push(trade::Trade::new(
+                order.uid,
+                eth::Asset {
+                    token: (*sell_token).into(),
+                    amount: order.sell_amount.into(),
+                },
+                eth::Asset {
+                    token: (*buy_token).into(),
+                    amount: order.buy_amount.into(),
+                },
+                order.side,
+                match order.side {
+                    order::Side::Sell => traded.sell_amount.into(),
+                    order::Side::Buy => traded.buy_amount.into(),
+                },
+                trade::Prices {
+                    uniform: trade::ClearingPrices {
+                        sell: *solution
+                            .clearing_prices()
+                            .get(sell_token)
+                            .ok_or(error::Solution::MissingClearingPrice)?,
+                        buy: *solution
+                            .clearing_prices()
+                            .get(buy_token)
+                            .ok_or(error::Solution::MissingClearingPrice)?,
                     },
-                    eth::Asset {
-                        token: buy_token.clone().into(),
-                        amount: order.buy_amount.into(),
-                    },
-                    order.side,
-                    match order.side {
-                        order::Side::Sell => amounts.sell_amount.into(),
-                        order::Side::Buy => amounts.buy_amount.into(),
-                    },
-                    trade::Prices {
-                        uniform: trade::ClearingPrices {
-                            sell: solution.clearing_prices()[sell_token],
-                            buy: solution.clearing_prices()[buy_token],
+                    custom: trade::ClearingPrices {
+                        sell: match order.side {
+                            order::Side::Sell => traded.buy_amount,
+                            order::Side::Buy => traded.sell_amount,
                         },
-                        custom: trade::ClearingPrices {
-                            sell: match order.side {
-                                order::Side::Sell => amounts.buy_amount.into(),
-                                order::Side::Buy => amounts.sell_amount.into(),
-                            },
-                            buy: match order.side {
-                                order::Side::Sell => amounts.sell_amount.into(),
-                                order::Side::Buy => amounts.buy_amount.into(),
-                            }
+                        buy: match order.side {
+                            order::Side::Sell => traded.sell_amount,
+                            order::Side::Buy => traded.buy_amount,
                         },
                     },
-                )
-            })
-            .collect();
-
-        Self {
-            trades,
-            auction_id,
+                },
+            ));
         }
+
+        Ok(Self { trades, auction_id })
     }
 }
 
@@ -237,19 +239,31 @@ impl From<U256> for TradeFlags {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum EncodingError {
-    #[error("unable to decode settlement calldata: {0}")]
-    Decoding(#[from] web3::ethabi::Error),
-    #[error("unable to tokenize calldata into expected format: {0}")]
-    Tokenizing(#[from] ethcontract::tokens::Error),
-    #[error("unable to recover order uid: {0}")]
-    OrderUidRecover(#[from] tokenized::Error),
-}
+pub mod error {
+    use super::*;
 
-impl EncodingError {
-    pub fn with(self, auction: auction::Id) -> Error {
-        Error::Encoding(auction, self)
+    #[derive(Debug, thiserror::Error)]
+    pub enum Encoding {
+        #[error("unable to decode settlement calldata: {0}")]
+        Decoding(#[from] web3::ethabi::Error),
+        #[error("unable to tokenize calldata into expected format: {0}")]
+        Tokenizing(#[from] ethcontract::tokens::Error),
+        #[error("unable to recover order uid: {0}")]
+        OrderUidRecover(#[from] tokenized::Error),
+    }
+
+    impl Encoding {
+        pub fn with(self, auction: auction::Id) -> Error {
+            Error::Encoding(auction, self)
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Solution {
+        #[error("order not found in the auction")]
+        MissingOrder,
+        #[error("referenced clearing price missing")]
+        MissingClearingPrice,
     }
 }
 
