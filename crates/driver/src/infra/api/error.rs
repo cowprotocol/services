@@ -70,6 +70,7 @@ impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
             quote::Error::Solver(_) => Kind::SolverFailed,
             quote::Error::Blockchain(_) => Kind::Unknown,
             quote::Error::Boundary(_) => Kind::Unknown,
+            quote::Error::Encoding(_) => Kind::Unknown,
         };
         error.into()
     }

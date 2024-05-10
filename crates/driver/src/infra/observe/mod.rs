@@ -271,6 +271,7 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         }
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
                         quote::Error::Boundary(_) => "Unknown",
+                        quote::Error::Encoding(_) => "Encoding",
                     },
                 ])
                 .inc();
