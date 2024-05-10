@@ -35,12 +35,14 @@ const FORK_BLOCK_MAINNET: u64 = 19796077;
 /// integrations. Based on an RFQ quote we saw on prod:
 /// https://www.tdly.co/shared/simulation/7402de5e-e524-4e24-9af8-50d0a38c105b
 async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
-    let block_stream = ethrpc::current_block::current_block_stream(
-        Arc::new(web3.clone()),
-        std::time::Duration::from_millis(1_000),
-    )
-    .await
-    .unwrap();
+    let url = std::env::var("FORK_URL_MAINNET")
+        .expect("FORK_URL_MAINNET must be set to run forked tests")
+        .parse()
+        .unwrap();
+    let block_stream =
+        ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(1_000))
+            .await
+            .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let verifier = TradeVerifier::new(
