@@ -269,7 +269,10 @@ mod encode {
     use {
         crate::domain::{
             competition::solution,
-            eth::{self, allowance::Required},
+            eth::{
+                self,
+                allowance::{Allowance, Required},
+            },
         },
         num::rational::Ratio,
     };
@@ -301,7 +304,24 @@ mod encode {
         Ok(interaction
             .allowances()
             .iter()
-            .map(|Required(allowance)| solution::encoding::approve(allowance))
+            .flat_map(|Required(allowance)| {
+                // When encoding approvals for quotes, reset the allowance instead
+                // of just setting it. This is required as some tokens only allow
+                // you to approve a non-0 value if the allowance was 0 to begin
+                // with, such as Tether USD.
+                //
+                // Alternatively, we could check existing allowances and only encode
+                // the approvals if needed, but this would only result in small gas
+                // optimizations which is mostly inconsequential for quotes and not
+                // worth the performance hit.
+                vec![
+                    solution::encoding::approve(&Allowance {
+                        amount: 0.into(),
+                        ..allowance.clone()
+                    }),
+                    solution::encoding::approve(allowance),
+                ]
+            })
             .chain(std::iter::once(encoded))
             .collect())
     }
