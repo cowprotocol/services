@@ -65,12 +65,10 @@ async fn solver_competition(web3: Web3) {
             "--drivers=test_solver|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2"
                 .to_string(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
-            "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
     services.start_api(vec![
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
-        "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
     ]).await;
 
     // Place Order

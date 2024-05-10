@@ -151,8 +151,6 @@ async fn zero_ex_liquidity(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
             ],
         )
@@ -160,8 +158,6 @@ async fn zero_ex_liquidity(web3: Web3) {
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
         ])
         .await;
 

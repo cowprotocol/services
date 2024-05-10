@@ -64,16 +64,12 @@ async fn order_cancellation(web3: Web3) {
             vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                    .to_string(),
             ],
         )
         .await;
     services
         .start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
         ])
         .await;
 

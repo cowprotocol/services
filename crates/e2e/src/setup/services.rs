@@ -94,7 +94,7 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
-            "--native-price-estimators=test_quoter".to_string(),
+            "--native-price-estimators=test_quoter|http://localhost:11088/test_solver".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             "--simulation-node-url=http://localhost:8545".to_string(),
@@ -192,8 +192,6 @@ impl<'a> Services<'a> {
                     "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
-                    "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                        .to_string(),
                 ],
                 args.autopilot,
             ]
@@ -204,8 +202,6 @@ impl<'a> Services<'a> {
             [
                 vec![
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                        .to_string(),
-                    "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                 ],
                 args.api,
@@ -247,11 +243,11 @@ impl<'a> Services<'a> {
             let autopilot_args = vec![
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+                "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
-                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
+                "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
             (autopilot_args, api_args)
         } else {
@@ -259,14 +255,14 @@ impl<'a> Services<'a> {
                 "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
 
             let api_args = vec![
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
-                "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
+                "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
             ];
             (autopilot_args, api_args)

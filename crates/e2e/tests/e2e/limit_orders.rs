@@ -324,8 +324,6 @@ async fn too_many_limit_orders_test(web3: Web3) {
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
         ])
         .await;
 
@@ -400,8 +398,6 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         .start_api(vec![
             "--max-limit-orders-per-user=1".into(),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
-            "--native-price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
-                .to_string(),
         ])
         .await;
 
