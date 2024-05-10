@@ -200,6 +200,10 @@ impl Competition {
                         trades: settlement.orders(),
                         prices: settlement.prices(),
                         gas: Some(settlement.gas.estimate),
+                        calldata: settlement
+                            .transaction(settlement::Internalization::Enable, false)
+                            .input
+                            .clone(),
                     },
                     settlement,
                 )
@@ -256,11 +260,11 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
             internalized_calldata: settlement
-                .transaction(settlement::Internalization::Enable)
+                .transaction(settlement::Internalization::Enable, true)
                 .input
                 .clone(),
             uninternalized_calldata: settlement
-                .transaction(settlement::Internalization::Disable)
+                .transaction(settlement::Internalization::Disable, true)
                 .input
                 .clone(),
         })
@@ -288,11 +292,11 @@ impl Competition {
             Err(_) => Err(Error::SubmissionError),
             Ok(tx_hash) => Ok(Settled {
                 internalized_calldata: settlement
-                    .transaction(settlement::Internalization::Enable)
+                    .transaction(settlement::Internalization::Enable, true)
                     .input
                     .clone(),
                 uninternalized_calldata: settlement
-                    .transaction(settlement::Internalization::Disable)
+                    .transaction(settlement::Internalization::Disable, true)
                     .input
                     .clone(),
                 tx_hash,
@@ -314,7 +318,7 @@ impl Competition {
         &self,
         settlement: &Settlement,
     ) -> Result<(), infra::simulator::Error> {
-        let tx = settlement.transaction(settlement::Internalization::Enable);
+        let tx = settlement.transaction(settlement::Internalization::Enable, true);
         let gas_needed_for_tx = self.simulator.gas(tx).await?;
         if gas_needed_for_tx > settlement.gas.limit {
             return Err(infra::simulator::Error::Revert(RevertError {
@@ -368,6 +372,9 @@ pub struct Solved {
     pub score: eth::Ether,
     pub trades: HashMap<order::Uid, Amounts>,
     pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
+    /// A transaction calldata without interactions. A promise of solution
+    /// quality.
+    pub calldata: Bytes<Vec<u8>>,
     pub gas: Option<eth::Gas>,
 }
 

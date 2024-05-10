@@ -90,7 +90,7 @@ impl Mempools {
         }
 
         let deadline = mempool.config().deadline();
-        let tx = settlement.transaction(settlement::Internalization::Enable);
+        let tx = settlement.transaction(settlement::Internalization::Enable, true);
 
         // Instantiate block stream and skip the current block before we submit the
         // settlement. This way we only run iterations in blocks that can potentially

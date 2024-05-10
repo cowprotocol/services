@@ -44,6 +44,7 @@ pub fn tx(
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
     solver_native_token: ManageNativeToken,
+    encode_interactions: bool,
 ) -> Result<eth::Tx, Error> {
     let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut clearing_prices =
@@ -209,11 +210,15 @@ pub fn tx(
             tokens,
             clearing_prices,
             trades.iter().map(codec::trade).collect(),
-            [
-                pre_interactions.iter().map(codec::interaction).collect(),
-                interactions.iter().map(codec::interaction).collect(),
-                post_interactions.iter().map(codec::interaction).collect(),
-            ],
+            if encode_interactions {
+                [
+                    pre_interactions.iter().map(codec::interaction).collect(),
+                    interactions.iter().map(codec::interaction).collect(),
+                    post_interactions.iter().map(codec::interaction).collect(),
+                ]
+            } else {
+                Default::default()
+            },
         )
         .into_inner();
 

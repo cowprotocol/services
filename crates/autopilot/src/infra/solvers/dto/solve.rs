@@ -100,6 +100,9 @@ pub struct Solution {
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
     pub gas: Option<u64>,
+    /// Calldata without interactions. A promise of quality.
+    #[serde(with = "bytes_hex")]
+    pub calldata: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

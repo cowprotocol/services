@@ -46,6 +46,8 @@ pub struct Settlement {
 struct SettlementTx {
     /// Transaction with all internalizable interactions omitted
     internalized: eth::Tx,
+    /// Transaction without interactions
+    no_interactions: eth::Tx,
     /// Full Transaction without internalizing any interactions
     uninternalized: eth::Tx,
     /// Whether this settlement has interactions that could make it revert
@@ -101,6 +103,11 @@ impl Settlement {
                         eth.contracts().settlement(),
                         Internalization::Enable,
                     ),
+                    no_interactions: boundary.tx(
+                        auction.id().unwrap(),
+                        eth.contracts().settlement(),
+                        Internalization::Enable,
+                    ),
                     uninternalized: boundary.tx(
                         auction.id().unwrap(),
                         eth.contracts().settlement(),
@@ -118,6 +125,7 @@ impl Settlement {
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
                     solver_native_token,
+                    true,
                 ) {
                     Ok(domain) => {
                         if domain.input != tx.internalized.input {
@@ -140,6 +148,16 @@ impl Settlement {
                     solution.approvals(eth, Internalization::Enable).await?,
                     Internalization::Enable,
                     solver_native_token,
+                    true,
+                )?,
+                no_interactions: encoding::tx(
+                    auction,
+                    &solution,
+                    eth.contracts(),
+                    solution.approvals(eth, Internalization::Enable).await?,
+                    Internalization::Enable,
+                    solver_native_token,
+                    false,
                 )?,
                 uninternalized: encoding::tx(
                     auction,
@@ -148,6 +166,7 @@ impl Settlement {
                     solution.approvals(eth, Internalization::Disable).await?,
                     Internalization::Disable,
                     solver_native_token,
+                    true,
                 )?,
                 may_revert: solution.revertable(),
             },
@@ -264,7 +283,14 @@ impl Settlement {
     }
 
     /// The calldata for this settlement.
-    pub fn transaction(&self, internalization: Internalization) -> &eth::Tx {
+    pub fn transaction(
+        &self,
+        internalization: Internalization,
+        encode_interactions: bool,
+    ) -> &eth::Tx {
+        if !encode_interactions {
+            return &self.transaction.no_interactions;
+        }
         match internalization {
             Internalization::Enable => &self.transaction.internalized,
             Internalization::Disable => &self.transaction.uninternalized,

@@ -50,6 +50,7 @@ impl Solution {
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
+            calldata: solved.calldata.into(),
         }
     }
 }
@@ -83,4 +84,6 @@ pub struct Solution {
     orders: HashMap<OrderId, TradedAmounts>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     clearing_prices: HashMap<eth::H160, eth::U256>,
+    #[serde_as(as = "serialize::Hex")]
+    calldata: Vec<u8>,
 }

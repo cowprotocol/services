@@ -1,7 +1,7 @@
 use {
     crate::{
         database::competition::Competition,
-        domain::{self, auction::order::Class, OrderUid},
+        domain::{self, auction::order::Class, eth, OrderUid},
         infra::{
             self,
             solvers::dto::{reveal, settle, solve},
@@ -140,6 +140,14 @@ impl RunLoop {
                     return;
                 }
             };
+
+            // Check if the promised calldata can be decoded.
+            if let Err(err) = domain::settlement::Settlement::new(
+                &solution.calldata,
+                self.eth.contracts().settlement_domain_separator(),
+            ) {
+                tracing::warn!(?err, "failed to decode settlement calldata");
+            }
 
             let order_uids = solution.order_ids().copied().collect();
             self.persistence
@@ -376,6 +384,7 @@ impl RunLoop {
                         .map(|(o, amounts)| (o.into(), amounts))
                         .collect(),
                     clearing_prices: solution.clearing_prices,
+                    calldata: solution.calldata.into(),
                 })
             })
             .collect())
@@ -536,6 +545,7 @@ struct Solution {
     score: NonZeroU256,
     orders: HashMap<domain::OrderUid, solve::TradedAmounts>,
     clearing_prices: HashMap<H160, U256>,
+    calldata: eth::Calldata,
 }
 
 impl Solution {
