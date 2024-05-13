@@ -60,4 +60,12 @@ impl Approval {
             ..self.0
         })
     }
+
+    /// Revoke the approval, i.e. set the approved amount to [`U256::zero`].
+    pub fn revoke(self) -> Self {
+        Self(Allowance {
+            amount: U256::zero(),
+            ..self.0
+        })
+    }
 }

@@ -230,7 +230,7 @@ pub fn tx(
     })
 }
 
-fn liquidity_interaction(
+pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
     settlement: &contracts::GPv2Settlement,
@@ -261,7 +261,7 @@ fn liquidity_interaction(
     .ok_or(Error::InvalidInteractionExecution(liquidity.clone()))
 }
 
-fn approve(allowance: &Allowance) -> eth::Interaction {
+pub fn approve(allowance: &Allowance) -> eth::Interaction {
     let mut amount = [0u8; 32];
     let selector = hex_literal::hex!("095ea7b3");
     allowance.amount.to_big_endian(&mut amount);

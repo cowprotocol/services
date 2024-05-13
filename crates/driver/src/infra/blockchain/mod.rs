@@ -5,6 +5,7 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     std::{fmt, sync::Arc},
     thiserror::Error,
+    url::Url,
     web3::Transport,
 };
 
@@ -20,6 +21,7 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 pub struct Rpc {
     web3: DynWeb3,
     chain: eth::ChainId,
+    url: Url,
 }
 
 impl Rpc {
@@ -29,7 +31,11 @@ impl Rpc {
         let web3 = boundary::buffered_web3_client(url);
         let chain = web3.eth().chain_id().await?.into();
 
-        Ok(Self { web3, chain })
+        Ok(Self {
+            web3,
+            chain,
+            url: url.clone(),
+        })
     }
 
     /// Returns the chain id for the RPC connection.
@@ -69,7 +75,7 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
     ) -> Self {
-        let Rpc { web3, chain } = rpc;
+        let Rpc { web3, chain, url } = rpc;
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
@@ -77,7 +83,7 @@ impl Ethereum {
         Self {
             inner: Arc::new(Inner {
                 current_block: ethrpc::current_block::current_block_stream(
-                    Arc::new(web3.clone()),
+                    url,
                     std::time::Duration::from_millis(500),
                 )
                 .await
@@ -138,6 +144,7 @@ impl Ethereum {
             // Specifically set high gas because some nodes don't pick a sensible value if omitted.
             // And since we are only interested in access lists a very high value is fine.
             gas: Some(MAX_BLOCK_SIZE.into()),
+            gas_price: self.simulation_gas_price().await,
             ..Default::default()
         };
         let json = self
@@ -171,6 +178,7 @@ impl Ethereum {
                     value: Some(tx.value.into()),
                     data: Some(tx.input.clone().into()),
                     access_list: Some(tx.access_list.clone().into()),
+                    gas_price: self.simulation_gas_price().await,
                     ..Default::default()
                 },
                 None,
@@ -223,6 +231,22 @@ impl Ethereum {
                 _ => eth::TxStatus::Pending,
             })
             .map_err(Into::into)
+    }
+
+    pub(super) async fn simulation_gas_price(&self) -> Option<eth::U256> {
+        // Some nodes don't pick a reasonable default value when you don't specify a gas
+        // price and default to 0. Additionally some sneaky tokens have special code
+        // paths that detect that case to try to behave differently during simulations
+        // than they normally would. To not rely on the node picking a reasonable
+        // default value we estimate the current gas price upfront. But because it's
+        // extremely rare that tokens behave that way we are fine with falling back to
+        // the node specific fallback value instead of failing the whole call.
+        self.inner
+            .gas
+            .estimate()
+            .await
+            .ok()
+            .map(|gas| gas.effective().0 .0)
     }
 }
 
