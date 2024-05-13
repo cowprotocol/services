@@ -6,11 +6,11 @@ use {
         boundary,
         domain::{
             auction::{self, order},
+            competition,
             eth,
             fee,
             OrderUid,
         },
-        run_loop,
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
     std::collections::HashMap,
@@ -147,7 +147,7 @@ impl Settlement {
     /// JIT orders are not included in the settlement if this constructor is
     /// used.
     pub fn from_solution(
-        solution: &run_loop::Solution,
+        solution: &competition::Solution,
         auction: &auction::Auction,
         auction_id: auction::Id,
     ) -> Result<Self, error::Solution> {
@@ -162,42 +162,46 @@ impl Settlement {
             let order = auction_orders
                 .get(order_uid)
                 .ok_or(error::Solution::MissingOrder)?;
-            let sell_token = &order.sell_token;
-            let buy_token = &order.buy_token;
+            let sell_token = order.sell_token.into();
+            let buy_token = order.buy_token.into();
             trades.push(trade::Trade::new(
                 order.uid,
                 eth::Asset {
-                    token: (*sell_token).into(),
+                    token: sell_token,
                     amount: order.sell_amount.into(),
                 },
                 eth::Asset {
-                    token: (*buy_token).into(),
+                    token: buy_token,
                     amount: order.buy_amount.into(),
                 },
                 order.side,
                 match order.side {
-                    order::Side::Sell => traded.sell_amount.into(),
-                    order::Side::Buy => traded.buy_amount.into(),
+                    order::Side::Sell => traded.sell.0.into(),
+                    order::Side::Buy => traded.buy.0.into(),
                 },
                 trade::Prices {
                     uniform: trade::ClearingPrices {
-                        sell: *solution
-                            .clearing_prices()
-                            .get(sell_token)
-                            .ok_or(error::Solution::MissingClearingPrice)?,
-                        buy: *solution
-                            .clearing_prices()
-                            .get(buy_token)
-                            .ok_or(error::Solution::MissingClearingPrice)?,
+                        sell: solution
+                            .prices()
+                            .get(&sell_token)
+                            .ok_or(error::Solution::MissingClearingPrice)?
+                            .get()
+                            .0,
+                        buy: solution
+                            .prices()
+                            .get(&buy_token)
+                            .ok_or(error::Solution::MissingClearingPrice)?
+                            .get()
+                            .0,
                     },
                     custom: trade::ClearingPrices {
                         sell: match order.side {
-                            order::Side::Sell => traded.buy_amount,
-                            order::Side::Buy => traded.sell_amount,
+                            order::Side::Sell => traded.buy.into(),
+                            order::Side::Buy => traded.sell.into(),
                         },
                         buy: match order.side {
-                            order::Side::Sell => traded.sell_amount,
-                            order::Side::Buy => traded.buy_amount,
+                            order::Side::Sell => traded.sell.into(),
+                            order::Side::Buy => traded.buy.into(),
                         },
                     },
                 },
