@@ -6,6 +6,7 @@ use {
     app_data::AppDataHash,
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
+    derive_more::From,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
@@ -100,7 +101,7 @@ impl DecodedTrade {
 /// Trade flags are encoded in a 256-bit integer field. For more information on
 /// how flags are encoded see:
 /// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, From)]
 pub struct TradeFlags(pub U256);
 
 impl TradeFlags {
@@ -146,12 +147,6 @@ impl TradeFlags {
             0b11 => SigningScheme::PreSign,
             _ => unreachable!(),
         }
-    }
-}
-
-impl From<U256> for TradeFlags {
-    fn from(value: U256) -> Self {
-        Self(value)
     }
 }
 
