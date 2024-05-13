@@ -22,7 +22,7 @@ use {
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
-    std::{cmp, sync::Arc, time::Duration},
+    std::{cmp, collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
 };
 
@@ -34,6 +34,7 @@ pub struct RunLoop {
     block: u64,
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
+    surplus_capturing_jit_order_owners: HashSet<H160>,
 }
 
 impl RunLoop {
@@ -43,6 +44,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
+        surplus_capturing_jit_order_owners: &HashSet<H160>,
     ) -> Self {
         Self {
             orderbook,
@@ -52,6 +54,7 @@ impl RunLoop {
             block: 0,
             solve_deadline,
             liveness,
+            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners.clone(),
         }
     }
 
@@ -187,8 +190,13 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let request =
-            solve::Request::new(id, auction, &self.trusted_tokens.all(), self.solve_deadline);
+        let request = solve::Request::new(
+            id,
+            auction,
+            &self.trusted_tokens.all(),
+            self.solve_deadline,
+            &self.surplus_capturing_jit_order_owners,
+        );
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {

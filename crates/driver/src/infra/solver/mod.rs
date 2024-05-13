@@ -241,7 +241,7 @@ impl Solver {
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
 
-        super::observe::solutions(&solutions);
+        super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
         Ok(solutions)
     }
 
