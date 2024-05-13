@@ -95,7 +95,7 @@ impl Competition {
 
         // Discard empty solutions.
         let solutions = solutions.filter(|solution| {
-            if solution.is_empty() {
+            if solution.is_empty(auction.surplus_capturing_jit_order_owners()) {
                 observe::empty_solution(self.solver.name(), solution.id());
                 notify::empty_solution(&self.solver, auction.id(), solution.id().clone());
                 false
@@ -161,7 +161,13 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(&settlement);
-                (settlement.score(&auction.prices()), settlement)
+                (
+                    settlement.score(
+                        &auction.prices(),
+                        auction.surplus_capturing_jit_order_owners(),
+                    ),
+                    settlement,
+                )
             })
             .collect_vec();
 
@@ -353,7 +359,10 @@ fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<So
     merged.sort_by_key(|solution| {
         Reverse(
             solution
-                .scoring(&auction.prices())
+                .scoring(
+                    &auction.prices(),
+                    auction.surplus_capturing_jit_order_owners(),
+                )
                 .map(|score| score.0)
                 .unwrap_or_default(),
         )

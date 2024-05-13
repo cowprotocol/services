@@ -13,6 +13,7 @@ use {
         util::Bytes,
     },
     allowance::Allowance,
+    itertools::Itertools,
 };
 
 /// The type of strategy used to encode the solution.
@@ -55,9 +56,13 @@ pub fn tx(
     let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
-    for (token, price) in solution.prices.clone() {
-        tokens.push(token.into());
-        clearing_prices.push(price);
+    for asset in solution
+        .clearing_prices()
+        .iter()
+        .sorted_by_cached_key(|asset| asset.token)
+    {
+        tokens.push(asset.token.into());
+        clearing_prices.push(asset.amount.into());
     }
 
     // Encode trades with custom clearing prices
@@ -225,7 +230,7 @@ pub fn tx(
     })
 }
 
-fn liquidity_interaction(
+pub fn liquidity_interaction(
     liquidity: &Liquidity,
     slippage: &slippage::Parameters,
     settlement: &contracts::GPv2Settlement,
@@ -256,7 +261,7 @@ fn liquidity_interaction(
     .ok_or(Error::InvalidInteractionExecution(liquidity.clone()))
 }
 
-fn approve(allowance: &Allowance) -> eth::Interaction {
+pub fn approve(allowance: &Allowance) -> eth::Interaction {
     let mut amount = [0u8; 32];
     let selector = hex_literal::hex!("095ea7b3");
     allowance.amount.to_big_endian(&mut amount);

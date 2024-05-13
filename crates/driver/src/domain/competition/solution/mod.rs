@@ -139,31 +139,55 @@ impl Solution {
         self.gas
     }
 
+    fn trade_count_for_scorable(
+        &self,
+        trade: &Trade,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+    ) -> bool {
+        match trade {
+            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                order::Kind::Market | order::Kind::Limit { .. } => true,
+                order::Kind::Liquidity => false,
+            },
+            Trade::Jit(jit) => {
+                surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer)
+            }
+        }
+    }
+
     /// JIT score calculation as per CIP38
-    pub fn scoring(&self, prices: &auction::Prices) -> Result<eth::Ether, error::Scoring> {
+    pub fn scoring(
+        &self,
+        prices: &auction::Prices,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+    ) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
-        for trade in self.user_trades() {
+        for trade in self.trades().iter().filter(|trade| {
+            self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners)
+        }) {
             // Solver generated fulfillment does not include the fee in the executed amount
             // for sell orders.
-            let executed = match trade.order().side {
+            let executed = match trade.side() {
                 order::Side::Sell => (trade.executed().0 + trade.fee().0).into(),
                 order::Side::Buy => trade.executed(),
             };
+            let buy = trade.buy();
+            let sell = trade.sell();
             let uniform_prices = ClearingPrices {
                 sell: self
-                    .clearing_price(trade.order().sell.token)
+                    .clearing_price(sell.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
                 buy: self
-                    .clearing_price(trade.order().buy.token)
+                    .clearing_price(buy.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
             trades.push(scoring::Trade::new(
-                trade.order().sell,
-                trade.order().buy,
-                trade.order().side,
+                sell,
+                buy,
+                trade.side(),
                 executed,
                 trade.custom_prices(&uniform_prices)?,
-                trade.order().protocol_fees.clone(),
+                trade.protocol_fees(),
             ))
         }
 
@@ -186,21 +210,19 @@ impl Solution {
                     .map(|existing| (required, existing))
             }))
             .await?;
-        let approvals = allowances.into_iter().filter_map(|(required, existing)| {
-            required
-                .approval(&existing)
-                // As a gas optimization, we always approve the max amount possible. This minimizes
-                // the number of approvals necessary, and therefore minimizes the approval fees over time. This is a
-                // potential security issue, but its effects are minimized and only exploitable if
-                // solvers use insecure contracts.
-                .map(eth::allowance::Approval::max)
-        });
+        let approvals = allowances
+            .into_iter()
+            .filter_map(|(required, existing)| required.approval(&existing));
         Ok(approvals)
     }
 
-    /// An empty solution has no user trades and a score of 0.
-    pub fn is_empty(&self) -> bool {
-        self.user_trades().next().is_none()
+    /// An empty solution has no trades which is allowed to capture surplus and
+    /// a score of 0.
+    pub fn is_empty(&self, surplus_capturing_jit_order_owners: &HashSet<eth::Address>) -> bool {
+        !self
+            .trades
+            .iter()
+            .any(|trade| self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners))
     }
 
     pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
@@ -342,7 +364,7 @@ impl Solution {
     ///
     /// The rule which relates two prices for tokens X and Y is:
     /// amount_x * price_x = amount_y * price_y
-    pub fn clearing_prices(&self) -> Result<Vec<eth::Asset>, Error> {
+    pub fn clearing_prices(&self) -> Vec<eth::Asset> {
         let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
             token,
             amount: amount.into(),
@@ -375,12 +397,12 @@ impl Solution {
                 amount: self.prices[&self.weth.into()].to_owned().into(),
             });
 
-            return Ok(prices);
+            return prices;
         }
 
         // TODO: We should probably filter out all unused prices to save gas.
 
-        Ok(prices.collect_vec())
+        prices.collect_vec()
     }
 
     /// Clearing price for the given token.
