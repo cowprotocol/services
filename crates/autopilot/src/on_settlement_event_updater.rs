@@ -42,7 +42,10 @@ use {
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    std::{collections::BTreeMap, collections::HashSet, sync::Arc},
+    std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+    },
     tokio::sync::Notify,
     web3::types::Transaction,
 };
@@ -190,6 +193,7 @@ impl Inner {
         hash: H256,
         settlement: DecodedSettlement,
         auction_id: i64,
+        ex: &mut PgConnection,
     ) -> Result<AuctionData> {
         let receipt = self
             .eth

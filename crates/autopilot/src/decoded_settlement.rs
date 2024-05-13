@@ -45,7 +45,7 @@ pub struct DecodedSettlement {
     // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
-    pub trades: Vec<TradeWithOrderUid>,
+    pub trades: Vec<DecodedTrade>,
     pub interactions: [Vec<DecodedInteraction>; 3],
     /// Data that was appended to the regular call data of the `settle()` call
     /// as a form of on-chain meta data. This gets used to associated a
@@ -55,6 +55,7 @@ pub struct DecodedSettlement {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DecodedTrade {
+    pub order_uid: OrderUid,
     pub sell_token_index: U256,
     pub buy_token_index: U256,
     pub receiver: Address,
@@ -75,7 +76,11 @@ impl DecodedTrade {
     }
 
     /// Returns the order uid of the order associated with this trade.
-    pub fn uid(&self, domain_separator: &DomainSeparator, tokens: &[Address]) -> Result<OrderUid> {
+    fn compute_uid(
+        &self,
+        domain_separator: &DomainSeparator,
+        tokens: &[Address],
+    ) -> Result<OrderUid> {
         let order = OrderData {
             sell_token: tokens[self.sell_token_index.as_u64() as usize],
             buy_token: tokens[self.buy_token_index.as_u64() as usize],
@@ -97,12 +102,6 @@ impl DecodedTrade {
             .context("cant recover owner")?;
         Ok(order.uid(domain_separator, &owner))
     }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct TradeWithOrderUid {
-    pub inner: DecodedTrade,
-    pub order_uid: OrderUid,
 }
 
 /// Trade flags are encoded in a 256-bit integer field. For more information on
@@ -224,7 +223,8 @@ impl DecodedSettlement {
         let trades = trades
             .into_iter()
             .filter_map(|trade| {
-                let trade = DecodedTrade {
+                let mut trade = DecodedTrade {
+                    order_uid: Default::default(),
                     sell_token_index: trade.0,
                     buy_token_index: trade.1,
                     receiver: trade.2,
@@ -237,11 +237,11 @@ impl DecodedSettlement {
                     executed_amount: trade.9,
                     signature: trade.10,
                 };
-                match trade.uid(domain_separator, &tokens) {
-                    Ok(order_uid) => Some(TradeWithOrderUid {
-                        inner: trade,
-                        order_uid,
-                    }),
+                match trade.compute_uid(domain_separator, &tokens) {
+                    Ok(order_uid) => {
+                        trade.order_uid = order_uid;
+                        Some(trade)
+                    }
                     Err(err) => {
                         tracing::error!(
                             ?err,
@@ -274,16 +274,11 @@ impl DecodedSettlement {
             .iter()
             .filter(|trade| !jit_order_uids.contains(&trade.order_uid))
             .fold(0.into(), |acc, trade| {
-                acc + surplus(
-                    &trade.inner,
-                    &self.tokens,
-                    &self.clearing_prices,
-                    external_prices,
-                )
-                .unwrap_or_else(|| {
-                    tracing::warn!("possible incomplete surplus calculation");
-                    0.into()
-                })
+                acc + surplus(trade, &self.tokens, &self.clearing_prices, external_prices)
+                    .unwrap_or_else(|| {
+                        tracing::warn!("possible incomplete surplus calculation");
+                        0.into()
+                    })
             })
     }
 
@@ -306,14 +301,14 @@ impl DecodedSettlement {
             .collect()
     }
 
-    fn fee(&self, trade: &TradeWithOrderUid, external_prices: &ExternalPrices) -> Option<Fees> {
-        let sell_index = trade.inner.sell_token_index.as_u64() as usize;
-        let buy_index = trade.inner.buy_token_index.as_u64() as usize;
+    fn fee(&self, trade: &DecodedTrade, external_prices: &ExternalPrices) -> Option<Fees> {
+        let sell_index = trade.sell_token_index.as_u64() as usize;
+        let buy_index = trade.buy_token_index.as_u64() as usize;
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let (kind, fee) = match trade.inner.fee_amount.is_zero() {
-            false => (FeeKind::User, trade.inner.fee_amount),
+        let (kind, fee) = match trade.fee_amount.is_zero() {
+            false => (FeeKind::User, trade.fee_amount),
             true => {
                 // get executed(adjusted) prices
                 let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
@@ -326,15 +321,13 @@ impl DecodedSettlement {
                 let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
-                let fee = match trade.inner.flags.order_kind() {
+                let fee = match trade.flags.order_kind() {
                     OrderKind::Buy => {
                         let required_sell_amount = trade
-                            .inner
                             .executed_amount
                             .checked_mul(adjusted_buy_price)?
                             .checked_div(adjusted_sell_price)?;
                         let required_sell_amount_with_ucp = trade
-                            .inner
                             .executed_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
@@ -342,7 +335,6 @@ impl DecodedSettlement {
                     }
                     OrderKind::Sell => {
                         let received_buy_amount = trade
-                            .inner
                             .executed_amount
                             .checked_mul(adjusted_sell_price)?
                             .checked_div(adjusted_buy_price)?;
@@ -350,7 +342,6 @@ impl DecodedSettlement {
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
                         trade
-                            .inner
                             .executed_amount
                             .checked_sub(sell_amount_needed_with_ucp)?
                     }
