@@ -273,7 +273,7 @@ impl DecodedSettlement {
     pub fn total_surplus(
         &self,
         external_prices: &ExternalPrices,
-        jit_order_uids: HashSet<OrderUid>,
+        jit_order_uids: &HashSet<OrderUid>,
     ) -> U256 {
         self.trades
             .iter()
@@ -661,7 +661,7 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
         let surplus = settlement
-            .total_surplus(&external_prices, Default::default())
+            .total_surplus(&external_prices, &Default::default())
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(surplus, 33350701806766732.);

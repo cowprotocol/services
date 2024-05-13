@@ -239,7 +239,7 @@ impl Inner {
             ex,
         )
         .await?;
-        let surplus = settlement.total_surplus(&external_prices, jit_order_uids);
+        let surplus = settlement.total_surplus(&external_prices, &jit_order_uids);
         let (fee, order_executions) = {
             let all_fees = settlement.all_fees(&external_prices);
             // total fee used for CIP20 rewards
