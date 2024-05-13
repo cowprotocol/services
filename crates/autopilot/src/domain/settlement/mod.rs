@@ -142,10 +142,10 @@ impl Settlement {
         Ok(Self { trades, auction_id })
     }
 
-    /// Build a settlement from a solved auction.
+    /// Build a settlement from a `competition::Solution`.
     ///
-    /// JIT orders are not included in the settlement if this constructor is
-    /// used.
+    /// Since `competition::Solution` does not contain JIT orders, the resulting
+    /// settlement might be a subset of it's onchain observable twin.
     pub fn from_solution(
         solution: &competition::Solution,
         auction: &auction::Auction,
