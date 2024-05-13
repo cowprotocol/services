@@ -128,8 +128,11 @@ impl<'a> PriceEstimatorFactory<'a> {
             .map(|t| TenderlyCodeSimulator::new(t, network.chain_id));
 
         let simulator: Arc<dyn CodeSimulating> = match tenderly {
-            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(web3, tenderly)),
-            None => Arc::new(web3),
+            Some(tenderly) => Arc::new(code_simulation::Web3ThenTenderly::new(
+                web3.clone(),
+                tenderly,
+            )),
+            None => Arc::new(web3.clone()),
         };
 
         let code_fetcher =
@@ -137,6 +140,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
 
         Some(Arc::new(TradeVerifier::new(
+            web3,
             simulator,
             code_fetcher,
             network.block_stream.clone(),

@@ -72,7 +72,7 @@ impl Settlement {
 
         let mut settlement = solver::settlement::Settlement::new(
             solution
-                .clearing_prices()?
+                .clearing_prices()
                 .into_iter()
                 .map(|asset| (asset.token.into(), asset.amount.into()))
                 .collect(),

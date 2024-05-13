@@ -1,4 +1,7 @@
-use crate::domain::eth;
+use {
+    crate::domain::eth,
+    derive_more::{From, Into},
+};
 
 pub mod stable;
 pub mod weighted;
@@ -9,25 +12,13 @@ pub mod weighted;
 /// * 0..20: the address of the pool
 /// * 20..22: the pool specialization
 /// * 22..32: the pool nonce
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, From, Into)]
 pub struct Id(pub eth::H256);
 
 impl Id {
     /// Extracts the pool address configured in the ID.
     pub fn address(&self) -> eth::ContractAddress {
         eth::H160::from_slice(&self.0[..20]).into()
-    }
-}
-
-impl From<eth::H256> for Id {
-    fn from(value: eth::H256) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Id> for eth::H256 {
-    fn from(value: Id) -> Self {
-        value.0
     }
 }
 

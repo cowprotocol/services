@@ -9,7 +9,7 @@ use {
         infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
     },
     futures::future::try_join_all,
-    std::collections::{BTreeSet, HashMap},
+    std::collections::{BTreeSet, HashMap, HashSet},
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -278,8 +278,13 @@ impl Settlement {
     }
 
     /// Score as defined per CIP38. Equal to surplus + protocol fees.
-    pub fn score(&self, prices: &auction::Prices) -> Result<eth::Ether, solution::error::Scoring> {
-        self.solution.scoring(prices)
+    pub fn score(
+        &self,
+        prices: &auction::Prices,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
+    ) -> Result<eth::Ether, solution::error::Scoring> {
+        self.solution
+            .scoring(prices, surplus_capturing_jit_order_owners)
     }
 
     /// The solution encoded in this settlement.
@@ -321,7 +326,6 @@ impl Settlement {
     pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.solution
             .clearing_prices()
-            .expect("settlement cannot exist without prices")
             .iter()
             .map(|asset| (asset.token, asset.amount))
             .collect()
