@@ -1,7 +1,11 @@
 // TODO Remove dead_code
 #![allow(dead_code)]
 
-use {crate::domain::eth, std::cmp::Ordering};
+use {
+    crate::domain::eth,
+    derive_more::{From, Into},
+    std::cmp::Ordering,
+};
 
 pub mod balancer;
 pub mod swapr;
@@ -17,20 +21,8 @@ pub struct Liquidity {
     pub kind: Kind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, From, Into)]
 pub struct Id(pub usize);
-
-impl From<usize> for Id {
-    fn from(value: usize) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Id> for usize {
-    fn from(value: Id) -> Self {
-        value.0
-    }
-}
 
 impl PartialEq<usize> for Id {
     fn eq(&self, other: &usize) -> bool {

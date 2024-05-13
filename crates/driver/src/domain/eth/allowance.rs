@@ -1,4 +1,7 @@
-use super::{Address, TokenAddress, U256};
+use {
+    super::{Address, TokenAddress, U256},
+    derive_more::{From, Into},
+};
 
 /// An ERC20 allowance.
 ///
@@ -15,24 +18,12 @@ pub struct Allowance {
 
 /// An allowance that's already in effect, this essentially models the result of
 /// the allowance() method, see https://eips.ethereum.org/EIPS/eip-20#methods.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Into, From)]
 pub struct Existing(pub Allowance);
 
-impl From<Allowance> for Existing {
-    fn from(inner: Allowance) -> Self {
-        Self(inner)
-    }
-}
-
 /// An allowance that is required for some action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Into, From)]
 pub struct Required(pub Allowance);
-
-impl From<Allowance> for Required {
-    fn from(inner: Allowance) -> Self {
-        Self(inner)
-    }
-}
 
 impl Required {
     /// Check if this allowance needs to be approved, and if so, return the
