@@ -486,12 +486,12 @@ mod tests {
 
         for repr in [
             &NativePriceEstimator::Driver(
-                ExternalSolver::from_str("Baseline|http://localhost:1234").unwrap(),
+                ExternalSolver::from_str("baseline|http://localhost:1234/").unwrap(),
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            "one,two;three,four",
-            &format!("one,two;{},four", NativePriceEstimator::OneInchSpotPriceApi),
+            "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
+            &format!("one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/", NativePriceEstimator::OneInchSpotPriceApi),
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
