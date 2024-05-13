@@ -1,7 +1,11 @@
 use {
     crate::{
         database::competition::Competition,
-        domain::{self, auction::order::Class, OrderUid},
+        domain::{
+            self,
+            auction::{self, order::Class},
+            OrderUid,
+        },
         infra::{
             self,
             solvers::dto::{reveal, settle, solve},
@@ -140,6 +144,37 @@ impl RunLoop {
                     return;
                 }
             };
+
+            {
+                // Also calculate the surplus from the solution itself
+                // For now, don't actually use it for ranking, instead log differences to solver
+                // provided score for debugging purposes.
+                let auction_prices = auction
+                    .prices
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            (*k).into(),
+                            auction::Price::new(domain::eth::Ether(*v)).unwrap(),
+                        )
+                    })
+                    .collect();
+                let settlement =
+                    domain::settlement::Settlement::from_solution(solution, &auction, auction_id)
+                        .map(|s| s.native_surplus(&auction_prices));
+
+                if let Ok(Ok(surplus)) = settlement {
+                    if surplus.0 != solution.score.get() {
+                        tracing::warn!(
+                            "surplus mismatch: solver provided score: {}, calculated surplus: {}",
+                            solution.score.get(),
+                            surplus.0
+                        );
+                    }
+                } else {
+                    tracing::warn!(?settlement, "failed to calculate surplus");
+                }
+            }
 
             let order_uids = solution.order_ids().copied().collect();
             self.persistence
