@@ -10,6 +10,7 @@ use {
     },
     serde::Deserialize,
     serde_with::serde_as,
+    std::collections::HashSet,
 };
 
 impl Auction {
@@ -151,6 +152,10 @@ impl Auction {
             }),
             time::Deadline::new(self.deadline, timeouts),
             eth,
+            self.surplus_capturing_jit_order_owners
+                .into_iter()
+                .map(Into::into)
+                .collect::<HashSet<_>>(),
         )
         .await
         .map_err(Into::into)
@@ -196,6 +201,8 @@ pub struct Auction {
     tokens: Vec<Token>,
     orders: Vec<Order>,
     deadline: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    surplus_capturing_jit_order_owners: Vec<eth::H160>,
 }
 
 impl Auction {

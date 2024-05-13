@@ -97,6 +97,7 @@ async fn test() {
                         "executedAmount": "133700000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -108,6 +109,7 @@ async fn test() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),
