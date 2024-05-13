@@ -763,13 +763,13 @@ pub async fn get_missing_order_uids(
         return Ok(vec![]);
     }
 
-    let mut query_builder = sqlx::QueryBuilder::new("WITH input_ids (id) AS (VALUES ");
+    let mut query_builder = sqlx::QueryBuilder::new("WITH input_ids (id) AS (VALUES (");
 
-    let mut separated = query_builder.separated(", ");
+    let mut separated = query_builder.separated("), (");
     for order_uid in &order_uids {
         separated.push_bind(order_uid);
     }
-    separated.push_unseparated(") ");
+    separated.push_unseparated(")) ");
 
     query_builder.push(
         "SELECT input_ids.id FROM input_ids LEFT JOIN orders ON orders.uid = input_ids.id WHERE \
