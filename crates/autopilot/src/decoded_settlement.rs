@@ -268,11 +268,11 @@ impl DecodedSettlement {
     pub fn total_surplus(
         &self,
         external_prices: &ExternalPrices,
-        jit_order_uids: &HashSet<OrderUid>,
+        surplus_exempt_order_uids: &HashSet<OrderUid>,
     ) -> U256 {
         self.trades
             .iter()
-            .filter(|trade| !jit_order_uids.contains(&trade.order_uid))
+            .filter(|trade| !surplus_exempt_order_uids.contains(&trade.order_uid))
             .fold(0.into(), |acc, trade| {
                 acc + surplus(trade, &self.tokens, &self.clearing_prices, external_prices)
                     .unwrap_or_else(|| {

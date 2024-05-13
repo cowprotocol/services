@@ -241,7 +241,7 @@ impl Inner {
             .into_iter()
             .map(|order| OrderUid(order.0))
             .collect::<HashSet<_>>();
-        let jit_order_uids = Postgres::get_missing_order_uids(
+        let surplus_exempt_order_uids = Postgres::get_missing_order_uids(
             settlement.trades.iter().filter_map(|trade| {
                 // check persistence of the orders not in the competition
                 (!competition_order_uids.contains(&trade.order_uid)).then_some(trade.order_uid)
@@ -249,7 +249,7 @@ impl Inner {
             ex,
         )
         .await?;
-        let surplus = settlement.total_surplus(&external_prices, &jit_order_uids);
+        let surplus = settlement.total_surplus(&external_prices, &surplus_exempt_order_uids);
         let (fee, order_executions) = {
             let all_fees = settlement.all_fees(&external_prices);
             // total fee used for CIP20 rewards
