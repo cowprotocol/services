@@ -48,7 +48,10 @@ impl Settlement {
             .map(|trade| {
                 trade.score(
                     prices,
-                    &policies.get(trade.order_uid()).cloned().unwrap_or_default(),
+                    policies
+                        .get(trade.order_uid())
+                        .map(|value| value.as_slice())
+                        .unwrap_or_default(),
                 )
             })
             .sum()
