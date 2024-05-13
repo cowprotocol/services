@@ -56,6 +56,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -425,10 +426,6 @@ pub async fn run(args: Arguments) {
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
             args.native_price_estimation_results_required,
         )
         .unwrap();
@@ -613,6 +610,11 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
+        surplus_capturing_jit_order_owners: args
+            .protocol_fee_exempt_addresses
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>(),
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -672,6 +674,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
+        &args
+            .protocol_fee_exempt_addresses
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>(),
     );
     shadow.run_forever().await;
 

@@ -32,6 +32,7 @@ pub struct Auction {
     tokens: Tokens,
     gas_price: eth::GasPrice,
     deadline: time::Deadline,
+    surplus_capturing_jit_order_owners: HashSet<eth::Address>,
 }
 
 impl Auction {
@@ -41,6 +42,7 @@ impl Auction {
         tokens: impl Iterator<Item = Token>,
         deadline: time::Deadline,
         eth: &Ethereum,
+        surplus_capturing_jit_order_owners: HashSet<eth::Address>,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
@@ -64,6 +66,7 @@ impl Auction {
             tokens,
             gas_price: eth.gas_price().await?,
             deadline,
+            surplus_capturing_jit_order_owners,
         })
     }
 
@@ -116,6 +119,10 @@ impl Auction {
                 eth::U256::exp10(18).into(),
             )))
             .collect()
+    }
+
+    pub fn surplus_capturing_jit_order_owners(&self) -> &HashSet<eth::Address> {
+        &self.surplus_capturing_jit_order_owners
     }
 }
 

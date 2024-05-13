@@ -7,8 +7,9 @@ use {
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
     primitive_types::U256,
-    std::{sync::Arc, time::Duration},
+    std::time::Duration,
     thiserror::Error,
+    url::Url,
 };
 
 pub mod contracts;
@@ -36,6 +37,7 @@ impl From<U256> for ChainId {
 pub struct Rpc {
     web3: DynWeb3,
     chain: ChainId,
+    url: Url,
 }
 
 impl Rpc {
@@ -45,7 +47,11 @@ impl Rpc {
         let web3 = boundary::buffered_web3_client(url);
         let chain = web3.eth().chain_id().await?.into();
 
-        Ok(Self { web3, chain })
+        Ok(Self {
+            web3,
+            chain,
+            url: url.clone(),
+        })
     }
 
     /// Returns the chain id for the RPC connection.
@@ -76,16 +82,13 @@ impl Ethereum {
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
     pub async fn new(rpc: Rpc, addresses: contracts::Addresses, poll_interval: Duration) -> Self {
-        let Rpc { web3, chain } = rpc;
+        let Rpc { web3, chain, url } = rpc;
         let contracts = Contracts::new(&web3, &chain, addresses).await;
 
         Self {
-            current_block: ethrpc::current_block::current_block_stream(
-                Arc::new(web3.clone()),
-                poll_interval,
-            )
-            .await
-            .expect("couldn't initialize current block stream"),
+            current_block: ethrpc::current_block::current_block_stream(url, poll_interval)
+                .await
+                .expect("couldn't initialize current block stream"),
             web3,
             chain,
             contracts,

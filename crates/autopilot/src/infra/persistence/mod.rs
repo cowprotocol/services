@@ -222,6 +222,7 @@ impl Persistence {
             winner_calldata: todo!(),
             deadline: todo!(),
             missing_orders: todo!(),
+            fee_policies: todo!(),
         })
     }
 }

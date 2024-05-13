@@ -13,12 +13,14 @@ use {
 pub struct Auction {
     /// Onchain observed settlement.
     pub settlement: settlement::Tx,
-    /// External prices
+    /// Auction external prices
     pub prices: domain::auction::Prices,
     /// Competition winner (solver submission address).
     pub winner: eth::Address,
-    /// Winning solution calldata promised during competition
-    pub winner_calldata: eth::Calldata,
+    /// Winning score promised during competition (based on the promised `competition::Solution`)
+    pub winner_score: eth::U256,
+    /// Winning solution promised during competition.
+    pub winner_solution: competition::Solution,
     /// Settlement should appear onchain before this block.
     pub deadline: eth::BlockNo,
     /// Settlement orders that are missing from the orderbook (JIT orders).
@@ -40,12 +42,6 @@ impl Auction {
         // Rule 2: Settlement settled before deadline.
         if self.settlement.block() > self.deadline {
             violations.push(Violation::Deadline);
-        }
-
-        // Quick check that delivered calldata is the same as promised.
-        if self.settlement.calldata() == &self.winner_calldata {
-            // No further checks needed if this passed.
-            return violations;
         }
 
         // Settlement settled onchain

@@ -1,5 +1,5 @@
 use {
-    super::competition::auction,
+    super::competition::{auction, solution},
     crate::{
         boundary,
         domain::{
@@ -58,7 +58,14 @@ impl Quote {
 
         Ok(Self {
             amount: eth::U256::from_big_rational(&amount)?,
-            interactions: boundary::quote::encode_interactions(eth, solution.interactions())?,
+            interactions: solution
+                .interactions()
+                .iter()
+                .map(|i| encode::interaction(i, eth.contracts().settlement()))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
             solver: solution.solver().address(),
             gas: solution.gas(),
             tx_origin: *solution.solver().quote_tx_origin(),
@@ -96,14 +103,10 @@ impl Order {
             solver::Liquidity::Skip => Default::default(),
         };
 
-        let solutions = solver
-            .solve(
-                &self
-                    .fake_auction(eth, tokens, solver.quote_using_limit_orders())
-                    .await?,
-                &liquidity,
-            )
+        let auction = self
+            .fake_auction(eth, tokens, solver.quote_using_limit_orders())
             .await?;
+        let solutions = solver.solve(&auction, &liquidity).await?;
         Quote::new(
             eth,
             self,
@@ -111,7 +114,7 @@ impl Order {
             // first solution
             solutions
                 .into_iter()
-                .find(|solution| !solution.is_empty())
+                .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
                 .ok_or(QuotingFailed::NoSolutions)?,
         )
     }
@@ -175,6 +178,7 @@ impl Order {
             .into_iter(),
             self.deadline,
             eth,
+            HashSet::default(),
         )
         .await
         .map_err(|err| match err {
@@ -258,6 +262,66 @@ impl Tokens {
     }
 }
 
+mod encode {
+    use {
+        crate::domain::{
+            competition::solution,
+            eth::{
+                self,
+                allowance::{Approval, Required},
+            },
+        },
+        num::rational::Ratio,
+    };
+
+    const DEFAULT_QUOTE_SLIPPAGE_BPS: u32 = 100;
+
+    pub(super) fn interaction(
+        interaction: &solution::Interaction,
+        settlement: &contracts::GPv2Settlement,
+    ) -> Result<Vec<eth::Interaction>, solution::encoding::Error> {
+        let slippage = solution::slippage::Parameters {
+            relative: Ratio::new_raw(DEFAULT_QUOTE_SLIPPAGE_BPS.into(), 10_000.into()),
+            max: None,
+            min: None,
+            prices: Default::default(),
+        };
+
+        let encoded = match interaction {
+            solution::Interaction::Custom(interaction) => eth::Interaction {
+                value: interaction.value,
+                target: interaction.target.0.into(),
+                call_data: interaction.call_data.clone(),
+            },
+            solution::Interaction::Liquidity(liquidity) => {
+                solution::encoding::liquidity_interaction(liquidity, &slippage, settlement)?
+            }
+        };
+
+        Ok(interaction
+            .allowances()
+            .iter()
+            .flat_map(|Required(allowance)| {
+                let approval = Approval(*allowance);
+                // When encoding approvals for quotes, reset the allowance instead
+                // of just setting it. This is required as some tokens only allow
+                // you to approve a non-0 value if the allowance was 0 to begin
+                // with, such as Tether USD.
+                //
+                // Alternatively, we could check existing allowances and only encode
+                // the approvals if needed, but this would only result in small gas
+                // optimizations which is mostly inconsequential for quotes and not
+                // worth the performance hit.
+                vec![
+                    solution::encoding::approve(&approval.revoke().0),
+                    solution::encoding::approve(&approval.max().0),
+                ]
+            })
+            .chain(std::iter::once(encoded))
+            .collect())
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// This can happen e.g. if there's no available liquidity for the tokens
@@ -273,6 +337,8 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+    #[error("encoding error: {0:?}")]
+    Encoding(#[from] solution::encoding::Error),
 }
 
 #[derive(Debug, thiserror::Error)]
