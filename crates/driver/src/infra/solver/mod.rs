@@ -18,6 +18,7 @@ use {
         util,
     },
     anyhow::Result,
+    derive_more::{From, Into},
     num::BigRational,
     reqwest::header::HeaderName,
     std::collections::HashMap,
@@ -35,18 +36,12 @@ const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 /// The solver name. The user can configure this to be anything that they like.
 /// The name uniquely identifies each solver in case there's more than one of
 /// them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From, Into)]
 pub struct Name(pub String);
 
 impl Name {
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<String> for Name {
-    fn from(inner: String) -> Self {
-        Self(inner)
     }
 }
 
@@ -216,19 +211,19 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(
+        let auction_dto = dto::Auction::new(
             auction,
             liquidity,
             weth,
             self.config.fee_handler,
             self.config.solver_native_token,
-        ))
-        .unwrap();
+        );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
         if let Some(id) = auction.id() {
-            self.persistence.archive_auction(id, &body);
+            self.persistence.archive_auction(id, &auction_dto);
         };
+        let body = serde_json::to_string(&auction_dto).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
