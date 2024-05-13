@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        domain::{self, eth, settlement},
+        domain::{self, eth},
         infra,
     },
     std::collections::{HashMap, HashSet},
@@ -11,21 +11,19 @@ use {
 /// Offchain data related to a specific settlement and the auction this
 /// settlement belongs to.
 pub struct Auction {
-    /// Onchain observed settlement.
-    pub settlement: settlement::Tx,
-    /// Auction external prices
-    pub prices: domain::auction::Prices,
     /// Competition winner (solver submission address).
     pub winner: eth::Address,
-    /// Winning score promised during competition (based on the promised
-    /// `competition::Solution`)
-    pub winner_score: eth::U256,
-    /// Winning solution promised during competition.
-    pub winner_solution: competition::Solution,
     /// Settlement should appear onchain before this block.
     pub deadline: eth::BlockNo,
+    /// Winning score promised during competition (based on the promised
+    /// `competition::Solution`)
+    pub score: eth::U256,
+    /// Winning solution promised during competition.
+    pub solution: competition::Solution,
+    /// Auction external prices
+    pub prices: domain::auction::Prices,
     /// Settlement orders that are missing from the orderbook (JIT orders).
-    pub missing_orders: Vec<domain::OrderUid>,
+    pub missing_orders: HashSet<domain::OrderUid>,
     /// Fee policies for all settled orders
     pub fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
 }

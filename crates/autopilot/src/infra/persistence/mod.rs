@@ -9,7 +9,10 @@ use {
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
     primitive_types::{H160, H256},
-    std::{collections::HashMap, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     tracing::Instrument,
 };
 
@@ -207,45 +210,52 @@ impl Persistence {
             prices.insert(token, price);
         }
 
-        // instead of promised calldata, retrieve promised `competition::Solution`
-
-        // promised calldata
-        // let calldata = database::settlement_call_data::fetch(&mut ex, auction)
-        //     .await
-        //     .context("fetch call data")?
-        //     .ok_or(AuctionError::MissingCalldata)?;
-
-        let settled_orders = settlement.order_uids();
-        //let missing_orders =
-
+        let mut missing_orders = HashSet::new();
         let mut fee_policies = HashMap::new();
-        for order in settlement.order_uids() {
-            let policies = database::fee_policies::fetch(&mut ex, auction, ByteArray(order.0))
+        for order in settlement.order_uids().cloned() {
+            match database::orders::read_order(&mut ex, &ByteArray(order.0))
                 .await
-                .context("fetch fee policies")
-                .map_err(Error::DbError)?;
+                .context("fetch order")
+                .map_err(Error::DbError)?
+            {
+                Some(_) => {
+                    let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
+                        .await
+                        .context("fetch quote")
+                        .map_err(Error::DbError)?
+                        .map(|quote| dto::quote::into_domain(quote))
+                        .transpose()
+                        .map_err(AuctionError::AmountOverflow)?
+                        .ok_or(AuctionError::MissingQuote)?;
 
-            let policies = policies
-                .into_iter()
-                .map(|(order_uid, policy)| {
-                    let order_uid = domain::OrderUid(order_uid);
-                    let policy = domain::fee::Policy::from_db(policy);
-                    (order_uid, policy)
-                })
-                .collect();
+                    let policies =
+                        database::fee_policies::fetch(&mut ex, auction, ByteArray(order.0))
+                            .await
+                            .context("fetch fee policies")
+                            .map_err(Error::DbError)?;
 
-            fee_policies.insert(order, policies);
+                    for policy in policies {
+                        let policy = dto::fee_policy::into_domain(policy, &quote)?;
+                        fee_policies
+                            .entry(order)
+                            .or_insert_with(Vec::new)
+                            .push(policy);
+                    }
+                }
+                None => {
+                    missing_orders.insert(order);
+                }
+            }
         }
 
         Ok(domain::settlement::auction2::Auction {
-            settlement: settlement.clone(),
             prices,
             winner: H160(scores.winner.0).into(),
-            winner_score: big_decimal_to_u256(&scores.winning_score).unwrap(),
-            winner_solution: todo!(),
-            deadline: todo!(),
-            missing_orders: todo!(),
-            fee_policies: todo!(),
+            score: big_decimal_to_u256(&scores.winning_score).unwrap(),
+            solution: todo!(),
+            deadline: (scores.block_deadline as u64).into(),
+            missing_orders,
+            fee_policies,
         })
     }
 }
@@ -266,4 +276,8 @@ pub enum AuctionError {
     MissingScore,
     #[error("calldata not found in the database")]
     MissingCalldata,
+    #[error("quote not found in the database for an existing order")]
+    MissingQuote,
+    #[error("quote conversion failure")]
+    AmountOverflow(#[from] dto::quote::AmountOverflow),
 }
