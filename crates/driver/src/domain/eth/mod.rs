@@ -1,5 +1,6 @@
 use {
     crate::util::Bytes,
+    derive_more::{From, Into},
     itertools::Itertools,
     std::{
         collections::{HashMap, HashSet},
@@ -31,7 +32,7 @@ pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20]
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Into)]
 pub struct ChainId(pub u64);
 
 impl std::fmt::Display for ChainId {
@@ -43,12 +44,6 @@ impl std::fmt::Display for ChainId {
 impl From<U256> for ChainId {
     fn from(value: U256) -> Self {
         Self(value.as_u64())
-    }
-}
-
-impl From<ChainId> for u64 {
-    fn from(value: ChainId) -> Self {
-        value.0
     }
 }
 
@@ -108,48 +103,18 @@ impl From<AccessList> for web3::types::AccessList {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
 struct StorageKey(pub H256);
 
-impl From<H256> for StorageKey {
-    fn from(value: H256) -> Self {
-        Self(value)
-    }
-}
-
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct Address(pub H160);
-
-impl From<H160> for Address {
-    fn from(value: H160) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Address> for H160 {
-    fn from(value: Address) -> Self {
-        value.0
-    }
-}
 
 // TODO This type should probably use Ethereum::is_contract to verify during
 // construction that it does indeed point to a contract
 /// A smart contract address.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Into, From)]
 pub struct ContractAddress(pub H160);
-
-impl From<H160> for ContractAddress {
-    fn from(value: H160) -> Self {
-        Self(value)
-    }
-}
-
-impl From<ContractAddress> for H160 {
-    fn from(value: ContractAddress) -> Self {
-        value.0
-    }
-}
 
 impl From<ContractAddress> for Address {
     fn from(value: ContractAddress) -> Self {
@@ -177,7 +142,7 @@ impl TokenAddress {
 /// An ERC20 token amount.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct TokenAmount(pub U256);
 
 impl TokenAmount {
@@ -248,18 +213,6 @@ impl num::CheckedDiv for TokenAmount {
     }
 }
 
-impl From<U256> for TokenAmount {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
-
-impl From<TokenAmount> for U256 {
-    fn from(value: TokenAmount) -> Self {
-        value.0
-    }
-}
-
 impl From<u128> for TokenAmount {
     fn from(value: u128) -> Self {
         Self(value.into())
@@ -297,14 +250,8 @@ impl std::fmt::Display for TokenAmount {
 }
 
 /// The address of the WETH contract.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, From, Into)]
 pub struct WethAddress(pub TokenAddress);
-
-impl From<WethAddress> for TokenAddress {
-    fn from(value: WethAddress) -> Self {
-        value.0
-    }
-}
 
 impl From<H160> for WethAddress {
     fn from(value: H160) -> Self {
@@ -339,26 +286,14 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into)]
 pub struct Ether(pub U256);
-
-impl From<U256> for Ether {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
 
 impl From<Ether> for num::BigInt {
     fn from(value: Ether) -> Self {
         let mut bytes = [0; 32];
         value.0.to_big_endian(&mut bytes);
         num::BigUint::from_bytes_be(&bytes).into()
-    }
-}
-
-impl From<Ether> for U256 {
-    fn from(value: Ether) -> Self {
-        value.0
     }
 }
 
@@ -393,14 +328,8 @@ impl std::iter::Sum for Ether {
 }
 
 /// Block number.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, From, Into)]
 pub struct BlockNo(pub u64);
-
-impl From<u64> for BlockNo {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
 
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -422,14 +351,8 @@ impl Into<model::interaction::InteractionData> for Interaction {
 }
 
 /// A transaction ID, AKA transaction hash.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, From, Into)]
 pub struct TxId(pub H256);
-
-impl From<H256> for TxId {
-    fn from(value: H256) -> Self {
-        Self(value)
-    }
-}
 
 pub enum TxStatus {
     /// The transaction has been included and executed successfully.

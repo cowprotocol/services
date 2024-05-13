@@ -1,7 +1,7 @@
 use {
     super::{Ether, U256},
     bigdecimal::Zero,
-    derive_more::Display,
+    derive_more::{Display, From, Into},
     std::{ops, ops::Add},
 };
 
@@ -9,24 +9,12 @@ use {
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this
 /// amount as well as the transaction's [`EffectiveGasPrice`].
-#[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq)]
+#[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq, From, Into)]
 pub struct Gas(pub U256);
-
-impl From<U256> for Gas {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
 
 impl From<u64> for Gas {
     fn from(value: u64) -> Self {
         Self(value.into())
-    }
-}
-
-impl From<Gas> for U256 {
-    fn from(value: Gas) -> Self {
-        value.0
     }
 }
 

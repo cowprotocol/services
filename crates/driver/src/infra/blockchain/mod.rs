@@ -5,6 +5,7 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     std::{fmt, sync::Arc},
     thiserror::Error,
+    url::Url,
     web3::Transport,
 };
 
@@ -20,6 +21,7 @@ pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 pub struct Rpc {
     web3: DynWeb3,
     chain: eth::ChainId,
+    url: Url,
 }
 
 impl Rpc {
@@ -29,7 +31,11 @@ impl Rpc {
         let web3 = boundary::buffered_web3_client(url);
         let chain = web3.eth().chain_id().await?.into();
 
-        Ok(Self { web3, chain })
+        Ok(Self {
+            web3,
+            chain,
+            url: url.clone(),
+        })
     }
 
     /// Returns the chain id for the RPC connection.
@@ -69,7 +75,7 @@ impl Ethereum {
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
     ) -> Self {
-        let Rpc { web3, chain } = rpc;
+        let Rpc { web3, chain, url } = rpc;
         let contracts = Contracts::new(&web3, chain, addresses)
             .await
             .expect("could not initialize important smart contracts");
@@ -77,7 +83,7 @@ impl Ethereum {
         Self {
             inner: Arc::new(Inner {
                 current_block: ethrpc::current_block::current_block_stream(
-                    Arc::new(web3.clone()),
+                    url,
                     std::time::Duration::from_millis(500),
                 )
                 .await
