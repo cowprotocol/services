@@ -20,7 +20,7 @@ impl super::Postgres {
             order_uids.map(|uid| ByteArray(uid.0)).collect(),
         )
         .await
-        .with_context(|| "get_missing_order_uids".to_string())?;
+        .context("get_missing_order_uids".to_string())?;
 
         Ok(missing_uids
             .into_iter()
