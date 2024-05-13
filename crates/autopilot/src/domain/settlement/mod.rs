@@ -143,8 +143,9 @@ impl Settlement {
     }
 
     /// Build a settlement from a solved auction.
-    /// 
-    /// JIT orders are not included in the settlement if this constructor is used.
+    ///
+    /// JIT orders are not included in the settlement if this constructor is
+    /// used.
     pub fn from_solution(
         solution: &run_loop::Solution,
         auction: &auction::Auction,
@@ -300,7 +301,7 @@ pub enum Error {
     #[error("no auction id found in calldata")]
     MissingAuctionId,
     #[error("auction {0} failed encoding: {1}")]
-    Encoding(auction::Id, EncodingError),
+    Encoding(auction::Id, error::Encoding),
 }
 
 #[cfg(test)]

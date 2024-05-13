@@ -146,37 +146,6 @@ impl RunLoop {
                 }
             };
 
-            {
-                // Also calculate the surplus from the solution itself
-                // For now, don't actually use it for ranking, instead log differences to solver
-                // provided score for debugging purposes.
-                let auction_prices = auction
-                    .prices
-                    .iter()
-                    .map(|(k, v)| {
-                        (
-                            (*k).into(),
-                            auction::Price::new(domain::eth::Ether(*v)).unwrap(),
-                        )
-                    })
-                    .collect();
-                let settlement =
-                    domain::settlement::Settlement::from_solution(solution, &auction, auction_id)
-                        .map(|s| s.native_surplus(&auction_prices));
-
-                if let Ok(Ok(surplus)) = settlement {
-                    if surplus.0 != solution.score.get() {
-                        tracing::warn!(
-                            "surplus mismatch: solver provided score: {}, calculated surplus: {}",
-                            solution.score.get(),
-                            surplus.0
-                        );
-                    }
-                } else {
-                    tracing::warn!(?settlement, "failed to calculate surplus");
-                }
-            }
-
             let order_uids = solution.order_ids().copied().collect();
             self.persistence
                 .store_order_events(order_uids, OrderEventLabel::Considered);
@@ -229,6 +198,41 @@ impl RunLoop {
                     None => {
                         tracing::debug!(?order_id, "order not found in auction");
                     }
+                }
+            }
+
+            {
+                // Also calculate the score from the solution itself
+                // For now, don't actually use it for ranking, instead log differences to solver
+                // provided score for debugging purposes.
+                let auction_prices = auction
+                    .prices
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            (*k).into(),
+                            auction::Price::new(domain::eth::Ether(*v)).unwrap(),
+                        )
+                    })
+                    .collect();
+                let policies = fee_policies
+                    .iter()
+                    .map(|(uid, policies)| (*uid, policies.clone()))
+                    .collect();
+                let settlement =
+                    domain::settlement::Settlement::from_solution(solution, &auction, auction_id)
+                        .map(|s| s.score(&auction_prices, &policies));
+
+                if let Ok(Ok(score)) = settlement {
+                    if score.0 != solution.score.get() {
+                        tracing::warn!(
+                            "score mismatch: solver provided score: {}, calculated score: {}",
+                            solution.score.get(),
+                            score.0
+                        );
+                    }
+                } else {
+                    tracing::warn!(?settlement, "failed to calculate score");
                 }
             }
 
