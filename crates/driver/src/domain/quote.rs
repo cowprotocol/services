@@ -178,7 +178,7 @@ impl Order {
             .into_iter(),
             self.deadline,
             eth,
-            &HashSet::default(),
+            HashSet::default(),
         )
         .await
         .map_err(|err| match err {

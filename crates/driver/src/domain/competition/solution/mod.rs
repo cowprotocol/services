@@ -133,7 +133,7 @@ impl Solution {
         self.gas
     }
 
-    fn trade_count_for_scoring(
+    fn trade_count_for_scorable(
         &self,
         trade: &Trade,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
@@ -156,11 +156,9 @@ impl Solution {
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<eth::Ether, error::Scoring> {
         let mut trades = Vec::with_capacity(self.trades.len());
-        for trade in self
-            .trades()
-            .iter()
-            .filter(|trade| self.trade_count_for_scoring(trade, surplus_capturing_jit_order_owners))
-        {
+        for trade in self.trades().iter().filter(|trade| {
+            self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners)
+        }) {
             // Solver generated fulfillment does not include the fee in the executed amount
             // for sell orders.
             let executed = match trade.side() {
@@ -218,7 +216,7 @@ impl Solution {
         !self
             .trades
             .iter()
-            .any(|trade| self.trade_count_for_scoring(trade, surplus_capturing_jit_order_owners))
+            .any(|trade| self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners))
     }
 
     pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
