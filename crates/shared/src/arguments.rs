@@ -51,7 +51,7 @@ macro_rules! logging_args_with_default_filter {
     };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
