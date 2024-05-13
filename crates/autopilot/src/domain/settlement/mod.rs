@@ -119,6 +119,8 @@ impl Settlement {
     }
 
     /// Build a settlement from a solved auction.
+    /// 
+    /// JIT orders are not included in the settlement if this constructor is used.
     pub fn from_solution(
         solution: &run_loop::Solution,
         auction: &auction::Auction,
