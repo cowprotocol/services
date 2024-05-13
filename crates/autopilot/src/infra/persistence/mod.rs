@@ -145,19 +145,19 @@ impl Persistence {
     pub async fn auction_prices(
         &self,
         auction: domain::auction::Id,
-    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, Error> {
+    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, error::Auction> {
         let mut ex = self
             .postgres
             .pool
             .begin()
             .await
             .context("begin")
-            .map_err(Error::DbError)?;
+            .map_err(error::Auction::DbError)?;
 
         let db_prices = database::auction_prices::fetch(&mut ex, auction)
             .await
             .context("fetch")
-            .map_err(Error::DbError)?;
+            .map_err(error::Auction::DbError)?;
 
         let mut prices = HashMap::new();
         for price in db_prices {
@@ -165,7 +165,7 @@ impl Persistence {
             let price = big_decimal_to_u256(&price.price)
                 .ok_or(domain::auction::InvalidPrice)
                 .and_then(|p| domain::auction::Price::new(p.into()))
-                .map_err(AuctionError::Price)?;
+                .map_err(error::Auction::Price)?;
             prices.insert(token, price);
         }
 
@@ -176,14 +176,14 @@ impl Persistence {
     pub async fn get_settlement_auction(
         &self,
         settlement: &domain::settlement::Settlement,
-    ) -> Result<domain::settlement::auction2::Auction, Error> {
+    ) -> Result<domain::settlement::Auction, error::Auction> {
         let mut ex = self
             .postgres
             .pool
             .begin()
             .await
             .context("begin")
-            .map_err(Error::DbError)?;
+            .map_err(error::Auction::DbError)?;
 
         let auction = settlement.auction_id();
 
@@ -192,13 +192,13 @@ impl Persistence {
             .await
             .context("fetch scores")?
             // if score is missing, no competition / auction exist for this auction_id
-            .ok_or(AuctionError::MissingScore)?;
+            .ok_or(error::Auction::MissingScore)?;
 
         // auction prices
         let db_prices = database::auction_prices::fetch(&mut ex, auction)
             .await
             .context("fetch auction prices")
-            .map_err(Error::DbError)?;
+            .map_err(error::Auction::DbError)?;
 
         let mut prices = HashMap::new();
         for price in db_prices {
@@ -206,7 +206,7 @@ impl Persistence {
             let price = big_decimal_to_u256(&price.price)
                 .ok_or(domain::auction::InvalidPrice)
                 .and_then(|p| domain::auction::Price::new(p.into()))
-                .map_err(AuctionError::Price)?;
+                .map_err(error::Auction::Price)?;
             prices.insert(token, price);
         }
 
@@ -216,23 +216,23 @@ impl Persistence {
             match database::orders::read_order(&mut ex, &ByteArray(order.0))
                 .await
                 .context("fetch order")
-                .map_err(Error::DbError)?
+                .map_err(error::Auction::DbError)?
             {
                 Some(_) => {
                     let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
                         .await
                         .context("fetch quote")
-                        .map_err(Error::DbError)?
+                        .map_err(error::Auction::DbError)?
                         .map(|quote| dto::quote::into_domain(quote))
                         .transpose()
-                        .map_err(AuctionError::AmountOverflow)?
-                        .ok_or(AuctionError::MissingQuote)?;
+                        .map_err(error::Auction::AmountOverflow)?
+                        .ok_or(error::Auction::MissingQuote)?;
 
                     let policies =
                         database::fee_policies::fetch(&mut ex, auction, ByteArray(order.0))
                             .await
                             .context("fetch fee policies")
-                            .map_err(Error::DbError)?;
+                            .map_err(error::Auction::DbError)?;
 
                     for policy in policies {
                         let policy = dto::fee_policy::into_domain(policy, &quote)?;
@@ -248,7 +248,7 @@ impl Persistence {
             }
         }
 
-        Ok(domain::settlement::auction2::Auction {
+        Ok(domain::settlement::Auction {
             prices,
             winner: H160(scores.winner.0).into(),
             score: big_decimal_to_u256(&scores.winning_score).unwrap(),
@@ -264,20 +264,24 @@ impl Persistence {
 pub enum Error {
     #[error("failed to read data from database")]
     DbError(#[from] anyhow::Error),
-    #[error(transparent)]
-    Auction(#[from] AuctionError),
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum AuctionError {
-    #[error(transparent)]
-    Price(#[from] domain::auction::InvalidPrice),
-    #[error("score not found in the database")]
-    MissingScore,
-    #[error("calldata not found in the database")]
-    MissingCalldata,
-    #[error("quote not found in the database for an existing order")]
-    MissingQuote,
-    #[error("quote conversion failure")]
-    AmountOverflow(#[from] dto::quote::AmountOverflow),
+pub mod error {
+    use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Auction {
+        #[error("failed to read data from database")]
+        DbError(#[from] anyhow::Error),
+        #[error(transparent)]
+        Price(#[from] domain::auction::InvalidPrice),
+        #[error("score not found in the database")]
+        MissingScore,
+        #[error("calldata not found in the database")]
+        MissingCalldata,
+        #[error("quote not found in the database for an existing order")]
+        MissingQuote,
+        #[error("quote conversion failure")]
+        AmountOverflow(#[from] dto::quote::AmountOverflow),
+    }
 }

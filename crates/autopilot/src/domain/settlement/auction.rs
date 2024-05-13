@@ -8,8 +8,8 @@ use {
     std::collections::{HashMap, HashSet},
 };
 
-/// Offchain data related to a specific settlement and the auction this
-/// settlement belongs to.
+/// Offchain data related to a specific auction the original settlement belongs
+/// to.
 pub struct Auction {
     /// Competition winner (solver submission address).
     pub winner: eth::Address,

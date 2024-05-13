@@ -112,25 +112,25 @@ impl Ethereum {
     pub async fn transaction(
         &self,
         hash: eth::TxId,
-    ) -> Result<Option<domain::settlement::Transaction>, Error> {
+    ) -> Result<domain::settlement::Transaction, Error> {
         self.web3
             .eth()
             .transaction(hash.0.into())
             .await?
             .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
-            .transpose()
+            .ok_or(Error::NotFound)?
     }
 
     pub async fn transaction_receipt(
         &self,
         hash: eth::TxId,
-    ) -> Result<Option<domain::settlement::transaction::Receipt>, Error> {
+    ) -> Result<domain::settlement::transaction::Receipt, Error> {
         self.web3
             .eth()
             .transaction_receipt(hash.0)
             .await?
             .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
-            .transpose()
+            .ok_or(Error::NotFound)?
     }
 }
 
@@ -140,4 +140,6 @@ pub enum Error {
     Web3(#[from] web3::error::Error),
     #[error("missing field {0}, node client bug?")]
     IncompleteTransactionData(&'static str),
+    #[error("transaction not found")]
+    NotFound,
 }

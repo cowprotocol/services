@@ -13,23 +13,27 @@ use {
 pub struct Tx {
     settlement: Settlement,
     transaction: Transaction,
-    #[allow(dead_code)]
     receipt: Receipt,
+    auction: super::Auction,
 }
 
 impl Tx {
-    pub async fn new(tx: eth::TxId, eth: &infra::Ethereum) -> Result<Self, Error> {
+    pub async fn new(
+        tx: eth::TxId,
+        eth: &infra::Ethereum,
+        persistence: &infra::Persistence,
+    ) -> Result<Self, Error> {
         let (transaction, receipt) =
             tokio::try_join!(eth.transaction(tx), eth.transaction_receipt(tx),)?;
-        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
-        let receipt = receipt.ok_or(Error::TransactionNotFound)?;
 
         let domain_separator = eth.contracts().settlement_domain_separator();
         let settlement = Settlement::new(&transaction.input.clone(), domain_separator)?;
+        let auction = persistence.get_settlement_auction(&settlement).await?;
         Ok(Self {
             settlement,
             transaction,
             receipt,
+            auction,
         })
     }
 
@@ -81,9 +85,9 @@ pub struct Receipt {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Blockchain(#[from] infra::blockchain::Error),
-    #[error("invalid transaction hash, transaction not found")]
-    TransactionNotFound,
+    Settlement(#[from] super::Error),
     #[error(transparent)]
-    Encoded(#[from] super::Error),
+    Blockchain(#[from] infra::blockchain::Error),
+    #[error(transparent)]
+    Auction(#[from] infra::persistence::error::Auction),
 }
