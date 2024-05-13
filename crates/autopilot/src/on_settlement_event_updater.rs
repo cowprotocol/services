@@ -254,7 +254,7 @@ impl Inner {
         tx: &Transaction,
     ) -> Result<AuctionIdRecoveryStatus> {
         let tx_from = tx.solver.0;
-        let settlement = match DecodedSettlement::new(&tx.input.0 .0) {
+        let settlement = match DecodedSettlement::new(&tx.input.0) {
             Ok(settlement) => settlement,
             Err(err) => {
                 tracing::warn!(

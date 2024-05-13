@@ -5,7 +5,6 @@ use {
     crate::{
         domain::{auction, eth},
         infra,
-        util,
     },
 };
 
@@ -26,7 +25,7 @@ impl Tx {
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
 
         let domain_separator = eth.contracts().settlement_domain_separator();
-        let settlement = Settlement::new(&transaction.input.0.clone(), domain_separator)?;
+        let settlement = Settlement::new(&transaction.input.0.clone().into(), domain_separator)?;
         Ok(Self {
             settlement,
             transaction,
@@ -51,12 +50,8 @@ pub struct Transaction {
     /// The address of the solver that submitted the transaction.
     pub solver: eth::Address,
     /// The call data of the transaction.
-    pub input: CallData,
+    pub input: eth::Calldata,
 }
-
-/// Call data in a format expected by the settlement contract.
-#[derive(Debug)]
-pub struct CallData(pub util::Bytes<Vec<u8>>);
 
 /// A receipt of a transaction that settles a settlement.
 #[derive(Debug)]

@@ -5,7 +5,7 @@ impl TryFrom<web3::types::Transaction> for crate::domain::settlement::Transactio
         Ok(Self {
             hash: value.hash.into(),
             solver: value.from.ok_or("from")?.into(),
-            input: crate::domain::settlement::transaction::CallData(value.input.0.into()),
+            input: crate::util::Bytes(value.input.0),
         })
     }
 }
