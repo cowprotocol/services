@@ -215,7 +215,6 @@ async fn uses_stale_liquidity(web3: Web3) {
     wait_for_condition(TIMEOUT, || async {
         // Mint blocks until we evict the cached liquidty and fetch the new state.
         onchain.mint_block().await;
-        // Why does this panic all of a sudden?
         let Ok(next) = services.submit_quote(&quote).await else {
             return false;
         };
