@@ -64,14 +64,14 @@ impl Fetcher {
             block_stream_poll_interval: BLOCK_POLL_INTERVAL,
         };
 
-        let block_stream = blocks.stream(boundary::web3(eth)).await?;
+        let block_stream = eth.current_block();
         let block_retriever = blocks.retriever(boundary::web3(eth));
 
         let uni_v2: Vec<_> = future::try_join_all(
             config
                 .uniswap_v2
                 .iter()
-                .map(|config| uniswap::v2::collector(eth, &block_stream, config)),
+                .map(|config| uniswap::v2::collector(eth, block_stream, config)),
         )
         .await?;
 
@@ -80,7 +80,7 @@ impl Fetcher {
             config
                 .swapr
                 .iter()
-                .map(|config| swapr::collector(eth, &block_stream, config)),
+                .map(|config| swapr::collector(eth, block_stream, config)),
         )
         .await?;
 
@@ -119,7 +119,7 @@ impl Fetcher {
         );
 
         Ok(Self {
-            blocks: block_stream,
+            blocks: block_stream.clone(),
             inner: LiquidityCollector {
                 liquidity_sources: [uni_v2, swapr, bal_v2, uni_v3, zeroex]
                     .into_iter()

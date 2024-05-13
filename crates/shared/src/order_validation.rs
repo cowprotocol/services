@@ -160,6 +160,7 @@ pub enum ValidationError {
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
+    QuoteNotVerified,
     Other(anyhow::Error),
 }
 
@@ -214,6 +215,7 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
+            CalculateQuoteError::QuoteNotVerified => ValidationError::QuoteNotVerified,
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
             // need to be higher than the computed fee amount. Don't bubble up
@@ -249,7 +251,6 @@ pub struct OrderValidator {
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
     app_data_validator: Validator,
-    request_verified_quotes: bool,
     max_gas_per_order: u64,
 }
 
@@ -337,14 +338,8 @@ impl OrderValidator {
             max_limit_orders_per_user,
             code_fetcher,
             app_data_validator,
-            request_verified_quotes: false,
             max_gas_per_order,
         }
-    }
-
-    pub fn with_verified_quotes(mut self, enable: bool) -> Self {
-        self.request_verified_quotes = enable;
-        self
     }
 
     async fn check_max_limit_orders(&self, owner: H160) -> Result<(), ValidationError> {
@@ -559,14 +554,14 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let verification = self.request_verified_quotes.then_some(Verification {
+        let verification = Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
             pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
             post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
-        });
+        };
 
         let quote_parameters = QuoteSearchParameters {
             sell_token: data.sell_token,
@@ -2014,10 +2009,10 @@ mod tests {
                 verification_gas_limit: default_verification_gas_limit(),
             },
             additional_gas: 0,
-            verification: Some(Verification {
+            verification: Verification {
                 from: H160([0xf0; 20]),
                 ..Default::default()
-            }),
+            },
         };
         let quote_data = Quote {
             fee_amount: 6.into(),
@@ -2050,10 +2045,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_calculates_fresh_quote_when_not_found() {
-        let verification = Some(Verification {
+        let verification = Verification {
             from: H160([0xf0; 20]),
             ..Default::default()
-        });
+        };
 
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter

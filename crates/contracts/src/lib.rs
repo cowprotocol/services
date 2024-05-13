@@ -73,7 +73,6 @@ pub mod support {
     include_contracts! {
         AnyoneAuthenticator;
         Balances;
-        FetchBlock;
         Multicall;
         Signatures;
         SimulateCode;

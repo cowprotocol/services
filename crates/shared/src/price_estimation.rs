@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::{display_option, display_secret_option, CodeSimulatorKind},
+        arguments::{display_option, display_secret_option, ExternalSolver},
         conversions::U256Ext,
         trade_finding::Interaction,
     },
@@ -19,6 +19,7 @@ use {
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
+        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -42,15 +43,15 @@ pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
-    GenericPriceEstimator(String),
+    Driver(ExternalSolver),
     OneInchSpotPriceApi,
 }
 
 impl Display for NativePriceEstimator {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let formatter = match self {
-            NativePriceEstimator::GenericPriceEstimator(s) => s,
-            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi",
+            NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
+            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
         };
         write!(f, "{}", formatter)
     }
@@ -59,14 +60,6 @@ impl Display for NativePriceEstimator {
 impl NativePriceEstimators {
     pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
-    }
-}
-
-impl Default for NativePriceEstimators {
-    fn default() -> Self {
-        Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
-            "Baseline".into(),
-        )]])
     }
 }
 
@@ -85,26 +78,32 @@ impl Display for NativePriceEstimators {
     }
 }
 
-impl From<&str> for NativePriceEstimators {
-    fn from(s: &str) -> Self {
-        Self(
+impl FromStr for NativePriceEstimators {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(
             s.split(';')
                 .map(|sub_list| {
                     sub_list
                         .split(',')
-                        .map(NativePriceEstimator::from)
-                        .collect::<Vec<NativePriceEstimator>>()
+                        .map(NativePriceEstimator::from_str)
+                        .collect::<Result<Vec<NativePriceEstimator>>>()
                 })
-                .collect::<Vec<Vec<NativePriceEstimator>>>(),
-        )
+                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
+        ))
     }
 }
 
-impl From<&str> for NativePriceEstimator {
-    fn from(s: &str) -> Self {
+impl FromStr for NativePriceEstimator {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
-            estimator => NativePriceEstimator::GenericPriceEstimator(estimator.into()),
+            "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
+            estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
+                estimator,
+            )?)),
         }
     }
 }
@@ -173,38 +172,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
 
-    /// The trade simulation strategy to use for supported price estimators.
-    /// This ensures that the proposed trade calldata gets simulated, thus
-    /// avoiding invalid calldata mistakenly advertising unachievable prices
-    /// when quoting, as well as more robustly identifying unsupported
-    /// tokens. The `Web3` simulator requires the `--simulation-node_url`
-    /// parameter to be set. The `Tenderly` simulator requires `--tenderly-*`
-    /// parameters to be set.
-    #[clap(long, env)]
-    pub trade_simulator: Option<CodeSimulatorKind>,
-
-    /// If this is enabled a price estimate we were able to verify will always
-    /// be seen as better than an unverified one even if it might report a worse
-    /// out amount. The reason is that unverified price estimates could be too
-    /// good to be true.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub prefer_verified_quotes: bool,
-
-    /// Flag to enable saving Tenderly simulations in the dashboard for
-    /// successful trade simulations.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub tenderly_save_successful_trade_simulations: bool,
-
-    /// Flag to enable saving Tenderly simulations in the dashboard for failed
-    /// trade simulations. This helps debugging reverted quote simulations.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub tenderly_save_failed_trade_simulations: bool,
-
-    /// Use 0x estimator for only buy orders. This flag can be enabled to reduce
-    /// request pressure on the 0x API.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub zeroex_only_estimate_buy_queries: bool,
-
     /// The API key for the 1Inch API.
     #[clap(long, env)]
     pub one_inch_api_key: Option<String>,
@@ -219,6 +186,30 @@ pub struct Arguments {
     /// can be paid out of the settlement contract buffers.
     #[clap(long, env, default_value = "1.")]
     pub quote_inaccuracy_limit: f64,
+
+    /// How strict quote verification should be.
+    #[clap(
+        long,
+        env,
+        default_value = "unverified",
+        value_enum,
+        verbatim_doc_comment
+    )]
+    pub quote_verification: QuoteVerificationMode,
+}
+
+/// Controls which level of quote verification gets applied.
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+#[clap(rename_all = "kebab-case")]
+pub enum QuoteVerificationMode {
+    /// Quotes do not get verified.
+    Unverified,
+    /// Quotes get verified whenever possible and verified
+    /// quotes are preferred over unverified ones.
+    Prefer,
+    /// Quotes get discarded if they can't be verified.
+    /// Some scenarios like missing sell token balance are exempt.
+    EnforceWhenPossible,
 }
 
 impl Display for Arguments {
@@ -232,14 +223,10 @@ impl Display for Arguments {
             native_price_cache_concurrent_requests,
             amount_to_estimate_prices_with,
             balancer_sor_url,
-            tenderly_save_successful_trade_simulations,
-            tenderly_save_failed_trade_simulations,
-            zeroex_only_estimate_buy_queries,
             one_inch_api_key,
-            trade_simulator,
-            prefer_verified_quotes,
             one_inch_url,
             quote_inaccuracy_limit,
+            quote_verification,
         } = self;
 
         display_option(
@@ -278,34 +265,10 @@ impl Display for Arguments {
             amount_to_estimate_prices_with,
         )?;
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
-        display_option(
-            f,
-            "trade_simulator",
-            &self
-                .trade_simulator
-                .as_ref()
-                .map(|value| format!("{value:?}")),
-        )?;
-        writeln!(f, "prefer_verified_quotes: {}", prefer_verified_quotes)?;
-        writeln!(
-            f,
-            "tenderly_save_successful_trade_simulations: {}",
-            tenderly_save_successful_trade_simulations
-        )?;
-        writeln!(
-            f,
-            "tenderly_save_failed_trade_simulations: {}",
-            tenderly_save_failed_trade_simulations
-        )?;
-        writeln!(
-            f,
-            "zeroex_only_estimate_buy_queries: {:?}",
-            zeroex_only_estimate_buy_queries
-        )?;
         display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
-        writeln!(f, "trade_simulator: {:?}", trade_simulator)?;
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
+        writeln!(f, "quote_verification: {:?}", quote_verification)?;
 
         Ok(())
     }
@@ -369,7 +332,7 @@ pub struct Query {
     /// buy_token.
     pub in_amount: NonZeroU256,
     pub kind: OrderKind,
-    pub verification: Option<Verification>,
+    pub verification: Verification,
     /// Signals whether responses from that were valid on previous blocks can be
     /// used to answer the query.
     #[serde(skip_serializing)]
@@ -518,16 +481,19 @@ mod tests {
         // Arg::value_parser or #[arg(value_enum)]:
         // https://docs.rs/clap/latest/clap/_derive/index.html#arg-attributes
 
-        let parsed = |arg: &str| NativePriceEstimators::from(arg);
+        let parsed = |arg: &str| NativePriceEstimators::from_str(arg);
         let stringified = |arg: &NativePriceEstimators| format!("{arg}");
 
         for repr in [
-            &NativePriceEstimator::GenericPriceEstimator("Baseline".into()).to_string(),
+            &NativePriceEstimator::Driver(
+                ExternalSolver::from_str("baseline|http://localhost:1234/").unwrap(),
+            )
+            .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
-            "one,two;three,four",
-            &format!("one,two;{},four", NativePriceEstimator::OneInchSpotPriceApi),
+            "one|http://localhost:1111/,two|http://localhost:2222/;three|http://localhost:3333/,four|http://localhost:4444/",
+            &format!("one|http://localhost:1111/,two|http://localhost:2222/;{},four|http://localhost:4444/", NativePriceEstimator::OneInchSpotPriceApi),
         ] {
-            assert_eq!(stringified(&parsed(repr)), repr);
+            assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
     }
 }

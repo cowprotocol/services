@@ -296,6 +296,7 @@ impl HttpTradeFinder {
                 })
                 .collect(),
             solver: self.solver,
+            tx_origin: None,
         })
     }
 
@@ -560,7 +561,7 @@ mod tests {
 
         let sell_order = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -573,7 +574,7 @@ mod tests {
 
         let buy_order = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -615,7 +616,7 @@ mod tests {
         );
         let err = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -662,7 +663,7 @@ mod tests {
 
         let err = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -758,7 +759,7 @@ mod tests {
         );
 
         let query = Arc::new(Query {
-            verification: None,
+            verification: Default::default(),
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             in_amount: NonZeroU256::try_from(100).unwrap(),
@@ -787,14 +788,11 @@ mod tests {
 
         let client = Client::new();
 
-        let transport = HttpTransport::new(
-            client.clone(),
-            crate::url::join(
-                &Url::parse("https://mainnet.infura.io/v3/").unwrap(),
-                &infura_project_id,
-            ),
-            "main".into(),
+        let url = crate::url::join(
+            &Url::parse("https://mainnet.infura.io/v3/").unwrap(),
+            &infura_project_id,
         );
+        let transport = HttpTransport::new(client.clone(), url.clone(), "main".into());
         let web3 = Web3::new(DynTransport::new(transport));
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let version = chain_id.to_string();
@@ -811,7 +809,7 @@ mod tests {
                 .await
                 .unwrap()
                 .pool_fetching,
-                current_block_stream(Arc::new(web3.clone()), Duration::from_secs(1))
+                current_block_stream(url, Duration::from_secs(1))
                     .await
                     .unwrap(),
             )
@@ -856,7 +854,7 @@ mod tests {
 
         let result = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount1).unwrap(),
@@ -878,7 +876,7 @@ mod tests {
 
         let result = estimator
             .estimate(Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount2).unwrap(),

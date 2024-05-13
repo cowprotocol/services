@@ -56,6 +56,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -268,6 +269,7 @@ pub async fn run(args: Arguments) {
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
         &base_tokens,
+        eth.contracts().settlement().address(),
     )
     .await
     .expect("failed to initialize token owner finders");
@@ -424,10 +426,6 @@ pub async fn run(args: Arguments) {
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
             args.native_price_estimation_results_required,
         )
         .unwrap();
@@ -448,8 +446,14 @@ pub async fn run(args: Arguments) {
         None
     };
 
+    let persistence =
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(eth.clone(), db.clone());
+        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
+            eth.clone(),
+            db.clone(),
+            persistence.clone(),
+        );
     let event_updater = Arc::new(EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
@@ -479,6 +483,8 @@ pub async fn run(args: Arguments) {
             )
             .unwrap(),
         },
+        balance_fetcher.clone(),
+        args.price_estimation.quote_verification,
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
@@ -535,9 +541,6 @@ pub async fn run(args: Arguments) {
     tokio::task::spawn(
         service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
-
-    let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -607,6 +610,11 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
+        surplus_capturing_jit_order_owners: args
+            .protocol_fee_exempt_addresses
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>(),
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -666,6 +674,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
+        &args
+            .protocol_fee_exempt_addresses
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>(),
     );
     shadow.run_forever().await;
 

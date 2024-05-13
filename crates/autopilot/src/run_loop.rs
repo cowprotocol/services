@@ -46,6 +46,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
+    pub surplus_capturing_jit_order_owners: HashSet<H160>,
 }
 
 impl RunLoop {
@@ -304,6 +305,7 @@ impl RunLoop {
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
+            &self.surplus_capturing_jit_order_owners,
         );
         let request = &request;
 

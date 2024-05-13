@@ -51,7 +51,7 @@ macro_rules! logging_args_with_default_filter {
     };
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
@@ -260,15 +260,6 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
-}
-
-/// The kind of EVM code simulator to use.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, clap::ValueEnum)]
-#[clap(rename_all = "verbatim")]
-pub enum CodeSimulatorKind {
-    Web3,
-    Tenderly,
-    Web3ThenTenderly,
 }
 
 pub fn display_secret_option<T>(

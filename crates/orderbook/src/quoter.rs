@@ -68,26 +68,20 @@ impl QuoteHandler {
         let valid_to = order.valid_to;
         self.order_validator.partial_validate(order).await?;
 
-        let params = {
-            let try_verification =
-                request.price_quality != PriceQuality::Fast && !request.from.is_zero();
-            let verification = try_verification.then(|| Verification {
+        let params = QuoteParameters {
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
+            side: request.side,
+            verification: Verification {
                 from: request.from,
                 receiver: request.receiver.unwrap_or(request.from),
                 sell_token_source: request.sell_token_balance,
                 buy_token_destination: request.buy_token_balance,
                 pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
                 post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
-            });
-
-            QuoteParameters {
-                sell_token: request.sell_token,
-                buy_token: request.buy_token,
-                side: request.side,
-                verification,
-                signing_scheme: request.signing_scheme,
-                additional_gas: app_data.inner.protocol.hooks.gas_limit(),
-            }
+            },
+            signing_scheme: request.signing_scheme,
+            additional_gas: app_data.inner.protocol.hooks.gas_limit(),
         };
 
         let quote = match request.price_quality {

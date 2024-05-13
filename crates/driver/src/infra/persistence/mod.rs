@@ -3,6 +3,8 @@ use {
         domain::competition::auction::Id,
         infra::{config::file, solver::Config},
     },
+    serde::Serialize,
+    serde_json::to_value,
     std::sync::Arc,
     tracing::Instrument,
 };
@@ -53,11 +55,17 @@ impl Persistence {
 
     /// Saves the given auction with liquidity with fire and forget mentality
     /// (non-blocking operation)
-    pub fn archive_auction(&self, auction_id: Id, body: &str) {
+    pub fn archive_auction(&self, auction_id: Id, body: impl Serialize) {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
-        let body = body.to_string();
+        let body = match to_value(body) {
+            Ok(body) => body,
+            Err(err) => {
+                tracing::error!(?err, "failed to parse the auction with liquidity to JSON");
+                return;
+            }
+        };
         tokio::spawn(
             async move {
                 match uploader.upload(auction_id.to_string(), body).await {

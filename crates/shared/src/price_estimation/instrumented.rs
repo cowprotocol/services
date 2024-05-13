@@ -84,7 +84,7 @@ mod tests {
     async fn records_metrics_for_each_query() {
         let queries = [
             Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160([1; 20]),
                 buy_token: H160([2; 20]),
                 in_amount: NonZeroU256::try_from(3).unwrap(),
@@ -92,7 +92,7 @@ mod tests {
                 block_dependent: false,
             }),
             Arc::new(Query {
-                verification: None,
+                verification: Default::default(),
                 sell_token: H160([4; 20]),
                 buy_token: H160([5; 20]),
                 in_amount: NonZeroU256::try_from(6).unwrap(),

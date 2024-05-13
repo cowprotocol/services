@@ -18,6 +18,7 @@ use {
         util,
     },
     anyhow::Result,
+    derive_more::{From, Into},
     num::BigRational,
     reqwest::header::HeaderName,
     std::collections::HashMap,
@@ -35,18 +36,12 @@ const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 /// The solver name. The user can configure this to be anything that they like.
 /// The name uniquely identifies each solver in case there's more than one of
 /// them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From, Into)]
 pub struct Name(pub String);
 
 impl Name {
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<String> for Name {
-    fn from(inner: String) -> Self {
-        Self(inner)
     }
 }
 
@@ -80,6 +75,14 @@ pub struct Timeouts {
     /// Maximum time allocated for solver engines to return the solutions back
     /// to the driver, in percentage of total driver deadline.
     pub solving_share_of_deadline: util::Percent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ManageNativeToken {
+    /// If true wraps ETH address
+    pub wrap_address: bool,
+    /// If true inserts unwrap interactions
+    pub insert_unwraps: bool,
 }
 
 /// Solvers are controlled by the driver. Their job is to search for solutions
@@ -117,6 +120,10 @@ pub struct Config {
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
     pub s3: Option<S3>,
+    /// Whether the native token is wrapped or not when sent to the solvers
+    pub solver_native_token: ManageNativeToken,
+    /// Which `tx.origin` is required to make quote verification pass.
+    pub quote_tx_origin: Option<eth::Address>,
 }
 
 impl Solver {
@@ -187,6 +194,14 @@ impl Solver {
         self.config.merge_solutions
     }
 
+    pub fn solver_native_token(&self) -> ManageNativeToken {
+        self.config.solver_native_token
+    }
+
+    pub fn quote_tx_origin(&self) -> &Option<eth::Address> {
+        &self.config.quote_tx_origin
+    }
+
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
     pub async fn solve(
@@ -196,18 +211,19 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(
+        let auction_dto = dto::Auction::new(
             auction,
             liquidity,
             weth,
             self.config.fee_handler,
-        ))
-        .unwrap();
+            self.config.solver_native_token,
+        );
         // Only auctions with IDs are real auctions (/quote requests don't have an ID,
         // and it makes no sense to store them)
         if let Some(id) = auction.id() {
-            self.persistence.archive_auction(id, &body);
+            self.persistence.archive_auction(id, &auction_dto);
         };
+        let body = serde_json::to_string(&auction_dto).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
@@ -225,7 +241,7 @@ impl Solver {
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone(), &self.config)?;
 
-        super::observe::solutions(&solutions);
+        super::observe::solutions(&solutions, auction.surplus_capturing_jit_order_owners());
         Ok(solutions)
     }
 
