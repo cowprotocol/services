@@ -113,7 +113,9 @@ async fn test() {
                         "executedAmount": "100",
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [],
+                "postInteractions": [],
             }]
         }),
     );

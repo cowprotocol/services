@@ -2,10 +2,10 @@ use crate::{
     domain::{
         competition::{
             self,
-            order::{self, Side},
+            order::{self, FeePolicy, SellAmount, Side, TargetAmount},
             solution::error::{self, Math},
         },
-        eth::{self},
+        eth::{self, Asset},
     },
     util::conv::u256::U256Ext,
 };
@@ -16,6 +16,92 @@ use crate::{
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(Jit),
+}
+
+impl Trade {
+    pub fn side(&self) -> Side {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().side,
+            Trade::Jit(jit) => jit.order().side,
+        }
+    }
+
+    pub fn protocol_fees(&self) -> Vec<FeePolicy> {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().protocol_fees.to_vec(),
+            Trade::Jit(_) => vec![],
+        }
+    }
+
+    pub fn executed(&self) -> TargetAmount {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.executed(),
+            Trade::Jit(jit) => jit.executed(),
+        }
+    }
+
+    pub fn fee(&self) -> SellAmount {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.fee(),
+            Trade::Jit(jit) => jit.order().fee,
+        }
+    }
+
+    pub fn buy(&self) -> Asset {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().buy,
+            Trade::Jit(jit) => jit.order().buy,
+        }
+    }
+
+    pub fn sell(&self) -> Asset {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().sell,
+            Trade::Jit(jit) => jit.order().sell,
+        }
+    }
+
+    /// The effective amount that left the user's wallet including all fees.
+    fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
+        let before_fee = match self.side() {
+            order::Side::Sell => self.executed().0,
+            order::Side::Buy => self
+                .executed()
+                .0
+                .checked_mul(prices.buy)
+                .ok_or(Math::Overflow)?
+                .checked_div(prices.sell)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(
+            before_fee.checked_add(self.fee().0).ok_or(Math::Overflow)?,
+        ))
+    }
+
+    /// The effective amount the user received after all fees.
+    fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
+        let amount = match self.side() {
+            order::Side::Buy => self.executed().0,
+            order::Side::Sell => self
+                .executed()
+                .0
+                .checked_mul(prices.sell)
+                .ok_or(Math::Overflow)?
+                .checked_ceil_div(&prices.buy)
+                .ok_or(Math::DivisionByZero)?,
+        };
+        Ok(eth::TokenAmount(amount))
+    }
+
+    pub fn custom_prices(
+        &self,
+        prices: &ClearingPrices,
+    ) -> Result<CustomClearingPrices, error::Math> {
+        Ok(CustomClearingPrices {
+            sell: self.buy_amount(prices)?.into(),
+            buy: self.sell_amount(prices)?.into(),
+        })
+    }
 }
 
 /// A trade which fulfills an order from the auction.

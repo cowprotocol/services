@@ -107,15 +107,6 @@ impl<'a> UserOrder<'a> {
     }
 }
 
-/// An arbitrary ethereum interaction that is required for the settlement
-/// execution.
-#[derive(Debug, Clone)]
-pub struct Interaction {
-    pub target: Address,
-    pub value: eth::Ether,
-    pub calldata: Vec<u8>,
-}
-
 /// An order that can be used to provide just-in-time liquidity in form of a CoW
 /// Protocol order. This is how solvers integrate private market makers into
 /// their solutions.

@@ -14,7 +14,6 @@ use {
 };
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Trade {
     order_uid: domain::OrderUid,
     sell: eth::Asset,
@@ -43,16 +42,18 @@ impl Trade {
         }
     }
 
+    pub fn order_uid(&self) -> &domain::OrderUid {
+        &self.order_uid
+    }
+
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    #[allow(dead_code)]
-    fn score(
+    pub fn score(
         &self,
         prices: &auction::Prices,
         policies: &[fee::Policy],
     ) -> Result<eth::Ether, Error> {
-        tracing::debug!("Scoring trade {:?}", self);
         Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices, policies)?)
     }
 

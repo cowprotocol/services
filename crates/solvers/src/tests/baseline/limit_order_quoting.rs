@@ -127,6 +127,7 @@ async fn sell_order() {
                         "fee": "4142307721255089"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -138,6 +139,7 @@ async fn sell_order() {
                         "outputAmount": "1663373703594405548696"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 206391,
             }]
         }),
@@ -269,6 +271,7 @@ async fn buy_order() {
                         "fee": "4142307721255089"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -280,6 +283,7 @@ async fn buy_order() {
                         "outputAmount": "1000000000004392195"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 206391,
             }]
         }),

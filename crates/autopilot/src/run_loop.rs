@@ -50,6 +50,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
+    pub surplus_capturing_jit_order_owners: HashSet<H160>,
 }
 
 impl RunLoop {
@@ -339,6 +340,7 @@ impl RunLoop {
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
+            &self.surplus_capturing_jit_order_owners,
         );
         let request = &request;
 
@@ -480,8 +482,12 @@ impl RunLoop {
         .await
         {
             futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((res, _)) => {
-                res.map_err(SettleError::Failure).map(|tx| tx.tx_hash)
+            futures::future::Either::Right((driver_result, onchain_task)) => {
+                driver_result.map_err(|err| {
+                    tracing::warn!(?err, "driver settle request failed");
+                    SettleError::Failure(err)
+                })?;
+                onchain_task.await
             }
         }
     }

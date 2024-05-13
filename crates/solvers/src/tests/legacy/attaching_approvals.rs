@@ -113,6 +113,7 @@ async fn test() {
                 "id": 0,
                 "prices": {},
                 "trades": [],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
@@ -146,6 +147,7 @@ async fn test() {
                         "kind": "custom",
                     },
                 ],
+                "postInteractions": [],
             }]
         }),
     );
