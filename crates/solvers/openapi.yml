@@ -872,13 +872,13 @@ components:
             Interactions to encode within a settlement.
           type: array
           items:
-            $ref: "#/components/schemas/Call"
+            $ref: "#/components/schemas/Interaction"
         postInteractions:
           description: |
             Interactions to encode after a settlement.
           type: array
           items:
-            $ref: "#/components/schemas/Interaction"
+            $ref: "#/components/schemas/Call"
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
