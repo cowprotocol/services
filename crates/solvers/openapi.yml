@@ -861,12 +861,40 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Trade"
+        preInteractions:
+          description: |
+            Interactions to encode before a settlement.
+          type: array
+          items:
+            $ref: "#/components/schemas/Call"
         interactions:
           description: |
             Interactions to encode within a settlement.
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
+        postInteractions:
+          description: |
+            Interactions to encode after a settlement.
+          type: array
+          items:
+            $ref: "#/components/schemas/Call"
         gas:
           type: integer
           description: How many units of gas this solution is estimated to cost.
+    Call:
+      type: object
+      properties:
+        target:
+          $ref: "#/components/schemas/Address"
+        value:
+          $ref: "#/components/schemas/TokenAmount"
+        calldata:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallData"
+          description: The call data to be used for the interaction.
+    CallData:
+      description: Some `calldata` sent to a contract in a transaction encoded as a hex with `0x` prefix.
+      type: string
+      example: "0xca11da7a"
