@@ -759,26 +759,24 @@ pub async fn get_missing_order_uids(
     ex: &mut PgConnection,
     order_uids: Vec<OrderUid>,
 ) -> Result<Vec<OrderUid>, sqlx::Error> {
-    let placeholders = (1..(order_uids.len() + 1))
-        .map(|i| format!("(${:?})", i))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let query = format!(
-        r#"
-WITH input_ids (id) AS (
-VALUES {})
-SELECT input_ids.id
-FROM input_ids
-LEFT JOIN orders ON orders.uid = input_ids.id
-WHERE orders.uid IS NULL
-"#,
-        placeholders
-    );
-    let mut query = sqlx::query_scalar(&query);
-    for order_uid in order_uids {
-        query = query.bind(order_uid)
+    if order_uids.is_empty() {
+        return Ok(vec![]);
     }
-    query.fetch_all(ex).await
+
+    let mut query_builder = sqlx::QueryBuilder::new("WITH input_ids (id) AS (VALUES ");
+
+    let mut separated = query_builder.separated(", ");
+    for order_uid in &order_uids {
+        separated.push_bind(order_uid);
+    }
+    separated.push_unseparated(") ");
+
+    query_builder.push(
+        "SELECT input_ids.id FROM input_ids LEFT JOIN orders ON orders.uid = input_ids.id WHERE \
+         orders.uid IS NULL",
+    );
+
+    query_builder.build_query_scalar().fetch_all(ex).await
 }
 
 #[cfg(test)]
@@ -1940,7 +1938,7 @@ mod tests {
         // 5, 6, 7, 8, 9 are missing
         let missing_uids = (5..=9)
             .map(|i| ByteArray([i; 56]))
-            .collect::<Vec<OrderUid>>();
+            .collect::<HashSet<OrderUid>>();
         let actual = get_missing_order_uids(&mut db, uids_to_check)
             .await
             .unwrap()
