@@ -87,7 +87,7 @@ pub enum Error {
     #[error(transparent)]
     Settlement(#[from] super::Error),
     #[error(transparent)]
-    Blockchain(#[from] infra::blockchain::Error),
+    Transaction(#[from] infra::blockchain::Error),
     #[error(transparent)]
     Auction(#[from] infra::persistence::error::Auction),
 }
