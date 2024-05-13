@@ -17,7 +17,8 @@ pub struct Auction {
     pub prices: domain::auction::Prices,
     /// Competition winner (solver submission address).
     pub winner: eth::Address,
-    /// Winning score promised during competition (based on the promised `competition::Solution`)
+    /// Winning score promised during competition (based on the promised
+    /// `competition::Solution`)
     pub winner_score: eth::U256,
     /// Winning solution promised during competition.
     pub winner_solution: competition::Solution,
