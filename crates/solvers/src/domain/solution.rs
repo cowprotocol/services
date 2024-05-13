@@ -22,9 +22,9 @@ pub struct Solution {
     pub id: Id,
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
-    pub pre_interactions: Vec<InteractionData>,
+    pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<Interaction>,
-    pub post_interactions: Vec<InteractionData>,
+    pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
 }
 
@@ -359,15 +359,6 @@ pub struct CustomInteraction {
     pub outputs: Vec<eth::Asset>,
     /// Allowances required to successfully execute the interaction.
     pub allowances: Vec<Allowance>,
-}
-
-/// An arbitrary ethereum interaction that is required for the settlement
-/// execution.
-#[derive(Debug)]
-pub struct InteractionData {
-    pub target: Address,
-    pub value: eth::Ether,
-    pub calldata: Vec<u8>,
 }
 
 /// Approval required to make some `[CustomInteraction]` possible.
