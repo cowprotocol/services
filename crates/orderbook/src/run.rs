@@ -253,7 +253,7 @@ pub async fn run(args: Arguments) {
     let current_block_stream = args
         .shared
         .current_block
-        .stream(web3.clone())
+        .stream(args.shared.node_url.clone())
         .await
         .unwrap();
 
