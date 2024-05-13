@@ -289,24 +289,56 @@ components:
           $ref: "#/components/schemas/Token"
         sellAmount:
           $ref: "#/components/schemas/TokenAmount"
+        fullSellAmount:
+          $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           $ref: "#/components/schemas/TokenAmount"
-        kind:
-          $ref: "#/components/schemas/OrderKind"
-        partiallyFillable:
-          description: |
-            Whether or not this order can be partially filled. If this is false,
-            then the order is a "fill-or-kill" order, meaning it needs to be
-            completely filled or not at all.
-          type: boolean
-        class:
-          $ref: "#/components/schemas/OrderClass"
+        fullBuyAmount:
+          $ref: "#/components/schemas/TokenAmount"
         feePolicies:
           description: |
             Any protocol fee policies that apply to the order.
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        validTo:
+          type: integer
+        kind:
+          $ref: "#/components/schemas/OrderKind"
+        receiver:
+          $ref: "#/components/schemas/Address"
+        owner:
+          $ref: "#/components/schemas/Address"
+        partiallyFillable:
+          description: |
+            Whether or not this order can be partially filled. If this is false,
+            then the order is a "fill-or-kill" order, meaning it needs to be
+            completely filled or not at all.
+          type: boolean
+        preInteractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        postInteractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/InteractionData"
+        sellTokenSource:
+          allOf:
+            - $ref: "#/components/schemas/SellTokenBalance"
+          default: "erc20"
+        buyTokenDestination:
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenBalance"
+          default: "erc20"
+        class:
+          $ref: "#/components/schemas/OrderClass"
+        appData:
+          $ref: "#/components/schemas/AppData"
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
+        signature:
+          $ref: "#/components/schemas/Signature"
     FeePolicy:
       description: |
         A fee policy that applies to an order.
@@ -653,10 +685,22 @@ components:
           $ref: "#/components/schemas/Token"
         receiver:
           $ref: "#/components/schemas/Address"
+        owner:
+          $ref: "#/components/schemas/Address"
         sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        fullSellAmount:
           $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           $ref: "#/components/schemas/TokenAmount"
+        fullBuyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        feePolicies:
+          description: |
+            Any protocol fee policies that apply to the order.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeePolicy"
         validTo:
           type: integer
         appData:
@@ -667,6 +711,22 @@ components:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           type: boolean
+        preInteractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        postInteractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/InteractionData"
+        sellTokenSource:
+          allOf:
+            - $ref: "#/components/schemas/SellTokenBalance"
+          default: "erc20"
+        buyTokenDestination:
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenBalance"
+          default: "erc20"
         sellTokenBalance:
           $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:
@@ -834,6 +894,17 @@ components:
         - oneOf:
             - $ref: "#/components/schemas/LiquidityInteraction"
             - $ref: "#/components/schemas/CustomInteraction"
+
+    InteractionData:
+      type: object
+      properties:
+        target:
+          $ref: "#/components/schemas/Address"
+        value:
+          $ref: "#/components/schemas/TokenAmount"
+        calldata:
+          description: Hex encoded bytes with `0x` prefix.
+          type: string
 
     Solution:
       description: |
