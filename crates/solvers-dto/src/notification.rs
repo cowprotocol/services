@@ -4,6 +4,10 @@ use {
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
     std::collections::BTreeSet,
+    utoipa::{
+        openapi::{ObjectBuilder, RefOr, Schema, SchemaType},
+        ToSchema,
+    },
     web3::types::{AccessList, H160, H256, U256},
 };
 
@@ -16,6 +20,54 @@ pub struct Notification {
     pub solution_id: Option<SolutionId>,
     #[serde(flatten)]
     pub kind: Kind,
+}
+
+// serde(flatten) has a conflict with the current API schema
+impl ToSchema<'static> for Notification {
+    fn schema() -> (&'static str, RefOr<Schema>) {
+        let auction_id = ObjectBuilder::new()
+            .description(Some(
+                "The auction ID of the auction that the solution was providedfor.",
+            ))
+            .schema_type(SchemaType::String);
+        let solution_id = ObjectBuilder::new()
+            .description(Some(
+                "The solution ID within the auction for which the notification applies",
+            ))
+            .schema_type(SchemaType::Number);
+        let kind = ObjectBuilder::new()
+            .schema_type(SchemaType::String)
+            .enum_values(Some([
+                "timeout",
+                "emptySolution",
+                "duplicatedSolutionId",
+                "simulationFailed",
+                "invalidClearingPrices",
+                "missingPrice",
+                "invalidExecutedAmount",
+                "nonBufferableTokensUsed",
+                "solverAccountInsufficientBalance",
+                "success",
+                "revert",
+                "driverError",
+                "cancelled",
+                "fail",
+                "postprocessingTimedOut",
+            ]));
+        let notification = ObjectBuilder::new()
+            .description(Some(
+                "A notification that informs the solver how its solution performed in the \
+                 auction. Depending on the notification type additional meta data may be attached \
+                 but this is not guaranteed to be stable.",
+            ))
+            .schema_type(SchemaType::Object)
+            .property("auctionId", auction_id)
+            .property("solutionId", solution_id)
+            .property("kind", kind)
+            .build();
+
+        ("Notification", Schema::Object(notification).into())
+    }
 }
 
 #[serde_as]

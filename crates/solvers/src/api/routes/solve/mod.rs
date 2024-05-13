@@ -4,6 +4,18 @@ mod dto;
 
 use {crate::domain::solver::Solver, std::sync::Arc};
 
+/// Solve the passed in auction instance.
+#[utoipa::path(
+    post,
+    path = "/solve",
+    request_body = Auction,
+    responses(
+        (status = 200, description = "Auction successfully solved.", body = inline(dto::Solutions)),
+        (status = 400, description = "There is something wrong with the request."),
+        (status = 429, description = "The solver cannot keep up. It is too busy to handle more requests."),
+        (status = 500, description = "Something went wrong when handling the request.")
+    ),
+)]
 pub async fn solve(
     state: axum::extract::State<Arc<Solver>>,
     auction: axum::extract::Json<dto::Auction>,

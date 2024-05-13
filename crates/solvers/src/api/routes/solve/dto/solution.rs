@@ -50,8 +50,8 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                     app_data: trade.order.app_data.0,
                                     fee_amount: 0.into(),
                                     kind: match trade.order.side {
-                                        crate::domain::order::Side::Buy => Kind::Buy,
-                                        crate::domain::order::Side::Sell => Kind::Sell,
+                                        crate::domain::order::Side::Buy => OrderKind::Buy,
+                                        crate::domain::order::Side::Sell => OrderKind::Sell,
                                     },
                                     partially_fillable: trade.order.partially_fillable,
                                     sell_token_balance: SellTokenBalance::Erc20,

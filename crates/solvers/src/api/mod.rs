@@ -2,8 +2,10 @@
 
 use {
     crate::domain::solver::Solver,
+    serde_json::Error,
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
+    utoipa::OpenApi,
 };
 
 mod routes;
@@ -45,4 +47,75 @@ impl Api {
 
         server.with_graceful_shutdown(shutdown).await
     }
+}
+
+// migrate to utoipauto once the issue is solved https://github.com/ProbablyClem/utoipauto/issues/23
+pub fn generate_openapi_json() -> Result<String, Error> {
+    #[derive(OpenApi)]
+    #[openapi(
+        paths(routes::solve::solve, routes::notify::notify,),
+        components(schemas(
+            solvers_dto::auction::Auction,
+            solvers_dto::auction::TokenInfo,
+            solvers_dto::auction::NativePrice,
+            solvers_dto::auction::DateTime,
+            solvers_dto::auction::Liquidity,
+            solvers_dto::auction::LiquidityParameters,
+            solvers_dto::auction::ConstantProductPool,
+            solvers_dto::auction::WeightedProductPool,
+            solvers_dto::auction::StablePool,
+            solvers_dto::auction::ConcentratedLiquidityPool,
+            solvers_dto::auction::ForeignLimitOrder,
+            solvers_dto::auction::TokenReserve,
+            solvers_dto::auction::BalancerPoolId,
+            solvers_dto::auction::Decimal,
+            solvers_dto::auction::U256Schema,
+            solvers_dto::auction::U128,
+            solvers_dto::auction::I128,
+            solvers_dto::auction::I32,
+            solvers_dto::auction::BigInt,
+            solvers_dto::auction::Order,
+            solvers_dto::auction::OrderUid,
+            solvers_dto::auction::FeePolicy,
+            solvers_dto::auction::Quote,
+            solvers_dto::auction::OrderClass,
+            solvers_dto::auction::OrderKind,
+            solvers_dto::auction::SurplusFee,
+            solvers_dto::auction::PriceImprovement,
+            solvers_dto::auction::VolumeFee,
+            solvers_dto::auction::SellTokenSource,
+            solvers_dto::auction::InteractionData,
+            solvers_dto::auction::BuyTokenDestination,
+            solvers_dto::auction::SellTokenSource,
+            solvers_dto::auction::LegacySigningScheme,
+            solvers_dto::solution::Solution,
+            solvers_dto::solution::Interaction,
+            solvers_dto::solution::CustomInteraction,
+            solvers_dto::solution::LiquidityInteraction,
+            solvers_dto::solution::Allowance,
+            solvers_dto::solution::Asset,
+            solvers_dto::solution::Trade,
+            solvers_dto::solution::Fulfillment,
+            solvers_dto::solution::JitTrade,
+            solvers_dto::solution::JitOrder,
+            solvers_dto::solution::BuyTokenBalance,
+            solvers_dto::solution::SellTokenBalance,
+            solvers_dto::solution::SigningScheme,
+            solvers_dto::common::Address,
+            solvers_dto::common::AppData,
+            solvers_dto::common::Signature,
+            solvers_dto::common::TokenAmount,
+            solvers_dto::common::Token,
+        )),
+        info(
+            description = "The API implemented by solver engines interacting with the reference \
+                           driver implementation.",
+            title = "Solver Engine API",
+            version = "0.1.0",
+            license(name = "MIT OR Apache-2.0")
+        )
+    )]
+    pub struct ApiDoc;
+
+    ApiDoc::openapi().to_pretty_json()
 }

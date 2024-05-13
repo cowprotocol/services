@@ -39,6 +39,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 toml = { workspace = true }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["limit", "trace"] }
+utoipa = { version = "4.2.0", features = ["axum_extras"] }
 web3 = { workspace = true }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and

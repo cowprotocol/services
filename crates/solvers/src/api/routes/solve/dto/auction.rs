@@ -50,13 +50,13 @@ pub fn to_domain(auction: &Auction) -> Result<auction::Auction, Error> {
                     amount: order.buy_amount,
                 },
                 side: match order.kind {
-                    Kind::Buy => order::Side::Buy,
-                    Kind::Sell => order::Side::Sell,
+                    OrderKind::Buy => order::Side::Buy,
+                    OrderKind::Sell => order::Side::Sell,
                 },
                 class: match order.class {
-                    Class::Market => order::Class::Market,
-                    Class::Limit => order::Class::Limit,
-                    Class::Liquidity => order::Class::Liquidity,
+                    OrderClass::Market => order::Class::Market,
+                    OrderClass::Limit => order::Class::Limit,
+                    OrderClass::Liquidity => order::Class::Liquidity,
                 },
                 partially_fillable: order.partially_fillable,
             })

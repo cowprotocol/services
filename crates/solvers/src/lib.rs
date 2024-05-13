@@ -11,4 +11,7 @@ mod run;
 mod tests;
 mod util;
 
-pub use self::run::{run, start};
+pub use {
+    self::run::{run, start},
+    api::generate_openapi_json,
+};
