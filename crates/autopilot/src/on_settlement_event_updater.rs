@@ -140,8 +140,8 @@ impl Inner {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let Some(transaction) = self.eth.transaction(hash.into()).await? else {
-            tracing::warn!(?hash, "no tx found, reorg happened");
+        let Ok(transaction) = self.eth.transaction(hash.into()).await else {
+            tracing::warn!(?hash, "no tx found");
             return Ok(false);
         };
 
@@ -187,7 +187,7 @@ impl Inner {
         let receipt = self
             .eth
             .transaction_receipt(hash.into())
-            .await?
+            .await
             .with_context(|| format!("no receipt {hash:?}"))?;
         let gas_used = receipt.gas;
         let effective_gas_price = receipt.effective_gas_price;

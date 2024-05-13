@@ -21,8 +21,6 @@ impl Tx {
     pub async fn new(tx: eth::TxId, eth: infra::Ethereum) -> Result<Self, Error> {
         let (transaction, receipt) =
             tokio::try_join!(eth.transaction(tx), eth.transaction_receipt(tx),)?;
-        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
-        let receipt = receipt.ok_or(Error::TransactionNotFound)?;
 
         let domain_separator = eth.contracts().settlement_domain_separator();
         let settlement = Settlement::new(&transaction.input.0.clone().into(), domain_separator)?;
@@ -70,8 +68,6 @@ pub struct Receipt {
 pub enum Error {
     #[error(transparent)]
     Blockchain(#[from] infra::blockchain::Error),
-    #[error("invalid transaction hash, transaction not found")]
-    TransactionNotFound,
     #[error(transparent)]
-    Encoded(#[from] super::Error),
+    Settlement(#[from] super::Error),
 }
