@@ -143,6 +143,7 @@ pub fn solve(
         // auctions (which is how we model a /quote request) it can not be used for
         // quoting anyway.
         gas: None,
+        pre_interactions: vec![],
         interactions: swap
             .into_iter()
             .map(|(input, output)| {
@@ -154,6 +155,7 @@ pub fn solve(
                 })
             })
             .collect(),
+        post_interactions: vec![],
     })
 }
 

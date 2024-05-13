@@ -2,11 +2,12 @@ use {
     crate::{
         domain::{competition, competition::order, eth, liquidity},
         infra::{solver::Config, Solver},
-        util::serialize,
+        util::{serialize, Bytes},
     },
     app_data::AppDataHash,
     itertools::Itertools,
     model::{
+        interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         DomainSeparator,
     },
@@ -135,6 +136,15 @@ impl Solutions {
                         .map(|(address, price)| (address.into(), price))
                         .collect(),
                     solution
+                        .pre_interactions
+                        .into_iter()
+                        .map(|interaction| eth::Interaction {
+                            target: interaction.target.into(),
+                            value: interaction.value.into(),
+                            call_data: Bytes(interaction.call_data),
+                        })
+                        .collect(),
+                    solution
                         .interactions
                         .into_iter()
                         .map(|interaction| match interaction {
@@ -201,6 +211,15 @@ impl Solutions {
                             }
                         })
                         .try_collect()?,
+                    solution
+                        .post_interactions
+                        .into_iter()
+                        .map(|interaction| eth::Interaction {
+                            target: interaction.target.into(),
+                            value: interaction.value.into(),
+                            call_data: Bytes(interaction.call_data),
+                        })
+                        .collect(),
                     solver.clone(),
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
@@ -276,7 +295,11 @@ pub struct Solution {
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
+    #[serde(default)]
+    pre_interactions: Vec<InteractionData>,
     interactions: Vec<Interaction>,
+    #[serde(default)]
+    post_interactions: Vec<InteractionData>,
     // TODO: remove this once all solvers are updated to not return the score
     // https://github.com/cowprotocol/services/issues/2588
     #[allow(dead_code)]

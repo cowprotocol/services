@@ -98,6 +98,7 @@ async fn test() {
                         "fee": "2495865000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -109,6 +110,7 @@ async fn test() {
                         "outputAmount": "20694705425542464884657"
                     }
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),
