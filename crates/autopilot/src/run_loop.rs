@@ -447,8 +447,12 @@ impl RunLoop {
         .await
         {
             futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((res, _)) => {
-                res.map_err(SettleError::Failure).map(|tx| tx.tx_hash)
+            futures::future::Either::Right((driver_result, onchain_task)) => {
+                driver_result.map_err(|err| {
+                    tracing::warn!(?err, "driver settle request failed");
+                    SettleError::Failure(err)
+                })?;
+                onchain_task.await
             }
         }
     }
