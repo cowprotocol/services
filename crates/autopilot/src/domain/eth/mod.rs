@@ -1,20 +1,9 @@
+use derive_more::{From, Into};
 pub use primitive_types::{H160, U256};
 
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct Address(pub H160);
-
-impl From<H160> for Address {
-    fn from(value: H160) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Address> for H160 {
-    fn from(value: Address) -> Self {
-        value.0
-    }
-}
 
 /// An ERC20 token address.
 ///
