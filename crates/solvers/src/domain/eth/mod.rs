@@ -110,3 +110,12 @@ pub struct Tx {
     pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
 }
+
+/// An arbitrary ethereum interaction that is required for the settlement
+/// execution.
+#[derive(Debug)]
+pub struct Interaction {
+    pub target: Address,
+    pub value: Ether,
+    pub calldata: Vec<u8>,
+}

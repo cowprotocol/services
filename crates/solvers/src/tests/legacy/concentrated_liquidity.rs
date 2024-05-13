@@ -128,6 +128,7 @@ async fn test() {
                 "id": 0,
                 "prices": {},
                 "trades": [],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -139,6 +140,7 @@ async fn test() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
+                "postInteractions": [],
             }]
         }),
     );
