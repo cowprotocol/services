@@ -79,6 +79,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
         _ = shutdown_signal() => {
+            tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             // Shutdown timeout needs to be larger than the auction deadline
             match tokio::time::timeout(Duration::from_secs(20), serve).await {
