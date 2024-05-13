@@ -38,10 +38,11 @@ use {
     },
     anyhow::{Context, Result},
     database::PgTransaction,
+    model::order::OrderUid,
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    std::sync::Arc,
+    std::{collections::HashSet, sync::Arc},
     tokio::sync::Notify,
     web3::types::Transaction,
 };
@@ -218,8 +219,23 @@ impl Inner {
         );
 
         // surplus and fees calculation
+        let competition_order_uids = Postgres::find_competition(auction_id, ex)
+            .await?
+            .context(format!(
+                "missing competition for auction_id={:?}",
+                auction_id
+            ))?
+            .common
+            .auction
+            .orders
+            .into_iter()
+            .map(|order| OrderUid(order.0))
+            .collect::<HashSet<_>>();
         let jit_order_uids = Postgres::get_missing_order_uids(
-            settlement.trades.iter().map(|trade| trade.order_uid),
+            settlement.trades.iter().filter_map(|trade| {
+                // check persistence of the orders not in the competition
+                (!competition_order_uids.contains(&trade.order_uid)).then_some(trade.order_uid)
+            }),
             ex,
         )
         .await?;
