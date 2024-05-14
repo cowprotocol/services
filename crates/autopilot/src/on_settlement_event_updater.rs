@@ -140,14 +140,6 @@ impl Inner {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        {
-            // temporary to debug and compare with current implementation
-            // TODO: use instead of current implementation
-            let settlement =
-                domain::settlement::Tx::new(hash.into(), &self.eth, &self.persistence).await;
-            tracing::info!(?settlement, "settlement object");
-        }
-
         let Ok(transaction) = self.eth.transaction(hash.into()).await else {
             tracing::warn!(?hash, "no tx found");
             return Ok(false);
@@ -178,6 +170,18 @@ impl Inner {
         };
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
+
+        {
+            // temporary to debug and compare with current implementation
+            // TODO: use instead of current implementation
+            let settlement =
+                domain::settlement::Tx::new(hash.into(), &self.eth, &self.persistence).await;
+            tracing::info!(?settlement, "settlement object");
+
+            if let Ok(settlement) = settlement {
+                tracing::info!("score as promised {}", settlement.check_score());
+            }
+        }
 
         Postgres::update_settlement_details(&mut ex, update.clone())
             .await

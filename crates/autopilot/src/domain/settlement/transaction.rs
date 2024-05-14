@@ -3,7 +3,7 @@
 use {
     super::Settlement,
     crate::{
-        domain::{auction, eth},
+        domain::{auction, competition, eth},
         infra,
     },
 };
@@ -46,6 +46,20 @@ impl Tx {
 
     pub fn solver(&self) -> eth::Address {
         self.transaction.solver
+    }
+
+    /// Score identical to the one promised during the competition.
+    pub fn check_score(&self) -> bool {
+        if let Ok(score) = self.score() {
+            return score == self.auction.score;
+        } else {
+            return false;
+        }
+    }
+
+    fn score(&self) -> Result<competition::Score, super::error::Score> {
+        self.settlement
+            .score(&self.auction.prices, &self.auction.fee_policies)
     }
 }
 

@@ -66,7 +66,7 @@ pub struct TradedAmounts {
     pub buy: eth::TokenAmount,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Score(eth::Ether);
 
 impl Score {
