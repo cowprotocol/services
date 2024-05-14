@@ -177,13 +177,7 @@ impl Persistence {
         &self,
         settlement: &domain::settlement::Settlement,
     ) -> Result<domain::settlement::Auction, error::Auction> {
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .context("begin")
-            .map_err(error::Auction::DbError)?;
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
 
         let auction = settlement.auction_id();
 
@@ -209,8 +203,7 @@ impl Persistence {
             // auction prices
             let db_prices = database::auction_prices::fetch(&mut ex, auction)
                 .await
-                .context("fetch auction prices")
-                .map_err(error::Auction::DbError)?;
+                .context("fetch auction prices")?;
 
             let mut prices = HashMap::new();
             for price in db_prices {
@@ -230,14 +223,12 @@ impl Persistence {
             for order in settlement.order_uids().cloned() {
                 match database::orders::read_order(&mut ex, &ByteArray(order.0))
                     .await
-                    .context("fetch order")
-                    .map_err(error::Auction::DbError)?
+                    .context("fetch order")?
                 {
                     Some(_) => {
                         let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
                             .await
-                            .context("fetch quote")
-                            .map_err(error::Auction::DbError)?
+                            .context("fetch quote")?
                             .map(dto::quote::into_domain)
                             .transpose()
                             .map_err(|_| error::Auction::DbConversion("quote overflow"))?
@@ -246,8 +237,7 @@ impl Persistence {
                         let policies =
                             database::fee_policies::fetch(&mut ex, auction, ByteArray(order.0))
                                 .await
-                                .context("fetch fee policies")
-                                .map_err(error::Auction::DbError)?;
+                                .context("fetch fee policies")?;
 
                         for policy in policies {
                             let policy = dto::fee_policy::into_domain(policy, &quote)?;
@@ -269,11 +259,13 @@ impl Persistence {
             // TODO: stabilize the solver competition table to get promised solution.
             let solver_competition = database::solver_competition::load_by_id(&mut ex, auction)
                 .await
-                .unwrap()
-                .unwrap();
+                .context("load solver competition")?
+                .ok_or(error::Auction::SolverCompetition(
+                    "missing solver competition",
+                ))?;
             let competition: model::solver_competition::SolverCompetitionDB =
                 serde_json::from_value(solver_competition.json)
-                    .context("deserialize SolverCompetitionDB")?;
+                    .map_err(|_| error::Auction::SolverCompetition("json conversion"))?;
             let winning_solution = competition.solutions.last().unwrap();
             let mut orders = HashMap::new();
             for order in winning_solution.orders.iter() {

@@ -6,6 +6,7 @@ use {
 
 type SolutionId = u64;
 
+#[derive(Debug)]
 pub struct Solution {
     id: SolutionId,
     account: eth::Address,
@@ -57,6 +58,7 @@ impl Solution {
     }
 }
 
+#[derive(Debug)]
 pub struct TradedAmounts {
     /// The effective amount that left the user's wallet including all fees.
     pub sell: eth::TokenAmount,

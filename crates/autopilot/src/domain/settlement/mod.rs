@@ -4,7 +4,7 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, competition, eth, fee, OrderUid},
+        domain::{self, auction::order, eth, fee, OrderUid},
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
     std::collections::HashMap,

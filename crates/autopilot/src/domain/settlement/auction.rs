@@ -7,6 +7,7 @@ use {
 
 /// Offchain auction data related to a specific settlement that got settled for
 /// it.
+#[derive(Debug)]
 pub struct Auction {
     /// Competition winner (solver submission address).
     pub winner: eth::Address,

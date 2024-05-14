@@ -10,6 +10,7 @@ use {
 
 /// A transaction that settles a settlement. Interacts with the settlement
 /// contract `settle` function.
+#[derive(Debug)]
 pub struct Tx {
     settlement: Settlement,
     transaction: Transaction,
@@ -22,7 +23,7 @@ pub struct Tx {
 impl Tx {
     pub async fn new(
         tx: eth::TxId,
-        eth: infra::Ethereum,
+        eth: &infra::Ethereum,
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
         let (transaction, receipt) =
