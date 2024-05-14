@@ -563,10 +563,12 @@ fn to_domain_solution(
                 .collect(),
         ),
         trades,
+        pre_interactions: Default::default(),
         interactions: interactions
             .into_iter()
             .map(|(interaction, _)| interaction)
             .collect(),
+        post_interactions: Default::default(),
         gas: None,
     })
 }

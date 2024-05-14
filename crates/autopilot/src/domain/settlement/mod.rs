@@ -7,9 +7,12 @@ use {
         domain::{
             auction::{self, order},
             eth,
+            fee,
+            OrderUid,
         },
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
+    std::collections::HashMap,
     trade::Trade,
 };
 
@@ -20,7 +23,6 @@ pub use transaction::{Transaction, Tx};
 
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct Settlement {
     trades: Vec<Trade>,
     /// Data that was appended to the regular call data of the `settle()` call
@@ -33,6 +35,29 @@ impl Settlement {
     /// Number of bytes that may be appended to the calldata to store an auction
     /// id.
     const META_DATA_LEN: usize = 8;
+
+    pub fn auction_id(&self) -> auction::Id {
+        self.auction_id
+    }
+
+    pub fn score(
+        &self,
+        prices: &auction::Prices,
+        policies: &HashMap<OrderUid, Vec<fee::Policy>>,
+    ) -> Result<eth::Ether, trade::Error> {
+        self.trades
+            .iter()
+            .map(|trade| {
+                trade.score(
+                    prices,
+                    policies
+                        .get(trade.order_uid())
+                        .map(|value| value.as_slice())
+                        .unwrap_or_default(),
+                )
+            })
+            .sum()
+    }
 
     pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
         self.trades

@@ -161,7 +161,9 @@ async fn sell_orders_on_both_sides() {
                         "executedAmount": "1000000000000000000000",
                     },
                 ],
+                "preInteractions": [],
                 "interactions": [],
+                "postInteractions": [],
                 "gas": 259417,
             }]
         }),

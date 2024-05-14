@@ -44,7 +44,9 @@ pub struct Solution {
     id: Id,
     trades: Vec<Trade>,
     prices: Prices,
+    pre_interactions: Vec<eth::Interaction>,
     interactions: Vec<Interaction>,
+    post_interactions: Vec<eth::Interaction>,
     solver: Solver,
     weth: eth::WethAddress,
     gas: Option<eth::Gas>,
@@ -56,7 +58,9 @@ impl Solution {
         id: Id,
         trades: Vec<Trade>,
         prices: Prices,
+        pre_interactions: Vec<eth::Interaction>,
         interactions: Vec<Interaction>,
+        post_interactions: Vec<eth::Interaction>,
         solver: Solver,
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
@@ -66,7 +70,9 @@ impl Solution {
             id,
             trades,
             prices,
+            pre_interactions,
             interactions,
+            post_interactions,
             solver,
             weth,
             gas,
@@ -268,7 +274,17 @@ impl Solution {
             id: Id::Merged([self.id.ids(), other.id.ids()].concat()),
             trades: [self.trades.clone(), other.trades.clone()].concat(),
             prices,
+            pre_interactions: [
+                self.pre_interactions.clone(),
+                other.pre_interactions.clone(),
+            ]
+            .concat(),
             interactions: [self.interactions.clone(), other.interactions.clone()].concat(),
+            post_interactions: [
+                self.post_interactions.clone(),
+                other.post_interactions.clone(),
+            ]
+            .concat(),
             solver: self.solver.clone(),
             weth: self.weth,
             // Same solver are guaranteed to have the same fee handler
@@ -416,7 +432,9 @@ impl std::fmt::Debug for Solution {
             .field("id", &self.id)
             .field("trades", &self.trades)
             .field("prices", &self.prices)
+            .field("pre_interactions", &self.pre_interactions)
             .field("interactions", &self.interactions)
+            .field("post_interactions", &self.post_interactions)
             .field("solver", &self.solver.name())
             .finish()
     }

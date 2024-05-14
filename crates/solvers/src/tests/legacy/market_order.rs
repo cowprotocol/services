@@ -205,6 +205,7 @@ async fn quote() {
                         "executedAmount": "133700000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -216,6 +217,7 @@ async fn quote() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
+                "postInteractions": [],
             }]
         }),
     );
@@ -419,6 +421,7 @@ async fn solve() {
                         "executedAmount": "133700000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -430,6 +433,7 @@ async fn solve() {
                         "outputAmount": "133700000000000000",
                     }
                 ],
+                "postInteractions": [],
             }]
         }),
     );
