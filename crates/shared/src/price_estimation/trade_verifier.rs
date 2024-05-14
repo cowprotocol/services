@@ -184,9 +184,25 @@ impl TradeVerifier {
             }
         };
 
-        let summary = SettleOutput::decode(&output?, query.kind)
+        let mut summary = SettleOutput::decode(&output?, query.kind)
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
+
+        if verification.from == self.settlement.address() {
+            // Quote accuracy gets determined by how many tokens had to be paied out of the
+            // settlement buffers to make the quote happen. This does not work when the
+            // settlement contract itself is the trader.
+            // To not make it look like the entire trade was paied by the buffers we adjust
+            // the token balance differences based on the traded amounts.
+            let (sell_amount, buy_amount) = match query.kind {
+                OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
+                OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
+            };
+
+            summary.buy_tokens_diff += u256_to_big_rational(&buy_amount);
+            summary.sell_tokens_diff -= u256_to_big_rational(&sell_amount);
+        }
+
         tracing::debug!(
             lost_buy_amount = %summary.buy_tokens_diff,
             lost_sell_amount = %summary.sell_tokens_diff,
@@ -469,6 +485,7 @@ impl SettleOutput {
         Ok(SettleOutput {
             gas_used,
             out_amount,
+            // this is weird when the from address is the settlement contract
             buy_tokens_diff: settlement_buy_balance_before - settlement_buy_balance_after,
             sell_tokens_diff: settlement_sell_balance_before - settlement_sell_balance_after,
         })
