@@ -18,6 +18,8 @@ use {
 
 mod tokenized;
 mod trade;
+pub mod transaction;
+pub use transaction::{Transaction, Tx};
 
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
