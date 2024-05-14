@@ -485,7 +485,6 @@ impl SettleOutput {
         Ok(SettleOutput {
             gas_used,
             out_amount,
-            // this is weird when the from address is the settlement contract
             buy_tokens_diff: settlement_buy_balance_before - settlement_buy_balance_after,
             sell_tokens_diff: settlement_sell_balance_before - settlement_sell_balance_after,
         })
