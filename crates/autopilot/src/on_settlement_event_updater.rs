@@ -34,7 +34,7 @@ use {
             Postgres,
         },
         decoded_settlement::DecodedSettlement,
-        domain::settlement::Transaction,
+        domain::{self, settlement::Transaction},
         infra,
     },
     anyhow::{Context, Result},
@@ -139,6 +139,13 @@ impl Inner {
 
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
+
+        {
+            // just for testing purposes
+            let settlement =
+                domain::settlement::Tx::new(hash.into(), &self.eth, &self.persistence).await;
+            tracing::info!(?settlement, "settlement");
+        }
 
         let Ok(transaction) = self.eth.transaction(hash.into()).await else {
             tracing::warn!(?hash, "no tx found");
