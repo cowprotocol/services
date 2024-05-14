@@ -22,7 +22,9 @@ pub struct Solution {
     pub id: Id,
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
+    pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<Interaction>,
+    pub post_interactions: Vec<eth::Interaction>,
     pub gas: Option<eth::Gas>,
 }
 
@@ -187,7 +189,9 @@ impl Single {
                 (order.buy.token, sell.checked_sub(surplus_fee)?),
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
+            pre_interactions: Default::default(),
             interactions,
+            post_interactions: Default::default(),
             gas: Some(gas),
         })
     }
