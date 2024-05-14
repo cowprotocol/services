@@ -20,6 +20,8 @@ pub use {
     transaction::{Transaction, Tx},
 };
 
+use super::competition;
+
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
 pub struct Settlement {
@@ -47,8 +49,9 @@ impl Settlement {
         &self,
         prices: &domain::auction::Prices,
         policies: &HashMap<OrderUid, Vec<fee::Policy>>,
-    ) -> Result<eth::Ether, trade::Error> {
-        self.trades
+    ) -> Result<competition::Score, error::Score> {
+        let score = self
+            .trades
             .iter()
             .map(|trade| {
                 trade.score(
@@ -59,7 +62,8 @@ impl Settlement {
                         .unwrap_or_default(),
                 )
             })
-            .sum()
+            .sum::<Result<eth::Ether, trade::Error>>()?;
+        Ok(competition::Score::new(score)?)
     }
 
     pub fn native_surplus(
@@ -101,9 +105,9 @@ impl Settlement {
 
         let tokenized = function
             .decode_input(calldata)
-            .map_err(|err| EncodingError::Decoding(err).with(auction_id))?;
+            .map_err(|err| error::Encoding::Decoding(err).with(auction_id))?;
         let tokenized = <tokenized::Settlement>::from_token(web3::ethabi::Token::Tuple(tokenized))
-            .map_err(|err| EncodingError::Tokenizing(err).with(auction_id))?;
+            .map_err(|err| error::Encoding::Tokenizing(err).with(auction_id))?;
 
         let (tokens, clearing_prices, decoded_trades, _interactions) = tokenized;
 
@@ -122,7 +126,7 @@ impl Settlement {
                 tokens.iter().position(|token| token == &buy_token).unwrap();
             trades.push(trade::Trade::new(
                 tokenized::order_uid(&trade, &tokens, domain_separator)
-                    .map_err(|err| EncodingError::OrderUidRecover(err).with(auction_id))?,
+                    .map_err(|err| error::Encoding::OrderUidRecover(err).with(auction_id))?,
                 eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
@@ -209,29 +213,41 @@ impl From<U256> for TradeFlags {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum EncodingError {
-    #[error("unable to decode settlement calldata: {0}")]
-    Decoding(#[from] web3::ethabi::Error),
-    #[error("unable to tokenize calldata into expected format: {0}")]
-    Tokenizing(#[from] ethcontract::tokens::Error),
-    #[error("unable to recover order uid: {0}")]
-    OrderUidRecover(#[from] tokenized::Error),
-}
-
-impl EncodingError {
-    pub fn with(self, auction: domain::auction::Id) -> Error {
-        Error::Encoding(auction, self)
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("transaction calldata is not a settlement")]
     InvalidSelector,
     #[error("no auction id found in calldata")]
     MissingAuctionId,
     #[error("auction {0} failed encoding: {1}")]
-    Encoding(domain::auction::Id, EncodingError),
+    Encoding(domain::auction::Id, error::Encoding),
+}
+
+pub mod error {
+    use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Encoding {
+        #[error("unable to decode settlement calldata: {0}")]
+        Decoding(#[from] web3::ethabi::Error),
+        #[error("unable to tokenize calldata into expected format: {0}")]
+        Tokenizing(#[from] ethcontract::tokens::Error),
+        #[error("unable to recover order uid: {0}")]
+        OrderUidRecover(#[from] tokenized::Error),
+    }
+
+    impl Encoding {
+        pub fn with(self, auction: domain::auction::Id) -> Error {
+            Error::Encoding(auction, self)
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Score {
+        #[error(transparent)]
+        Trade(#[from] trade::Error),
+        #[error(transparent)]
+        Zero(#[from] competition::ZeroScore),
+    }
 }
 
 #[cfg(test)]

@@ -333,11 +333,15 @@ impl Competition {
     }
 }
 
+const MAX_SOLUTIONS_TO_MERGE: usize = 10;
+
 /// Creates a vector with all possible combinations of the given solutions.
 /// The result is sorted descending by score.
 fn merge(solutions: impl Iterator<Item = Solution>, auction: &Auction) -> Vec<Solution> {
     let mut merged: Vec<Solution> = Vec::new();
-    for solution in solutions {
+    // Limit the number of solutions to merge to avoid combinatorial explosion
+    // (2^MAX_SOLUTIONS).
+    for solution in solutions.take(MAX_SOLUTIONS_TO_MERGE) {
         let mut extension = vec![];
         for already_merged in merged.iter() {
             match solution.merge(already_merged) {
