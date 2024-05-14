@@ -685,22 +685,10 @@ components:
           $ref: "#/components/schemas/Token"
         receiver:
           $ref: "#/components/schemas/Address"
-        owner:
-          $ref: "#/components/schemas/Address"
         sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        fullSellAmount:
           $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           $ref: "#/components/schemas/TokenAmount"
-        fullBuyAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        feePolicies:
-          description: |
-            Any protocol fee policies that apply to the order.
-          type: array
-          items:
-            $ref: "#/components/schemas/FeePolicy"
         validTo:
           type: integer
         appData:
@@ -711,22 +699,6 @@ components:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           type: boolean
-        preInteractions:
-          type: array
-          items:
-            $ref: "#/components/schemas/Interaction"
-        postInteractions:
-          type: array
-          items:
-            $ref: "#/components/schemas/InteractionData"
-        sellTokenSource:
-          allOf:
-            - $ref: "#/components/schemas/SellTokenBalance"
-          default: "erc20"
-        buyTokenDestination:
-          allOf:
-            - $ref: "#/components/schemas/BuyTokenBalance"
-          default: "erc20"
         sellTokenBalance:
           $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:
