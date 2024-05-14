@@ -51,9 +51,9 @@ impl Tx {
     /// Score identical to the one promised during the competition.
     pub fn check_score(&self) -> bool {
         if let Ok(score) = self.score() {
-            return score == self.auction.score;
+            score == self.auction.score
         } else {
-            return false;
+            false
         }
     }
 
