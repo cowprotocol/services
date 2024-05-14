@@ -7,6 +7,7 @@ use {
     url::Url,
 };
 
+pub mod authenticator;
 pub mod dto;
 
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;

@@ -260,13 +260,6 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
-
-    /// EOA account used to sign transactions on behalf of the authenticator
-    /// manager.
-    ///
-    /// Manual transaction adding the role for this EOA is assumed to be done
-    #[clap(long, env)]
-    pub authenticator_eoa: H256,
 }
 
 pub fn display_secret_option<T>(
@@ -372,7 +365,6 @@ impl Display for Arguments {
             settlement_contract_address,
             native_token_address,
             balancer_v2_vault_address,
-            authenticator_eoa,
             custom_univ2_baseline_sources,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
@@ -387,7 +379,6 @@ impl Display for Arguments {
         display_option(f, "uniswap_v3_graph_url: {}", uniswap_v3_graph_url)?;
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
-        writeln!(f, "authenticator_eoa: {}", authenticator_eoa)?;
         writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", base_tokens)?;

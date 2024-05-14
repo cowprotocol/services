@@ -13,16 +13,6 @@ pub struct BlockNo(pub u64);
 #[derive(Debug, Copy, Clone, From)]
 pub struct TxId(pub H256);
 
-/// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Address(pub H160);
-
-impl From<H160> for Address {
-    fn from(value: H160) -> Self {
-        Self(value)
-    }
-}
-
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20

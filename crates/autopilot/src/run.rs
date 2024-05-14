@@ -13,14 +13,14 @@ use {
         },
         domain,
         event_updater::EventUpdater,
-        infra::{self},
+        infra::{self, blockchain::ChainId},
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{errors::DeployError, BlockNumber},
+    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
@@ -98,11 +98,13 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
 }
 
 async fn ethereum(
-    ethrpc: infra::blockchain::Rpc,
+    web3: DynWeb3,
+    chain: ChainId,
+    url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(ethrpc, contracts, poll_interval).await
+    infra::Ethereum::new(web3, chain, url, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -160,17 +162,18 @@ pub async fn run(args: Arguments) {
     }
 
     let ethrpc = ethrpc(&args.shared.node_url).await;
+    let chain = ethrpc.chain();
+    let web3 = ethrpc.web3().clone();
+    let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
-        authenticator_eoa: ethcontract::Account::Offline(
-            ethcontract::PrivateKey::from_raw(args.shared.authenticator_eoa.0).unwrap(),
-            None,
-        ),
     };
     let eth = ethereum(
-        ethrpc,
-        contracts,
+        web3.clone(),
+        chain,
+        url,
+        contracts.clone(),
         args.shared.current_block.block_stream_poll_interval,
     )
     .await;
