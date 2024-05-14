@@ -189,10 +189,10 @@ impl TradeVerifier {
             .map_err(Error::SimulationFailed)?;
 
         if verification.from == self.settlement.address() {
-            // Quote accuracy gets determined by how many tokens had to be paied out of the
+            // Quote accuracy gets determined by how many tokens had to be paid out of the
             // settlement buffers to make the quote happen. This does not work when the
             // settlement contract itself is the trader.
-            // To not make it look like the entire trade was paied by the buffers we adjust
+            // To not make it look like the entire trade was paid by the buffers we adjust
             // the token balance differences based on the traded amounts.
             let (sell_amount, buy_amount) = match query.kind {
                 OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
