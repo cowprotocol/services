@@ -57,14 +57,6 @@ pub struct ExternalSolver {
     pub url: Url,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacySolver {
-    pub name: String,
-    pub url: Url,
-    pub address: H160,
-    pub use_liquidity: bool,
-}
-
 // The following arguments are used to configure the order creation process
 // The arguments are shared between the orderbook crate and the autopilot crate,
 // as both crates can create orders
@@ -422,12 +414,6 @@ impl Display for ExternalSolver {
     }
 }
 
-impl Display for LegacySolver {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({}, {:?})", self.name, self.url, self.address)
-    }
-}
-
 pub fn parse_percentage_factor(s: &str) -> Result<f64> {
     let percentage_factor = f64::from_str(s)?;
     ensure!(percentage_factor.is_finite() && (0. ..=1.0).contains(&percentage_factor));
@@ -460,26 +446,6 @@ impl FromStr for ExternalSolver {
     }
 }
 
-impl FromStr for LegacySolver {
-    type Err = anyhow::Error;
-
-    fn from_str(solver: &str) -> Result<Self> {
-        let mut parts = solver.splitn(4, '|');
-        let name = parts.next().context("missing name for legacy solver")?;
-        let url = parts.next().context("missing url for legacy solver")?;
-        let address = parts
-            .next()
-            .unwrap_or("0x0000000000000000000000000000000000000000");
-        let use_liquidity = parts.next().unwrap_or("false");
-        Ok(Self {
-            name: name.to_owned(),
-            url: url.parse()?,
-            address: address.parse()?,
-            use_liquidity: use_liquidity.parse()?,
-        })
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -508,56 +474,5 @@ mod test {
         assert!(
             ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
         );
-    }
-
-    #[test]
-    fn parse_legacy_solver_price_estimators() {
-        // ok
-        assert_eq!(
-            LegacySolver::from_str("name|http://localhost:8080").unwrap(),
-            LegacySolver {
-                name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
-                address: H160::zero(),
-                use_liquidity: false,
-            }
-        );
-        assert_eq!(
-            LegacySolver::from_str(
-                "name|http://localhost:8080|0x0101010101010101010101010101010101010101"
-            )
-            .unwrap(),
-            LegacySolver {
-                name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
-                address: H160([1; 20]),
-                use_liquidity: false,
-            }
-        );
-        assert_eq!(
-            LegacySolver::from_str(
-                "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true"
-            )
-            .unwrap(),
-            LegacySolver {
-                name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
-                address: H160([1; 20]),
-                use_liquidity: true,
-            }
-        );
-
-        // too few arguments
-        assert!(LegacySolver::from_str("").is_err());
-        assert!(LegacySolver::from_str("name").is_err());
-
-        // broken URL
-        assert!(LegacySolver::from_str("name1|sdfsdfds").is_err());
-
-        // too many arguments
-        assert!(LegacySolver::from_str(
-            "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true|1"
-        )
-        .is_err());
     }
 }
