@@ -73,10 +73,6 @@ impl Settlement {
             .sum()
     }
 
-    pub fn auction_id(&self) -> auction::Id {
-        self.auction_id
-    }
-
     pub fn new(
         calldata: &eth::Calldata,
         domain_separator: &eth::DomainSeparator,

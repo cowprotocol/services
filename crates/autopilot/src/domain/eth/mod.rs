@@ -2,7 +2,7 @@ use derive_more::{From, Into};
 pub use primitive_types::{H160, H256, U256};
 
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct Address(pub H160);
 
 /// Block number.
@@ -12,10 +12,6 @@ pub struct BlockNo(pub u64);
 /// A transaction ID, AKA transaction hash.
 #[derive(Debug, Copy, Clone, From)]
 pub struct TxId(pub H256);
-
-/// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
-pub struct Address(pub H160);
 
 /// An ERC20 token address.
 ///
