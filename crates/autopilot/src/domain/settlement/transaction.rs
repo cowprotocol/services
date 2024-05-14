@@ -15,19 +15,27 @@ pub struct Tx {
     transaction: Transaction,
     #[allow(dead_code)]
     receipt: Receipt,
+    #[allow(dead_code)]
+    auction: super::Auction,
 }
 
 impl Tx {
-    pub async fn new(tx: eth::TxId, eth: infra::Ethereum) -> Result<Self, Error> {
+    pub async fn new(
+        tx: eth::TxId,
+        eth: infra::Ethereum,
+        persistence: &infra::Persistence,
+    ) -> Result<Self, Error> {
         let (transaction, receipt) =
             tokio::try_join!(eth.transaction(tx), eth.transaction_receipt(tx),)?;
 
         let domain_separator = eth.contracts().settlement_domain_separator();
         let settlement = Settlement::new(&transaction.input.0.clone().into(), domain_separator)?;
+        let auction = persistence.get_settlement_auction(&settlement).await?;
         Ok(Self {
             settlement,
             transaction,
             receipt,
+            auction,
         })
     }
 
@@ -70,4 +78,6 @@ pub enum Error {
     Blockchain(#[from] infra::blockchain::Error),
     #[error(transparent)]
     Settlement(#[from] super::Error),
+    #[error(transparent)]
+    Auction(#[from] infra::persistence::error::Auction),
 }

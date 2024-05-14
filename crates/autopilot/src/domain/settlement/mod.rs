@@ -4,22 +4,21 @@
 use {
     crate::{
         boundary,
-        domain::{
-            auction::{self, order},
-            eth,
-            fee,
-            OrderUid,
-        },
+        domain::{self, auction::order, competition, eth, fee, OrderUid},
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, U256},
     std::collections::HashMap,
     trade::Trade,
 };
 
+mod auction;
 mod tokenized;
 mod trade;
 pub mod transaction;
-pub use transaction::{Transaction, Tx};
+pub use {
+    auction::Auction,
+    transaction::{Transaction, Tx},
+};
 
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
@@ -28,7 +27,7 @@ pub struct Settlement {
     /// Data that was appended to the regular call data of the `settle()` call
     /// as a form of on-chain meta data. This is used to associate a
     /// settlement with an auction.
-    auction_id: auction::Id,
+    auction_id: domain::auction::Id,
 }
 
 impl Settlement {
@@ -36,13 +35,17 @@ impl Settlement {
     /// id.
     const META_DATA_LEN: usize = 8;
 
-    pub fn auction_id(&self) -> auction::Id {
+    pub fn auction_id(&self) -> domain::auction::Id {
         self.auction_id
+    }
+
+    pub fn order_uids(&self) -> impl Iterator<Item = &order::OrderUid> {
+        self.trades.iter().map(|trade| trade.order_uid())
     }
 
     pub fn score(
         &self,
-        prices: &auction::Prices,
+        prices: &domain::auction::Prices,
         policies: &HashMap<OrderUid, Vec<fee::Policy>>,
     ) -> Result<eth::Ether, trade::Error> {
         self.trades
@@ -59,14 +62,17 @@ impl Settlement {
             .sum()
     }
 
-    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
+    pub fn native_surplus(
+        &self,
+        prices: &domain::auction::Prices,
+    ) -> Result<eth::Ether, trade::Error> {
         self.trades
             .iter()
             .map(|trade| trade.native_surplus(prices))
             .sum()
     }
 
-    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
+    pub fn native_fee(&self, prices: &domain::auction::Prices) -> Result<eth::Ether, trade::Error> {
         self.trades
             .iter()
             .map(|trade| trade.native_fee(prices))
@@ -90,7 +96,7 @@ impl Settlement {
         let (calldata, metadata) = data.split_at(data.len() - Self::META_DATA_LEN);
         let metadata: Option<[u8; Self::META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
-            .map(auction::Id::from_be_bytes)
+            .map(domain::auction::Id::from_be_bytes)
             .ok_or(Error::MissingAuctionId)?;
 
         let tokenized = function
@@ -213,7 +219,7 @@ pub enum EncodingError {
 }
 
 impl EncodingError {
-    pub fn with(self, auction: auction::Id) -> Error {
+    pub fn with(self, auction: domain::auction::Id) -> Error {
         Error::Encoding(auction, self)
     }
 }
@@ -225,7 +231,7 @@ pub enum Error {
     #[error("no auction id found in calldata")]
     MissingAuctionId,
     #[error("auction {0} failed encoding: {1}")]
-    Encoding(auction::Id, EncodingError),
+    Encoding(domain::auction::Id, EncodingError),
 }
 
 #[cfg(test)]

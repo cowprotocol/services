@@ -2,13 +2,17 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, eth},
+        domain::{self, competition, eth},
     },
     anyhow::Context,
+    boundary::database::byte_array::ByteArray,
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
-    primitive_types::H256,
-    std::{collections::HashMap, sync::Arc},
+    primitive_types::{H160, H256},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     tracing::Instrument,
 };
 
@@ -141,19 +145,19 @@ impl Persistence {
     pub async fn auction_prices(
         &self,
         auction: domain::auction::Id,
-    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, Error> {
+    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, error::Auction> {
         let mut ex = self
             .postgres
             .pool
             .begin()
             .await
             .context("begin")
-            .map_err(Error::DbError)?;
+            .map_err(error::Auction::DbError)?;
 
         let db_prices = database::auction_prices::fetch(&mut ex, auction)
             .await
             .context("fetch")
-            .map_err(Error::DbError)?;
+            .map_err(error::Auction::DbError)?;
 
         let mut prices = HashMap::new();
         for price in db_prices {
@@ -161,11 +165,158 @@ impl Persistence {
             let price = big_decimal_to_u256(&price.price)
                 .ok_or(domain::auction::InvalidPrice)
                 .and_then(|p| domain::auction::Price::new(p.into()))
-                .map_err(Error::Price)?;
+                .map_err(error::Auction::Price)?;
             prices.insert(token, price);
         }
 
         Ok(prices)
+    }
+
+    /// Get auction data related to the given settlement.
+    pub async fn get_settlement_auction(
+        &self,
+        settlement: &domain::settlement::Settlement,
+    ) -> Result<domain::settlement::Auction, error::Auction> {
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .context("begin")
+            .map_err(error::Auction::DbError)?;
+
+        let auction = settlement.auction_id();
+
+        let (winner, score, deadline) = {
+            let scores = database::settlement_scores::fetch(&mut ex, auction)
+            .await
+            .context("fetch scores")?
+            // if score is missing, no competition / auction exist for this auction_id
+            .ok_or(error::Auction::MissingScore)?;
+
+            (
+                H160(scores.winner.0).into(),
+                competition::Score::new(
+                    big_decimal_to_u256(&scores.winning_score)
+                        .ok_or(error::Auction::DbConversion("score"))?
+                        .into(),
+                )?,
+                (scores.block_deadline as u64).into(),
+            )
+        };
+
+        let prices = {
+            // auction prices
+            let db_prices = database::auction_prices::fetch(&mut ex, auction)
+                .await
+                .context("fetch auction prices")
+                .map_err(error::Auction::DbError)?;
+
+            let mut prices = HashMap::new();
+            for price in db_prices {
+                let token = eth::H160(price.token.0).into();
+                let price = big_decimal_to_u256(&price.price)
+                    .ok_or(domain::auction::InvalidPrice)
+                    .and_then(|p| domain::auction::Price::new(p.into()))
+                    .map_err(error::Auction::Price)?;
+                prices.insert(token, price);
+            }
+            prices
+        };
+
+        let (fee_policies, missing_orders) = {
+            let mut missing_orders = HashSet::new();
+            let mut fee_policies = HashMap::new();
+            for order in settlement.order_uids().cloned() {
+                match database::orders::read_order(&mut ex, &ByteArray(order.0))
+                    .await
+                    .context("fetch order")
+                    .map_err(error::Auction::DbError)?
+                {
+                    Some(_) => {
+                        let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
+                            .await
+                            .context("fetch quote")
+                            .map_err(error::Auction::DbError)?
+                            .map(dto::quote::into_domain)
+                            .transpose()
+                            .map_err(|_| error::Auction::DbConversion("quote overflow"))?
+                            .ok_or(error::Auction::MissingQuote)?;
+
+                        let policies =
+                            database::fee_policies::fetch(&mut ex, auction, ByteArray(order.0))
+                                .await
+                                .context("fetch fee policies")
+                                .map_err(error::Auction::DbError)?;
+
+                        for policy in policies {
+                            let policy = dto::fee_policy::into_domain(policy, &quote)?;
+                            fee_policies
+                                .entry(order)
+                                .or_insert_with(Vec::new)
+                                .push(policy);
+                        }
+                    }
+                    None => {
+                        missing_orders.insert(order);
+                    }
+                }
+            }
+            (fee_policies, missing_orders)
+        };
+
+        let solution = {
+            // TODO: stabilize the solver competition table to get promised solution.
+            let solver_competition = database::solver_competition::load_by_id(&mut ex, auction)
+                .await
+                .unwrap()
+                .unwrap();
+            let competition: model::solver_competition::SolverCompetitionDB =
+                serde_json::from_value(solver_competition.json)
+                    .context("deserialize SolverCompetitionDB")?;
+            let winning_solution = competition.solutions.last().unwrap();
+            let mut orders = HashMap::new();
+            for order in winning_solution.orders.iter() {
+                match order {
+                    model::solver_competition::Order::Colocated {
+                        id,
+                        sell_amount,
+                        buy_amount,
+                    } => {
+                        orders.insert(
+                            domain::OrderUid(id.0),
+                            competition::TradedAmounts {
+                                sell: (*sell_amount).into(),
+                                buy: (*buy_amount).into(),
+                            },
+                        );
+                    }
+                    model::solver_competition::Order::Legacy {
+                        id: _,
+                        executed_amount: _,
+                    } => return Err(error::Auction::SolverCompetition("Legacy order")),
+                }
+            }
+            let mut prices = HashMap::new();
+            for (token, price) in winning_solution.clearing_prices.clone().into_iter() {
+                prices.insert(
+                    token.into(),
+                    domain::auction::Price::new(price.into())
+                        .map_err(|_| error::Auction::Price(domain::auction::InvalidPrice))?,
+                );
+            }
+            competition::Solution::new(0, winner, score, orders, prices)
+        };
+
+        Ok(domain::settlement::Auction {
+            winner,
+            score,
+            deadline,
+            prices,
+            missing_orders,
+            fee_policies,
+            solution,
+        })
     }
 }
 
@@ -173,6 +324,28 @@ impl Persistence {
 pub enum Error {
     #[error("failed to read data from database")]
     DbError(#[from] anyhow::Error),
-    #[error(transparent)]
-    Price(#[from] domain::auction::InvalidPrice),
+}
+
+pub mod error {
+    use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Auction {
+        #[error("failed to read data from database")]
+        DbError(#[from] anyhow::Error),
+        #[error("failed dto conversion from database")]
+        DbConversion(&'static str),
+        #[error(transparent)]
+        Price(#[from] domain::auction::InvalidPrice),
+        #[error("score not found in the database")]
+        MissingScore,
+        #[error(transparent)]
+        ZeroScore(#[from] domain::competition::ZeroScore),
+        #[error("calldata not found in the database")]
+        MissingCalldata,
+        #[error("quote not found in the database for an existing order")]
+        MissingQuote,
+        #[error("solver competition data is missing")]
+        SolverCompetition(&'static str),
+    }
 }

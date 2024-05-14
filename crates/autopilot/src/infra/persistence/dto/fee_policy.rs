@@ -48,3 +48,31 @@ pub fn from_domain(
         },
     }
 }
+
+pub fn into_domain(
+    policy: FeePolicy,
+    quote: &domain::quote::Quote,
+) -> anyhow::Result<domain::fee::Policy> {
+    let policy = match policy.kind {
+        FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
+            factor: policy.surplus_factor.unwrap().try_into()?,
+            max_volume_factor: policy.surplus_max_volume_factor.unwrap().try_into()?,
+        },
+        FeePolicyKind::Volume => domain::fee::Policy::Volume {
+            factor: policy.volume_factor.unwrap().try_into()?,
+        },
+        FeePolicyKind::PriceImprovement => domain::fee::Policy::PriceImprovement {
+            factor: policy.price_improvement_factor.unwrap().try_into()?,
+            max_volume_factor: policy
+                .price_improvement_max_volume_factor
+                .unwrap()
+                .try_into()?,
+            quote: domain::fee::Quote {
+                sell_amount: quote.sell_amount,
+                buy_amount: quote.buy_amount,
+                fee: quote.fee,
+            },
+        },
+    };
+    Ok(policy)
+}
