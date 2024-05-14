@@ -90,7 +90,7 @@ pub struct Arguments {
     /// native token. Estimators with the same name need to also be specified as
     /// built-in, legacy or external price estimators (lookup happens in this
     /// order in case of name collisions)
-    #[clap(long, env, default_value_t)]
+    #[clap(long, env)]
     pub native_price_estimators: NativePriceEstimators,
 
     /// How many successful price estimates for each order will cause a native
