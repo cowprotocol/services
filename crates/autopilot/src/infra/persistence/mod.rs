@@ -256,6 +256,7 @@ impl Persistence {
 
         let solution = {
             // TODO: stabilize the solver competition table to get promised solution.
+            // https://github.com/cowprotocol/services/issues/2716
             // for now, this is a `good enough` solution to unblock other tasks.
             let solver_competition = database::solver_competition::load_by_id(&mut ex, auction)
                 .await

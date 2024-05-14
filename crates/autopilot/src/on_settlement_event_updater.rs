@@ -141,10 +141,11 @@ impl Inner {
         tracing::debug!("updating settlement details for tx {hash:?}");
 
         {
-            // just for testing purposes
+            // temporary to debug and compare with current implementation
+            // TODO: use instead of current implementation
             let settlement =
                 domain::settlement::Tx::new(hash.into(), &self.eth, &self.persistence).await;
-            tracing::info!(?settlement, "settlement");
+            tracing::info!(?settlement, "settlement object");
         }
 
         let Ok(transaction) = self.eth.transaction(hash.into()).await else {
