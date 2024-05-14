@@ -84,3 +84,11 @@ impl Score {
 #[derive(Debug, thiserror::Error)]
 #[error("the solver proposed a 0-score solution")]
 pub struct ZeroScore;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SolutionError {
+    #[error(transparent)]
+    ZeroScore(#[from] ZeroScore),
+    #[error(transparent)]
+    InvalidPrice(#[from] auction::InvalidPrice),
+}

@@ -56,6 +56,17 @@ impl Request {
     }
 }
 
+impl Response {
+    pub fn into_domain(
+        self,
+    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
+        self.solutions
+            .into_iter()
+            .map(Solution::into_domain)
+            .collect()
+    }
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +99,36 @@ pub struct TradedAmounts {
     /// The effective amount the user received after all fees.
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
+}
+
+impl Solution {
+    pub fn into_domain(
+        self,
+    ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
+        Ok(domain::competition::Solution::new(
+            self.solution_id,
+            self.submission_address.into(),
+            domain::competition::Score::new(self.score.into())?,
+            self.orders
+                .into_iter()
+                .map(|(o, amounts)| {
+                    (
+                        o.into(),
+                        domain::competition::TradedAmounts {
+                            sell: amounts.sell_amount.into(),
+                            buy: amounts.buy_amount.into(),
+                        },
+                    )
+                })
+                .collect(),
+            self.clearing_prices
+                .into_iter()
+                .map(|(token, price)| {
+                    domain::auction::Price::new(price.into()).map(|price| (token.into(), price))
+                })
+                .collect::<Result<_, _>>()?,
+        ))
+    }
 }
 
 #[serde_as]
