@@ -129,10 +129,6 @@ paths:
       responses:
         200:
           description: Execution accepted.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SettleResponse"
         400:
           $ref: "#/components/responses/BadRequest"
         500:
@@ -385,19 +381,6 @@ components:
       properties:
         calldata:
           $ref: "#/components/schemas/Calldata"
-    SettleResponse:
-      description: Response of the settle endpoint.
-      type: object
-      properties:
-        calldata:
-          $ref: "#/components/schemas/Calldata"
-        txHash:
-          description: |
-            The hash of the transaction that executed the solution.
-
-            This is the hash that should be used to submit the solution.
-          type: string
-          example: "0x2fa8a928efdd11fcf09e196dfa6e3ac4884967a9409ecc1b854ed2eabe4839e2"
     FeePolicy:
       description: |
         A fee policy that applies to an order.

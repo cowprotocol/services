@@ -29,7 +29,7 @@ use {
     },
     app_data::AppDataHash,
     bigdecimal::{BigDecimal, FromPrimitive},
-    ethcontract::{dyns::DynTransport, BlockId},
+    ethcontract::dyns::DynTransport,
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
@@ -40,7 +40,6 @@ use {
         path::PathBuf,
         str::FromStr,
     },
-    web3::types::TransactionId,
 };
 
 mod blockchain;
@@ -941,14 +940,6 @@ impl Test {
 
     pub async fn settle_with_solver(&self, solver_name: &str) -> Settle {
         let old_balances = self.balances().await;
-        let old_block = self
-            .blockchain
-            .web3
-            .eth()
-            .block_number()
-            .await
-            .unwrap()
-            .as_u64();
         let res = self
             .client
             .post(format!(
@@ -959,15 +950,19 @@ impl Test {
             .send()
             .await
             .unwrap();
-        let status = res.status();
-        let body = res.text().await.unwrap();
-        tracing::debug!(?status, ?body, "got a response from /settle");
+        let status_code = res.status();
+        let settle_status = match status_code {
+            StatusCode::OK => SettleStatus::Ok,
+            not_ok => SettleStatus::Err {
+                status_code: not_ok,
+                body: res.text().await.unwrap(),
+            },
+        };
+        tracing::debug!(status=?status_code, "got a response from /settle");
         Settle {
             old_balances,
-            old_block,
-            status,
+            status: settle_status,
             test: self,
-            body,
         }
     }
 
@@ -1237,10 +1232,17 @@ pub enum Balance {
 /// A /settle response.
 pub struct Settle<'a> {
     old_balances: HashMap<&'static str, eth::U256>,
-    old_block: u64,
-    status: StatusCode,
+    status: SettleStatus,
     test: &'a Test,
-    body: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SettleStatus {
+    Ok,
+    Err {
+        status_code: StatusCode,
+        body: String,
+    },
 }
 
 pub struct SettleOk<'a> {
@@ -1256,66 +1258,7 @@ impl<'a> Settle<'a> {
     /// Expect the /settle endpoint to have returned a 200 OK response.
     pub async fn ok(self) -> SettleOk<'a> {
         // Ensure that the response is OK.
-        assert_eq!(self.status, hyper::StatusCode::OK);
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(!result
-            .get("calldata")
-            .unwrap()
-            .get("internalized")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .is_empty());
-        assert!(!result
-            .get("calldata")
-            .unwrap()
-            .get("uninternalized")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .is_empty());
-
-        let reported_tx_hash =
-            serde_json::from_value::<eth::H256>(result.get("txHash").unwrap().clone()).unwrap();
-
-        // Wait for the new block with the settlement to be mined.
-        blockchain::wait_for_block(&self.test.blockchain.web3, self.old_block + 1).await;
-
-        // Ensure that the solution ID is included in the settlement.
-        let tx = self
-            .test
-            .blockchain
-            .web3
-            .eth()
-            .transaction(TransactionId::Block(
-                BlockId::Number(ethcontract::BlockNumber::Latest),
-                0.into(),
-            ))
-            .await
-            .unwrap()
-            .unwrap();
-
-        let input = tx.input.0;
-        let len = input.len();
-        let tx_auction_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
-        assert_eq!(tx_auction_id.to_string(), "1");
-        assert_eq!(reported_tx_hash, tx.hash);
-
-        // Ensure that the internalized calldata returned by the driver is equal to the
-        // calldata published to the blockchain.
-        let internalized = result
-            .get("calldata")
-            .unwrap()
-            .get("internalized")
-            .unwrap()
-            .as_str()
-            .unwrap();
-        assert_eq!(
-            internalized,
-            format!("0x{}", hex::encode(&input).to_lowercase())
-        );
+        assert_eq!(self.status, SettleStatus::Ok);
 
         SettleOk {
             test: self.test,
@@ -1325,8 +1268,13 @@ impl<'a> Settle<'a> {
 
     /// Expect the /settle endpoint to return a 400 BAD REQUEST response.
     pub fn err(self) -> SettleErr {
-        assert_eq!(self.status, hyper::StatusCode::BAD_REQUEST);
-        SettleErr { body: self.body }
+        match self.status {
+            SettleStatus::Err { status_code, body } => {
+                assert_eq!(status_code, hyper::StatusCode::BAD_REQUEST);
+                SettleErr { body }
+            }
+            _ => panic!("expected a 400 BAD REQUEST response"),
+        }
     }
 }
 

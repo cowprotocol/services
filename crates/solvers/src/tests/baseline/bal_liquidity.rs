@@ -117,6 +117,7 @@ async fn weighted() {
                         "executedAmount": "1000000000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -128,6 +129,7 @@ async fn weighted() {
                         "outputAmount": "1657855325872947866705"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 206391,
             }]
         }),
@@ -258,6 +260,7 @@ async fn weighted_v3plus() {
                         "executedAmount": "1000000000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -269,6 +272,7 @@ async fn weighted_v3plus() {
                         "outputAmount": "1663373703594405548696"
                     },
                 ],
+                "postInteractions": [],
                 "gas": 206391,
             }]
         }),
@@ -417,6 +421,7 @@ async fn stable() {
                             "executedAmount": "10000000000000000000"
                         }
                     ],
+                    "preInteractions": [],
                     "interactions": [
                         {
                             "kind": "liquidity",
@@ -428,6 +433,7 @@ async fn stable() {
                             "outputAmount": "9999475"
                         },
                     ],
+                    "postInteractions": [],
                     "gas":  289911,
                 },
                 {
@@ -445,6 +451,7 @@ async fn stable() {
                             "executedAmount": "10000000"
                         }
                     ],
+                    "preInteractions": [],
                     "interactions": [
                         {
                             "kind": "liquidity",
@@ -456,6 +463,7 @@ async fn stable() {
                             "outputAmount": "10000000"
                         },
                     ],
+                    "postInteractions": [],
                     "gas":  289911,
                 },
             ]
@@ -588,6 +596,7 @@ async fn composable_stable_v4() {
                             "executedAmount": "10000000000000000000"
                         }
                     ],
+                    "preInteractions": [],
                     "interactions": [
                         {
                             "kind": "liquidity",
@@ -599,6 +608,7 @@ async fn composable_stable_v4() {
                             "outputAmount": "10029862202766050434"
                         },
                     ],
+                    "postInteractions": [],
                     "gas": 289911,
                 },
             ]

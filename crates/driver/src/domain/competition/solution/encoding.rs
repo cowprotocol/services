@@ -49,10 +49,10 @@ pub fn tx(
     let mut clearing_prices =
         Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut trades: Vec<Trade> = Vec::with_capacity(solution.trades().len());
-    let mut pre_interactions = Vec::new();
+    let mut pre_interactions = solution.pre_interactions.clone();
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
-    let mut post_interactions = Vec::new();
+    let mut post_interactions = solution.post_interactions.clone();
     let mut native_unwrap = eth::TokenAmount(eth::U256::zero());
 
     // Encode uniform clearing price vector
@@ -189,7 +189,7 @@ pub fn tx(
         interactions.push(match interaction {
             competition::solution::Interaction::Custom(interaction) => eth::Interaction {
                 value: interaction.value,
-                target: interaction.target.0.into(),
+                target: interaction.target.into(),
                 call_data: interaction.call_data.clone(),
             },
             competition::solution::Interaction::Liquidity(liquidity) => {

@@ -97,6 +97,7 @@ async fn trusted_token() {
                         "executedAmount": "133700000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -108,6 +109,7 @@ async fn trusted_token() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),
@@ -208,6 +210,7 @@ async fn untrusted_sell_token() {
                         "executedAmount": "133700000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -219,6 +222,7 @@ async fn untrusted_sell_token() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),
@@ -319,6 +323,7 @@ async fn insufficient_balance() {
                         "executedAmount": "133700000000000000"
                     }
                 ],
+                "preInteractions": [],
                 "interactions": [
                     {
                         "kind": "liquidity",
@@ -330,6 +335,7 @@ async fn insufficient_balance() {
                         "outputAmount": "6043910341261930467761"
                     }
                 ],
+                "postInteractions": [],
                 "gas": 166391,
             }]
         }),

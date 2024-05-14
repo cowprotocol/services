@@ -2,7 +2,7 @@ use {
     self::dto::{reveal, settle, solve},
     crate::util,
     anyhow::{anyhow, Context, Result},
-    reqwest::Client,
+    reqwest::{Client, StatusCode},
     std::time::Duration,
     url::Url,
 };
@@ -42,9 +42,31 @@ impl Driver {
         &self,
         request: &settle::Request,
         timeout: std::time::Duration,
-    ) -> Result<settle::Response> {
-        self.request_response("settle", request, Some(timeout))
+    ) -> Result<()> {
+        let url = util::join(&self.url, "settle");
+        tracing::trace!(
+            path=&url.path(),
+            body=%serde_json::to_string_pretty(request).unwrap(),
+            "solver request",
+        );
+
+        let response = self
+            .client
+            .post(url)
+            .json(request)
+            .timeout(timeout)
+            .send()
             .await
+            .context("send")?;
+        let status = response.status();
+
+        tracing::trace!(%status, "solver response");
+
+        if status != StatusCode::OK {
+            let text = response.text().await.context("read error response body")?;
+            return Err(anyhow!("bad status {status}: {text}"));
+        }
+        Ok(())
     }
 
     async fn request_response<Response>(
