@@ -80,21 +80,6 @@ pub struct Components {
     pub gas_price: Arc<dyn GasPriceEstimating>,
 }
 
-/// The source of the price estimator.
-pub enum PriceEstimatorSource {
-    External(ExternalSolver),
-    Legacy(LegacySolver),
-}
-
-impl PriceEstimatorSource {
-    pub fn for_args(external: &[ExternalSolver], legacy: &[LegacySolver]) -> Vec<Self> {
-        std::iter::empty()
-            .chain(external.iter().cloned().map(PriceEstimatorSource::External))
-            .chain(legacy.iter().cloned().map(PriceEstimatorSource::Legacy))
-            .collect()
-    }
-}
-
 impl<'a> PriceEstimatorFactory<'a> {
     pub fn new(
         args: &'a Arguments,
@@ -212,10 +197,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             NativePriceEstimatorSource::Driver(driver) => {
                 let native_token_price_estimation_amount =
                     self.native_token_price_estimation_amount()?;
-                let estimator = self
-                    .get_estimator(&PriceEstimatorSource::External(driver.clone()))?
-                    .native
-                    .clone();
+                let estimator = self.get_estimator(driver)?.native.clone();
                 Ok((
                     driver.name.clone(),
                     Arc::new(NativePriceEstimator::new(
@@ -239,34 +221,29 @@ impl<'a> PriceEstimatorFactory<'a> {
         }
     }
 
-    fn get_estimator(&mut self, source: &PriceEstimatorSource) -> Result<&EstimatorEntry> {
-        let name = source.name();
-
-        if !self.estimators.contains_key(&name) {
-            let estimator = match source {
-                PriceEstimatorSource::External(driver) => self
-                    .create_estimator_entry::<ExternalPriceEstimator>(
-                        &driver.name,
-                        driver.into(),
-                    )?,
-                PriceEstimatorSource::Legacy(solver) => {
-                    self.create_estimator_entry::<HttpPriceEstimator>(&solver.name, solver.into())?
-                }
-            };
-            self.estimators.insert(name.clone(), estimator);
+    fn get_estimator(&mut self, solver: &ExternalSolver) -> Result<&EstimatorEntry> {
+        if !self.estimators.contains_key(&solver.name) {
+            let estimator =
+                self.create_estimator_entry::<ExternalPriceEstimator>(&solver.name, solver.into())?;
+            self.estimators.insert(solver.name.clone(), estimator);
         }
 
-        Ok(&self.estimators[&name])
+        Ok(&self.estimators[&solver.name])
     }
 
     fn get_estimators(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        solvers: &[ExternalSolver],
         select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
-        sources
+        solvers
             .iter()
-            .map(|source| Ok((source.name(), select(self.get_estimator(source)?).clone())))
+            .map(|solver| {
+                Ok((
+                    solver.name.clone(),
+                    select(self.get_estimator(solver)?).clone(),
+                ))
+            })
             .collect()
     }
 
@@ -280,11 +257,11 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn price_estimator(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        solvers: &[ExternalSolver],
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
+        let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
         let competition_estimator = CompetitionEstimator::new(
             vec![estimators],
             PriceRanking::BestBangForBuck { native, gas },
@@ -295,12 +272,12 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn fast_price_estimator(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        solvers: &[ExternalSolver],
         fast_price_estimation_results_required: NonZeroUsize,
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
+        let estimators = self.get_estimators(solvers, |entry| &entry.fast)?;
         Ok(Arc::new(
             self.sanitized(Arc::new(
                 CompetitionEstimator::new(
@@ -345,15 +322,6 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)
-    }
-}
-
-impl PriceEstimatorSource {
-    fn name(&self) -> String {
-        match self {
-            Self::External(solver) => solver.name.clone(),
-            Self::Legacy(solver) => solver.name.clone(),
-        }
     }
 }
 

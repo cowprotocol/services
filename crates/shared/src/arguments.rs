@@ -75,15 +75,6 @@ pub struct OrderQuotingArguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<ExternalSolver>,
 
-    /// A list of legacy solvers to be used for price estimation in the
-    /// following format: `<NAME>|<URL>[|<ADDRESS>[|<USE_LIQUIITY>]]`.
-    ///
-    /// These solvers are used as an intermediary "transition-period" for
-    /// CIP-27 for solvers that don't provide calldata and while not all
-    /// quotes are verified.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub price_estimation_legacy_solvers: Vec<LegacySolver>,
-
     /// The time period an EIP1271-quote request is valid.
     #[clap(
         long,
@@ -307,7 +298,6 @@ impl Display for OrderQuotingArguments {
             eip1271_onchain_quote_validity,
             presign_onchain_quote_validity,
             price_estimation_drivers,
-            price_estimation_legacy_solvers,
             standard_offchain_quote_validity,
         } = self;
 
@@ -322,11 +312,6 @@ impl Display for OrderQuotingArguments {
             presign_onchain_quote_validity
         )?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
-        display_list(
-            f,
-            "price_estimation_legacy_solvers",
-            price_estimation_legacy_solvers,
-        )?;
         writeln!(
             f,
             "standard_offchain_quote_validity: {:?}",

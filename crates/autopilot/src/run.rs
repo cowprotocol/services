@@ -38,7 +38,7 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
-        price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
+        price_estimation::factory::{self, PriceEstimatorFactory},
         recent_block_cache::CacheConfig,
         signature_validator,
         sources::{
@@ -431,10 +431,7 @@ pub async fn run(args: Arguments) {
         .unwrap();
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
+            &args.order_quoting.price_estimation_drivers,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )

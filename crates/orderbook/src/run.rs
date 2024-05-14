@@ -35,7 +35,7 @@ use {
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
-            factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
+            factory::{self, PriceEstimatorFactory},
             native::NativePriceEstimating,
             PriceEstimating,
             QuoteVerificationMode,
@@ -386,20 +386,14 @@ pub async fn run(args: Arguments) {
         .unwrap();
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
+            &args.order_quoting.price_estimation_drivers,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
+            &args.order_quoting.price_estimation_drivers,
             args.fast_price_estimation_results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
