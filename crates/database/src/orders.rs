@@ -755,30 +755,6 @@ pub async fn user_orders_with_quote(
         .await
 }
 
-pub async fn get_missing_order_uids(
-    ex: &mut PgConnection,
-    order_uids: Vec<OrderUid>,
-) -> Result<Vec<OrderUid>, sqlx::Error> {
-    if order_uids.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mut query_builder = sqlx::QueryBuilder::new("WITH input_ids (id) AS (VALUES (");
-
-    let mut separated = query_builder.separated("), (");
-    for order_uid in &order_uids {
-        separated.push_bind(order_uid);
-    }
-    separated.push_unseparated(")) ");
-
-    query_builder.push(
-        "SELECT input_ids.id FROM input_ids LEFT JOIN orders ON orders.uid = input_ids.id WHERE \
-         orders.uid IS NULL",
-    );
-
-    query_builder.build_query_scalar().fetch_all(ex).await
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -800,7 +776,6 @@ mod tests {
         chrono::{TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
         sqlx::Connection,
-        std::collections::HashSet,
     };
 
     async fn read_order_interactions(
@@ -1915,36 +1890,5 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(full_order.full_app_data, Some(full_app_data));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_get_missing_order_uids() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        // Insert orders with uids 1, 2, 3, 4
-        for i in 1..=4 {
-            let order = Order {
-                uid: ByteArray([i; 56]),
-                ..Default::default()
-            };
-            insert_order(&mut db, &order).await.unwrap();
-        }
-        let uids_to_check = (1..=9)
-            .map(|i| ByteArray([i; 56]))
-            .collect::<Vec<OrderUid>>();
-        // 5, 6, 7, 8, 9 are missing
-        let missing_uids = (5..=9)
-            .map(|i| ByteArray([i; 56]))
-            .collect::<HashSet<OrderUid>>();
-        let actual = get_missing_order_uids(&mut db, uids_to_check)
-            .await
-            .unwrap()
-            .into_iter()
-            .collect::<HashSet<_>>();
-
-        assert_eq!(missing_uids, actual);
     }
 }

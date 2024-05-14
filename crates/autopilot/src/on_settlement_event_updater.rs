@@ -38,14 +38,10 @@ use {
     },
     anyhow::{Context, Result},
     database::PgTransaction,
-    model::order::OrderUid,
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    std::{
-        collections::{BTreeMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::HashSet, sync::Arc},
     tokio::sync::Notify,
     web3::types::Transaction,
 };
@@ -56,7 +52,6 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
-    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
 }
@@ -73,10 +68,9 @@ enum AuctionIdRecoveryStatus {
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
         let inner = Arc::new(Inner {
             eth,
-            persistence,
             db,
             notify: Notify::new(),
         });
@@ -206,50 +200,31 @@ impl Inner {
         let effective_gas_price = receipt
             .effective_gas_price
             .with_context(|| format!("no effective gas price {hash:?}"))?;
-        let auction_external_prices = self
-            .persistence
-            .auction_prices(auction_id)
-            .await
-            .with_context(|| {
-                format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?
-            .into_iter()
-            .map(|(token, price)| (token.0, price.get().into()))
-            .collect::<BTreeMap<_, _>>();
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.eth.contracts().weth().address(),
-            auction_external_prices.clone(),
-        )?;
-
-        tracing::debug!(
-            ?auction_id,
-            ?auction_external_prices,
-            ?external_prices,
-            "observations input"
-        );
-
-        // surplus and fees calculation
-        let competition_order_uids = Postgres::find_competition(auction_id, ex)
+        let auction = Postgres::find_competition(auction_id, ex)
             .await?
             .context(format!(
                 "missing competition for auction_id={:?}",
                 auction_id
             ))?
             .common
-            .auction
-            .orders
-            .into_iter()
-            .map(|order| OrderUid(order.0))
-            .collect::<HashSet<_>>();
-        let surplus_exempt_order_uids = Postgres::get_missing_order_uids(
-            settlement.trades.iter().filter_map(|trade| {
-                // check persistence of the orders not in the competition
-                (!competition_order_uids.contains(&trade.order_uid)).then_some(trade.order_uid)
-            }),
-            ex,
-        )
-        .await?;
-        let surplus = settlement.total_surplus(&external_prices, &surplus_exempt_order_uids);
+            .auction;
+        let external_prices = ExternalPrices::try_from_auction_prices(
+            self.eth.contracts().weth().address(),
+            auction.prices.clone(),
+        )?;
+
+        tracing::debug!(
+            ?auction_id,
+            auction_external_prices=?auction.prices,
+            ?external_prices,
+            "observations input"
+        );
+
+        // surplus and fees calculation
+        let surplus = settlement.total_surplus(
+            &external_prices,
+            &auction.orders.into_iter().collect::<HashSet<_>>(),
+        );
         let (fee, order_executions) = {
             let all_fees = settlement.all_fees(&external_prices);
             // total fee used for CIP20 rewards
