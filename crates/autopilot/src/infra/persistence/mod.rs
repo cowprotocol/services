@@ -333,8 +333,6 @@ pub mod error {
         MissingScore,
         #[error(transparent)]
         ZeroScore(#[from] domain::competition::ZeroScore),
-        #[error("calldata not found in the database")]
-        MissingCalldata,
         #[error("quote not found in the database for an existing order")]
         MissingQuote,
         #[error("solver competition data is missing")]
