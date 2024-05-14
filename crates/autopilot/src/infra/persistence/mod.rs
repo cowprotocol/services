@@ -200,7 +200,6 @@ impl Persistence {
         };
 
         let prices = {
-            // auction prices
             let db_prices = database::auction_prices::fetch(&mut ex, auction)
                 .await
                 .context("fetch auction prices")?;
