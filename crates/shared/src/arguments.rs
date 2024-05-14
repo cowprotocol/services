@@ -128,14 +128,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
-    /// The Balancer subgraph URL.
-    #[clap(long, env)]
-    pub balancer_v2_graph_url: Option<Url>,
-
-    /// The UniswapV3 subgraph URL.
-    #[clap(long, env)]
-    pub uniswap_v3_graph_url: Option<Url>,
-
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
     /// be used for simulations.
     #[clap(long, env)]
@@ -330,8 +322,6 @@ impl Display for Arguments {
             tenderly,
             logging,
             node_url,
-            balancer_v2_graph_url,
-            uniswap_v3_graph_url,
             chain_id,
             simulation_node_url,
             gas_estimators,
@@ -360,8 +350,6 @@ impl Display for Arguments {
         write!(f, "{}", tenderly)?;
         write!(f, "{}", logging)?;
         writeln!(f, "node_url: {}", node_url)?;
-        display_option(f, "balancer_v2_graph_url: {}", balancer_v2_graph_url)?;
-        display_option(f, "uniswap_v3_graph_url: {}", uniswap_v3_graph_url)?;
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", gas_estimators)?;

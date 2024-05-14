@@ -20,11 +20,6 @@ use {
         ethrpc::Web3,
         http_client::HttpClientFactory,
         price_estimation::{competition::PriceRanking, native::NativePriceEstimating},
-        sources::{
-            balancer_v2::BalancerPoolFetching,
-            uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
-            uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
-        },
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
@@ -70,11 +65,7 @@ pub struct Network {
 pub struct Components {
     pub http_factory: HttpClientFactory,
     pub bad_token_detector: Arc<dyn BadTokenDetecting>,
-    pub uniswap_v2_pools: Arc<dyn UniswapV2PoolFetching>,
-    pub balancer_pools: Option<Arc<dyn BalancerPoolFetching>>,
-    pub uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     pub tokens: Arc<dyn TokenInfoFetching>,
-    pub gas_price: Arc<dyn GasPriceEstimating>,
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
