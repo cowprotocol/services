@@ -1,15 +1,19 @@
 use {
     self::contracts::Contracts,
-    crate::boundary,
+    crate::{
+        boundary,
+        domain::{self, eth},
+    },
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
-    primitive_types::{H256, U256},
+    primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
     url::Url,
 };
 
 pub mod contracts;
+pub mod dto;
 
 /// Chain ID as defined by EIP-155.
 ///
@@ -105,23 +109,28 @@ impl Ethereum {
         &self.contracts
     }
 
-    pub async fn transaction(&self, hash: H256) -> Result<Option<web3::types::Transaction>, Error> {
+    pub async fn transaction(
+        &self,
+        hash: eth::TxId,
+    ) -> Result<domain::settlement::Transaction, Error> {
         self.web3
             .eth()
-            .transaction(hash.into())
-            .await
-            .map_err(Into::into)
+            .transaction(hash.0.into())
+            .await?
+            .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
+            .ok_or(Error::TransactionNotFound)?
     }
 
     pub async fn transaction_receipt(
         &self,
-        hash: H256,
-    ) -> Result<Option<web3::types::TransactionReceipt>, Error> {
+        hash: eth::TxId,
+    ) -> Result<domain::settlement::transaction::Receipt, Error> {
         self.web3
             .eth()
-            .transaction_receipt(hash)
-            .await
-            .map_err(Into::into)
+            .transaction_receipt(hash.0)
+            .await?
+            .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
+            .ok_or(Error::TransactionNotFound)?
     }
 }
 
@@ -129,4 +138,8 @@ impl Ethereum {
 pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
+    #[error("missing field {0}, node client bug?")]
+    IncompleteTransactionData(&'static str),
+    #[error("transaction not found")]
+    TransactionNotFound,
 }

@@ -3,7 +3,7 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::{self, order::Class, InvalidPrice},
+            auction::{self, order::Class},
             competition::{self},
             OrderUid,
         },
@@ -24,7 +24,6 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -35,7 +34,6 @@ use {
     },
     tokio::sync::Mutex,
     tracing::Instrument,
-    web3::types::TransactionReceipt,
 };
 
 pub struct RunLoop {
@@ -126,7 +124,7 @@ impl RunLoop {
 
             // Shuffle so that sorting randomly splits ties.
             solutions.shuffle(&mut rand::thread_rng());
-            solutions.sort_unstable_by_key(|participant| participant.solution.score());
+            solutions.sort_unstable_by_key(|participant| participant.solution.score().get().0);
             solutions
         };
         let competition_simulation_block = self.eth.current_block().borrow().number;
@@ -152,11 +150,11 @@ impl RunLoop {
                 .store_order_events(order_uids, OrderEventLabel::Considered);
 
             let winner = solution.account().into();
-            let winning_score = solution.score().get();
+            let winning_score = solution.score().get().0;
             let reference_score = solutions
                 .iter()
                 .nth_back(1)
-                .map(|participant| participant.solution.score().get())
+                .map(|participant| participant.solution.score().get().0)
                 .unwrap_or_default();
             let participants = solutions
                 .iter()
@@ -221,7 +219,7 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account().0,
-                            score: Some(Score::Solver(participant.solution.score().get())),
+                            score: Some(Score::Solver(participant.solution.score().get().0)),
                             ranking: solutions.len() - index,
                             orders: participant
                                 .solution
@@ -391,11 +389,12 @@ impl RunLoop {
                         )
                     })
                     .collect();
+                let score = competition::Score::new(solution.score.into())?;
 
                 Ok(competition::Solution::new(
                     solution.solution_id,
                     solution.submission_address.into(),
-                    NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
+                    score,
                     orders,
                     prices,
                 ))
@@ -519,19 +518,16 @@ impl RunLoop {
             return auction;
         };
 
-        let tx_receipt = self.eth.transaction_receipt(in_flight.tx_hash).await;
+        let tx_receipt = self.eth.transaction_receipt(in_flight.tx_hash.into()).await;
 
         let prev_settlement_block = match tx_receipt {
-            Ok(Some(TransactionReceipt {
-                block_number: Some(number),
-                ..
-            })) => number.0[0],
+            Ok(receipt) => receipt.block,
             // Could not find the block of the previous settlement, let's be
             // conservative and assume all orders are still in-flight.
-            _ => u64::MAX,
+            _ => u64::MAX.into(),
         };
 
-        if auction.latest_settlement_block < prev_settlement_block {
+        if auction.latest_settlement_block < prev_settlement_block.0 {
             // Auction was built before the in-flight orders were processed.
             auction
                 .orders
@@ -569,14 +565,10 @@ enum SolveError {
 #[derive(Debug, thiserror::Error)]
 enum SolutionError {
     #[error(transparent)]
-    ZeroScore(#[from] ZeroScoreError),
+    ZeroScore(#[from] competition::ZeroScore),
     #[error(transparent)]
-    InvalidPrice(#[from] InvalidPrice),
+    InvalidPrice(#[from] auction::InvalidPrice),
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("the solver proposed a 0-score solution")]
-struct ZeroScoreError;
 
 #[derive(Debug, thiserror::Error)]
 enum RevealError {
