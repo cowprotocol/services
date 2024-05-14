@@ -34,6 +34,7 @@ use {
             Postgres,
         },
         decoded_settlement::DecodedSettlement,
+        domain::settlement::Transaction,
         infra,
     },
     anyhow::{Context, Result},
@@ -43,7 +44,6 @@ use {
     sqlx::PgConnection,
     std::{collections::BTreeMap, sync::Arc},
     tokio::sync::Notify,
-    web3::types::Transaction,
 };
 
 pub struct OnSettlementEventUpdater {
@@ -140,8 +140,8 @@ impl Inner {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let Some(transaction) = self.eth.transaction(hash).await? else {
-            tracing::warn!(?hash, "no tx found, reorg happened");
+        let Ok(transaction) = self.eth.transaction(hash.into()).await else {
+            tracing::warn!(?hash, "no tx found");
             return Ok(false);
         };
 
@@ -186,15 +186,11 @@ impl Inner {
     ) -> Result<AuctionData> {
         let receipt = self
             .eth
-            .transaction_receipt(hash)
-            .await?
+            .transaction_receipt(hash.into())
+            .await
             .with_context(|| format!("no receipt {hash:?}"))?;
-        let gas_used = receipt
-            .gas_used
-            .with_context(|| format!("no gas used {hash:?}"))?;
-        let effective_gas_price = receipt
-            .effective_gas_price
-            .with_context(|| format!("no effective gas price {hash:?}"))?;
+        let gas_used = receipt.gas;
+        let effective_gas_price = receipt.effective_gas_price;
         let auction_external_prices = self
             .persistence
             .auction_prices(auction_id)
@@ -257,7 +253,7 @@ impl Inner {
         ex: &mut PgConnection,
         tx: &Transaction,
     ) -> Result<AuctionIdRecoveryStatus> {
-        let tx_from = tx.from.context("tx is missing sender")?;
+        let tx_from = tx.solver.0;
         let settlement = match DecodedSettlement::new(&tx.input.0) {
             Ok(settlement) => settlement,
             Err(err) => {
