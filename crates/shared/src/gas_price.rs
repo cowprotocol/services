@@ -45,9 +45,7 @@ where
 
     async fn estimate(&self) -> Result<GasPrice1559> {
         let estimate = self.inner.estimate().await?;
-        self.metrics
-            .gas_price
-            .set(estimate.effective_gas_price() / 1e9);
+        self.metrics.gas_price.set(estimate.effective_gas_price());
         Ok(estimate)
     }
 }
