@@ -195,14 +195,17 @@ impl Settlement {
                             .0,
                     },
                     custom: trade::ClearingPrices {
-                        sell: match order.side {
-                            order::Side::Sell => traded.buy.into(),
-                            order::Side::Buy => traded.sell.into(),
-                        },
-                        buy: match order.side {
-                            order::Side::Sell => traded.sell.into(),
-                            order::Side::Buy => traded.buy.into(),
-                        },
+                        // settlement contract uses this formula to convert executed amounts:
+                        // SELL order: executedBuyAmount = executed * sellPrice / buyPrice;
+                        // BUY order: executedSellAmount = executed * buyPrice / sellPrice;
+                        //
+                        // With an example of converting 1 GNO for 100 DAI:
+                        // SELL order: executedBuyAmount = 1 * 100 / 1 = 100 =>
+                        // (sellPrice = 100, buyPrice = 1)
+                        // BUY order: executedSellAmount = 100 * 1 / 100 = 1 =>
+                        // (sellPrice = 100, buyPrice = 1)
+                        sell: traded.buy.into(),
+                        buy: traded.sell.into(),
                     },
                 },
             ));
