@@ -19,6 +19,8 @@ use {
 
 mod tokenized;
 mod trade;
+pub mod transaction;
+pub use transaction::{Transaction, Tx};
 
 /// Settlement originated from a calldata of a settlement transaction.
 #[derive(Debug)]
@@ -43,8 +45,9 @@ impl Settlement {
         &self,
         prices: &auction::Prices,
         policies: &HashMap<OrderUid, Vec<fee::Policy>>,
-    ) -> Result<eth::Ether, trade::Error> {
-        self.trades
+    ) -> Result<competition::Score, error::Score> {
+        let score = self
+            .trades
             .iter()
             .map(|trade| {
                 trade.score(
@@ -55,7 +58,8 @@ impl Settlement {
                         .unwrap_or_default(),
                 )
             })
-            .sum()
+            .sum::<Result<eth::Ether, trade::Error>>()?;
+        Ok(competition::Score::new(score)?)
     }
 
     pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
@@ -298,6 +302,14 @@ pub mod error {
         MissingOrder,
         #[error("referenced clearing price missing")]
         MissingClearingPrice,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Score {
+        #[error(transparent)]
+        Trade(#[from] trade::Error),
+        #[error(transparent)]
+        Zero(#[from] competition::ZeroScore),
     }
 }
 
