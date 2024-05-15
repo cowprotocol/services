@@ -186,13 +186,13 @@ impl Settlement {
                             .get(&sell_token)
                             .ok_or(error::Solution::MissingClearingPrice)?
                             .get()
-                            .0,
+                            .into(),
                         buy: solution
                             .prices()
                             .get(&buy_token)
                             .ok_or(error::Solution::MissingClearingPrice)?
                             .get()
-                            .0,
+                            .into(),
                     },
                     custom: trade::ClearingPrices {
                         // settlement contract uses this formula to convert executed amounts:
