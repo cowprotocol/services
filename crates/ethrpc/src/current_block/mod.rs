@@ -3,7 +3,16 @@ use {
     anyhow::{anyhow, ensure, Context as _, Result},
     futures::StreamExt,
     primitive_types::{H256, U256},
-    std::{fmt::Debug, num::NonZeroU64, time::Duration},
+    std::{
+        fmt::Debug,
+        num::NonZeroU64,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+            Mutex,
+        },
+        time::Duration,
+    },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
@@ -95,39 +104,53 @@ pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<C
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
 
     let (sender, receiver) = watch::channel(first_block);
+    let cancelled = Arc::new(AtomicBool::new(false));
+
     let update_future = async move {
-        let mut previous_block = first_block;
-        loop {
-            tokio::time::sleep(poll_interval).await;
-            let block = match web3.current_block().await {
-                Ok(block) => block,
-                Err(err) => {
-                    tracing::warn!("failed to get current block: {:?}", err);
-                    continue;
+        let previous_block = Arc::new(Mutex::new(first_block));
+        let mut interval = tokio::time::interval(poll_interval);
+
+        while !cancelled.load(Ordering::Relaxed) {
+            let previous_block = Arc::clone(&previous_block);
+            let sender = sender.clone();
+            let web3 = web3.clone();
+            let cancelled = cancelled.clone();
+            let _ = interval.tick().await;
+
+            // Spawn task to avoid delaying the poll interval due to slow RPC requests.
+            // This is very important on chains with a block time well below 1 second.
+            tokio::spawn(async move {
+                let block = match web3.current_block().await {
+                    Ok(block) => block,
+                    Err(err) => {
+                        tracing::warn!("failed to get current block: {:?}", err);
+                        return;
+                    }
+                };
+
+                let mut previous_block = previous_block.lock().unwrap();
+
+                // If the block is exactly the same, ignore it.
+                if previous_block.hash == block.hash {
+                    return;
                 }
-            };
 
-            // If the block is exactly the same, ignore it.
-            if previous_block.hash == block.hash {
-                continue;
-            }
+                // The new block is different but might still have the same number.
+                tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
+                update_block_metrics(previous_block.number, block.number);
 
-            // The new block is different but might still have the same number.
+                // Only update the stream if the number has increased.
+                if block.number <= previous_block.number {
+                    return;
+                }
 
-            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
-            update_block_metrics(previous_block.number, block.number);
+                if sender.send(block).is_err() {
+                    cancelled.store(true, Ordering::Relaxed);
+                    tracing::debug!("terminate current block stream");
+                }
 
-            // Only update the stream if the number has increased.
-            if block.number <= previous_block.number {
-                continue;
-            }
-
-            if sender.send(block).is_err() {
-                tracing::debug!("exiting polling loop");
-                break;
-            }
-
-            previous_block = block;
+                *previous_block = block;
+            });
         }
     };
 
