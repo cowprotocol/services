@@ -1,5 +1,5 @@
 use {
-    crate::{http::HttpTransport, Web3, Web3Transport},
+    crate::{http::HttpTransport, instrumented::instrument_with_label, Web3, Web3Transport},
     anyhow::{anyhow, ensure, Context as _, Result},
     futures::StreamExt,
     primitive_types::{H256, U256},
@@ -90,6 +90,7 @@ pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<C
         url,
         "block_stream".into(),
     )));
+    let web3 = instrument_with_label(&web3, "base_currentBlockStream".into());
     let first_block = web3.current_block().await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
 

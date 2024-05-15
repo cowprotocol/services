@@ -34,10 +34,6 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
             Solver::Baseline(solver::Baseline::new(config))
         }
         cli::Command::Naive => Solver::Naive(solver::Naive),
-        cli::Command::Legacy { config } => {
-            let config = config::legacy::load(&config).await;
-            Solver::Legacy(solver::Legacy::new(config))
-        }
     };
 
     crate::api::Api {
