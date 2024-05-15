@@ -372,8 +372,8 @@ components:
       description: Request to the settle and reveal endpoint.
       type: object
       properties:
-        auctionId:
-          description: Id of the auction that should be executed.
+        solutionId:
+          description: Id of the solution that should be executed.
           type: integer
     RevealedResponse:
       description: Response of the reveal endpoint.
