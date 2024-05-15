@@ -30,7 +30,6 @@ pub mod competition;
 pub mod external;
 pub mod factory;
 pub mod gas;
-pub mod http;
 pub mod instrumented;
 pub mod native;
 pub mod native_price_cache;

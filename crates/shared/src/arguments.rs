@@ -57,14 +57,6 @@ pub struct ExternalSolver {
     pub url: Url,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacySolver {
-    pub name: String,
-    pub url: Url,
-    pub address: H160,
-    pub use_liquidity: bool,
-}
-
 // The following arguments are used to configure the order creation process
 // The arguments are shared between the orderbook crate and the autopilot crate,
 // as both crates can create orders
@@ -74,15 +66,6 @@ pub struct OrderQuotingArguments {
     /// format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<ExternalSolver>,
-
-    /// A list of legacy solvers to be used for price estimation in the
-    /// following format: `<NAME>|<URL>[|<ADDRESS>[|<USE_LIQUIITY>]]`.
-    ///
-    /// These solvers are used as an intermediary "transition-period" for
-    /// CIP-27 for solvers that don't provide calldata and while not all
-    /// quotes are verified.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub price_estimation_legacy_solvers: Vec<LegacySolver>,
 
     /// The time period an EIP1271-quote request is valid.
     #[clap(
@@ -136,14 +119,6 @@ pub struct Arguments {
     /// The Ethereum node URL to connect to.
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
-
-    /// The Balancer subgraph URL.
-    #[clap(long, env)]
-    pub balancer_v2_graph_url: Option<Url>,
-
-    /// The UniswapV3 subgraph URL.
-    #[clap(long, env)]
-    pub uniswap_v3_graph_url: Option<Url>,
 
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
     /// be used for simulations.
@@ -307,7 +282,6 @@ impl Display for OrderQuotingArguments {
             eip1271_onchain_quote_validity,
             presign_onchain_quote_validity,
             price_estimation_drivers,
-            price_estimation_legacy_solvers,
             standard_offchain_quote_validity,
         } = self;
 
@@ -322,11 +296,6 @@ impl Display for OrderQuotingArguments {
             presign_onchain_quote_validity
         )?;
         display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
-        display_list(
-            f,
-            "price_estimation_legacy_solvers",
-            price_estimation_legacy_solvers,
-        )?;
         writeln!(
             f,
             "standard_offchain_quote_validity: {:?}",
@@ -345,8 +314,6 @@ impl Display for Arguments {
             tenderly,
             logging,
             node_url,
-            balancer_v2_graph_url,
-            uniswap_v3_graph_url,
             chain_id,
             simulation_node_url,
             gas_estimators,
@@ -375,8 +342,6 @@ impl Display for Arguments {
         write!(f, "{}", tenderly)?;
         write!(f, "{}", logging)?;
         writeln!(f, "node_url: {}", node_url)?;
-        display_option(f, "balancer_v2_graph_url: {}", balancer_v2_graph_url)?;
-        display_option(f, "uniswap_v3_graph_url: {}", uniswap_v3_graph_url)?;
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
@@ -449,12 +414,6 @@ impl Display for ExternalSolver {
     }
 }
 
-impl Display for LegacySolver {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({}, {:?})", self.name, self.url, self.address)
-    }
-}
-
 pub fn parse_percentage_factor(s: &str) -> Result<f64> {
     let percentage_factor = f64::from_str(s)?;
     ensure!(percentage_factor.is_finite() && (0. ..=1.0).contains(&percentage_factor));
@@ -487,26 +446,6 @@ impl FromStr for ExternalSolver {
     }
 }
 
-impl FromStr for LegacySolver {
-    type Err = anyhow::Error;
-
-    fn from_str(solver: &str) -> Result<Self> {
-        let mut parts = solver.splitn(4, '|');
-        let name = parts.next().context("missing name for legacy solver")?;
-        let url = parts.next().context("missing url for legacy solver")?;
-        let address = parts
-            .next()
-            .unwrap_or("0x0000000000000000000000000000000000000000");
-        let use_liquidity = parts.next().unwrap_or("false");
-        Ok(Self {
-            name: name.to_owned(),
-            url: url.parse()?,
-            address: address.parse()?,
-            use_liquidity: use_liquidity.parse()?,
-        })
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -535,56 +474,5 @@ mod test {
         assert!(
             ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
         );
-    }
-
-    #[test]
-    fn parse_legacy_solver_price_estimators() {
-        // ok
-        assert_eq!(
-            LegacySolver::from_str("name|http://localhost:8080").unwrap(),
-            LegacySolver {
-                name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
-                address: H160::zero(),
-                use_liquidity: false,
-            }
-        );
-        assert_eq!(
-            LegacySolver::from_str(
-                "name|http://localhost:8080|0x0101010101010101010101010101010101010101"
-            )
-            .unwrap(),
-            LegacySolver {
-                name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
-                address: H160([1; 20]),
-                use_liquidity: false,
-            }
-        );
-        assert_eq!(
-            LegacySolver::from_str(
-                "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true"
-            )
-            .unwrap(),
-            LegacySolver {
-                name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
-                address: H160([1; 20]),
-                use_liquidity: true,
-            }
-        );
-
-        // too few arguments
-        assert!(LegacySolver::from_str("").is_err());
-        assert!(LegacySolver::from_str("name").is_err());
-
-        // broken URL
-        assert!(LegacySolver::from_str("name1|sdfsdfds").is_err());
-
-        // too many arguments
-        assert!(LegacySolver::from_str(
-            "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true|1"
-        )
-        .is_err());
     }
 }
