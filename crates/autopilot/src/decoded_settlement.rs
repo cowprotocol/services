@@ -264,15 +264,17 @@ impl DecodedSettlement {
     }
 
     /// Returns the total surplus denominated in the native asset for the
-    /// solution.
+    /// solution. Requires external prices and a set of eligible
+    /// orders, as the onchain settlement might include trades that are not
+    /// eligible for surplus calculation(JIT orders).
     pub fn total_surplus(
         &self,
         external_prices: &ExternalPrices,
-        surplus_eligible_orders: &HashSet<OrderUid>,
+        eligible_orders: &HashSet<OrderUid>,
     ) -> U256 {
         self.trades
             .iter()
-            .filter(|trade| surplus_eligible_orders.contains(&trade.order_uid))
+            .filter(|trade| eligible_orders.contains(&trade.order_uid))
             .fold(0.into(), |acc, trade| {
                 acc + surplus(trade, &self.tokens, &self.clearing_prices, external_prices)
                     .unwrap_or_else(|| {
