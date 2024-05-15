@@ -3,8 +3,11 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::{self, order::Class},
-            competition::{self},
+            auction::order::Class,
+            competition::{
+                SolutionError,
+                {self},
+            },
             OrderUid,
         },
         infra::{
@@ -28,7 +31,7 @@ use {
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -359,7 +362,8 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         request: &solve::Request,
-    ) -> Result<Vec<Result<competition::Solution, SolutionError>>, SolveError> {
+    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
+    {
         let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -367,39 +371,7 @@ impl RunLoop {
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
-
-        Ok(response
-            .solutions
-            .into_iter()
-            .map(|solution| {
-                let mut prices = HashMap::new();
-                for (token, price) in solution.clearing_prices.into_iter() {
-                    prices.insert(token.into(), auction::Price::new(price.into())?);
-                }
-                let orders = solution
-                    .orders
-                    .into_iter()
-                    .map(|(o, amounts)| {
-                        (
-                            o.into(),
-                            competition::TradedAmounts {
-                                sell: amounts.sell_amount.into(),
-                                buy: amounts.buy_amount.into(),
-                            },
-                        )
-                    })
-                    .collect();
-                let score = competition::Score::new(solution.score.into())?;
-
-                Ok(competition::Solution::new(
-                    solution.solution_id,
-                    solution.submission_address.into(),
-                    score,
-                    orders,
-                    prices,
-                ))
-            })
-            .collect())
+        Ok(response.into_domain())
     }
 
     /// Ask the winning solver to reveal their solution.
@@ -560,14 +532,6 @@ enum SolveError {
     NoSolutions,
     #[error(transparent)]
     Failure(anyhow::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-enum SolutionError {
-    #[error(transparent)]
-    ZeroScore(#[from] competition::ZeroScore),
-    #[error(transparent)]
-    InvalidPrice(#[from] auction::InvalidPrice),
 }
 
 #[derive(Debug, thiserror::Error)]
