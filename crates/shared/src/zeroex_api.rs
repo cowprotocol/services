@@ -9,7 +9,7 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{H160, H256, U256},
-    ethrpc::current_block::{BlockInfo, CurrentBlockStream},
+    ethrpc::current_block::CurrentBlockStream,
     number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},
@@ -23,6 +23,7 @@ use {
     serde_with::{serde_as, DisplayFromStr},
     std::{collections::HashSet, sync::Arc},
     thiserror::Error,
+    tokio::sync::watch,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -269,7 +270,7 @@ impl DefaultZeroExApi {
     /// default URL) and `ZEROEX_API_KEY` (falling back to no API key) from the
     /// local environment when creating the API client.
     pub fn test() -> Self {
-        let block_stream = ethrpc::current_block::mock_stream(BlockInfo::default());
+        let block_stream = CurrentBlockStream::test_impl(watch::channel(Default::default()).1);
         Self::new(
             Client::builder(),
             std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),

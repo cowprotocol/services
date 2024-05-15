@@ -193,13 +193,6 @@ impl TryFrom<Block<H256>> for BlockInfo {
     }
 }
 
-/// A method for creating a block stream with an initial value that never
-/// observes any new blocks. This is useful for testing and creating "mock"
-/// components.
-pub fn mock_stream(block: BlockInfo) -> CurrentBlockStream {
-    CurrentBlockStream(Arc::new(BlockStreamInner::new(block)))
-}
-
 /// Trait for abstracting the retrieval of the block information such as the
 /// latest block number.
 #[async_trait::async_trait]

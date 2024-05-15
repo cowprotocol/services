@@ -464,9 +464,10 @@ where
 mod tests {
     use {
         super::*,
-        ethrpc::current_block::{mock_stream, BlockInfo},
+        ethrpc::current_block::BlockInfo,
         futures::FutureExt,
         std::sync::Arc,
+        tokio::sync::watch,
     };
 
     #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -538,10 +539,13 @@ mod tests {
             TestValue::new(3, "c"),
         ]);
         let block_number = 10u64;
-        let block_stream = mock_stream(BlockInfo {
-            number: block_number,
-            ..Default::default()
-        });
+        let block_stream = CurrentBlockStream::test_impl(
+            watch::channel(BlockInfo {
+                number: block_number,
+                ..Default::default()
+            })
+            .1,
+        );
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(1).unwrap(),
@@ -595,10 +599,13 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = mock_stream(BlockInfo {
-            number: block_number,
-            ..Default::default()
-        });
+        let block_stream = CurrentBlockStream::test_impl(
+            watch::channel(BlockInfo {
+                number: block_number,
+                ..Default::default()
+            })
+            .1,
+        );
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(4).unwrap(),
@@ -657,10 +664,13 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = mock_stream(BlockInfo {
-            number: block_number,
-            ..Default::default()
-        });
+        let block_stream = CurrentBlockStream::test_impl(
+            watch::channel(BlockInfo {
+                number: block_number,
+                ..Default::default()
+            })
+            .1,
+        );
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
@@ -714,10 +724,13 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = mock_stream(BlockInfo {
-            number: block_number,
-            ..Default::default()
-        });
+        let block_stream = CurrentBlockStream::test_impl(
+            watch::channel(BlockInfo {
+                number: block_number,
+                ..Default::default()
+            })
+            .1,
+        );
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
@@ -831,10 +844,13 @@ mod tests {
     async fn respects_max_age_limit_for_recent() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block_stream = mock_stream(BlockInfo {
-            number: block_number,
-            ..Default::default()
-        });
+        let block_stream = CurrentBlockStream::test_impl(
+            watch::channel(BlockInfo {
+                number: block_number,
+                ..Default::default()
+            })
+            .1,
+        );
         let cache = RecentBlockCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
