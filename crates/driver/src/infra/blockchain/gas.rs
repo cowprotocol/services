@@ -4,11 +4,12 @@
 /// private submission networks are used.
 use {
     super::Error,
+    crate::infra::config::file::GasEstimatorType,
     crate::{domain::eth, infra::mempool},
     ethcontract::dyns::DynWeb3,
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
+    std::sync::Arc,
 };
-use {crate::infra::config::file::GasEstimatorType, std::sync::Arc};
 
 type MaxAdditionalTip = eth::U256;
 type AdditionalTipPercentage = f64;

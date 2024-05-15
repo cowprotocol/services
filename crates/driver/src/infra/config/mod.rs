@@ -1,12 +1,11 @@
+pub use file::encoding;
+
 use crate::{
     domain::eth,
-    infra::{blockchain, liquidity, mempool, simulator, solver},
+    infra::{blockchain, config::file::GasEstimatorType, liquidity, mempool, simulator, solver},
 };
 
 pub mod file;
-pub use file::encoding;
-
-use crate::infra::config::file::GasEstimatorType;
 
 /// Configuration of infrastructural components.
 #[derive(Debug)]
