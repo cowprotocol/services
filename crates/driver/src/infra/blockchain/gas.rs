@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 /// Wrapper around the gas estimation library.
 /// Also allows to add additional tip to the gas price. This is used to
 /// increase the chance of a transaction being included in a block, in case
@@ -10,6 +8,7 @@ use {
     ethcontract::dyns::DynWeb3,
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
 };
+use {crate::infra::config::file::GasEstimatorType, std::sync::Arc};
 
 type MaxAdditionalTip = eth::U256;
 type AdditionalTipPercentage = f64;
@@ -17,19 +16,26 @@ type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
     //TODO: remove visibility once boundary is removed
-    pub(super) gas: Arc<NativeGasEstimator>,
+    pub(super) gas: Arc<dyn GasPriceEstimating>,
     additional_tip: Option<AdditionalTip>,
     max_fee_per_gas: eth::U256,
     min_priority_fee: eth::U256,
 }
 
 impl GasPriceEstimator {
-    pub async fn new(web3: &DynWeb3, mempools: &[mempool::Config]) -> Result<Self, Error> {
-        let gas = Arc::new(
-            NativeGasEstimator::new(web3.transport().clone(), None)
-                .await
-                .map_err(Error::GasPrice)?,
-        );
+    pub async fn new(
+        web3: &DynWeb3,
+        gas_estimator_type: &GasEstimatorType,
+        mempools: &[mempool::Config],
+    ) -> Result<Self, Error> {
+        let gas: Arc<dyn GasPriceEstimating> = match gas_estimator_type {
+            GasEstimatorType::Native => Arc::new(
+                NativeGasEstimator::new(web3.transport().clone(), None)
+                    .await
+                    .map_err(Error::GasPrice)?,
+            ),
+            GasEstimatorType::Web3 => Arc::new(web3.clone()),
+        };
         let additional_tip = mempools
             .iter()
             .filter_map(|mempool| match mempool.kind {

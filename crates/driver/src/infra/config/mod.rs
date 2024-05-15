@@ -6,6 +6,8 @@ use crate::{
 pub mod file;
 pub use file::encoding;
 
+use crate::infra::config::file::GasEstimatorType;
+
 /// Configuration of infrastructural components.
 #[derive(Debug)]
 pub struct Config {
@@ -14,6 +16,7 @@ pub struct Config {
     pub solvers: Vec<solver::Config>,
     pub liquidity: liquidity::Config,
     pub simulator: Option<simulator::Config>,
+    pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
     pub encoding: encoding::Strategy,
