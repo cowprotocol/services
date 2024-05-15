@@ -188,24 +188,31 @@ impl TradeVerifier {
             .context("could not decode simulation output")
             .map_err(Error::SimulationFailed)?;
 
-        if verification.from == self.settlement.address() {
+        {
             // Quote accuracy gets determined by how many tokens had to be paid out of the
-            // settlement buffers to make the quote happen. This does not work when the
-            // settlement contract itself is the trader.
-            // To not make it look like the entire trade was paid by the buffers we adjust
-            // the token balance differences based on the traded amounts.
+            // settlement buffers to make the quote happen. When the settlement contract
+            // itself is the trader or receiver these values need to be adjusted slightly.
             let (sell_amount, buy_amount) = match query.kind {
                 OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
                 OrderKind::Buy => (summary.out_amount, query.in_amount.get()),
             };
 
-            summary.buy_tokens_diff += u256_to_big_rational(&buy_amount);
-            summary.sell_tokens_diff -= u256_to_big_rational(&sell_amount);
+            // It looks like the contract lost a lot of sell tokens but only because it was
+            // the trader and had to pay for the trade. Adjust tokens lost downward.
+            if verification.from == self.settlement.address() {
+                summary.sell_tokens_lost -= u256_to_big_rational(&sell_amount);
+            }
+            // It looks like the contract gained a lot of buy tokens (negative loss) but
+            // only because it was the receiver and got the payout. Adjust the tokens lost
+            // upward.
+            if verification.receiver == self.settlement.address() {
+                summary.buy_tokens_lost += u256_to_big_rational(&buy_amount);
+            }
         }
 
         tracing::debug!(
-            lost_buy_amount = %summary.buy_tokens_diff,
-            lost_sell_amount = %summary.sell_tokens_diff,
+            lost_buy_amount = %summary.buy_tokens_lost,
+            lost_sell_amount = %summary.sell_tokens_lost,
             gas_diff = ?trade.gas_estimate.unwrap_or_default().abs_diff(summary.gas_used.as_u64()),
             time = ?start.elapsed(),
             promised_out_amount = ?trade.out_amount,
@@ -449,10 +456,10 @@ struct SettleOutput {
     out_amount: U256,
     /// Difference in buy tokens of the settlement contract before and after the
     /// trade.
-    buy_tokens_diff: BigRational,
+    buy_tokens_lost: BigRational,
     /// Difference in sell tokens of the settlement contract before and after
     /// the trade.
-    sell_tokens_diff: BigRational,
+    sell_tokens_lost: BigRational,
 }
 
 impl SettleOutput {
@@ -485,8 +492,8 @@ impl SettleOutput {
         Ok(SettleOutput {
             gas_used,
             out_amount,
-            buy_tokens_diff: settlement_buy_balance_before - settlement_buy_balance_after,
-            sell_tokens_diff: settlement_sell_balance_before - settlement_sell_balance_after,
+            buy_tokens_lost: settlement_buy_balance_before - settlement_buy_balance_after,
+            sell_tokens_lost: settlement_sell_balance_before - settlement_sell_balance_after,
         })
     }
 }
@@ -505,8 +512,8 @@ fn ensure_quote_accuracy(
         OrderKind::Sell => (query.in_amount.get(), summary.out_amount),
     };
 
-    if summary.sell_tokens_diff >= inaccuracy_limit * u256_to_big_rational(&sell_amount)
-        || summary.buy_tokens_diff >= inaccuracy_limit * u256_to_big_rational(&buy_amount)
+    if summary.sell_tokens_lost >= inaccuracy_limit * u256_to_big_rational(&sell_amount)
+        || summary.buy_tokens_lost >= inaccuracy_limit * u256_to_big_rational(&buy_amount)
     {
         return Err(Error::TooInaccurate);
     }
@@ -560,8 +567,8 @@ mod tests {
         let sell_more = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: BigRational::from_integer(0.into()),
-            sell_tokens_diff: BigRational::from_integer(500.into()),
+            buy_tokens_lost: BigRational::from_integer(0.into()),
+            sell_tokens_lost: BigRational::from_integer(500.into()),
         };
 
         let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_more);
@@ -574,8 +581,8 @@ mod tests {
         let pay_out_more = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: BigRational::from_integer(1_000.into()),
-            sell_tokens_diff: BigRational::from_integer(0.into()),
+            buy_tokens_lost: BigRational::from_integer(1_000.into()),
+            sell_tokens_lost: BigRational::from_integer(0.into()),
         };
 
         let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_more);
@@ -588,8 +595,8 @@ mod tests {
         let sell_less = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: BigRational::from_integer(0.into()),
-            sell_tokens_diff: BigRational::from_integer((-500).into()),
+            buy_tokens_lost: BigRational::from_integer(0.into()),
+            sell_tokens_lost: BigRational::from_integer((-500).into()),
         };
         // Ending up with surplus in the buffers is always fine
         let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &sell_less);
@@ -598,8 +605,8 @@ mod tests {
         let pay_out_less = SettleOutput {
             gas_used: 0.into(),
             out_amount: 2_000.into(),
-            buy_tokens_diff: BigRational::from_integer((-1_000).into()),
-            sell_tokens_diff: BigRational::from_integer(0.into()),
+            buy_tokens_lost: BigRational::from_integer((-1_000).into()),
+            sell_tokens_lost: BigRational::from_integer(0.into()),
         };
         // Ending up with surplus in the buffers is always fine
         let estimate = ensure_quote_accuracy(&low_threshold, &query, H160::zero(), &pay_out_less);
