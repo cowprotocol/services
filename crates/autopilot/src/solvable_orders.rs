@@ -425,7 +425,7 @@ async fn update_task(
                 break;
             }
         };
-        let block = current_block.borrow().number;
+        let block = current_block.current().number;
         match cache.update(block).await {
             Ok(()) => {
                 cache.track_auction_update("success");

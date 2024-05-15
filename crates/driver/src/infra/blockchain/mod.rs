@@ -82,12 +82,9 @@ impl Ethereum {
 
         Self {
             inner: Arc::new(Inner {
-                current_block: ethrpc::current_block::current_block_stream(
-                    url,
-                    std::time::Duration::from_millis(500),
-                )
-                .await
-                .expect("couldn't initialize current block stream"),
+                current_block: CurrentBlockStream::new(url, std::time::Duration::from_millis(500))
+                    .await
+                    .expect("couldn't initialize current block stream"),
                 chain,
                 contracts,
                 gas,
@@ -193,7 +190,7 @@ impl Ethereum {
     }
 
     pub fn block_gas_limit(&self) -> eth::Gas {
-        self.inner.current_block.borrow().gas_limit.into()
+        self.inner.current_block.current().gas_limit.into()
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.

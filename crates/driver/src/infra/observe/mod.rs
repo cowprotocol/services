@@ -391,7 +391,7 @@ pub fn order_excluded_from_auction(
 
 /// Observe that a settlement was simulated
 pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Error>) {
-    let block: eth::BlockNo = eth.current_block().borrow().number.into();
+    let block: eth::BlockNo = eth.current_block().current().number.into();
     match gas {
         Ok(gas) => tracing::debug!(block = ?block, gas = ?gas.0, ?tx, "simulated settlement"),
         Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),

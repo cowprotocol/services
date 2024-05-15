@@ -7,7 +7,6 @@ use {
         domain::{competition::solution::Settlement, eth::TxStatus},
         infra::{self, observe, solver::Solver, Ethereum},
     },
-    ethrpc::current_block::into_stream,
     futures::{future::select_ok, FutureExt, StreamExt},
     thiserror::Error,
     tracing::Instrument,
@@ -95,7 +94,7 @@ impl Mempools {
         // Instantiate block stream and skip the current block before we submit the
         // settlement. This way we only run iterations in blocks that can potentially
         // include the settlement.
-        let mut block_stream = into_stream(self.ethereum.current_block().clone());
+        let mut block_stream = self.ethereum.current_block().clone().watch_stream();
         block_stream.next().await;
 
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;

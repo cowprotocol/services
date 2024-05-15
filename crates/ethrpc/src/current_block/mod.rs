@@ -1,11 +1,11 @@
 use {
     crate::{http::HttpTransport, instrumented::instrument_with_label, Web3, Web3Transport},
     anyhow::{anyhow, ensure, Context as _, Result},
-    futures::StreamExt,
+    futures::{Stream, StreamExt},
     primitive_types::{H256, U256},
-    std::{fmt::Debug, num::NonZeroU64, time::Duration},
-    tokio::sync::watch,
-    tokio_stream::wrappers::WatchStream,
+    std::{fmt::Debug, sync::Arc, time::Duration},
+    tokio::sync::{broadcast, watch},
+    tokio_stream::wrappers::{BroadcastStream, WatchStream},
     tracing::Instrument,
     url::Url,
     web3::{
@@ -15,6 +15,130 @@ use {
         Transport,
     },
 };
+
+/// Internals of [`CurrentBlockStream`] that allow for only watching the most
+/// recent block as well as all blocks with the same handle.
+#[derive(Debug)]
+struct BlockStreamInner {
+    watch_receiver: watch::Receiver<BlockInfo>,
+    watch_sender: watch::Sender<BlockInfo>,
+    broadcast_sender: broadcast::Sender<BlockInfo>,
+}
+
+impl BlockStreamInner {
+    fn publish_block(&self, value: BlockInfo) {
+        let _ = self.broadcast_sender.send(value);
+        let _ = self.watch_sender.send(value);
+    }
+
+    fn new(initial_block: BlockInfo) -> Self {
+        /// This many blocks may be buffered in any [`broadcast::Receiver`].
+        const MAX_SIZE: usize = 1_000;
+
+        let (watch_sender, watch_receiver) = watch::channel(initial_block);
+        let (broadcast_sender, _broadcast_receiver) = broadcast::channel(MAX_SIZE);
+
+        Self {
+            watch_receiver,
+            watch_sender,
+            broadcast_sender,
+        }
+    }
+}
+
+/// Monitors the blockchain for new blocks and allows users to get notified
+/// about them. Can be considered the "heartbeat" of the backend.
+#[derive(Debug, Clone)]
+pub struct CurrentBlockStream(Arc<BlockStreamInner>);
+
+impl CurrentBlockStream {
+    /// Returns a reference to the current block. Keeping this reference
+    /// alive locks a mutex so it should be used as shortly as possible.
+    pub fn current(&self) -> watch::Ref<'_, BlockInfo> {
+        self.0.watch_receiver.borrow()
+    }
+
+    /// Returns a stream that always yields the most recent block (if unseen).
+    /// Also yields the current block right away and not just the next new
+    /// block. Use this if you only need to know about the current state.
+    pub fn watch_stream(&self) -> WatchStream<BlockInfo> {
+        WatchStream::new(self.0.watch_receiver.clone())
+    }
+
+    /// Returns a stream that yields every new block **AFTER** it got created.
+    /// Use this if it's required to not miss any blocks.
+    pub fn buffering_stream(&self) -> impl Stream<Item = BlockInfo> {
+        let receiver = self.0.broadcast_sender.subscribe();
+        BroadcastStream::new(receiver).map(Result::unwrap)
+    }
+
+    /// Spawns a new background task that watches for new blocks and notifies
+    /// the [`CurrentBlockStream`] about them.
+    pub async fn new(url: Url, poll_interval: Duration) -> Result<Self> {
+        // Build new Web3 specifically for the current block stream to avoid batching
+        // requests together on chains with a very high block frequency.
+        let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
+            Default::default(),
+            url,
+            "block_stream".into(),
+        )));
+        let web3 = instrument_with_label(&web3, "base_currentBlockStream".into());
+        let first_block = web3.current_block().await?;
+        tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
+
+        let stream = CurrentBlockStream(Arc::new(BlockStreamInner::new(first_block)));
+        let stream_clone = stream.clone();
+
+        let update_future = async move {
+            let mut previous_block = first_block;
+            loop {
+                tokio::time::sleep(poll_interval).await;
+                let block = match web3.current_block().await {
+                    Ok(block) => block,
+                    Err(err) => {
+                        tracing::warn!("failed to get current block: {:?}", err);
+                        continue;
+                    }
+                };
+
+                // If the block is exactly the same, ignore it.
+                if previous_block.hash == block.hash {
+                    continue;
+                }
+
+                // The new block is different but might still have the same number.
+                tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
+                update_block_metrics(previous_block.number, block.number);
+
+                // Only update the stream if the number has increased.
+                if block.number <= previous_block.number {
+                    continue;
+                }
+
+                stream_clone.0.publish_block(block);
+
+                previous_block = block;
+            }
+        };
+
+        tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
+        Ok(stream)
+    }
+
+    /// Spawns an instance that only forwards the blocks sent through the
+    /// `receiver` channel. This should only be used for testing.
+    pub fn test_impl(receiver: watch::Receiver<BlockInfo>) -> Self {
+        let inner = Arc::new(BlockStreamInner::new(*receiver.borrow()));
+        let inner_clone = inner.clone();
+        tokio::spawn(async move {
+            let mut stream = WatchStream::new(receiver);
+            while let Some(block) = stream.next().await {
+                inner_clone.publish_block(block);
+            }
+        });
+        Self(inner)
+    }
+}
 
 pub type BlockNumberHash = (u64, H256);
 
@@ -69,125 +193,11 @@ impl TryFrom<Block<H256>> for BlockInfo {
     }
 }
 
-/// Creates a cloneable stream that yields the current block whenever it
-/// changes.
-///
-/// The stream is not guaranteed to yield *every* block individually without
-/// gaps but it does yield the newest block whenever it detects a block number
-/// increase. In practice this means that if the node changes the current block
-/// in quick succession we might only observe the last block, skipping some
-/// blocks in between.
-///
-/// The stream is cloneable so that we only have to poll the node once while
-/// being able to share the result with several consumers. Calling this function
-/// again would create a new poller so it is preferable to clone an existing
-/// stream instead.
-pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<CurrentBlockStream> {
-    // Build new Web3 specifically for the current block stream to avoid batching
-    // requests together on chains with a very high block frequency.
-    let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
-        Default::default(),
-        url,
-        "block_stream".into(),
-    )));
-    let web3 = instrument_with_label(&web3, "base_currentBlockStream".into());
-    let first_block = web3.current_block().await?;
-    tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
-
-    let (sender, receiver) = watch::channel(first_block);
-    let update_future = async move {
-        let mut previous_block = first_block;
-        loop {
-            tokio::time::sleep(poll_interval).await;
-            let block = match web3.current_block().await {
-                Ok(block) => block,
-                Err(err) => {
-                    tracing::warn!("failed to get current block: {:?}", err);
-                    continue;
-                }
-            };
-
-            // If the block is exactly the same, ignore it.
-            if previous_block.hash == block.hash {
-                continue;
-            }
-
-            // The new block is different but might still have the same number.
-
-            tracing::debug!(number=%block.number, hash=?block.hash, "polled block");
-            update_block_metrics(previous_block.number, block.number);
-
-            // Only update the stream if the number has increased.
-            if block.number <= previous_block.number {
-                continue;
-            }
-
-            if sender.send(block).is_err() {
-                tracing::debug!("exiting polling loop");
-                break;
-            }
-
-            previous_block = block;
-        }
-    };
-
-    tokio::task::spawn(update_future.instrument(tracing::info_span!("current_block_stream")));
-    Ok(receiver)
-}
-
-/// Returns a stream that is synchronized to the passed in stream by only yields
-/// every nth update of the original stream.
-pub fn throttle(blocks: CurrentBlockStream, updates_to_skip: NonZeroU64) -> CurrentBlockStream {
-    let first_block = *blocks.borrow();
-
-    // `receiver` yields `first_block` immediately.
-    let (sender, receiver) = watch::channel(first_block);
-
-    let update_future = async move {
-        let mut skipped_updates = 0;
-
-        // The `block_stream` would yield `first_block` immediately and since `receiver`
-        // is already guaranteed to yield that block by construction we skip 1
-        // update right away to avoid yielding `first_block` twice from the
-        // throttled stream.
-        let mut block_stream = into_stream(blocks).skip(1);
-
-        while let Some(block) = block_stream.next().await {
-            if skipped_updates == updates_to_skip.get() {
-                // reset counter
-                skipped_updates = 0;
-            } else {
-                // Don't update the throttled stream because we didn't skip enough updates yet.
-                skipped_updates += 1;
-                continue;
-            }
-
-            if sender.send(block).is_err() {
-                tracing::debug!("exiting polling loop");
-                break;
-            }
-        }
-    };
-    tokio::task::spawn(
-        update_future.instrument(tracing::info_span!("current_block_stream_throttled")),
-    );
-    receiver
-}
-
 /// A method for creating a block stream with an initial value that never
 /// observes any new blocks. This is useful for testing and creating "mock"
 /// components.
-pub fn mock_single_block(block: BlockInfo) -> CurrentBlockStream {
-    let (sender, receiver) = watch::channel(block);
-    // Make sure the `sender` never drops so the `receiver` stays open.
-    std::mem::forget(sender);
-    receiver
-}
-
-pub type CurrentBlockStream = watch::Receiver<BlockInfo>;
-
-pub fn into_stream(receiver: CurrentBlockStream) -> WatchStream<BlockInfo> {
-    WatchStream::new(receiver)
+pub fn mock_stream(block: BlockInfo) -> CurrentBlockStream {
+    CurrentBlockStream(Arc::new(BlockStreamInner::new(block)))
 }
 
 /// Trait for abstracting the retrieval of the block information such as the
@@ -313,22 +323,17 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::create_env_test_transport,
-        futures::StreamExt,
-        tokio::time::{timeout, Duration},
-    };
+    use {super::*, crate::create_env_test_transport, futures::StreamExt, tokio::time::Duration};
 
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
         observe::tracing::initialize_reentrant("shared=debug");
         let node = std::env::var("NODE_URL").unwrap().parse().unwrap();
-        let receiver = current_block_stream(node, Duration::from_secs(1))
+        let mut stream = CurrentBlockStream::new(node, Duration::from_secs(1))
             .await
-            .unwrap();
-        let mut stream = into_stream(receiver);
+            .unwrap()
+            .watch_stream();
         for _ in 0..3 {
             let block = stream.next().await.unwrap();
             println!("new block number {}", block.number);
@@ -366,56 +371,5 @@ mod tests {
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);
-    }
-
-    // Tests that a throttled block stream indeed skips the configured
-    // number of updates.
-    // Always awaits the next block on a timer to not get the test stuck
-    // when we want to assert that no new block is coming.
-    #[tokio::test]
-    async fn throttled_skips_blocks_test() {
-        let new_block = |number| BlockInfo {
-            number,
-            ..Default::default()
-        };
-        let (sender, receiver) = watch::channel(new_block(0));
-        const TIMEOUT: Duration = Duration::from_millis(10);
-
-        // stream that yields every other block
-        let throttled = throttle(receiver, 1.try_into().unwrap());
-        let mut stream = into_stream(throttled);
-
-        // Initial block of the original stream gets yielded immediately.
-        // which is consistent with an unthrottled stream.
-        let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
-        assert_eq!(block.number, 0);
-
-        // Doesn't yield the first block twice
-        let block = timeout(TIMEOUT, stream.next()).await;
-        assert!(block.is_err());
-
-        sender.send(new_block(1)).unwrap();
-
-        // first update gets skipped
-        let block = timeout(TIMEOUT, stream.next()).await;
-        assert!(block.is_err());
-
-        sender.send(new_block(2)).unwrap();
-
-        // second update gets forwarded
-        let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
-        assert_eq!(block.number, 2);
-
-        sender.send(new_block(3)).unwrap();
-
-        // third update getes skipped again
-        let block = timeout(TIMEOUT, stream.next()).await;
-        assert!(block.is_err());
-
-        sender.send(new_block(4)).unwrap();
-
-        // fourth update gets forwarded again
-        let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
-        assert_eq!(block.number, 4);
     }
 }

@@ -61,7 +61,7 @@ impl ExternalTradeFinder {
         if query.block_dependent {
             request = request.header(
                 "X-Current-Block-Hash",
-                self.block_stream.borrow().hash.to_string(),
+                self.block_stream.current().hash.to_string(),
             )
         }
 

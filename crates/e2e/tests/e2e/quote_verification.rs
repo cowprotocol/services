@@ -39,10 +39,12 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         .expect("FORK_URL_MAINNET must be set to run forked tests")
         .parse()
         .unwrap();
-    let block_stream =
-        ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(1_000))
-            .await
-            .unwrap();
+    let block_stream = ethrpc::current_block::CurrentBlockStream::new(
+        url,
+        std::time::Duration::from_millis(1_000),
+    )
+    .await
+    .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
 
     let verifier = TradeVerifier::new(

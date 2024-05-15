@@ -1,6 +1,6 @@
 use {
     anyhow::{ensure, Result},
-    ethrpc::current_block::{self, BlockInfo, CurrentBlockStream},
+    ethrpc::current_block::{BlockInfo, CurrentBlockStream},
     futures::{future::join_all, Stream, StreamExt as _},
     std::{sync::Arc, time::Duration},
     tokio::time,
@@ -124,7 +124,7 @@ impl ServiceMaintenance {
     }
 
     pub async fn run_maintenance_on_new_block(self, current_block_stream: CurrentBlockStream) -> ! {
-        self.run_maintenance_for_blocks(current_block::into_stream(current_block_stream))
+        self.run_maintenance_for_blocks(current_block_stream.buffering_stream())
             .instrument(tracing::info_span!("service_maintenance"))
             .await;
         panic!("block stream unexpectedly dropped");

@@ -4,7 +4,7 @@ use {
     anyhow::Result,
     clap::Parser,
     ethrpc::{
-        current_block::{current_block_stream, BlockRetrieving, CurrentBlockStream},
+        current_block::{BlockRetrieving, CurrentBlockStream},
         Web3,
     },
     std::{
@@ -36,7 +36,7 @@ impl Arguments {
     }
 
     pub async fn stream(&self, rpc: Url) -> Result<CurrentBlockStream> {
-        current_block_stream(rpc, self.block_stream_poll_interval).await
+        CurrentBlockStream::new(rpc, self.block_stream_poll_interval).await
     }
 }
 

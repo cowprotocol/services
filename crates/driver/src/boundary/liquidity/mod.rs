@@ -148,7 +148,7 @@ impl Fetcher {
         let block = match block {
             infra::liquidity::AtBlock::Recent => recent_block_cache::Block::Recent,
             infra::liquidity::AtBlock::Latest => {
-                let block_number = self.blocks.borrow().number;
+                let block_number = self.blocks.current().number;
                 recent_block_cache::Block::Number(block_number)
             }
         };

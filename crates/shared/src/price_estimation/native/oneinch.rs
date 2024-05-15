@@ -2,7 +2,7 @@ use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::current_block::CurrentBlockStream,
     futures::{future::BoxFuture, FutureExt, StreamExt},
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
@@ -61,7 +61,7 @@ impl OneInch {
     ) {
         let prices = self.prices.clone();
         tokio::task::spawn(async move {
-            let mut block_stream = into_stream(current_block);
+            let mut block_stream = current_block.watch_stream();
             loop {
                 let current_prices = get_current_prices(
                     &client,

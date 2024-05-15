@@ -61,7 +61,7 @@ impl RunLoop {
         let mut last_block = None;
         loop {
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
-                let current_block = self.eth.current_block().borrow().hash;
+                let current_block = self.eth.current_block().current().hash;
                 // Only run the solvers if the auction or block has changed.
                 let previous = last_auction.replace(auction.clone());
                 if previous.as_ref() != Some(&auction)
@@ -130,7 +130,7 @@ impl RunLoop {
             solutions.sort_unstable_by_key(|participant| participant.solution.score().get().0);
             solutions
         };
-        let competition_simulation_block = self.eth.current_block().borrow().number;
+        let competition_simulation_block = self.eth.current_block().current().number;
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
@@ -457,11 +457,11 @@ impl RunLoop {
         auction_id: i64,
         max_blocks_wait: u64,
     ) -> Result<H256, SettleError> {
-        let current = self.eth.current_block().borrow().number;
+        let current = self.eth.current_block().current().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
         loop {
-            if self.eth.current_block().borrow().number > deadline {
+            if self.eth.current_block().current().number > deadline {
                 break;
             }
 

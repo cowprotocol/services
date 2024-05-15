@@ -1,7 +1,7 @@
 use {
     crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
     anyhow::Result,
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::current_block::CurrentBlockStream,
     futures::StreamExt,
     itertools::Itertools,
     primitive_types::U256,
@@ -114,7 +114,7 @@ impl Balances {
     pub fn spawn_background_task(&self, block_stream: CurrentBlockStream) {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();
-        let mut stream = into_stream(block_stream);
+        let mut stream = block_stream.watch_stream();
 
         let task = async move {
             while let Some(block) = stream.next().await {
@@ -253,6 +253,7 @@ mod tests {
     async fn background_task_updates_cache_on_new_block() {
         let first_block = BlockInfo::default();
         let (sender, receiver) = tokio::sync::watch::channel(first_block);
+        let block_stream = CurrentBlockStream::test_impl(receiver);
 
         let mut inner = MockBalanceFetching::new();
         inner
@@ -262,7 +263,7 @@ mod tests {
             .returning(|_| vec![Ok(U256::one())]);
 
         let fetcher = Balances::new(Arc::new(inner));
-        fetcher.spawn_background_task(receiver);
+        fetcher.spawn_background_task(block_stream);
 
         // 1st call to `inner`. Balance gets cached.
         let result = fetcher.get_balances(&[query(1)]).await;
@@ -325,7 +326,7 @@ mod tests {
             .returning(|_| vec![Ok(U256::one())]);
 
         let fetcher = Balances::new(Arc::new(inner));
-        fetcher.spawn_background_task(receiver);
+        fetcher.spawn_background_task(CurrentBlockStream::test_impl(receiver));
 
         let cached_entry = || {
             let cache = fetcher.balance_cache.lock().unwrap();

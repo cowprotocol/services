@@ -226,8 +226,7 @@ impl Competition {
         if let Ok(remaining) = auction.deadline().driver().remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
-                let mut stream =
-                    ethrpc::current_block::into_stream(self.eth.current_block().clone());
+                let mut stream = self.eth.current_block().clone().watch_stream();
                 while let Some(block) = stream.next().await {
                     if let Err(infra::simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await
@@ -326,7 +325,7 @@ impl Competition {
             return Err(infra::simulator::Error::Revert(RevertError {
                 err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
                 tx: tx.clone(),
-                block: self.eth.current_block().borrow().number.into(),
+                block: self.eth.current_block().current().number.into(),
             }));
         }
         Ok(())

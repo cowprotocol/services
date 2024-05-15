@@ -86,7 +86,7 @@ impl Ethereum {
         let contracts = Contracts::new(&web3, &chain, addresses).await;
 
         Self {
-            current_block: ethrpc::current_block::current_block_stream(url, poll_interval)
+            current_block: CurrentBlockStream::new(url, poll_interval)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,

@@ -164,7 +164,7 @@ where
         block_stream: CurrentBlockStream,
         metrics_label: &'static str,
     ) -> Result<Self> {
-        let block = block_stream.borrow().number;
+        let block = block_stream.current().number;
         let inner = Arc::new(Inner {
             mutexed: Mutex::new(Mutexed::new(
                 config.number_of_entries_to_auto_update,
@@ -200,7 +200,7 @@ where
     ) {
         tokio::task::spawn(
             async move {
-                let mut stream = ethrpc::current_block::into_stream(block_stream);
+                let mut stream = block_stream.watch_stream();
                 while let Some(block) = stream.next().await {
                     let Some(inner) = inner.upgrade() else {
                         tracing::debug!("cache no longer in use; terminate GC task");
@@ -464,7 +464,7 @@ where
 mod tests {
     use {
         super::*,
-        ethrpc::current_block::{mock_single_block, BlockInfo},
+        ethrpc::current_block::{mock_stream, BlockInfo},
         futures::FutureExt,
         std::sync::Arc,
     };
@@ -538,7 +538,7 @@ mod tests {
             TestValue::new(3, "c"),
         ]);
         let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
+        let block_stream = mock_stream(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -595,7 +595,7 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
+        let block_stream = mock_stream(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -657,7 +657,7 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
+        let block_stream = mock_stream(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -714,7 +714,7 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
+        let block_stream = mock_stream(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -793,7 +793,7 @@ mod tests {
                 ..Default::default()
             },
             fetcher,
-            block_stream,
+            CurrentBlockStream::test_impl(block_stream),
             "",
         )
         .unwrap()
@@ -831,7 +831,7 @@ mod tests {
     async fn respects_max_age_limit_for_recent() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
+        let block_stream = mock_stream(BlockInfo {
             number: block_number,
             ..Default::default()
         });

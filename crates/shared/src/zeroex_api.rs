@@ -23,7 +23,6 @@ use {
     serde_with::{serde_as, DisplayFromStr},
     std::{collections::HashSet, sync::Arc},
     thiserror::Error,
-    tokio::sync::watch,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -270,7 +269,7 @@ impl DefaultZeroExApi {
     /// default URL) and `ZEROEX_API_KEY` (falling back to no API key) from the
     /// local environment when creating the API client.
     pub fn test() -> Self {
-        let (_, block_stream) = watch::channel(BlockInfo::default());
+        let block_stream = ethrpc::current_block::mock_stream(BlockInfo::default());
         Self::new(
             Client::builder(),
             std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
@@ -387,7 +386,7 @@ impl DefaultZeroExApi {
             if set_current_block_header {
                 request = request.header(
                     "X-Current-Block-Hash",
-                    self.block_stream.borrow().hash.to_string(),
+                    self.block_stream.current().hash.to_string(),
                 );
             };
             if let Some(id) = observe::request_id::get_task_local_storage() {

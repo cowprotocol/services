@@ -12,7 +12,7 @@ use {
     anyhow::Result,
     arc_swap::ArcSwap,
     contracts::{GPv2Settlement, IZeroEx},
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::current_block::CurrentBlockStream,
     futures::StreamExt,
     itertools::Itertools,
     model::{order::OrderKind, TokenPair},
@@ -100,7 +100,7 @@ impl ZeroExLiquidity {
         orderbook_cache: Arc<OrderbookCache>,
         gpv2_address: H160,
     ) {
-        let mut block_stream = into_stream(blocks_stream);
+        let mut block_stream = blocks_stream.watch_stream();
         while block_stream.next().await.is_some() {
             let queries = &[
                 // orders fillable by anyone
