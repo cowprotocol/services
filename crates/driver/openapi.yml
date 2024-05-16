@@ -352,7 +352,7 @@ components:
                 description: |
                   The objective value of the solution.
                 type: string
-                example: "123"
+                example: "100"
               submissionAddress:
                 description: |
                   The address that will be used to submit the solution.
