@@ -16,6 +16,9 @@ use {
     },
 };
 
+/// Number of blocks that can be buffered in a [`broadcast::Receiver`].
+const MAX_SIZE: usize = 1_000;
+
 /// Internals of [`CurrentBlockStream`] that allow for only watching the most
 /// recent block as well as all blocks with the same handle.
 #[derive(Debug)]
@@ -32,9 +35,6 @@ impl BlockStreamInner {
     }
 
     fn new(initial_block: BlockInfo) -> Self {
-        /// This many blocks may be buffered in any [`broadcast::Receiver`].
-        const MAX_SIZE: usize = 1_000;
-
         let (watch_sender, watch_receiver) = watch::channel(initial_block);
         let (broadcast_sender, _broadcast_receiver) = broadcast::channel(MAX_SIZE);
 
@@ -67,6 +67,11 @@ impl CurrentBlockStream {
 
     /// Returns a stream that yields every new block **AFTER** it got created.
     /// Use this if it's required to not miss any blocks.
+    /// This stream also yields blocks that got reorged so it's not guaranteed
+    /// that the block number increases monotonically but at least it does not
+    /// go back in time since reorgs never "take away" blocks.
+    /// 
+    /// Panics if it gets polled after having more than [`MAX_SIZE`] buffered blocks.
     pub fn buffering_stream(&self) -> impl Stream<Item = BlockInfo> {
         let receiver = self.0.broadcast_sender.subscribe();
         BroadcastStream::new(receiver).map(Result::unwrap)
