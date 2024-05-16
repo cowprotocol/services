@@ -31,6 +31,10 @@ struct Config {
     #[serde_as(as = "Option<serialize::U256>")]
     disable_gas_simulation: Option<eth::U256>,
 
+    /// Defines the gas estimator to use.
+    #[serde(default)]
+    gas_estimator: GasEstimatorType,
+
     /// Parameters related to settlement submission.
     #[serde(default)]
     submission: SubmissionConfig,
@@ -581,4 +585,12 @@ fn default_zeroex_base_url() -> String {
 
 fn default_http_timeout() -> Duration {
     Duration::from_secs(10)
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum GasEstimatorType {
+    #[default]
+    Native,
+    Web3,
 }

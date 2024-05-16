@@ -286,6 +286,7 @@ impl Solver {
         let gas = Arc::new(
             infra::blockchain::GasPriceEstimator::new(
                 rpc.web3(),
+                &Default::default(),
                 &[infra::mempool::Config {
                     min_priority_fee: Default::default(),
                     gas_price_cap: eth::U256::MAX,
