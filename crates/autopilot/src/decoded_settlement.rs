@@ -278,7 +278,7 @@ impl DecodedSettlement {
             .fold(0.into(), |acc, trade| {
                 acc + surplus(trade, &self.tokens, &self.clearing_prices, external_prices)
                     .unwrap_or_else(|| {
-                        tracing::warn!("possible incomplete surplus calculation");
+                        tracing::warn!(?trade, "possible incomplete surplus calculation");
                         0.into()
                     })
             })
