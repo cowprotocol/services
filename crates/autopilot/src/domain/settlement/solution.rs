@@ -3,7 +3,6 @@
 
 use {
     super::{
-        competition,
         tokenized,
         trade::{self, Trade},
     },
@@ -11,6 +10,7 @@ use {
         boundary,
         domain::{
             auction::{self, order},
+            competition,
             eth,
             fee,
             OrderUid,

@@ -1,13 +1,12 @@
 //! This module defines Settlement as originated from a mined transaction
 //! calldata.
 
-use crate::domain::eth;
+use crate::{domain::eth, infra};
 
 mod solution;
 mod tokenized;
 mod trade;
 pub use solution::Solution;
-use {super::competition, crate::infra};
 
 /// A transaction that executes a solution. Interacts with the settlement
 /// contract `settle` function.
