@@ -70,8 +70,9 @@ impl CurrentBlockStream {
     /// This stream also yields blocks that got reorged so it's not guaranteed
     /// that the block number increases monotonically but at least it does not
     /// go back in time since reorgs never "take away" blocks.
-    /// 
-    /// Panics if it gets polled after having more than [`MAX_SIZE`] buffered blocks.
+    ///
+    /// Panics if it gets polled after having more than [`MAX_SIZE`] buffered
+    /// blocks.
     pub fn buffering_stream(&self) -> impl Stream<Item = BlockInfo> {
         let receiver = self.0.broadcast_sender.subscribe();
         BroadcastStream::new(receiver).map(Result::unwrap)
