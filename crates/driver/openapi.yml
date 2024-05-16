@@ -342,7 +342,8 @@ components:
               The unique identifier of the solution.
 
               This id is used to identify the solution when executing it.
-            type: integer
+            type: string
+            example: "123"
           score:
             description: |
               The objective value of the solution.
