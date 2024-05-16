@@ -20,23 +20,25 @@ use {
     web3::ethabi::{Function, Token},
 };
 
+type TradeTuple = (
+    U256,            // sellTokenIndex
+    U256,            // buyTokenIndex
+    Address,         // receiver
+    U256,            // sellAmount
+    U256,            // buyAmount
+    u32,             // validTo
+    Bytes<[u8; 32]>, // appData
+    U256,            // feeAmount
+    U256,            // flags
+    U256,            // executedAmount
+    Bytes<Vec<u8>>,  // signature
+);
+
 // Original type for input of `GPv2Settlement.settle` function.
 type DecodedSettlementTokenized = (
     Vec<Address>,
     Vec<U256>,
-    Vec<(
-        U256,            // sellTokenIndex
-        U256,            // buyTokenIndex
-        Address,         // receiver
-        U256,            // sellAmount
-        U256,            // buyAmount
-        u32,             // validTo
-        Bytes<[u8; 32]>, // appData
-        U256,            // feeAmount
-        U256,            // flags
-        U256,            // executedAmount
-        Bytes<Vec<u8>>,  // signature
-    )>,
+    Vec<TradeTuple>,
     [Vec<(Address, U256, Bytes<Vec<u8>>)>; 3],
 );
 
@@ -66,41 +68,83 @@ pub struct DecodedTrade {
     pub fee_amount: U256,
     pub flags: TradeFlags,
     pub executed_amount: U256,
-    pub signature: Bytes<Vec<u8>>,
+    pub signature: Signature,
+}
+
+pub struct RawTrade {
+    sell_token_index: U256,
+    buy_token_index: U256,
+    receiver: Address,
+    sell_amount: U256,
+    buy_amount: U256,
+    valid_to: u32,
+    app_data: Bytes<[u8; 32]>,
+    fee_amount: U256,
+    flags: U256,
+    executed_amount: U256,
+    signature: Bytes<Vec<u8>>,
+}
+
+impl From<TradeTuple> for RawTrade {
+    fn from(trade: TradeTuple) -> Self {
+        RawTrade {
+            sell_token_index: trade.0,
+            buy_token_index: trade.1,
+            receiver: trade.2,
+            sell_amount: trade.3,
+            buy_amount: trade.4,
+            valid_to: trade.5,
+            app_data: trade.6,
+            fee_amount: trade.7,
+            flags: trade.8,
+            executed_amount: trade.9,
+            signature: trade.10,
+        }
+    }
 }
 
 impl DecodedTrade {
-    /// Returns the signature of the order.
-    fn signature(&self) -> Result<Signature> {
-        Signature::from_bytes(self.flags.signing_scheme(), &self.signature.0)
-    }
-
-    /// Returns the order uid of the order associated with this trade.
-    fn compute_uid(
-        &self,
+    pub fn new(
+        trade: RawTrade,
         domain_separator: &DomainSeparator,
         tokens: &[Address],
-    ) -> Result<OrderUid> {
+    ) -> Result<Self> {
+        let flags: TradeFlags = trade.flags.into();
         let order = OrderData {
-            sell_token: tokens[self.sell_token_index.as_u64() as usize],
-            buy_token: tokens[self.buy_token_index.as_u64() as usize],
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
-            valid_to: self.valid_to,
-            app_data: AppDataHash(self.app_data.0),
-            fee_amount: self.fee_amount,
-            kind: self.flags.order_kind(),
-            partially_fillable: self.flags.partially_fillable(),
-            receiver: Some(self.receiver),
-            sell_token_balance: self.flags.sell_token_balance(),
-            buy_token_balance: self.flags.buy_token_balance(),
+            sell_token: tokens[trade.sell_token_index.as_u64() as usize],
+            buy_token: tokens[trade.buy_token_index.as_u64() as usize],
+            receiver: Some(trade.receiver),
+            sell_amount: trade.sell_amount,
+            buy_amount: trade.buy_amount,
+            valid_to: trade.valid_to,
+            app_data: AppDataHash(trade.app_data.0),
+            fee_amount: trade.fee_amount,
+            kind: flags.order_kind(),
+            partially_fillable: flags.partially_fillable(),
+            sell_token_balance: flags.sell_token_balance(),
+            buy_token_balance: flags.buy_token_balance(),
         };
-        let owner = self
-            .signature()
-            .context("signature is invalid")?
-            .recover_owner(&self.signature.0, domain_separator, &order.hash_struct())
+        let signature = Signature::from_bytes(flags.signing_scheme(), &trade.signature.0)
+            .context("signature is invalid")?;
+        let owner = signature
+            .recover_owner(&trade.signature.0, domain_separator, &order.hash_struct())
             .context("cant recover owner")?;
-        Ok(order.uid(domain_separator, &owner))
+        let order_uid = order.uid(domain_separator, &owner);
+
+        Ok(DecodedTrade {
+            order_uid,
+            sell_token_index: trade.sell_token_index,
+            buy_token_index: trade.buy_token_index,
+            receiver: trade.receiver,
+            sell_amount: trade.sell_amount,
+            buy_amount: trade.buy_amount,
+            valid_to: trade.valid_to,
+            app_data: trade.app_data,
+            fee_amount: trade.fee_amount,
+            flags: trade.flags.into(),
+            executed_amount: trade.executed_amount,
+            signature,
+        })
     }
 }
 
@@ -223,35 +267,9 @@ impl DecodedSettlement {
         let trades = trades
             .into_iter()
             .filter_map(|trade| {
-                let mut trade = DecodedTrade {
-                    order_uid: Default::default(),
-                    sell_token_index: trade.0,
-                    buy_token_index: trade.1,
-                    receiver: trade.2,
-                    sell_amount: trade.3,
-                    buy_amount: trade.4,
-                    valid_to: trade.5,
-                    app_data: trade.6,
-                    fee_amount: trade.7,
-                    flags: trade.8.into(),
-                    executed_amount: trade.9,
-                    signature: trade.10,
-                };
-                match trade.compute_uid(domain_separator, &tokens) {
-                    Ok(order_uid) => {
-                        trade.order_uid = order_uid;
-                        Some(trade)
-                    }
-                    Err(err) => {
-                        tracing::error!(
-                            ?err,
-                            ?trade,
-                            "failed to calculate order uid, we don't know which order this trade \
-                             belongs to"
-                        );
-                        None
-                    }
-                }
+                DecodedTrade::new(trade.clone().into(), domain_separator, &tokens)
+                    .inspect_err(|err| tracing::error!(?err, ?trade, "failed to decode trade"))
+                    .ok()
             })
             .collect();
         Ok(Self {
