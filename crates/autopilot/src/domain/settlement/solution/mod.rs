@@ -141,9 +141,20 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Score {
         #[error(transparent)]
-        Trade(#[from] trade::Error),
-        #[error(transparent)]
         Zero(#[from] competition::ZeroScore),
+        #[error("missing native price for token {0:?}")]
+        MissingPrice(eth::TokenAddress),
+        #[error(transparent)]
+        Math(trade::error::Math),
+    }
+
+    impl From<trade::Error> for Score {
+        fn from(err: trade::Error) -> Self {
+            match err {
+                trade::Error::MissingPrice(token) => Self::MissingPrice(token),
+                trade::Error::Math(err) => Self::Math(err),
+            }
+        }
     }
 }
 
