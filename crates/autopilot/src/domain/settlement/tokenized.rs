@@ -5,7 +5,7 @@ use {
 };
 
 // Original type for input of `GPv2Settlement.settle` function.
-pub(super) type Settlement = (
+pub(super) type Solution = (
     Vec<Token>,
     Vec<ClearingPrice>,
     Vec<Trade>,
@@ -35,7 +35,7 @@ pub fn order_uid(
     tokens: &[Token],
     domain_separator: &eth::DomainSeparator,
 ) -> Result<domain::OrderUid, Error> {
-    let flags = super::TradeFlags(trade.8);
+    let flags = super::solution::TradeFlags(trade.8);
     let signature = crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
         .map_err(Error::Signature)?;
 

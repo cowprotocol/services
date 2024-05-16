@@ -13,7 +13,7 @@ use {
 };
 
 pub mod contracts;
-pub mod dto;
+mod dto;
 
 /// Chain ID as defined by EIP-155.
 ///
@@ -113,24 +113,15 @@ impl Ethereum {
         &self,
         hash: eth::TxId,
     ) -> Result<domain::settlement::Transaction, Error> {
-        self.web3
-            .eth()
-            .transaction(hash.0.into())
-            .await?
-            .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
-            .ok_or(Error::TransactionNotFound)?
-    }
-
-    pub async fn transaction_receipt(
-        &self,
-        hash: eth::TxId,
-    ) -> Result<domain::settlement::transaction::Receipt, Error> {
-        self.web3
-            .eth()
-            .transaction_receipt(hash.0)
-            .await?
-            .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
-            .ok_or(Error::TransactionNotFound)?
+        let (transaction, receipt) = tokio::try_join!(
+            self.web3.eth().transaction(hash.0.into()),
+            self.web3.eth().transaction_receipt(hash.0)
+        )?;
+        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
+        let receipt = receipt.ok_or(Error::TransactionNotFound)?;
+        (transaction, receipt)
+            .try_into()
+            .map_err(Error::IncompleteTransactionData)
     }
 }
 
@@ -139,7 +130,7 @@ pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
     #[error("missing field {0}, node client bug?")]
-    IncompleteTransactionData(&'static str),
+    IncompleteTransactionData(anyhow::Error),
     #[error("transaction not found")]
     TransactionNotFound,
 }

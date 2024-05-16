@@ -156,7 +156,7 @@ impl Inner {
                 AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
                     auction_id,
                     Some(
-                        self.fetch_auction_data(hash, settlement, auction_id)
+                        self.fetch_auction_data(hash, settlement, auction_id, &transaction)
                             .await?,
                     ),
                 ),
@@ -183,14 +183,8 @@ impl Inner {
         hash: H256,
         settlement: DecodedSettlement,
         auction_id: i64,
+        tx: &Transaction,
     ) -> Result<AuctionData> {
-        let receipt = self
-            .eth
-            .transaction_receipt(hash.into())
-            .await
-            .with_context(|| format!("no receipt {hash:?}"))?;
-        let gas_used = receipt.gas;
-        let effective_gas_price = receipt.effective_gas_price;
         let auction_external_prices = self
             .persistence
             .auction_prices(auction_id)
@@ -236,8 +230,8 @@ impl Inner {
         Ok(AuctionData {
             surplus,
             fee,
-            gas_used,
-            effective_gas_price,
+            gas_used: tx.gas,
+            effective_gas_price: tx.effective_gas_price,
             order_executions,
         })
     }

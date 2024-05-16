@@ -1,24 +1,29 @@
-impl TryFrom<web3::types::Transaction> for crate::domain::settlement::Transaction {
-    type Error = &'static str;
+impl TryFrom<(web3::types::Transaction, web3::types::TransactionReceipt)>
+    for crate::domain::settlement::Transaction
+{
+    type Error = anyhow::Error;
 
-    fn try_from(value: web3::types::Transaction) -> Result<Self, Self::Error> {
+    fn try_from(
+        (transaction, receipt): (web3::types::Transaction, web3::types::TransactionReceipt),
+    ) -> Result<Self, Self::Error> {
         Ok(Self {
-            hash: value.hash.into(),
-            solver: value.from.ok_or("from")?.into(),
-            input: crate::util::Bytes(value.input.0),
-        })
-    }
-}
-
-impl TryFrom<web3::types::TransactionReceipt> for crate::domain::settlement::transaction::Receipt {
-    type Error = &'static str;
-
-    fn try_from(value: web3::types::TransactionReceipt) -> Result<Self, Self::Error> {
-        Ok(Self {
-            hash: value.transaction_hash.into(),
-            block: value.block_number.ok_or("block_number")?.0[0].into(),
-            gas: value.gas_used.ok_or("gas_used")?,
-            effective_gas_price: value.effective_gas_price.ok_or("effective_gas_price")?,
+            hash: transaction.hash.into(),
+            solver: transaction
+                .from
+                .ok_or(anyhow::anyhow!("missing from"))?
+                .into(),
+            input: crate::util::Bytes(transaction.input.0),
+            block: receipt
+                .block_number
+                .ok_or(anyhow::anyhow!("missing block_number"))?
+                .0[0]
+                .into(),
+            gas: receipt
+                .gas_used
+                .ok_or(anyhow::anyhow!("missing gas_used"))?,
+            effective_gas_price: receipt
+                .effective_gas_price
+                .ok_or(anyhow::anyhow!("missing effective_gas_price"))?,
         })
     }
 }
