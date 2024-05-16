@@ -213,7 +213,7 @@ pub enum Error {
     Encoding(auction::Id, error::Encoding),
 }
 
-pub mod error {
+mod error {
     use super::*;
 
     #[derive(Debug, thiserror::Error)]
