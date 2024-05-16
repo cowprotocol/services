@@ -165,7 +165,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: onchain.contracts().gp_settlement.address(),
-            receiver: Some(onchain.contracts().gp_settlement.address()),
+            receiver: None,
             ..request.clone()
         })
         .await
