@@ -1,15 +1,16 @@
-//! This module defines Settlement as originated from a mined transaction
-//! calldata.
+//! Solvers propose solutions to an [`crate::domain::Auction`].
+//! 
+//! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
 use crate::{domain::eth, infra};
 
 mod solution;
-mod tokenized;
-mod trade;
-pub use solution::Solution;
+mod transaction;
+pub use {solution::Solution, transaction::Transaction};
 
-/// A transaction that executes a solution. Interacts with the settlement
-/// contract `settle` function.
+/// A solution together with the transaction that executed it on-chain.
+/// 
+/// Referenced as a [`Settlement`] in the codebase.
 #[allow(dead_code)]
 pub struct Settlement {
     solution: Solution,
@@ -28,23 +29,6 @@ impl Settlement {
             transaction,
         })
     }
-}
-
-/// An on-chain transaction that settled a solution.
-#[derive(Debug)]
-pub struct Transaction {
-    /// The hash of the transaction.
-    pub hash: eth::TxId,
-    /// The address of the solver that submitted the transaction.
-    pub solver: eth::Address,
-    /// The call data of the transaction.
-    pub input: eth::Calldata,
-    /// The block number of the block that contains the transaction.
-    pub block: eth::BlockNo,
-    /// The gas used by the transaction.
-    pub gas: eth::U256,
-    /// The effective gas price of the transaction.
-    pub effective_gas_price: eth::U256,
 }
 
 #[derive(Debug, thiserror::Error)]
