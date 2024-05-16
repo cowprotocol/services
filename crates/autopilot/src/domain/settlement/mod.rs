@@ -1,5 +1,5 @@
 //! Solvers propose solutions to an [`crate::domain::Auction`].
-//! 
+//!
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
 use crate::{domain::eth, infra};
@@ -9,7 +9,7 @@ mod transaction;
 pub use {solution::Solution, transaction::Transaction};
 
 /// A solution together with the transaction that executed it on-chain.
-/// 
+///
 /// Referenced as a [`Settlement`] in the codebase.
 #[allow(dead_code)]
 pub struct Settlement {
