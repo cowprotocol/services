@@ -357,19 +357,16 @@ components:
                   The address that will be used to submit the solution.
                 $ref: "#/components/schemas/Address"
               orders:
-                description: executed orders
-                type: array
-                items:
-                  type: object
-                  description: |
-                    Executed orders and their traded amount
-                  properties:
-                    sellAmount:
-                      type: string
-                      description: The effective amount that left the user's wallet including all fees.
-                    buyAmount:
-                      type: string
-                      description: The effective amount the user received after all fees.
+                type: object
+                description: |
+                  Executed orders and their traded amount
+                properties:
+                  sellAmount:
+                    type: string
+                    description: The effective amount that left the user's wallet including all fees.
+                  buyAmount:
+                    type: string
+                    description: The effective amount the user received after all fees.
               clearingPrices:
                 description: |
                   Mapping of hex token address to price.
