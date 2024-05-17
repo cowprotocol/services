@@ -409,7 +409,7 @@ auction\_id | bigint  | not null | in which auction this price was provided
 order_uid   | bytea   | not null | order uid of the order that was included in the auction
 
 Indexes:
-- PRIMARY KEY: btree(`auction_uid`)
+- PRIMARY KEY: btree(`auction_uid`, `order_uid`)
 
 ### Enums
 
