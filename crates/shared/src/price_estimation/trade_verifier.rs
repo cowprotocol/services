@@ -134,7 +134,7 @@ impl TradeVerifier {
             )
             .tx;
 
-        let block = *self.block_stream.current();
+        let block = self.block_stream.current();
 
         let call = CallRequest {
             // Initiate tx as solver so gas doesn't get deducted from user's ETH.

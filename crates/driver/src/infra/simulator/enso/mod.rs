@@ -41,7 +41,7 @@ impl Enso {
     }
 
     pub(super) async fn simulate(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
-        let current_block = *self.current_block.current();
+        let current_block = self.current_block.current();
 
         let (block_number, block_timestamp) = match self.network_block_interval {
             None => (None, None), // use default values which result in simulation on `latest`

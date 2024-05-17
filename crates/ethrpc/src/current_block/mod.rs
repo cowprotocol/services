@@ -52,10 +52,9 @@ impl BlockStreamInner {
 pub struct CurrentBlockStream(Arc<BlockStreamInner>);
 
 impl CurrentBlockStream {
-    /// Returns a reference to the current block. Keeping this reference
-    /// alive locks a mutex so it should be used as shortly as possible.
-    pub fn current(&self) -> watch::Ref<'_, BlockInfo> {
-        self.0.watch_receiver.borrow()
+    /// Returns the most recently seen block.
+    pub fn current(&self) -> BlockInfo {
+        *self.0.watch_receiver.borrow()
     }
 
     /// Returns a stream that always yields the most recent block (if unseen).
