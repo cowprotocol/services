@@ -360,7 +360,7 @@ components:
               orders:
                 type: object
                 description: |
-                  Executed orders and their traded amount
+                  Mapping of order uid to net executed amount (including all fees).
                 properties:
                   sellAmount:
                     type: string
