@@ -4,7 +4,7 @@ use {
     std::ops::DerefMut,
 };
 
-/// External token price for a given auction.
+/// List of included orders for a given auction.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct AuctionOrder {
     pub auction_id: AuctionId,
