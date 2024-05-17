@@ -375,7 +375,8 @@ components:
       properties:
         solutionId:
           description: Id of the solution that should be executed.
-          type: integer
+          type: string
+          example: "123"
     RevealedResponse:
       description: Response of the reveal endpoint.
       type: object
