@@ -42,7 +42,7 @@ use {
     primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    std::{collections::BTreeMap, sync::Arc},
+    std::{collections::HashSet, sync::Arc},
     tokio::sync::Notify,
 };
 
@@ -52,7 +52,6 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
-    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
 }
@@ -69,10 +68,9 @@ enum AuctionIdRecoveryStatus {
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
         let inner = Arc::new(Inner {
             eth,
-            persistence,
             db,
             notify: Notify::new(),
         });
@@ -144,23 +142,29 @@ impl Inner {
             tracing::warn!(?hash, "no tx found");
             return Ok(false);
         };
+        let domain_separator = self.eth.contracts().settlement_domain_separator();
 
-        let (auction_id, auction_data) =
-            match Self::recover_auction_id_from_calldata(&mut ex, &transaction).await? {
-                AuctionIdRecoveryStatus::InvalidCalldata => {
-                    // To not get stuck on indexing the same transaction over and over again, we
-                    // insert the default auction ID (0)
-                    (Default::default(), None)
-                }
-                AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
-                AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
-                    auction_id,
-                    Some(
-                        self.fetch_auction_data(hash, settlement, auction_id)
-                            .await?,
-                    ),
+        let (auction_id, auction_data) = match Self::recover_auction_id_from_calldata(
+            &mut ex,
+            &transaction,
+            &model::DomainSeparator(domain_separator.0),
+        )
+        .await?
+        {
+            AuctionIdRecoveryStatus::InvalidCalldata => {
+                // To not get stuck on indexing the same transaction over and over again, we
+                // insert the default auction ID (0)
+                (Default::default(), None)
+            }
+            AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
+            AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
+                auction_id,
+                Some(
+                    self.fetch_auction_data(hash, settlement, auction_id, &mut ex)
+                        .await?,
                 ),
-            };
+            ),
+        };
 
         let update = SettlementUpdate {
             block_number: event.block_number,
@@ -183,6 +187,7 @@ impl Inner {
         hash: H256,
         settlement: DecodedSettlement,
         auction_id: i64,
+        ex: &mut PgConnection,
     ) -> Result<AuctionData> {
         let receipt = self
             .eth
@@ -191,36 +196,33 @@ impl Inner {
             .with_context(|| format!("no receipt {hash:?}"))?;
         let gas_used = receipt.gas;
         let effective_gas_price = receipt.effective_gas_price;
-        let auction_external_prices = self
-            .persistence
-            .auction_prices(auction_id)
-            .await
-            .with_context(|| {
-                format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?
-            .into_iter()
-            .map(|(token, price)| (token.0, price.get().into()))
-            .collect::<BTreeMap<_, _>>();
+        let auction = Postgres::find_competition(auction_id, ex)
+            .await?
+            .context(format!(
+                "missing competition for auction_id={:?}",
+                auction_id
+            ))?
+            .common
+            .auction;
         let external_prices = ExternalPrices::try_from_auction_prices(
             self.eth.contracts().weth().address(),
-            auction_external_prices.clone(),
+            auction.prices.clone(),
         )?;
 
         tracing::debug!(
             ?auction_id,
-            ?auction_external_prices,
+            auction_external_prices=?auction.prices,
             ?external_prices,
             "observations input"
         );
 
         // surplus and fees calculation
-        let surplus = settlement.total_surplus(&external_prices);
+        let surplus = settlement.total_surplus(
+            &external_prices,
+            &auction.orders.into_iter().collect::<HashSet<_>>(),
+        );
         let (fee, order_executions) = {
-            let domain_separator = self.eth.contracts().settlement_domain_separator();
-            let all_fees = settlement.all_fees(
-                &external_prices,
-                &model::DomainSeparator(domain_separator.0),
-            );
+            let all_fees = settlement.all_fees(&external_prices);
             // total fee used for CIP20 rewards
             let fee = all_fees
                 .iter()
@@ -252,9 +254,10 @@ impl Inner {
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
         tx: &Transaction,
+        domain_separator: &model::DomainSeparator,
     ) -> Result<AuctionIdRecoveryStatus> {
         let tx_from = tx.solver.0;
-        let settlement = match DecodedSettlement::new(&tx.input.0) {
+        let settlement = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement,
             Err(err) => {
                 tracing::warn!(
