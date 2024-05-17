@@ -13,7 +13,6 @@ use {
 };
 
 pub mod contracts;
-mod dto;
 
 /// Chain ID as defined by EIP-155.
 ///
@@ -119,10 +118,33 @@ impl Ethereum {
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
-        (transaction, receipt)
-            .try_into()
-            .map_err(Error::IncompleteTransactionData)
+        into_domain(transaction, receipt).map_err(Error::IncompleteTransactionData)
     }
+}
+
+fn into_domain(
+    transaction: web3::types::Transaction,
+    receipt: web3::types::TransactionReceipt,
+) -> anyhow::Result<domain::settlement::Transaction> {
+    Ok(domain::settlement::Transaction {
+        hash: transaction.hash.into(),
+        solver: transaction
+            .from
+            .ok_or(anyhow::anyhow!("missing from"))?
+            .into(),
+        input: crate::util::Bytes(transaction.input.0),
+        block: receipt
+            .block_number
+            .ok_or(anyhow::anyhow!("missing block_number"))?
+            .0[0]
+            .into(),
+        gas: receipt
+            .gas_used
+            .ok_or(anyhow::anyhow!("missing gas_used"))?,
+        effective_gas_price: receipt
+            .effective_gas_price
+            .ok_or(anyhow::anyhow!("missing effective_gas_price"))?,
+    })
 }
 
 #[derive(Debug, Error)]
