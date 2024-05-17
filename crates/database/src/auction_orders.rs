@@ -31,8 +31,7 @@ pub async fn fetch(
     auction_id: AuctionId,
 ) -> Result<Vec<AuctionOrder>, sqlx::Error> {
     const QUERY: &str = "SELECT * FROM auction_orders WHERE auction_id = $1";
-    let orders = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
-    Ok(orders)
+    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
 }
 
 #[cfg(test)]

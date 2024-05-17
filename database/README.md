@@ -406,7 +406,7 @@ Stores all orders that were included in every Auction. A single order can be inc
  Column     | Type    | Nullable | Details
 ------------|---------|----------|--------
 auction\_id | bigint  | not null | in which auction this price was provided
-order_uid   | bytea   | not null | order uid of the order that was included in the auction
+order\_uid  | bytea   | not null | order uid of the order that was included in the auction
 
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`, `order_uid`)
