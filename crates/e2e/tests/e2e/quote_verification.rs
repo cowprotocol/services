@@ -1,8 +1,11 @@
 use {
-    e2e::setup::{run_forked_test_with_block_number, OnchainComponents},
+    e2e::setup::*,
     ethcontract::H160,
     ethrpc::Web3,
-    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    model::{
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+    },
     number::nonzero::U256 as NonZeroU256,
     shared::{
         price_estimation::{
@@ -25,6 +28,12 @@ async fn forked_node_bypass_verification_for_rfq_quotes() {
         FORK_BLOCK_MAINNET,
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_verified_quote_for_settlement_contract() {
+    run_test(verified_quote_for_settlement_contract).await;
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -119,4 +128,82 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
             ..verified_quote
         }
     );
+}
+
+/// Test that asserts that we can verify quotes where the settlement contract is
+/// the trader or receiver.
+async fn verified_quote_for_settlement_contract(web3: Web3) {
+    tracing::info!("Setting up chain state.");
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(3)).await;
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    // Send 3 ETH to the settlement contract so we can get verified quotes for
+    // selling WETH.
+    onchain
+        .send_wei(onchain.contracts().gp_settlement.address(), to_wei(3))
+        .await;
+
+    tracing::info!("Starting services.");
+    let services = Services::new(onchain.contracts()).await;
+    services.start_protocol(solver.clone()).await;
+
+    let request = OrderQuoteRequest {
+        sell_token: onchain.contracts().weth.address(),
+        buy_token: token.address(),
+        side: OrderQuoteSide::Sell {
+            sell_amount: SellAmount::BeforeFee {
+                value: to_wei(3).try_into().unwrap(),
+            },
+        },
+        ..Default::default()
+    };
+
+    // quote where settlement contract is trader and implicit receiver
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: onchain.contracts().gp_settlement.address(),
+            receiver: None,
+            ..request.clone()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // quote where settlement contract is trader and explicit receiver
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: onchain.contracts().gp_settlement.address(),
+            receiver: Some(onchain.contracts().gp_settlement.address()),
+            ..request.clone()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // quote where settlement contract is trader and not the receiver
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: onchain.contracts().gp_settlement.address(),
+            receiver: Some(trader.address()),
+            ..request.clone()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
+
+    // quote where a random trader sends funds to the settlement contract
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            receiver: Some(onchain.contracts().gp_settlement.address()),
+            ..request.clone()
+        })
+        .await
+        .unwrap();
+    assert!(response.verified);
 }
