@@ -140,8 +140,11 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Score {
+        /// Per CIP38, zero score solutions are rejected.
         #[error(transparent)]
         Zero(#[from] competition::ZeroScore),
+        /// Score calculation requires native prices for all tokens in the
+        /// solution, so that the surplus can be normalized to native currency.
         #[error("missing native price for token {0:?}")]
         MissingPrice(eth::TokenAddress),
         #[error(transparent)]
