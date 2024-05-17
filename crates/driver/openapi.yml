@@ -376,6 +376,9 @@ components:
                 type: object
                 additionalProperties:
                   $ref: "#/components/schemas/BigUint"
+
+              gas:
+                type: integer
     Solution:
       description: Request to the settle and reveal endpoint.
       type: object
