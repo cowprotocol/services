@@ -1,7 +1,6 @@
 use {
     super::{auction, eth},
     crate::domain,
-    number::nonzero::U256 as NonZeroU256,
     std::collections::HashMap,
 };
 
@@ -10,7 +9,7 @@ type SolutionId = u64;
 pub struct Solution {
     id: SolutionId,
     account: eth::Address,
-    score: NonZeroU256,
+    score: Score,
     orders: HashMap<domain::OrderUid, TradedAmounts>,
     // uniform prices for all tokens
     prices: HashMap<eth::TokenAddress, auction::Price>,
@@ -20,7 +19,7 @@ impl Solution {
     pub fn new(
         id: SolutionId,
         account: eth::Address,
-        score: NonZeroU256,
+        score: Score,
         orders: HashMap<domain::OrderUid, TradedAmounts>,
         prices: HashMap<eth::TokenAddress, auction::Price>,
     ) -> Self {
@@ -41,7 +40,7 @@ impl Solution {
         self.account
     }
 
-    pub fn score(&self) -> NonZeroU256 {
+    pub fn score(&self) -> Score {
         self.score
     }
 
@@ -63,4 +62,33 @@ pub struct TradedAmounts {
     pub sell: eth::TokenAmount,
     /// The effective amount the user received after all fees.
     pub buy: eth::TokenAmount,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Score(eth::Ether);
+
+impl Score {
+    pub fn new(score: eth::Ether) -> Result<Self, ZeroScore> {
+        if score.0.is_zero() {
+            Err(ZeroScore)
+        } else {
+            Ok(Self(score))
+        }
+    }
+
+    pub fn get(&self) -> &eth::Ether {
+        &self.0
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the solver proposed a 0-score solution")]
+pub struct ZeroScore;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SolutionError {
+    #[error(transparent)]
+    ZeroScore(#[from] ZeroScore),
+    #[error(transparent)]
+    InvalidPrice(#[from] auction::InvalidPrice),
 }
