@@ -6,7 +6,8 @@ pub struct Contracts {
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
 
-    /// The authenticator contract used for allow-listing solvers to settle.
+    /// The authenticator contract that decides which solver is allowed to
+    /// submit settlements.
     authenticator: contracts::GPv2AllowListAuthentication,
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: domain::eth::DomainSeparator,
