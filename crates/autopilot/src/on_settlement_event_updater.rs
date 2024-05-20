@@ -160,7 +160,7 @@ impl Inner {
             AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
                 auction_id,
                 Some(
-                    self.fetch_auction_data(hash, settlement, auction_id, &mut ex)
+                    self.fetch_auction_data(settlement, auction_id, &transaction, &mut ex)
                         .await?,
                 ),
             ),
@@ -184,18 +184,11 @@ impl Inner {
 
     async fn fetch_auction_data(
         &self,
-        hash: H256,
         settlement: DecodedSettlement,
         auction_id: i64,
+        tx: &Transaction,
         ex: &mut PgConnection,
     ) -> Result<AuctionData> {
-        let receipt = self
-            .eth
-            .transaction_receipt(hash.into())
-            .await
-            .with_context(|| format!("no receipt {hash:?}"))?;
-        let gas_used = receipt.gas;
-        let effective_gas_price = receipt.effective_gas_price;
         let auction = Postgres::find_competition(auction_id, ex)
             .await?
             .context(format!(
@@ -238,8 +231,8 @@ impl Inner {
         Ok(AuctionData {
             surplus,
             fee,
-            gas_used,
-            effective_gas_price,
+            gas_used: tx.gas,
+            effective_gas_price: tx.effective_gas_price,
             order_executions,
         })
     }
