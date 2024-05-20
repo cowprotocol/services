@@ -1,5 +1,5 @@
 use {
-    self::solution::{encoding, settlement},
+    self::solution::settlement,
     super::{
         time::{self, Remaining},
         Mempools,

@@ -1,7 +1,6 @@
 use {
     super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
-        boundary,
         domain::{
             competition::{self, auction, order, solution},
             eth,

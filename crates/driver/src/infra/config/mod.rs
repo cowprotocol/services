@@ -1,5 +1,3 @@
-pub use file::encoding;
-
 use crate::{
     domain::eth,
     infra::{blockchain, config::file::GasEstimatorType, liquidity, mempool, simulator, solver},
