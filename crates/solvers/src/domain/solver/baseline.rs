@@ -17,7 +17,11 @@ use {
         },
     },
     ethereum_types::U256,
-    std::{cmp, collections::HashSet, sync::Arc},
+    std::{
+        cmp,
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 pub struct Baseline(Arc<Inner>);
@@ -122,6 +126,14 @@ impl Inner {
         auction: auction::Auction,
         sender: tokio::sync::mpsc::UnboundedSender<solution::Solution>,
     ) {
+        let token_balances = auction
+            .tokens
+            .0
+            .iter()
+            .map(|(address, token)| (address, token.available_balance))
+            .collect::<HashMap<_, _>>();
+        tracing::info!(?token_balances, "available token balances");
+
         let boundary_solver =
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
