@@ -10,8 +10,8 @@ async fn separate_deadline() {
         .order(ab_order())
         .solution(ab_solution())
         .solvers(vec![
-            test_solver().name("first"),
-            test_solver().name("second").solving_time_share(0.5),
+            test_solver().set_name("first"),
+            test_solver().set_name("second").solving_time_share(0.5),
         ])
         .done()
         .await;

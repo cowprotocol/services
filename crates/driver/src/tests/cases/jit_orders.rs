@@ -42,8 +42,8 @@ struct JitOrder {
     solver: SolverName,
 }
 
-struct Solver {
-    name: SolverName,
+struct Solution {
+    solver_name: SolverName,
     is_surplus_capturing_jit_order: bool,
     expected_score: eth::U256,
 }
@@ -52,7 +52,7 @@ struct TestCase {
     order: Order,
     execution: Execution,
     jit_order: JitOrder,
-    solvers: Vec<Solver>,
+    solutions: Vec<Solution>,
 }
 
 #[cfg(test)]
@@ -88,14 +88,9 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .no_surplus();
 
     let solvers = test_case
-        .solvers
+        .solutions
         .iter()
-        .map(|solver| {
-            test_solver()
-                .name(&solver.name.to_string())
-                .set_surplus_capturing_jit_order_owner(solver.is_surplus_capturing_jit_order)
-                .set_configure_for_jit_orders(true)
-        })
+        .map(|solution| test_solver().set_name(&solution.solver_name.to_string()))
         .collect::<Vec<_>>();
     let test: Test = tests::setup()
         .name(test_name)
@@ -104,18 +99,28 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .order(order.clone())
         .solution(ab_solution())
         .set_surplus_capturing_jit_order_owners(
-            solvers
+            test_case
+                .solutions
                 .iter()
-                .filter(|solver| solver.get_surplus_capturing_jit_order_owner())
-                .map(|solver| solver.address())
+                .filter(|&solution| solution.is_surplus_capturing_jit_order)
+                .map(|solution| {
+                    solvers
+                        .iter()
+                        .find(|solver| solver.get_name() == solution.solver_name.to_string())
+                        .unwrap()
+                        .address()
+                })
                 .collect::<Vec<_>>(),
         )
         .solvers(solvers)
         .done()
         .await;
 
-    for solver in test_case.solvers {
-        let result = test.solve_with_solver(&solver.name.to_string()).await.ok();
+    for solver in test_case.solutions {
+        let result = test
+            .solve_with_solver(&solver.solver_name.to_string())
+            .await
+            .ok();
         assert!(is_approximately_equal(
             result.score(),
             solver.expected_score
@@ -152,8 +157,8 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
             },
             solver: SolverName::One,
         },
-        solvers: vec![Solver {
-            name: SolverName::One,
+        solutions: vec![Solution {
+            solver_name: SolverName::One,
             is_surplus_capturing_jit_order: true,
             // Score is 20 x 2 since there are two orders with score 20 (user order + JIT order)
             expected_score: 40.ether().into_wei(),
@@ -192,8 +197,8 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
             },
             solver: SolverName::One,
         },
-        solvers: vec![Solver {
-            name: SolverName::One,
+        solutions: vec![Solution {
+            solver_name: SolverName::One,
             is_surplus_capturing_jit_order: false,
             // Score is 20 since the JIT order is not from a surplus capturing owner
             expected_score: 20.ether().into_wei(),

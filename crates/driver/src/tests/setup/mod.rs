@@ -327,11 +327,8 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
-    /// Whether or not the solver is a JIT-order surplus capturing address
-    surplus_capturing_jit_order_owner: bool,
-    /// Whether or not the solver will be configured (token allowance) for JIT
-    /// orders
-    configure_for_jit_orders: bool,
+    // /// Whether or not the solver is a JIT-order surplus capturing address
+    // surplus_capturing_jit_order_owner: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -359,8 +356,6 @@ pub fn test_solver() -> Solver {
         },
         fee_handler: FeeHandler::default(),
         merge_solutions: false,
-        surplus_capturing_jit_order_owner: false,
-        configure_for_jit_orders: false,
     }
 }
 
@@ -369,36 +364,15 @@ impl Solver {
         self.private_key.public_address()
     }
 
-    pub fn name(self, name: &str) -> Self {
+    pub fn set_name(self, name: &str) -> Self {
         Self {
             name: name.to_owned(),
             ..self
         }
     }
 
-    pub fn set_surplus_capturing_jit_order_owner(
-        self,
-        surplus_capturing_jit_order_owner: bool,
-    ) -> Self {
-        Self {
-            surplus_capturing_jit_order_owner,
-            ..self
-        }
-    }
-
-    pub fn get_surplus_capturing_jit_order_owner(&self) -> bool {
-        self.surplus_capturing_jit_order_owner
-    }
-
-    pub fn set_configure_for_jit_orders(self, configure_for_jit_orders: bool) -> Self {
-        Self {
-            configure_for_jit_orders,
-            ..self
-        }
-    }
-
-    pub fn get_configure_for_jit_orders(&self) -> bool {
-        self.configure_for_jit_orders
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 
     pub fn solving_time_share(self, share: f64) -> Self {
@@ -551,7 +525,7 @@ pub struct Setup {
     mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
-    /// Whether the solver sends the solution as a JIT order
+    /// List of jit orders returned by the solver
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<H160>,
@@ -853,78 +827,62 @@ impl Setup {
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
             main_trader_secret_key: trader_secret_key,
-            trader_secret_keys: self
-                .solvers
-                .iter()
-                .filter_map(|solver| {
-                    if solver.get_configure_for_jit_orders() {
-                        Some(*solver.private_key.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>(),
             solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
             rpc_args: self.rpc_args,
         })
         .await;
-        let mut solutions = Vec::new();
-        let mut specific_solutions: HashMap<String, Vec<blockchain::Solution>> = HashMap::new();
-        for solution in self.solutions {
+        let mut solutions = Vec::with_capacity(self.solutions.len());
+        for solution in &self.solutions {
             let orders = solution
                 .orders
                 .iter()
                 .flat_map(|solution_order| orders.iter().filter(|o| o.name == *solution_order))
                 .cloned()
                 .collect::<Vec<_>>();
-            let solution_fulfillment = blockchain.fulfill(orders.iter(), &solution, false).await;
-            solutions.push(solution_fulfillment.clone());
-
+            let trades = blockchain
+                .fulfill(orders.iter(), solution)
+                .await
+                .into_iter()
+                .map(Trade::from_fulfillment)
+                .collect::<Vec<_>>();
+            solutions.push(blockchain::Solution { trades });
+        }
+        let quotes = orders
+            .into_iter()
+            .map(|order| blockchain.quote(&order))
+            .collect::<Vec<_>>();
+        let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
             // We want to extend the solution trades with the JIT-orders only for those
             // solvers which are configured to send the JIT-order
-            let jit_orders = solution
-                .orders
-                .iter()
-                .flat_map(|solution_order| {
-                    jit_orders
-                        .iter()
-                        .filter(|o| o.order.name == *solution_order)
-                })
-                .fold(
-                    HashMap::new(),
-                    |mut acc: HashMap<String, Vec<Order>>, jit_order| {
-                        acc.entry(jit_order.solver.to_string())
-                            .or_default()
-                            .push(jit_order.order.clone());
-                        acc
-                    },
-                )
-                .into_iter()
-                .collect::<HashMap<_, _>>();
-            for (k, v) in jit_orders {
-                let mut solution_with_jit_order = solution_fulfillment.clone();
-                solution_with_jit_order
-                    .trades
-                    .extend(blockchain.fulfill(v.iter(), &solution, true).await.trades);
-                specific_solutions
-                    .entry(k)
-                    .or_default()
-                    .push(solution_with_jit_order);
+            let mut solutions = solutions.clone();
+            for (i, solution) in self.solutions.iter().enumerate() {
+                let jit_orders = solution
+                    .orders
+                    .iter()
+                    .flat_map(|solution_order| {
+                        jit_orders.iter().filter_map(|o| {
+                            if o.order.name == *solution_order
+                                && o.solver.to_string() == solver.get_name()
+                            {
+                                Some(&o.order)
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let trades = blockchain
+                    .fulfill(jit_orders.into_iter(), solution)
+                    .await
+                    .into_iter()
+                    .map(Trade::from_jit)
+                    .collect::<Vec<_>>();
+                solutions.get_mut(i).unwrap().trades.extend(trades);
             }
-        }
-        let mut quotes = Vec::new();
-        for order in orders {
-            let quote = blockchain.quote(&order);
-            quotes.push(quote);
-        }
-        let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
-            let specific_solutions = specific_solutions
-                .get(&solver.name.to_string())
-                .unwrap_or(&solutions);
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
-                solutions: specific_solutions,
+                solutions: &solutions,
                 trusted: &trusted,
                 quoted_orders: &quotes,
                 deadline: time::Deadline::new(deadline, solver.timeouts),
