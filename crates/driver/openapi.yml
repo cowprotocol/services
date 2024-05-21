@@ -160,6 +160,7 @@ components:
         address:
           $ref: "#/components/schemas/Address"
         price:
+          nullable: true
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
           description: |

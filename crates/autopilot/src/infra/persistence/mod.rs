@@ -2,13 +2,12 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, eth},
+        domain,
     },
     anyhow::Context,
     chrono::Utc,
-    number::conversions::big_decimal_to_u256,
     primitive_types::H256,
-    std::{collections::HashMap, sync::Arc},
+    std::sync::Arc,
     tracing::Instrument,
 };
 
@@ -135,37 +134,6 @@ impl Persistence {
             .find_tx_hash_by_auction_id(auction_id)
             .await
             .map_err(Error::DbError)
-    }
-
-    /// Get native token prices.
-    pub async fn auction_prices(
-        &self,
-        auction: domain::auction::Id,
-    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, Error> {
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .context("begin")
-            .map_err(Error::DbError)?;
-
-        let db_prices = database::auction_prices::fetch(&mut ex, auction)
-            .await
-            .context("fetch")
-            .map_err(Error::DbError)?;
-
-        let mut prices = HashMap::new();
-        for price in db_prices {
-            let token = eth::H160(price.token.0).into();
-            let price = big_decimal_to_u256(&price.price)
-                .ok_or(domain::auction::InvalidPrice)
-                .and_then(|p| domain::auction::Price::new(p.into()))
-                .map_err(Error::Price)?;
-            prices.insert(token, price);
-        }
-
-        Ok(prices)
     }
 }
 
