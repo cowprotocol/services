@@ -12,9 +12,9 @@ chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.4", features = ["derive", "env"] }
 derivative = "2.2.0"
 derive_more = "0.99.17"
-ethcontract = { version = "0.25.6", default-features = false, features = ["aws-kms"] }
-ethcontract-generate = { version = "0.25.6", default-features = false }
-ethcontract-mock = { version = "0.25.6", default-features = false }
+ethcontract = { version = "=0.25.5", default-features = false, features = ["aws-kms"] }
+ethcontract-generate = { version = "=0.25.5", default-features = false }
+ethcontract-mock = { version = "=0.25.5", default-features = false }
 ethereum-types = "0.14.1"
 flate2 = "1.0.28"
 futures = "0.3.30"
