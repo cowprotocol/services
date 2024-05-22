@@ -37,6 +37,10 @@ impl Solution {
         self.auction_id
     }
 
+    pub fn order_uids(&self) -> impl Iterator<Item = &OrderUid> {
+        self.trades.iter().map(|trade| trade.order_uid())
+    }
+
     pub fn score(
         &self,
         prices: &auction::Prices,

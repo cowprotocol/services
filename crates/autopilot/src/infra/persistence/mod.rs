@@ -141,45 +141,14 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    /// Get native token prices.
-    pub async fn auction_prices(
-        &self,
-        auction: domain::auction::Id,
-    ) -> Result<HashMap<eth::TokenAddress, domain::auction::Price>, error::Auction> {
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .context("begin")
-            .map_err(error::Auction::DbError)?;
-
-        let db_prices = database::auction_prices::fetch(&mut ex, auction)
-            .await
-            .context("fetch")
-            .map_err(error::Auction::DbError)?;
-
-        let mut prices = HashMap::new();
-        for price in db_prices {
-            let token = eth::H160(price.token.0).into();
-            let price = big_decimal_to_u256(&price.price)
-                .ok_or(domain::auction::InvalidPrice)
-                .and_then(|p| domain::auction::Price::new(p.into()))
-                .map_err(error::Auction::Price)?;
-            prices.insert(token, price);
-        }
-
-        Ok(prices)
-    }
-
-    /// Get auction data related to the given settlement.
+    /// Get auction data related to the given settlement solution.
     pub async fn get_settlement_auction(
         &self,
-        settlement: &domain::settlement::Settlement,
+        solution: &domain::settlement::Solution,
     ) -> Result<domain::settlement::Auction, error::Auction> {
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
 
-        let auction = settlement.auction_id();
+        let auction = solution.auction_id();
 
         let (winner, score, deadline) = {
             let scores = database::settlement_scores::fetch(&mut ex, auction)
@@ -219,7 +188,7 @@ impl Persistence {
         let (fee_policies, missing_orders) = {
             let mut missing_orders = HashSet::new();
             let mut fee_policies = HashMap::new();
-            for order in settlement.order_uids().cloned() {
+            for order in solution.order_uids().cloned() {
                 match database::orders::read_order(&mut ex, &ByteArray(order.0))
                     .await
                     .context("fetch order")?
@@ -261,13 +230,20 @@ impl Persistence {
             let solver_competition = database::solver_competition::load_by_id(&mut ex, auction)
                 .await
                 .context("load solver competition")?
-                .ok_or(error::Auction::SolverCompetition(
-                    "missing solver competition",
-                ))?;
+                .ok_or(error::Auction::SolverCompetition(anyhow::anyhow!(
+                    "missing solver competition"
+                )))?;
             let competition: model::solver_competition::SolverCompetitionDB =
-                serde_json::from_value(solver_competition.json)
-                    .map_err(|_| error::Auction::SolverCompetition("json conversion"))?;
-            let winning_solution = competition.solutions.last().unwrap();
+                serde_json::from_value(solver_competition.json).map_err(|_| {
+                    error::Auction::SolverCompetition(anyhow::anyhow!("json conversion"))
+                })?;
+            let winning_solution =
+                competition
+                    .solutions
+                    .last()
+                    .ok_or(error::Auction::SolverCompetition(anyhow::anyhow!(
+                        "empty solutions"
+                    )))?;
             let mut orders = HashMap::new();
             for order in winning_solution.orders.iter() {
                 match order {
@@ -287,7 +263,11 @@ impl Persistence {
                     model::solver_competition::Order::Legacy {
                         id: _,
                         executed_amount: _,
-                    } => return Err(error::Auction::SolverCompetition("Legacy order")),
+                    } => {
+                        return Err(error::Auction::SolverCompetition(anyhow::anyhow!(
+                            "Legacy order"
+                        )))
+                    }
                 }
             }
             let mut prices = HashMap::new();
@@ -337,6 +317,6 @@ pub mod error {
         #[error("quote not found in the database for an existing order")]
         MissingQuote,
         #[error("solver competition data is missing")]
-        SolverCompetition(&'static str),
+        SolverCompetition(anyhow::Error),
     }
 }

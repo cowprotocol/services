@@ -52,6 +52,7 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
+    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
 }
@@ -68,9 +69,10 @@ enum AuctionIdRecoveryStatus {
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
         let inner = Arc::new(Inner {
             eth,
+            persistence,
             db,
             notify: Notify::new(),
         });
@@ -179,11 +181,33 @@ impl Inner {
             // temporary to debug and compare with current implementation
             // TODO: use instead of current implementation
             let settlement =
-                domain::settlement::Tx::new(hash.into(), &self.eth, &self.persistence).await;
-            tracing::info!(?settlement, "settlement object");
+                domain::settlement::Settlement::new(hash.into(), &self.eth, &self.persistence)
+                    .await;
 
-            if let Ok(settlement) = settlement {
-                tracing::info!("score as promised {}", settlement.check_score());
+            match settlement {
+                Ok(settlement) => {
+                    let scores = settlement
+                        .score()
+                        .map(|score| (score, settlement.competition_score()));
+
+                    match scores {
+                        Ok((score, competition_score)) => {
+                            if score != competition_score {
+                                tracing::warn!(
+                                    ?score,
+                                    ?competition_score,
+                                    "score and competition score mismatch"
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            tracing::error!(?err, "score cant be computed");
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(?err, "settlement object error");
+                }
             }
         }
 
