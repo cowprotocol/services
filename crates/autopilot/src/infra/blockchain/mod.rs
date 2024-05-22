@@ -13,7 +13,6 @@ use {
 };
 
 pub mod contracts;
-pub mod dto;
 
 /// Chain ID as defined by EIP-155.
 ///
@@ -113,25 +112,39 @@ impl Ethereum {
         &self,
         hash: eth::TxId,
     ) -> Result<domain::settlement::Transaction, Error> {
-        self.web3
-            .eth()
-            .transaction(hash.0.into())
-            .await?
-            .map(|tx| tx.try_into().map_err(Error::IncompleteTransactionData))
-            .ok_or(Error::TransactionNotFound)?
+        let (transaction, receipt) = tokio::try_join!(
+            self.web3.eth().transaction(hash.0.into()),
+            self.web3.eth().transaction_receipt(hash.0)
+        )?;
+        let transaction = transaction.ok_or(Error::TransactionNotFound)?;
+        let receipt = receipt.ok_or(Error::TransactionNotFound)?;
+        into_domain(transaction, receipt).map_err(Error::IncompleteTransactionData)
     }
+}
 
-    pub async fn transaction_receipt(
-        &self,
-        hash: eth::TxId,
-    ) -> Result<domain::settlement::transaction::Receipt, Error> {
-        self.web3
-            .eth()
-            .transaction_receipt(hash.0)
-            .await?
-            .map(|receipt| receipt.try_into().map_err(Error::IncompleteTransactionData))
-            .ok_or(Error::TransactionNotFound)?
-    }
+fn into_domain(
+    transaction: web3::types::Transaction,
+    receipt: web3::types::TransactionReceipt,
+) -> anyhow::Result<domain::settlement::Transaction> {
+    Ok(domain::settlement::Transaction {
+        hash: transaction.hash.into(),
+        solver: transaction
+            .from
+            .ok_or(anyhow::anyhow!("missing from"))?
+            .into(),
+        input: crate::util::Bytes(transaction.input.0),
+        block: receipt
+            .block_number
+            .ok_or(anyhow::anyhow!("missing block_number"))?
+            .0[0]
+            .into(),
+        gas: receipt
+            .gas_used
+            .ok_or(anyhow::anyhow!("missing gas_used"))?,
+        effective_gas_price: receipt
+            .effective_gas_price
+            .ok_or(anyhow::anyhow!("missing effective_gas_price"))?,
+    })
 }
 
 #[derive(Debug, Error)]
@@ -139,7 +152,7 @@ pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
     #[error("missing field {0}, node client bug?")]
-    IncompleteTransactionData(&'static str),
+    IncompleteTransactionData(anyhow::Error),
     #[error("transaction not found")]
     TransactionNotFound,
 }
