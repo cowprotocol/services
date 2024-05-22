@@ -10,6 +10,7 @@ cached = { version = "0.44", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
 derivative = "2"
+derive_more = "0.99.17"
 ethcontract = { version = "0.25.6", default-features = false, features = ["aws-kms"] }
 ethcontract-generate = { version = "0.25.6", default-features = false }
 ethcontract-mock = { version = "0.25.6", default-features = false }
