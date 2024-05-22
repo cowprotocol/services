@@ -80,8 +80,22 @@ async fn execute_rpc<T: DeserializeOwned>(
     if let Some(request_id) = observe::request_id::get_task_local_storage() {
         request_builder = request_builder.header("X-REQUEST-ID", request_id);
     }
-    if let Request::Single(Call::MethodCall(method)) = request {
-        request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
+    match request {
+        Request::Single(Call::MethodCall(method)) => {
+            request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
+        }
+        Request::Batch(calls) => {
+            let methods = calls
+                .iter()
+                .filter_map(|call| match call {
+                    Call::MethodCall(method) => Some(method.method.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            request_builder = request_builder.header("X-RPC-METHOD", methods);
+        }
+        _ => {}
     }
 
     let response = request_builder
