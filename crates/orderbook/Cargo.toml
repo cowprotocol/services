@@ -16,13 +16,11 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
-axum = { workspace = true }
 anyhow = { workspace = true }
 app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
-cached = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
@@ -33,7 +31,7 @@ gas-estimation = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
-hyper = { workspace = true }
+hyper = "0.14.27"
 maplit = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"
@@ -51,17 +49,21 @@ serde_with = { workspace = true }
 shared = { path = "../shared" }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.32.0", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { workspace = true }
 url = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true }
+cached = "0.44.0"
+zeroize = "1.6.0"
+memchr = "2.5.0"
+strum = "0.25.0"
 
 [dev-dependencies]
 mockall = { workspace = true }
 secp256k1 = { workspace = true }
 testlib = { path = "../testlib" }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { version = "1.32.0", features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
