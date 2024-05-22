@@ -7,7 +7,7 @@ anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.6"
 bigdecimal = "0.3"
-cached = { version = "0.49.3", default-features = false }
+cached = { version = "0.44.0", default-features = false }
 chrono = { version = "0.4.38", default-features = false }
 clap = { version = "4.5.4", features = ["derive", "env"] }
 derivative = "2.2.0"
@@ -42,12 +42,12 @@ serde = { version = "1.0.198", features = ["derive"] }
 serde_json = "1.0.116"
 serde_with = "3.7.0"
 sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "tls-native-tls", "bigdecimal", "chrono", "postgres", "macros"] }
-strum = { version = "0.26.2", features = ["derive"] }
+strum = { version = "0.25.0", features = ["derive"] }
 tempfile = "3.10.1"
 time = { version = "0.3.25", features = ["macros"] }
 thiserror = "1.0.58"
 toml = "0.8.12"
-tokio = "1.37.0"
+tokio = "1.32.0"
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
