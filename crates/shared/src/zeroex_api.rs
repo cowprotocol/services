@@ -116,7 +116,7 @@ pub struct Order {
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be
     /// filled.
-    #[derivative(Default(value = "NaiveDateTime::MAX.and_utc().timestamp() as u64"))]
+    #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
     #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the

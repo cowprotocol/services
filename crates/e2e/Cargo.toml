@@ -30,7 +30,7 @@ shared = { path = "../shared" }
 solver = { path = "../solver" }
 solvers = { path = "../solvers" }
 sqlx = { workspace = true }
-tempfile = { workspace = true }
+tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros", "process"] }
 tracing = { workspace = true }
 warp = { workspace = true }

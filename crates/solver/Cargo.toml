@@ -20,7 +20,7 @@ contracts = { path = "../contracts" }
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
-flate2 = { workspace = true }
+flate2 = "1.0"
 futures = { workspace = true }
 gas-estimation = { workspace = true }
 observe = { path = "../observe" }

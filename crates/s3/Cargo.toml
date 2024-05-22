@@ -7,9 +7,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
-aws-config = { version = "1.2.0", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.23.0", default-features = false, features = ["rustls", "rt-tokio"] }
-flate2 = { workspace = true }
+aws-config = { version ="0.56" }
+aws-sdk-s3 = { version = "0.29", default-features = false, features = ["rustls", "rt-tokio"] }
+flate2 = "1.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 
