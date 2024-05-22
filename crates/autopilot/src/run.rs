@@ -38,20 +38,9 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
-        price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
-        recent_block_cache::CacheConfig,
+        price_estimation::factory::{self, PriceEstimatorFactory},
         signature_validator,
-        sources::{
-            balancer_v2::{
-                pool_fetching::BalancerContracts,
-                BalancerFactoryKind,
-                BalancerPoolFetcher,
-            },
-            uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
-            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-            BaselineSource,
-            PoolAggregator,
-        },
+        sources::{uniswap_v2::UniV2BaselineSourceParameters, BaselineSource},
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
@@ -240,15 +229,12 @@ pub async fn run(args: Arguments) {
             UniV2BaselineSourceParameters::from_baseline_source(*source, &chain_id.to_string())
         })
         .chain(args.shared.custom_univ2_baseline_sources.iter().copied());
-    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) = futures::stream::iter(univ2_sources)
+    let pair_providers: Vec<_> = futures::stream::iter(univ2_sources)
         .then(|source: UniV2BaselineSourceParameters| {
             let web3 = &web3;
-            async move {
-                let source = source.into_source(web3).await.unwrap();
-                (source.pair_provider, source.pool_fetching)
-            }
+            async move { source.into_source(web3).await.unwrap().pair_provider }
         })
-        .unzip()
+        .collect()
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
@@ -300,95 +286,9 @@ pub async fn run(args: Arguments) {
         .instrumented(),
     );
 
-    let pool_aggregator = PoolAggregator { pool_fetchers };
-
-    let cache_config = CacheConfig {
-        number_of_blocks_to_cache: args.shared.pool_cache_blocks,
-        number_of_entries_to_auto_update: args.pool_cache_lru_size,
-        maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
-        max_retries: args.shared.pool_cache_maximum_retries,
-        delay_between_retries: args.shared.pool_cache_delay_between_retries,
-    };
-    let pool_fetcher = Arc::new(
-        PoolCache::new(
-            cache_config,
-            Arc::new(pool_aggregator),
-            eth.current_block().clone(),
-        )
-        .expect("failed to create pool cache"),
-    );
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
-        let factories = args
-            .shared
-            .balancer_factories
-            .clone()
-            .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
-        let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
-        let graph_url = args
-            .shared
-            .balancer_v2_graph_url
-            .as_ref()
-            .expect("provide a balancer subgraph url when enabling balancer liquidity");
-        match BalancerPoolFetcher::new(
-            graph_url,
-            block_retriever.clone(),
-            token_info_fetcher.clone(),
-            cache_config,
-            eth.current_block().clone(),
-            http_factory.create(),
-            web3.clone(),
-            &contracts,
-            args.shared.balancer_pool_deny_list.clone(),
-        )
-        .await
-        {
-            Ok(fetcher) => Some(Arc::new(fetcher)),
-            Err(err) => {
-                tracing::error!(
-                    "failed to create BalancerV2 pool fetcher, this is most likely due to \
-                     temporary issues with the graph (in that case consider manually restarting \
-                     services once the graph is back online): {:?}",
-                    err
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-    let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        let graph_url = args
-            .shared
-            .uniswap_v3_graph_url
-            .as_ref()
-            .expect("provide a uniswapV3 subgraph url when enabling uniswapV3 liquidity");
-        match UniswapV3PoolFetcher::new(
-            graph_url,
-            web3.clone(),
-            http_factory.create(),
-            block_retriever,
-            args.shared.max_pools_to_initialize_cache,
-        )
-        .await
-        {
-            Ok(fetcher) => Some(Arc::new(fetcher)),
-            Err(err) => {
-                tracing::error!(
-                    "failed to create UniswapV3 pool fetcher, this is most likely due to \
-                     temporary issues with the graph (in that case consider manually restarting \
-                     services once the graph is back online): {:?}",
-                    err
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
     let block_retriever = args.shared.current_block.retriever(web3.clone());
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
@@ -414,11 +314,7 @@ pub async fn run(args: Arguments) {
         factory::Components {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
-            uniswap_v2_pools: pool_fetcher.clone(),
-            balancer_pools: balancer_pool_fetcher.clone().map(|a| a as _),
-            uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
-            gas_price: gas_price_estimator.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -431,10 +327,7 @@ pub async fn run(args: Arguments) {
         .unwrap();
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
+            &args.order_quoting.price_estimation_drivers,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
@@ -449,11 +342,7 @@ pub async fn run(args: Arguments) {
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
-            eth.clone(),
-            db.clone(),
-            persistence.clone(),
-        );
+        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(eth.clone(), db.clone());
     let event_updater = Arc::new(EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
@@ -532,9 +421,6 @@ pub async fn run(args: Arguments) {
             .expect("Should be able to initialize event updater. Database read issues?"),
         );
         maintainers.push(broadcaster_event_updater);
-    }
-    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        maintainers.push(uniswap_v3);
     }
 
     let service_maintainer = ServiceMaintenance::new(maintainers);

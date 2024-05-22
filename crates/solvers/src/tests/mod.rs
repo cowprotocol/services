@@ -11,7 +11,6 @@ use {
 };
 
 mod baseline;
-mod legacy;
 mod mock;
 mod naive;
 

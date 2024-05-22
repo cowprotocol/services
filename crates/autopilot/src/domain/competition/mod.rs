@@ -9,7 +9,7 @@ type SolutionId = u64;
 #[derive(Debug)]
 pub struct Solution {
     id: SolutionId,
-    account: eth::Address,
+    solver: eth::Address,
     score: Score,
     orders: HashMap<domain::OrderUid, TradedAmounts>,
     // uniform prices for all tokens
@@ -19,14 +19,14 @@ pub struct Solution {
 impl Solution {
     pub fn new(
         id: SolutionId,
-        account: eth::Address,
+        solver: eth::Address,
         score: Score,
         orders: HashMap<domain::OrderUid, TradedAmounts>,
         prices: HashMap<eth::TokenAddress, auction::Price>,
     ) -> Self {
         Self {
             id,
-            account,
+            solver,
             score,
             orders,
             prices,
@@ -37,8 +37,8 @@ impl Solution {
         self.id
     }
 
-    pub fn account(&self) -> eth::Address {
-        self.account
+    pub fn solver(&self) -> eth::Address {
+        self.solver
     }
 
     pub fn score(&self) -> Score {
@@ -86,3 +86,11 @@ impl Score {
 #[derive(Debug, thiserror::Error)]
 #[error("the solver proposed a 0-score solution")]
 pub struct ZeroScore;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SolutionError {
+    #[error(transparent)]
+    ZeroScore(#[from] ZeroScore),
+    #[error(transparent)]
+    InvalidPrice(#[from] auction::InvalidPrice),
+}
