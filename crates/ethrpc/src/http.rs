@@ -1,7 +1,8 @@
 use {
-    ethcontract::jsonrpc as jsonrpc_core,
+    ethcontract::{jsonrpc as jsonrpc_core, jsonrpc::MethodCall},
     futures::{future::BoxFuture, FutureExt},
-    jsonrpc_core::types::{Call, Output, Request, Value},
+    jsonrpc_core::types::{Call, Output, Params, Request, Value},
+    maplit::hashmap,
     reqwest::{header, Client, Url},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
     std::{
@@ -53,6 +54,70 @@ impl HttpTransport {
     fn new_request(&self) -> (Client, Arc<Inner>) {
         (self.client.clone(), self.inner.clone())
     }
+
+    fn insert_call_metadata(call: &mut Call) {
+        if let Call::MethodCall(method_call) = call {
+            if let Some(request_id) = observe::request_id::get_task_local_storage() {
+                match &mut method_call.params {
+                    Params::Array(_) => {
+                        let original_params = Value::from(method_call.params.clone());
+                        method_call.params = Params::Map(
+                            hashmap! {
+                                "original_array" => original_params,
+                                "call_metadata" => Value::Object(hashmap! {
+                                    "method" => Value::String(method_call.method.clone()),
+                                    "request_id" => Value::String(request_id.clone()),
+                                }.into()),
+                            }
+                            .into(),
+                        )
+                    }
+                    Params::Map(params) => {
+                        params.insert(
+                            "call_metadata".to_string(),
+                            Value::Object(
+                                hashmap! {
+                                    "method" => Value::String(method_call.method.clone()),
+                                    "request_id" => Value::String(request_id.clone()),
+                                }
+                                .into(),
+                            ),
+                        );
+                    }
+                    _ => {}
+                }
+            };
+        };
+    }
+
+    fn restore_original_call_params(calls: &mut Vec<Call>) -> HashMap<String, String> {
+        let mut result = HashMap::new();
+        calls.iter_mut().for_each(|call| {
+            if let Call::MethodCall(method) = call {
+                if let Params::Map(params) = &method.params {
+                    if let Some((request_id, method_name)) = Self::restore_method_params(method) {
+                        result.insert(request_id, method_name);
+                    };
+                };
+            };
+        });
+        result
+    }
+
+    fn restore_method_params(method: &mut MethodCall) -> Option<(String, String)> {
+        let mut result = None;
+        if let Params::Map(params) = &method.params {
+            if let Some(Value::Object(call_metadata)) = params.get("call_metadata") {
+                let request_id = call_metadata.get("request_id").unwrap().to_string();
+                let method = call_metadata.get("method").unwrap().to_string();
+                result = Some((request_id, method));
+            };
+            if let Some(Value::Array(original_params)) = params.get("original_array") {
+                method.params = Params::Array(original_params.clone());
+            };
+        };
+        result
+    }
 }
 
 impl Debug for HttpTransport {
@@ -68,37 +133,38 @@ async fn execute_rpc<T: DeserializeOwned>(
     client: Client,
     inner: Arc<Inner>,
     id: RequestId,
-    request: &Request,
+    request: Request,
 ) -> Result<T, Web3Error> {
-    let body = serde_json::to_string(&request)?;
-    tracing::trace!(name = %inner.name, %id, %body, "executing request");
+    let mut request = request;
     let mut request_builder = client
         .post(inner.url.clone())
         .header(header::CONTENT_TYPE, "application/json")
-        .header("X-RPC-REQUEST-ID", id.to_string())
-        .body(body);
-    if let Some(request_id) = observe::request_id::get_task_local_storage() {
-        request_builder = request_builder.header("X-REQUEST-ID", request_id);
-    }
-    match request {
+        .header("X-RPC-REQUEST-ID", id.to_string());
+    match &mut request {
         Request::Single(Call::MethodCall(method)) => {
-            request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
+            if let Some((request_id, method_name)) = HttpTransport::restore_method_params(method) {
+                request_builder = request_builder.header("X-REQUEST-ID", request_id);
+                request_builder = request_builder.header("X-RPC-METHOD", method_name);
+            } else if let Some(request_id) = observe::request_id::get_task_local_storage() {
+                request_builder = request_builder.header("X-REQUEST-ID", request_id);
+                request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
+            }
         }
         Request::Batch(calls) => {
-            let methods = calls
-                .iter()
-                .filter_map(|call| match call {
-                    Call::MethodCall(method) => Some(method.method.clone()),
-                    _ => None,
-                })
+            let request_metadata = HttpTransport::restore_original_call_params(calls)
+                .into_iter()
+                .map(|(request_id, method_name)| format!("{}:{}", request_id, method_name))
                 .collect::<Vec<_>>()
                 .join(",");
-            request_builder = request_builder.header("X-RPC-METHOD", methods);
+            request_builder = request_builder.header("X-REQUEST-METADATA", request_metadata);
         }
         _ => {}
     }
 
+    let body = serde_json::to_string(&request)?;
+    tracing::trace!(name = %inner.name, %id, %body, "executing request");
     let response = request_builder
+        .body(body)
         .send()
         .await
         .map_err(|err: reqwest::Error| {
@@ -139,7 +205,8 @@ impl Transport for HttpTransport {
 
     fn prepare(&self, method: &str, params: Vec<Value>) -> (RequestId, Call) {
         let id = self.next_id();
-        let request = helpers::build_request(id, method, params);
+        let mut request = helpers::build_request(id, method, params);
+        Self::insert_call_metadata(&mut request);
         (id, request)
     }
 
@@ -147,7 +214,7 @@ impl Transport for HttpTransport {
         let (client, inner) = self.new_request();
 
         async move {
-            let output = execute_rpc(client, inner, id, &Request::Single(call)).await?;
+            let output = execute_rpc(client, inner, id, Request::Single(call)).await?;
             helpers::to_result_from_output(output)
         }
         .boxed()
@@ -168,7 +235,7 @@ impl BatchTransport for HttpTransport {
         let (ids, calls): (Vec<_>, Vec<_>) = requests.into_iter().unzip();
 
         async move {
-            let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
+            let outputs = execute_rpc(client, inner, id, Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
         }
         .boxed()
