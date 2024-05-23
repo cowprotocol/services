@@ -224,7 +224,7 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2WeightedPool::signatures().get_normalized_weights())
             .returns(weights.iter().copied().map(Bfp::as_uint256).collect());
 

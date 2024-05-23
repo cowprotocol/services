@@ -360,11 +360,11 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2BasePool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2BasePool::signatures().get_pool_id())
             .returns(Bytes(pool_id.0));
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
             .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
             .predicate((predicate::eq(Bytes(pool_id.0)),))
@@ -414,13 +414,13 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2BasePool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
             .returns((false, 0.into(), 0.into()));
         pool.expect_call(BalancerV2BasePool::signatures().get_swap_fee_percentage())
             .returns(bfp!("0.003").as_uint256());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
             .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
             .predicate((predicate::eq(Bytes(pool_id.0)),))
@@ -483,13 +483,13 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2BasePool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2BasePool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
             .returns((false, 0.into(), 0.into()));
         pool.expect_call(BalancerV2BasePool::signatures().get_swap_fee_percentage())
             .returns(0.into());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
             .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
             .predicate((predicate::eq(Bytes(Default::default())),))
@@ -532,7 +532,7 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
             .returns((false, 0.into(), 0.into()));
         pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
@@ -576,7 +576,7 @@ mod tests {
             version: Default::default(),
         };
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
             .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
             .predicate((predicate::eq(Bytes(pool_info.common.id.0)),))
@@ -630,13 +630,13 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
             .returns((true, 0.into(), 0.into()));
         pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
             .returns(Default::default());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
             .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
             .returns(Default::default());
@@ -690,13 +690,13 @@ mod tests {
         let mock = Mock::new(42);
         let web3 = mock.web3();
 
-        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().interface.abi.clone());
+        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
             .returns((false, 0.into(), 0.into()));
         pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
             .returns(Default::default());
 
-        let vault = mock.deploy(BalancerV2Vault::raw_contract().interface.abi.clone());
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
             .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
             .returns(Default::default());
