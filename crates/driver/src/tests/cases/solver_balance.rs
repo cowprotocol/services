@@ -15,7 +15,7 @@ async fn test_unfunded() {
         .order(ab_order())
         .solution(ab_solution())
         .solvers(vec![test_solver()
-            .set_name("unfunded")
+            .name("unfunded")
             .balance(eth::U256::zero())])
         .done()
         .await;
@@ -34,7 +34,7 @@ async fn test_just_enough_funded() {
         .order(ab_order())
         .solution(ab_solution())
         .solvers(vec![test_solver()
-            .set_name("barely_funded")
+            .name("barely_funded")
             // The solution uses ~500k gas units
             // With gas costs <20gwei, 0.01 ETH should suffice
             .balance(eth::U256::exp10(16))])

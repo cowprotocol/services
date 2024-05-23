@@ -40,7 +40,6 @@ use {
         path::PathBuf,
         str::FromStr,
     },
-    strum::{Display, EnumString},
 };
 
 mod blockchain;
@@ -85,17 +84,9 @@ impl LiquidityQuote {
     }
 }
 
-#[derive(Debug, Display, EnumString, Clone, Copy, PartialEq)]
-pub enum SolverName {
-    One,
-    Two,
-    Three,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct JitOrder {
     pub order: Order,
-    pub solver: SolverName,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -327,8 +318,6 @@ pub struct Solver {
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
-    // /// Whether or not the solver is a JIT-order surplus capturing address
-    // surplus_capturing_jit_order_owner: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -364,15 +353,11 @@ impl Solver {
         self.private_key.public_address()
     }
 
-    pub fn set_name(self, name: &str) -> Self {
+    pub fn name(self, name: &str) -> Self {
         Self {
             name: name.to_owned(),
             ..self
         }
-    }
-
-    pub fn get_name(&self) -> &str {
-        &self.name
     }
 
     pub fn solving_time_share(self, share: f64) -> Self {
@@ -840,46 +825,41 @@ impl Setup {
                 .flat_map(|solution_order| orders.iter().filter(|o| o.name == *solution_order))
                 .cloned()
                 .collect::<Vec<_>>();
-            let trades = blockchain
+            let fulfillment_trades = blockchain
                 .fulfill(orders.iter(), solution)
                 .await
                 .into_iter()
                 .map(Trade::from_fulfillment)
                 .collect::<Vec<_>>();
-            solutions.push(blockchain::Solution { trades });
+
+            let jit_orders = solution
+                .orders
+                .iter()
+                .flat_map(|solution_order| {
+                    jit_orders.iter().filter_map(|o| {
+                        if o.order.name == *solution_order {
+                            Some(&o.order)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            let jit_trades = blockchain
+                .fulfill(jit_orders.into_iter(), solution)
+                .await
+                .into_iter()
+                .map(Trade::from_jit)
+                .collect::<Vec<_>>();
+            solutions.push(blockchain::Solution {
+                trades: [fulfillment_trades, jit_trades].concat(),
+            });
         }
         let quotes = orders
             .into_iter()
             .map(|order| blockchain.quote(&order))
             .collect::<Vec<_>>();
         let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
-            // We want to extend the solution trades with the JIT-orders only for those
-            // solvers which are configured to send the JIT-order
-            let mut solutions = solutions.clone();
-            for (i, solution) in self.solutions.iter().enumerate() {
-                let jit_orders = solution
-                    .orders
-                    .iter()
-                    .flat_map(|solution_order| {
-                        jit_orders.iter().filter_map(|o| {
-                            if o.order.name == *solution_order
-                                && o.solver.to_string() == solver.get_name()
-                            {
-                                Some(&o.order)
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                let trades = blockchain
-                    .fulfill(jit_orders.into_iter(), solution)
-                    .await
-                    .into_iter()
-                    .map(Trade::from_jit)
-                    .collect::<Vec<_>>();
-                solutions.get_mut(i).unwrap().trades.extend(trades);
-            }
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
                 solutions: &solutions,
