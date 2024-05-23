@@ -41,9 +41,9 @@ ENTRYPOINT [ "driver" ]
 FROM intermediate as orderbook
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
     apt-get install -y valgrind && \
-    apt-get clean \
+    apt-get clean
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
-ENTRYPOINT ["valgrind", "--leak-check=full", "--track-origins=yes", "--tool=massif", "/usr/local/bin/orderbook"]
+ENTRYPOINT ["valgrind", "--tool=massif", "/usr/local/bin/orderbook"]
 
 FROM intermediate as refunder
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
