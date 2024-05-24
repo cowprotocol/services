@@ -103,10 +103,7 @@ impl Settlement {
 
         // TODO implement the rest of the checks
 
-        Ok(Self {
-            trades,
-            auction,
-        })
+        Ok(Self { trades, auction })
     }
 
     pub fn order_uids(&self) -> impl Iterator<Item = &crate::domain::OrderUid> {
