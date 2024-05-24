@@ -77,7 +77,8 @@ impl Settlement {
             ));
         }
 
-        let (auction, solution) = persistence.get_competition(auction_id).await?;
+        let auction = persistence.get_auction(auction_id).await?;
+        let solution = persistence.get_competition_solution(auction_id).await?;
 
         let score = domain::competition::Score::new(
             trades
@@ -120,6 +121,8 @@ mod error {
         Score(#[from] Score),
         #[error(transparent)]
         Auction(#[from] infra::persistence::error::Auction),
+        #[error(transparent)]
+        Solution(#[from] infra::persistence::error::Solution),
     }
     #[derive(Debug, thiserror::Error)]
     pub enum Score {
