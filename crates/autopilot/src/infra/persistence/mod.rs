@@ -238,10 +238,17 @@ impl Persistence {
             competition::Solution::new(0, winner, score, orders, prices)
         };
 
-        // TODO get all orders from auction and all fee policies for each order
         let fee_policies = {
+            let orders = database::auction_orders::fetch(&mut ex, auction_id)
+                .await
+                .context("fetch auction orders")?
+                .ok_or(error::Auction::MissingOrders)?
+                .into_iter()
+                .map(|order| domain::OrderUid(order.0));
+
             let mut fee_policies = HashMap::new();
-            for order in solution.orders().keys().cloned() {
+            for order in orders {
+                fee_policies.insert(order, vec![]);
                 if database::orders::read_order(&mut ex, &ByteArray(order.0))
                     .await
                     .context("fetch order")?
@@ -262,10 +269,9 @@ impl Persistence {
 
                     for policy in policies {
                         let policy = dto::fee_policy::into_domain(policy, &quote)?;
-                        fee_policies
-                            .entry(order)
-                            .or_insert_with(Vec::new)
-                            .push(policy);
+                        fee_policies.entry(order).and_modify(|policies| {
+                            policies.push(policy);
+                        });
                     }
                 }
             }
@@ -307,6 +313,8 @@ pub mod error {
         ZeroScore(#[from] domain::competition::ZeroScore),
         #[error("quote not found in the database for an existing order")]
         MissingQuote,
+        #[error("orders are missing from the auction")]
+        MissingOrders,
         #[error("solver competition data is missing")]
         SolverCompetition(anyhow::Error),
     }

@@ -1,4 +1,4 @@
-//! Competition data related to the specific settlement.
+//! Auction data related to the specific settlement.
 
 use {
     crate::domain::{self, eth},
@@ -12,6 +12,7 @@ pub struct Auction {
     pub prices: domain::auction::Prices,
     /// Settlement should appear onchain before this block.
     pub deadline: eth::BlockNo,
-    /// Fee policies for all settled orders
+    /// Fee policies for all orders in the auction. For some orders, there may
+    /// be no fee policies.
     pub fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
 }
