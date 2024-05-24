@@ -401,15 +401,15 @@ Indexes:
 
 ### auction\_orders
 
-Stores all orders that were included in every Auction. A single order can be included in multiple auctions.
+Stores all orders that were included in a given auction. The same order can be included in multiple auctions.
 
  Column     | Type    | Nullable | Details
 ------------|---------|----------|--------
-auction\_id | bigint  | not null | in which auction this price was provided
-order\_uid  | bytea   | not null | order uid of the order that was included in the auction
+auction\_id | bigint  | not null | which auction this order was part of
+order\_uids | bytea[] | not null | order uids that were included in the auction
 
 Indexes:
-- PRIMARY KEY: btree(`auction_uid`, `order_uid`)
+- PRIMARY KEY: btree(`auction_uid`)
 
 ### Enums
 

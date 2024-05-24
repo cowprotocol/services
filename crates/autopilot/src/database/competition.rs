@@ -117,6 +117,21 @@ impl super::Postgres {
         .await
         .context("settlement_call_data::insert")?;
 
+        database::auction_orders::insert(
+            &mut ex,
+            competition.auction_id,
+            competition
+                .competition_table
+                .auction
+                .orders
+                .iter()
+                .map(|order| ByteArray(order.0))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .await
+        .context("auction_orders::insert")?;
+
         ex.commit().await.context("commit")
     }
 }
