@@ -8,7 +8,7 @@ type SolutionId = u64;
 
 pub struct Solution {
     id: SolutionId,
-    account: eth::Address,
+    solver: eth::Address,
     score: Score,
     orders: HashMap<domain::OrderUid, TradedAmounts>,
     // uniform prices for all tokens
@@ -18,14 +18,14 @@ pub struct Solution {
 impl Solution {
     pub fn new(
         id: SolutionId,
-        account: eth::Address,
+        solver: eth::Address,
         score: Score,
         orders: HashMap<domain::OrderUid, TradedAmounts>,
         prices: HashMap<eth::TokenAddress, auction::Price>,
     ) -> Self {
         Self {
             id,
-            account,
+            solver,
             score,
             orders,
             prices,
@@ -36,8 +36,8 @@ impl Solution {
         self.id
     }
 
-    pub fn account(&self) -> eth::Address {
-        self.account
+    pub fn solver(&self) -> eth::Address {
+        self.solver
     }
 
     pub fn score(&self) -> Score {
