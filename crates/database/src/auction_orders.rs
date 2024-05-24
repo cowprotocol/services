@@ -20,7 +20,7 @@ pub async fn insert(
 pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
-) -> Result<Vec<OrderUid>, sqlx::Error> {
+) -> Result<Option<Vec<OrderUid>>, sqlx::Error> {
     const QUERY: &str = r#"SELECT order_uids FROM auction_orders WHERE auction_id = $1;"#;
     let row = sqlx::query_scalar(QUERY)
         .bind(auction_id)
@@ -45,10 +45,10 @@ mod tests {
         insert(&mut db, 1, &auction).await.unwrap();
 
         let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(output, auction);
+        assert_eq!(output, Some(auction));
 
         // non-existent auction
         let output = fetch(&mut db, 2).await.unwrap();
-        assert!(output.is_empty());
+        assert!(output.is_none());
     }
 }
