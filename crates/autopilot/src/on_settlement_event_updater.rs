@@ -180,35 +180,16 @@ impl Inner {
         {
             // temporary to debug and compare with current implementation
             // TODO: use instead of current implementation
-            let settlement =
-                domain::settlement::Settlement::new(hash.into(), &self.eth, &self.persistence)
-                    .await;
+            let transaction = self.eth.transaction(hash.into()).await?;
+            let domain_separator = self.eth.contracts().settlement_domain_separator();
+            let settlement = domain::settlement::Settlement::new(
+                &transaction,
+                domain_separator,
+                &self.persistence,
+            )
+            .await;
 
-            match settlement {
-                Ok(settlement) => {
-                    let scores = settlement
-                        .score()
-                        .map(|score| (score, settlement.competition_score()));
-
-                    match scores {
-                        Ok((score, competition_score)) => {
-                            if score != competition_score {
-                                tracing::warn!(
-                                    ?score,
-                                    ?competition_score,
-                                    "score and competition score mismatch"
-                                );
-                            }
-                        }
-                        Err(err) => {
-                            tracing::error!(?err, "score cant be computed");
-                        }
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(?err, "settlement object error");
-                }
-            }
+            tracing::info!(?settlement, "settlement object");
         }
 
         Postgres::update_settlement_details(&mut ex, update.clone())

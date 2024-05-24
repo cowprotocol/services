@@ -9,10 +9,7 @@ use {
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
     primitive_types::{H160, H256},
-    std::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::HashMap, sync::Arc},
     tracing::Instrument,
 };
 
@@ -141,17 +138,15 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    /// Get auction data related to the given settlement solution.
-    pub async fn get_settlement_auction(
+    /// Get competition data for the given auction id.
+    pub async fn get_competition(
         &self,
-        solution: &domain::settlement::Solution,
-    ) -> Result<domain::settlement::Auction, error::Auction> {
+        auction_id: domain::auction::Id,
+    ) -> Result<domain::settlement::Competition, error::Auction> {
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
 
-        let auction = solution.auction_id();
-
         let (winner, score, deadline) = {
-            let scores = database::settlement_scores::fetch(&mut ex, auction)
+            let scores = database::settlement_scores::fetch(&mut ex, auction_id)
             .await
             .context("fetch scores")?
             // if score is missing, no competition / auction exist for this auction_id
@@ -169,7 +164,7 @@ impl Persistence {
         };
 
         let prices = {
-            let db_prices = database::auction_prices::fetch(&mut ex, auction)
+            let db_prices = database::auction_prices::fetch(&mut ex, auction_id)
                 .await
                 .context("fetch auction prices")?;
 
@@ -185,49 +180,11 @@ impl Persistence {
             prices
         };
 
-        let (fee_policies, missing_orders) = {
-            let mut missing_orders = HashSet::new();
-            let mut fee_policies = HashMap::new();
-            for order in solution.order_uids().cloned() {
-                match database::orders::read_order(&mut ex, &ByteArray(order.0))
-                    .await
-                    .context("fetch order")?
-                {
-                    Some(_) => {
-                        let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
-                            .await
-                            .context("fetch quote")?
-                            .map(dto::quote::into_domain)
-                            .transpose()
-                            .map_err(|_| error::Auction::DbConversion("quote overflow"))?
-                            .ok_or(error::Auction::MissingQuote)?;
-
-                        let policies =
-                            database::fee_policies::fetch(&mut ex, auction, ByteArray(order.0))
-                                .await
-                                .context("fetch fee policies")?;
-
-                        for policy in policies {
-                            let policy = dto::fee_policy::into_domain(policy, &quote)?;
-                            fee_policies
-                                .entry(order)
-                                .or_insert_with(Vec::new)
-                                .push(policy);
-                        }
-                    }
-                    None => {
-                        missing_orders.insert(order);
-                    }
-                }
-            }
-            (fee_policies, missing_orders)
-        };
-
         let solution = {
             // TODO: stabilize the solver competition table to get promised solution.
             // https://github.com/cowprotocol/services/issues/2716
             // for now, this is a `good enough` solution to unblock other tasks.
-            let solver_competition = database::solver_competition::load_by_id(&mut ex, auction)
+            let solver_competition = database::solver_competition::load_by_id(&mut ex, auction_id)
                 .await
                 .context("load solver competition")?
                 .ok_or(error::Auction::SolverCompetition(anyhow::anyhow!(
@@ -281,13 +238,47 @@ impl Persistence {
             competition::Solution::new(0, winner, score, orders, prices)
         };
 
-        Ok(domain::settlement::Auction {
-            winner,
-            score,
-            deadline,
-            prices,
-            missing_orders,
-            fee_policies,
+        // TODO get all orders from auction and all fee policies for each order
+        let fee_policies = {
+            let mut fee_policies = HashMap::new();
+            for order in solution.orders().keys().cloned() {
+                if database::orders::read_order(&mut ex, &ByteArray(order.0))
+                    .await
+                    .context("fetch order")?
+                    .is_some()
+                {
+                    let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
+                        .await
+                        .context("fetch quote")?
+                        .map(dto::quote::into_domain)
+                        .transpose()
+                        .map_err(|_| error::Auction::DbConversion("quote overflow"))?
+                        .ok_or(error::Auction::MissingQuote)?;
+
+                    let policies =
+                        database::fee_policies::fetch(&mut ex, auction_id, ByteArray(order.0))
+                            .await
+                            .context("fetch fee policies")?;
+
+                    for policy in policies {
+                        let policy = dto::fee_policy::into_domain(policy, &quote)?;
+                        fee_policies
+                            .entry(order)
+                            .or_insert_with(Vec::new)
+                            .push(policy);
+                    }
+                }
+            }
+            fee_policies
+        };
+
+        Ok(domain::settlement::Competition {
+            auction: domain::settlement::Auction {
+                id: auction_id,
+                prices,
+                deadline,
+                fee_policies,
+            },
             solution,
         })
     }

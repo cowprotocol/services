@@ -13,9 +13,11 @@ use {
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
 };
 
-/// A single trade executed on-chain, as part of the [`settlement::Solution`].
+pub mod tokenized;
+
+/// A single trade executed on-chain, as part of the [`Settlement`].
 ///
-/// Referenced as [`settlement::solution::Trade`] in the codebase.
+/// Referenced as [`settlement::Trade`] in the codebase.
 #[derive(Debug, Clone)]
 pub struct Trade {
     order_uid: domain::OrderUid,
