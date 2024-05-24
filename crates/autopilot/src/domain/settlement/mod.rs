@@ -8,7 +8,7 @@ mod competition;
 mod trade;
 mod transaction;
 pub use {
-    competition::{Auction, Competition},
+    competition::Auction,
     error::Error,
     trade::{tokenized, Trade},
     transaction::Transaction,
@@ -21,8 +21,7 @@ pub use {
 #[derive(Debug)]
 pub struct Settlement {
     trades: Vec<Trade>,
-    score: domain::competition::Score,
-    competition: Competition,
+    auction: Auction,
 }
 
 impl Settlement {
@@ -78,16 +77,15 @@ impl Settlement {
             ));
         }
 
-        let competition = persistence.get_competition(auction_id).await?;
+        let (auction, solution) = persistence.get_competition(auction_id).await?;
 
         let score = domain::competition::Score::new(
             trades
                 .iter()
                 .map(|trade| {
                     trade.score(
-                        &competition.auction.prices,
-                        competition
-                            .auction
+                        &auction.prices,
+                        auction
                             .fee_policies
                             .get(trade.order_uid())
                             .map(|value| value.as_slice())
@@ -99,7 +97,7 @@ impl Settlement {
         )
         .map_err(error::Score::from)?;
 
-        if score != competition.solution.score() {
+        if score != solution.score() {
             return Err(Error::Score(error::Score::LowerThanPromised));
         }
 
@@ -107,8 +105,7 @@ impl Settlement {
 
         Ok(Self {
             trades,
-            score,
-            competition,
+            auction,
         })
     }
 
@@ -119,14 +116,14 @@ impl Settlement {
     pub fn native_surplus(&self) -> Result<eth::Ether, trade::Error> {
         self.trades
             .iter()
-            .map(|trade| trade.native_surplus(&self.competition.auction.prices))
+            .map(|trade| trade.native_surplus(&self.auction.prices))
             .sum()
     }
 
     pub fn native_fee(&self) -> Result<eth::Ether, trade::Error> {
         self.trades
             .iter()
-            .map(|trade| trade.native_fee(&self.competition.auction.prices))
+            .map(|trade| trade.native_fee(&self.auction.prices))
             .sum()
     }
 }

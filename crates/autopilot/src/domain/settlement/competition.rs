@@ -1,18 +1,9 @@
 //! Competition data related to the specific settlement.
 
 use {
-    crate::domain::{self, competition, eth},
+    crate::domain::{self, eth},
     std::collections::HashMap,
 };
-
-/// Offchain competition data related to a specific settlement that got settled
-/// for it.
-#[derive(Debug)]
-pub struct Competition {
-    pub auction: Auction,
-    /// Winning solution promised during competition.
-    pub solution: competition::Solution,
-}
 
 #[derive(Debug)]
 pub struct Auction {

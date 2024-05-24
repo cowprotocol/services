@@ -142,7 +142,7 @@ impl Persistence {
     pub async fn get_competition(
         &self,
         auction_id: domain::auction::Id,
-    ) -> Result<domain::settlement::Competition, error::Auction> {
+    ) -> Result<(domain::settlement::Auction, domain::competition::Solution), error::Auction> {
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
 
         let (winner, score, deadline) = {
@@ -272,15 +272,15 @@ impl Persistence {
             fee_policies
         };
 
-        Ok(domain::settlement::Competition {
-            auction: domain::settlement::Auction {
+        Ok((
+            domain::settlement::Auction {
                 id: auction_id,
                 prices,
                 deadline,
                 fee_policies,
             },
             solution,
-        })
+        ))
     }
 }
 
