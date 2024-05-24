@@ -24,7 +24,7 @@ pub async fn fetch(
     const QUERY: &str = r#"SELECT order_uids FROM auction_orders WHERE auction_id = $1;"#;
     let row = sqlx::query_scalar(QUERY)
         .bind(auction_id)
-        .fetch_one(ex)
+        .fetch_optional(ex)
         .await?;
     Ok(row)
 }
