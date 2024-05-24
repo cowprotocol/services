@@ -98,30 +98,12 @@ impl Settlement {
         .map_err(error::Score::from)?;
 
         if score != solution.score() {
-            return Err(Error::Score(error::Score::LowerThanPromised));
+            return Err(Error::Score(error::Score::Missmatch));
         }
 
         // TODO implement the rest of the checks
 
         Ok(Self { trades, auction })
-    }
-
-    pub fn order_uids(&self) -> impl Iterator<Item = &crate::domain::OrderUid> {
-        self.trades.iter().map(|trade| trade.order_uid())
-    }
-
-    pub fn native_surplus(&self) -> Result<eth::Ether, trade::Error> {
-        self.trades
-            .iter()
-            .map(|trade| trade.native_surplus(&self.auction.prices))
-            .sum()
-    }
-
-    pub fn native_fee(&self) -> Result<eth::Ether, trade::Error> {
-        self.trades
-            .iter()
-            .map(|trade| trade.native_fee(&self.auction.prices))
-            .sum()
     }
 }
 
@@ -146,8 +128,8 @@ mod error {
         Zero(#[from] domain::competition::ZeroScore),
         /// The solver's score calculation is lower than the promised score
         /// during competition.
-        #[error("score lower than promised during competition")]
-        LowerThanPromised,
+        #[error("score different from score promised during competition")]
+        Missmatch,
         /// Score calculation requires native prices for all tokens in the
         /// solution, so that the surplus can be normalized to native currency.
         #[error("missing native price for token {0:?}")]
