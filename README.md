@@ -123,7 +123,7 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
 
 Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third-party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
 After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
-Because services are only run on Mainnet, Görli, Sepolia, and Gnosis Chain you need to select one of those.
+Because services are only run on Mainnet, Gnosis Chain, Arbitrum One and Sepolia you need to select one of those.
 
 Note that the `node-url` is sensitive data. The `orderbook` and `solver` executables allow you to pass it with the `--node-url` parameter. This is very convenient for our examples but to minimize the possibility of sharing this information by accident you should consider setting the `NODE_URL` environment variable so you don't have to pass the `--node-url` argument to the executables.
 
@@ -178,16 +178,16 @@ The `solver-account` is responsible for signing transactions. Solutions for sett
 
 To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
 
-| Orderbook URL                       | Network      | Environment |
-|-------------------------------------|--------------|-------------|
-| https://barn.api.cow.fi/mainnet/api | Mainnet      | Staging     |
-| https://api.cow.fi/mainnet/api      | Mainnet      | Production  |
-| https://barn.api.cow.fi/goerli/api  | Görli        | Staging     |
-| https://api.cow.fi/goerli/api       | Görli        | Production  |
-| https://barn.api.cow.fi/sepolia/api | Sepolia      | Staging     |
-| https://api.cow.fi/sepolia/api      | Sepolia      | Production  |
-| https://barn.api.cow.fi/xdai/api    | Gnosis Chain | Staging     |
-| https://api.cow.fi/xdai/api         | Gnosis Chain | Production  |
+| Orderbook URL                              | Network      | Environment |
+|--------------------------------------------|--------------|-------------|
+| <https://barn.api.cow.fi/mainnet/api>      | Mainnet      | Staging     |
+| <https://api.cow.fi/mainnet/api>           | Mainnet      | Production  |
+| <https://barn.api.cow.fi/xdai/api>         | Gnosis Chain | Staging     |
+| <https://api.cow.fi/xdai/api>              | Gnosis Chain | Production  |
+| <https://barn.api.cow.fi/arbitrum_one/api> | Arbitrum One | Staging     |
+| <https://api.cow.fi/arbitrum_one/api>      | Arbitrum One | Production  |
+| <https://barn.api.cow.fi/sepolia/api>      | Sepolia      | Staging     |
+| <https://api.cow.fi/sepolia/api>           | Sepolia      | Production  |
 
 Always make sure that the `solver` and the `orderbook` it connects to are configured to use the same network.
 
