@@ -6,7 +6,7 @@ use {
             ChainId,
         },
     },
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, GasPrice},
 };
 
 #[allow(dead_code)]
@@ -63,6 +63,8 @@ impl Authenticator {
         let authenticator_eoa = self.authenticator_eoa.clone();
         let authenticator_address = self.authenticator.address();
         let authenticator_role = self.authenticator_role.clone();
+        let mut byte_array = [0u8; 32];
+        byte_array[31] = 1;
         tokio::task::spawn(async move {
             if let Err(err) = authenticator_role
                 .methods()
@@ -71,10 +73,14 @@ impl Authenticator {
                     0.into(),
                     ethcontract::Bytes(calldata.0),
                     0,
-                    ethcontract::Bytes([0; 32]), // @TODO: populate role
+                    ethcontract::Bytes(byte_array),
                     true,
                 )
                 .from(authenticator_eoa)
+                .gas_price(GasPrice::Eip1559 {
+                    max_fee_per_gas: 1000.into(),
+                    max_priority_fee_per_gas: 5.into(),
+                })
                 .send()
                 .await
             {
