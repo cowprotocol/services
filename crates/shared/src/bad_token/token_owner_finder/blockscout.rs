@@ -22,6 +22,7 @@ impl BlockscoutTokenOwnerFinder {
             5 => "https://eth-goerli.blockscout.com/api",
             100 => "https://blockscout.com/xdai/mainnet/api",
             11155111 => "https://eth-sepolia.blockscout.com/api",
+            // TODO: should arb1 be here too?
             _ => bail!("Unsupported Network"),
         };
 
