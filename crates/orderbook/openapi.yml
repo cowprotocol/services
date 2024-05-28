@@ -7,18 +7,18 @@ servers:
     url: https://api.cow.fi/mainnet
   - description: Mainnet (Staging)
     url: https://barn.api.cow.fi/mainnet
-  - description: Görli (Prod)
-    url: https://api.cow.fi/goerli
-  - description: Görli (Staging)
-    url: https://barn.api.cow.fi/goerli
-  - description: Sepolia (Prod)
-    url: https://api.cow.fi/sepolia
-  - description: Sepolia (Staging)
-    url: https://barn.api.cow.fi/sepolia
   - description: Gnosis Chain (Prod)
     url: https://api.cow.fi/xdai
   - description: Gnosis Chain (Staging)
     url: https://barn.api.cow.fi/xdai
+  - description: Arbitrum One (Prod)
+    url: https://api.cow.fi/arbitrum_one
+  - description: Arbitrum One (Staging)
+    url: https://barn.api.cow.fi/arbitrum_one
+  - description: Sepolia (Prod)
+    url: https://api.cow.fi/sepolia
+  - description: Sepolia (Staging)
+    url: https://barn.api.cow.fi/sepolia
   - description: Local
     url: http://localhost:8080
 paths:
@@ -485,7 +485,7 @@ components:
         format of the JSON expected in the `appData` field is defined
         [here](https://github.com/cowprotocol/app-data).
       type: string
-      example: "{\"version\":\"0.9.0\",\"metadata\":{}}"
+      example: '{"version":"0.9.0","metadata":{}}'
     AppDataHash:
       description: |
         32 bytes encoded as hex with `0x` prefix.
@@ -762,10 +762,10 @@ components:
             - $ref: "#/components/schemas/AppDataHash"
         appDataHash:
           description: |
-           May be set for debugging purposes. If set, this field is compared to what the backend
-           internally calculates as the app data hash based on the contents of `appData`. If the
-           hash does not match, an error is returned. If this field is set, then `appData` **MUST** be
-           a string encoding of a JSON object.
+            May be set for debugging purposes. If set, this field is compared to what the backend
+            internally calculates as the app data hash based on the contents of `appData`. If the
+            hash does not match, an error is returned. If this field is set, then `appData` **MUST** be
+            a string encoding of a JSON object.
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
@@ -935,7 +935,7 @@ components:
           description: |
             Currently executed amount of sell/buy token, depending on the order kind.
           allOf:
-          - $ref: "#/components/schemas/TokenAmount"
+            - $ref: "#/components/schemas/TokenAmount"
         preInteractions:
           description: |
             The pre-interactions that need to be executed before the first execution of the order.
@@ -1564,6 +1564,6 @@ components:
     FeePolicy:
       description: Defines the ways to calculate the protocol fee.
       oneOf:
-        - $ref: '#/components/schemas/Surplus'
-        - $ref: '#/components/schemas/Volume'
-        - $ref: '#/components/schemas/PriceImprovement'
+        - $ref: "#/components/schemas/Surplus"
+        - $ref: "#/components/schemas/Volume"
+        - $ref: "#/components/schemas/PriceImprovement"
