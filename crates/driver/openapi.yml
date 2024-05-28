@@ -336,7 +336,7 @@ components:
           items:
             $ref: "#/components/schemas/Address"
           description: |
-            List of surplus capturing JIT-order owners.
+            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
     SolveResponse:
       description: |
         Response of the solve endpoint.
