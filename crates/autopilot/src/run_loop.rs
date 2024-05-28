@@ -3,8 +3,11 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::{self, order::Class, InvalidPrice},
-            competition::{self},
+            auction::order::Class,
+            competition::{
+                SolutionError,
+                {self},
+            },
             OrderUid,
         },
         infra::{
@@ -24,12 +27,11 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{BTreeMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -125,7 +127,7 @@ impl RunLoop {
 
             // Shuffle so that sorting randomly splits ties.
             solutions.shuffle(&mut rand::thread_rng());
-            solutions.sort_unstable_by_key(|participant| participant.solution.score());
+            solutions.sort_unstable_by_key(|participant| participant.solution.score().get().0);
             solutions
         };
         let competition_simulation_block = self.eth.current_block().borrow().number;
@@ -150,16 +152,16 @@ impl RunLoop {
             self.persistence
                 .store_order_events(order_uids, OrderEventLabel::Considered);
 
-            let winner = solution.account().into();
-            let winning_score = solution.score().get();
+            let winner = solution.solver().into();
+            let winning_score = solution.score().get().0;
             let reference_score = solutions
                 .iter()
                 .nth_back(1)
-                .map(|participant| participant.solution.score().get())
+                .map(|participant| participant.solution.score().get().0)
                 .unwrap_or_default();
             let participants = solutions
                 .iter()
-                .map(|participant| participant.solution.account().into())
+                .map(|participant| participant.solution.solver().into())
                 .collect::<HashSet<_>>();
 
             let mut prices = BTreeMap::new();
@@ -219,8 +221,8 @@ impl RunLoop {
                         let is_winner = solutions.len() - index == 1;
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
-                            solver_address: participant.solution.account().0,
-                            score: Some(Score::Solver(participant.solution.score().get())),
+                            solver_address: participant.solution.solver().0,
+                            score: Some(Score::Solver(participant.solution.score().get().0)),
                             ranking: solutions.len() - index,
                             orders: participant
                                 .solution
@@ -360,7 +362,8 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         request: &solve::Request,
-    ) -> Result<Vec<Result<competition::Solution, SolutionError>>, SolveError> {
+    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
+    {
         let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -368,38 +371,7 @@ impl RunLoop {
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
-
-        Ok(response
-            .solutions
-            .into_iter()
-            .map(|solution| {
-                let mut prices = HashMap::new();
-                for (token, price) in solution.clearing_prices.into_iter() {
-                    prices.insert(token.into(), auction::Price::new(price.into())?);
-                }
-                let orders = solution
-                    .orders
-                    .into_iter()
-                    .map(|(o, amounts)| {
-                        (
-                            o.into(),
-                            competition::TradedAmounts {
-                                sell: amounts.sell_amount.into(),
-                                buy: amounts.buy_amount.into(),
-                            },
-                        )
-                    })
-                    .collect();
-
-                Ok(competition::Solution::new(
-                    solution.solution_id,
-                    solution.submission_address.into(),
-                    NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
-                    orders,
-                    prices,
-                ))
-            })
-            .collect())
+        Ok(response.into_domain())
     }
 
     /// Ask the winning solver to reveal their solution.
@@ -518,10 +490,10 @@ impl RunLoop {
             return auction;
         };
 
-        let tx_receipt = self.eth.transaction_receipt(in_flight.tx_hash.into()).await;
+        let transaction = self.eth.transaction(in_flight.tx_hash.into()).await;
 
-        let prev_settlement_block = match tx_receipt {
-            Ok(receipt) => receipt.block,
+        let prev_settlement_block = match transaction {
+            Ok(transaction) => transaction.block,
             // Could not find the block of the previous settlement, let's be
             // conservative and assume all orders are still in-flight.
             _ => u64::MAX.into(),
@@ -561,18 +533,6 @@ enum SolveError {
     #[error(transparent)]
     Failure(anyhow::Error),
 }
-
-#[derive(Debug, thiserror::Error)]
-enum SolutionError {
-    #[error(transparent)]
-    ZeroScore(#[from] ZeroScoreError),
-    #[error(transparent)]
-    InvalidPrice(#[from] InvalidPrice),
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("the solver proposed a 0-score solution")]
-struct ZeroScoreError;
 
 #[derive(Debug, thiserror::Error)]
 enum RevealError {

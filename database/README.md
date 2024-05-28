@@ -399,6 +399,18 @@ Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)
 - trade\_order\_uid: btree (`order_uid`, `block_number`, `log_index`)
 
+### auction\_orders
+
+Stores all orders that were included in a given auction. The same order can be included in multiple auctions.
+
+ Column     | Type    | Nullable | Details
+------------|---------|----------|--------
+auction\_id | bigint  | not null | which auction this order was part of
+order\_uids | bytea[] | not null | order uids that were included in the auction
+
+Indexes:
+- PRIMARY KEY: btree(`auction_uid`)
+
 ### Enums
 
 #### executiontime
