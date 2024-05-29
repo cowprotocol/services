@@ -68,37 +68,47 @@ async fn execute_rpc<T: DeserializeOwned>(
     client: Client,
     inner: Arc<Inner>,
     id: RequestId,
-    request: &Request,
+    calls: Vec<(Call, Option<String>)>,
 ) -> Result<T, Web3Error> {
-    let body = serde_json::to_string(&request)?;
-    tracing::trace!(name = %inner.name, %id, %body, "executing request");
     let mut request_builder = client
         .post(inner.url.clone())
         .header(header::CONTENT_TYPE, "application/json")
-        .header("X-RPC-REQUEST-ID", id.to_string())
-        .body(body);
-    if let Some(request_id) = observe::request_id::get_task_local_storage() {
-        request_builder = request_builder.header("X-REQUEST-ID", request_id);
-    }
-    match request {
-        Request::Single(Call::MethodCall(method)) => {
-            request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
-        }
-        Request::Batch(calls) => {
-            let methods = calls
-                .iter()
-                .filter_map(|call| match call {
-                    Call::MethodCall(method) => Some(method.method.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            request_builder = request_builder.header("X-RPC-METHOD", methods);
-        }
-        _ => {}
-    }
+        .header("X-RPC-REQUEST-ID", id.to_string());
 
+    let request = if calls.len() == 1 {
+        let (call, trace_id) = calls[0].clone();
+        match (&call, trace_id) {
+            (Call::MethodCall(method), Some(trace_id)) => {
+                request_builder = request_builder.header("X-REQUEST-ID", trace_id);
+                request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
+            }
+            _ => {}
+        }
+        Request::Single(call)
+    } else {
+        let mut calls_vec = Vec::new();
+        let request_metadata = calls
+            .into_iter()
+            .filter_map(|(call, trace_id)| {
+                let next = match (&call, trace_id) {
+                    (Call::MethodCall(method), Some(trace_id)) => {
+                        Some(format!("{}:{}", trace_id, method.method.clone()))
+                    }
+                    _ => None,
+                };
+                calls_vec.push(call);
+                next
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        request_builder = request_builder.header("X-REQUEST-METADATA", request_metadata);
+        Request::Batch(calls_vec)
+    };
+
+    let body = serde_json::to_string(&request)?;
+    tracing::trace!(name = %inner.name, %id, %body, "executing request");
     let response = request_builder
+        .body(body)
         .send()
         .await
         .map_err(|err: reqwest::Error| {
@@ -147,7 +157,8 @@ impl Transport for HttpTransport {
         let (client, inner) = self.new_request();
 
         async move {
-            let output = execute_rpc(client, inner, id, &Request::Single(call)).await?;
+            let trace_id = observe::request_id::get_task_local_storage();
+            let output = execute_rpc(client, inner, id, vec![(call, trace_id)]).await?;
             helpers::to_result_from_output(output)
         }
         .boxed()
@@ -159,7 +170,7 @@ impl BatchTransport for HttpTransport {
 
     fn send_batch<T>(&self, requests: T) -> Self::Batch
     where
-        T: IntoIterator<Item = (RequestId, Call)>,
+        T: IntoIterator<Item = (RequestId, (Call, Option<String>))>,
     {
         // Batch calls don't need an id but it helps associate the response log to the
         // request log.
@@ -168,7 +179,7 @@ impl BatchTransport for HttpTransport {
         let (ids, calls): (Vec<_>, Vec<_>) = requests.into_iter().unzip();
 
         async move {
-            let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
+            let outputs = execute_rpc(client, inner, id, calls).await?;
             handle_batch_response(&ids, outputs)
         }
         .boxed()
