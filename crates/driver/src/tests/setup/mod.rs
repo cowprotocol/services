@@ -769,7 +769,7 @@ impl Setup {
         self
     }
 
-    pub fn set_surplus_capturing_jit_order_owners(
+    pub fn surplus_capturing_jit_order_owners(
         mut self,
         surplus_capturing_jit_order_owners: Vec<H160>,
     ) -> Self {
@@ -836,13 +836,10 @@ impl Setup {
                 .orders
                 .iter()
                 .flat_map(|solution_order| {
-                    jit_orders.iter().filter_map(|o| {
-                        if o.order.name == *solution_order {
-                            Some(&o.order)
-                        } else {
-                            None
-                        }
-                    })
+                    jit_orders
+                        .iter()
+                        .filter(|&o| o.order.name == *solution_order)
+                        .map(|o| &o.order)
                 })
                 .collect::<Vec<_>>();
             let jit_trades = blockchain
