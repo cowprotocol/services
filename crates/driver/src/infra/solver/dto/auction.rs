@@ -21,7 +21,6 @@ use {
         interaction::InteractionData,
         order::{BuyTokenDestination, SellTokenSource},
     },
-    primitive_types::H160,
     serde::Serialize,
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
@@ -309,6 +308,12 @@ impl Auction {
             tokens,
             effective_gas_price: auction.gas_price().effective().into(),
             deadline: auction.deadline().solvers(),
+            surplus_capturing_jit_order_owners: auction
+                .surplus_capturing_jit_order_owners()
+                .iter()
+                .cloned()
+                .map(Into::into)
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -324,6 +329,7 @@ pub struct Auction {
     #[serde_as(as = "serialize::U256")]
     effective_gas_price: eth::U256,
     deadline: chrono::DateTime<chrono::Utc>,
+    surplus_capturing_jit_order_owners: Vec<eth::H160>,
 }
 
 #[serde_as]
@@ -349,8 +355,8 @@ struct Order {
     valid_to: u32,
     kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
-    receiver: Option<H160>,
-    owner: H160,
+    receiver: Option<eth::H160>,
+    owner: eth::H160,
     partially_fillable: bool,
     pre_interactions: Vec<InteractionData>,
     post_interactions: Vec<InteractionData>,

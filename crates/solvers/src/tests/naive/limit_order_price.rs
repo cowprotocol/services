@@ -57,6 +57,7 @@ async fn test() {
             ],
             "effectiveGasPrice": "15000000000",
             "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
