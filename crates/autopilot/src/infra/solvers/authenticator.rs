@@ -66,7 +66,7 @@ impl Authenticator {
         let mut byte_array = [0u8; 32];
         byte_array[31] = 1;
         tokio::task::spawn(async move {
-            if let Err(err) = authenticator_role
+            authenticator_role
                 .methods()
                 .exec_transaction_with_role(
                     authenticator_address,
@@ -83,9 +83,9 @@ impl Authenticator {
                 })
                 .send()
                 .await
-            {
-                tracing::error!(?err, "failed to remove the solver")
-            }
+                .inspect_err(|err| {
+                    tracing::error!(?err, "failed to remove the solver {}", solver.0)
+                })
         });
     }
 }
