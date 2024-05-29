@@ -12,7 +12,7 @@ impl super::Postgres {
             Some(inner) => inner,
             None => return Ok(None),
         };
-        let auction: dto::Auction = serde_json::from_value(json)?;
+        let auction: dto::Auction = serde_json::from_str(&json)?;
         let auction = dto::AuctionWithId { id, auction };
         Ok(Some(auction))
     }

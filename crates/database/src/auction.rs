@@ -14,7 +14,7 @@ RETURNING id
 
 pub async fn load_most_recent(
     ex: &mut PgConnection,
-) -> Result<Option<(AuctionId, JsonValue)>, sqlx::Error> {
+) -> Result<Option<(AuctionId, String)>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT id, json
 FROM auctions
@@ -43,6 +43,7 @@ mod tests {
         let value = JsonValue::Number(1.into());
         let id = save(&mut db, &value).await.unwrap();
         let (id_, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+        let value_ = serde_json::from_str::<JsonValue>(&value_).unwrap();
         assert_eq!(id, id_);
         assert_eq!(value, value_);
 
@@ -50,6 +51,7 @@ mod tests {
         let id_ = save(&mut db, &value).await.unwrap();
         assert_eq!(id + 1, id_);
         let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+        let value_ = serde_json::from_str::<JsonValue>(&value_).unwrap();
         assert_eq!(value, value_);
         assert_eq!(id_, id);
 
@@ -62,6 +64,7 @@ mod tests {
         let id_ = save(&mut db, &value).await.unwrap();
         assert_eq!(id + 1, id_);
         let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+        let value_ = serde_json::from_str::<JsonValue>(&value_).unwrap();
         assert_eq!(value, value_);
         assert_eq!(id_, id);
     }
