@@ -12,6 +12,7 @@ use {
         future::{self, BoxFuture, FutureExt as _},
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
+    itertools::Itertools,
     serde_json::Value,
     std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
     tokio::task::JoinHandle,
@@ -53,7 +54,7 @@ pub struct BufferedTransport<Inner> {
 
 type RpcResult = Result<Value, Web3Error>;
 
-type CallContext = (RequestId, Call, oneshot::Sender<RpcResult>);
+type CallContext = (RequestId, Call, Option<String>, oneshot::Sender<RpcResult>);
 
 impl<Inner> BufferedTransport<Inner>
 where
@@ -84,23 +85,50 @@ where
         tokio::task::spawn(batched_for_each(config, calls, move |batch| {
             let inner = inner.clone();
             async move {
-                let (mut requests, mut senders): (Vec<_>, Vec<_>) = batch
-                    .into_iter()
-                    .filter(|(_, _, sender)| !sender.is_canceled())
-                    .map(|(id, request, sender)| ((id, request), sender))
-                    .unzip();
+                let (mut requests, mut trace_ids, mut senders): (Vec<_>, Vec<_>, Vec<_>) =
+                    itertools::multiunzip(
+                        batch
+                            .into_iter()
+                            .filter(|(_, _, _, sender)| !sender.is_canceled())
+                            .map(|(id, request, trace_id, sender)| {
+                                ((id, request), trace_id, sender)
+                            }),
+                    );
                 match requests.len() {
                     0 => (),
                     1 => {
-                        let ((id, request), sender) = (requests.remove(0), senders.remove(0));
-                        let result = inner.send(id, request).await;
+                        let ((id, request), trace_id, sender) =
+                            (requests.remove(0), trace_ids.remove(0), senders.remove(0));
+                        let result = match trace_id {
+                            Some(trace_id) => {
+                                observe::request_id::set_task_local_storage(
+                                    trace_id,
+                                    inner.send(id, request),
+                                )
+                                .await
+                            }
+                            None => inner.send(id, request).await,
+                        };
                         let _ = sender.send(result);
                     }
                     n => {
-                        let results = inner
-                            .send_batch(requests)
-                            .await
-                            .unwrap_or_else(|err| vec![Err(err); n]);
+                        let request_metadata = requests
+                            .iter()
+                            .zip(trace_ids)
+                            .filter_map(|((_, call), trace_id)| match (call, trace_id) {
+                                (Call::MethodCall(call), Some(trace_id)) => {
+                                    Some(format!("{}:{}", trace_id, call.method))
+                                }
+                                _ => None,
+                            })
+                            .collect_vec()
+                            .join(",");
+                        let results = observe::request_id::set_task_local_storage(
+                            request_metadata,
+                            inner.send_batch(requests),
+                        )
+                        .await
+                        .unwrap_or_else(|err| vec![Err(err); n]);
                         for (sender, result) in senders.into_iter().zip(results) {
                             let _ = sender.send(result);
                         }
@@ -113,7 +141,8 @@ where
     /// Queue a call by sending it over calls channel to the background worker.
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
-        let context = (id, request, sender);
+        let trace_id = observe::request_id::get_task_local_storage();
+        let context = (id, request, trace_id, sender);
         self.calls
             .unbounded_send(context)
             .expect("worker task unexpectedly dropped");
