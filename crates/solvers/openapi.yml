@@ -828,7 +828,7 @@ components:
         - kind
         - target
         - value
-        - calldata
+        - callData
         - inputs
         - outputs
       properties:
@@ -839,7 +839,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        calldata:
+        callData:
           description: |
             The EVM calldata bytes.
           type: string
@@ -881,7 +881,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        calldata:
+        callData:
           description: Hex encoded bytes with `0x` prefix.
           type: string
 
@@ -939,7 +939,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        calldata:
+        callData:
           type: array
           items:
             $ref: "#/components/schemas/CallData"

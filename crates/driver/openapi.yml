@@ -331,6 +331,12 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
+        surplusCapturingJitOrderOwners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
+          description: |
+            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
     SolveResponse:
       description: |
         Response of the solve endpoint.
