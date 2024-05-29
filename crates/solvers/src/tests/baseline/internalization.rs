@@ -75,7 +75,8 @@ async fn trusted_token() {
                 }
             ],
             "effectiveGasPrice": "15000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -188,7 +189,8 @@ async fn untrusted_sell_token() {
                 }
             ],
             "effectiveGasPrice": "15000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -301,7 +303,8 @@ async fn insufficient_balance() {
                 }
             ],
             "effectiveGasPrice": "15000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
