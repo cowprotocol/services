@@ -53,11 +53,7 @@ pub struct BufferedTransport<Inner> {
 
 type RpcResult = Result<Value, Web3Error>;
 
-type CallContext = (
-    RequestId,
-    (Call, Option<String>),
-    oneshot::Sender<RpcResult>,
-);
+type CallContext = (RequestId, Call, oneshot::Sender<RpcResult>);
 
 impl<Inner> BufferedTransport<Inner>
 where
@@ -95,6 +91,11 @@ where
                     .unzip();
                 match requests.len() {
                     0 => (),
+                    1 => {
+                        let ((id, request), sender) = (requests.remove(0), senders.remove(0));
+                        let result = inner.send(id, request).await;
+                        let _ = sender.send(result);
+                    }
                     n => {
                         let results = inner
                             .send_batch(requests)
@@ -112,8 +113,7 @@ where
     /// Queue a call by sending it over calls channel to the background worker.
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
-        let trace_id = observe::request_id::get_task_local_storage();
-        let context = (id, (request, trace_id), sender);
+        let context = (id, request, sender);
         self.calls
             .unbounded_send(context)
             .expect("worker task unexpectedly dropped");
