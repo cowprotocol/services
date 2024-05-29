@@ -16,7 +16,7 @@ pub async fn load_most_recent(
     ex: &mut PgConnection,
 ) -> Result<Option<(AuctionId, String)>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT id, json
+SELECT id, json::text
 FROM auctions
 ORDER BY id DESC
 LIMIT 1
