@@ -12,8 +12,9 @@ use {
         future::{self, BoxFuture, FutureExt as _},
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
+    itertools::Itertools,
     serde_json::Value,
-    std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
+    std::{collections::HashSet, future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
     tokio::task::JoinHandle,
     tracing::Instrument as _,
 };
@@ -53,11 +54,7 @@ pub struct BufferedTransport<Inner> {
 
 type RpcResult = Result<Value, Web3Error>;
 
-type CallContext = (
-    RequestId,
-    (Call, Option<String>),
-    oneshot::Sender<RpcResult>,
-);
+type CallContext = (RequestId, Call, Option<String>, oneshot::Sender<RpcResult>);
 
 impl<Inner> BufferedTransport<Inner>
 where
@@ -88,18 +85,24 @@ where
         tokio::task::spawn(batched_for_each(config, calls, move |batch| {
             let inner = inner.clone();
             async move {
-                let (mut requests, mut senders): (Vec<_>, Vec<_>) = batch
-                    .into_iter()
-                    .filter(|(_, _, sender)| !sender.is_canceled())
-                    .map(|(id, request, sender)| ((id, request), sender))
-                    .unzip();
+                let (requests, trace_ids, senders): (Vec<_>, HashSet<_>, Vec<_>) =
+                    itertools::multiunzip(
+                        batch
+                            .into_iter()
+                            .filter(|(_, _, _, sender)| !sender.is_canceled())
+                            .map(|(id, request, trace_id, sender)| {
+                                ((id, request), trace_id, sender)
+                            }),
+                    );
                 match requests.len() {
                     0 => (),
                     n => {
-                        let results = inner
-                            .send_batch(requests)
-                            .await
-                            .unwrap_or_else(|err| vec![Err(err); n]);
+                        let results = observe::request_id::set_task_local_storage(
+                            trace_ids.iter().flatten().join(","),
+                            inner.send_batch(requests),
+                        )
+                        .await
+                        .unwrap_or_else(|err| vec![Err(err); n]);
                         for (sender, result) in senders.into_iter().zip(results) {
                             let _ = sender.send(result);
                         }
@@ -113,7 +116,7 @@ where
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
         let trace_id = observe::request_id::get_task_local_storage();
-        let context = (id, (request, trace_id), sender);
+        let context = (id, request, trace_id, sender);
         self.calls
             .unbounded_send(context)
             .expect("worker task unexpectedly dropped");

@@ -68,7 +68,7 @@ async fn execute_rpc<T: DeserializeOwned>(
     client: Client,
     inner: Arc<Inner>,
     id: RequestId,
-    calls: Vec<(Call, Option<String>)>,
+    calls: Vec<Call>,
 ) -> Result<T, Web3Error> {
     let mut request_builder = client
         .post(inner.url.clone())
@@ -76,24 +76,14 @@ async fn execute_rpc<T: DeserializeOwned>(
         .header("X-RPC-REQUEST-ID", id.to_string());
 
     let request = if calls.len() == 1 {
-        let (call, trace_id) = calls[0].clone();
-        match (&call, trace_id) {
-            (Call::MethodCall(method), Some(trace_id)) => {
-                request_builder = request_builder.header("X-REQUEST-ID", trace_id);
-                request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
-            }
-            _ => {}
-        }
-        Request::Single(call)
+        Request::Single(calls[0].clone())
     } else {
         let mut calls_vec = Vec::new();
         let request_metadata = calls
             .into_iter()
-            .filter_map(|(call, trace_id)| {
-                let next = match (&call, trace_id) {
-                    (Call::MethodCall(method), Some(trace_id)) => {
-                        Some(format!("{}:{}", trace_id, method.method.clone()))
-                    }
+            .filter_map(|call| {
+                let next = match &call {
+                    Call::MethodCall(method) => Some(format!("{}", method.method.clone())),
                     _ => None,
                 };
                 calls_vec.push(call);
@@ -157,8 +147,7 @@ impl Transport for HttpTransport {
         let (client, inner) = self.new_request();
 
         async move {
-            let trace_id = observe::request_id::get_task_local_storage();
-            let output = execute_rpc(client, inner, id, vec![(call, trace_id)]).await?;
+            let output = execute_rpc(client, inner, id, vec![call]).await?;
             helpers::to_result_from_output(output)
         }
         .boxed()
@@ -170,7 +159,7 @@ impl BatchTransport for HttpTransport {
 
     fn send_batch<T>(&self, requests: T) -> Self::Batch
     where
-        T: IntoIterator<Item = (RequestId, (Call, Option<String>))>,
+        T: IntoIterator<Item = (RequestId, Call)>,
     {
         // Batch calls don't need an id but it helps associate the response log to the
         // request log.

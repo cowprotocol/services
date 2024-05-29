@@ -16,6 +16,8 @@
 //! And when we issue requests to another process we can simply fetch the
 //! current identifier specific to our task and send that along with the
 //! request.
+
+use futures::Future;
 tokio::task_local! {
     pub static REQUEST_ID: String;
 }
@@ -28,6 +30,14 @@ pub fn get_task_local_storage() -> Option<String> {
         id = Some(cell.clone());
     });
     id
+}
+
+// Sets the tasks's local id to the passed in value for the given scope.
+pub async fn set_task_local_storage<F, R>(id: String, scope: F) -> R
+where
+    F: Future<Output = R>,
+{
+    REQUEST_ID.scope(id, scope).await
 }
 
 /// Takes a `tower::Service` and embeds it in a `make_service` function that
