@@ -99,17 +99,19 @@ where
                     1 => {
                         let ((id, request), trace_id, sender) =
                             (requests.remove(0), trace_ids.remove(0), senders.remove(0));
-                        let result = match trace_id {
-                            Some(trace_id) => {
-                                observe::request_id::set_task_local_storage(
-                                    trace_id,
-                                    inner.send(id, request),
-                                )
-                                .await
-                            }
-                            None => inner.send(id, request).await,
-                        };
-                        let _ = sender.send(result);
+                        tokio::spawn(async move {
+                            let result = match trace_id {
+                                Some(trace_id) => {
+                                    observe::request_id::set_task_local_storage(
+                                        trace_id,
+                                        inner.send(id, request),
+                                    )
+                                    .await
+                                }
+                                None => inner.send(id, request).await,
+                            };
+                            let _ = sender.send(result);
+                        });
                     }
                     n => {
                         let request_metadata = requests
@@ -123,15 +125,17 @@ where
                             })
                             .collect_vec()
                             .join(",");
-                        let results = observe::request_id::set_task_local_storage(
-                            request_metadata,
-                            inner.send_batch(requests),
-                        )
-                        .await
-                        .unwrap_or_else(|err| vec![Err(err); n]);
-                        for (sender, result) in senders.into_iter().zip(results) {
-                            let _ = sender.send(result);
-                        }
+                        tokio::spawn(async move {
+                            let results = observe::request_id::set_task_local_storage(
+                                request_metadata,
+                                inner.send_batch(requests),
+                            )
+                            .await
+                            .unwrap_or_else(|err| vec![Err(err); n]);
+                            for (sender, result) in senders.into_iter().zip(results) {
+                                let _ = sender.send(result);
+                            }
+                        });
                     }
                 }
             }
