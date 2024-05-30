@@ -47,14 +47,21 @@ pub struct SettlementEvent {
 pub async fn get_settlement_without_auction(
     ex: &mut PgConnection,
 ) -> Result<Option<SettlementEvent>, sqlx::Error> {
+    Ok(get_settlements_without_auction(ex, 1).await?.pop())
+}
+
+pub async fn get_settlements_without_auction(
+    ex: &mut PgConnection,
+    limit: i64,
+) -> Result<Vec<SettlementEvent>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index, tx_hash
 FROM settlements
 WHERE auction_id IS NULL
 ORDER BY block_number ASC
-LIMIT 1
+LIMIT $1
     "#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    sqlx::query_as(QUERY).bind(limit).fetch_all(ex).await
 }
 
 pub async fn already_processed(

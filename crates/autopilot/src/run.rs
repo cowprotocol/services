@@ -13,7 +13,10 @@ use {
         },
         domain,
         event_updater::EventUpdater,
-        infra::{self, blockchain::ChainId},
+        infra::{
+            self,
+            blockchain::{circuit_breaker::CircuitBreaker, ChainId},
+        },
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
@@ -358,6 +361,31 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
+
+    // Add a circuit breaker listener if configured
+    if let (Some(authenticator_eoa), Some(solvers)) = (
+        args.circuit_breaker.circuit_breaker_authenticator_pk,
+        args.circuit_breaker.circuit_breaker_solvers,
+    ) {
+        let authenticator_eao = ethcontract::Account::Offline(
+            ethcontract::PrivateKey::from_raw(authenticator_eoa.0).unwrap(),
+            None,
+        );
+        let circuit_breaker = CircuitBreaker::new(
+            web3.clone(),
+            chain,
+            eth.contracts().settlement().clone(),
+            authenticator_eao,
+        )
+        .await;
+
+        let circuit_breaker = crate::circuit_breaker::CircuitBreaker::build(
+            circuit_breaker,
+            solvers.into_iter().map(Into::into).collect(),
+            db.clone(),
+        );
+    }
+
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(

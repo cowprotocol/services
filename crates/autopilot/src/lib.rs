@@ -1,5 +1,6 @@
 pub mod arguments;
 pub mod boundary;
+pub mod circuit_breaker;
 pub mod database;
 pub mod decoded_settlement;
 pub mod domain;
