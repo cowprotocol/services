@@ -9,9 +9,10 @@ use {
         settlement_scores::Score,
     },
     derivative::Derivative,
-    model::solver_competition::SolverCompetitionDB,
+    model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
     number::conversions::u256_to_big_decimal,
-    primitive_types::{H160, U256},
+    primitive_types::{H160, H256, U256},
+    sqlx::{types::JsonValue, PgConnection},
     std::collections::{BTreeMap, HashSet},
 };
 
@@ -117,6 +118,52 @@ impl super::Postgres {
         .await
         .context("settlement_call_data::insert")?;
 
+        database::auction_orders::insert(
+            &mut ex,
+            competition.auction_id,
+            competition
+                .competition_table
+                .auction
+                .orders
+                .iter()
+                .map(|order| ByteArray(order.0))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .await
+        .context("auction_orders::insert")?;
+
         ex.commit().await.context("commit")
     }
+
+    pub async fn find_competition(
+        auction_id: AuctionId,
+        ex: &mut PgConnection,
+    ) -> anyhow::Result<Option<SolverCompetitionAPI>> {
+        database::solver_competition::load_by_id(ex, auction_id)
+            .await
+            .context("solver_competition::load_by_id")?
+            .map(|row| {
+                deserialize_solver_competition(
+                    row.json,
+                    row.id,
+                    row.tx_hash.map(|hash| H256(hash.0)),
+                )
+            })
+            .transpose()
+    }
+}
+
+fn deserialize_solver_competition(
+    json: JsonValue,
+    auction_id: model::auction::AuctionId,
+    transaction_hash: Option<H256>,
+) -> anyhow::Result<SolverCompetitionAPI> {
+    let common: SolverCompetitionDB =
+        serde_json::from_value(json).context("deserialize SolverCompetitionDB")?;
+    Ok(SolverCompetitionAPI {
+        auction_id,
+        transaction_hash,
+        common,
+    })
 }

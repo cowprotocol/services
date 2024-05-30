@@ -160,6 +160,7 @@ components:
         address:
           $ref: "#/components/schemas/Address"
         price:
+          nullable: true
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
           description: |
@@ -330,44 +331,61 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
+        surplusCapturingJitOrderOwners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
+          description: |
+            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
     SolveResponse:
       description: |
         Response of the solve endpoint.
-      type: array
-      items:
-        type: object
-        properties:
-          solutionId:
-            description: |
-              The unique identifier of the solution.
-
-              This id is used to identify the solution when executing it.
-            type: integer
-          score:
-            description: |
-              The objective value of the solution.
-            type: number
-          submissionAddress:
-            description: |
-              The address that will be used to submit the solution.
-            $ref: "#/components/schemas/Address"
-          orders:
-            description: executed orders
-            type: array
-            items:
-              type: object
-              description: |
-                Mapping of order uid to net executed amount (including all fees).
-              additionalProperties:
-                $ref: "#/components/schemas/TokenAmount"
-          clearingPrices:
-            description: |
-              Mapping of hex token address to price.
-
-              The prices of tokens for settled user orders as passed to the settlement contract.
+      type: object
+      properties:
+        solutions:
+          type: array
+          items:
             type: object
-            additionalProperties:
-              $ref: "#/components/schemas/BigUint"
+            properties:
+              solutionId:
+                description: |
+                  The unique identifier of the solution.
+    
+                  This id is used to identify the solution when executing it.
+                type: string
+                example: "1"
+              score:
+                description: |
+                  The objective value of the solution.
+                type: string
+                example: "100"
+              submissionAddress:
+                description: |
+                  The address that will be used to submit the solution.
+                $ref: "#/components/schemas/Address"
+              orders:
+                description: |
+                  Mapping of order uid to net executed amount (including all fees).
+                additionalProperties:
+                  type: object
+                  properties:
+                    sellAmount:
+                      type: string
+                      description: The effective amount that left the user's wallet including all fees.
+                    buyAmount:
+                      type: string
+                      description: The effective amount the user received after all fees.
+              clearingPrices:
+                description: |
+                  Mapping of hex token address to price.
+    
+                  The prices of tokens for settled user orders as passed to the settlement contract.
+                type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/BigUint"
+
+              gas:
+                type: integer
     Solution:
       description: Request to the settle and reveal endpoint.
       type: object

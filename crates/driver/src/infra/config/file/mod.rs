@@ -588,7 +588,7 @@ fn default_http_timeout() -> Duration {
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum GasEstimatorType {
     #[default]
     Native,

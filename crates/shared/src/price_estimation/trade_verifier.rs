@@ -311,7 +311,7 @@ impl TradeVerifying for TradeVerifier {
                     tracing::warn!(
                         ?err,
                         estimate = ?trade,
-                        "failed verification; returning unferified estimate"
+                        "failed verification; returning unverified estimate"
                     );
                     Ok(estimate)
                 }
