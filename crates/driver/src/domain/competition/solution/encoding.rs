@@ -124,13 +124,30 @@ pub fn tx(
             }
             super::Trade::Jit(trade) => {
                 (
-                    Price {
+                    if auction
+                        .surplus_capturing_jit_order_owners()
+                        .contains(&trade.order().signature.signer)
+                    {
+                        // COW Amm JIT orders are matched at UCP prices
+                        Price {
+                            sell_token: trade.order().sell.token.into(),
+                            sell_price: solution
+                                .clearing_price(trade.order().sell.token)
+                                .ok_or(Error::InvalidClearingPrice(trade.order().sell.token))?,
+                            buy_token: trade.order().buy.token.into(),
+                            buy_price: solution
+                                .clearing_price(trade.order().buy.token)
+                                .ok_or(Error::InvalidClearingPrice(trade.order().buy.token))?,
+                        }
+                    } else {
                         // Jit orders are matched at limit price, so the sell token is worth
                         // buy.amount and vice versa
-                        sell_token: trade.order().sell.token.into(),
-                        sell_price: trade.order().buy.amount.into(),
-                        buy_token: trade.order().buy.token.into(),
-                        buy_price: trade.order().sell.amount.into(),
+                        Price {
+                            sell_token: trade.order().sell.token.into(),
+                            sell_price: trade.order().buy.amount.into(),
+                            buy_token: trade.order().buy.token.into(),
+                            buy_price: trade.order().sell.amount.into(),
+                        }
                     },
                     Trade {
                         // indices are set below
