@@ -1,6 +1,6 @@
 use {
-    self::trade::ClearingPrices,
-    super::auction,
+    self::trade::{ClearingPrices, Fee, Fulfillment},
+    super::{auction, order::Partial},
     crate::{
         boundary,
         domain::{
@@ -65,7 +65,62 @@ impl Solution {
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, error::Solution> {
+        let trades = trades
+            .into_iter()
+            .map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => Trade::Fulfillment(fulfillment),
+                Trade::Jit(jit) => {
+                    if surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
+                        // COW Amm JIT orders behave like Fulfillment orders. They are surplus
+                        // capturing, pay network fees and contribute to score of a solution.
+                        Trade::Fulfillment(
+                            Fulfillment::new(
+                                competition::Order {
+                                    uid: jit.order().uid, // todo get
+                                    kind: order::Kind::Limit,
+                                    side: jit.order().side,
+                                    sell: jit.order().sell,
+                                    buy: jit.order().buy,
+                                    signature: jit.order().signature,
+                                    receiver: Some(jit.order().receiver),
+                                    valid_to: jit.order().valid_to,
+                                    app_data: jit.order().app_data,
+                                    partial: match jit.order().partially_fillable {
+                                        false => Partial::No,
+                                        true => Partial::Yes {
+                                            available: match jit.order().side {
+                                                order::Side::Sell => {
+                                                    jit.order().sell.amount.0.into()
+                                                }
+                                                order::Side::Buy => jit.order().buy.amount.0.into(),
+                                            },
+                                        },
+                                    },
+                                    pre_interactions: vec![],
+                                    post_interactions: vec![],
+                                    sell_token_balance: jit.order().sell_token_balance,
+                                    buy_token_balance: jit.order().buy_token_balance,
+                                    protocol_fees: vec![],
+                                },
+                                match jit.order().side {
+                                    order::Side::Buy => jit.executed(),
+                                    order::Side::Sell => {
+                                        (jit.executed().0 - jit.order().fee.0).into()
+                                    }
+                                },
+                                Fee::Dynamic(jit.order().fee),
+                            )
+                            .unwrap(), // todo fix
+                        )
+                    } else {
+                        Trade::Jit(jit)
+                    }
+                }
+            })
+            .collect();
+
         let solution = Self {
             id,
             trades,
