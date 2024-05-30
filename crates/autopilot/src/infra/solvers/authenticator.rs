@@ -74,6 +74,8 @@ impl Manager {
                 )
                 .from(authenticator_eoa)
                 .gas_price(GasPrice::Eip1559 {
+                    // These are arbitrary high numbers that should be enough for a tx to be settled
+                    // anytime.
                     max_fee_per_gas: 1000.into(),
                     max_priority_fee_per_gas: 5.into(),
                 })
