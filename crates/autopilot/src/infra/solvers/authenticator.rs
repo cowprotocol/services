@@ -11,7 +11,7 @@ use {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub struct Authenticator {
+pub struct Manager {
     /// The authenticator contract that decides which solver is allowed to
     /// submit settlements.
     authenticator: contracts::GPv2AllowListAuthentication,
@@ -21,18 +21,13 @@ pub struct Authenticator {
     authenticator_eoa: ethcontract::Account,
 }
 
-///  Authenticator specific addresses
-pub struct Addresses {
-    pub authenticator_eoa: eth::H256,
-}
-
-impl Authenticator {
+impl Manager {
     /// Creates an authenticator which can remove solvers from the allow-list
     pub async fn new(
         web3: DynWeb3,
         chain: ChainId,
         contracts: Contracts,
-        addresses: Addresses,
+        authenticator_pk: eth::H256,
     ) -> Self {
         let authenticator_role = contracts::Roles::at(
             &web3,
@@ -43,7 +38,7 @@ impl Authenticator {
             authenticator: contracts.authenticator().clone(),
             authenticator_role,
             authenticator_eoa: ethcontract::Account::Offline(
-                ethcontract::PrivateKey::from_raw(addresses.authenticator_eoa.0).unwrap(),
+                ethcontract::PrivateKey::from_raw(authenticator_pk.0).unwrap(),
                 None,
             ),
         }
@@ -63,9 +58,10 @@ impl Authenticator {
         let authenticator_eoa = self.authenticator_eoa.clone();
         let authenticator_address = self.authenticator.address();
         let authenticator_role = self.authenticator_role.clone();
-        let mut byte_array = [0u8; 32];
-        byte_array[31] = 1;
         tokio::task::spawn(async move {
+            // This value comes from the TX posted in the issue: https://github.com/cowprotocol/services/issues/2667
+            let mut byte_array = [0u8; 32];
+            byte_array[31] = 1;
             authenticator_role
                 .methods()
                 .exec_transaction_with_role(
@@ -83,9 +79,7 @@ impl Authenticator {
                 })
                 .send()
                 .await
-                .inspect_err(|err| {
-                    tracing::error!(?err, "failed to remove the solver {}", solver.0)
-                })
+                .inspect_err(|err| tracing::error!(?solver, ?err, "failed to remove the solver"))
         });
     }
 }
