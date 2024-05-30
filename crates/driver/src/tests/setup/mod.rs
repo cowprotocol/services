@@ -866,6 +866,8 @@ impl Setup {
                 quote: self.quote,
                 fee_handler: solver.fee_handler,
                 private_key: solver.private_key.clone(),
+                expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
+                    .clone(),
             })
             .await;
 

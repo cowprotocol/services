@@ -41,6 +41,7 @@ pub struct Config<'a> {
     pub quote: bool,
     pub fee_handler: FeeHandler,
     pub private_key: ethcontract::PrivateKey,
+    pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 impl Solver {
@@ -421,7 +422,7 @@ impl Solver {
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline.solvers(),
-                        "surplusCapturingJitOrderOwners": [],
+                        "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
