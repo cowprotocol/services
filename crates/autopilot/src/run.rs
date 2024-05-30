@@ -15,7 +15,7 @@ use {
         event_updater::EventUpdater,
         infra::{
             self,
-            blockchain::{circuit_breaker::CircuitBreaker, ChainId},
+            blockchain::{authenticator, ChainId},
         },
         run_loop::RunLoop,
         shadow,
@@ -363,26 +363,21 @@ pub async fn run(args: Arguments) {
     ));
 
     // Add a circuit breaker listener if configured
-    if let (Some(authenticator_eoa), Some(solvers)) = (
+    if let (Some(authenticator_pk), Some(solvers)) = (
         args.circuit_breaker.circuit_breaker_authenticator_pk,
         args.circuit_breaker.circuit_breaker_solvers,
     ) {
-        let authenticator_eao = ethcontract::Account::Offline(
-            ethcontract::PrivateKey::from_raw(authenticator_eoa.0).unwrap(),
-            None,
-        );
-        let circuit_breaker = CircuitBreaker::new(
+        let circuit_breaker = authenticator::Manager::new(
             web3.clone(),
             chain,
-            eth.contracts().settlement().clone(),
-            authenticator_eao,
+            eth.contracts().clone(),
+            authenticator_pk,
         )
         .await;
 
-        let circuit_breaker = crate::circuit_breaker::CircuitBreaker::build(
+        let _circuit_breaker = crate::circuit_breaker::CircuitBreaker::build(
             circuit_breaker,
             solvers.into_iter().map(Into::into).collect(),
-            db.clone(),
         );
     }
 
