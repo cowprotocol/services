@@ -3,7 +3,7 @@ use {
         setup::{colocation::SolverEngine, *},
         tx,
     },
-    ethcontract::{prelude::U256, H160},
+    ethcontract::prelude::U256,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -98,8 +98,8 @@ async fn single_limit_order_test(web3: Web3) {
     let solution = Solution {
         id: 0,
         prices: HashMap::from([
-            (H160::from(token_a.address()), to_wei(1)),
-            (H160::from(token_b.address()), to_wei(1)),
+            (token_a.address(), to_wei(1)),
+            (token_b.address(), to_wei(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
@@ -107,11 +107,11 @@ async fn single_limit_order_test(web3: Web3) {
                     owner: trader_a.address(),
                     sell: Asset {
                         amount: to_wei(10),
-                        token: token_b.address().into(),
+                        token: token_b.address(),
                     },
                     buy: Asset {
                         amount: to_wei(1),
-                        token: token_a.address().into(),
+                        token: token_a.address(),
                     },
                     kind: OrderKind::Sell,
                     partially_fillable: false,
