@@ -3,6 +3,7 @@ mod deploy;
 #[macro_use]
 pub mod onchain_components;
 mod services;
+mod solver;
 
 use {
     crate::nodes::{Node, NODE_HOST},
@@ -19,7 +20,7 @@ use {
     },
     tempfile::TempPath,
 };
-pub use {deploy::*, onchain_components::*, services::*};
+pub use {deploy::*, onchain_components::*, services::*, solver::*};
 
 /// Create a temporary file with the given content.
 pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {

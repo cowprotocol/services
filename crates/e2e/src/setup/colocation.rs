@@ -1,7 +1,9 @@
 use {
-    crate::{nodes::NODE_HOST, setup::*},
+    crate::setup::*,
     ethcontract::H160,
     reqwest::Url,
+    solvers_dto::solution::Solution,
+    std::net::SocketAddr,
     tokio::task::JoinHandle,
 };
 
@@ -31,6 +33,22 @@ async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
     tokio::task::spawn(async move {
         let _config_file = config_file;
         solvers::run(args, Some(bind)).await;
+    });
+
+    let solver_addr = bind_receiver.await.unwrap();
+    format!("http://{solver_addr}").parse().unwrap()
+}
+
+pub async fn start_mock_solver(solution: Solution) -> Url {
+    let config = Config {
+        log: "warn,solvers=debug,shared=debug,model=debug,solver=debug".to_string(),
+        addr: SocketAddr::from(([0, 0, 0, 0], 0)),
+        solution,
+    };
+
+    let (bind, bind_receiver) = tokio::sync::oneshot::channel();
+    tokio::task::spawn(async move {
+        solver::run_mock(config, Some(bind)).await;
     });
 
     let solver_addr = bind_receiver.await.unwrap();
