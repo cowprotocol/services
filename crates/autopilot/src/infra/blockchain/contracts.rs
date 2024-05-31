@@ -5,13 +5,15 @@ pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
-    authenticator: contracts::GPv2AllowListAuthentication,
 
+    /// The authenticator contract that decides which solver is allowed to
+    /// submit settlements.
+    authenticator: contracts::GPv2AllowListAuthentication,
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: domain::eth::DomainSeparator,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Addresses {
     pub settlement: Option<H160>,
     pub weth: Option<H160>,

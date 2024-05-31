@@ -641,6 +641,42 @@ fn main() {
     });
     generate_contract("GnosisSafeProxy");
     generate_contract("GnosisSafeProxyFactory");
+    generate_contract_with_config("Roles", |builder| {
+        builder
+            .contract_mod_override("roles")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x9646fDAD06d3e24444381f44362a3B0eB343D337"),
+                    // <https://etherscan.io/tx/0x351ecf2966f8cdd54e1de1d4cb326217fa89f6064231dfc1fe56417b9b48e942>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(18692162)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x9646fDAD06d3e24444381f44362a3B0eB343D337"),
+                    // <https://gnosisscan.io/tx/0x4b1ec57c4048afd40904ea9b91dad38ec18d69ea0db965d624ffdd4abd284c96>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(31222929)),
+                },
+            )
+            .add_network(
+                SEPOLIA,
+                Network {
+                    address: addr("0x9646fDAD06d3e24444381f44362a3B0eB343D337"),
+                    // <https://sepolia.etherscan.io/tx/0x516f0f6b8ac669cb5ca3962833e520274169c1463da354be9faa2cb0e6afa8a6>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(4884885)),
+                },
+            )
+            .add_network(
+                ARBITRUM_ONE,
+                Network {
+                    address: addr("0x9646fDAD06d3e24444381f44362a3B0eB343D337"),
+                    // <https://arbiscan.io/tx/0x3860d6091e1baf8a9ba16e58ec437ec3644db2f4c0d9e2ba7fe37cfa0a4fa748>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(176504820)),
+                },
+            )
+    });
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
