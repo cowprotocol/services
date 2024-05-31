@@ -75,7 +75,8 @@ async fn uniswap() {
                 }
             ],
             "effectiveGasPrice": "15000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -247,7 +248,8 @@ async fn balancer_weighted() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -401,7 +403,8 @@ async fn balancer_weighted_v3plus() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -544,7 +547,8 @@ async fn distant_convergence() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -703,7 +707,8 @@ async fn same_path() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -866,7 +871,8 @@ async fn balancer_stable() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 

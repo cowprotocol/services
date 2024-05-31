@@ -21,6 +21,7 @@ pub struct Auction {
     #[serde_as(as = "HexOrDecimalU256")]
     pub effective_gas_price: U256,
     pub deadline: chrono::DateTime<chrono::Utc>,
+    pub surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 #[serde_as]

@@ -95,7 +95,8 @@ async fn weighted() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -238,7 +239,8 @@ async fn weighted_v3plus() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -398,7 +400,8 @@ async fn stable() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -573,7 +576,8 @@ async fn composable_stable_v4() {
                 },
             ],
             "effectiveGasPrice": "1000000000",
-            "deadline": "2106-01-01T00:00:00.000Z"
+            "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
