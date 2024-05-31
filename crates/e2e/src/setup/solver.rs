@@ -55,13 +55,11 @@ impl Mock {
 
 #[derive(Debug)]
 pub struct Config {
-    pub log: String,
     pub addr: SocketAddr,
     pub solution: Solution,
 }
 
 pub async fn run_mock(config: Config, bind: Option<oneshot::Sender<SocketAddr>>) {
-    observe::tracing::initialize_reentrant(&config.log);
     tracing::info!("running mock solver engine with {config:#?}");
 
     let solver = Mock::new(config.solution);

@@ -41,7 +41,6 @@ async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
 
 pub async fn start_mock_solver(solution: Solution) -> Url {
     let config = Config {
-        log: "warn,solvers=debug,shared=debug,model=debug,solver=debug".to_string(),
         addr: SocketAddr::from(([0, 0, 0, 0], 0)),
         solution,
     };
