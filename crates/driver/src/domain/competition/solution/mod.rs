@@ -73,17 +73,17 @@ impl Solution {
                 Trade::Fulfillment(fulfillment) => Trade::Fulfillment(fulfillment),
                 Trade::Jit(jit) => {
                     if surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
-                        // COW Amm JIT orders behave like Fulfillment orders. They are surplus
-                        // capturing, pay network fees and contribute to score of a solution.
+                        // Surplus capturing JIT orders behave like Fulfillment orders. They capture
+                        // surplus, pay network fees and contribute to score of a solution.
                         Trade::Fulfillment(
                             Fulfillment::new(
                                 competition::Order {
-                                    uid: jit.order().uid, // todo get
+                                    uid: recover_uid_from_jit_trade_order(&jit),
                                     kind: order::Kind::Limit,
                                     side: jit.order().side,
                                     sell: jit.order().sell,
                                     buy: jit.order().buy,
-                                    signature: jit.order().signature,
+                                    signature: jit.order().signature.clone(),
                                     receiver: Some(jit.order().receiver),
                                     valid_to: jit.order().valid_to,
                                     app_data: jit.order().app_data,

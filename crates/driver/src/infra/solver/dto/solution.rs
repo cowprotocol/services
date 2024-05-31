@@ -224,6 +224,7 @@ impl Solutions {
                     weth,
                     solution.gas.map(|gas| eth::Gas(gas.into())),
                     solver_config.fee_handler,
+                    auction.surplus_capturing_jit_order_owners(),
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
@@ -277,6 +278,49 @@ impl Solutions {
             )
             .map_err(|e| super::Error(e.to_string()))
             .map(Into::into)
+    }
+
+    /// Function to recover the order uid of a JIT order
+    fn recover_uid_from_jit_trade_order(
+        jit: &JitTrade,
+        signature: &competition::order::Signature,
+        domain: &eth::DomainSeparator,
+    ) -> Result<crate::domain::competition::order::Uid, super::Error> {
+        let order_data = OrderData {
+            sell_token: jit.order.sell_token,
+            buy_token: jit.order.buy_token,
+            receiver: Some(jit.order.receiver),
+            sell_amount: jit.order.sell_amount,
+            buy_amount: jit.order.buy_amount,
+            valid_to: jit.order.valid_to,
+            app_data: AppDataHash(jit.order.app_data),
+            fee_amount: jit.order.fee_amount,
+            kind: match jit.order.kind {
+                Kind::Sell => OrderKind::Sell,
+                Kind::Buy => OrderKind::Buy,
+            },
+            partially_fillable: jit.order.partially_fillable,
+            sell_token_balance: match jit.order.sell_token_balance {
+                SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                SellTokenBalance::Internal => SellTokenSource::Internal,
+                SellTokenBalance::External => SellTokenSource::External,
+            },
+            buy_token_balance: match jit.order.buy_token_balance {
+                BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
+                BuyTokenBalance::Internal => BuyTokenDestination::Internal,
+            },
+        };
+
+        let owner = signature
+            .to_boundary_signature()
+            .recover_owner(
+                jit.order.signature.as_slice(),
+                &DomainSeparator(domain.0),
+                &order_data.hash_struct(),
+            )
+            .map_err(|e| super::Error(e.to_string()))?;
+
+        Ok(order_data.uid(&DomainSeparator(domain.0), &owner).0.into())
     }
 }
 
