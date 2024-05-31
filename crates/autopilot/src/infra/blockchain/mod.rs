@@ -12,6 +12,7 @@ use {
     url::Url,
 };
 
+pub mod authenticator;
 pub mod contracts;
 
 /// Chain ID as defined by EIP-155.
