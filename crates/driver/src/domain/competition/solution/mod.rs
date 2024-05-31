@@ -56,7 +56,7 @@ impl Solution {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
-        trades: Vec<Trade>,
+        mut trades: Vec<Trade>,
         prices: Prices,
         pre_interactions: Vec<eth::Interaction>,
         interactions: Vec<Interaction>,
@@ -67,59 +67,63 @@ impl Solution {
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, error::Solution> {
-        let trades = trades
-            .into_iter()
-            .map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => Ok(Trade::Fulfillment(fulfillment)),
-                Trade::Jit(jit) => {
-                    if surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
-                        // Surplus capturing JIT orders behave like Fulfillment orders. They capture
-                        // surplus, pay network fees and contribute to score of a solution.
-                        Ok(Trade::Fulfillment(
-                            Fulfillment::new(
-                                competition::Order {
-                                    uid: jit.order().uid,
-                                    kind: order::Kind::Limit,
-                                    side: jit.order().side,
-                                    sell: jit.order().sell,
-                                    buy: jit.order().buy,
-                                    signature: jit.order().signature.clone(),
-                                    receiver: Some(jit.order().receiver),
-                                    valid_to: jit.order().valid_to,
-                                    app_data: jit.order().app_data,
-                                    partial: match jit.order().partially_fillable {
-                                        false => Partial::No,
-                                        true => Partial::Yes {
-                                            available: match jit.order().side {
-                                                order::Side::Sell => {
-                                                    jit.order().sell.amount.0.into()
-                                                }
-                                                order::Side::Buy => jit.order().buy.amount.0.into(),
-                                            },
-                                        },
-                                    },
-                                    pre_interactions: vec![],
-                                    post_interactions: vec![],
-                                    sell_token_balance: jit.order().sell_token_balance,
-                                    buy_token_balance: jit.order().buy_token_balance,
-                                    protocol_fees: vec![],
+        // Surplus capturing JIT orders behave like Fulfillment orders. They capture
+        // surplus, pay network fees and contribute to score of a solution.
+        // To make sure that all the same logic and checks get applied we convert them
+        // right away.
+        for trade in &mut trades {
+            let Trade::Jit(jit) = trade else { continue };
+            if !surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
+                continue;
+            }
+
+            *trade = Trade::Fulfillment(
+                Fulfillment::new(
+                    competition::Order {
+                        uid: jit.order().uid,
+                        kind: order::Kind::Limit,
+                        side: jit.order().side,
+                        sell: jit.order().sell,
+                        buy: jit.order().buy,
+                        signature: jit.order().signature.clone(),
+                        receiver: Some(jit.order().receiver),
+                        valid_to: jit.order().valid_to,
+                        app_data: jit.order().app_data,
+                        partial: match jit.order().partially_fillable {
+                            false => Partial::No,
+                            true => Partial::Yes {
+                                available: match jit.order().side {
+                                    order::Side::Sell => jit.order().sell.amount.0.into(),
+                                    order::Side::Buy => jit.order().buy.amount.0.into(),
                                 },
-                                match jit.order().side {
-                                    order::Side::Buy => jit.executed(),
-                                    order::Side::Sell => {
-                                        (jit.executed().0 - jit.order().fee.0).into()
-                                    }
-                                },
-                                Fee::Dynamic(jit.order().fee),
-                            )
-                            .map_err(error::Solution::InvalidJitTrade)?,
-                        ))
-                    } else {
-                        Ok(Trade::Jit(jit))
-                    }
-                }
-            })
-            .collect::<Result<Vec<_>, error::Solution>>()?;
+                            },
+                        },
+                        pre_interactions: vec![],
+                        post_interactions: vec![],
+                        sell_token_balance: jit.order().sell_token_balance,
+                        buy_token_balance: jit.order().buy_token_balance,
+                        protocol_fees: vec![],
+                    },
+                    match jit.order().side {
+                        order::Side::Buy => jit.executed(),
+                        order::Side::Sell => jit
+                            .executed()
+                            .0
+                            .checked_sub(jit.order().fee.0)
+                            .ok_or(error::Solution::InvalidJitTrade(
+                                error::Trade::InvalidExecutedAmount,
+                            ))?
+                            .into(),
+                    },
+                    Fee::Dynamic(jit.order().fee),
+                )
+                .map_err(error::Solution::InvalidJitTrade)?,
+            );
+            tracing::debug!(
+                fulfillment = ?trade,
+                "converted surplus capturing JIT trade into fulfillment"
+            );
+        }
 
         let solution = Self {
             id,
