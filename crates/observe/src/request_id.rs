@@ -31,7 +31,7 @@ pub fn get_task_local_storage() -> Option<String> {
     id
 }
 
-// Sets the tasks's local id to the passed in value for the given scope.
+/// Sets the tasks's local id to the passed in value for the given scope.
 pub async fn set_task_local_storage<F, R>(id: String, scope: F) -> R
 where
     F: Future<Output = R>,
