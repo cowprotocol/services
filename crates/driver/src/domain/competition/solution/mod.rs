@@ -70,15 +70,15 @@ impl Solution {
         let trades = trades
             .into_iter()
             .map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => Trade::Fulfillment(fulfillment),
+                Trade::Fulfillment(fulfillment) => Ok(Trade::Fulfillment(fulfillment)),
                 Trade::Jit(jit) => {
                     if surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
                         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
                         // surplus, pay network fees and contribute to score of a solution.
-                        Trade::Fulfillment(
+                        Ok(Trade::Fulfillment(
                             Fulfillment::new(
                                 competition::Order {
-                                    uid: recover_uid_from_jit_trade_order(&jit),
+                                    uid: jit.order().uid,
                                     kind: order::Kind::Limit,
                                     side: jit.order().side,
                                     sell: jit.order().sell,
@@ -112,14 +112,14 @@ impl Solution {
                                 },
                                 Fee::Dynamic(jit.order().fee),
                             )
-                            .unwrap(), // todo fix
-                        )
+                            .map_err(error::Solution::InvalidJitTrade)?,
+                        ))
                     } else {
-                        Trade::Jit(jit)
+                        Ok(Trade::Jit(jit))
                     }
                 }
             })
-            .collect();
+            .collect::<Result<Vec<_>, error::Solution>>()?;
 
         let solution = Self {
             id,
@@ -610,6 +610,8 @@ pub mod error {
         InvalidClearingPrices,
         #[error(transparent)]
         ProtocolFee(#[from] fee::Error),
+        #[error("invalid JIT trade")]
+        InvalidJitTrade(Trade),
     }
 
     #[derive(Debug, thiserror::Error)]

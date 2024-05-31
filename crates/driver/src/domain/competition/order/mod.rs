@@ -370,6 +370,7 @@ pub struct Jit {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
+    pub uid: Uid,
 }
 
 impl Jit {

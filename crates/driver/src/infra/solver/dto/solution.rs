@@ -61,6 +61,9 @@ impl Solutions {
                             Trade::Jit(jit) => Ok(competition::solution::Trade::Jit(
                                 competition::solution::trade::Jit::new(
                                     competition::order::Jit {
+                                        uid: jit.order.uid(
+                                            &solver.eth.contracts().settlement_domain_separator(),
+                                        )?,
                                         sell: eth::Asset {
                                             amount: jit.order.sell_amount.into(),
                                             token: jit.order.sell_token.into(),
@@ -97,32 +100,9 @@ impl Solutions {
                                                 competition::order::BuyTokenBalance::Internal
                                             }
                                         },
-                                        signature: {
-                                            let mut signature = competition::order::Signature {
-                                                scheme: match jit.order.signing_scheme {
-                                                    SigningScheme::Eip712 => {
-                                                        competition::order::signature::Scheme::Eip712
-                                                    }
-                                                    SigningScheme::EthSign => {
-                                                        competition::order::signature::Scheme::EthSign
-                                                    }
-                                                    SigningScheme::PreSign => {
-                                                        competition::order::signature::Scheme::PreSign
-                                                    }
-                                                    SigningScheme::Eip1271 => {
-                                                        competition::order::signature::Scheme::Eip1271
-                                                    }
-                                                },
-                                                data: jit.order.signature.clone().into(),
-                                                signer: Default::default(),
-                                            };
-
-                                            // Recover the signer from the order signature
-                                            let signer = Self::recover_signer_from_jit_trade_order(&jit, &signature, solver.eth.contracts().settlement_domain_separator())?;
-                                            signature.signer = signer;
-
-                                            signature
-                                        },
+                                        signature: jit.order.signature(
+                                            &solver.eth.contracts().settlement_domain_separator(),
+                                        )?,
                                     },
                                     jit.executed_amount.into(),
                                 )
@@ -233,94 +213,12 @@ impl Solutions {
                     competition::solution::error::Solution::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
                     }
+                    competition::solution::error::Solution::InvalidJitTrade(err) => {
+                        super::Error(format!("invalid jit trade: {err}"))
+                    }
                 })
             })
             .collect()
-    }
-
-    /// Function to recover the signer of a JIT order
-    fn recover_signer_from_jit_trade_order(
-        jit: &JitTrade,
-        signature: &competition::order::Signature,
-        domain: &eth::DomainSeparator,
-    ) -> Result<eth::Address, super::Error> {
-        let order_data = OrderData {
-            sell_token: jit.order.sell_token,
-            buy_token: jit.order.buy_token,
-            receiver: Some(jit.order.receiver),
-            sell_amount: jit.order.sell_amount,
-            buy_amount: jit.order.buy_amount,
-            valid_to: jit.order.valid_to,
-            app_data: AppDataHash(jit.order.app_data),
-            fee_amount: jit.order.fee_amount,
-            kind: match jit.order.kind {
-                Kind::Sell => OrderKind::Sell,
-                Kind::Buy => OrderKind::Buy,
-            },
-            partially_fillable: jit.order.partially_fillable,
-            sell_token_balance: match jit.order.sell_token_balance {
-                SellTokenBalance::Erc20 => SellTokenSource::Erc20,
-                SellTokenBalance::Internal => SellTokenSource::Internal,
-                SellTokenBalance::External => SellTokenSource::External,
-            },
-            buy_token_balance: match jit.order.buy_token_balance {
-                BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
-                BuyTokenBalance::Internal => BuyTokenDestination::Internal,
-            },
-        };
-
-        signature
-            .to_boundary_signature()
-            .recover_owner(
-                jit.order.signature.as_slice(),
-                &DomainSeparator(domain.0),
-                &order_data.hash_struct(),
-            )
-            .map_err(|e| super::Error(e.to_string()))
-            .map(Into::into)
-    }
-
-    /// Function to recover the order uid of a JIT order
-    fn recover_uid_from_jit_trade_order(
-        jit: &JitTrade,
-        signature: &competition::order::Signature,
-        domain: &eth::DomainSeparator,
-    ) -> Result<crate::domain::competition::order::Uid, super::Error> {
-        let order_data = OrderData {
-            sell_token: jit.order.sell_token,
-            buy_token: jit.order.buy_token,
-            receiver: Some(jit.order.receiver),
-            sell_amount: jit.order.sell_amount,
-            buy_amount: jit.order.buy_amount,
-            valid_to: jit.order.valid_to,
-            app_data: AppDataHash(jit.order.app_data),
-            fee_amount: jit.order.fee_amount,
-            kind: match jit.order.kind {
-                Kind::Sell => OrderKind::Sell,
-                Kind::Buy => OrderKind::Buy,
-            },
-            partially_fillable: jit.order.partially_fillable,
-            sell_token_balance: match jit.order.sell_token_balance {
-                SellTokenBalance::Erc20 => SellTokenSource::Erc20,
-                SellTokenBalance::Internal => SellTokenSource::Internal,
-                SellTokenBalance::External => SellTokenSource::External,
-            },
-            buy_token_balance: match jit.order.buy_token_balance {
-                BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
-                BuyTokenBalance::Internal => BuyTokenDestination::Internal,
-            },
-        };
-
-        let owner = signature
-            .to_boundary_signature()
-            .recover_owner(
-                jit.order.signature.as_slice(),
-                &DomainSeparator(domain.0),
-                &order_data.hash_struct(),
-            )
-            .map_err(|e| super::Error(e.to_string()))?;
-
-        Ok(order_data.uid(&DomainSeparator(domain.0), &owner).0.into())
     }
 }
 
@@ -402,6 +300,76 @@ struct JitOrder {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+}
+
+impl JitOrder {
+    fn raw_order_data(&self) -> OrderData {
+        OrderData {
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
+            receiver: Some(self.receiver),
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
+            valid_to: self.valid_to,
+            app_data: AppDataHash(self.app_data),
+            fee_amount: self.fee_amount,
+            kind: match self.kind {
+                Kind::Sell => OrderKind::Sell,
+                Kind::Buy => OrderKind::Buy,
+            },
+            partially_fillable: self.partially_fillable,
+            sell_token_balance: match self.sell_token_balance {
+                SellTokenBalance::Erc20 => SellTokenSource::Erc20,
+                SellTokenBalance::Internal => SellTokenSource::Internal,
+                SellTokenBalance::External => SellTokenSource::External,
+            },
+            buy_token_balance: match self.buy_token_balance {
+                BuyTokenBalance::Erc20 => BuyTokenDestination::Erc20,
+                BuyTokenBalance::Internal => BuyTokenDestination::Internal,
+            },
+        }
+    }
+
+    fn signature(
+        &self,
+        domain_separator: &eth::DomainSeparator,
+    ) -> Result<competition::order::Signature, super::Error> {
+        let mut signature = competition::order::Signature {
+            scheme: match self.signing_scheme {
+                SigningScheme::Eip712 => competition::order::signature::Scheme::Eip712,
+                SigningScheme::EthSign => competition::order::signature::Scheme::EthSign,
+                SigningScheme::PreSign => competition::order::signature::Scheme::PreSign,
+                SigningScheme::Eip1271 => competition::order::signature::Scheme::Eip1271,
+            },
+            data: self.signature.clone().into(),
+            signer: Default::default(),
+        };
+
+        let signer = signature
+            .to_boundary_signature()
+            .recover_owner(
+                self.signature.as_slice(),
+                &DomainSeparator(domain_separator.0),
+                &self.raw_order_data().hash_struct(),
+            )
+            .map_err(|e| super::Error(e.to_string()))?;
+
+        signature.signer = signer.into();
+
+        Ok(signature)
+    }
+
+    fn uid(
+        &self,
+        domain: &eth::DomainSeparator,
+    ) -> Result<crate::domain::competition::order::Uid, super::Error> {
+        let order_data = self.raw_order_data();
+        let signature = self.signature(domain)?;
+        Ok(order_data
+            .uid(&DomainSeparator(domain.0), &signature.signer.into())
+            .0
+            .into())
+    }
 }
 
 #[derive(Debug, Deserialize)]
