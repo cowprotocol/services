@@ -16,7 +16,6 @@ use {
     },
     std::sync::{Arc, Mutex},
     tokio::signal::{unix, unix::SignalKind},
-    tracing::Instrument,
     warp::hyper,
     web3::signing::SecretKeyRef,
 };
