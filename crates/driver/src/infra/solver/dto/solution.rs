@@ -62,7 +62,7 @@ impl Solutions {
                                 competition::solution::trade::Jit::new(
                                     competition::order::Jit {
                                         uid: jit.order.uid(
-                                            &solver.eth.contracts().settlement_domain_separator(),
+                                            solver.eth.contracts().settlement_domain_separator(),
                                         )?,
                                         sell: eth::Asset {
                                             amount: jit.order.sell_amount.into(),
@@ -101,7 +101,7 @@ impl Solutions {
                                             }
                                         },
                                         signature: jit.order.signature(
-                                            &solver.eth.contracts().settlement_domain_separator(),
+                                            solver.eth.contracts().settlement_domain_separator(),
                                         )?,
                                     },
                                     jit.executed_amount.into(),
