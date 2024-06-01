@@ -3,128 +3,44 @@
 use {
     app_data::AppDataHash,
     axum::Json,
-    ethcontract::{common::abi::ethereum_types::Address, jsonrpc::serde::Serialize},
+    ethcontract::common::abi::ethereum_types::Address,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
         DomainSeparator,
     },
+    reqwest::Url,
     solvers_dto::{
         auction::Auction,
-        solution::{Asset, Kind, Solution, Solutions, Trade},
+        solution::{Asset, Kind, Solution, Solutions},
     },
-    std::{future::Future, net::SocketAddr, sync::Arc},
-    tokio::{
-        signal::{unix, unix::SignalKind},
-        sync::oneshot,
-    },
+    std::sync::{Arc, Mutex},
+    tokio::signal::{unix, unix::SignalKind},
     tracing::Instrument,
     warp::hyper,
     web3::signing::SecretKeyRef,
 };
 
+/// A solver that does not implement any solving logic itself and instead simply
+/// forwards a single hardcoded solution.
 pub struct Mock {
-    solution: Solution,
+    /// The currently configured solution to return.
+    solution: Arc<Mutex<Option<Solution>>>,
+    /// Under which URL the solver is reachable by a driver.
+    pub url: Url,
 }
 
 impl Mock {
-    pub fn new(solution: Solution) -> Self {
-        Self { solution }
-    }
-
-    /// Returns the specified solution with the same order UID as the order UID
-    /// in the auction.
-    pub async fn solve(&self, auction: Auction) -> Solutions {
-        let mut solution = self.solution.clone();
-        // Return the same order UID as the order UID in the auction
-        solution
-            .trades
-            .iter_mut()
-            .filter_map(|trade| match trade {
-                Trade::Fulfillment(fulfillment) => Some(fulfillment),
-                Trade::Jit(_) => None,
-            })
-            .zip(auction.orders.iter())
-            .for_each(|(fulfillment, order)| fulfillment.order = order.uid);
-
-        Solutions {
-            solutions: vec![solution],
-        }
+    /// Instructs the solver to return a new solution from now on.
+    pub fn configure_solution(&self, solution: Option<Solution>) {
+        *self.solution.lock().unwrap() = solution;
     }
 }
 
-#[derive(Debug)]
-pub struct Config {
-    pub addr: SocketAddr,
-    pub solution: Solution,
-}
+impl Default for Mock {
+    fn default() -> Self {
+        let solution = Arc::new(Mutex::new(None));
 
-pub async fn run_mock(config: Config, bind: Option<oneshot::Sender<SocketAddr>>) {
-    tracing::info!("running mock solver engine with {config:#?}");
-
-    let solver = Mock::new(config.solution);
-
-    Api {
-        addr: config.addr,
-        solver,
-    }
-    .serve(bind, shutdown_signal())
-    .await
-    .unwrap();
-}
-
-pub async fn solve(
-    state: axum::extract::State<Arc<Mock>>,
-    Json(auction): Json<Auction>,
-) -> (axum::http::StatusCode, Json<Response<Solutions>>) {
-    let handle_request = async {
-        let auction_id = auction.id.unwrap_or_default();
-        let solutions = state
-            .solve(auction)
-            .instrument(tracing::info_span!("auction", id = %auction_id))
-            .await;
-
-        tracing::trace!(?auction_id, ?solutions);
-
-        (axum::http::StatusCode::OK, Json(Response::Ok(solutions)))
-    };
-
-    handle_request
-        .instrument(tracing::info_span!("/solve"))
-        .await
-}
-
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub enum Response<T> {
-    Ok(T),
-    Err(Error),
-}
-
-#[derive(Debug, Serialize)]
-pub struct Error {
-    pub message: &'static str,
-}
-
-impl From<&'static str> for Error {
-    fn from(message: &'static str) -> Self {
-        Self { message }
-    }
-}
-
-const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
-
-pub struct Api {
-    pub addr: SocketAddr,
-    pub solver: Mock,
-}
-
-impl Api {
-    pub async fn serve(
-        self,
-        bind: Option<oneshot::Sender<SocketAddr>>,
-        shutdown: impl Future<Output = ()> + Send + 'static,
-    ) -> Result<(), hyper::Error> {
         let app = axum::Router::new()
             .layer(tower::ServiceBuilder::new().layer(
                 tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
@@ -133,20 +49,37 @@ impl Api {
             .layer(
                 tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
-            .with_state(Arc::new(self.solver))
+            .with_state(solution.clone())
             // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
             .layer(axum::extract::DefaultBodyLimit::disable());
 
         let make_svc = observe::make_service_with_task_local_storage!(app);
 
-        let server = axum::Server::bind(&self.addr).serve(make_svc);
-        if let Some(bind) = bind {
-            let _ = bind.send(server.local_addr());
-        }
+        let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(make_svc);
 
-        server.with_graceful_shutdown(shutdown).await
+        let mock = Mock {
+            solution,
+            url: format!("http://{}", server.local_addr()).parse().unwrap(),
+        };
+
+        tokio::task::spawn(server.with_graceful_shutdown(shutdown_signal()));
+
+        mock
     }
 }
+
+async fn solve(
+    state: axum::extract::State<Arc<Mutex<Option<Solution>>>>,
+    Json(auction): Json<Auction>,
+) -> (axum::http::StatusCode, Json<Solutions>) {
+    let auction_id = auction.id.unwrap_or_default();
+    let solutions = state.lock().unwrap().iter().cloned().collect();
+    let solutions = Solutions { solutions };
+    tracing::trace!(?auction_id, ?solutions, "/solve");
+    (axum::http::StatusCode::OK, Json(solutions))
+}
+
+const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 #[cfg(unix)]
 async fn shutdown_signal() {

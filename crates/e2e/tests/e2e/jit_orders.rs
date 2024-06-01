@@ -92,10 +92,67 @@ async fn single_limit_order_test(web3: Web3) {
         token_b.approve(onchain.contracts().allowance, to_wei(100))
     );
 
-    // Place Orders
     let services = Services::new(onchain.contracts()).await;
 
-    let solution = Solution {
+    let mock_solver = Mock::default();
+
+    // Start system
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
+                    .await,
+            },
+            SolverEngine {
+                name: "mock_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    // We start the quoter as the baseline solver, and the mock solver as the one
+    // returning the solution
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // Place order
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    mock_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
             (token_a.address(), to_wei(1)),
@@ -129,70 +186,14 @@ async fn single_limit_order_test(web3: Web3) {
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: to_wei(10),
                 fee: Some(0.into()),
-                // Dummy as it will be overwritten in the solver
-                order: [0; 56],
+                order: order_id.0,
             }),
         ],
         pre_interactions: vec![],
         interactions: vec![],
         post_interactions: vec![],
         gas: None,
-    };
-
-    // Start system
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
-            },
-            SolverEngine {
-                name: "mock_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_mock_solver(solution).await,
-            },
-        ],
-        colocation::LiquidityProvider::UniswapV2,
-    );
-
-    // We start the quoter as the baseline solver, and the mock solver as the one
-    // returning the solution
-    services
-        .start_autopilot(
-            None,
-            vec![
-                "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
-                    .to_string(),
-            ],
-        )
-        .await;
-    services
-        .start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ])
-        .await;
-
-    let order = OrderCreation {
-        sell_token: token_a.address(),
-        sell_amount: to_wei(10),
-        buy_token: token_b.address(),
-        buy_amount: to_wei(5),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
-        kind: OrderKind::Sell,
-        ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-    );
-    let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    }));
 
     // Drive solution
     tracing::info!("Waiting for trade.");
