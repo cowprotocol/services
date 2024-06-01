@@ -107,6 +107,7 @@ impl Settlement {
             )?,
             may_revert: solution.revertable(),
         };
+        tracing::error!(?tx.uninternalized);
         Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
     }
 
