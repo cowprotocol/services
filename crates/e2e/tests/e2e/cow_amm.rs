@@ -12,7 +12,14 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    solvers_dto::solution::{BuyTokenBalance, Call, Kind, SellTokenBalance, SigningScheme, Solution},
+    solvers_dto::solution::{
+        BuyTokenBalance,
+        Call,
+        Kind,
+        SellTokenBalance,
+        SigningScheme,
+        Solution,
+    },
     std::collections::HashMap,
     web3::signing::SecretKeyRef,
 };
@@ -34,7 +41,11 @@ async fn cow_amm(web3: Web3) {
         .await;
 
     // Temporarily fund the contract with lots of money to debug reverts.
-    dai.mint(onchain.contracts().gp_settlement.address(), to_wei(100_000_000)).await;
+    dai.mint(
+        onchain.contracts().gp_settlement.address(),
+        to_wei(100_000_000),
+    )
+    .await;
     tx_value!(
         helper.account(),
         to_wei(999),
@@ -101,7 +112,7 @@ async fn cow_amm(web3: Web3) {
         .await
         .expect("failed to get Uniswap V2 pair");
 
-    let oracle_data = ethcontract::web3::ethabi::encode(&[Token::Address(pair)]);
+    tracing::error!(?pair);
 
     let cow_amm = cow_amm_factory
         .amm_deterministic_address(
@@ -113,6 +124,9 @@ async fn cow_amm(web3: Web3) {
         .await
         .unwrap();
 
+    let oracle_data: Vec<_> = std::iter::repeat(0u8).take(12).chain(pair.as_bytes().to_vec()).collect();
+    tracing::error!(data = ?hex::encode(&oracle_data));
+
     cow_amm_factory
         .create(
             dai.address(),
@@ -122,7 +136,7 @@ async fn cow_amm(web3: Web3) {
             0.into(), // min traded token
             oracle.address(),
             ethcontract::Bytes(oracle_data.clone()),
-            ethcontract::Bytes([0; 32]), // appdata
+            ethcontract::Bytes([12u8; 32]), // appdata
         )
         .from(cow_amm_owner.account().clone())
         .send()
@@ -161,7 +175,7 @@ async fn cow_amm(web3: Web3) {
                 "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--protocol-fee-exempt-addresses={:?}", cow_amm.address())
+                format!("--protocol-fee-exempt-addresses={:?}", cow_amm.address()),
             ],
         )
         .await;
@@ -189,13 +203,6 @@ async fn cow_amm(web3: Web3) {
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
-    let encoded_trading_params = ethcontract::web3::ethabi::encode(&[
-        Token::Uint(0.into()), // min_traded_token
-        Token::Address(oracle.address()),
-        Token::Bytes(oracle_data),
-        Token::FixedBytes([0u8; 32].to_vec()),
-    ]);
-
     let cow_amm_order = OrderData {
         sell_token: dai.address(),
         buy_token: onchain.contracts().weth.address(),
@@ -203,7 +210,7 @@ async fn cow_amm(web3: Web3) {
         sell_amount: to_wei(100),
         buy_amount: to_wei(1),
         valid_to: model::time::now_in_epoch_seconds() + 300,
-        app_data: AppDataHash([0u8; 32]),
+        app_data: AppDataHash([12u8; 32]),
         fee_amount: 0.into(),
         kind: OrderKind::Sell,
         partially_fillable: false,
@@ -211,26 +218,48 @@ async fn cow_amm(web3: Web3) {
         buy_token_balance: Default::default(),
     };
 
-    let encoded_cow_amm_order = ethcontract::web3::ethabi::encode(&[
-        Token::Address(cow_amm_order.sell_token),
-        Token::Address(cow_amm_order.buy_token),
-        Token::Address(cow_amm_order.receiver.unwrap_or_default()),
-        Token::Uint(cow_amm_order.sell_amount),
-        Token::Uint(cow_amm_order.buy_amount),
-        Token::Uint(cow_amm_order.valid_to.into()),
-        Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
-        Token::Uint(cow_amm_order.fee_amount),
-        Token::FixedBytes(hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775").unwrap()), // sell order
-        Token::Bool(cow_amm_order.partially_fillable),
-        Token::FixedBytes(hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9").unwrap()), // sell_token_source
-        Token::FixedBytes(hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9").unwrap()), // erc20 buy_token_destination
-    ]);
+    tracing::error!(?cow_amm_order);
 
     let signature_data = ethcontract::web3::ethabi::encode(&[
-        Token::Bytes(encoded_cow_amm_order),
-        Token::Bytes(encoded_trading_params),
+        Token::Tuple(vec![
+            Token::Address(cow_amm_order.sell_token),
+            Token::Address(cow_amm_order.buy_token),
+            Token::Address(cow_amm_order.receiver.unwrap_or_default()),
+            Token::Uint(cow_amm_order.sell_amount),
+            Token::Uint(cow_amm_order.buy_amount),
+            Token::Uint(cow_amm_order.valid_to.into()),
+            Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
+            Token::Uint(cow_amm_order.fee_amount),
+            Token::FixedBytes(
+                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
+                    .unwrap(),
+            ), // sell order
+            Token::Bool(cow_amm_order.partially_fillable),
+            Token::FixedBytes(
+                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
+                    .unwrap(),
+            ), // sell_token_source
+            Token::FixedBytes(
+                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
+                    .unwrap(),
+            ), // erc20 buy_token_destination
+        ]),
+        Token::Tuple(vec![
+            Token::Uint(0.into()), // min_traded_token
+            Token::Address(oracle.address()),
+            Token::Bytes(oracle_data),
+            Token::FixedBytes([12u8; 32].to_vec()),
+        ]),
     ]);
-    let signature = cow_amm.address().as_bytes().iter().cloned().chain(signature_data).collect();
+
+    let signature = cow_amm
+        .address()
+        .as_bytes()
+        .iter()
+        .cloned()
+        .chain(signature_data)
+        .collect();
+    tracing::error!(sig = ?hex::encode(&signature));
 
     let pre_interaction = {
         let order_hash = cow_amm_order.hash_struct();
