@@ -220,10 +220,10 @@ async fn cow_amm(web3: Web3) {
         Token::Uint(cow_amm_order.valid_to.into()),
         Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
         Token::Uint(cow_amm_order.fee_amount),
-        Token::Uint(0.into()), // sell order
+        Token::FixedBytes(hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775").unwrap()), // sell order
         Token::Bool(cow_amm_order.partially_fillable),
-        Token::Uint(0.into()), // sell_token_source
-        Token::Uint(0.into()), // buy_token_destination
+        Token::FixedBytes(hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9").unwrap()), // sell_token_source
+        Token::FixedBytes(hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9").unwrap()), // erc20 buy_token_destination
     ]);
 
     let signature_data = ethcontract::web3::ethabi::encode(&[
