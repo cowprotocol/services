@@ -354,6 +354,14 @@ impl JitOrder {
             )
             .map_err(|e| super::Error(e.to_string()))?;
 
+        if matches!(self.signing_scheme, SigningScheme::Eip1271) {
+            // For EIP-1271 signatures the encoding logic prepends the signer to the raw
+            // signature bytes. This leads to the owner being encoded twice in
+            // the final settlement calldata unless we remove that from the raw
+            // data.
+            signature.data = Bytes(self.signature[20..].to_vec());
+        }
+
         signature.signer = signer.into();
 
         Ok(signature)
