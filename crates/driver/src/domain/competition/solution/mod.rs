@@ -104,18 +104,8 @@ impl Solution {
                         buy_token_balance: jit.order().buy_token_balance,
                         protocol_fees: vec![],
                     },
-                    match jit.order().side {
-                        order::Side::Buy => jit.executed(),
-                        order::Side::Sell => jit
-                            .executed()
-                            .0
-                            .checked_sub(jit.order().fee.0)
-                            .ok_or(error::Solution::InvalidJitTrade(
-                                error::Trade::InvalidExecutedAmount,
-                            ))?
-                            .into(),
-                    },
-                    Fee::Dynamic(jit.order().fee),
+                    jit.executed(),
+                    Fee::Dynamic(jit.fee()),
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );

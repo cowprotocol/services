@@ -105,6 +105,7 @@ impl Solutions {
                                         )?,
                                     },
                                     jit.executed_amount.into(),
+                                    jit.fee.into(),
                                 )
                                 .map_err(|err| super::Error(format!("invalid JIT trade: {err}")))?,
                             )),
@@ -275,6 +276,9 @@ struct JitTrade {
     order: JitOrder,
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
+    #[serde(default)]
+    #[serde_as(as = "serialize::U256")]
+    fee: eth::U256,
 }
 
 #[serde_as]

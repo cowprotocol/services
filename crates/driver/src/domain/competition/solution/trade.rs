@@ -349,20 +349,44 @@ pub struct Jit {
     /// partially fillable, the executed amount must equal the amount from the
     /// order.
     executed: order::TargetAmount,
+    fee: order::SellAmount,
 }
 
 impl Jit {
-    pub fn new(order: order::Jit, executed: order::TargetAmount) -> Result<Self, error::Trade> {
+    pub fn new(
+        order: order::Jit,
+        executed: order::TargetAmount,
+        fee: order::SellAmount,
+    ) -> Result<Self, error::Trade> {
+        // If the order is partial, the total executed amount can be smaller than
+        // the target amount. Otherwise, the executed amount must be equal to the target
+        // amount.
+        let fee_target_amount = match order.side {
+            order::Side::Buy => order::TargetAmount::default(),
+            order::Side::Sell => fee.0.into(),
+        };
+
+        let executed_with_fee = order::TargetAmount(
+            executed
+                .0
+                .checked_add(fee_target_amount.into())
+                .ok_or(error::Trade::InvalidExecutedAmount)?,
+        );
+
         // If the order is partially fillable, the executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
-        let is_valid = if order.partially_fillable {
-            executed <= order.target()
-        } else {
-            executed == order.target()
+        let is_valid = match order.partially_fillable {
+            true => executed_with_fee <= order.target(),
+            false => executed_with_fee == order.target(),
         };
+
         if is_valid {
-            Ok(Self { order, executed })
+            Ok(Self {
+                order,
+                executed,
+                fee,
+            })
         } else {
             Err(error::Trade::InvalidExecutedAmount)
         }
@@ -374,6 +398,10 @@ impl Jit {
 
     pub fn executed(&self) -> order::TargetAmount {
         self.executed
+    }
+
+    pub fn fee(&self) -> order::SellAmount {
+        self.fee
     }
 }
 

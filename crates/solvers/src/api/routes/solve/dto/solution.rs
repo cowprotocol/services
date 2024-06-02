@@ -60,6 +60,7 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                     signature,
                                 },
                                 executed_amount: trade.executed,
+                                fee: Some(trade.fee.0),
                             })
                         }
                     })
