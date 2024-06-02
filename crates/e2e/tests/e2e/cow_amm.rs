@@ -5,7 +5,7 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::{web3::ethabi::Token, U256},
+    ethcontract::{web3::ethabi::Token, BlockId, BlockNumber, U256},
     model::{
         order::{OrderCreation, OrderData, OrderKind},
         signature::{hashed_eip712_message, EcdsaSigningScheme},
@@ -83,13 +83,13 @@ async fn cow_amm(web3: Web3) {
     .await
     .unwrap();
 
-    // Fund cow amm owner with 10 `token` and allow factory take them
+    // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
     tx!(
         cow_amm_owner.account(),
         dai.approve(cow_amm_factory.address(), to_wei(2_000))
     );
-    // Fund cow amm owner with 10 WETH and allow factory take them
+    // Fund cow amm owner with 1 WETH and allow factory take them
     tx_value!(
         cow_amm_owner.account(),
         to_wei(1),
@@ -103,7 +103,6 @@ async fn cow_amm(web3: Web3) {
             .approve(cow_amm_factory.address(), to_wei(1))
     );
 
-    // univ2 pair address encoded as 32 bytes
     let pair = onchain
         .contracts()
         .uniswap_v2_factory
@@ -124,6 +123,7 @@ async fn cow_amm(web3: Web3) {
         .await
         .unwrap();
 
+    // Pad the oracle data to 32 bytes (normally it's just an H160).
     let oracle_data: Vec<_> = std::iter::repeat(0u8).take(12).chain(pair.as_bytes().to_vec()).collect();
     tracing::error!(data = ?hex::encode(&oracle_data));
 
@@ -144,9 +144,11 @@ async fn cow_amm(web3: Web3) {
         .unwrap();
     let cow_amm = contracts::CowAmm::at(&web3, cow_amm);
 
-    let mock_solver = Mock::default();
+    let template_order = cow_amm.get_tradeable_order((0.into(), oracle.address(), ethcontract::Bytes(oracle_data.clone()), ethcontract::Bytes([12; 32]))).call().await.unwrap();
+    tracing::error!(?template_order);
 
     // Start system
+    let mock_solver = Mock::default();
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -184,7 +186,6 @@ async fn cow_amm(web3: Web3) {
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
-    tracing::error!(cow_amm = ?cow_amm.address());
 
     // place user order
     let user_order = OrderCreation {
@@ -203,13 +204,19 @@ async fn cow_amm(web3: Web3) {
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
 
+    // Derive the order's valid_to from the block chain because the cow amm enforces a relatively
+    // small valid_to and we initialize with a date in the past so the computer's current time
+    // is way ahead of the blockchain.
+    let block = web3.eth().block(BlockId::Number(BlockNumber::Latest)).await.unwrap().unwrap();
+    let valid_to = block.timestamp.as_u32() + 300;
+
     let cow_amm_order = OrderData {
-        sell_token: dai.address(),
-        buy_token: onchain.contracts().weth.address(),
-        receiver: None,
-        sell_amount: to_wei(100),
-        buy_amount: to_wei(1),
-        valid_to: model::time::now_in_epoch_seconds() + 300,
+        sell_token: template_order.0, // weth
+        buy_token: template_order.1, // dai
+        receiver: Some(template_order.2),
+        sell_amount: template_order.3,
+        buy_amount: template_order.4,
+        valid_to,
         app_data: AppDataHash([12u8; 32]),
         fee_amount: 0.into(),
         kind: OrderKind::Sell,
@@ -217,6 +224,20 @@ async fn cow_amm(web3: Web3) {
         sell_token_balance: Default::default(),
         buy_token_balance: Default::default(),
     };
+    // let cow_amm_order = OrderData {
+    //     sell_token: onchain.contracts().weth.address(),
+    //     buy_token: dai.address(),
+    //     receiver: None,
+    //     sell_amount: 166_666_666_666_666_666u128.into(),
+    //     buy_amount: 416_666_666_666_666_664_667u128.into(),
+    //     valid_to: model::time::now_in_epoch_seconds() + 300,
+    //     app_data: AppDataHash([12u8; 32]),
+    //     fee_amount: 0.into(),
+    //     kind: OrderKind::Sell,
+    //     partially_fillable: true,
+    //     sell_token_balance: Default::default(),
+    //     buy_token_balance: Default::default(),
+    // };
 
     tracing::error!(?cow_amm_order);
 
@@ -278,6 +299,9 @@ async fn cow_amm(web3: Web3) {
         }
     };
 
+    tracing::error!(dai = ?dai.address());
+    tracing::error!(weth = ?onchain.contracts().weth.address());
+
     // todo generate cow amm order
     // ConstantProduct.TradingParams memory data = ConstantProduct.TradingParams({
     //     minTradedToken0: minTradedToken0,
@@ -314,8 +338,8 @@ async fn cow_amm(web3: Web3) {
     mock_solver.configure_solution(Some(Solution {
         id: 1,
         prices: HashMap::from([
-            (dai.address(), to_wei(1)),
-            (onchain.contracts().weth.address(), to_wei(1_000)),
+            (dai.address(), cow_amm_order.sell_amount),
+            (onchain.contracts().weth.address(), cow_amm_order.buy_amount + to_wei(1)),
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
@@ -337,11 +361,11 @@ async fn cow_amm(web3: Web3) {
                 },
                 executed_amount: cow_amm_order.sell_amount,
             }),
-            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: user_order.buy_amount,
-                fee: Some(0.into()),
-                order: user_order_id.0,
-            }),
+            // solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
+            //     executed_amount: user_order.buy_amount,
+            //     fee: Some(0.into()),
+            //     order: user_order_id.0,
+            // }),
         ],
         pre_interactions: vec![pre_interaction],
         interactions: vec![],
@@ -349,11 +373,14 @@ async fn cow_amm(web3: Web3) {
         gas: None,
     }));
 
+    let balance_before = dai.balance_of(cow_amm.address()).call().await.unwrap();
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        let balance = dai.balance_of(bob.address()).call().await.unwrap();
-        balance >= to_wei(100)
+        let balance = dai.balance_of(cow_amm.address()).call().await.unwrap();
+        // cow_amm received more buy_token than required by the limit price
+        // aka it got surplus
+        balance >= balance_before + cow_amm_order.buy_amount
     })
     .await
     .unwrap();
