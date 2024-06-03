@@ -375,7 +375,7 @@ pub async fn run(args: Arguments) {
         )
         .await;
 
-        let _circuit_breaker = crate::circuit_breaker::CircuitBreaker::build(
+        let _circuit_breaker = crate::domain::circuit_breaker::CircuitBreaker::build(
             circuit_breaker,
             solvers.into_iter().map(Into::into).collect(),
         );

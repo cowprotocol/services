@@ -2,6 +2,7 @@ use {
     crate::{domain::fee::FeeFactor, infra},
     anyhow::Context,
     clap::ValueEnum,
+    derivative::Derivative,
     primitive_types::{H160, H256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -9,14 +10,7 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{
-        fmt,
-        fmt::{Debug, Formatter},
-        net::SocketAddr,
-        num::NonZeroUsize,
-        str::FromStr,
-        time::Duration,
-    },
+    std::{fmt::Debug, net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
     url::Url,
 };
 
@@ -493,22 +487,12 @@ impl FromStr for FeePolicy {
     }
 }
 
-#[derive(clap::Parser, Clone)]
+#[derive(clap::Parser, Clone, Derivative)]
+#[derivative(Debug)]
 pub struct CircuitBreaker {
+    #[derivative(Debug = "ignore")]
     pub circuit_breaker_authenticator_pk: Option<H256>,
     pub circuit_breaker_solvers: Option<Vec<H160>>,
-}
-
-impl Debug for CircuitBreaker {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CircuitBreaker")
-            .field(
-                "circuit_breaker_authenticator_pk",
-                &self.circuit_breaker_authenticator_pk.map(|_| "***"),
-            )
-            .field("circuit_breaker_solvers", &self.circuit_breaker_solvers)
-            .finish()
-    }
 }
 
 #[cfg(test)]

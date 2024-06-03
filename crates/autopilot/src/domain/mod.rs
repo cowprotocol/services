@@ -1,4 +1,5 @@
 pub mod auction;
+pub mod circuit_breaker;
 pub mod competition;
 pub mod eth;
 pub mod fee;
