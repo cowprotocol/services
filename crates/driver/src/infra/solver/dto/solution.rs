@@ -79,7 +79,6 @@ impl Solutions {
                                             Kind::Sell => competition::order::Side::Sell,
                                             Kind::Buy => competition::order::Side::Buy,
                                         },
-                                        partially_fillable: jit.order.partially_fillable,
                                         sell_token_balance: match jit.order.sell_token_balance {
                                             SellTokenBalance::Erc20 => {
                                                 competition::order::SellTokenBalance::Erc20
@@ -295,7 +294,6 @@ struct JitOrder {
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; order::APP_DATA_LEN],
     kind: Kind,
-    partially_fillable: bool,
     sell_token_balance: SellTokenBalance,
     buy_token_balance: BuyTokenBalance,
     signing_scheme: SigningScheme,
@@ -318,7 +316,7 @@ impl JitOrder {
                 Kind::Sell => OrderKind::Sell,
                 Kind::Buy => OrderKind::Buy,
             },
-            partially_fillable: self.partially_fillable,
+            partially_fillable: false,
             sell_token_balance: match self.sell_token_balance {
                 SellTokenBalance::Erc20 => SellTokenSource::Erc20,
                 SellTokenBalance::Internal => SellTokenSource::Internal,

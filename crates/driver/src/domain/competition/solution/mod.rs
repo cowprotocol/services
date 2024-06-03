@@ -1,6 +1,6 @@
 use {
     self::trade::{ClearingPrices, Fee, Fulfillment},
-    super::{auction, order::Partial},
+    super::auction,
     crate::{
         boundary,
         domain::{
@@ -89,15 +89,7 @@ impl Solution {
                         receiver: Some(jit.order().receiver),
                         valid_to: jit.order().valid_to,
                         app_data: jit.order().app_data,
-                        partial: match jit.order().partially_fillable {
-                            false => Partial::No,
-                            true => Partial::Yes {
-                                available: match jit.order().side {
-                                    order::Side::Sell => jit.order().sell.amount.0.into(),
-                                    order::Side::Buy => jit.order().buy.amount.0.into(),
-                                },
-                            },
-                        },
+                        partial: jit.order().partially_fillable(),
                         pre_interactions: vec![],
                         post_interactions: vec![],
                         sell_token_balance: jit.order().sell_token_balance,

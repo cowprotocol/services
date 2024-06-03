@@ -52,7 +52,6 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                         crate::domain::order::Side::Buy => Kind::Buy,
                                         crate::domain::order::Side::Sell => Kind::Sell,
                                     },
-                                    partially_fillable: trade.order.partially_fillable,
                                     sell_token_balance: SellTokenBalance::Erc20,
                                     buy_token_balance: BuyTokenBalance::Erc20,
                                     signing_scheme,

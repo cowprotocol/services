@@ -76,7 +76,6 @@ pub struct JitOrder {
     #[serde_as(as = "serialize::Hex")]
     pub app_data: [u8; 32],
     pub kind: Kind,
-    pub partially_fillable: bool,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signing_scheme: SigningScheme,

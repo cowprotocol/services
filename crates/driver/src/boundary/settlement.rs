@@ -302,7 +302,10 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
             competition::order::Side::Buy => OrderKind::Buy,
             competition::order::Side::Sell => OrderKind::Sell,
         },
-        partially_fillable: order.partially_fillable,
+        partially_fillable: match order.partially_fillable() {
+            order::Partial::No => false,
+            order::Partial::Yes { .. } => true,
+        },
         sell_token_balance: match order.sell_token_balance {
             competition::order::SellTokenBalance::Erc20 => SellTokenSource::Erc20,
             competition::order::SellTokenBalance::Internal => SellTokenSource::Internal,

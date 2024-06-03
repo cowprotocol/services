@@ -376,9 +376,9 @@ impl Jit {
         // If the order is partially fillable, the executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
-        let is_valid = match order.partially_fillable {
-            true => executed_with_fee <= order.target(),
-            false => executed_with_fee == order.target(),
+        let is_valid = match order.partially_fillable() {
+            order::Partial::Yes { available } => executed_with_fee <= available,
+            order::Partial::No => executed_with_fee == order.target(),
         };
 
         if is_valid {
