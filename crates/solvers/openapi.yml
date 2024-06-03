@@ -170,31 +170,19 @@ components:
       type: object
       required:
         - trusted
-        - availableBalance
+        - address
       properties:
-        decimals:
+        address:
           description: |
-            The ERC20.decimals value for this token. This may be missing for
-            ERC20 tokens that don't implement the optional metadata extension.
-          type: integer
-        symbol:
-          description: |
-            The ERC20.symbol value for this token. This may be missing for ERC20
-            tokens that don't implement the optional metadata extension.
-          type: string
-        referencePrice:
+            The token contract address
+          type: Address
+        price:
           description: |
             The reference price of this token for the auction used for scoring.
             This price is only included for tokens for which there are CoW
             Protocol orders.
           allOf:
             - $ref: "#/components/schemas/NativePrice"
-        availableBalance:
-          description: |
-            The balance held by the Settlement contract that is available
-            during a settlement.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
         trusted:
           description: |
             A flag which indicates that solvers are allowed to perform gas cost
