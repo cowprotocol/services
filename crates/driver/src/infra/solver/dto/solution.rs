@@ -72,7 +72,6 @@ impl Solutions {
                                             amount: jit.order.buy_amount.into(),
                                             token: jit.order.buy_token.into(),
                                         },
-                                        fee: jit.order.fee_amount.into(),
                                         receiver: jit.order.receiver.into(),
                                         valid_to: jit.order.valid_to.into(),
                                         app_data: jit.order.app_data.into(),
@@ -295,8 +294,6 @@ struct JitOrder {
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; order::APP_DATA_LEN],
-    #[serde_as(as = "serialize::U256")]
-    fee_amount: eth::U256,
     kind: Kind,
     partially_fillable: bool,
     sell_token_balance: SellTokenBalance,
@@ -316,7 +313,7 @@ impl JitOrder {
             buy_amount: self.buy_amount,
             valid_to: self.valid_to,
             app_data: AppDataHash(self.app_data),
-            fee_amount: self.fee_amount,
+            fee_amount: 0.into(),
             kind: match self.kind {
                 Kind::Sell => OrderKind::Sell,
                 Kind::Buy => OrderKind::Buy,

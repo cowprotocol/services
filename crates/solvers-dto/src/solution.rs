@@ -75,8 +75,6 @@ pub struct JitOrder {
     pub valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     pub app_data: [u8; 32],
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
     pub kind: Kind,
     pub partially_fillable: bool,
     pub sell_token_balance: SellTokenBalance,

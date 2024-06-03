@@ -43,7 +43,7 @@ impl Trade {
     pub fn fee(&self) -> SellAmount {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.fee(),
-            Trade::Jit(jit) => jit.order().fee,
+            Trade::Jit(jit) => jit.fee,
         }
     }
 
