@@ -361,15 +361,14 @@ pub struct Jit {
     /// The amount this order wants to buy when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
-    pub fee: SellAmount,
     pub receiver: eth::Address,
     pub valid_to: util::Timestamp,
     pub app_data: AppData,
     pub side: Side,
-    pub partially_fillable: bool,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
+    pub uid: Uid,
 }
 
 impl Jit {
@@ -380,6 +379,20 @@ impl Jit {
             Side::Buy => self.buy.amount.into(),
             Side::Sell => self.sell.amount.into(),
         }
+    }
+
+    /// Returns the signed fee of the order. You can't set this field in
+    /// the API so it's enforced to be 0. This function only exists to
+    /// not have magic values scattered everywhere.
+    pub fn fee(&self) -> SellAmount {
+        SellAmount(0.into())
+    }
+
+    /// Returns the signed partially fillable property of the order. You can't
+    /// set this field in the API so it's enforced to be fill-or-kill. This
+    /// function only exists to not have magic values scattered everywhere.
+    pub fn partially_fillable(&self) -> Partial {
+        Partial::No
     }
 }
 

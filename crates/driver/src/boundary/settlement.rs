@@ -297,12 +297,15 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         buy_amount: order.buy.amount.into(),
         valid_to: order.valid_to.into(),
         app_data: AppDataHash(order.app_data.into()),
-        fee_amount: order.fee.into(),
+        fee_amount: order.fee().0,
         kind: match order.side {
             competition::order::Side::Buy => OrderKind::Buy,
             competition::order::Side::Sell => OrderKind::Sell,
         },
-        partially_fillable: order.partially_fillable,
+        partially_fillable: match order.partially_fillable() {
+            order::Partial::No => false,
+            order::Partial::Yes { .. } => true,
+        },
         sell_token_balance: match order.sell_token_balance {
             competition::order::SellTokenBalance::Erc20 => SellTokenSource::Erc20,
             competition::order::SellTokenBalance::Internal => SellTokenSource::Internal,
@@ -315,7 +318,7 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
     };
     let metadata = OrderMetadata {
         owner: order.signature.signer.into(),
-        full_fee_amount: order.fee.into(),
+        full_fee_amount: order.fee().into(),
         // All foreign orders **MUST** be liquidity, this is
         // important so they cannot be used to affect the objective.
         class: OrderClass::Liquidity,
