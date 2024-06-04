@@ -23,7 +23,6 @@
 //! Software (2014)
 
 pub mod liquidity;
-pub mod settlement;
 
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly
 // returns that error. This will change as the legacy code gets refactored away.
@@ -32,7 +31,6 @@ pub use {
     anyhow::{Error, Result},
     contracts,
     model::order::OrderData,
-    settlement::Settlement,
     shared::ethrpc::Web3,
 };
 
