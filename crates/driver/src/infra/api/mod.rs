@@ -31,7 +31,6 @@ pub struct Api {
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
-    pub encoding: infra::config::encoding::Strategy,
 }
 
 impl Api {
@@ -77,7 +76,6 @@ impl Api {
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
-                    encoding: self.encoding.to_domain(),
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

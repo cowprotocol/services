@@ -318,6 +318,7 @@ impl Fee {
 pub struct JitTrade {
     pub order: order::JitOrder,
     pub executed: U256,
+    pub fee: eth::SellTokenAmount,
 }
 
 /// An interaction that is required to execute a solution by acquiring liquidity

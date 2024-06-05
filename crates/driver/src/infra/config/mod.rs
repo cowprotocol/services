@@ -1,5 +1,3 @@
-pub use file::encoding;
-
 use crate::{
     domain::eth,
     infra::{blockchain, config::file::GasEstimatorType, liquidity, mempool, simulator, solver},
@@ -18,5 +16,4 @@ pub struct Config {
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
-    pub encoding: encoding::Strategy,
 }

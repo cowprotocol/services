@@ -16,15 +16,6 @@ use {
     itertools::Itertools,
 };
 
-/// The type of strategy used to encode the solution.
-#[derive(Debug, Copy, Clone)]
-pub enum Strategy {
-    /// Use logic from the legacy solver crate
-    Boundary,
-    /// Use logic from this module for encoding
-    Domain,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("invalid interaction: {0:?}")]
@@ -144,7 +135,10 @@ pub fn tx(
                         fee_amount: eth::U256::zero(),
                         flags: Flags {
                             side: trade.order().side,
-                            partially_fillable: trade.order().partially_fillable,
+                            partially_fillable: matches!(
+                                trade.order().partially_fillable(),
+                                order::Partial::Yes { .. }
+                            ),
                             signing_scheme: trade.order().signature.scheme,
                             sell_token_balance: trade.order().sell_token_balance,
                             buy_token_balance: trade.order().buy_token_balance,
