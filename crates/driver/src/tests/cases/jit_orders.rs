@@ -70,7 +70,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .buy_amount(test_case.solution.jit_order.order.buy_amount)
             .solver_fee(Some(solver_fee))
             .side(test_case.solution.jit_order.order.side)
-            .partial(0.into())
             .no_surplus(),
     };
 

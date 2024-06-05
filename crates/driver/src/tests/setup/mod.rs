@@ -53,7 +53,6 @@ pub struct Asset {
     amount: eth::U256,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Partial {
     #[default]
@@ -261,10 +260,6 @@ impl Order {
 
     fn receiver(self, receiver: Option<H160>) -> Self {
         Self { receiver, ..self }
-    }
-
-    fn fee_amount(self, fee_amount: eth::U256) -> Self {
-        Self { fee_amount, ..self }
     }
 }
 

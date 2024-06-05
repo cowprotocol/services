@@ -299,7 +299,6 @@ impl Solver {
                                 .order
                                 .receiver(Some(config.private_key.address()));
                             let fee_amount = jit.quoted_order.order.solver_fee.unwrap_or_default();
-                            jit.quoted_order.order = jit.quoted_order.order.fee_amount(fee_amount);
                             let order = json!({
                                 "sellToken": config.blockchain.get_token(jit.quoted_order.order.sell_token),
                                 "buyToken": config.blockchain.get_token(jit.quoted_order.order.buy_token),
@@ -308,12 +307,10 @@ impl Solver {
                                 "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
                                 "validTo": jit.quoted_order.order.valid_to,
                                 "appData": jit.quoted_order.order.app_data,
-                                "feeAmount": jit.quoted_order.order.fee_amount.to_string(),
                                 "kind": match jit.quoted_order.order.side {
                                             order::Side::Sell => "sell",
                                             order::Side::Buy => "buy",
                                 },
-                                "partiallyFillable": matches!(jit.quoted_order.order.partial, Partial::Yes { .. }),
                                 "sellTokenBalance": jit.quoted_order.order.sell_token_source,
                                 "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
                                 "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))) },
@@ -323,6 +320,7 @@ impl Solver {
                                 "kind": "jit",
                                 "order": order,
                                 "executedAmount": executed_amount,
+                                "fee": fee_amount.to_string(),
                             }));
                         }
                     }
