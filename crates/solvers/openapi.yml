@@ -668,7 +668,8 @@ components:
 
     JitOrder:
       description: |
-        A just-in-time liquidity order included in a settlement.
+        A just-in-time liquidity order included in a settlement. These will
+        be assumed to be fill-or-kill orders with a signed fee of 0.
       type: object
       required:
         - sellToken
@@ -678,9 +679,7 @@ components:
         - buyAmount
         - validTo
         - appData
-        - feeAmount
         - kind
-        - partiallyFillable
         - sellTokenBalance
         - buyTokenBalance
         - signingScheme
@@ -700,12 +699,8 @@ components:
           type: integer
         appData:
           $ref: "#/components/schemas/AppData"
-        feeAmount:
-          $ref: "#/components/schemas/TokenAmount"
         kind:
           $ref: "#/components/schemas/OrderKind"
-        partiallyFillable:
-          type: boolean
         sellTokenBalance:
           $ref: "#/components/schemas/SellTokenBalance"
         buyTokenBalance:
@@ -751,6 +746,7 @@ components:
         - kind
         - order
         - executedAmount
+        - fee
       properties:
         kind:
           type: string
@@ -759,6 +755,14 @@ components:
           description: |
             The amount of the order that was executed. This is denoted in
             "sellToken" for sell orders, and "buyToken" for buy orders.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        fee:
+          description: |
+            The amount of sell token which should be kept to cover the gas
+            cost for this JIT trade. If a fee is set on a sell order the
+            "executedAmount" needs to be reduced accordingly to not "overfill"
+            the order.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         order:

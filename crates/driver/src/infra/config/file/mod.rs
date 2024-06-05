@@ -54,9 +54,6 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
-
-    #[serde(default)]
-    encoding: encoding::Strategy,
 }
 
 #[serde_as]
@@ -149,30 +146,6 @@ impl ManageNativeToken {
         infra::solver::ManageNativeToken {
             wrap_address: self.wrap_address,
             insert_unwraps: self.insert_unwraps,
-        }
-    }
-}
-
-pub mod encoding {
-    use {crate::domain::competition, serde::Deserialize};
-
-    /// Which logic to use to encode solutions into settlement transactions.
-    #[derive(Debug, Deserialize, Default)]
-    #[serde(rename_all = "kebab-case")]
-    pub enum Strategy {
-        /// Legacy solver crate strategy
-        #[default]
-        Boundary,
-        /// New encoding strategy
-        Domain,
-    }
-
-    impl Strategy {
-        pub fn to_domain(&self) -> competition::solution::encoding::Strategy {
-            match self {
-                Self::Boundary => competition::solution::encoding::Strategy::Boundary,
-                Self::Domain => competition::solution::encoding::Strategy::Domain,
-            }
         }
     }
 }
