@@ -1,96 +1,14 @@
-//! Mock solver for testing purposes. It returns a custom solution.
-
 use {
     app_data::AppDataHash,
-    axum::Json,
     ethcontract::common::abi::ethereum_types::Address,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
         DomainSeparator,
     },
-    reqwest::Url,
-    solvers_dto::{
-        auction::Auction,
-        solution::{Asset, Kind, Solution, Solutions},
-    },
-    std::sync::{Arc, Mutex},
-    tokio::signal::{unix, unix::SignalKind},
-    warp::hyper,
+    solvers_dto::solution::{Asset, Kind},
     web3::signing::SecretKeyRef,
 };
-
-/// A solver that does not implement any solving logic itself and instead simply
-/// forwards a single hardcoded solution.
-pub struct Mock {
-    /// The currently configured solution to return.
-    solution: Arc<Mutex<Option<Solution>>>,
-    /// Under which URL the solver is reachable by a driver.
-    pub url: Url,
-}
-
-impl Mock {
-    /// Instructs the solver to return a new solution from now on.
-    pub fn configure_solution(&self, solution: Option<Solution>) {
-        *self.solution.lock().unwrap() = solution;
-    }
-}
-
-impl Default for Mock {
-    fn default() -> Self {
-        let solution = Arc::new(Mutex::new(None));
-
-        let app = axum::Router::new()
-            .layer(tower::ServiceBuilder::new().layer(
-                tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
-            ))
-            .route("/solve", axum::routing::post(solve))
-            .layer(
-                tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
-            )
-            .with_state(solution.clone())
-            // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
-            .layer(axum::extract::DefaultBodyLimit::disable());
-
-        let make_svc = observe::make_service_with_task_local_storage!(app);
-
-        let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(make_svc);
-
-        let mock = Mock {
-            solution,
-            url: format!("http://{}", server.local_addr()).parse().unwrap(),
-        };
-
-        tokio::task::spawn(server.with_graceful_shutdown(shutdown_signal()));
-
-        mock
-    }
-}
-
-async fn solve(
-    state: axum::extract::State<Arc<Mutex<Option<Solution>>>>,
-    Json(auction): Json<Auction>,
-) -> (axum::http::StatusCode, Json<Solutions>) {
-    let auction_id = auction.id.unwrap_or_default();
-    let solutions = state.lock().unwrap().iter().cloned().collect();
-    let solutions = Solutions { solutions };
-    tracing::trace!(?auction_id, ?solutions, "/solve");
-    (axum::http::StatusCode::OK, Json(solutions))
-}
-
-const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown.
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common.
-    let mut interrupt = unix::signal(SignalKind::interrupt()).unwrap();
-    let mut terminate = unix::signal(SignalKind::terminate()).unwrap();
-    tokio::select! {
-        _ = interrupt.recv() => (),
-        _ = terminate.recv() => (),
-    };
-}
 
 #[derive(Clone, Debug)]
 pub struct JitOrder {

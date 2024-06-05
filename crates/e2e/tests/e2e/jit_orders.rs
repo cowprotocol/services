@@ -1,6 +1,6 @@
 use {
     e2e::{
-        setup::{colocation::SolverEngine, *},
+        setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
         tx,
     },
     ethcontract::prelude::U256,
@@ -77,14 +77,6 @@ async fn single_limit_order_test(web3: Web3) {
     // Approve GPv2 for trading
     tx!(
         trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(100))
-    );
-    tx!(
-        trader_a.account(),
-        token_b.approve(onchain.contracts().allowance, to_wei(100))
-    );
-    tx!(
-        solver.account(),
         token_a.approve(onchain.contracts().allowance, to_wei(100))
     );
     tx!(
@@ -210,18 +202,22 @@ async fn single_limit_order_test(web3: Web3) {
     let trader_balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let solver_balance_after = token_b.balance_of(solver.address()).call().await.unwrap();
 
-    assert!(
+    wait_for_condition(TIMEOUT, || async {
         trader_balance_after
             .checked_sub(trader_balance_before)
             .unwrap()
             >= to_wei(5)
-    );
+    })
+    .await
+    .unwrap();
     // Since the fee is 0 in the custom solution, the balance difference has to be
     // exactly 10 wei
-    assert_eq!(
+    wait_for_condition(TIMEOUT, || async {
         solver_balance_before
             .checked_sub(solver_balance_after)
-            .unwrap(),
-        to_wei(10)
-    );
+            .unwrap()
+            == to_wei(10)
+    })
+    .await
+    .unwrap();
 }
