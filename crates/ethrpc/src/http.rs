@@ -77,21 +77,9 @@ async fn execute_rpc<T: DeserializeOwned>(
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-RPC-REQUEST-ID", id.to_string())
         .body(body);
-    match request {
-        Request::Single(Call::MethodCall(method)) => {
-            if let Some(request_id) = observe::request_id::get_task_local_storage() {
-                request_builder = request_builder.header("X-REQUEST-ID", request_id);
-            }
-            request_builder = request_builder.header("X-RPC-METHOD", method.method.clone());
-        }
-        Request::Batch(_) => {
-            if let Some(metadata) = observe::request_id::get_task_local_storage() {
-                request_builder = request_builder.header("X-RPC-METADATA", metadata);
-            }
-        }
-        _ => {}
+    if let Some(metadata) = observe::request_id::get_task_local_storage() {
+        request_builder = request_builder.header("X-RPC-METADATA", metadata);
     }
-
     let response = request_builder
         .send()
         .await

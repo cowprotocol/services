@@ -99,15 +99,20 @@ where
                     1 => {
                         let ((id, request), trace_id, sender) =
                             (requests.remove(0), trace_ids.remove(0), senders.remove(0));
-                        let result = match trace_id {
-                            Some(trace_id) => {
+                        let result = match &request {
+                            Call::MethodCall(call) => {
+                                let metadata = format!(
+                                    "{}:{}",
+                                    trace_id.unwrap_or("-".to_string()),
+                                    call.method
+                                );
                                 observe::request_id::set_task_local_storage(
-                                    trace_id,
+                                    metadata,
                                     inner.send(id, request),
                                 )
                                 .await
                             }
-                            None => inner.send(id, request).await,
+                            _ => inner.send(id, request).await,
                         };
                         let _ = sender.send(result);
                     }
