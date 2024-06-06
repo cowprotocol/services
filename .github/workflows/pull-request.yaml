@@ -108,8 +108,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly-f479e945c6be78bb902df12f9d683c3bb55e3fb0
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
