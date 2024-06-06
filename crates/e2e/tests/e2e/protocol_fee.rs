@@ -231,6 +231,9 @@ async fn combined_protocol_fees(web3: Web3) {
         )
         .await
         .unwrap();
+        // Only proceed with test once the quote changes significantly (2x) to avoid
+        // progressing due to tiny fluctuations in gas price which would lead to
+        // errors down the line.
         new_market_order_quote.quote.buy_amount > market_quote_before.quote.buy_amount * 2
     })
     .await
