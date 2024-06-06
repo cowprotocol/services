@@ -1,5 +1,5 @@
 use {
-    self::trade::ClearingPrices,
+    self::trade::{ClearingPrices, Fee, Fulfillment},
     super::auction,
     crate::{
         boundary,
@@ -56,7 +56,7 @@ impl Solution {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: Id,
-        trades: Vec<Trade>,
+        mut trades: Vec<Trade>,
         prices: Prices,
         pre_interactions: Vec<eth::Interaction>,
         interactions: Vec<Interaction>,
@@ -65,7 +65,48 @@ impl Solution {
         weth: eth::WethAddress,
         gas: Option<eth::Gas>,
         fee_handler: FeeHandler,
+        surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, error::Solution> {
+        // Surplus capturing JIT orders behave like Fulfillment orders. They capture
+        // surplus, pay network fees and contribute to score of a solution.
+        // To make sure that all the same logic and checks get applied we convert them
+        // right away.
+        for trade in &mut trades {
+            let Trade::Jit(jit) = trade else { continue };
+            if !surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
+                continue;
+            }
+
+            *trade = Trade::Fulfillment(
+                Fulfillment::new(
+                    competition::Order {
+                        uid: jit.order().uid,
+                        kind: order::Kind::Limit,
+                        side: jit.order().side,
+                        sell: jit.order().sell,
+                        buy: jit.order().buy,
+                        signature: jit.order().signature.clone(),
+                        receiver: Some(jit.order().receiver),
+                        valid_to: jit.order().valid_to,
+                        app_data: jit.order().app_data,
+                        partial: jit.order().partially_fillable(),
+                        pre_interactions: vec![],
+                        post_interactions: vec![],
+                        sell_token_balance: jit.order().sell_token_balance,
+                        buy_token_balance: jit.order().buy_token_balance,
+                        protocol_fees: vec![],
+                    },
+                    jit.executed(),
+                    Fee::Dynamic(jit.fee()),
+                )
+                .map_err(error::Solution::InvalidJitTrade)?,
+            );
+            tracing::debug!(
+                fulfillment = ?trade,
+                "converted surplus capturing JIT trade into fulfillment"
+            );
+        }
+
         let solution = Self {
             id,
             trades,
@@ -352,10 +393,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
-        encoding: encoding::Strategy,
         solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, encoding, solver_native_token).await
+        Settlement::encode(self, auction, eth, simulator, solver_native_token).await
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
@@ -555,6 +595,8 @@ pub mod error {
         InvalidClearingPrices,
         #[error(transparent)]
         ProtocolFee(#[from] fee::Error),
+        #[error("invalid JIT trade")]
+        InvalidJitTrade(Trade),
     }
 
     #[derive(Debug, thiserror::Error)]

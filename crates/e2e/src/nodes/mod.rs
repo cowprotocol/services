@@ -36,7 +36,7 @@ impl Node {
             "--gas-limit",
             "10000000",
             "--base-fee",
-            "0",
+            "1",
             "--balance",
             "1000000",
             "--chain-id",
