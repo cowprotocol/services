@@ -156,7 +156,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let fast = instrument(estimator, name);
         let optimal = match verified {
-            Some(verified) => instrument(verified, format!("{name}_verified")),
+            Some(verified) => instrument(verified, name),
             None => fast.clone(),
         };
 
