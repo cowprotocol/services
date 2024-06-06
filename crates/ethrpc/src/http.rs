@@ -1,6 +1,7 @@
 use {
     ethcontract::jsonrpc as jsonrpc_core,
     futures::{future::BoxFuture, FutureExt},
+    itertools::Itertools,
     jsonrpc_core::types::{Call, Output, Request, Value},
     reqwest::{header, Client, Url},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
@@ -77,9 +78,46 @@ async fn execute_rpc<T: DeserializeOwned>(
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-RPC-REQUEST-ID", id.to_string())
         .body(body);
-    if let Some(metadata) = observe::request_id::get_task_local_storage() {
-        request_builder = request_builder.header("X-RPC-METADATA", metadata);
+
+    let rpc_metadata = observe::rpc_metadata::get_rpc_metadata_storage();
+    if !rpc_metadata.is_empty() {
+        let metadata_str = rpc_metadata
+            .into_iter()
+            .map(|metadata| {
+                format!(
+                    "{}:{}",
+                    metadata.trace_id.unwrap_or("-".to_string()),
+                    metadata.method_name,
+                )
+            })
+            .collect_vec()
+            .join(",");
+        request_builder = request_builder.header("X-RPC-METADATA", metadata_str);
+    } else if let Some(trace_id) = observe::request_id::get_task_local_storage() {
+        match request {
+            Request::Single(Call::MethodCall(call)) => {
+                let metadata_str = format!("{}:{}", trace_id, call.method);
+                request_builder = request_builder.header("X-RPC-METADATA", metadata_str);
+            }
+            Request::Batch(calls) => {
+                let metadata = calls
+                    .iter()
+                    .filter_map(|call| {
+                        if let Call::MethodCall(method_call) = call {
+                            Some(format!("{}:{}", trace_id, method_call.method))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect_vec();
+                if !metadata.is_empty() {
+                    request_builder = request_builder.header("X-RPC-METADATA", metadata.join(","));
+                }
+            }
+            _ => {}
+        }
     }
+
     let response = request_builder
         .send()
         .await
