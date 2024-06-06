@@ -115,10 +115,12 @@ where
                         let request_metadata = requests
                             .iter()
                             .zip(trace_ids)
-                            .filter_map(|((_, call), trace_id)| match (call, trace_id) {
-                                (Call::MethodCall(call), Some(trace_id)) => {
-                                    Some(format!("{}:{}", trace_id, call.method))
-                                }
+                            .filter_map(|((_, call), trace_id)| match call {
+                                Call::MethodCall(call) => Some(format!(
+                                    "{}:{}",
+                                    trace_id.unwrap_or("-".to_string()),
+                                    call.method
+                                )),
                                 _ => None,
                             })
                             .collect_vec()
