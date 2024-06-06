@@ -381,6 +381,7 @@ impl<'a> Services<'a> {
         &self,
         order: &OrderCreation,
     ) -> Result<OrderUid, (StatusCode, String)> {
+        tracing::info!("Creating order: {order:?}");
         let placement = self
             .http
             .post(format!("{API_HOST}{ORDERS_ENDPOINT}"))

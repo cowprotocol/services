@@ -57,6 +57,8 @@ pub struct JitTrade {
     pub order: JitOrder,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    pub fee: Option<U256>,
 }
 
 #[serde_as]
@@ -73,10 +75,7 @@ pub struct JitOrder {
     pub valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
     pub app_data: [u8; 32],
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee_amount: U256,
     pub kind: Kind,
-    pub partially_fillable: bool,
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signing_scheme: SigningScheme,

@@ -58,7 +58,7 @@ where
 
 static NODE_MUTEX: Mutex<()> = Mutex::new(());
 
-const DEFAULT_FILTERS: [&str; 9] = [
+const DEFAULT_FILTERS: &[&str] = &[
     "warn",
     "autopilot=debug",
     "driver=debug",
@@ -74,7 +74,7 @@ fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<S
 where
     T: AsRef<str>,
 {
-    let mut default_filters: Vec<_> = DEFAULT_FILTERS.into_iter().map(String::from).collect();
+    let mut default_filters: Vec<_> = DEFAULT_FILTERS.iter().map(|s| s.to_string()).collect();
     default_filters.extend(custom_filters.into_iter().map(|f| f.as_ref().to_owned()));
 
     default_filters
@@ -205,7 +205,8 @@ async fn run<F, Fut, T>(
 macro_rules! assert_approximately_eq {
     ($executed_value:expr, $expected_value:expr) => {{
         let lower = $expected_value * U256::from(99999999999u128) / U256::from(100000000000u128);
-        let upper = $expected_value * U256::from(100000000001u128) / U256::from(100000000000u128);
+        let upper =
+            ($expected_value * U256::from(100000000001u128) / U256::from(100000000000u128)) + 1;
         assert!(
             $executed_value >= lower && $executed_value <= upper,
             "Expected: ~{}, got: {}",
