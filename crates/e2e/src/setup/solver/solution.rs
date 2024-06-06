@@ -68,12 +68,10 @@ impl JitOrder {
             buy_amount: data.buy_amount,
             valid_to: data.valid_to,
             app_data: data.app_data.0,
-            fee_amount: data.fee_amount,
             kind: match data.kind {
                 OrderKind::Buy => Kind::Buy,
                 OrderKind::Sell => Kind::Sell,
             },
-            partially_fillable: data.partially_fillable,
             sell_token_balance: match data.sell_token_balance {
                 SellTokenSource::Erc20 => solvers_dto::solution::SellTokenBalance::Erc20,
                 SellTokenSource::External => solvers_dto::solution::SellTokenBalance::External,

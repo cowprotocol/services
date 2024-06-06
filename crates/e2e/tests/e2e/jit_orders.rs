@@ -140,6 +140,7 @@ async fn single_limit_order_test(web3: Web3) {
                     SecretKeyRef::from(&SecretKey::from_slice(solver.private_key()).unwrap()),
                 ),
                 executed_amount: to_wei(10),
+                fee: Some(0.into()),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 executed_amount: order.sell_amount,
