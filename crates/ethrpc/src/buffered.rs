@@ -13,7 +13,6 @@ use {
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
     itertools::Itertools,
-    observe::rpc_metadata::RpcMetadata,
     serde_json::Value,
     std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
     tokio::task::JoinHandle,
@@ -102,11 +101,13 @@ where
                             (requests.remove(0), trace_ids.remove(0), senders.remove(0));
                         let result = match &request {
                             Call::MethodCall(call) => {
-                                observe::rpc_metadata::set_rpc_metadata_storage(
-                                    vec![RpcMetadata {
-                                        method_name: call.method.clone(),
-                                        trace_id,
-                                    }],
+                                let metadata = format!(
+                                    "{}:{}",
+                                    trace_id.unwrap_or("-".to_string()),
+                                    call.method
+                                );
+                                observe::request_id::set_task_local_storage(
+                                    metadata,
                                     inner.send(id, request),
                                 )
                                 .await
@@ -120,14 +121,16 @@ where
                             .iter()
                             .zip(trace_ids)
                             .filter_map(|((_, call), trace_id)| match call {
-                                Call::MethodCall(call) => Some(RpcMetadata {
-                                    method_name: call.method.clone(),
-                                    trace_id,
-                                }),
+                                Call::MethodCall(call) => Some(format!(
+                                    "{}:{}",
+                                    trace_id.unwrap_or("-".to_string()),
+                                    call.method
+                                )),
                                 _ => None,
                             })
-                            .collect_vec();
-                        let results = observe::rpc_metadata::set_rpc_metadata_storage(
+                            .collect_vec()
+                            .join(",");
+                        let results = observe::request_id::set_task_local_storage(
                             request_metadata,
                             inner.send_batch(requests),
                         )

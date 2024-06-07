@@ -5,5 +5,4 @@ pub mod future;
 pub mod metrics;
 pub mod panic_hook;
 pub mod request_id;
-pub mod rpc_metadata;
 pub mod tracing;
