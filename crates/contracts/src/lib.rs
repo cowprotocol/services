@@ -38,6 +38,9 @@ include_contracts! {
     BalancerV2WeightedPoolFactoryV3;
     BalancerV2WeightedPoolFactoryV4;
     BaoswapRouter;
+    CowAmm;
+    CowAmmConstantProductFactory;
+    CowAmmUniswapV2PriceOracle;
     CoWSwapEthFlow;
     CoWSwapOnchainOrders;
     CowProtocolToken;
