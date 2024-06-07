@@ -1,7 +1,7 @@
 use {
     app_data::AppDataHash,
     e2e::{
-        setup::{colocation::SolverEngine, *},
+        setup::{colocation::SolverEngine, mock::Mock, *},
         tx,
         tx_value,
     },
@@ -290,6 +290,8 @@ async fn cow_amm(web3: Web3) {
     let amm_balance_before = dai.balance_of(cow_amm.address()).call().await.unwrap();
     let bob_balance_before = dai.balance_of(bob.address()).call().await.unwrap();
 
+    let fee = U256::exp10(16); // 0.01 WETH
+
     mock_solver.configure_solution(Some(Solution {
         id: 1,
         // assume price of the univ2 pool
@@ -307,20 +309,19 @@ async fn cow_amm(web3: Web3) {
                     buy_amount: cow_amm_order.buy_amount,
                     valid_to: cow_amm_order.valid_to,
                     app_data: cow_amm_order.app_data.0,
-                    fee_amount: cow_amm_order.fee_amount,
                     kind: Kind::Sell,
-                    partially_fillable: cow_amm_order.partially_fillable,
                     sell_token_balance: SellTokenBalance::Erc20,
                     buy_token_balance: BuyTokenBalance::Erc20,
                     signing_scheme: SigningScheme::Eip1271,
                     signature,
                 },
-                executed_amount: cow_amm_order.sell_amount,
+                executed_amount: cow_amm_order.sell_amount - fee,
+                fee: Some(fee),
             }),
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: user_order.sell_amount,
-                fee: Some(0.into()),
                 order: user_order_id.0,
+                executed_amount: user_order.sell_amount - fee,
+                fee: Some(fee),
             }),
         ],
         pre_interactions: vec![cow_amm_commitment],

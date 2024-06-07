@@ -101,8 +101,6 @@ account = "{account}"
     let liquidity = liquidity.to_string(contracts);
     let config_file = config_tmp_file(format!(
         r#"
-encoding="domain"
-
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
