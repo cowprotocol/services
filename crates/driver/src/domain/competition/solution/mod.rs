@@ -67,19 +67,15 @@ impl Solution {
         fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> Result<Self, error::Solution> {
-        tracing::error!(?surplus_capturing_jit_order_owners);
         // Surplus capturing JIT orders behave like Fulfillment orders. They capture
         // surplus, pay network fees and contribute to score of a solution.
         // To make sure that all the same logic and checks get applied we convert them
         // right away.
         for trade in &mut trades {
             let Trade::Jit(jit) = trade else { continue };
-            tracing::error!(owner = ?jit.order().signature.signer);
             if !surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer) {
                 continue;
             }
-
-            tracing::error!(signature = ?jit.order().signature);
 
             *trade = Trade::Fulfillment(
                 Fulfillment::new(
