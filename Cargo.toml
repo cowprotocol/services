@@ -52,5 +52,5 @@ tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 url = "2.5.0"
-warp = { git = 'https://github.com/cowprotocol/warp.git', rev = "87a91e2", default-features = false }
+warp = { git = 'https://github.com/cowprotocol/warp.git', rev = "586244e", default-features = false }
 web3 = { version = "0.19.0", default-features = false }
