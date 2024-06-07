@@ -97,11 +97,14 @@ pub enum Interaction {
     Custom(CustomInteraction),
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub struct Call {
     pub target: H160,
     pub value: U256,
+    #[serde(rename = "callData")]
+    #[serde_as(as = "serialize::Hex")]
     pub calldata: Vec<u8>,
 }
 
