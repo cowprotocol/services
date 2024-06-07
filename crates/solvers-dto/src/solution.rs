@@ -14,7 +14,7 @@ pub struct Solutions {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub id: u64,
@@ -30,7 +30,7 @@ pub struct Solution {
     pub gas: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Trade {
     Fulfillment(Fulfillment),
@@ -38,7 +38,7 @@ pub enum Trade {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
@@ -51,7 +51,7 @@ pub struct Fulfillment {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JitTrade {
     pub order: JitOrder,
@@ -62,7 +62,7 @@ pub struct JitTrade {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JitOrder {
     pub sell_token: H160,
@@ -83,21 +83,21 @@ pub struct JitOrder {
     pub signature: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
     Sell,
     Buy,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub struct Call {
     pub target: H160,
@@ -106,7 +106,7 @@ pub struct Call {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiquidityInteraction {
     pub internalize: bool,
@@ -120,7 +120,7 @@ pub struct LiquidityInteraction {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomInteraction {
     pub internalize: bool,
@@ -150,7 +150,7 @@ pub struct OrderInteraction {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub token: H160,
@@ -159,7 +159,7 @@ pub struct Asset {
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Allowance {
     pub token: H160,
@@ -168,7 +168,7 @@ pub struct Allowance {
     pub amount: U256,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SellTokenBalance {
     #[default]
@@ -177,7 +177,7 @@ pub enum SellTokenBalance {
     External,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BuyTokenBalance {
     #[default]
@@ -185,7 +185,7 @@ pub enum BuyTokenBalance {
     Internal,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SigningScheme {
     Eip712,

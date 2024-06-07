@@ -1,9 +1,4 @@
-use {
-    crate::{nodes::NODE_HOST, setup::*},
-    ethcontract::H160,
-    reqwest::Url,
-    tokio::task::JoinHandle,
-};
+use {crate::setup::*, ethcontract::H160, reqwest::Url, tokio::task::JoinHandle};
 
 pub async fn start_baseline_solver(weth: H160) -> Url {
     let config_file = config_tmp_file(format!(
