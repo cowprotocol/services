@@ -40,7 +40,7 @@ tower-http = { version = "0.4", features = ["limit", "trace"] }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }
-uuid = { version = "1.4.1", features = ["v4"] }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 app-data-hash = { path = "../app-data-hash" }
