@@ -157,6 +157,7 @@ pub async fn run(args: Arguments) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
+        cow_amm_product_factory: args.shared.cow_amm_product_factory_contract_address,
     };
     let eth = ethereum(
         web3.clone(),
@@ -358,6 +359,15 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
+    let _event_updater_cow_amm = Arc::new(EventUpdater::new(
+        boundary::events::cow_amm_product_factory::CowAmmConstantProductFactoryContract::new(
+            eth.contracts().cow_amm_product_factory().clone(),
+        ),
+        boundary::events::cow_amm_product_factory::Indexer::default(),
+        block_retriever.clone(),
+        None,
+    ));
+
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(
