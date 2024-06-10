@@ -3,6 +3,7 @@ mod deploy;
 #[macro_use]
 pub mod onchain_components;
 mod services;
+mod solver;
 
 use {
     crate::nodes::{Node, NODE_HOST},
@@ -19,7 +20,7 @@ use {
     },
     tempfile::TempPath,
 };
-pub use {deploy::*, onchain_components::*, services::*};
+pub use {deploy::*, onchain_components::*, services::*, solver::*};
 
 /// Create a temporary file with the given content.
 pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
@@ -58,7 +59,7 @@ where
 
 static NODE_MUTEX: Mutex<()> = Mutex::new(());
 
-const DEFAULT_FILTERS: [&str; 9] = [
+const DEFAULT_FILTERS: &[&str] = &[
     "warn",
     "autopilot=debug",
     "driver=debug",
@@ -74,7 +75,7 @@ fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<S
 where
     T: AsRef<str>,
 {
-    let mut default_filters: Vec<_> = DEFAULT_FILTERS.into_iter().map(String::from).collect();
+    let mut default_filters: Vec<_> = DEFAULT_FILTERS.iter().map(|s| s.to_string()).collect();
     default_filters.extend(custom_filters.into_iter().map(|f| f.as_ref().to_owned()));
 
     default_filters

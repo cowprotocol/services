@@ -811,6 +811,10 @@ fn main() {
             .add_network_str(ARBITRUM_ONE, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
     });
 
+    generate_contract("CowAmm");
+    generate_contract("CowAmmConstantProductFactory");
+    generate_contract("CowAmmUniswapV2PriceOracle");
+
     // Support contracts used for trade and token simulations.
     generate_contract("Trader");
     generate_contract("Solver");
