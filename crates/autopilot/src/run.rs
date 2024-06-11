@@ -359,16 +359,18 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let _event_updater_cow_amm = Arc::new(EventUpdater::new(
+    let cow_amm_indexer = boundary::events::cow_amm_product_factory::Indexer::new(&web3).await;
+    let event_updater_cow_amm = Arc::new(EventUpdater::new(
         boundary::events::cow_amm_product_factory::CowAmmConstantProductFactoryContract::new(
             eth.contracts().cow_amm_product_factory().clone(),
         ),
-        boundary::events::cow_amm_product_factory::Indexer::default(),
+        cow_amm_indexer.clone(),
         block_retriever.clone(),
         None,
     ));
 
-    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
+    let mut maintainers: Vec<Arc<dyn Maintaining>> =
+        vec![event_updater, Arc::new(db.clone()), event_updater_cow_amm];
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
@@ -518,6 +520,7 @@ pub async fn run(args: Arguments) {
             .iter()
             .cloned()
             .collect::<HashSet<_>>(),
+        cow_amm_indexer,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

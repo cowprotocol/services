@@ -812,7 +812,33 @@ fn main() {
     });
 
     generate_contract("CowAmm");
-    generate_contract("CowAmmConstantProductFactory");
+    generate_contract_with_config("CowAmmConstantProductFactory", |builder| {
+        builder
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x40664207e3375fb4b733d4743ce9b159331fd033"),
+                    // <https://etherscan.io/tx/0xf37fc438ddacb00c28305bd7dea3b79091cd5be3405a2b445717d9faf946fa50>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(19861952)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0"),
+                    // <https://gnosisscan.io/tx/0x4121efab4ad58ae7ad73b50448cccae0de92905e181648e5e08de3d6d9c66083>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(33874317)),
+                },
+            )
+            .add_network(
+                SEPOLIA,
+                Network {
+                    address: addr("0xb808e8183e3a72d196457d127c7fd4befa0d7fd2"),
+                    // <https://sepolia.etherscan.io/tx/0x5e6af00c670eb421b96e78fd2e3b9df573b19e6e0ea77d8003e47cdde384b048>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(5874562)),
+                },
+            )
+    });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
     // Support contracts used for trade and token simulations.
