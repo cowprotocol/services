@@ -99,15 +99,10 @@ where
                     1 => {
                         let ((id, request), trace_id, sender) =
                             (requests.remove(0), trace_ids.remove(0), senders.remove(0));
-                        let result = match &request {
-                            Call::MethodCall(call) => {
-                                let metadata = format!(
-                                    "{}:{}",
-                                    trace_id.unwrap_or("-".to_string()),
-                                    call.method
-                                );
+                        let result = match (&request, trace_id) {
+                            (Call::MethodCall(_), Some(trace_id)) => {
                                 observe::request_id::set_task_local_storage(
-                                    metadata,
+                                    trace_id,
                                     inner.send(id, request),
                                 )
                                 .await
