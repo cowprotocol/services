@@ -12,9 +12,14 @@ use {
         future::{self, BoxFuture, FutureExt as _},
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
-    itertools::Itertools,
     serde_json::Value,
-    std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
+    std::{
+        collections::{BTreeMap, BTreeSet, HashMap},
+        future::Future,
+        num::NonZeroUsize,
+        sync::Arc,
+        time::Duration,
+    },
     tokio::task::JoinHandle,
     tracing::Instrument as _,
 };
@@ -112,19 +117,51 @@ where
                         let _ = sender.send(result);
                     }
                     n => {
-                        let request_metadata = requests
+                        // Group requests by trace_id(sorted), then group values by method
+                        // name(unsorted) with call idx values(sorted).
+                        let mut result_map: BTreeMap<String, HashMap<String, BTreeSet<usize>>> =
+                            BTreeMap::new();
+                        for (idx, ((_, call), trace_id)) in
+                            requests.iter().zip(trace_ids).enumerate()
+                        {
+                            if let Call::MethodCall(call) = call {
+                                let trace_id = trace_id.unwrap_or("-".to_string());
+                                let method_name = call.method.clone();
+                                result_map
+                                    .entry(trace_id)
+                                    .or_default()
+                                    .entry(method_name)
+                                    .or_default()
+                                    .insert(idx);
+                            }
+                        }
+                        // Produces the following format:
+                        //  `1001:eth_call(0,2),eth_sendTransaction(4)|1002:eth_call(1,4),
+                        // eth_sendTransaction(5)|-eth_call:(6,7,8,9,10)`
+                        let request_metadata = result_map
                             .iter()
-                            .zip(trace_ids)
-                            .filter_map(|((_, call), trace_id)| match call {
-                                Call::MethodCall(call) => Some(format!(
+                            .map(|(trace_id, methods)| {
+                                format!(
                                     "{}:{}",
-                                    trace_id.unwrap_or("-".to_string()),
-                                    call.method
-                                )),
-                                _ => None,
+                                    trace_id,
+                                    methods
+                                        .iter()
+                                        .map(|(method, indices)| format!(
+                                            "{}({})",
+                                            method,
+                                            indices
+                                                .iter()
+                                                .map(usize::to_string)
+                                                .collect::<Vec<_>>()
+                                                .join(",")
+                                        ))
+                                        .collect::<Vec<_>>()
+                                        .join(",")
+                                )
                             })
-                            .collect_vec()
-                            .join(",");
+                            .collect::<Vec<_>>()
+                            .join("|");
+
                         let results = observe::request_id::set_task_local_storage(
                             request_metadata,
                             inner.send_batch(requests),
