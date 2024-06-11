@@ -12,6 +12,7 @@ use {
         future::{self, BoxFuture, FutureExt as _},
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
+    itertools::Itertools,
     serde_json::Value,
     std::{
         collections::{BTreeMap, BTreeSet, HashMap},
@@ -136,30 +137,29 @@ where
                             }
                         }
                         // Produces the following format:
-                        //  `1001:eth_call(0,2),eth_sendTransaction(4)|1002:eth_call(1,4),
-                        // eth_sendTransaction(5)|-eth_call:(6,7,8,9,10)`
+                        // `1001:eth_call(0,2),eth_sendTransaction(4)|1002:eth_call(1,3)`
                         let request_metadata = result_map
-                            .iter()
+                            .into_iter()
                             .map(|(trace_id, methods)| {
                                 format!(
                                     "{}:{}",
                                     trace_id,
                                     methods
-                                        .iter()
+                                        .into_iter()
                                         .map(|(method, indices)| format!(
                                             "{}({})",
                                             method,
                                             indices
                                                 .iter()
                                                 .map(usize::to_string)
-                                                .collect::<Vec<_>>()
+                                                .collect_vec()
                                                 .join(",")
                                         ))
-                                        .collect::<Vec<_>>()
+                                        .collect_vec()
                                         .join(",")
                                 )
                             })
-                            .collect::<Vec<_>>()
+                            .collect_vec()
                             .join("|");
 
                         let results = observe::request_id::set_task_local_storage(
