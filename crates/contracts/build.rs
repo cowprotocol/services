@@ -720,7 +720,7 @@ fn main() {
             .add_network_str(MAINNET, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str(GOERLI, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
-            .add_network_str(ARBITRUM_ONE, "0x6554AD1Afaa3f4ce16dc31030403590F467417A6")
+            .add_network_str(ARBITRUM_ONE, "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9")
         // Not available on Sepolia
     });
     generate_contract_with_config("UniswapV2Router02", |builder| {
@@ -729,7 +729,7 @@ fn main() {
             .add_network_str(MAINNET, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str(GOERLI, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
-            .add_network_str(ARBITRUM_ONE, "0xaedE1EFe768bD8A1663A7608c63290C60B85e71c")
+            .add_network_str(ARBITRUM_ONE, "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24")
         // Not available on Sepolia
     });
     generate_contract_with_config("UniswapV3SwapRouter", |builder| {
@@ -810,6 +810,10 @@ fn main() {
             .add_network_str(MAINNET, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
             .add_network_str(ARBITRUM_ONE, "0x40C57923924B5c5c5455c48D93317139ADDaC8fb")
     });
+
+    generate_contract("CowAmm");
+    generate_contract("CowAmmConstantProductFactory");
+    generate_contract("CowAmmUniswapV2PriceOracle");
 
     // Support contracts used for trade and token simulations.
     generate_contract("Trader");

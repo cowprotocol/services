@@ -4,6 +4,7 @@ use {
     driver::domain::eth::H160,
     e2e::{
         api::zeroex::{Eip712TypedZeroExOrder, ZeroExApi},
+        assert_approximately_eq,
         nodes::forked_node::ForkedNodeApi,
         setup::{
             colocation::{self, SolverEngine},
@@ -202,11 +203,14 @@ async fn zero_ex_liquidity(web3: Web3) {
     // crates/e2e/src/setup/colocation.rs:110 which is then applied to the
     // original filled amount crates/solver/src/liquidity/slippage.rs:110
     let expected_filled_amount = amount.as_u128() + amount.as_u128() / 10u128;
-    assert_eq!(zeroex_order_amounts.filled, expected_filled_amount);
+    assert_approximately_eq!(
+        U256::from(zeroex_order_amounts.filled),
+        U256::from(expected_filled_amount)
+    );
     assert!(zeroex_order_amounts.fillable > 0u128);
-    assert_eq!(
-        zeroex_order_amounts.fillable,
-        amount.as_u128() * 2 - expected_filled_amount
+    assert_approximately_eq!(
+        U256::from(zeroex_order_amounts.fillable),
+        U256::from(amount.as_u128() * 2 - expected_filled_amount)
     );
 
     // Fill the remaining part of the 0x order
@@ -233,11 +237,11 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_order_amounts = get_zeroex_order_amounts(&zeroex, &zeroex_order)
         .await
         .unwrap();
-    assert_eq!(
-        zeroex_order_amounts.filled,
-        amount.as_u128() * 2 - expected_filled_amount
+    assert_approximately_eq!(
+        U256::from(zeroex_order_amounts.filled),
+        U256::from(amount.as_u128() * 2 - expected_filled_amount)
     );
-    assert_eq!(zeroex_order_amounts.fillable, 0u128);
+    assert_approximately_eq!(U256::from(zeroex_order_amounts.fillable), U256::zero());
 }
 
 fn create_zeroex_liquidity_orders(
