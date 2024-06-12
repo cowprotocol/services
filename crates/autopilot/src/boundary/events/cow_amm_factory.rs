@@ -8,7 +8,7 @@ use {
         collections::{BTreeMap, HashSet},
         sync::Arc,
     },
-    tokio::sync::RwLock,
+    tokio::sync::{broadcast, RwLock},
 };
 
 impl_event_retrieving! {
@@ -23,10 +23,20 @@ pub struct Indexer {
         RwLock<BTreeMap<u64, contracts::cow_amm_constant_product_factory::event_data::Deployed>>,
     >,
     first_block: u64,
+    sender: Option<
+        broadcast::Sender<ethcontract::Event<contracts::cow_amm_constant_product_factory::Event>>,
+    >,
 }
 
 impl Indexer {
-    pub async fn new(web3: &DynWeb3) -> Self {
+    pub async fn new(
+        web3: &DynWeb3,
+        sender: Option<
+            broadcast::Sender<
+                ethcontract::Event<contracts::cow_amm_constant_product_factory::Event>,
+            >,
+        >,
+    ) -> Self {
         let cow_amm_constant_product_factory = CowAmmConstantProductFactory::deployed(web3)
             .await
             .expect("Failed to find deployed CowAmmConstantProductFactory");
@@ -40,6 +50,7 @@ impl Indexer {
         Self {
             registry: Arc::new(RwLock::new(BTreeMap::new())),
             first_block,
+            sender,
         }
     }
 
@@ -79,14 +90,21 @@ impl EventStoring<contracts::cow_amm_constant_product_factory::Event> for Indexe
         events: Vec<ethcontract::Event<contracts::cow_amm_constant_product_factory::Event>>,
     ) -> anyhow::Result<()> {
         let mut registry = self.registry.write().await;
-        for event in events {
+        for event in &events {
             let block_number = event
                 .meta
+                .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?
                 .block_number;
-            if let contracts::cow_amm_constant_product_factory::Event::Deployed(event) = event.data
+            if let contracts::cow_amm_constant_product_factory::Event::Deployed(ref event) =
+                event.data
             {
-                registry.insert(block_number, event);
+                registry.insert(block_number, event.clone());
+            }
+            if let Some(sender) = &self.sender {
+                if let Err(e) = sender.send(event.clone()) {
+                    tracing::error!(?e, "failed to send CoW AMM product factory event(s)");
+                }
             }
         }
         Ok(())

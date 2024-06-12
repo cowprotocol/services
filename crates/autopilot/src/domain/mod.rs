@@ -4,6 +4,7 @@ pub mod eth;
 pub mod fee;
 pub mod quote;
 pub mod settlement;
+mod surplus_capturing_jit_order_owners;
 
 pub use {
     auction::{
@@ -13,4 +14,5 @@ pub use {
     },
     fee::ProtocolFees,
     quote::Quote,
+    surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
 };

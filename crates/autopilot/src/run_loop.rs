@@ -10,6 +10,7 @@ use {
                 {self},
             },
             OrderUid,
+            SurplusCapturingJitOrderOwners,
         },
         infra::{
             self,
@@ -28,7 +29,7 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
@@ -53,7 +54,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
-    pub surplus_capturing_jit_order_owners: HashSet<H160>,
+    pub surplus_capturing_jit_order_owners: SurplusCapturingJitOrderOwners,
     pub cow_amm_indexer: cow_amm_factory::Indexer,
 }
 
@@ -309,16 +310,17 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let mut surplus_capturing_jit_order_owners =
-            self.cow_amm_indexer.get_cow_amm_addresses().await;
-        surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
-
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &surplus_capturing_jit_order_owners,
+            self.surplus_capturing_jit_order_owners
+                .get_all()
+                .await
+                .into_iter()
+                .map(Into::into)
+                .collect(),
         );
         let request = &request;
 

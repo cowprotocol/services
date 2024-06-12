@@ -11,7 +11,7 @@ use {
             },
             Postgres,
         },
-        domain,
+        domain::{self, SurplusCapturingJitOrderOwners},
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         run_loop::RunLoop,
@@ -45,7 +45,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -359,7 +358,9 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_indexer = boundary::events::cow_amm_factory::Indexer::new(&web3).await;
+    let (sender, _) = tokio::sync::broadcast::channel(20);
+    let cow_amm_indexer =
+        boundary::events::cow_amm_factory::Indexer::new(&web3, Some(sender.clone())).await;
     let event_updater_cow_amm = Arc::new(EventUpdater::new(
         boundary::events::cow_amm_factory::CowAmmConstantProductFactoryContract::new(
             eth.contracts().cow_amm_factory().clone(),
@@ -368,6 +369,10 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         None,
     ));
+    let surplus_capturing_jit_order_owners = SurplusCapturingJitOrderOwners::new(
+        &args.protocol_fee_exempt_addresses,
+        Some(sender.subscribe()),
+    );
 
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
         vec![event_updater, Arc::new(db.clone()), event_updater_cow_amm];
@@ -515,11 +520,7 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
-        surplus_capturing_jit_order_owners: args
-            .protocol_fee_exempt_addresses
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>(),
+        surplus_capturing_jit_order_owners,
         cow_amm_indexer,
     };
     run.run_forever().await;
@@ -574,17 +575,15 @@ async fn shadow_mode(args: Arguments) -> ! {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
+    let surplus_capturing_jit_order_owners =
+        SurplusCapturingJitOrderOwners::new(&args.protocol_fee_exempt_addresses, None);
     let shadow = shadow::RunLoop::new(
         orderbook,
         drivers,
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
-        &args
-            .protocol_fee_exempt_addresses
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>(),
+        surplus_capturing_jit_order_owners,
     );
     shadow.run_forever().await;
 
