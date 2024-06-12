@@ -62,16 +62,13 @@ impl EventStoring<contracts::cow_amm_constant_product_factory::Event> for Indexe
     ) -> anyhow::Result<()> {
         // Remove events in the specified range
         let range = *range.start()..=*range.end();
-        let keys_to_remove: Vec<u64> = self
-            .registry
-            .read()
-            .await
-            .range(range)
-            .map(|(block, _)| *block)
-            .collect();
-
-        for key in keys_to_remove {
-            self.registry.write().await.remove(&key);
+        // Create a context so the registry is dropped before the write lock is acquired
+        // in `append_events()`
+        {
+            let mut registry = self.registry.write().await;
+            for key in range {
+                registry.remove(&key);
+            }
         }
 
         self.append_events(events).await
@@ -81,6 +78,7 @@ impl EventStoring<contracts::cow_amm_constant_product_factory::Event> for Indexe
         &mut self,
         events: Vec<ethcontract::Event<contracts::cow_amm_constant_product_factory::Event>>,
     ) -> anyhow::Result<()> {
+        let mut registry = self.registry.write().await;
         for event in events {
             let block_number = event
                 .meta
@@ -88,7 +86,7 @@ impl EventStoring<contracts::cow_amm_constant_product_factory::Event> for Indexe
                 .block_number;
             if let contracts::cow_amm_constant_product_factory::Event::Deployed(event) = event.data
             {
-                self.registry.write().await.insert(block_number, event);
+                registry.insert(block_number, event);
             }
         }
         Ok(())
