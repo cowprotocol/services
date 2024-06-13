@@ -350,7 +350,7 @@ async fn cow_amm(web3: Web3) {
     // Check that the CoW AMM product factory listener works and catches the new CoW
     // AMM deployment events
     wait_for_condition(TIMEOUT, || async {
-        let mut auctions = mock_solver.get_auctions();
+        let auctions = mock_solver.get_auctions();
         auctions.iter().any(|auction| {
             auction
                 .surplus_capturing_jit_order_owners
