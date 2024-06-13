@@ -469,6 +469,7 @@ enum SigningScheme {
 }
 
 #[serde_as]
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, tag = "kind")]
 pub enum Score {
