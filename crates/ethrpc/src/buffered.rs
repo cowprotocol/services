@@ -12,7 +12,6 @@ use {
         future::{self, BoxFuture, FutureExt as _},
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
-    itertools::Itertools,
     serde_json::Value,
     std::{
         collections::{BTreeMap, BTreeSet},
@@ -355,16 +354,15 @@ fn build_rpc_metadata(
 /// Single indices (i.e., indices that are not part of a range) are represented
 /// as themselves.
 fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> {
-    let indices = indices.into_iter().collect_vec();
     let mut result = String::new();
-    if indices.is_empty() {
-        return Ok(result);
-    }
+    let mut indices = indices.into_iter();
+    let mut start = match indices.next() {
+        Some(index) => index,
+        None => return Ok(result),
+    };
+    let mut last = start;
 
-    let mut start = indices[0];
-    let mut last = indices[0];
-
-    for &index in &indices[1..] {
+    for index in indices.skip(1) {
         if index == last + 1 {
             last = index;
         } else {
