@@ -15,7 +15,7 @@ use {
     itertools::Itertools,
     serde_json::Value,
     std::{
-        collections::{BTreeMap, BTreeSet, HashMap},
+        collections::{BTreeMap, BTreeSet},
         future::Future,
         num::NonZeroUsize,
         sync::Arc,
@@ -118,50 +118,8 @@ where
                         let _ = sender.send(result);
                     }
                     n => {
-                        // Group requests by trace_id(sorted), then group values by method
-                        // name(unsorted) with call idx values(sorted).
-                        let mut result_map: BTreeMap<String, HashMap<String, BTreeSet<usize>>> =
-                            BTreeMap::new();
-                        for (idx, ((_, call), trace_id)) in
-                            requests.iter().zip(trace_ids).enumerate()
-                        {
-                            if let Call::MethodCall(call) = call {
-                                let trace_id = trace_id.unwrap_or("-".to_string());
-                                let method_name = call.method.clone();
-                                result_map
-                                    .entry(trace_id)
-                                    .or_default()
-                                    .entry(method_name)
-                                    .or_default()
-                                    .insert(idx);
-                            }
-                        }
-                        // Produces the following format:
-                        // `1001:eth_call(0,2),eth_sendTransaction(4)|1002:eth_call(1,3)`
-                        let request_metadata = result_map
-                            .into_iter()
-                            .map(|(trace_id, methods)| {
-                                format!(
-                                    "{}:{}",
-                                    trace_id,
-                                    methods
-                                        .into_iter()
-                                        .map(|(method, indices)| format!(
-                                            "{}({})",
-                                            method,
-                                            indices
-                                                .iter()
-                                                .map(usize::to_string)
-                                                .collect_vec()
-                                                .join(",")
-                                        ))
-                                        .collect_vec()
-                                        .join(",")
-                                )
-                            })
-                            .collect_vec()
-                            .join("|");
-
+                        let request_metadata =
+                            build_rpc_metadata_header(requests.iter(), trace_ids.iter());
                         let results = observe::request_id::set_task_local_storage(
                             request_metadata,
                             inner.send_batch(requests),
@@ -293,12 +251,191 @@ where
     batches.for_each_concurrent(concurrency_limit, work)
 }
 
+/// Builds a metadata header for RPC requests.
+///
+/// This function takes an iterator of requests and their corresponding trace
+/// IDs, and generates a metadata string that groups the requests by their trace
+/// IDs and method names. The format of the output string is as follows:
+///
+/// `trace_id:method_name(index1,index2,...),method_name(index1,index2,...
+/// )|trace_id:...`
+///
+/// Each trace ID is followed by a colon and a list of method names. Each method
+/// name is followed by a list of indices (representing the position of the
+/// request in the original vector) enclosed in parentheses. Different method
+/// names are separated by commas. If there are multiple trace IDs, their
+/// entries are separated by a pipe character.
+///
+/// If a trace ID is `None`, it is represented as "null" in the output string.
+/// All requests with absent trace IDs are grouped together under "null".
+///
+/// # Arguments
+///
+/// * `requests` - A vector of tuples, where each tuple contains a request ID
+///   and a `Call` object representing the RPC request.
+/// * `trace_ids` - A vector of optional strings representing the trace IDs of
+///   the requests. The trace IDs correspond to the requests in the same
+///   position in the `requests` vector.
+///
+/// # Returns
+///
+/// This function returns a string representing the metadata header.
+///
+/// # Examples
+///
+/// ```
+/// let requests = vec![
+///     (
+///         1001,
+///         Call::MethodCall(MethodCall {
+///             jsonrpc: "2.0",
+///             method: "eth_call",
+///             params: vec![],
+///             id: Id::Num(1),
+///         }),
+///     ),
+///     (
+///         1001,
+///         Call::MethodCall(MethodCall {
+///             jsonrpc: "2.0",
+///             method: "eth_sendTransaction",
+///             params: vec![],
+///             id: Id::Num(2),
+///         }),
+///     ),
+///     (
+///         1002,
+///         Call::MethodCall(MethodCall {
+///             jsonrpc: "2.0",
+///             method: "eth_call",
+///             params: vec![],
+///             id: Id::Num(3),
+///         }),
+///     ),
+/// ];
+/// let trace_ids = vec![Some("1001".to_string()), None, Some("1002".to_string())];
+/// let metadata_header = build_rpc_metadata_header(requests, trace_ids);
+/// assert_eq!(
+///     metadata_header,
+///     "null:eth_sendTransaction(1)|1001:eth_call(0)|1002:eth_call(2)"
+/// );
+/// ```
+fn build_rpc_metadata_header<'a>(
+    requests: impl Iterator<Item = &'a (RequestId, Call)>,
+    trace_ids: impl Iterator<Item = &'a Option<String>>,
+) -> String {
+    let mut grouped_metadata: BTreeMap<String, BTreeMap<String, BTreeSet<usize>>> = BTreeMap::new();
+    for (idx, ((_, call), trace_id)) in requests.zip(trace_ids).enumerate() {
+        if let Call::MethodCall(call) = call {
+            let trace_id = trace_id.clone().unwrap_or("null".to_string());
+            grouped_metadata
+                .entry(trace_id)
+                .or_default()
+                .entry(call.method.clone())
+                .or_default()
+                .insert(idx);
+        }
+    }
+
+    let mut metadata_str = String::new();
+
+    let mut grouped_metadata_iter = grouped_metadata.into_iter().peekable();
+    while let Some((trace_id, methods)) = grouped_metadata_iter.next() {
+        // New entry starts with the trace_id
+        metadata_str.push_str(&format!("{}:", trace_id));
+
+        // Followed by the method names and their indices
+        let mut methods_iter = methods.into_iter().peekable();
+        while let Some((method, indices)) = methods_iter.next() {
+            metadata_str.push_str(&format!("{}(", method));
+
+            let indices_str = format_indices_as_ranges(indices);
+            metadata_str.push_str(&indices_str);
+
+            metadata_str.push(')');
+
+            if methods_iter.peek().is_some() {
+                metadata_str.push(',');
+            }
+        }
+
+        if grouped_metadata_iter.peek().is_some() {
+            metadata_str.push('|');
+        }
+    }
+
+    metadata_str
+}
+
+/// Formats a set of indices as a string of ranges.
+///
+/// This function takes a set of indices and formats them as a string where
+/// consecutive indices are represented as ranges. For example, the set
+/// `{1, 2, 3, 5, 6, 8}` would be formatted as the string `"1..3,5..6,8"`.
+///
+/// # Arguments
+///
+/// * `indices` - A set of indices to format. The indices should be unique and
+///   sorted in ascending order.
+///
+/// # Returns
+///
+/// This function returns a string representing the indices as ranges. Each
+/// range is formatted as `start..end`, and ranges are separated by commas.
+/// Single indices (i.e., indices that are not part of a range) are represented
+/// as themselves.
+///
+/// # Examples
+///
+/// ```
+/// let indices = vec![1, 2, 3, 5, 6, 8].into_iter().collect();
+/// let ranges = format_indices_as_ranges(indices);
+/// assert_eq!(ranges, "1..3,5..6,8");
+/// ```
+fn format_indices_as_ranges(indices: BTreeSet<usize>) -> String {
+    let indices = indices.into_iter().collect_vec();
+    if indices.is_empty() {
+        return "".to_string();
+    }
+
+    let mut result = String::new();
+    let mut start = indices[0];
+    let mut last = indices[0];
+
+    for &index in &indices[1..] {
+        if index == last + 1 {
+            last = index;
+        } else {
+            if start == last {
+                result.push_str(&format!("{}", start));
+            } else {
+                result.push_str(&format!("{}..{}", start, last));
+            }
+            result.push(',');
+            start = index;
+            last = index;
+        }
+    }
+
+    if start == last {
+        result.push_str(&format!("{}", start));
+    } else {
+        result.push_str(&format!("{}..{}", start, last));
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         crate::mock::MockTransport,
-        ethcontract::{Web3, U256},
+        ethcontract::{
+            jsonrpc::{Id, MethodCall, Params},
+            Web3,
+            U256,
+        },
         mockall::predicate,
         serde_json::json,
     };
@@ -396,5 +533,79 @@ mod tests {
 
         assert_eq!(used.await.unwrap(), json!(1337));
         drop(unpolled);
+    }
+
+    #[test]
+    fn test_format_indices_as_ranges() {
+        // empty string
+        let indices = BTreeSet::new();
+        assert_eq!(format_indices_as_ranges(indices), "");
+
+        // a single value
+        let indices = vec![2].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices), "2");
+
+        // only a range
+        let indices = vec![1, 2, 3, 4, 5].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices), "1..5");
+
+        // no ranges
+        let indices = vec![1, 3, 5, 7].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices), "1,3,5,7");
+
+        // ends with a non-range value
+        let indices = vec![1, 2, 3, 5, 7, 8, 9, 10, 20].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices), "1..3,5,7..10,20");
+
+        // ends with a range value
+        let indices = vec![1, 2, 3, 5, 6, 7, 8, 10, 11, 12].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices), "1..3,5..8,10..12");
+    }
+
+    fn method_call(method: &str) -> Call {
+        Call::MethodCall(MethodCall {
+            jsonrpc: None,
+            method: method.to_string(),
+            params: Params::None,
+            id: Id::Null,
+        })
+    }
+
+    #[test]
+    fn test_build_rpc_metadata_header() {
+        let requests = vec![
+            (1001, method_call("eth_sendTransaction")), // 0
+            (1001, method_call("eth_call")),            // 1
+            (1001, method_call("eth_sendTransaction")), // 2
+            (1002, method_call("eth_call")),            // 3
+            (9999, method_call("eth_call")),            // 4
+            (1001, method_call("eth_sendTransaction")), // 5
+            (1002, method_call("eth_call")),            // 6
+            (1002, method_call("eth_call")),            // 7
+            (1001, method_call("eth_sendTransaction")), // 8
+            (9999, method_call("eth_sendTransaction")), // 9
+            (9999, method_call("eth_sendTransaction")), // 10
+            (9999, method_call("eth_sendTransaction")), // 11
+        ];
+        let trace_ids = vec![
+            Some("1001".to_string()), // 0
+            Some("1001".to_string()), // 1
+            Some("1001".to_string()), // 2
+            Some("1002".to_string()), // 3
+            None,                     // 4
+            Some("1001".to_string()), // 5
+            Some("1002".to_string()), // 6
+            Some("1002".to_string()), // 7
+            Some("1001".to_string()), // 8
+            None,                     // 9
+            None,                     // 10
+            None,                     // 11
+        ];
+        let metadata_header = build_rpc_metadata_header(requests.iter(), trace_ids.iter());
+        assert_eq!(
+            metadata_header,
+            "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6..7)|null:eth_call(4),\
+             eth_sendTransaction(9..11)"
+        );
     }
 }
