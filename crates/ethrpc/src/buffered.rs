@@ -280,46 +280,6 @@ where
 /// # Returns
 ///
 /// This function returns a string representing the metadata header.
-///
-/// # Examples
-///
-/// ```
-/// let requests = vec![
-///     (
-///         1001,
-///         Call::MethodCall(MethodCall {
-///             jsonrpc: "2.0",
-///             method: "eth_call",
-///             params: vec![],
-///             id: Id::Num(1),
-///         }),
-///     ),
-///     (
-///         1001,
-///         Call::MethodCall(MethodCall {
-///             jsonrpc: "2.0",
-///             method: "eth_sendTransaction",
-///             params: vec![],
-///             id: Id::Num(2),
-///         }),
-///     ),
-///     (
-///         1002,
-///         Call::MethodCall(MethodCall {
-///             jsonrpc: "2.0",
-///             method: "eth_call",
-///             params: vec![],
-///             id: Id::Num(3),
-///         }),
-///     ),
-/// ];
-/// let trace_ids = vec![Some("1001".to_string()), None, Some("1002".to_string())];
-/// let metadata_header = build_rpc_metadata_header(requests, trace_ids);
-/// assert_eq!(
-///     metadata_header,
-///     "null:eth_sendTransaction(1)|1001:eth_call(0)|1002:eth_call(2)"
-/// );
-/// ```
 fn build_rpc_metadata_header<'a>(
     requests: impl Iterator<Item = &'a (RequestId, Call)>,
     trace_ids: impl Iterator<Item = &'a Option<String>>,
@@ -384,14 +344,6 @@ fn build_rpc_metadata_header<'a>(
 /// range is formatted as `start..end`, and ranges are separated by commas.
 /// Single indices (i.e., indices that are not part of a range) are represented
 /// as themselves.
-///
-/// # Examples
-///
-/// ```
-/// let indices = vec![1, 2, 3, 5, 6, 8].into_iter().collect();
-/// let ranges = format_indices_as_ranges(indices);
-/// assert_eq!(ranges, "1..3,5..6,8");
-/// ```
 fn format_indices_as_ranges(indices: BTreeSet<usize>) -> String {
     let indices = indices.into_iter().collect_vec();
     if indices.is_empty() {
