@@ -154,6 +154,7 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
         ]
         .into_iter()
