@@ -16,7 +16,7 @@ use {
 /// Returns the default time limit used for quoting with external co-located
 /// solvers.
 pub fn time_limit() -> chrono::Duration {
-    chrono::Duration::seconds(5)
+    chrono::Duration::seconds(10)
 }
 
 /// Find a trade for a token pair.
