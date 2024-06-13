@@ -280,6 +280,7 @@ where
 ///
 /// This function returns a string representing the metadata header.
 fn build_rpc_metadata(requests: &[(RequestId, Call)], trace_ids: &[Option<String>]) -> String {
+    // Group the requests by trace ID and method name
     let mut grouped_metadata: BTreeMap<String, BTreeMap<String, BTreeSet<usize>>> = BTreeMap::new();
     for (idx, ((_, call), trace_id)) in requests.iter().zip(trace_ids).enumerate() {
         if let Call::MethodCall(call) = call {
