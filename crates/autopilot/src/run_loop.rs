@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary::events::cow_amm_product_factory,
+        boundary::events::cow_amm_factory,
         database::competition::Competition,
         domain::{
             self,
@@ -54,7 +54,7 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub surplus_capturing_jit_order_owners: HashSet<H160>,
-    pub cow_amm_indexer: cow_amm_product_factory::Indexer,
+    pub cow_amm_indexer: cow_amm_factory::Indexer,
 }
 
 impl RunLoop {

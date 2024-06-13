@@ -230,7 +230,7 @@ pub struct Arguments {
 
     /// Override address of the cow amm product factory contract.
     #[clap(long, env)]
-    pub cow_amm_product_factory_contract_address: Option<H160>,
+    pub cow_amm_factory_contract_address: Option<H160>,
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
@@ -334,7 +334,7 @@ impl Display for Arguments {
             solver_competition_auth,
             network_block_interval,
             settlement_contract_address,
-            cow_amm_product_factory_contract_address,
+            cow_amm_factory_contract_address,
             native_token_address,
             balancer_v2_vault_address,
             custom_univ2_baseline_sources,
@@ -385,8 +385,8 @@ impl Display for Arguments {
         )?;
         display_option(
             f,
-            "cow_amm_product_factory_contract_address",
-            &cow_amm_product_factory_contract_address.map(|a| format!("{a:?}")),
+            "cow_amm_factory_contract_address",
+            &cow_amm_factory_contract_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,

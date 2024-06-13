@@ -8,7 +8,7 @@ use {
         auction::Auction,
         solution::{Solution, Solutions},
     },
-    std::sync::{Arc, Mutex},
+    std::sync::{Arc, Mutex, MutexGuard},
     warp::hyper,
 };
 
@@ -36,14 +36,8 @@ impl Mock {
     }
 
     /// Returns all the auctions received by the solver
-    pub fn get_auctions(&self) -> Vec<Auction> {
-        self.state
-            .auctions
-            .lock()
-            .unwrap()
-            .iter()
-            .cloned()
-            .collect()
+    pub fn get_auctions(&self) -> MutexGuard<'_, Vec<Auction>> {
+        self.state.auctions.lock().unwrap()
     }
 }
 

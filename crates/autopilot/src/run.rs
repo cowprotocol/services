@@ -157,7 +157,7 @@ pub async fn run(args: Arguments) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
-        cow_amm_product_factory: args.shared.cow_amm_product_factory_contract_address,
+        cow_amm_factory: args.shared.cow_amm_factory_contract_address,
     };
     let eth = ethereum(
         web3.clone(),
@@ -359,10 +359,10 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_indexer = boundary::events::cow_amm_product_factory::Indexer::new(&web3).await;
+    let cow_amm_indexer = boundary::events::cow_amm_factory::Indexer::new(&web3).await;
     let event_updater_cow_amm = Arc::new(EventUpdater::new(
-        boundary::events::cow_amm_product_factory::CowAmmConstantProductFactoryContract::new(
-            eth.contracts().cow_amm_product_factory().clone(),
+        boundary::events::cow_amm_factory::CowAmmConstantProductFactoryContract::new(
+            eth.contracts().cow_amm_factory().clone(),
         ),
         cow_amm_indexer.clone(),
         block_retriever.clone(),

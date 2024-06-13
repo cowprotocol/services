@@ -27,10 +27,10 @@ pub struct Indexer {
 
 impl Indexer {
     pub async fn new(web3: &DynWeb3) -> Self {
-        let cow_amm_product_factory = CowAmmConstantProductFactory::deployed(web3)
+        let cow_amm_constant_product_factory = CowAmmConstantProductFactory::deployed(web3)
             .await
-            .expect("Failed to deploy CowAmmConstantProductFactory");
-        let first_block = match cow_amm_product_factory
+            .expect("Failed to find deployed CowAmmConstantProductFactory");
+        let first_block = match cow_amm_constant_product_factory
             .deployment_information()
             .expect("Failed to get deployment information")
         {
