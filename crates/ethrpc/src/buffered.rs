@@ -365,7 +365,7 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
     let mut last = start;
 
     // Iterate over the rest of the indices
-    for index in indices.skip(1) {
+    for index in indices {
         // If the current index is the next consecutive number, update last index.
         if index == last + 1 {
             last = index;
