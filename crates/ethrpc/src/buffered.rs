@@ -356,27 +356,36 @@ fn build_rpc_metadata(
 fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> {
     let mut result = String::new();
     let mut indices = indices.into_iter();
+    // Initialize the start and last variables with the first index.
     let mut start = match indices.next() {
         Some(index) => index,
         None => return Ok(result),
     };
     let mut last = start;
 
+    // Iterate over the rest of the indices
     for index in indices.skip(1) {
+        // If the current index is the next consecutive number, update last index.
         if index == last + 1 {
             last = index;
+        // Otherwise, there is no need to accumulate the range anymore. Append
+        // the range to the result string.
         } else {
+            // If start equals last, no range accumulated, append a single value.
             if start == last {
                 write!(result, "{}", start)?;
+            // Else, append the accumulated range.
             } else {
                 write!(result, "{}..{}", start, last)?;
             }
             result.push(',');
+            // Reset the start and last indices with the current value.
             start = index;
             last = index;
         }
     }
 
+    // Append the last range or a single value.
     if start == last {
         write!(result, "{}", start)?;
     } else {
