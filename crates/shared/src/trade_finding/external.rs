@@ -71,6 +71,7 @@ impl ExternalTradeFinder {
 
         let future = async {
             let response = request
+                .timeout(super::time_limit().into())
                 .send()
                 .await
                 .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
