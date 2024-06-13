@@ -16,6 +16,7 @@ use {
     serde_json::Value,
     std::{
         collections::{BTreeMap, BTreeSet},
+        fmt::Write,
         future::Future,
         num::NonZeroUsize,
         sync::Arc,
@@ -23,6 +24,7 @@ use {
     },
     tokio::task::JoinHandle,
     tracing::Instrument as _,
+    web3::error::TransportError,
 };
 
 /// Buffered transport configuration.
@@ -118,13 +120,21 @@ where
                         let _ = sender.send(result);
                     }
                     n => {
-                        let request_metadata = build_rpc_metadata(&requests, &trace_ids);
-                        let results = observe::request_id::set_task_local_storage(
-                            request_metadata,
-                            inner.send_batch(requests),
-                        )
-                        .await
-                        .unwrap_or_else(|err| vec![Err(err); n]);
+                        let results = match build_rpc_metadata(&requests, &trace_ids) {
+                            Ok(metadata) => observe::request_id::set_task_local_storage(
+                                metadata,
+                                inner.send_batch(requests),
+                            )
+                            .await
+                            .unwrap_or_else(|err| vec![Err(err); n]),
+                            // should never happen
+                            Err(err) => vec![
+                                Err(web3::Error::Transport(TransportError::Message(
+                                    err.to_string()
+                                )));
+                                n
+                            ],
+                        };
                         for (sender, result) in senders.into_iter().zip(results) {
                             let _ = sender.send(result);
                         }
@@ -279,7 +289,10 @@ where
 /// # Returns
 ///
 /// This function returns a string representing the metadata header.
-fn build_rpc_metadata(requests: &[(RequestId, Call)], trace_ids: &[Option<String>]) -> String {
+fn build_rpc_metadata(
+    requests: &[(RequestId, Call)],
+    trace_ids: &[Option<String>],
+) -> anyhow::Result<String> {
     // Group the requests by trace ID and method name
     let mut grouped_metadata: BTreeMap<String, BTreeMap<String, BTreeSet<usize>>> = BTreeMap::new();
     for (idx, ((_, call), trace_id)) in requests.iter().zip(trace_ids).enumerate() {
@@ -299,14 +312,14 @@ fn build_rpc_metadata(requests: &[(RequestId, Call)], trace_ids: &[Option<String
     let mut grouped_metadata_iter = grouped_metadata.into_iter().peekable();
     while let Some((trace_id, methods)) = grouped_metadata_iter.next() {
         // New entry starts with the trace_id
-        metadata_str.push_str(&format!("{}:", trace_id));
+        write!(metadata_str, "{}:", trace_id)?;
 
         // Followed by the method names and their indices
         let mut methods_iter = methods.into_iter().peekable();
         while let Some((method, indices)) = methods_iter.next() {
-            metadata_str.push_str(&format!("{}(", method));
+            write!(metadata_str, "{}(", method)?;
 
-            let indices_str = format_indices_as_ranges(indices);
+            let indices_str = format_indices_as_ranges(indices)?;
             metadata_str.push_str(&indices_str);
 
             metadata_str.push(')');
@@ -321,7 +334,7 @@ fn build_rpc_metadata(requests: &[(RequestId, Call)], trace_ids: &[Option<String
         }
     }
 
-    metadata_str
+    Ok(metadata_str)
 }
 
 /// Formats a set of indices as a string of ranges.
@@ -341,13 +354,13 @@ fn build_rpc_metadata(requests: &[(RequestId, Call)], trace_ids: &[Option<String
 /// range is formatted as `start..end`, and ranges are separated by commas.
 /// Single indices (i.e., indices that are not part of a range) are represented
 /// as themselves.
-fn format_indices_as_ranges(indices: BTreeSet<usize>) -> String {
+fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> {
     let indices = indices.into_iter().collect_vec();
+    let mut result = String::new();
     if indices.is_empty() {
-        return "".to_string();
+        return Ok(result);
     }
 
-    let mut result = String::new();
     let mut start = indices[0];
     let mut last = indices[0];
 
@@ -356,9 +369,9 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> String {
             last = index;
         } else {
             if start == last {
-                result.push_str(&format!("{}", start));
+                write!(result, "{}", start)?;
             } else {
-                result.push_str(&format!("{}..{}", start, last));
+                write!(result, "{}..{}", start, last)?;
             }
             result.push(',');
             start = index;
@@ -367,12 +380,12 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> String {
     }
 
     if start == last {
-        result.push_str(&format!("{}", start));
+        write!(result, "{}", start)?;
     } else {
-        result.push_str(&format!("{}..{}", start, last));
+        write!(result, "{}..{}", start, last)?;
     }
 
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -488,27 +501,33 @@ mod tests {
     fn test_format_indices_as_ranges() {
         // empty string
         let indices = BTreeSet::new();
-        assert_eq!(format_indices_as_ranges(indices), "");
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "");
 
         // a single value
         let indices = vec![2].into_iter().collect();
-        assert_eq!(format_indices_as_ranges(indices), "2");
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "2");
 
         // only a range
         let indices = vec![1, 2, 3, 4, 5].into_iter().collect();
-        assert_eq!(format_indices_as_ranges(indices), "1..5");
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "1..5");
 
         // no ranges
         let indices = vec![1, 3, 5, 7].into_iter().collect();
-        assert_eq!(format_indices_as_ranges(indices), "1,3,5,7");
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "1,3,5,7");
 
         // ends with a non-range value
         let indices = vec![1, 2, 3, 5, 7, 8, 9, 10, 20].into_iter().collect();
-        assert_eq!(format_indices_as_ranges(indices), "1..3,5,7..10,20");
+        assert_eq!(
+            format_indices_as_ranges(indices).unwrap(),
+            "1..3,5,7..10,20"
+        );
 
         // ends with a range value
         let indices = vec![1, 2, 3, 5, 6, 7, 8, 10, 11, 12].into_iter().collect();
-        assert_eq!(format_indices_as_ranges(indices), "1..3,5..8,10..12");
+        assert_eq!(
+            format_indices_as_ranges(indices).unwrap(),
+            "1..3,5..8,10..12"
+        );
     }
 
     fn method_call(method: &str) -> Call {
@@ -550,7 +569,7 @@ mod tests {
             None,                     // 10
             None,                     // 11
         ];
-        let metadata_header = build_rpc_metadata(&requests, &trace_ids);
+        let metadata_header = build_rpc_metadata(&requests, &trace_ids).unwrap();
         assert_eq!(
             metadata_header,
             "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6..7)|null:eth_call(4),\
