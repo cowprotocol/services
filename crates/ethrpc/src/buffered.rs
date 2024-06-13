@@ -118,7 +118,7 @@ where
                         let _ = sender.send(result);
                     }
                     n => {
-                        let request_metadata = build_rpc_metadata_header(&requests, &trace_ids);
+                        let request_metadata = build_rpc_metadata(&requests, &trace_ids);
                         let results = observe::request_id::set_task_local_storage(
                             request_metadata,
                             inner.send_batch(requests),
@@ -250,7 +250,7 @@ where
     batches.for_each_concurrent(concurrency_limit, work)
 }
 
-/// Builds a metadata header for RPC requests.
+/// Builds a metadata string representation for RPC requests.
 ///
 /// This function takes an iterator of requests and their corresponding trace
 /// IDs, and generates a metadata string that groups the requests by their trace
@@ -279,10 +279,7 @@ where
 /// # Returns
 ///
 /// This function returns a string representing the metadata header.
-fn build_rpc_metadata_header(
-    requests: &[(RequestId, Call)],
-    trace_ids: &[Option<String>],
-) -> String {
+fn build_rpc_metadata(requests: &[(RequestId, Call)], trace_ids: &[Option<String>]) -> String {
     let mut grouped_metadata: BTreeMap<String, BTreeMap<String, BTreeSet<usize>>> = BTreeMap::new();
     for (idx, ((_, call), trace_id)) in requests.iter().zip(trace_ids).enumerate() {
         if let Call::MethodCall(call) = call {
@@ -552,7 +549,7 @@ mod tests {
             None,                     // 10
             None,                     // 11
         ];
-        let metadata_header = build_rpc_metadata_header(&requests, &trace_ids);
+        let metadata_header = build_rpc_metadata(&requests, &trace_ids);
         assert_eq!(
             metadata_header,
             "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6..7)|null:eth_call(4),\
