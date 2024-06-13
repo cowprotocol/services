@@ -52,7 +52,7 @@ impl ExternalTradeFinder {
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
     async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
-        let deadline = chrono::Utc::now() + super::time_limit();
+        let deadline = chrono::Utc::now() + *self.timeout;
         let order = dto::Order {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
