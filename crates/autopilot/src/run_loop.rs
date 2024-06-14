@@ -391,7 +391,12 @@ impl RunLoop {
                 Ok(false) => Err(domain::competition::SolutionError::SolverDenyListed),
                 Err(err) => {
                     // log warning but discard solution anyway to be on the safe side
-                    tracing::warn!(?err, "failed to check if solver is deny listed");
+                    tracing::warn!(
+                        driver = driver.name,
+                        ?solver,
+                        ?err,
+                        "failed to check if solver is deny listed"
+                    );
                     Err(domain::competition::SolutionError::SolverDenyListed)
                 }
             }
