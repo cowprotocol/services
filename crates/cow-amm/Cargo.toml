@@ -1,0 +1,15 @@
+[package]
+name = "cow-amm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+contracts = { path = "../contracts" }
+ethcontract = { workspace = true }
+ethrpc = { path = "../ethrpc" }
+primitive-types = { workspace = true }
+shared = { path = "../shared" }
+tokio = { workspace = true, features = [] }
+tracing = { workspace = true }

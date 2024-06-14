@@ -359,9 +359,9 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_indexer = boundary::events::cow_amm_factory::Indexer::new(&web3).await;
+    let cow_amm_indexer = cow_amm::Indexer::new(&web3).await;
     let event_updater_cow_amm = Arc::new(EventUpdater::new(
-        boundary::events::cow_amm_factory::CowAmmConstantProductFactoryContract::new(
+        cow_amm::cow_amm_constant_product_factory::Contract::new(
             eth.contracts().cow_amm_factory().clone(),
         ),
         cow_amm_indexer.clone(),

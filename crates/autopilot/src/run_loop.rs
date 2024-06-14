@@ -1,6 +1,5 @@
 use {
     crate::{
-        boundary::events::cow_amm_factory,
         database::competition::Competition,
         domain::{
             self,
@@ -20,6 +19,7 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
+    cow_amm::CowAmm,
     database::order_events::OrderEventLabel,
     model::solver_competition::{
         CompetitionAuction,
@@ -54,7 +54,7 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub surplus_capturing_jit_order_owners: HashSet<H160>,
-    pub cow_amm_indexer: cow_amm_factory::Indexer,
+    pub cow_amm_indexer: cow_amm::Indexer,
 }
 
 impl RunLoop {
@@ -309,8 +309,13 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let mut surplus_capturing_jit_order_owners =
-            self.cow_amm_indexer.get_cow_amm_addresses().await;
+        let mut surplus_capturing_jit_order_owners = self
+            .cow_amm_indexer
+            .enabled_cow_amms()
+            .await
+            .into_iter()
+            .map(|cow_amm| cow_amm.address().clone())
+            .collect::<HashSet<_>>();
         surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
 
         let request = solve::Request::new(
