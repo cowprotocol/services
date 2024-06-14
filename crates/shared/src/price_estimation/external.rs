@@ -21,12 +21,14 @@ impl ExternalPriceEstimator {
         client: Client,
         rate_limiter: Arc<RateLimiter>,
         block_stream: CurrentBlockStream,
+        timeout: std::time::Duration,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(ExternalTradeFinder::new(
                 driver.clone(),
                 client,
                 block_stream,
+                timeout,
             )),
             rate_limiter,
             driver.to_string(),

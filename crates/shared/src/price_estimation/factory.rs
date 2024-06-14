@@ -209,9 +209,13 @@ impl<'a> PriceEstimatorFactory<'a> {
     }
 
     fn get_estimator(&mut self, solver: &ExternalSolver) -> Result<&EstimatorEntry> {
+        let params = ExternalEstimatorParams {
+            driver: solver.url.clone(),
+            timeout: self.args.quote_timeout,
+        };
         if !self.estimators.contains_key(&solver.name) {
             let estimator =
-                self.create_estimator_entry::<ExternalPriceEstimator>(&solver.name, solver.into())?;
+                self.create_estimator_entry::<ExternalPriceEstimator>(&solver.name, params)?;
             self.estimators.insert(solver.name.clone(), estimator);
         }
 
@@ -328,6 +332,7 @@ trait PriceEstimatorCreating: Sized {
 #[derive(Debug, Clone)]
 struct ExternalEstimatorParams {
     driver: Url,
+    timeout: std::time::Duration,
 }
 
 impl PriceEstimatorCreating for ExternalPriceEstimator {
@@ -339,19 +344,12 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
             factory.network.block_stream.clone(),
+            params.timeout,
         ))
     }
 
     fn verified(&self, verifier: &Arc<dyn TradeVerifying>) -> Option<Self> {
         Some(self.verified(verifier.clone()))
-    }
-}
-
-impl From<&ExternalSolver> for ExternalEstimatorParams {
-    fn from(solver: &ExternalSolver) -> Self {
-        Self {
-            driver: solver.url.clone(),
-        }
     }
 }
 
