@@ -320,17 +320,17 @@ fn build_rpc_metadata(
             write!(metadata_str, "{}(", method)?;
 
             let indices_str = format_indices_as_ranges(indices)?;
-            metadata_str.push_str(&indices_str);
+            write!(metadata_str, "{}", indices_str)?;
 
-            metadata_str.push(')');
+            write!(metadata_str, ")")?;
 
             if methods_iter.peek().is_some() {
-                metadata_str.push(',');
+                write!(metadata_str, ",")?;
             }
         }
 
         if grouped_metadata_iter.peek().is_some() {
-            metadata_str.push('|');
+            write!(metadata_str, "|")?;
         }
     }
 
@@ -379,7 +379,7 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
             } else {
                 write!(result, "{}..{}", start, last)?;
             }
-            result.push(',');
+            write!(result, ",")?;
             // Reset the start and last indices with the current value.
             start = index;
             last = index;
