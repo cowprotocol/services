@@ -371,7 +371,38 @@ impl RunLoop {
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
-        Ok(response.into_domain())
+        let solutions = response.into_domain();
+
+        // TODO: remove this workaround when implementing #2780
+        // Discard any solutions from solvers that got deny listed in the mean time.
+        let futures = solutions.into_iter().map(|solution| async {
+            let solution = solution?;
+            let solver = solution.solver();
+            let is_allowed = self
+                .eth
+                .contracts()
+                .authenticator()
+                .is_solver(solver.into())
+                .call()
+                .await;
+
+            match is_allowed {
+                Ok(true) => Ok(solution),
+                Ok(false) => Err(domain::competition::SolutionError::SolverDenyListed),
+                Err(err) => {
+                    // log warning but discard solution anyway to be on the safe side
+                    tracing::warn!(
+                        driver = driver.name,
+                        ?solver,
+                        ?err,
+                        "failed to check if solver is deny listed"
+                    );
+                    Err(domain::competition::SolutionError::SolverDenyListed)
+                }
+            }
+        });
+
+        Ok(futures::future::join_all(futures).await)
     }
 
     /// Ask the winning solver to reveal their solution.
@@ -624,6 +655,7 @@ impl Metrics {
         let label = match err {
             SolutionError::ZeroScore(_) => "zero_score",
             SolutionError::InvalidPrice(_) => "invalid_price",
+            SolutionError::SolverDenyListed => "solver_deny_listed",
         };
         Self::get()
             .solutions
