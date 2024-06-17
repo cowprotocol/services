@@ -36,21 +36,21 @@ impl Indexer {
             DeploymentInformation::BlockNumber(block) => block,
             _ => panic!("Expected block number"),
         };
-        let cow_amm = contracts::CowAmm::deployed(web3)
-            .await
-            .expect("Failed to find deployed CowAmm");
-        let cow_amm_first_block = match cow_amm
-            .deployment_information()
-            .expect("Failed to get deployment information")
-        {
-            DeploymentInformation::BlockNumber(block) => block,
-            _ => panic!("Expected block number"),
-        };
+        // let cow_amm = contracts::CowAmm::deployed(web3)
+        //     .await
+        //     .expect("Failed to find deployed CowAmm");
+        // let cow_amm_first_block = match cow_amm
+        //     .deployment_information()
+        //     .expect("Failed to get deployment information")
+        // {
+        //     DeploymentInformation::BlockNumber(block) => block,
+        //     _ => panic!("Expected block number"),
+        // };
         Self {
             cow_amms: Arc::new(RwLock::new(HashMap::new())),
             events_registry: Arc::new(RwLock::new(BTreeMap::new())),
             cow_amm_constant_product_factory_first_block,
-            cow_amm_first_block,
+            cow_amm_first_block: 0,
         }
     }
 

@@ -370,7 +370,7 @@ pub async fn run(args: Arguments) {
     ));
 
     let mut maintainers: Vec<Arc<dyn Maintaining>> =
-        vec![event_updater, Arc::new(db.clone()), event_updater_cow_amm];
+        vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
