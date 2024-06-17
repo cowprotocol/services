@@ -19,7 +19,6 @@ impl CowAmmConstantProductFactoryHandler {
             contracts::cow_amm_constant_product_factory::Event::ConditionalOrderCreated(params) => {
                 if let Some(cow_amm) = cow_amms.get_mut(&params.owner) {
                     // When we receive this event, the CoW AMM is enabled
-                    cow_amm.enable();
                     cow_amm.set_bytes(params.params.1);
                 }
             }

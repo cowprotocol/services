@@ -7,7 +7,6 @@ pub struct CowAmm {
     // This is a placeholder for the actual CoW AMM arbitrary bytes obtained from tradingEnabled
     // (`TradingParams`).
     bytes: Bytes<[u8; 32]>,
-    enabled: bool,
 }
 
 impl CowAmm {
@@ -16,20 +15,15 @@ impl CowAmm {
             address,
             tradeable_pairs: tradeable_pairs.to_vec(),
             bytes: Bytes::default(),
-            enabled: false,
         }
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub fn enable(&mut self) {
-        self.enabled = true;
+        self.bytes != Bytes::default()
     }
 
     pub fn disable(&mut self) {
-        self.enabled = false;
+        self.bytes = Bytes::default();
     }
 
     pub fn set_bytes(&mut self, bytes: Bytes<[u8; 32]>) {
