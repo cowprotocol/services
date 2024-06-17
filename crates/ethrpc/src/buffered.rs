@@ -377,6 +377,9 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
             // If start equals last, no range accumulated, append a single value.
             if start == last {
                 write!(result, "{}", start)?;
+            // Just two subsequent values, append them separated by a comma.
+            } else if start == last - 1 {
+                write!(result, "{},{}", start, last)?;
             // Else, append the accumulated range.
             } else {
                 write!(result, "{}..{}", start, last)?;
@@ -388,9 +391,11 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
         }
     }
 
-    // Append the last range or a single value.
+    // Append the remaining data.
     if start == last {
         write!(result, "{}", start)?;
+    } else if start == last - 1 {
+        write!(result, "{},{}", start, last)?;
     } else {
         write!(result, "{}..{}", start, last)?;
     }
@@ -521,6 +526,10 @@ mod tests {
         let indices = vec![1, 2, 3, 4, 5].into_iter().collect();
         assert_eq!(format_indices_as_ranges(indices).unwrap(), "1..5");
 
+        // 2 subsequent values range
+        let indices = vec![2, 3].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "2,3");
+
         // no ranges
         let indices = vec![1, 3, 5, 7].into_iter().collect();
         assert_eq!(format_indices_as_ranges(indices).unwrap(), "1,3,5,7");
@@ -582,7 +591,7 @@ mod tests {
         let metadata_header = build_rpc_metadata(&requests, &trace_ids).unwrap();
         assert_eq!(
             metadata_header,
-            "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6..7)|null:eth_call(4),\
+            "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6,7)|null:eth_call(4),\
              eth_sendTransaction(9..11)"
         );
     }
