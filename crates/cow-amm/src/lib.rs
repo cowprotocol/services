@@ -1,8 +1,10 @@
-mod events;
+mod cow_amm;
+pub mod cow_amm_constant_product_factory;
+mod event_updater;
 mod indexer;
 
 use ethcontract::Address;
-pub use {events::*, indexer::Indexer};
+pub use {event_updater::EventUpdater, indexer::Indexer};
 
 pub trait CowAmm {
     /// Address of the CoW AMM.

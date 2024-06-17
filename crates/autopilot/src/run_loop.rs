@@ -314,7 +314,7 @@ impl RunLoop {
             .enabled_cow_amms()
             .await
             .into_iter()
-            .map(|cow_amm| cow_amm.address().clone())
+            .map(|cow_amm| *cow_amm.address())
             .collect::<HashSet<_>>();
         surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
 
