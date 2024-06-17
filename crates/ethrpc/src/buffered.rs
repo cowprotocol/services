@@ -23,7 +23,6 @@ use {
     },
     tokio::task::JoinHandle,
     tracing::Instrument as _,
-    web3::error::TransportError,
 };
 
 /// Buffered transport configuration.
@@ -120,20 +119,23 @@ where
                     }
                     n => {
                         let results = match build_rpc_metadata(&requests, &trace_ids) {
-                            Ok(metadata) => observe::request_id::set_task_local_storage(
-                                metadata,
-                                inner.send_batch(requests),
-                            )
-                            .await
-                            .unwrap_or_else(|err| vec![Err(err); n]),
-                            // should never happen
-                            Err(err) => vec![
-                                Err(web3::Error::Transport(TransportError::Message(
-                                    err.to_string()
-                                )));
-                                n
-                            ],
-                        };
+                            Ok(metadata) => {
+                                observe::request_id::set_task_local_storage(
+                                    metadata,
+                                    inner.send_batch(requests),
+                                )
+                                .await
+                            }
+                            Err(err) => {
+                                tracing::error!(
+                                    ?err,
+                                    "failed to build metadata, sending RPC calls without the \
+                                     metadata header"
+                                );
+                                inner.send_batch(requests).await
+                            }
+                        }
+                        .unwrap_or_else(|err| vec![Err(err); n]);
                         for (sender, result) in senders.into_iter().zip(results) {
                             let _ = sender.send(result);
                         }
