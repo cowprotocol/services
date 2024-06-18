@@ -1,8 +1,10 @@
 use {
     contracts::ERC20,
+    cow_amm::{CowAmm, Indexer},
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{prelude::U256, H160},
+    ethrpc::current_block::BlockRetrieving,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -10,7 +12,8 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
+    std::{str::FromStr, sync::Arc},
+    web3::{signing::SecretKeyRef, types::Address},
 };
 
 #[tokio::test]
@@ -71,6 +74,56 @@ async fn forked_node_gnosis_single_limit_order() {
         FORK_BLOCK_GNOSIS,
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_gnosis_cow_amm_indexer() {
+    run_forked_test(
+        forked_gnosis_cow_amm_indexer,
+        std::env::var("FORK_URL_GNOSIS").expect("FORK_URL_GNOSIS must be set to run forked tests"),
+    )
+    .await;
+}
+
+async fn forked_gnosis_cow_amm_indexer(web3: Web3) {
+    let cow_amm_factory = contracts::CowAmmConstantProductFactory::deployed(&web3)
+        .await
+        .unwrap();
+
+    let cow_amm_indexer = Indexer::new(&web3, None).await;
+    let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
+    let cow_amm_event_updater =
+        cow_amm::EventUpdater::build(block_retriever, &cow_amm_indexer, &cow_amm_factory).await;
+
+    cow_amm_event_updater.run_maintenance().await.unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        let cows = cow_amm_indexer.cow_amms().await;
+        cows.len() > 1
+    })
+    .await
+    .unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        let cows = cow_amm_indexer.cow_amms().await;
+        cows.iter().any(|cow| {
+            *cow.address()
+                == Address::from_str("0x1a720a128f9a4385c58aafb67e4cb64264e4fa3b").unwrap()
+        })
+    })
+    .await
+    .unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        let cows = cow_amm_indexer.cow_amms().await;
+        cows.iter().any(|cow| {
+            *cow.address()
+                == Address::from_str("0x1d032553a3c1581f2926fe80e8a255ad37f423f6").unwrap()
+        })
+    })
+    .await
+    .unwrap();
 }
 
 async fn single_limit_order_test(web3: Web3) {

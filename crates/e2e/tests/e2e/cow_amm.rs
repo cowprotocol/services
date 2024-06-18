@@ -1,11 +1,13 @@
 use {
     app_data::AppDataHash,
+    cow_amm::{CowAmm, Indexer},
     e2e::{
         setup::{colocation::SolverEngine, mock::Mock, *},
         tx,
         tx_value,
     },
     ethcontract::{web3::ethabi::Token, BlockId, BlockNumber, U256},
+    ethrpc::current_block::BlockRetrieving,
     model::{
         order::{OrderCreation, OrderData, OrderKind},
         signature::{hashed_eip712_message, EcdsaSigningScheme},
@@ -20,7 +22,7 @@ use {
         SigningScheme,
         Solution,
     },
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
     web3::signing::SecretKeyRef,
 };
 
@@ -28,6 +30,117 @@ use {
 #[ignore]
 async fn local_node_cow_amm() {
     run_test(cow_amm).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_cow_amm_indexer() {
+    run_test(cow_amm_indexer).await;
+}
+
+async fn cow_amm_indexer(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [cow_amm_owner] = onchain.make_accounts(to_wei(1000)).await;
+
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(100))
+        .await;
+
+    // set up cow_amm
+    let oracle = contracts::CowAmmUniswapV2PriceOracle::builder(&web3)
+        .deploy()
+        .await
+        .unwrap();
+
+    let cow_amm_factory = contracts::CowAmmConstantProductFactory::builder(
+        &web3,
+        onchain.contracts().gp_settlement.address(),
+    )
+    .deploy()
+    .await
+    .unwrap();
+
+    let cow_amm_indexer = Indexer::new(&web3, Some(&cow_amm_factory)).await;
+    let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
+    let cow_amm_event_updater =
+        cow_amm::EventUpdater::build(block_retriever, &cow_amm_indexer, &cow_amm_factory).await;
+
+    // Fund cow amm owner with 2_000 dai and allow factory take them
+    dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
+    tx!(
+        cow_amm_owner.account(),
+        dai.approve(cow_amm_factory.address(), to_wei(2_000))
+    );
+    // Fund cow amm owner with 1 WETH and allow factory take them
+    tx_value!(
+        cow_amm_owner.account(),
+        to_wei(1),
+        onchain.contracts().weth.deposit()
+    );
+    tx!(
+        cow_amm_owner.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(cow_amm_factory.address(), to_wei(1))
+    );
+
+    let pair = onchain
+        .contracts()
+        .uniswap_v2_factory
+        .get_pair(onchain.contracts().weth.address(), dai.address())
+        .call()
+        .await
+        .expect("failed to get Uniswap V2 pair");
+
+    let cow_amm = cow_amm_factory
+        .amm_deterministic_address(
+            cow_amm_owner.address(),
+            dai.address(),
+            onchain.contracts().weth.address(),
+        )
+        .call()
+        .await
+        .unwrap();
+
+    let oracle_data: Vec<_> = std::iter::repeat(0u8)
+        .take(12) // pad with 12 zeros in the front to end up with 32 bytes
+        .chain(pair.as_bytes().to_vec())
+        .collect();
+    const APP_DATA: [u8; 32] = [12u8; 32];
+
+    cow_amm_factory
+        .create(
+            dai.address(),
+            to_wei(2_000),
+            onchain.contracts().weth.address(),
+            to_wei(1),
+            0.into(), // min traded token
+            oracle.address(),
+            ethcontract::Bytes(oracle_data.clone()),
+            ethcontract::Bytes(APP_DATA),
+        )
+        .from(cow_amm_owner.account().clone())
+        .send()
+        .await
+        .unwrap();
+
+    cow_amm_event_updater.run_maintenance().await.unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        let cows = cow_amm_indexer.cow_amms().await;
+        !cows.is_empty()
+    })
+    .await
+    .unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        let cows = cow_amm_indexer.cow_amms().await;
+        cows.iter().any(|cow| *cow.address() == cow_amm)
+    })
+    .await
+    .unwrap();
 }
 
 async fn cow_amm(web3: Web3) {
@@ -343,19 +456,6 @@ async fn cow_amm(web3: Web3) {
         amm_received > cow_amm_order.buy_amount
             && bob_received > user_order.buy_amount
             && amm_received == bob_received
-    })
-    .await
-    .unwrap();
-
-    // Check that the CoW AMM product factory listener works and catches the new CoW
-    // AMM deployment events
-    wait_for_condition(TIMEOUT, || async {
-        let auctions = mock_solver.get_auctions();
-        auctions.iter().any(|auction| {
-            auction
-                .surplus_capturing_jit_order_owners
-                .contains(&cow_amm.address())
-        })
     })
     .await
     .unwrap();

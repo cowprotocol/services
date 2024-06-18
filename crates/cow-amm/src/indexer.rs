@@ -16,33 +16,32 @@ use {
 
 pub type CowAmmRegistry = HashMap<Address, CowAmm>;
 /// Registry with the format: (block number, (log index, event))
-pub type EventsRegistry = BTreeMap<u64, cow_amm_constant_product_factory::Event>;
+pub type EventsRegistry = BTreeMap<u64, BTreeMap<usize, cow_amm_constant_product_factory::Event>>;
 
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
 pub struct Indexer {
     cow_amms: Arc<RwLock<CowAmmRegistry>>,
     events_registry: Arc<RwLock<EventsRegistry>>,
-    first_block: u64,
+    pub first_block: u64,
 }
 
 impl Indexer {
-    pub async fn new(web3: &DynWeb3, cow_amm_factory_address: Option<&Address>) -> Self {
+    pub async fn new(
+        web3: &DynWeb3,
+        cow_amm_factory_contract: Option<&cow_amm_constant_product_factory::Contract>,
+    ) -> Self {
         let cow_amm_constant_product_factory =
-            if let Some(cow_amm_factory_address) = cow_amm_factory_address {
-                contracts::CowAmmConstantProductFactory::at(web3, *cow_amm_factory_address)
+            if let Some(cow_amm_factory_contract) = cow_amm_factory_contract {
+                cow_amm_factory_contract.clone()
             } else {
                 contracts::CowAmmConstantProductFactory::deployed(web3)
                     .await
                     .expect("Failed to find deployed CowAmmConstantProductFactory")
             };
-        let first_block = match cow_amm_constant_product_factory
-            .deployment_information()
-            .expect("Failed to get deployment information")
-        {
-            DeploymentInformation::BlockNumber(block) => block,
-            _ => panic!("Expected block number"),
-        };
+        let first_block = Self::first_block(cow_amm_constant_product_factory)
+            .await
+            .unwrap_or(0);
         Self {
             cow_amms: Arc::new(RwLock::new(HashMap::new())),
             events_registry: Arc::new(RwLock::new(BTreeMap::new())),
@@ -50,14 +49,20 @@ impl Indexer {
         }
     }
 
+    async fn first_block(
+        cow_amm_constant_product_factory: cow_amm_constant_product_factory::Contract,
+    ) -> Option<u64> {
+        let first_block = match cow_amm_constant_product_factory.deployment_information()? {
+            DeploymentInformation::BlockNumber(block) => block,
+            _ => return None,
+        };
+        Some(first_block)
+    }
+
     /// Returns all CoW AMMs that are currently enabled (i.e. able to trade).
-    pub async fn enabled_cow_amms(&self) -> Vec<impl crate::CowAmm> {
+    pub async fn cow_amms(&self) -> Vec<impl crate::CowAmm> {
         let cow_amms = self.cow_amms.read().await;
-        cow_amms
-            .values()
-            .filter(|cow_amm| cow_amm.is_enabled())
-            .cloned()
-            .collect::<Vec<_>>()
+        cow_amms.values().cloned().collect::<Vec<_>>()
     }
 }
 
@@ -88,16 +93,33 @@ impl EventStoring<cow_amm_constant_product_factory::Event> for Indexer {
         // registry have been applied
         // Context to drop the write lock before calling `reapply_events()`
         {
-            let mut cow_amms = HashMap::new();
+            let events_registry = &mut *self.events_registry.write().await;
             for event in &events {
-                CowAmmConstantProductFactoryHandler::apply_event(&event.data, &mut cow_amms)
-                    .await?;
+                let meta = event
+                    .meta
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
+                let block_number = meta.block_number;
+                let log_index = meta.log_index;
+                events_registry
+                    .entry(block_number)
+                    .or_default()
+                    .insert(log_index, event.data.clone());
+            }
+        }
+
+        // Apply all the new events
+        {
+            let mut cow_amms = HashMap::new();
+            let events_registry = self.events_registry.read().await;
+            for (_, events) in events_registry.iter() {
+                for event in events.values() {
+                    CowAmmConstantProductFactoryHandler::apply_event(event, &mut cow_amms).await?;
+                }
             }
             *self.cow_amms.write().await = cow_amms;
         }
-
-        // Apply the new events
-        self.append_events(events).await
+        Ok(())
     }
 
     /// Apply all the events to the given CoW AMM registry and update the
@@ -106,18 +128,24 @@ impl EventStoring<cow_amm_constant_product_factory::Event> for Indexer {
         &mut self,
         events: Vec<ethcontract::Event<cow_amm_constant_product_factory::Event>>,
     ) -> anyhow::Result<()> {
-        let cow_amms = &mut *self.cow_amms.write().await;
-        let events_registry = &mut *self.events_registry.write().await;
-        for event in events {
-            let meta = event
-                .meta
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
-            let block_number = meta.block_number;
+        {
+            let cow_amms = &mut *self.cow_amms.write().await;
+            let events_registry = &mut *self.events_registry.write().await;
+            for event in events {
+                let meta = event
+                    .meta
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
+                let block_number = meta.block_number;
+                let log_index = meta.log_index;
 
-            CowAmmConstantProductFactoryHandler::apply_event(&event.data, cow_amms).await?;
+                CowAmmConstantProductFactoryHandler::apply_event(&event.data, cow_amms).await?;
 
-            events_registry.insert(block_number, event.data);
+                events_registry
+                    .entry(block_number)
+                    .or_default()
+                    .insert(log_index, event.data);
+            }
         }
         Ok(())
     }
@@ -127,8 +155,7 @@ impl EventStoring<cow_amm_constant_product_factory::Event> for Indexer {
             .events_registry
             .read()
             .await
-            .iter()
-            .last()
+            .last_key_value()
             .map(|(block, _)| *block)
             .unwrap_or(self.first_block))
     }
