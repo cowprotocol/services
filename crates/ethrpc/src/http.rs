@@ -72,19 +72,32 @@ async fn execute_rpc<T: DeserializeOwned>(
 ) -> Result<T, Web3Error> {
     let body = serde_json::to_string(&request)?;
     tracing::trace!(name = %inner.name, %id, %body, "executing request");
-    let mut request = client
+    let mut request_builder = client
         .post(inner.url.clone())
         .header(header::CONTENT_TYPE, "application/json")
         .header("X-RPC-REQUEST-ID", id.to_string())
         .body(body);
-    if let Some(request_id) = observe::request_id::get_task_local_storage() {
-        request = request.header("X-REQUEST-ID", request_id);
+    match request {
+        Request::Single(Call::MethodCall(call)) => {
+            if let Some(metadata) = observe::request_id::get_task_local_storage() {
+                request_builder = request_builder.header("X-REQUEST_ID", metadata);
+            }
+            request_builder = request_builder.header("X-RPC-METHOD", call.method.clone());
+        }
+        Request::Batch(_) => {
+            if let Some(metadata) = observe::request_id::get_task_local_storage() {
+                request_builder = request_builder.header("X-RPC-BATCH-METADATA", metadata);
+            }
+        }
+        _ => {}
     }
-
-    let response = request.send().await.map_err(|err: reqwest::Error| {
-        tracing::warn!(name = %inner.name, %id, %err, "failed to send request");
-        Web3Error::Transport(TransportError::Message(err.to_string()))
-    })?;
+    let response = request_builder
+        .send()
+        .await
+        .map_err(|err: reqwest::Error| {
+            tracing::warn!(name = %inner.name, %id, %err, "failed to send request");
+            Web3Error::Transport(TransportError::Message(err.to_string()))
+        })?;
     let status = response.status();
     let text = response.text().await.map_err(|err: reqwest::Error| {
         tracing::warn!(name = %inner.name, %id, %err, "failed to get response body");
