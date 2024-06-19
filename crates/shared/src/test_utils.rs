@@ -22,9 +22,9 @@ use {anyhow::anyhow, std::collections::HashSet};
 /// # Examples
 ///
 /// ```
-/// let actual = json!({"user": {"id": 1, "name": "Alice", "email": "alice@example.com"}});
-/// let expected = json!({"user": {"id": 1, "name": "Alice", "email": "bob@example.com"}});
-/// assert_json_matches!(actual, expected, ["user.email"]);
+/// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "alice@example.com"}});
+/// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "bob@example.com"}});
+/// shared::assert_json_matches!(actual, expected, ["user.email"]);
 /// ```
 #[macro_export]
 macro_rules! assert_json_matches {
