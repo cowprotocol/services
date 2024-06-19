@@ -246,12 +246,25 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "JSON did not match. Error: Mismatch at user.profile.name: String(\"Alice\") \
-                    != String(\"Bob\")\nActual JSON: {\n  \"user\": {\n    \"id\": 123,\n    \
-                    \"profile\": {\n      \"name\": \"Alice\",\n      \"timestamp\": \
-                    \"2021-01-01T12:00:00Z\"\n    }\n  }\n}\nExpected JSON: {\n  \"user\": {\n    \
-                    \"id\": 123,\n    \"profile\": {\n      \"name\": \"Bob\",\n      \
-                    \"timestamp\": \"2021-01-01T12:00:00Z\"\n    }\n  }\n}"
+        expected = r#"JSON did not match. Error: Mismatch at user.profile.name: String("Alice") != String("Bob")
+Actual JSON: {
+  "user": {
+    "id": 123,
+    "profile": {
+      "name": "Alice",
+      "timestamp": "2021-01-01T12:00:00Z"
+    }
+  }
+}
+Expected JSON: {
+  "user": {
+    "id": 123,
+    "profile": {
+      "name": "Bob",
+      "timestamp": "2021-01-01T12:00:00Z"
+    }
+  }
+}"#
     )]
     fn test_json_matches_excluding_failure() {
         let json_a = json!({
@@ -277,12 +290,24 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "JSON did not match. Error: Key missing in expected JSON at \
-                    user.profile.name\nActual JSON: {\n  \"user\": {\n    \"id\": 123,\n    \
-                    \"profile\": {\n      \"name\": \"Alice\",\n      \"timestamp\": \
-                    \"2021-01-01T12:00:00Z\"\n    }\n  }\n}\nExpected JSON: {\n  \"user\": {\n    \
-                    \"id\": 123,\n    \"profile\": {\n      \"timestamp\": \
-                    \"2021-01-01T12:00:00Z\"\n    }\n  }\n}"
+        expected = r#"JSON did not match. Error: Key missing in expected JSON at user.profile.name
+Actual JSON: {
+  "user": {
+    "id": 123,
+    "profile": {
+      "name": "Alice",
+      "timestamp": "2021-01-01T12:00:00Z"
+    }
+  }
+}
+Expected JSON: {
+  "user": {
+    "id": 123,
+    "profile": {
+      "timestamp": "2021-01-01T12:00:00Z"
+    }
+  }
+}"#
     )]
     fn test_json_matches_excluding_key_is_missing() {
         let json_a = json!({
@@ -306,13 +331,26 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "JSON did not match. Error: Key missing in actual JSON at \
-                               user.profile.name\nActual JSON: {\n  \"user\": {\n    \"id\": \
-                               123,\n    \"profile\": {\n      \"timestamp\": \
-                               \"2021-01-01T12:00:00Z\"\n    }\n  }\n}\nExpected JSON: {\n  \
-                               \"user\": {\n    \"id\": 123,\n    \"profile\": {\n      \
-                               \"name\": \"Alice\",\n      \"timestamp\": \
-                               \"2021-01-01T12:00:00Z\"\n    }\n  }\n}")]
+    #[should_panic(
+        expected = r#"JSON did not match. Error: Key missing in actual JSON at user.profile.name
+Actual JSON: {
+  "user": {
+    "id": 123,
+    "profile": {
+      "timestamp": "2021-01-01T12:00:00Z"
+    }
+  }
+}
+Expected JSON: {
+  "user": {
+    "id": 123,
+    "profile": {
+      "name": "Alice",
+      "timestamp": "2021-01-01T12:00:00Z"
+    }
+  }
+}"#
+    )]
     fn test_json_matches_excluding_key_is_missing_reversed() {
         let json_a = json!({
             "user": {
