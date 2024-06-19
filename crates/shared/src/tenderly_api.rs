@@ -334,7 +334,7 @@ impl Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex, serde_json::json};
+    use {super::*, crate::assert_json_matches, hex_literal::hex, serde_json::json};
 
     #[test]
     fn serialize_deserialize_simulation_request() {
@@ -359,7 +359,7 @@ mod tests {
             "generate_access_list": true
         });
 
-        assert_eq!(serde_json::to_value(&request).unwrap(), json);
+        assert_json_matches!(serde_json::to_value(&request).unwrap(), json, []);
         assert_eq!(
             serde_json::from_value::<SimulationRequest>(json).unwrap(),
             request
