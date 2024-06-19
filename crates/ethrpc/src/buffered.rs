@@ -374,13 +374,7 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
         // Otherwise, there is no need to accumulate the range anymore. Append
         // the range to the result string.
         } else {
-            // If start equals last, no range accumulated, append a single value.
-            if start == last {
-                write!(result, "{}", start)?;
-            // Else, append the accumulated range.
-            } else {
-                write!(result, "{}..{}", start, last)?;
-            }
+            append_sequence(&mut result, start, last)?;
             write!(result, ",")?;
             // Reset the start and last indices with the current value.
             start = index;
@@ -388,14 +382,30 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
         }
     }
 
-    // Append the last range or a single value.
-    if start == last {
-        write!(result, "{}", start)?;
-    } else {
-        write!(result, "{}..{}", start, last)?;
-    }
+    // Append the remaining data.
+    append_sequence(&mut result, start, last)?;
 
     Ok(result)
+}
+
+/// This function formats a range of integers into a condensed string
+/// representation and appends it to the given buffer. The format varies based
+/// on the relationship between `start` and `last`:
+///
+/// - If `start` is equal to `last`, it indicates a single value, which is
+///   appended as such.
+/// - If `start` is one less than `last` (i.e., they are consecutive), both
+///   numbers are appended separated by a comma.
+/// - Otherwise, the numbers between `start` and `last` (inclusive) are
+///   represented as a range using two dots (e.g., "start..last").
+fn append_sequence(buffer: &mut String, start: usize, last: usize) -> core::fmt::Result {
+    if start == last {
+        write!(buffer, "{}", start)
+    } else if start == last - 1 {
+        write!(buffer, "{},{}", start, last)
+    } else {
+        write!(buffer, "{}..{}", start, last)
+    }
 }
 
 #[cfg(test)]
@@ -521,6 +531,10 @@ mod tests {
         let indices = vec![1, 2, 3, 4, 5].into_iter().collect();
         assert_eq!(format_indices_as_ranges(indices).unwrap(), "1..5");
 
+        // 2 subsequent values range
+        let indices = vec![2, 3].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "2,3");
+
         // no ranges
         let indices = vec![1, 3, 5, 7].into_iter().collect();
         assert_eq!(format_indices_as_ranges(indices).unwrap(), "1,3,5,7");
@@ -582,7 +596,7 @@ mod tests {
         let metadata_header = build_rpc_metadata(&requests, &trace_ids).unwrap();
         assert_eq!(
             metadata_header,
-            "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6..7)|null:eth_call(4),\
+            "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6,7)|null:eth_call(4),\
              eth_sendTransaction(9..11)"
         );
     }
