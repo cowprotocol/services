@@ -20,7 +20,10 @@ use {
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    cow_amm::Indexer,
+    cow_amm::{
+        cow_amm_constant_product_factory::{self, CowAmmConstantProductFactoryHandler},
+        Indexer,
+    },
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
@@ -360,16 +363,17 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_indexer = Indexer::new(&web3, None).await;
-    let cow_amm_event_updater = cow_amm::EventUpdater::build(
+    let contract = CowAmmConstantProductFactoryHandler::deployed(&web3).await;
+    let cow_amm_indexer = Indexer::new(contract).await;
+    cow_amm::EventUpdater::build(
         block_retriever.clone(),
-        &cow_amm_indexer,
-        eth.contracts().cow_amm_factory(),
+        cow_amm_indexer.clone(),
+        cow_amm_constant_product_factory::Contract::new(eth.contracts().cow_amm_factory().clone()),
+        eth.current_block().clone(),
     )
     .await;
 
-    let mut maintainers: Vec<Arc<dyn Maintaining>> =
-        vec![event_updater, Arc::new(db.clone()), cow_amm_event_updater];
+    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,

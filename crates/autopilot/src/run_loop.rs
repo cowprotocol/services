@@ -19,7 +19,6 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
-    cow_amm::CowAmm,
     database::order_events::OrderEventLabel,
     model::solver_competition::{
         CompetitionAuction,
@@ -54,7 +53,7 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub surplus_capturing_jit_order_owners: HashSet<H160>,
-    pub cow_amm_indexer: cow_amm::Indexer,
+    pub cow_amm_indexer: cow_amm::Indexer<contracts::cow_amm_constant_product_factory::Event>,
 }
 
 impl RunLoop {

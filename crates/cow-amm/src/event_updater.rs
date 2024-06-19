@@ -1,30 +1,43 @@
 use {
-    crate::Indexer,
-    ethrpc::current_block::BlockRetrieving,
-    shared::{event_handling::EventHandler, maintenance::Maintaining},
+    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
+    shared::{
+        event_handling::{EventHandler, EventRetrieving, EventStoring},
+        maintenance::{Maintaining, ServiceMaintenance},
+    },
     std::sync::Arc,
     tokio::sync::Mutex,
 };
 
-pub struct EventUpdater(
-    Mutex<EventHandler<crate::cow_amm_constant_product_factory::Contract, crate::Indexer>>,
-);
+pub struct EventUpdater<
+    Database: EventStoring<<W as EventRetrieving>::Event>,
+    W: EventRetrieving + Send + Sync,
+>(Mutex<EventHandler<W, Database>>);
 
-impl EventUpdater {
+impl<Indexer, W> EventUpdater<Indexer, W>
+where
+    Indexer: EventStoring<<W as EventRetrieving>::Event> + 'static,
+    W: EventRetrieving + Send + Sync + 'static,
+{
     pub async fn build(
         block_retriever: Arc<dyn BlockRetrieving>,
-        indexer: &Indexer,
-        cow_amm_factory: &contracts::CowAmmConstantProductFactory,
-    ) -> Arc<dyn Maintaining> {
-        let contract =
-            crate::cow_amm_constant_product_factory::Contract::new(cow_amm_factory.clone());
-        let event_handler = EventHandler::new(block_retriever, contract, indexer.clone(), None);
-        Arc::new(Self(Mutex::new(event_handler)))
+        indexer: Indexer,
+        contract: W,
+        current_block_stream: CurrentBlockStream,
+    ) {
+        let event_handler = EventHandler::new(block_retriever, contract, indexer, None);
+        let event_handler: Vec<Arc<dyn Maintaining>> =
+            vec![Arc::new(Self(Mutex::new(event_handler)))];
+        let service_maintainer = ServiceMaintenance::new(event_handler);
+        tokio::task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
     }
 }
 
 #[async_trait::async_trait]
-impl Maintaining for EventUpdater {
+impl<Indexer, W> Maintaining for EventUpdater<Indexer, W>
+where
+    Indexer: EventStoring<<W>::Event>,
+    W: EventRetrieving + Send + Sync,
+{
     async fn run_maintenance(&self) -> anyhow::Result<()> {
         self.0.run_maintenance().await
     }

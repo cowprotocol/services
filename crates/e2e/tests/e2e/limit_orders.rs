@@ -1,8 +1,15 @@
 use {
     contracts::ERC20,
-    cow_amm::{CowAmm, Indexer},
+    cow_amm::{
+        cow_amm_constant_product_factory::{self, CowAmmConstantProductFactoryHandler},
+        Indexer,
+    },
     driver::domain::eth::NonZeroU256,
-    e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
+    e2e::{
+        nodes::{forked_node::ForkedNodeApi, NODE_HOST},
+        setup::*,
+        tx,
+    },
     ethcontract::{prelude::U256, H160},
     ethrpc::current_block::BlockRetrieving,
     model::{
@@ -12,7 +19,7 @@ use {
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    std::{str::FromStr, sync::Arc},
+    std::{str::FromStr, sync::Arc, time::Duration},
     web3::{signing::SecretKeyRef, types::Address},
 };
 
@@ -91,12 +98,23 @@ async fn forked_gnosis_cow_amm_indexer(web3: Web3) {
         .await
         .unwrap();
 
-    let cow_amm_indexer = Indexer::new(&web3, None).await;
+    let block_stream = ethrpc::current_block::current_block_stream(
+        NODE_HOST.parse().unwrap(),
+        Duration::from_millis(1_000),
+    )
+    .await
+    .unwrap();
+    let contract_handler =
+        CowAmmConstantProductFactoryHandler::from_contract(cow_amm_factory.clone());
+    let cow_amm_indexer = Indexer::new(contract_handler).await;
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
-    let cow_amm_event_updater =
-        cow_amm::EventUpdater::build(block_retriever, &cow_amm_indexer, &cow_amm_factory).await;
-
-    cow_amm_event_updater.run_maintenance().await.unwrap();
+    cow_amm::EventUpdater::build(
+        block_retriever,
+        cow_amm_indexer.clone(),
+        cow_amm_constant_product_factory::Contract::new(cow_amm_factory.clone()),
+        block_stream,
+    )
+    .await;
 
     wait_for_condition(TIMEOUT, || async {
         let cows = cow_amm_indexer.cow_amms().await;

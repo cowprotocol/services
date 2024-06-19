@@ -1,4 +1,4 @@
-use ethcontract::Address;
+use {ethcontract::Address, std::sync::Arc};
 
 #[derive(Clone)]
 pub struct CowAmm {
@@ -7,11 +7,11 @@ pub struct CowAmm {
 }
 
 impl CowAmm {
-    pub fn new(address: Address, tradeable_pairs: &[Address]) -> Self {
-        Self {
+    pub fn build(address: Address, tradeable_pairs: &[Address]) -> Arc<dyn crate::CowAmm> {
+        Arc::new(Self {
             address,
             tradeable_pairs: tradeable_pairs.to_vec(),
-        }
+        })
     }
 }
 

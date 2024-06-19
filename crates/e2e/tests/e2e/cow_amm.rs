@@ -1,7 +1,11 @@
 use {
     app_data::AppDataHash,
-    cow_amm::{CowAmm, Indexer},
+    cow_amm::{
+        cow_amm_constant_product_factory::{self, CowAmmConstantProductFactoryHandler},
+        Indexer,
+    },
     e2e::{
+        nodes::NODE_HOST,
         setup::{colocation::SolverEngine, mock::Mock, *},
         tx,
         tx_value,
@@ -22,7 +26,7 @@ use {
         SigningScheme,
         Solution,
     },
-    std::{collections::HashMap, sync::Arc},
+    std::{collections::HashMap, sync::Arc, time::Duration},
     web3::signing::SecretKeyRef,
 };
 
@@ -61,10 +65,23 @@ async fn cow_amm_indexer(web3: Web3) {
     .await
     .unwrap();
 
-    let cow_amm_indexer = Indexer::new(&web3, Some(&cow_amm_factory)).await;
+    let block_stream = ethrpc::current_block::current_block_stream(
+        NODE_HOST.parse().unwrap(),
+        Duration::from_millis(1_000),
+    )
+    .await
+    .unwrap();
+
+    let contract = CowAmmConstantProductFactoryHandler::from_contract(cow_amm_factory.clone());
+    let cow_amm_indexer = Indexer::new(contract).await;
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
-    let cow_amm_event_updater =
-        cow_amm::EventUpdater::build(block_retriever, &cow_amm_indexer, &cow_amm_factory).await;
+    cow_amm::EventUpdater::build(
+        block_retriever,
+        cow_amm_indexer.clone(),
+        cow_amm_constant_product_factory::Contract::new(cow_amm_factory.clone()),
+        block_stream,
+    )
+    .await;
 
     // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
@@ -125,8 +142,6 @@ async fn cow_amm_indexer(web3: Web3) {
         .send()
         .await
         .unwrap();
-
-    cow_amm_event_updater.run_maintenance().await.unwrap();
 
     wait_for_condition(TIMEOUT, || async {
         let cows = cow_amm_indexer.cow_amms().await;
