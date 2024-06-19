@@ -10,6 +10,7 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
+    std::sync::Arc,
     url::Url,
 };
 
@@ -27,22 +28,31 @@ pub struct ExternalTradeFinder {
 
     /// Stream to retrieve latest block information for block-dependent queries.
     block_stream: CurrentBlockStream,
+
+    /// Timeout of the quote request to the driver.
+    timeout: Arc<std::time::Duration>,
 }
 
 impl ExternalTradeFinder {
-    pub fn new(driver: Url, client: Client, block_stream: CurrentBlockStream) -> Self {
+    pub fn new(
+        driver: Url,
+        client: Client,
+        block_stream: CurrentBlockStream,
+        timeout: std::time::Duration,
+    ) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
             client,
             block_stream,
+            timeout: Arc::new(timeout),
         }
     }
 
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
     async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
-        let deadline = chrono::Utc::now() + super::time_limit();
+        let deadline = chrono::Utc::now() + *self.timeout;
         let order = dto::Order {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
@@ -69,8 +79,10 @@ impl ExternalTradeFinder {
             request = request.header("X-REQUEST-ID", id);
         }
 
-        let future = async {
+        let timeout = self.timeout.clone();
+        let future = async move {
             let response = request
+                .timeout(*timeout)
                 .send()
                 .await
                 .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
