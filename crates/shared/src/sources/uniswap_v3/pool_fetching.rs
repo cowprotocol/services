@@ -571,7 +571,7 @@ mod tests {
         };
 
         let serialized = serde_json::to_value(pool).unwrap();
-        assert_json_matches!(json, serialized, []);
+        assert_json_matches!(json, serialized);
     }
 
     #[test]

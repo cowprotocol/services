@@ -24,14 +24,73 @@ use {anyhow::anyhow, std::collections::HashSet};
 /// ```
 /// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "alice@example.com"}});
 /// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice", "email": "bob@example.com"}});
-/// shared::assert_json_matches!(actual, expected, ["user.email"]);
+/// shared::assert_json_matches_excluding!(actual, expected, ["user.email"]);
 /// ```
 #[macro_export]
-macro_rules! assert_json_matches {
+macro_rules! assert_json_matches_excluding {
     ($actual:expr, $expected:expr, $exclude_paths:expr) => {{
         let exclude_paths = $crate::test_utils::parse_field_paths(&$exclude_paths);
-        $crate::test_utils::json_matches_excluding(&$actual, &$expected, &exclude_paths)
-            .expect("JSON did not match with the exclusion of specified paths");
+        let result =
+            $crate::test_utils::json_matches_excluding(&$actual, &$expected, &exclude_paths);
+        if let Err(e) = result {
+            panic!(
+                "JSON did not match with the exclusion of specified paths. Error: {}\nActual \
+                 JSON: {}\nExpected JSON: {}",
+                e,
+                serde_json::to_string_pretty(&$actual).unwrap(),
+                serde_json::to_string_pretty(&$expected).unwrap()
+            );
+        }
+    }};
+}
+
+/// Asserts that two JSON values are exactly equal.
+///
+/// This macro is used to compare two JSON values for strict equality in a
+/// testing context. If the two JSON values are not equal, the macro will panic
+/// with a detailed error message indicating the location of the discrepancy.
+///
+/// # Arguments
+///
+/// * `$actual` - The actual JSON value obtained in a test, typically the output
+///   of the code being tested.
+/// * `$expected` - The expected JSON value for comparison, typically the
+///   expected outcome in a test scenario.
+///
+/// # Panics
+///
+/// The macro panics if the actual and expected JSON values are not exactly
+/// equal.
+///
+/// # Examples
+///
+/// ```
+/// use shared::assert_json_matches;
+///
+/// let actual = serde_json::json!({"user": {"id": 1, "name": "Alice"}});
+/// let expected = serde_json::json!({"user": {"id": 1, "name": "Alice"}});
+/// assert_json_matches!(actual, expected);
+/// ```
+///
+/// In this example, the `assert_json_matches!` macro is used to assert that the
+/// `actual` JSON object is exactly the same as the `expected` JSON object. If
+/// there are any differences between the two, the test will fail with a panic.
+#[macro_export]
+macro_rules! assert_json_matches {
+    ($actual:expr, $expected:expr) => {{
+        let result = $crate::test_utils::json_matches_excluding(
+            &$actual,
+            &$expected,
+            &std::collections::HashSet::new(),
+        );
+        if let Err(e) = result {
+            panic!(
+                "JSON did not match. Error: {}\nActual JSON: {}\nExpected JSON: {}",
+                e,
+                serde_json::to_string_pretty(&$actual).unwrap(),
+                serde_json::to_string_pretty(&$expected).unwrap()
+            );
+        }
     }};
 }
 
@@ -157,7 +216,7 @@ mod tests {
                 }
             }
         });
-        assert_json_matches!(json_a, json_b, [])
+        assert_json_matches!(json_a, json_b)
     }
 
     #[test]
@@ -182,13 +241,17 @@ mod tests {
                 "enabled": false,
             }
         });
-        assert_json_matches!(json_a, json_b, ["user.profile.timestamp", "user.enabled"])
+        assert_json_matches_excluding!(json_a, json_b, ["user.profile.timestamp", "user.enabled"])
     }
 
     #[test]
     #[should_panic(
-        expected = "JSON did not match with the exclusion of specified paths: Mismatch at \
-                    user.profile.name: String(\"Alice\") != String(\"Bob\")"
+        expected = "JSON did not match. Error: Mismatch at user.profile.name: String(\"Alice\") \
+                    != String(\"Bob\")\nActual JSON: {\n  \"user\": {\n    \"id\": 123,\n    \
+                    \"profile\": {\n      \"name\": \"Alice\",\n      \"timestamp\": \
+                    \"2021-01-01T12:00:00Z\"\n    }\n  }\n}\nExpected JSON: {\n  \"user\": {\n    \
+                    \"id\": 123,\n    \"profile\": {\n      \"name\": \"Bob\",\n      \
+                    \"timestamp\": \"2021-01-01T12:00:00Z\"\n    }\n  }\n}"
     )]
     fn test_json_matches_excluding_failure() {
         let json_a = json!({
@@ -209,13 +272,17 @@ mod tests {
                 }
             }
         });
-        assert_json_matches!(json_a, json_b, [])
+        assert_json_matches!(json_a, json_b)
     }
 
     #[test]
     #[should_panic(
-        expected = "JSON did not match with the exclusion of specified paths: Key missing in \
-                    expected JSON at user.profile.name"
+        expected = "JSON did not match. Error: Key missing in expected JSON at \
+                    user.profile.name\nActual JSON: {\n  \"user\": {\n    \"id\": 123,\n    \
+                    \"profile\": {\n      \"name\": \"Alice\",\n      \"timestamp\": \
+                    \"2021-01-01T12:00:00Z\"\n    }\n  }\n}\nExpected JSON: {\n  \"user\": {\n    \
+                    \"id\": 123,\n    \"profile\": {\n      \"timestamp\": \
+                    \"2021-01-01T12:00:00Z\"\n    }\n  }\n}"
     )]
     fn test_json_matches_excluding_key_is_missing() {
         let json_a = json!({
@@ -235,14 +302,17 @@ mod tests {
                 }
             }
         });
-        assert_json_matches!(json_a, json_b, [])
+        assert_json_matches!(json_a, json_b)
     }
 
     #[test]
-    #[should_panic(
-        expected = "JSON did not match with the exclusion of specified paths: Key missing in \
-                    actual JSON at user.profile.name"
-    )]
+    #[should_panic(expected = "JSON did not match. Error: Key missing in actual JSON at \
+                               user.profile.name\nActual JSON: {\n  \"user\": {\n    \"id\": \
+                               123,\n    \"profile\": {\n      \"timestamp\": \
+                               \"2021-01-01T12:00:00Z\"\n    }\n  }\n}\nExpected JSON: {\n  \
+                               \"user\": {\n    \"id\": 123,\n    \"profile\": {\n      \
+                               \"name\": \"Alice\",\n      \"timestamp\": \
+                               \"2021-01-01T12:00:00Z\"\n    }\n  }\n}")]
     fn test_json_matches_excluding_key_is_missing_reversed() {
         let json_a = json!({
             "user": {
@@ -261,6 +331,6 @@ mod tests {
                 }
             }
         });
-        assert_json_matches!(json_a, json_b, [])
+        assert_json_matches!(json_a, json_b)
     }
 }

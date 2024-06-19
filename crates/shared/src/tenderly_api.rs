@@ -359,7 +359,7 @@ mod tests {
             "generate_access_list": true
         });
 
-        assert_json_matches!(serde_json::to_value(&request).unwrap(), json, []);
+        assert_json_matches!(serde_json::to_value(&request).unwrap(), json);
         assert_eq!(
             serde_json::from_value::<SimulationRequest>(json).unwrap(),
             request
