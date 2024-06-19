@@ -374,16 +374,7 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
         // Otherwise, there is no need to accumulate the range anymore. Append
         // the range to the result string.
         } else {
-            // If start equals last, no range accumulated, append a single value.
-            if start == last {
-                write!(result, "{}", start)?;
-            // Just two subsequent values, append them separated by a comma.
-            } else if start == last - 1 {
-                write!(result, "{},{}", start, last)?;
-            // Else, append the accumulated range.
-            } else {
-                write!(result, "{}..{}", start, last)?;
-            }
+            append_sequence(&mut result, start, last)?;
             write!(result, ",")?;
             // Reset the start and last indices with the current value.
             start = index;
@@ -392,15 +383,29 @@ fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> 
     }
 
     // Append the remaining data.
-    if start == last {
-        write!(result, "{}", start)?;
-    } else if start == last - 1 {
-        write!(result, "{},{}", start, last)?;
-    } else {
-        write!(result, "{}..{}", start, last)?;
-    }
+    append_sequence(&mut result, start, last)?;
 
     Ok(result)
+}
+
+/// This function formats a range of integers into a condensed string
+/// representation and appends it to the given buffer. The format varies based
+/// on the relationship between `start` and `last`:
+///
+/// - If `start` is equal to `last`, it indicates a single value, which is
+///   appended as such.
+/// - If `start` is one less than `last` (i.e., they are consecutive), both
+///   numbers are appended separated by a comma.
+/// - Otherwise, the numbers between `start` and `last` (inclusive) are
+///   represented as a range using two dots (e.g., "start..last").
+fn append_sequence(buffer: &mut String, start: usize, last: usize) -> core::fmt::Result {
+    if start == last {
+        write!(buffer, "{}", start)
+    } else if start == last - 1 {
+        write!(buffer, "{},{}", start, last)
+    } else {
+        write!(buffer, "{}..{}", start, last)
+    }
 }
 
 #[cfg(test)]
