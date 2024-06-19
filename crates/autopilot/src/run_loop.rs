@@ -441,6 +441,7 @@ impl RunLoop {
 
         let request = settle::Request {
             solution_id: solved.id(),
+            submission_deadline: self.submission_deadline,
         };
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)
