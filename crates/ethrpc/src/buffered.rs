@@ -13,7 +13,14 @@ use {
         stream::{self, FusedStream, Stream, StreamExt as _},
     },
     serde_json::Value,
-    std::{future::Future, num::NonZeroUsize, sync::Arc, time::Duration},
+    std::{
+        collections::{BTreeMap, BTreeSet},
+        fmt::Write,
+        future::Future,
+        num::NonZeroUsize,
+        sync::Arc,
+        time::Duration,
+    },
     tokio::task::JoinHandle,
     tracing::Instrument as _,
 };
@@ -53,7 +60,7 @@ pub struct BufferedTransport<Inner> {
 
 type RpcResult = Result<Value, Web3Error>;
 
-type CallContext = (RequestId, Call, oneshot::Sender<RpcResult>);
+type CallContext = (RequestId, Call, Option<String>, oneshot::Sender<RpcResult>);
 
 impl<Inner> BufferedTransport<Inner>
 where
@@ -84,23 +91,51 @@ where
         tokio::task::spawn(batched_for_each(config, calls, move |batch| {
             let inner = inner.clone();
             async move {
-                let (mut requests, mut senders): (Vec<_>, Vec<_>) = batch
-                    .into_iter()
-                    .filter(|(_, _, sender)| !sender.is_canceled())
-                    .map(|(id, request, sender)| ((id, request), sender))
-                    .unzip();
+                let (mut requests, mut trace_ids, mut senders): (Vec<_>, Vec<_>, Vec<_>) =
+                    itertools::multiunzip(
+                        batch
+                            .into_iter()
+                            .filter(|(_, _, _, sender)| !sender.is_canceled())
+                            .map(|(id, request, trace_id, sender)| {
+                                ((id, request), trace_id, sender)
+                            }),
+                    );
                 match requests.len() {
                     0 => (),
                     1 => {
-                        let ((id, request), sender) = (requests.remove(0), senders.remove(0));
-                        let result = inner.send(id, request).await;
+                        let ((id, request), trace_id, sender) =
+                            (requests.remove(0), trace_ids.remove(0), senders.remove(0));
+                        let result = match (&request, trace_id) {
+                            (Call::MethodCall(_), Some(trace_id)) => {
+                                observe::request_id::set_task_local_storage(
+                                    trace_id,
+                                    inner.send(id, request),
+                                )
+                                .await
+                            }
+                            _ => inner.send(id, request).await,
+                        };
                         let _ = sender.send(result);
                     }
                     n => {
-                        let results = inner
-                            .send_batch(requests)
-                            .await
-                            .unwrap_or_else(|err| vec![Err(err); n]);
+                        let results = match build_rpc_metadata(&requests, &trace_ids) {
+                            Ok(metadata) => {
+                                observe::request_id::set_task_local_storage(
+                                    metadata,
+                                    inner.send_batch(requests),
+                                )
+                                .await
+                            }
+                            Err(err) => {
+                                tracing::error!(
+                                    ?err,
+                                    "failed to build metadata, sending RPC calls without the \
+                                     metadata header"
+                                );
+                                inner.send_batch(requests).await
+                            }
+                        }
+                        .unwrap_or_else(|err| vec![Err(err); n]);
                         for (sender, result) in senders.into_iter().zip(results) {
                             let _ = sender.send(result);
                         }
@@ -113,7 +148,8 @@ where
     /// Queue a call by sending it over calls channel to the background worker.
     fn queue_call(&self, id: RequestId, request: Call) -> oneshot::Receiver<RpcResult> {
         let (sender, receiver) = oneshot::channel();
-        let context = (id, request, sender);
+        let trace_id = observe::request_id::get_task_local_storage();
+        let context = (id, request, trace_id, sender);
         self.calls
             .unbounded_send(context)
             .expect("worker task unexpectedly dropped");
@@ -225,12 +261,163 @@ where
     batches.for_each_concurrent(concurrency_limit, work)
 }
 
+/// Builds a metadata string representation for RPC requests.
+///
+/// This function takes an iterator of requests and their corresponding trace
+/// IDs, and generates a metadata string that groups the requests by their trace
+/// IDs and method names. The format of the output string is as follows:
+///
+/// `trace_id:method_name(index1,index2,...),method_name(index1,index2,...
+/// )|trace_id:...`
+///
+/// Each trace ID is followed by a colon and a list of method names. Each method
+/// name is followed by a list of indices (representing the position of the
+/// request in the original vector) enclosed in parentheses. Different method
+/// names are separated by commas. If there are multiple trace IDs, their
+/// entries are separated by a pipe character.
+///
+/// If a trace ID is `None`, it is represented as "null" in the output string.
+/// All requests with absent trace IDs are grouped together under "null".
+///
+/// # Arguments
+///
+/// * `requests` - A vector of tuples, where each tuple contains a request ID
+///   and a `Call` object representing the RPC request.
+/// * `trace_ids` - A vector of optional strings representing the trace IDs of
+///   the requests. The trace IDs correspond to the requests in the same
+///   position in the `requests` vector.
+///
+/// # Returns
+///
+/// This function returns a string representing the metadata header.
+fn build_rpc_metadata(
+    requests: &[(RequestId, Call)],
+    trace_ids: &[Option<String>],
+) -> anyhow::Result<String> {
+    // Group the requests by trace ID(sorted) and method name(sorted) where values
+    // are sorted indices.
+    let mut grouped_metadata: BTreeMap<String, BTreeMap<String, BTreeSet<usize>>> = BTreeMap::new();
+    for (idx, ((_, call), trace_id)) in requests.iter().zip(trace_ids).enumerate() {
+        if let Call::MethodCall(call) = call {
+            let trace_id = trace_id.clone().unwrap_or("null".to_string());
+            grouped_metadata
+                .entry(trace_id)
+                .or_default()
+                .entry(call.method.clone())
+                .or_default()
+                .insert(idx);
+        }
+    }
+
+    let mut metadata_str = String::new();
+
+    let mut grouped_metadata_iter = grouped_metadata.into_iter().peekable();
+    while let Some((trace_id, methods)) = grouped_metadata_iter.next() {
+        // New entry starts with the trace_id
+        write!(metadata_str, "{}:", trace_id)?;
+
+        // Followed by the method names and their indices
+        let mut methods_iter = methods.into_iter().peekable();
+        while let Some((method, indices)) = methods_iter.next() {
+            write!(metadata_str, "{}(", method)?;
+
+            let indices_str = format_indices_as_ranges(indices)?;
+            write!(metadata_str, "{}", indices_str)?;
+
+            write!(metadata_str, ")")?;
+
+            if methods_iter.peek().is_some() {
+                write!(metadata_str, ",")?;
+            }
+        }
+
+        if grouped_metadata_iter.peek().is_some() {
+            write!(metadata_str, "|")?;
+        }
+    }
+
+    Ok(metadata_str)
+}
+
+/// Formats a set of indices as a string of ranges.
+///
+/// This function takes a set of indices and formats them as a string where
+/// consecutive indices are represented as ranges. For example, the set
+/// `{1, 2, 3, 5, 6, 8}` would be formatted as the string `"1..3,5..6,8"`.
+///
+/// # Arguments
+///
+/// * `indices` - A set of indices to format. The indices should be unique and
+///   sorted in ascending order.
+///
+/// # Returns
+///
+/// This function returns a string representing the indices as ranges. Each
+/// range is formatted as `start..end`, and ranges are separated by commas.
+/// Single indices (i.e., indices that are not part of a range) are represented
+/// as themselves.
+fn format_indices_as_ranges(indices: BTreeSet<usize>) -> anyhow::Result<String> {
+    let mut result = String::new();
+    let mut indices = indices.into_iter();
+    // Initialize the start and last variables with the first index.
+    let mut start = match indices.next() {
+        Some(index) => index,
+        None => return Ok(result),
+    };
+    let mut last = start;
+
+    // Iterate over the rest of the indices
+    for index in indices {
+        // If the current index is the next consecutive number, update last index.
+        if index == last + 1 {
+            last = index;
+        // Otherwise, there is no need to accumulate the range anymore. Append
+        // the range to the result string.
+        } else {
+            append_sequence(&mut result, start, last)?;
+            write!(result, ",")?;
+            // Reset the start and last indices with the current value.
+            start = index;
+            last = index;
+        }
+    }
+
+    // Append the remaining data.
+    append_sequence(&mut result, start, last)?;
+
+    Ok(result)
+}
+
+/// This function formats a range of integers into a condensed string
+/// representation and appends it to the given buffer. The format varies based
+/// on the relationship between `start` and `last`:
+///
+/// - If `start` is equal to `last`, it indicates a single value, which is
+///   appended as such.
+/// - If `start` is one less than `last` (i.e., they are consecutive), both
+///   numbers are appended separated by a comma.
+/// - Otherwise, the numbers between `start` and `last` (inclusive) are
+///   represented as a range using two dots (e.g., "start..last").
+fn append_sequence(buffer: &mut String, start: usize, last: usize) -> core::fmt::Result {
+    if start == last {
+        write!(buffer, "{}", start)
+    } else if start == last - 1 {
+        write!(buffer, "{},{}", start, last)
+    } else {
+        write!(buffer, "{}..{}", start, last)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         crate::mock::MockTransport,
-        ethcontract::{Web3, U256},
+        ethcontract::{
+            jsonrpc::{Id, MethodCall, Params},
+            Web3,
+            U256,
+        },
         mockall::predicate,
         serde_json::json,
     };
@@ -328,5 +515,89 @@ mod tests {
 
         assert_eq!(used.await.unwrap(), json!(1337));
         drop(unpolled);
+    }
+
+    #[test]
+    fn test_format_indices_as_ranges() {
+        // empty string
+        let indices = BTreeSet::new();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "");
+
+        // a single value
+        let indices = vec![2].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "2");
+
+        // only a range
+        let indices = vec![1, 2, 3, 4, 5].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "1..5");
+
+        // 2 subsequent values range
+        let indices = vec![2, 3].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "2,3");
+
+        // no ranges
+        let indices = vec![1, 3, 5, 7].into_iter().collect();
+        assert_eq!(format_indices_as_ranges(indices).unwrap(), "1,3,5,7");
+
+        // ends with a non-range value
+        let indices = vec![1, 2, 3, 5, 7, 8, 9, 10, 20].into_iter().collect();
+        assert_eq!(
+            format_indices_as_ranges(indices).unwrap(),
+            "1..3,5,7..10,20"
+        );
+
+        // ends with a range value
+        let indices = vec![1, 2, 3, 5, 6, 7, 8, 10, 11, 12].into_iter().collect();
+        assert_eq!(
+            format_indices_as_ranges(indices).unwrap(),
+            "1..3,5..8,10..12"
+        );
+    }
+
+    fn method_call(method: &str) -> Call {
+        Call::MethodCall(MethodCall {
+            jsonrpc: None,
+            method: method.to_string(),
+            params: Params::None,
+            id: Id::Null,
+        })
+    }
+
+    #[test]
+    fn test_build_rpc_metadata_header() {
+        let requests = vec![
+            (1001, method_call("eth_sendTransaction")), // 0
+            (1001, method_call("eth_call")),            // 1
+            (1001, method_call("eth_sendTransaction")), // 2
+            (1002, method_call("eth_call")),            // 3
+            (9999, method_call("eth_call")),            // 4
+            (1001, method_call("eth_sendTransaction")), // 5
+            (1002, method_call("eth_call")),            // 6
+            (1002, method_call("eth_call")),            // 7
+            (1001, method_call("eth_sendTransaction")), // 8
+            (9999, method_call("eth_sendTransaction")), // 9
+            (9999, method_call("eth_sendTransaction")), // 10
+            (9999, method_call("eth_sendTransaction")), // 11
+        ];
+        let trace_ids = vec![
+            Some("1001".to_string()), // 0
+            Some("1001".to_string()), // 1
+            Some("1001".to_string()), // 2
+            Some("1002".to_string()), // 3
+            None,                     // 4
+            Some("1001".to_string()), // 5
+            Some("1002".to_string()), // 6
+            Some("1002".to_string()), // 7
+            Some("1001".to_string()), // 8
+            None,                     // 9
+            None,                     // 10
+            None,                     // 11
+        ];
+        let metadata_header = build_rpc_metadata(&requests, &trace_ids).unwrap();
+        assert_eq!(
+            metadata_header,
+            "1001:eth_call(1),eth_sendTransaction(0,2,5,8)|1002:eth_call(3,6,7)|null:eth_call(4),\
+             eth_sendTransaction(9..11)"
+        );
     }
 }

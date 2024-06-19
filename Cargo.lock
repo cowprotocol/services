@@ -1929,6 +1929,7 @@ dependencies = [
  "futures",
  "hex",
  "hex-literal",
+ "itertools 0.12.1",
  "lazy_static",
  "maplit",
  "mockall 0.12.1",
