@@ -104,8 +104,7 @@ async fn forked_gnosis_cow_amm_indexer(web3: Web3) {
     )
     .await
     .unwrap();
-    let contract_handler =
-        CowAmmConstantProductFactoryHandler::from_contract(cow_amm_factory.clone());
+    let contract_handler = CowAmmConstantProductFactoryHandler::deployed(&web3).await;
     let cow_amm_indexer = Indexer::new(contract_handler).await;
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
     cow_amm::EventUpdater::build(
