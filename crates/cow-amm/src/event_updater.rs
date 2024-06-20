@@ -8,7 +8,7 @@ use {
     tokio::sync::Mutex,
 };
 
-pub struct EventUpdater<
+pub(crate) struct EventUpdater<
     Database: EventStoring<<W as EventRetrieving>::Event>,
     W: EventRetrieving + Send + Sync,
 >(Mutex<EventHandler<W, Database>>);
@@ -18,7 +18,7 @@ where
     Indexer: EventStoring<<W as EventRetrieving>::Event> + 'static,
     W: EventRetrieving + Send + Sync + 'static,
 {
-    pub async fn build(
+    pub(crate) async fn build(
         block_retriever: Arc<dyn BlockRetrieving>,
         indexer: Indexer,
         contract: W,

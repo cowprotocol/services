@@ -1,9 +1,6 @@
 use {
     contracts::ERC20,
-    cow_amm::{
-        cow_amm_constant_product_factory::{self, CowAmmConstantProductFactoryHandler},
-        Indexer,
-    },
+    cow_amm::{CowAmmSafeBasedContract, Registry},
     driver::domain::eth::NonZeroU256,
     e2e::{
         nodes::{forked_node::ForkedNodeApi, NODE_HOST},
@@ -104,14 +101,15 @@ async fn forked_gnosis_cow_amm_indexer(web3: Web3) {
     )
     .await
     .unwrap();
-    let contract_handler = CowAmmConstantProductFactoryHandler::deployed(&web3).await;
-    let cow_amm_indexer = Indexer::new(contract_handler).await;
+    let contract_handler = contracts::CowAmmConstantProductFactory::deployed(&web3)
+        .await
+        .unwrap();
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
-    cow_amm::EventUpdater::build(
+    let cow_amm_indexer = Registry::build(
         block_retriever,
-        cow_amm_indexer.clone(),
-        cow_amm_constant_product_factory::Contract::new(cow_amm_factory.clone()),
+        CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
         block_stream,
+        contract_handler.deployment_information(),
     )
     .await;
 

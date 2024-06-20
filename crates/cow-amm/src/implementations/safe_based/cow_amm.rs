@@ -1,16 +1,16 @@
 use {ethcontract::Address, std::sync::Arc};
 
 #[derive(Clone)]
-pub struct CowAmm {
+pub(crate) struct CowAmm {
     address: Address,
-    tradeable_pairs: Vec<Address>,
+    tradeable_tokens: Vec<Address>,
 }
 
 impl CowAmm {
-    pub fn build(address: Address, tradeable_pairs: &[Address]) -> Arc<dyn crate::CowAmm> {
+    pub(crate) fn build(address: Address, tradeable_pairs: &[Address]) -> Arc<dyn crate::CowAmm> {
         Arc::new(Self {
             address,
-            tradeable_pairs: tradeable_pairs.to_vec(),
+            tradeable_tokens: tradeable_pairs.to_vec(),
         })
     }
 }
@@ -21,6 +21,6 @@ impl crate::CowAmm for CowAmm {
     }
 
     fn traded_tokens(&self) -> &[Address] {
-        self.tradeable_pairs.as_slice()
+        self.tradeable_tokens.as_slice()
     }
 }

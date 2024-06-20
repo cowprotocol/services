@@ -1,9 +1,6 @@
 use {
     app_data::AppDataHash,
-    cow_amm::{
-        cow_amm_constant_product_factory::{self, CowAmmConstantProductFactoryHandler},
-        Indexer,
-    },
+    cow_amm::{CowAmmSafeBasedContract, Registry},
     e2e::{
         nodes::NODE_HOST,
         setup::{colocation::SolverEngine, mock::Mock, *},
@@ -72,14 +69,12 @@ async fn cow_amm_indexer(web3: Web3) {
     .await
     .unwrap();
 
-    let contract = CowAmmConstantProductFactoryHandler::from_contract(cow_amm_factory.clone());
-    let cow_amm_indexer = Indexer::new(contract).await;
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
-    cow_amm::EventUpdater::build(
+    let cow_amm_indexer = Registry::build(
         block_retriever,
-        cow_amm_indexer.clone(),
-        cow_amm_constant_product_factory::Contract::new(cow_amm_factory.clone()),
+        CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
         block_stream,
+        cow_amm_factory.deployment_information(),
     )
     .await;
 

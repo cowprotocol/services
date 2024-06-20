@@ -1,12 +1,12 @@
 mod event_updater;
 mod implementations;
-mod indexer;
+mod registry;
 
-use {
-    crate::indexer::CowAmmRegistry,
-    ethcontract::{common::DeploymentInformation, Address},
+use {ethcontract::Address, std::sync::Arc};
+pub use {
+    implementations::safe_based::event_handler::Contract as CowAmmSafeBasedContract,
+    registry::Registry,
 };
-pub use {event_updater::EventUpdater, implementations::safe_based::*, indexer::Indexer};
 
 pub trait CowAmm: Send + Sync {
     /// Address of the CoW AMM.
@@ -20,15 +20,7 @@ pub trait CowAmm: Send + Sync {
 }
 
 #[async_trait::async_trait]
-pub trait ContractHandler<E>: Send + Sync {
-    /// Information about when a contract instance was deployed
-    fn deployment_information(&self) -> Option<DeploymentInformation>;
-
+pub trait ContractHandler: Sync + Send {
     /// Apply the event to the given CoW AMM registry
-    async fn apply_event(
-        &self,
-        block_number: u64,
-        event: &E,
-        cow_amms: &mut CowAmmRegistry,
-    ) -> anyhow::Result<()>;
+    async fn apply_event(&self) -> anyhow::Result<Option<Arc<dyn CowAmm>>>;
 }

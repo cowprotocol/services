@@ -1,41 +1,51 @@
 use {
-    crate::{ContractHandler, CowAmm},
+    crate::{event_updater::EventUpdater, ContractHandler, CowAmm},
     ethcontract::common::DeploymentInformation,
-    ethrpc::current_block::RangeInclusive,
-    shared::event_handling::EventStoring,
+    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream, RangeInclusive},
+    shared::event_handling::{EventRetrieving, EventStoring},
     std::{collections::BTreeMap, sync::Arc},
     tokio::sync::RwLock,
 };
 
-/// Registry with the format: (block number, cow_amm)
-pub type CowAmmRegistry = BTreeMap<u64, Arc<dyn CowAmm>>;
-
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
-pub struct Indexer<E> {
-    contract_handler: Arc<dyn ContractHandler<E>>,
-    cow_amms: Arc<RwLock<CowAmmRegistry>>,
+pub struct Registry {
+    cow_amms: Arc<RwLock<BTreeMap<u64, Arc<dyn CowAmm>>>>,
     first_block: u64,
 }
 
-impl<E> Indexer<E> {
-    pub async fn new(contract_handler: Arc<dyn ContractHandler<E>>) -> Self {
-        let first_block = Self::first_block(contract_handler.clone()).await;
-        Self {
+impl Registry {
+    pub async fn build<W>(
+        block_retriever: Arc<dyn BlockRetrieving>,
+        contract: W,
+        current_block_stream: CurrentBlockStream,
+        deployment_information: Option<DeploymentInformation>,
+    ) -> Self
+    where
+        W: EventRetrieving + Send + Sync + 'static,
+        <W as EventRetrieving>::Event: ContractHandler,
+        <W as EventRetrieving>::Event: Clone,
+    {
+        let first_block =
+            if let Some(DeploymentInformation::BlockNumber(block)) = deployment_information {
+                block
+            } else {
+                0
+            };
+        let indexer = Self {
             cow_amms: Arc::new(RwLock::new(BTreeMap::new())),
             first_block,
-            contract_handler,
-        }
-    }
+        };
 
-    async fn first_block(contract_handler: Arc<dyn ContractHandler<E>>) -> u64 {
-        if let Some(DeploymentInformation::BlockNumber(block)) =
-            contract_handler.deployment_information()
-        {
-            block
-        } else {
-            0
-        }
+        EventUpdater::build(
+            block_retriever,
+            indexer.clone(),
+            contract,
+            current_block_stream,
+        )
+        .await;
+
+        indexer
     }
 
     /// Returns all CoW AMMs that are currently enabled (i.e. able to trade).
@@ -46,7 +56,10 @@ impl<E> Indexer<E> {
 }
 
 #[async_trait::async_trait]
-impl<E: Send + Sync> EventStoring<E> for Indexer<E> {
+impl<E: ContractHandler + Clone> EventStoring<E> for Registry
+where
+    E: ContractHandler + 'static,
+{
     async fn replace_events(
         &mut self,
         events: Vec<ethcontract::Event<E>>,
@@ -78,9 +91,9 @@ impl<E: Send + Sync> EventStoring<E> for Indexer<E> {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
                 let block_number = meta.block_number;
-                self.contract_handler
-                    .apply_event(block_number, &event.data, cow_amms)
-                    .await?;
+                if let Some(cow_amm) = event.data.apply_event().await? {
+                    cow_amms.insert(block_number, cow_amm);
+                }
             }
         }
         Ok(())

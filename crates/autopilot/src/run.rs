@@ -20,10 +20,7 @@ use {
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    cow_amm::{
-        cow_amm_constant_product_factory::{self, CowAmmConstantProductFactoryHandler},
-        Indexer,
-    },
+    cow_amm::{CowAmmSafeBasedContract, Registry},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
@@ -363,13 +360,14 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let contract = CowAmmConstantProductFactoryHandler::deployed(&web3).await;
-    let cow_amm_indexer = Indexer::new(contract).await;
-    cow_amm::EventUpdater::build(
+    let contract = contracts::CowAmmConstantProductFactory::deployed(&web3)
+        .await
+        .unwrap();
+    let cow_amm_indexer = Registry::build(
         block_retriever.clone(),
-        cow_amm_indexer.clone(),
-        cow_amm_constant_product_factory::Contract::new(eth.contracts().cow_amm_factory().clone()),
+        CowAmmSafeBasedContract::new(eth.contracts().cow_amm_factory().clone()),
         eth.current_block().clone(),
+        contract.deployment_information(),
     )
     .await;
 
