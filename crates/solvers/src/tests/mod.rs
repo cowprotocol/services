@@ -11,7 +11,6 @@ use {
 };
 
 mod baseline;
-mod mock;
 mod naive;
 
 /// A solver engine handle for E2E testing.
