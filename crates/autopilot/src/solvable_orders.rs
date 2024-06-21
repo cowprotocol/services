@@ -81,6 +81,7 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
+    cow_amm_registry: cow_amm::Registry,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -105,6 +106,7 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
+        cow_amm_registry: cow_amm::Registry,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -122,6 +124,7 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fees,
+            cow_amm_registry,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -190,11 +193,22 @@ impl SolvableOrdersCache {
         filtered_order_events.extend(removed);
 
         // create auction
-        let (orders, mut prices) = get_orders_with_native_prices(
+        let (orders, mut prices) = Self::get_orders_with_native_prices(
             orders.clone(),
             &self.native_price_estimator,
             self.metrics,
         );
+        // Add the prices for the CoW AMM tokens.
+        let cow_amms = self.cow_amm_registry.cow_amms().await;
+        let cow_amm_tokens = cow_amms
+            .iter()
+            .flat_map(|cow_amm| cow_amm.traded_tokens())
+            .filter(|token| !prices.contains_key(token))
+            .cloned()
+            .collect::<Vec<_>>();
+        let cow_amm_prices =
+            Self::get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
+        prices.extend(cow_amm_prices);
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
@@ -258,6 +272,65 @@ impl SolvableOrdersCache {
 
         tracing::debug!(%block, "updated current auction cache");
         Ok(())
+    }
+
+    fn get_native_prices(
+        tokens: &[H160],
+        native_price_estimator: &CachingNativePriceEstimator,
+    ) -> HashMap<H160, U256> {
+        native_price_estimator
+            .get_cached_prices(tokens)
+            .into_iter()
+            .flat_map(|(token, result)| {
+                let price = to_normalized_price(result.ok()?)?;
+                Some((token, price))
+            })
+            .collect()
+    }
+
+    fn get_orders_with_native_prices(
+        orders: Vec<Order>,
+        native_price_estimator: &CachingNativePriceEstimator,
+        metrics: &Metrics,
+    ) -> (Vec<Order>, BTreeMap<H160, U256>) {
+        let traded_tokens = orders
+            .iter()
+            .flat_map(|order| [order.data.sell_token, order.data.buy_token])
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        let prices = Self::get_native_prices(&traded_tokens, native_price_estimator);
+
+        // Filter both orders and prices so that we only return orders that have prices
+        // and prices that have orders.
+        let mut filtered_market_orders = 0_i64;
+        let mut used_prices = BTreeMap::new();
+        let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+            let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
+            match (prices.get(t0), prices.get(t1)) {
+                (Some(p0), Some(p1)) => {
+                    used_prices.insert(*t0, *p0);
+                    used_prices.insert(*t1, *p1);
+                    true
+                }
+                _ => {
+                    filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
+                    false
+                }
+            }
+        });
+
+        let tokens_by_priority = prioritize_missing_prices(filtered);
+        native_price_estimator.replace_high_priority(tokens_by_priority);
+
+        // Record separate metrics just for missing native token prices for market
+        // orders, as they should be prioritized.
+        metrics
+            .auction_market_order_missing_price
+            .set(filtered_market_orders);
+
+        (usable, used_prices)
     }
 
     pub fn last_update_time(&self) -> Instant {
@@ -447,58 +520,6 @@ async fn update_task(
         }
         tokio::time::sleep_until(start + update_interval).await;
     }
-}
-
-fn get_orders_with_native_prices(
-    orders: Vec<Order>,
-    native_price_estimator: &CachingNativePriceEstimator,
-    metrics: &Metrics,
-) -> (Vec<Order>, BTreeMap<H160, U256>) {
-    let traded_tokens = orders
-        .iter()
-        .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    let prices: HashMap<_, _> = native_price_estimator
-        .get_cached_prices(&traded_tokens)
-        .into_iter()
-        .flat_map(|(token, result)| {
-            let price = to_normalized_price(result.ok()?)?;
-            Some((token, price))
-        })
-        .collect();
-
-    // Filter both orders and prices so that we only return orders that have prices
-    // and prices that have orders.
-    let mut filtered_market_orders = 0_i64;
-    let mut used_prices = BTreeMap::new();
-    let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-        let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
-        match (prices.get(t0), prices.get(t1)) {
-            (Some(p0), Some(p1)) => {
-                used_prices.insert(*t0, *p0);
-                used_prices.insert(*t1, *p1);
-                true
-            }
-            _ => {
-                filtered_market_orders += i64::from(order.metadata.class == OrderClass::Market);
-                false
-            }
-        }
-    });
-
-    let tokens_by_priority = prioritize_missing_prices(filtered);
-    native_price_estimator.replace_high_priority(tokens_by_priority);
-
-    // Record separate metrics just for missing native token prices for market
-    // orders, as they should be prioritized.
-    metrics
-        .auction_market_order_missing_price
-        .set(filtered_market_orders);
-
-    (usable, used_prices)
 }
 
 /// Computes which missing native prices are the most urgent to fetch.
@@ -814,8 +835,11 @@ mod tests {
         // We'll have no native prices in this call. But this call will cause a
         // background task to fetch the missing prices so we'll have them in the
         // next call.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+        let (filtered_orders, prices) = SolvableOrdersCache::get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+        );
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -823,8 +847,11 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
         // Now we have all the native prices we want.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+        let (filtered_orders, prices) = SolvableOrdersCache::get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+        );
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
