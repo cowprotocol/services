@@ -78,11 +78,10 @@ async fn cow_amm_indexer(web3: Web3) {
             block_stream,
             cow_amm_factory
                 .deployment_information()
-                .map(|info| match info {
+                .and_then(|info| match info {
                     DeploymentInformation::BlockNumber(block) => Some(block),
                     _ => None,
                 })
-                .flatten()
                 .unwrap_or(0),
         )
         .await;
