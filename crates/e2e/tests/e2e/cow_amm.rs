@@ -7,7 +7,7 @@ use {
         tx,
         tx_value,
     },
-    ethcontract::{web3::ethabi::Token, BlockId, BlockNumber, U256},
+    ethcontract::{common::DeploymentInformation, web3::ethabi::Token, BlockId, BlockNumber, U256},
     ethrpc::current_block::BlockRetrieving,
     model::{
         order::{OrderCreation, OrderData, OrderKind},
@@ -70,13 +70,22 @@ async fn cow_amm_indexer(web3: Web3) {
     .unwrap();
 
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
-    let cow_amm_indexer = Registry::build(
-        block_retriever,
-        CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
-        block_stream,
-        cow_amm_factory.deployment_information(),
-    )
-    .await;
+    let cow_amm_registry = Registry::default();
+    cow_amm_registry
+        .add_listener(
+            block_retriever,
+            CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
+            block_stream,
+            cow_amm_factory
+                .deployment_information()
+                .map(|info| match info {
+                    DeploymentInformation::BlockNumber(block) => Some(block),
+                    _ => None,
+                })
+                .flatten()
+                .unwrap_or(0),
+        )
+        .await;
 
     // Fund cow amm owner with 2_000 dai and allow factory take them
     dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
@@ -139,14 +148,14 @@ async fn cow_amm_indexer(web3: Web3) {
         .unwrap();
 
     wait_for_condition(TIMEOUT, || async {
-        let cows = cow_amm_indexer.cow_amms().await;
+        let cows = cow_amm_registry.cow_amms().await;
         !cows.is_empty()
     })
     .await
     .unwrap();
 
     wait_for_condition(TIMEOUT, || async {
-        let cows = cow_amm_indexer.cow_amms().await;
+        let cows = cow_amm_registry.cow_amms().await;
         cows.iter().any(|cow| *cow.address() == cow_amm)
     })
     .await
@@ -274,7 +283,10 @@ async fn cow_amm(web3: Web3) {
                 "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--protocol-fee-exempt-addresses={:?}", cow_amm.address()),
+                format!(
+                    "--cow-amm-factory-contract-address={:?}",
+                    cow_amm_factory.address()
+                ),
             ],
         )
         .await;
@@ -469,4 +481,14 @@ async fn cow_amm(web3: Web3) {
     })
     .await
     .unwrap();
+
+    // Check that the CoW AMM product factory listener works and catches the new CoW
+    // AMM deployment events
+    let mut auctions = mock_solver.get_auctions();
+    assert_eq!(auctions.len(), 1);
+    assert!(auctions
+        .pop()
+        .unwrap()
+        .surplus_capturing_jit_order_owners
+        .contains(&cow_amm.address()))
 }

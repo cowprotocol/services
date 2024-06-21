@@ -1,4 +1,3 @@
-mod event_updater;
 mod implementations;
 mod registry;
 
@@ -16,11 +15,11 @@ pub trait CowAmm: Send + Sync {
     /// Returns the list of tokens traded by this pool.
     /// Can be used by the autopilot to build the list of native token prices to
     /// query.
-    fn traded_tokens(&self) -> &[Address];
+    fn traded_tokens(&self) -> &[Address; 2];
 }
 
 #[async_trait::async_trait]
-pub trait ContractHandler: Sync + Send {
-    /// Apply the event to the given CoW AMM registry
-    async fn apply_event(&self) -> anyhow::Result<Option<Arc<dyn CowAmm>>>;
+pub trait Deployment: Sync + Send {
+    /// Returns the AMM deployed in the given Event.
+    async fn deployed_amm(&self) -> Option<Arc<dyn CowAmm>>;
 }

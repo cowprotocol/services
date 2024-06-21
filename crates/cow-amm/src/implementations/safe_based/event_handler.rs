@@ -10,17 +10,17 @@ impl_event_retrieving! {
 }
 
 #[async_trait::async_trait]
-impl crate::ContractHandler for Event {
-    /// Apply the event to the given CoW AMM registry
-    async fn apply_event(&self) -> anyhow::Result<Option<Arc<dyn crate::CowAmm>>> {
+impl crate::Deployment for Event {
+    /// Returns the AMM deployed in the given Event.
+    async fn deployed_amm(&self) -> Option<Arc<dyn crate::CowAmm>> {
         match &self {
             Event::ConditionalOrderCreated(_) | Event::TradingDisabled(_) => {
                 // We purposely ignore these events
-                return Ok(None);
+                None
             }
             Event::Deployed(deployed) => {
-                let cow_amm = CowAmm::build(deployed.amm, &[deployed.token_0, deployed.token_1]);
-                return Ok(Some(cow_amm));
+                let cow_amm = CowAmm::build(deployed.amm, [deployed.token_0, deployed.token_1]);
+                Some(cow_amm)
             }
         }
     }

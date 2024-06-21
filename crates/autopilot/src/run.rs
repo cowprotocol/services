@@ -21,7 +21,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     cow_amm::{CowAmmSafeBasedContract, Registry},
-    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
@@ -360,16 +360,23 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let contract = contracts::CowAmmConstantProductFactory::deployed(&web3)
-        .await
-        .unwrap();
-    let cow_amm_indexer = Registry::build(
-        block_retriever.clone(),
-        CowAmmSafeBasedContract::new(eth.contracts().cow_amm_factory().clone()),
-        eth.current_block().clone(),
-        contract.deployment_information(),
-    )
-    .await;
+    let cow_amm_registry = Registry::default();
+    if let Some(cow_amm_factory) = eth.contracts().cow_amm_factory() {
+        cow_amm_registry
+            .add_listener(
+                block_retriever.clone(),
+                CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
+                eth.current_block().clone(),
+                cow_amm_factory
+                    .deployment_information()
+                    .map(|info| match info {
+                        DeploymentInformation::BlockNumber(block) => block,
+                        _ => panic!("no deployment block configured"),
+                    })
+                    .unwrap_or(0),
+            )
+            .await;
+    }
 
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
@@ -521,7 +528,7 @@ pub async fn run(args: Arguments) {
             .iter()
             .cloned()
             .collect::<HashSet<_>>(),
-        cow_amm_indexer,
+        cow_amm_registry,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

@@ -1,54 +1,71 @@
 use {
-    crate::{event_updater::EventUpdater, ContractHandler, CowAmm},
-    ethcontract::common::DeploymentInformation,
+    crate::{CowAmm, Deployment},
     ethrpc::current_block::{BlockRetrieving, CurrentBlockStream, RangeInclusive},
-    shared::event_handling::{EventRetrieving, EventStoring},
-    std::{collections::BTreeMap, sync::Arc},
-    tokio::sync::RwLock,
+    shared::{
+        event_handling::{EventHandler, EventRetrieving, EventStoring},
+        maintenance::{Maintaining, ServiceMaintenance},
+    },
+    std::{
+        any::TypeId,
+        collections::{BTreeMap, HashMap},
+        sync::Arc,
+    },
+    tokio::sync::{Mutex, RwLock},
 };
 
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
 pub struct Registry {
     cow_amms: Arc<RwLock<BTreeMap<u64, Arc<dyn CowAmm>>>>,
-    first_block: u64,
+    first_blocks: Arc<RwLock<HashMap<TypeId, u64>>>,
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self {
+            cow_amms: Arc::new(RwLock::new(BTreeMap::new())),
+            first_blocks: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
 }
 
 impl Registry {
-    pub async fn build<W>(
+    pub async fn add_listener<C>(
+        &self,
         block_retriever: Arc<dyn BlockRetrieving>,
-        contract: W,
+        contract: C,
         current_block_stream: CurrentBlockStream,
-        deployment_information: Option<DeploymentInformation>,
-    ) -> Self
-    where
-        W: EventRetrieving + Send + Sync + 'static,
-        <W as EventRetrieving>::Event: ContractHandler,
-        <W as EventRetrieving>::Event: Clone,
+        first_block: u64,
+    ) where
+        C: EventRetrieving + Send + Sync + 'static,
+        <C as EventRetrieving>::Event: Deployment,
     {
-        let first_block =
-            if let Some(DeploymentInformation::BlockNumber(block)) = deployment_information {
-                block
-            } else {
-                0
-            };
-        let indexer = Self {
-            cow_amms: Arc::new(RwLock::new(BTreeMap::new())),
-            first_block,
-        };
+        {
+            let first_blocks = &mut self.first_blocks.write().await;
+            let type_id = TypeId::of::<C::Event>();
+            first_blocks.insert(type_id, first_block);
+        }
 
-        EventUpdater::build(
-            block_retriever,
-            indexer.clone(),
-            contract,
-            current_block_stream,
-        )
-        .await;
-
-        indexer
+        self.spawn_event_updater(block_retriever, contract, current_block_stream)
+            .await;
     }
 
-    /// Returns all CoW AMMs that are currently enabled (i.e. able to trade).
+    async fn spawn_event_updater<C>(
+        &self,
+        block_retriever: Arc<dyn BlockRetrieving>,
+        contract: C,
+        current_block_stream: CurrentBlockStream,
+    ) where
+        C: EventRetrieving + Send + Sync + 'static,
+        <C as EventRetrieving>::Event: Deployment,
+    {
+        let event_handler = EventHandler::new(block_retriever, contract, self.clone(), None);
+        let event_handler: Vec<Arc<dyn Maintaining>> = vec![Arc::new(Mutex::new(event_handler))];
+        let service_maintainer = ServiceMaintenance::new(event_handler);
+        tokio::task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
+    }
+
+    /// Returns all the deployed CoW AMMs
     pub async fn cow_amms(&self) -> Vec<Arc<dyn crate::CowAmm>> {
         let cow_amms = self.cow_amms.read().await;
         cow_amms.values().cloned().collect::<Vec<_>>()
@@ -56,9 +73,9 @@ impl Registry {
 }
 
 #[async_trait::async_trait]
-impl<E: ContractHandler + Clone> EventStoring<E> for Registry
+impl<E: Deployment> EventStoring<E> for Registry
 where
-    E: ContractHandler + 'static,
+    E: Deployment + 'static,
 {
     async fn replace_events(
         &mut self,
@@ -91,7 +108,7 @@ where
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
                 let block_number = meta.block_number;
-                if let Some(cow_amm) = event.data.apply_event().await? {
+                if let Some(cow_amm) = event.data.deployed_amm().await {
                     cow_amms.insert(block_number, cow_amm);
                 }
             }
@@ -100,12 +117,22 @@ where
     }
 
     async fn last_event_block(&self) -> anyhow::Result<u64> {
+        let type_id = TypeId::of::<E>();
+
+        let first_block = self
+            .first_blocks
+            .read()
+            .await
+            .get(&type_id)
+            .copied()
+            .unwrap_or(0);
+
         Ok(self
             .cow_amms
             .read()
             .await
             .last_key_value()
             .map(|(block, _)| *block)
-            .unwrap_or(self.first_block))
+            .unwrap_or(first_block))
     }
 }
