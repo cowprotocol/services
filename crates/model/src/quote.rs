@@ -318,11 +318,11 @@ impl OrderQuoteRequest {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json};
+    use {super::*, serde_json::json, shared::assert_json_matches};
 
     #[test]
     fn serialize_defaults() {
-        assert_eq!(
+        assert_json_matches!(
             json!(OrderQuoteRequest::default()),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
