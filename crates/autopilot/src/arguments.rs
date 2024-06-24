@@ -2,14 +2,15 @@ use {
     crate::{domain::fee::FeeFactor, infra},
     anyhow::Context,
     clap::ValueEnum,
-    primitive_types::H160,
+    derivative::Derivative,
+    primitive_types::{H160, H256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
+    std::{fmt::Debug, net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
     url::Url,
 };
 
@@ -229,6 +230,11 @@ pub struct Arguments {
     /// `order_events` database table.
     #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_threshold: Duration,
+
+    /// Describes the circuit breaker configuration if the configuration is
+    /// present
+    #[clap(flatten)]
+    pub circuit_breaker: CircuitBreaker,
 }
 
 impl std::fmt::Display for Arguments {
@@ -273,6 +279,7 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait,
             s3,
             protocol_fee_exempt_addresses,
+            circuit_breaker,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -359,6 +366,7 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait
         )?;
         writeln!(f, "s3: {:?}", s3)?;
+        writeln!(f, "circuit breaker: {:?}", circuit_breaker)?;
         Ok(())
     }
 }
@@ -477,6 +485,14 @@ impl FromStr for FeePolicy {
             fee_policy_order_class,
         })
     }
+}
+
+#[derive(clap::Parser, Clone, Derivative)]
+#[derivative(Debug)]
+pub struct CircuitBreaker {
+    #[derivative(Debug = "ignore")]
+    pub circuit_breaker_authenticator_pk: Option<H256>,
+    pub circuit_breaker_solvers: Option<Vec<H160>>,
 }
 
 #[cfg(test)]
