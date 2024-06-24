@@ -17,6 +17,9 @@ use {
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
 pub struct Registry {
+    /// Store indexed data associated to the indexed events type id.
+    /// That type erasure allows us to index multiple concrete contracts
+    /// in a single Registry to make for a nicer user facing API.
     storage: Arc<RwLock<HashMap<TypeId, Storage>>>,
     block_retriever: Arc<dyn BlockRetrieving>,
     current_block_stream: CurrentBlockStream,
