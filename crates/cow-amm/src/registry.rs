@@ -1,5 +1,6 @@
 use {
     crate::{CowAmm, Deployment},
+    anyhow::Context,
     ethrpc::current_block::{BlockRetrieving, CurrentBlockStream, RangeInclusive},
     shared::{
         event_handling::{EventHandler, EventRetrieving, EventStoring},
@@ -16,8 +17,7 @@ use {
 /// CoW AMM indexer which stores events in-memory.
 #[derive(Clone)]
 pub struct Registry {
-    cow_amms: Arc<RwLock<BTreeMap<u64, Arc<dyn CowAmm>>>>,
-    first_blocks: Arc<RwLock<HashMap<TypeId, u64>>>,
+    storage: Arc<RwLock<HashMap<TypeId, Storage>>>,
     block_retriever: Arc<dyn BlockRetrieving>,
     current_block_stream: CurrentBlockStream,
 }
@@ -28,8 +28,7 @@ impl Registry {
         current_block_stream: CurrentBlockStream,
     ) -> Self {
         Self {
-            cow_amms: Arc::new(RwLock::new(BTreeMap::new())),
-            first_blocks: Arc::new(RwLock::new(HashMap::new())),
+            storage: Default::default(),
             block_retriever,
             current_block_stream,
         }
@@ -40,11 +39,13 @@ impl Registry {
         C: EventRetrieving + Send + Sync + 'static,
         <C as EventRetrieving>::Event: Deployment,
     {
-        {
-            let first_blocks = &mut self.first_blocks.write().await;
-            let type_id = TypeId::of::<C::Event>();
-            first_blocks.insert(type_id, first_block);
-        }
+        let type_id = TypeId::of::<C::Event>();
+        let storage = Storage {
+            cow_amms: Default::default(),
+            first_block,
+        };
+
+        self.storage.write().await.insert(type_id, storage);
 
         self.spawn_event_updater(
             self.block_retriever.clone(),
@@ -71,9 +72,21 @@ impl Registry {
 
     /// Returns all the deployed CoW AMMs
     pub async fn cow_amms(&self) -> Vec<Arc<dyn crate::CowAmm>> {
-        let cow_amms = self.cow_amms.read().await;
-        cow_amms.values().cloned().collect::<Vec<_>>()
+        let cow_amms = self.storage.read().await;
+        cow_amms
+            .values()
+            .flat_map(|storage| storage.cow_amms.values().cloned())
+            .collect::<Vec<_>>()
     }
+}
+
+/// Stores CoW AMMs indexes for the associated factory contract.
+struct Storage {
+    /// Stores which AMMs were deployed on which block.
+    cow_amms: BTreeMap<u64, Arc<dyn CowAmm>>,
+    /// The block in which the associated factory contract was created.
+    /// This is the block from which indexing should start.
+    first_block: u64,
 }
 
 #[async_trait::async_trait]
@@ -88,12 +101,15 @@ where
     ) -> anyhow::Result<()> {
         // Context to drop the write lock before calling `append_events()`
         {
-            let range = *range.start()..=*range.end();
-            let events_registry = &mut *self.cow_amms.write().await;
+            let type_id = TypeId::of::<E>();
+            let lock = &mut *self.storage.write().await;
+            let storage = lock
+                .get_mut(&type_id)
+                .context("cow amm storage missing for factory")?;
 
             // Remove the Cow AMM events in the given range
-            for key in range {
-                events_registry.remove(&key);
+            for key in *range.start()..=*range.end() {
+                storage.cow_amms.remove(&key);
             }
         }
 
@@ -104,17 +120,20 @@ where
     /// Apply all the events to the given CoW AMM registry and update the
     /// internal registry
     async fn append_events(&mut self, events: Vec<ethcontract::Event<E>>) -> anyhow::Result<()> {
-        {
-            let cow_amms = &mut *self.cow_amms.write().await;
-            for event in events {
-                let meta = event
-                    .meta
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
-                let block_number = meta.block_number;
-                if let Some(cow_amm) = event.data.deployed_amm().await {
-                    cow_amms.insert(block_number, cow_amm);
-                }
+        let type_id = TypeId::of::<E>();
+        let lock = &mut *self.storage.write().await;
+        let storage = lock
+            .get_mut(&type_id)
+            .context("cow amm storage missing for factory")?;
+
+        for event in events {
+            let meta = event
+                .meta
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
+            let block_number = meta.block_number;
+            if let Some(cow_amm) = event.data.deployed_amm().await {
+                storage.cow_amms.insert(block_number, cow_amm);
             }
         }
         Ok(())
@@ -123,20 +142,16 @@ where
     async fn last_event_block(&self) -> anyhow::Result<u64> {
         let type_id = TypeId::of::<E>();
 
-        let first_block = self
-            .first_blocks
-            .read()
-            .await
+        let lock = self.storage.read().await;
+        let storage = lock
             .get(&type_id)
-            .copied()
-            .unwrap_or(0);
+            .context("cow amm storage missing for factory")?;
 
-        Ok(self
+        let last_block = storage
             .cow_amms
-            .read()
-            .await
             .last_key_value()
-            .map(|(block, _)| *block)
-            .unwrap_or(first_block))
+            .map(|(block, _amms)| *block)
+            .unwrap_or(storage.first_block);
+        Ok(last_block)
     }
 }
