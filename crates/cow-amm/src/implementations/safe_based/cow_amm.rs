@@ -1,4 +1,4 @@
-use {ethcontract::Address, std::sync::Arc};
+use ethcontract::Address;
 
 #[derive(Clone)]
 pub(crate) struct CowAmm {
@@ -7,14 +7,11 @@ pub(crate) struct CowAmm {
 }
 
 impl CowAmm {
-    pub(crate) fn build(
-        address: Address,
-        tradeable_tokens: [Address; 2],
-    ) -> Arc<dyn crate::CowAmm> {
-        Arc::new(Self {
+    pub(crate) fn new(address: Address, tradeable_tokens: [Address; 2]) -> Self {
+        Self {
             address,
             tradeable_tokens,
-        })
+        }
     }
 }
 

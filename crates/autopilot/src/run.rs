@@ -360,13 +360,11 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_registry = Registry::default();
+    let cow_amm_registry = Registry::new(block_retriever.clone(), eth.current_block().clone());
     if let Some(cow_amm_factory) = eth.contracts().cow_amm_factory() {
         cow_amm_registry
             .add_listener(
-                block_retriever.clone(),
                 CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
-                eth.current_block().clone(),
                 cow_amm_factory
                     .deployment_information()
                     .map(|info| match info {

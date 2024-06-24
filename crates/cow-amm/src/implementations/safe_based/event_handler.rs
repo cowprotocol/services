@@ -19,7 +19,10 @@ impl crate::Deployment for Event {
                 None
             }
             Event::Deployed(deployed) => {
-                let cow_amm = CowAmm::build(deployed.amm, [deployed.token_0, deployed.token_1]);
+                let cow_amm = Arc::new(CowAmm::new(
+                    deployed.amm,
+                    [deployed.token_0, deployed.token_1],
+                ));
                 Some(cow_amm)
             }
         }

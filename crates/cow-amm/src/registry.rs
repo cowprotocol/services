@@ -18,25 +18,25 @@ use {
 pub struct Registry {
     cow_amms: Arc<RwLock<BTreeMap<u64, Arc<dyn CowAmm>>>>,
     first_blocks: Arc<RwLock<HashMap<TypeId, u64>>>,
-}
-
-impl Default for Registry {
-    fn default() -> Self {
-        Self {
-            cow_amms: Arc::new(RwLock::new(BTreeMap::new())),
-            first_blocks: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
+    block_retriever: Arc<dyn BlockRetrieving>,
+    current_block_stream: CurrentBlockStream,
 }
 
 impl Registry {
-    pub async fn add_listener<C>(
-        &self,
+    pub fn new(
         block_retriever: Arc<dyn BlockRetrieving>,
-        contract: C,
         current_block_stream: CurrentBlockStream,
-        first_block: u64,
-    ) where
+    ) -> Self {
+        Self {
+            cow_amms: Arc::new(RwLock::new(BTreeMap::new())),
+            first_blocks: Arc::new(RwLock::new(HashMap::new())),
+            block_retriever,
+            current_block_stream,
+        }
+    }
+
+    pub async fn add_listener<C>(&self, contract: C, first_block: u64)
+    where
         C: EventRetrieving + Send + Sync + 'static,
         <C as EventRetrieving>::Event: Deployment,
     {
@@ -46,8 +46,12 @@ impl Registry {
             first_blocks.insert(type_id, first_block);
         }
 
-        self.spawn_event_updater(block_retriever, contract, current_block_stream)
-            .await;
+        self.spawn_event_updater(
+            self.block_retriever.clone(),
+            contract,
+            self.current_block_stream.clone(),
+        )
+        .await;
     }
 
     async fn spawn_event_updater<C>(

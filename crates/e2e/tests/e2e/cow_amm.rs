@@ -70,12 +70,10 @@ async fn cow_amm_indexer(web3: Web3) {
     .unwrap();
 
     let block_retriever: Arc<dyn BlockRetrieving> = Arc::new(web3.clone());
-    let cow_amm_registry = Registry::default();
+    let cow_amm_registry = Registry::new(block_retriever, block_stream);
     cow_amm_registry
         .add_listener(
-            block_retriever,
             CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
-            block_stream,
             cow_amm_factory
                 .deployment_information()
                 .and_then(|info| match info {
