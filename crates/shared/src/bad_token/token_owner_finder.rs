@@ -79,6 +79,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub blockscout_api_url: Option<Url>,
 
+    /// The blockscout API key.
+    #[clap(long, env)]
+    pub blockscout_api_key: Option<String>,
+
     /// Override the default ethplorer API url
     #[clap(long, env)]
     pub ethplorer_api_url: Option<Url>,
@@ -169,6 +173,7 @@ impl Display for Arguments {
             token_owner_finders,
             token_owner_finder_uniswap_v3_fee_values,
             blockscout_api_url,
+            blockscout_api_key,
             ethplorer_api_url,
             ethplorer_api_key,
             token_owner_finder_rate_limiter,
@@ -184,6 +189,7 @@ impl Display for Arguments {
             token_owner_finder_uniswap_v3_fee_values
         )?;
         display_option(f, "blockscout_api_url", blockscout_api_url)?;
+        display_secret_option(f, "blockscout_api_key", blockscout_api_key)?;
         display_option(f, "ethplorer_api_url", ethplorer_api_url)?;
         display_secret_option(f, "ethplorer_api_key", ethplorer_api_key)?;
         display_option(
@@ -255,6 +261,9 @@ pub async fn init(
             BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), chain_id)?;
         if let Some(base_url) = args.blockscout_api_url.clone() {
             blockscout.with_base_url(base_url);
+        }
+        if let Some(api_key) = args.blockscout_api_key.clone() {
+            blockscout.with_api_key(api_key);
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             blockscout.with_rate_limiter(strategy);
