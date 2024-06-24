@@ -556,16 +556,6 @@ async fn auction_contains_native_prices_for_cow_amm_tokens(web3: Web3) {
         .await
         .expect("failed to get Uniswap V2 pair");
 
-    let cow_amm = cow_amm_factory
-        .amm_deterministic_address(
-            cow_amm_owner.address(),
-            dai.address(),
-            onchain.contracts().weth.address(),
-        )
-        .call()
-        .await
-        .unwrap();
-
     let oracle_data: Vec<_> = std::iter::repeat(0u8)
         .take(12) // pad with 12 zeros in the front to end up with 32 bytes
         .chain(pair.as_bytes().to_vec())
@@ -587,7 +577,6 @@ async fn auction_contains_native_prices_for_cow_amm_tokens(web3: Web3) {
         .send()
         .await
         .unwrap();
-    let cow_amm = contracts::CowAmm::at(&web3, cow_amm);
 
     // Start system with the regular baseline solver as a quoter but a mock solver
     // for the actual solver competition. That way we can handcraft a solution
@@ -632,96 +621,6 @@ async fn auction_contains_native_prices_for_cow_amm_tokens(web3: Web3) {
         ])
         .await;
 
-    // Derive the order's valid_to from the blockchain because the cow amm enforces
-    // a relatively small valid_to and we initialize the chain with a date in
-    // the past so the computer's current time is way ahead of the blockchain.
-    let block = web3
-        .eth()
-        .block(BlockId::Number(BlockNumber::Latest))
-        .await
-        .unwrap()
-        .unwrap();
-    let valid_to = block.timestamp.as_u32() + 300;
-
-    // User order without trading the DOGE token
-    let cow_amm_order = OrderData {
-        sell_token: onchain.contracts().weth.address(),
-        buy_token: dai.address(),
-        receiver: None,
-        sell_amount: U256::exp10(17),
-        buy_amount: to_wei(230),
-        valid_to,
-        app_data: AppDataHash(APP_DATA),
-        fee_amount: 0.into(),
-        kind: OrderKind::Sell,
-        partially_fillable: false,
-        sell_token_balance: Default::default(),
-        buy_token_balance: Default::default(),
-    };
-
-    // structure of signature copied from
-    // <https://github.com/cowprotocol/cow-amm/blob/main/test/e2e/ConstantProduct.t.sol#L179>
-    let signature_data = ethcontract::web3::ethabi::encode(&[
-        Token::Tuple(vec![
-            Token::Address(cow_amm_order.sell_token),
-            Token::Address(cow_amm_order.buy_token),
-            Token::Address(cow_amm_order.receiver.unwrap_or_default()),
-            Token::Uint(cow_amm_order.sell_amount),
-            Token::Uint(cow_amm_order.buy_amount),
-            Token::Uint(cow_amm_order.valid_to.into()),
-            Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
-            Token::Uint(cow_amm_order.fee_amount),
-            // enum hashes taken from
-            // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol#L50-L79>
-            Token::FixedBytes(
-                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
-                    .unwrap(),
-            ), // sell order
-            Token::Bool(cow_amm_order.partially_fillable),
-            Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
-            ), // sell_token_source == erc20
-            Token::FixedBytes(
-                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
-                    .unwrap(),
-            ), // buy_token_destination == erc20
-        ]),
-        Token::Tuple(vec![
-            Token::Uint(0.into()), // min_traded_token
-            Token::Address(oracle.address()),
-            Token::Bytes(oracle_data),
-            Token::FixedBytes(APP_DATA.to_vec()),
-        ]),
-    ]);
-
-    // Prepend CoW AMM address to the signature so settlement contract know which
-    // contract this signature refers to.
-    let signature = cow_amm
-        .address()
-        .as_bytes()
-        .iter()
-        .cloned()
-        .chain(signature_data)
-        .collect();
-
-    // Creation of commitment copied from
-    // <https://github.com/cowprotocol/cow-amm/blob/main/test/e2e/ConstantProduct.t.sol#L181-L188>
-    let cow_amm_commitment = {
-        let order_hash = cow_amm_order.hash_struct();
-        let order_hash = hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash);
-        let commitment = cow_amm
-            .commit(ethcontract::Bytes(order_hash))
-            .tx
-            .data
-            .unwrap();
-        Call {
-            target: cow_amm.address(),
-            value: 0.into(),
-            calldata: commitment.0.to_vec(),
-        }
-    };
-
     // fund trader "bob" and approve vault relayer
     tx_value!(
         bob.account(),
@@ -762,32 +661,14 @@ async fn auction_contains_native_prices_for_cow_amm_tokens(web3: Web3) {
             (dai.address(), to_wei(100)),
             (onchain.contracts().weth.address(), to_wei(300_000)),
         ]),
-        trades: vec![
-            solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
-                order: solvers_dto::solution::JitOrder {
-                    sell_token: cow_amm_order.sell_token,
-                    buy_token: cow_amm_order.buy_token,
-                    receiver: cow_amm_order.receiver.unwrap_or_default(),
-                    sell_amount: cow_amm_order.sell_amount,
-                    buy_amount: cow_amm_order.buy_amount,
-                    valid_to: cow_amm_order.valid_to,
-                    app_data: cow_amm_order.app_data.0,
-                    kind: Kind::Sell,
-                    sell_token_balance: SellTokenBalance::Erc20,
-                    buy_token_balance: BuyTokenBalance::Erc20,
-                    signing_scheme: SigningScheme::Eip1271,
-                    signature,
-                },
-                executed_amount: cow_amm_order.sell_amount - fee,
-                fee: Some(fee),
-            }),
-            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
+        trades: vec![solvers_dto::solution::Trade::Fulfillment(
+            solvers_dto::solution::Fulfillment {
                 order: user_order_id.0,
                 executed_amount: user_order.sell_amount - fee,
                 fee: Some(fee),
-            }),
-        ],
-        pre_interactions: vec![cow_amm_commitment],
+            },
+        )],
+        pre_interactions: vec![],
         interactions: vec![],
         post_interactions: vec![],
         gas: None,

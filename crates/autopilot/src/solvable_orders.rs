@@ -203,6 +203,7 @@ impl SolvableOrdersCache {
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())
+            .unique()
             .filter(|token| !prices.contains_key(token))
             .cloned()
             .collect::<Vec<_>>();

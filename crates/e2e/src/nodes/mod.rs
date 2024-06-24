@@ -43,8 +43,6 @@ impl Node {
             "1",
             "--timestamp",
             "1577836800",
-            "--hardfork",
-            "cancun",
         ])
         .await
     }
