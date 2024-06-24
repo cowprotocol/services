@@ -18,8 +18,7 @@ pub trait CowAmm: Send + Sync {
     fn traded_tokens(&self) -> &[Address; 2];
 }
 
-#[async_trait::async_trait]
 pub trait Deployment: Sync + Send {
     /// Returns the AMM deployed in the given Event.
-    async fn deployed_amm(&self) -> Option<Arc<dyn CowAmm>>;
+    fn deployed_amm(&self) -> Option<Arc<dyn CowAmm>>;
 }

@@ -135,7 +135,7 @@ where
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
             let block_number = meta.block_number;
-            if let Some(cow_amm) = event.data.deployed_amm().await {
+            if let Some(cow_amm) = event.data.deployed_amm() {
                 storage.cow_amms.insert(block_number, cow_amm);
             }
         }
