@@ -1,5 +1,5 @@
 use {
-    crate::implementations::safe_based::cow_amm::CowAmm,
+    crate::implementations::standalone::cow_amm::CowAmm,
     contracts::cow_amm_constant_product_factory::Event,
     shared::impl_event_retrieving,
     std::sync::Arc,

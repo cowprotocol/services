@@ -3,7 +3,7 @@ mod registry;
 
 use {ethcontract::Address, std::sync::Arc};
 pub use {
-    implementations::safe_based::event_handler::Contract as CowAmmSafeBasedContract,
+    implementations::standalone::event_handler::Contract as CowAmmStandaloneContract,
     registry::Registry,
 };
 

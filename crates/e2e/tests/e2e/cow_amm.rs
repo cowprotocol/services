@@ -1,6 +1,6 @@
 use {
     app_data::AppDataHash,
-    cow_amm::{CowAmmSafeBasedContract, Registry},
+    cow_amm::{CowAmmStandaloneContract, Registry},
     e2e::{
         nodes::NODE_HOST,
         setup::{colocation::SolverEngine, mock::Mock, *},
@@ -73,7 +73,7 @@ async fn cow_amm_indexer(web3: Web3) {
     let cow_amm_registry = Registry::new(block_retriever, block_stream);
     cow_amm_registry
         .add_listener(
-            CowAmmSafeBasedContract::new(cow_amm_factory.clone()),
+            CowAmmStandaloneContract::new(cow_amm_factory.clone()),
             cow_amm_factory
                 .deployment_information()
                 .and_then(|info| match info {
