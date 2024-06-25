@@ -20,7 +20,7 @@ impl crate::CowAmm for CowAmm {
         &self.address
     }
 
-    fn traded_tokens(&self) -> &[Address; 2] {
+    fn traded_tokens(&self) -> &[Address] {
         &self.tradeable_tokens
     }
 }

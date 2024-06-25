@@ -9,13 +9,10 @@ pub use {
 
 pub trait CowAmm: Send + Sync {
     /// Address of the CoW AMM.
-    /// Can be used by the autopilot to build the list of accepted cow amms.
     fn address(&self) -> &Address;
 
-    /// Returns the list of tokens traded by this pool.
-    /// Can be used by the autopilot to build the list of native token prices to
-    /// query.
-    fn traded_tokens(&self) -> &[Address; 2];
+    /// Returns all tokens traded by this pool in stable order.
+    fn traded_tokens(&self) -> &[Address];
 }
 
 pub trait Deployment: Sync + Send {
