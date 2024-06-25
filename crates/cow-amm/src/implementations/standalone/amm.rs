@@ -1,12 +1,12 @@
 use ethcontract::Address;
 
 #[derive(Clone)]
-pub(crate) struct CowAmm {
+pub(crate) struct Amm {
     address: Address,
     tradeable_tokens: [Address; 2],
 }
 
-impl CowAmm {
+impl Amm {
     pub(crate) fn new(address: Address, tradeable_tokens: [Address; 2]) -> Self {
         Self {
             address,
@@ -15,7 +15,7 @@ impl CowAmm {
     }
 }
 
-impl crate::CowAmm for CowAmm {
+impl crate::CowAmm for Amm {
     fn address(&self) -> &Address {
         &self.address
     }

@@ -1,5 +1,5 @@
 use {
-    crate::implementations::standalone::cow_amm::CowAmm,
+    crate::implementations::standalone::amm::Amm,
     contracts::cow_amm_constant_product_factory::Event,
     shared::impl_event_retrieving,
     std::sync::Arc,
@@ -18,10 +18,8 @@ impl crate::Deployment for Event {
                 None
             }
             Event::Deployed(deployed) => {
-                let cow_amm = Arc::new(CowAmm::new(
-                    deployed.amm,
-                    [deployed.token_0, deployed.token_1],
-                ));
+                let cow_amm =
+                    Arc::new(Amm::new(deployed.amm, [deployed.token_0, deployed.token_1]));
                 Some(cow_amm)
             }
         }

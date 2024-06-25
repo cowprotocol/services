@@ -20,7 +20,7 @@ use {
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    cow_amm::{CowAmmStandaloneContract, Registry},
+    cow_amm::{CowAmmStandaloneFactory, Registry},
     ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
@@ -364,7 +364,7 @@ pub async fn run(args: Arguments) {
     if let Some(cow_amm_factory) = eth.contracts().cow_amm_factory() {
         cow_amm_registry
             .add_listener(
-                CowAmmStandaloneContract::new(cow_amm_factory.clone()),
+                CowAmmStandaloneFactory::new(cow_amm_factory.clone()),
                 cow_amm_factory
                     .deployment_information()
                     .map(|info| match info {
