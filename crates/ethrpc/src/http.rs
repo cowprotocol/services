@@ -80,7 +80,7 @@ async fn execute_rpc<T: DeserializeOwned>(
     match request {
         Request::Single(Call::MethodCall(call)) => {
             if let Some(metadata) = observe::request_id::get_task_local_storage() {
-                request_builder = request_builder.header("X-REQUEST_ID", metadata);
+                request_builder = request_builder.header("X-REQUEST-ID", metadata);
             }
             request_builder = request_builder.header("X-RPC-METHOD", call.method.clone());
         }
