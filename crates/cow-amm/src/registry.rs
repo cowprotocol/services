@@ -37,7 +37,7 @@ impl Registry {
         }
     }
 
-    pub async fn add_listener<C>(&self, contract: C, first_block: u64)
+    pub async fn add_listener<C>(&self, first_block: u64, contract: C)
     where
         C: EventRetrieving + Send + Sync + 'static,
         <C as EventRetrieving>::Event: Deployment,

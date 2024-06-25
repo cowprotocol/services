@@ -21,7 +21,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     cow_amm::{CowAmmStandaloneFactory, Registry},
-    ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
+    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
@@ -362,18 +362,8 @@ pub async fn run(args: Arguments) {
     ));
     let cow_amm_registry = Registry::new(block_retriever.clone(), eth.current_block().clone());
     if let Some(cow_amm_factory) = eth.contracts().cow_amm_factory() {
-        cow_amm_registry
-            .add_listener(
-                CowAmmStandaloneFactory::new(cow_amm_factory.clone()),
-                cow_amm_factory
-                    .deployment_information()
-                    .map(|info| match info {
-                        DeploymentInformation::BlockNumber(block) => block,
-                        _ => panic!("no deployment block configured"),
-                    })
-                    .unwrap_or(0),
-            )
-            .await;
+        let contract = CowAmmStandaloneFactory::new(cow_amm_factory.clone());
+        cow_amm_registry.add_listener(contract.deployment_block(), contract).await;
     }
 
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];

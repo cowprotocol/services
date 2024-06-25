@@ -1,12 +1,28 @@
 use {
     crate::implementations::standalone::amm::Amm,
     contracts::cow_amm_constant_product_factory::Event,
+    ethcontract::common::DeploymentInformation,
     shared::impl_event_retrieving,
     std::sync::Arc,
 };
 
 impl_event_retrieving! {
     pub Contract for contracts::cow_amm_constant_product_factory
+}
+
+impl Contract {
+    pub fn deployment_block(&self) -> u64 {
+        let Some(info) = self.0.deployment_information() else {
+            // No deployment info should indicate a test environment => start from genesis.
+            return 0;
+        };
+        match info {
+            DeploymentInformation::BlockNumber(block) => block,
+            DeploymentInformation::TransactionHash(_) => {
+                panic!("no block number in deployment info")
+            }
+        }
+    }
 }
 
 impl crate::Deployment for Event {
