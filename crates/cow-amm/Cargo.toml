@@ -9,6 +9,7 @@ async-trait = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
+model = { path = "../model" }
 primitive-types = { workspace = true }
 shared = { path = "../shared" }
 tokio = { workspace = true, features = [] }

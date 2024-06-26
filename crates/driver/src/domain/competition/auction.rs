@@ -4,14 +4,18 @@ use {
         domain::{
             competition::{self, auction},
             eth,
-            liquidity::{self},
+            liquidity,
             time,
         },
         infra::{self, blockchain, observe, Ethereum},
-        util::{self},
+        util::{self, Bytes},
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
+    model::{
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+        signature::Signature,
+    },
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -164,6 +168,7 @@ impl AuctionProcessor {
         }
 
         let eth = lock.eth.clone();
+
         let rt = tokio::runtime::Handle::current();
         let tokens: Tokens = auction.tokens().clone();
         let mut orders = auction.orders.clone();
@@ -172,6 +177,7 @@ impl AuctionProcessor {
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
+            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens)));
             Self::sort(&mut orders, tokens);
             let mut balances =
                 rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
@@ -335,6 +341,114 @@ impl AuctionProcessor {
         .into_iter()
         .filter_map(|(key, value)| Some((key, value?)))
         .collect()
+    }
+
+    async fn cow_amm_orders(eth: &Ethereum, tokens: &Tokens) -> Vec<Order> {
+        // Compute order templates for all indexed CoW AMMs where all required native
+        // prices are in the auction.
+        let cow_amms = eth.cow_amms().await;
+        let results: Vec<_> = futures::future::join_all(
+            cow_amms
+                .into_iter()
+                .filter_map(|amm| {
+                    let prices = amm
+                        .traded_tokens()
+                        .iter()
+                        .map(|t| {
+                            tokens
+                                .get(eth::TokenAddress(eth::ContractAddress(*t)))
+                                .price
+                                .map(|p| p.0 .0)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some((amm, prices))
+                })
+                .map(|(cow_amm, prices)| async move {
+                    (
+                        *cow_amm.address(),
+                        cow_amm.template_order(prices.as_slice()).await,
+                    )
+                }),
+        )
+        .await;
+
+        // Convert results to domain format.
+        let domain_separator =
+            model::DomainSeparator(eth.contracts().settlement_domain_separator().0);
+        let orders: Vec<_> = results
+            .into_iter()
+            .filter_map(|(amm, result)| match result {
+                Ok((order, signature, interaction)) => Some(Order {
+                    uid: order.uid(&domain_separator, &amm).0.into(),
+                    receiver: order.receiver.map(|addr| addr.into()),
+                    valid_to: order.valid_to.into(),
+                    buy: eth::Asset {
+                        amount: order.buy_amount.into(),
+                        token: order.buy_token.into(),
+                    },
+                    sell: eth::Asset {
+                        amount: order.sell_amount.into(),
+                        token: order.sell_token.into(),
+                    },
+                    kind: order::Kind::Limit,
+                    side: match order.kind {
+                        OrderKind::Sell => order::Side::Sell,
+                        OrderKind::Buy => order::Side::Buy,
+                    },
+                    app_data: order::AppData(Bytes(order.app_data.0)),
+                    buy_token_balance: match order.buy_token_balance {
+                        BuyTokenDestination::Erc20 => order::BuyTokenBalance::Erc20,
+                        BuyTokenDestination::Internal => order::BuyTokenBalance::Internal,
+                    },
+                    sell_token_balance: match order.sell_token_balance {
+                        SellTokenSource::Erc20 => order::SellTokenBalance::Erc20,
+                        SellTokenSource::Internal => order::SellTokenBalance::Internal,
+                        SellTokenSource::External => order::SellTokenBalance::External,
+                    },
+                    partial: match order.partially_fillable {
+                        true => order::Partial::Yes {
+                            available: match order.kind {
+                                OrderKind::Sell => order::TargetAmount(order.sell_amount),
+                                OrderKind::Buy => order::TargetAmount(order.buy_amount),
+                            },
+                        },
+                        false => order::Partial::No,
+                    },
+                    pre_interactions: vec![eth::Interaction {
+                        target: interaction.target.into(),
+                        value: interaction.value.into(),
+                        call_data: interaction.call_data.into(),
+                    }],
+                    post_interactions: vec![],
+                    signature: match signature {
+                        Signature::Eip1271(bytes) => order::Signature {
+                            scheme: order::signature::Scheme::Eip1271,
+                            data: Bytes(bytes),
+                            signer: amm.into(),
+                        },
+                        _ => {
+                            tracing::warn!(
+                                ?signature,
+                                ?amm,
+                                "signature for cow amm order has incorrect scheme"
+                            );
+                            return None;
+                        }
+                    },
+                    protocol_fees: vec![],
+                }),
+                Err(err) => {
+                    tracing::warn!(?err, ?amm, "failed to generate template order for cow amm");
+                    None
+                }
+            })
+            .collect();
+
+        if !orders.is_empty() {
+            tracing::debug!(len = orders.len(), "generated cow amm template orders");
+        }
+
+        orders
     }
 
     pub fn new(eth: &infra::Ethereum) -> Self {

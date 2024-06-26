@@ -318,6 +318,10 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
+
+    /// Override the default address of cow amm factory (2nd version with gas
+    /// optimizations)
+    standalone_cow_amm_factory: Option<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]

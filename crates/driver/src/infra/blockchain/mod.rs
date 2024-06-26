@@ -1,6 +1,7 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
+    cow_amm::CowAmm,
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
     std::{fmt, sync::Arc},
@@ -61,6 +62,7 @@ struct Inner {
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockStream,
+    cow_amms: cow_amm::Registry,
 }
 
 impl Ethereum {
@@ -80,17 +82,24 @@ impl Ethereum {
             .await
             .expect("could not initialize important smart contracts");
 
+        let current_block_stream =
+            ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(500))
+                .await
+                .expect("couldn't initialize current block stream");
+
+        let cow_amms = cow_amm::Registry::new(Arc::new(web3.clone()), current_block_stream.clone());
+        if let Some(contract) = contracts.standalone_cow_amm_factory() {
+            let contract = cow_amm::CowAmmStandaloneFactory::new(contract.clone());
+            cow_amms.add_listener(contract.deployment_block(), contract).await;
+        }
+
         Self {
             inner: Arc::new(Inner {
-                current_block: ethrpc::current_block::current_block_stream(
-                    url,
-                    std::time::Duration::from_millis(500),
-                )
-                .await
-                .expect("couldn't initialize current block stream"),
+                current_block: current_block_stream,
                 chain,
                 contracts,
                 gas,
+                cow_amms,
             }),
             web3,
         }
@@ -247,6 +256,10 @@ impl Ethereum {
             .await
             .ok()
             .map(|gas| gas.effective().0 .0)
+    }
+
+    pub async fn cow_amms(&self) -> Vec<Arc<dyn CowAmm>> {
+        self.inner.cow_amms.cow_amms().await
     }
 }
 

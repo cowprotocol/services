@@ -13,12 +13,14 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
+    standalone_cow_amm_factory: Option<contracts::CowAmmConstantProductFactory>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
+    pub standalone_cow_amm_factory: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -60,12 +62,17 @@ impl Contracts {
                 .0,
         );
 
+        let standalone_cow_amm_factory = addresses
+            .standalone_cow_amm_factory
+            .map(|addr| contracts::CowAmmConstantProductFactory::at(web3, addr.into()));
+
         Ok(Self {
             settlement,
             vault_relayer,
             vault,
             weth,
             settlement_domain_separator,
+            standalone_cow_amm_factory,
         })
     }
 
@@ -91,6 +98,10 @@ impl Contracts {
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
         &self.settlement_domain_separator
+    }
+
+    pub fn standalone_cow_amm_factory(&self) -> Option<&contracts::CowAmmConstantProductFactory> {
+        self.standalone_cow_amm_factory.as_ref()
     }
 }
 
