@@ -69,13 +69,21 @@ pub trait CowAmm: Send + Sync {
             app_data: AppDataHash(order.6 .0),
             fee_amount: order.7,
             // order.8
-            kind: OrderKind::Sell,
+            kind: if order.8 .0
+                == *hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
+                    .unwrap()
+            {
+                OrderKind::Sell
+            } else {
+                OrderKind::Buy
+            },
             partially_fillable: order.9,
             //order.10
             sell_token_balance: SellTokenSource::Erc20,
             //order.11
             buy_token_balance: BuyTokenDestination::Erc20,
         };
+        tracing::error!(?order);
 
         let pre_interactions = pre_interactions
             .into_iter()

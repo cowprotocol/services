@@ -62,9 +62,10 @@ impl Contracts {
                 .0,
         );
 
-        let cow_amm_legacy_helper = addresses
-            .cow_amm_legacy_helper
-            .map(|addr| contracts::CowAmmLegacyHelper::at(web3, addr.into()));
+        let cow_amm_legacy_helper = contracts::CowAmmLegacyHelper::deployed(web3).await.ok();
+        // let cow_amm_legacy_helper = addresses
+        //     .cow_amm_legacy_helper
+        //     .map(|addr| contracts::CowAmmLegacyHelper::at(web3, addr.into()));
 
         Ok(Self {
             settlement,

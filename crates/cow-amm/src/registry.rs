@@ -78,7 +78,7 @@ impl Registry {
         let cow_amms = self.storage.read().await;
         cow_amms
             .values()
-            .flat_map(|storage| storage.cow_amms.values().cloned())
+            .flat_map(|storage| storage.cow_amms.values().cloned().flatten())
             .collect::<Vec<_>>()
     }
 }
@@ -86,7 +86,7 @@ impl Registry {
 /// Stores CoW AMMs indexes for the associated factory contract.
 struct Storage {
     /// Stores which AMMs were deployed on which block.
-    cow_amms: BTreeMap<u64, Arc<dyn CowAmm>>,
+    cow_amms: BTreeMap<u64, Vec<Arc<dyn CowAmm>>>,
     /// The block in which the associated factory contract was created.
     /// This is the block from which indexing should start.
     first_block: u64,
@@ -136,7 +136,12 @@ where
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
             let block_number = meta.block_number;
             if let Some(cow_amm) = event.data.deployed_amm(&self.web3).await? {
-                storage.cow_amms.insert(block_number, cow_amm);
+                tracing::error!(amm = ?cow_amm.address(), "insert cow amm");
+                storage
+                    .cow_amms
+                    .entry(block_number)
+                    .or_default()
+                    .push(cow_amm);
             }
         }
         Ok(())
@@ -155,6 +160,7 @@ where
             .last_key_value()
             .map(|(block, _amms)| *block)
             .unwrap_or(storage.first_block);
+        tracing::error!(last_block, "last event block");
         Ok(last_block)
     }
 }

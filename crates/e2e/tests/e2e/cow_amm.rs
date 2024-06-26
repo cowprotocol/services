@@ -371,7 +371,7 @@ async fn forked_node_mainnet_cow_amm() {
         forked_mainnet_cow_amm_test,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        20176181, // 1 block after helper was deployed
+        20176185, // block at which helper was deployed
     )
     .await;
 }
@@ -384,6 +384,8 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
+    // TODO: imbalance one cow amm enough that the baseline solver is able to find a
+    // trade
     let token_usdc = ERC20::at(
         &web3,
         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
@@ -458,6 +460,13 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
+    tokio::spawn(async move {
+        loop {
+            tracing::error!("mine block");
+            onchain.send_wei(Default::default(), 1.into()).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+    });
     // For now just wait and see what happens...
     tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
 }

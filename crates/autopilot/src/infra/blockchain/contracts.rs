@@ -37,9 +37,10 @@ impl Contracts {
             ),
         );
 
-        let cow_amm_legacy_helper = addresses
-            .cow_amm_legacy_helper
-            .map(|helper| contracts::CowAmmLegacyHelper::at(web3, helper));
+        let cow_amm_legacy_helper = contracts::CowAmmLegacyHelper::deployed(web3).await.ok();
+        // let cow_amm_legacy_helper = addresses
+        //     .cow_amm_legacy_helper
+        //     .map(|helper| contracts::CowAmmLegacyHelper::at(web3, helper));
 
         let weth = contracts::WETH9::at(
             web3,

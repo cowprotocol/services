@@ -468,6 +468,7 @@ pub async fn run(args: Arguments) {
             args.protocol_fee_exempt_addresses.as_slice(),
             args.enable_multiple_fees,
         ),
+        cow_amm_registry.clone(),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));

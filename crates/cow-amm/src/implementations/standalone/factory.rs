@@ -19,7 +19,7 @@ impl Contract {
             return 0;
         };
         match info {
-            DeploymentInformation::BlockNumber(block) => block,
+            DeploymentInformation::BlockNumber(block) => block - 1,
             DeploymentInformation::TransactionHash(_) => {
                 panic!("no block number in deployment info")
             }

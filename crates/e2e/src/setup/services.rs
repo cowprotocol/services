@@ -136,6 +136,12 @@ impl<'a> Services<'a> {
             format!("--solve-deadline={solve_deadline:?}"),
         ]
         .into_iter()
+        .chain(self.contracts.cow_amm_helper.as_ref().map(|contract| {
+            format!(
+                "--cow-amm-factory-contract-address={:?}",
+                contract.address()
+            )
+        }))
         .chain(self.api_autopilot_solver_arguments())
         .chain(Self::api_autopilot_arguments())
         .chain(extra_args);
