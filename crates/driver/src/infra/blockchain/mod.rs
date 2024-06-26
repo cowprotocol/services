@@ -87,10 +87,12 @@ impl Ethereum {
                 .await
                 .expect("couldn't initialize current block stream");
 
-        let cow_amms = cow_amm::Registry::new(Arc::new(web3.clone()), current_block_stream.clone());
-        if let Some(contract) = contracts.standalone_cow_amm_factory() {
+        let cow_amms = cow_amm::Registry::new(web3.clone(), current_block_stream.clone());
+        if let Some(contract) = contracts.cow_amm_legacy_helper() {
             let contract = cow_amm::CowAmmStandaloneFactory::new(contract.clone());
-            cow_amms.add_listener(contract.deployment_block(), contract).await;
+            cow_amms
+                .add_listener(contract.deployment_block(), contract)
+                .await;
         }
 
         Self {

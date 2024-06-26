@@ -839,6 +839,25 @@ fn main() {
                 },
             )
     });
+    generate_contract_with_config("CowAmmLegacyHelper", |builder| {
+        builder
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0xac1fd793691299b701ae211094985853497789ec"),
+                    // <https://etherscan.io/tx/0xf34747baf268ffd3e35c1b9546e2bfbc506928ec8ebd9af521dc9ad6c726d347>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(20176181)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x18a2facebef44a72dfdcc52ef9588fefc84fdfbf"),
+                    // <https://gnosisscan.io/tx/0xcdbc954d309e0c1a68e5ab499530ce53ef20001ae47e092525578fb228d8fab9>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(34661669)),
+                },
+            )
+    });
     generate_contract("CowAmmUniswapV2PriceOracle");
 
     // Support contracts used for trade and token simulations.

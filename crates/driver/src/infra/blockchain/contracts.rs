@@ -13,14 +13,14 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    standalone_cow_amm_factory: Option<contracts::CowAmmConstantProductFactory>,
+    cow_amm_legacy_helper: Option<contracts::CowAmmLegacyHelper>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
-    pub standalone_cow_amm_factory: Option<eth::ContractAddress>,
+    pub cow_amm_legacy_helper: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -62,9 +62,9 @@ impl Contracts {
                 .0,
         );
 
-        let standalone_cow_amm_factory = addresses
-            .standalone_cow_amm_factory
-            .map(|addr| contracts::CowAmmConstantProductFactory::at(web3, addr.into()));
+        let cow_amm_legacy_helper = addresses
+            .cow_amm_legacy_helper
+            .map(|addr| contracts::CowAmmLegacyHelper::at(web3, addr.into()));
 
         Ok(Self {
             settlement,
@@ -72,7 +72,7 @@ impl Contracts {
             vault,
             weth,
             settlement_domain_separator,
-            standalone_cow_amm_factory,
+            cow_amm_legacy_helper,
         })
     }
 
@@ -100,8 +100,8 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn standalone_cow_amm_factory(&self) -> Option<&contracts::CowAmmConstantProductFactory> {
-        self.standalone_cow_amm_factory.as_ref()
+    pub fn cow_amm_legacy_helper(&self) -> Option<&contracts::CowAmmLegacyHelper> {
+        self.cow_amm_legacy_helper.as_ref()
     }
 }
 

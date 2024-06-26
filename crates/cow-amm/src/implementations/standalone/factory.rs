@@ -1,13 +1,14 @@
 use {
     crate::implementations::standalone::amm::Amm,
-    contracts::cow_amm_constant_product_factory::Event,
+    contracts::cow_amm_legacy_helper::Event,
     ethcontract::common::DeploymentInformation,
+    ethrpc::Web3,
     shared::impl_event_retrieving,
     std::sync::Arc,
 };
 
 impl_event_retrieving! {
-    pub Contract for contracts::cow_amm_constant_product_factory
+    pub Contract for contracts::cow_amm_legacy_helper
 }
 
 impl Contract {
@@ -25,17 +26,16 @@ impl Contract {
     }
 }
 
+#[async_trait::async_trait]
 impl crate::Deployment for Event {
     /// Returns the AMM deployed in the given Event.
-    fn deployed_amm(&self) -> Option<Arc<dyn crate::CowAmm>> {
+    async fn deployed_amm(&self, web3: &Web3) -> Option<Arc<dyn crate::CowAmm>> {
         match &self {
-            Event::ConditionalOrderCreated(_) | Event::TradingDisabled(_) => {
-                // We purposely ignore these events
-                None
-            }
-            Event::Deployed(deployed) => {
-                let cow_amm =
-                    Arc::new(Amm::new(deployed.amm, [deployed.token_0, deployed.token_1]));
+            Event::CowammpoolCreated(data) => {
+                let address = data.amm;
+                let helper = contracts::CowAmmLegacyHelper::deployed(web3).await.unwrap();
+                let tokens = helper.tokens(address).call().await.unwrap();
+                let cow_amm = Arc::new(Amm::new(address, tokens));
                 Some(cow_amm)
             }
         }

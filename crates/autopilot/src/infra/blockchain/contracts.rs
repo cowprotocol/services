@@ -3,7 +3,7 @@ use {super::ChainId, crate::domain, ethcontract::dyns::DynWeb3, primitive_types:
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
-    cow_amm_factory: Option<contracts::CowAmmConstantProductFactory>,
+    cow_amm_legacy_helper: Option<contracts::CowAmmLegacyHelper>,
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
 
@@ -18,7 +18,7 @@ pub struct Contracts {
 pub struct Addresses {
     pub settlement: Option<H160>,
     pub weth: Option<H160>,
-    pub cow_amm_factory: Option<H160>,
+    pub cow_amm_legacy_helper: Option<H160>,
 }
 
 impl Contracts {
@@ -37,9 +37,9 @@ impl Contracts {
             ),
         );
 
-        let cow_amm_factory = addresses.cow_amm_factory.map(|cow_amm_factory| {
-            contracts::CowAmmConstantProductFactory::at(web3, cow_amm_factory)
-        });
+        let cow_amm_legacy_helper = addresses
+            .cow_amm_legacy_helper
+            .map(|helper| contracts::CowAmmLegacyHelper::at(web3, helper));
 
         let weth = contracts::WETH9::at(
             web3,
@@ -72,7 +72,7 @@ impl Contracts {
             chainalysis_oracle,
             settlement_domain_separator,
             authenticator,
-            cow_amm_factory,
+            cow_amm_legacy_helper,
         }
     }
 
@@ -80,8 +80,8 @@ impl Contracts {
         &self.settlement
     }
 
-    pub fn cow_amm_factory(&self) -> Option<&contracts::CowAmmConstantProductFactory> {
-        self.cow_amm_factory.as_ref()
+    pub fn cow_amm_legacy_helper(&self) -> Option<&contracts::CowAmmLegacyHelper> {
+        self.cow_amm_legacy_helper.as_ref()
     }
 
     pub fn settlement_domain_separator(&self) -> &domain::eth::DomainSeparator {

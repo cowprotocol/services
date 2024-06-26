@@ -158,7 +158,7 @@ pub async fn run(args: Arguments) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
-        cow_amm_factory: args.shared.cow_amm_factory_contract_address,
+        cow_amm_legacy_helper: args.shared.cow_amm_factory_contract_address,
     };
     let eth = ethereum(
         web3.clone(),
@@ -360,10 +360,12 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_registry = Registry::new(block_retriever.clone(), eth.current_block().clone());
-    if let Some(cow_amm_factory) = eth.contracts().cow_amm_factory() {
+    let cow_amm_registry = Registry::new(web3.clone(), eth.current_block().clone());
+    if let Some(cow_amm_factory) = eth.contracts().cow_amm_legacy_helper() {
         let contract = CowAmmStandaloneFactory::new(cow_amm_factory.clone());
-        cow_amm_registry.add_listener(contract.deployment_block(), contract).await;
+        cow_amm_registry
+            .add_listener(contract.deployment_block(), contract)
+            .await;
     }
 
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];

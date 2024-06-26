@@ -7,11 +7,11 @@ use {
 #[derive(Clone)]
 pub(crate) struct Amm {
     address: Address,
-    tradeable_tokens: [Address; 2],
+    tradeable_tokens: Vec<Address>,
 }
 
 impl Amm {
-    pub(crate) fn new(address: Address, tradeable_tokens: [Address; 2]) -> Self {
+    pub(crate) fn new(address: Address, tradeable_tokens: Vec<Address>) -> Self {
         Self {
             address,
             tradeable_tokens,

@@ -1,7 +1,10 @@
 use {
     crate::{CowAmm, Deployment},
     anyhow::Context,
-    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream, RangeInclusive},
+    ethrpc::{
+        current_block::{BlockRetrieving, CurrentBlockStream, RangeInclusive},
+        Web3,
+    },
     shared::{
         event_handling::{EventHandler, EventRetrieving, EventStoring},
         maintenance::{Maintaining, ServiceMaintenance},
@@ -21,18 +24,15 @@ pub struct Registry {
     /// That type erasure allows us to index multiple concrete contracts
     /// in a single Registry to make for a nicer user facing API.
     storage: Arc<RwLock<HashMap<TypeId, Storage>>>,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    web3: Web3,
     current_block_stream: CurrentBlockStream,
 }
 
 impl Registry {
-    pub fn new(
-        block_retriever: Arc<dyn BlockRetrieving>,
-        current_block_stream: CurrentBlockStream,
-    ) -> Self {
+    pub fn new(web3: Web3, current_block_stream: CurrentBlockStream) -> Self {
         Self {
             storage: Default::default(),
-            block_retriever,
+            web3,
             current_block_stream,
         }
     }
@@ -51,7 +51,7 @@ impl Registry {
         self.storage.write().await.insert(type_id, storage);
 
         self.spawn_event_updater(
-            self.block_retriever.clone(),
+            Arc::new(self.web3.clone()),
             contract,
             self.current_block_stream.clone(),
         )
@@ -135,7 +135,7 @@ where
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
             let block_number = meta.block_number;
-            if let Some(cow_amm) = event.data.deployed_amm() {
+            if let Some(cow_amm) = event.data.deployed_amm(&self.web3).await {
                 storage.cow_amms.insert(block_number, cow_amm);
             }
         }

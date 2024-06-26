@@ -304,7 +304,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
-                standalone_cow_amm_factory: None, // TODO: cleanup when adding tests
+                cow_amm_legacy_helper: None, // TODO: cleanup when adding tests
             },
             gas,
         )

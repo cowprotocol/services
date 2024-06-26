@@ -4,6 +4,7 @@ mod registry;
 use {
     anyhow::Result,
     ethcontract::{Address, U256},
+    ethrpc::Web3,
     model::{interaction::InteractionData, order::OrderData, signature::Signature},
     std::sync::Arc,
 };
@@ -30,7 +31,8 @@ pub trait CowAmm: Send + Sync {
     ) -> Result<(OrderData, Signature, InteractionData)>;
 }
 
+#[async_trait::async_trait]
 pub trait Deployment: Sync + Send {
     /// Returns the AMM deployed in the given Event.
-    fn deployed_amm(&self) -> Option<Arc<dyn CowAmm>>;
+    async fn deployed_amm(&self, web3: &Web3) -> Option<Arc<dyn CowAmm>>;
 }
