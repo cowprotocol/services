@@ -1361,6 +1361,7 @@ name = "cow-amm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data",
  "async-trait",
  "contracts",
  "ethcontract",

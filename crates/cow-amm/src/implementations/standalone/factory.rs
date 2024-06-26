@@ -1,5 +1,6 @@
 use {
     crate::implementations::standalone::amm::Amm,
+    anyhow::Result,
     contracts::cow_amm_legacy_helper::Event,
     ethcontract::common::DeploymentInformation,
     ethrpc::Web3,
@@ -29,15 +30,9 @@ impl Contract {
 #[async_trait::async_trait]
 impl crate::Deployment for Event {
     /// Returns the AMM deployed in the given Event.
-    async fn deployed_amm(&self, web3: &Web3) -> Option<Arc<dyn crate::CowAmm>> {
+    async fn deployed_amm(&self, web3: &Web3) -> Result<Option<Arc<dyn crate::CowAmm>>> {
         match &self {
-            Event::CowammpoolCreated(data) => {
-                let address = data.amm;
-                let helper = contracts::CowAmmLegacyHelper::deployed(web3).await.unwrap();
-                let tokens = helper.tokens(address).call().await.unwrap();
-                let cow_amm = Arc::new(Amm::new(address, tokens));
-                Some(cow_amm)
-            }
+            Event::CowammpoolCreated(data) => Ok(Some(Arc::new(Amm::new(data.amm, web3).await?))),
         }
     }
 }

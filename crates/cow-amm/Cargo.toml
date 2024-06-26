@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
+app-data = { path = "../app-data" }
 async-trait = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }

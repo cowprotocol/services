@@ -13,6 +13,7 @@ use {
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{
+        interaction::InteractionData,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         signature::Signature,
     },
@@ -364,10 +365,7 @@ impl AuctionProcessor {
                     Some((amm, prices))
                 })
                 .map(|(cow_amm, prices)| async move {
-                    (
-                        *cow_amm.address(),
-                        cow_amm.template_order(prices.as_slice()).await,
-                    )
+                    (*cow_amm.address(), cow_amm.template_order(prices).await)
                 }),
         )
         .await;
@@ -378,7 +376,7 @@ impl AuctionProcessor {
         let orders: Vec<_> = results
             .into_iter()
             .filter_map(|(amm, result)| match result {
-                Ok((order, signature, interaction)) => Some(Order {
+                Ok((order, signature, pre_interactions, post_interactions)) => Some(Order {
                     uid: order.uid(&domain_separator, &amm).0.into(),
                     receiver: order.receiver.map(|addr| addr.into()),
                     valid_to: order.valid_to.into(),
@@ -414,12 +412,14 @@ impl AuctionProcessor {
                         },
                         false => order::Partial::No,
                     },
-                    pre_interactions: vec![eth::Interaction {
-                        target: interaction.target.into(),
-                        value: interaction.value.into(),
-                        call_data: interaction.call_data.into(),
-                    }],
-                    post_interactions: vec![],
+                    pre_interactions: pre_interactions
+                        .into_iter()
+                        .map(convert_interaction)
+                        .collect(),
+                    post_interactions: post_interactions
+                        .into_iter()
+                        .map(convert_interaction)
+                        .collect(),
                     signature: match signature {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
@@ -458,6 +458,14 @@ impl AuctionProcessor {
             fut: futures::future::pending().boxed().shared(),
             eth,
         })))
+    }
+}
+
+fn convert_interaction(interaction: InteractionData) -> eth::Interaction {
+    eth::Interaction {
+        target: interaction.target.into(),
+        value: interaction.value.into(),
+        call_data: interaction.call_data.into(),
     }
 }
 

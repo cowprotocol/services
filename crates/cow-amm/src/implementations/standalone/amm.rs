@@ -1,21 +1,27 @@
 use {
     anyhow::Result,
     ethcontract::{Address, U256},
+    ethrpc::Web3,
     model::{interaction::InteractionData, order::OrderData, signature::Signature},
 };
 
 #[derive(Clone)]
 pub(crate) struct Amm {
+    helper: contracts::CowAmmLegacyHelper,
     address: Address,
     tradeable_tokens: Vec<Address>,
 }
 
 impl Amm {
-    pub(crate) fn new(address: Address, tradeable_tokens: Vec<Address>) -> Self {
-        Self {
+    pub(crate) async fn new(address: Address, web3: &Web3) -> Result<Self> {
+        let helper = contracts::CowAmmLegacyHelper::deployed(web3).await?;
+        let tradeable_tokens = helper.tokens(address).call().await?;
+
+        Ok(Self {
+            helper,
             address,
             tradeable_tokens,
-        }
+        })
     }
 }
 
@@ -31,8 +37,15 @@ impl crate::CowAmm for Amm {
 
     async fn template_order(
         &self,
-        _prices: &[U256],
-    ) -> Result<(OrderData, Signature, InteractionData)> {
-        anyhow::bail!("not implemented")
+        prices: Vec<U256>,
+    ) -> Result<(
+        OrderData,
+        Signature,
+        Vec<InteractionData>,
+        Vec<InteractionData>,
+    )> {
+        let (order, pre_interactions, post_interactions, signature) =
+            self.helper.order(self.address, prices).call().await?;
+        self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
     }
 }
