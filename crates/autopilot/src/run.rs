@@ -20,7 +20,6 @@ use {
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    cow_amm::{CowAmmLegacyFactory, Registry},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
@@ -360,9 +359,9 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let cow_amm_registry = Registry::new(web3.clone(), eth.current_block().clone());
+    let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
     if let Some(cow_amm_factory) = eth.contracts().cow_amm_legacy_helper() {
-        let factory = CowAmmLegacyFactory::new(cow_amm_factory.clone());
+        let factory = cow_amm::LegacyFactory::new(cow_amm_factory.clone());
         cow_amm_registry
             .add_listener(
                 factory.start_indexing_at(),

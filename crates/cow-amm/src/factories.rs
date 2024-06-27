@@ -16,10 +16,10 @@ pub mod legacy {
     use super::*;
 
     impl_event_retrieving! {
-        pub Contract for contracts::cow_amm_legacy_helper
+        pub Factory for contracts::cow_amm_legacy_helper
     }
 
-    impl Contract {
+    impl Factory {
         pub fn start_indexing_at(&self) -> u64 {
             match self.0.deployment_information().unwrap() {
                 DeploymentInformation::TransactionHash(_) => {

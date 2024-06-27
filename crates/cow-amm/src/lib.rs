@@ -2,4 +2,9 @@ mod amm;
 mod factories;
 mod registry;
 
-pub use {amm::Amm, factories::legacy::Contract as CowAmmLegacyFactory, registry::Registry};
+pub use {
+    amm::Amm,
+    contracts::CowAmmLegacyHelper as Helper,
+    factories::legacy::Factory as LegacyFactory,
+    registry::Registry,
+};

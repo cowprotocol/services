@@ -10,7 +10,7 @@ use {
     },
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Amm {
     helper: contracts::CowAmmLegacyHelper,
     address: Address,
