@@ -64,7 +64,7 @@ impl Contracts {
         let cow_amm_legacy_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
             Err(DeployError::NotFound(_)) => None,
             Err(err) => panic!("failed to find deployed contract: {:?}", err),
-            Ok(contract) => Some(contract)
+            Ok(contract) => Some(contract),
         };
 
         Ok(Self {

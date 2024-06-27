@@ -316,6 +316,7 @@ impl RunLoop {
             .map(|cow_amm| *cow_amm.address())
             .collect::<HashSet<_>>();
         surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
+        tracing::error!(owners = ?surplus_capturing_jit_order_owners);
 
         let request = solve::Request::new(
             id,

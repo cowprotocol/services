@@ -1,4 +1,9 @@
-use {super::ChainId, crate::domain, ethcontract::{dyns::DynWeb3, errors::DeployError}, primitive_types::H160};
+use {
+    super::ChainId,
+    crate::domain,
+    ethcontract::{dyns::DynWeb3, errors::DeployError},
+    primitive_types::H160,
+};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
@@ -39,7 +44,7 @@ impl Contracts {
         let cow_amm_legacy_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
             Err(DeployError::NotFound(_)) => None,
             Err(err) => panic!("failed to find deployed contract: {:?}", err),
-            Ok(contract) => Some(contract)
+            Ok(contract) => Some(contract),
         };
 
         let weth = contracts::WETH9::at(

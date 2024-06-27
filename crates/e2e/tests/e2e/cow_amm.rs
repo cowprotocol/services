@@ -14,7 +14,7 @@ use {
         signature::{hashed_eip712_message, EcdsaSigningScheme},
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
+    shared::{addr, ethrpc::Web3},
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,
@@ -420,10 +420,43 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
         usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
     );
 
-    // Place Orders
+    // spawn a mock solver so we can later assert things about the received auction
+    let mock_solver = Mock::default();
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
+                    .await,
+            },
+            SolverEngine {
+                name: "mock_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
     let services = Services::new(onchain.contracts()).await;
-    services.start_protocol(solver).await;
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver,mock_solver|http://localhost:11088/mock_solver".to_string(),
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
+    // Place Orders
     let order = OrderCreation {
         sell_token: usdc.address(),
         sell_amount: to_wei_with_exp(1000, 6),
@@ -468,6 +501,29 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
         let amm_usdc_balance_after = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
         // CoW AMM traded automatically
         amm_usdc_balance_after != amm_usdc_balance_before
+    })
+    .await
+    .unwrap();
+
+    // all cow amms on mainnet the helper contract is aware of
+    tracing::info!("Waiting for all cow amms to be indexed.");
+    let expected_cow_amms = vec![
+        addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
+        addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc"),
+        addr!("301076c36e034948a747bb61bab9cd03f62672e3"),
+        addr!("d7cb8cc1b56356bb7b78d02e785ead28e2158660"),
+        addr!("9941fd7db2003308e7ee17b04400012278f12ac6"),
+        addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
+        addr!("c6b13d5e662fa0458f03995bcb824a1934aa895f"),
+    ];
+
+    wait_for_condition(TIMEOUT, || async {
+        let auctions = mock_solver.get_auctions();
+        let found_cow_amms = &auctions.last().unwrap().surplus_capturing_jit_order_owners;
+
+        expected_cow_amms
+            .iter()
+            .all(|amm| found_cow_amms.contains(amm))
     })
     .await
     .unwrap();
