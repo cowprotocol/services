@@ -317,7 +317,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
-            cow_amm_legacy_helper: config.contracts.standalone_cow_amm_factory.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

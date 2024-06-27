@@ -20,7 +20,6 @@ pub struct Contracts {
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
-    pub cow_amm_legacy_helper: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
