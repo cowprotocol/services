@@ -29,11 +29,13 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_cow_amm() {
-    run_test(cow_amm).await;
+async fn local_node_cow_amm_jit() {
+    run_test(cow_amm_jit).await;
 }
 
-async fn cow_amm(web3: Web3) {
+/// Tests that solvers are able to propose and settle cow amm orders
+/// on their own in the form of JIT orders.
+async fn cow_amm_jit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(100)).await;
@@ -352,9 +354,9 @@ async fn cow_amm(web3: Web3) {
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_mainnet_cow_amm() {
+async fn forked_node_mainnet_cow_amm_driver_support() {
     run_forked_test_with_block_number(
-        forked_mainnet_cow_amm_test,
+        cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
         20183494, // block at which helper was deployed
@@ -362,7 +364,9 @@ async fn forked_node_mainnet_cow_amm() {
     .await;
 }
 
-async fn forked_mainnet_cow_amm_test(web3: Web3) {
+/// Tests that the driver is able to generate template orders for indexed
+/// cow amms and that they can be settled by solvers like regular orders.
+async fn cow_amm_driver_support(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
