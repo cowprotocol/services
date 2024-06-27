@@ -129,6 +129,7 @@ impl Inner {
             let Some(user_order) = UserOrder::new(&order) else {
                 continue;
             };
+
             let sell_token = user_order.get().sell.token;
             let sell_token_price = match auction.tokens.reference_price(&sell_token) {
                 Some(price) => price,
@@ -159,6 +160,8 @@ impl Inner {
             };
 
             let solution = self.requests_for_order(user_order).find_map(|request| {
+                tracing::trace!(order =% order.uid, ?request, "finding route");
+
                 let route = boundary_solver.route(request, self.max_hops)?;
                 let interactions = route
                     .segments
