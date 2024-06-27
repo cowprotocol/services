@@ -844,17 +844,25 @@ fn main() {
             .add_network(
                 MAINNET,
                 Network {
-                    address: addr("0xac1fd793691299b701ae211094985853497789ec"),
-                    // <https://etherscan.io/tx/0xf34747baf268ffd3e35c1b9546e2bfbc506928ec8ebd9af521dc9ad6c726d347>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(20176181)),
+                    address: addr("0xbef07ce660f651c6ffa262749ea482edf3a74ffb"),
+                    // <https://etherscan.io/tx/0xb10c605e0c61801917e7e17ee722def0d41d6912c022dbfd9f4ac3fab33cd143>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(20183493)),
                 },
             )
             .add_network(
                 GNOSIS,
                 Network {
-                    address: addr("0x18a2facebef44a72dfdcc52ef9588fefc84fdfbf"),
-                    // <https://gnosisscan.io/tx/0xcdbc954d309e0c1a68e5ab499530ce53ef20001ae47e092525578fb228d8fab9>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(34661669)),
+                    address: addr("0xc5e91792c503d9a29db8722ab612c814dae059b0"),
+                    // <https://gnosisscan.io/tx/0x9ab4fc2d7997865d60fb770c549998775930d9a13e46849a7a9a5a08330a2887>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(34678625)),
+                },
+            )
+            .add_network(
+                SEPOLIA,
+                Network {
+                    address: addr("0x75d372ec4fe6060a308ed6eea9e5d49297f07c52"),
+                    // <https://sepolia.etherscan.io/tx/0x4b94c53a0b22aa3b9f97fdefe6d3243b38818daed2b9e419c5ec3bd7585f72c9>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(6198300)),
                 },
             )
     });

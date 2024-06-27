@@ -369,7 +369,7 @@ async fn forked_node_mainnet_cow_amm() {
         forked_mainnet_cow_amm_test,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        20176185, // block at which helper was deployed
+        20183494, // block at which helper was deployed
     )
     .await;
 }
