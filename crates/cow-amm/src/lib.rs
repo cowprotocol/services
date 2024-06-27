@@ -47,6 +47,8 @@ pub trait CowAmm: Send + Sync {
     )>;
 
     /// Converts a successful response of the CowAmmHelper into domain types.
+    /// Can be used for any contract that correctly implements the CoW AMM
+    /// helper interface.
     fn convert_orders_reponse(
         &self,
         order: RawOrder,
@@ -74,14 +76,8 @@ pub trait CowAmm: Send + Sync {
             buy_token_balance: convert_buy_token_destination(&order.11 .0)?,
         };
 
-        let pre_interactions = pre_interactions
-            .into_iter()
-            .map(convert_interaction)
-            .collect();
-        let post_interactions = post_interactions
-            .into_iter()
-            .map(convert_interaction)
-            .collect();
+        let pre_interactions = convert_interactions(pre_interactions);
+        let post_interactions = convert_interactions(post_interactions);
 
         let signature = Signature::Eip1271(signature.0);
 
@@ -89,12 +85,15 @@ pub trait CowAmm: Send + Sync {
     }
 }
 
-fn convert_interaction(interaction: RawInteraction) -> InteractionData {
-    InteractionData {
-        target: interaction.0,
-        value: interaction.1,
-        call_data: interaction.2 .0,
-    }
+fn convert_interactions(interactions: Vec<RawInteraction>) -> Vec<InteractionData> {
+    interactions
+        .into_iter()
+        .map(|interaction| InteractionData {
+            target: interaction.0,
+            value: interaction.1,
+            call_data: interaction.2 .0,
+        })
+        .collect()
 }
 
 // Hex strings for enums have been copied from
