@@ -68,20 +68,10 @@ pub trait CowAmm: Send + Sync {
             valid_to: order.5,
             app_data: AppDataHash(order.6 .0),
             fee_amount: order.7,
-            // order.8
-            kind: if order.8 .0
-                == *hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
-                    .unwrap()
-            {
-                OrderKind::Sell
-            } else {
-                OrderKind::Buy
-            },
+            kind: convert_kind(&order.8 .0)?,
             partially_fillable: order.9,
-            //order.10
-            sell_token_balance: SellTokenSource::Erc20,
-            //order.11
-            buy_token_balance: BuyTokenDestination::Erc20,
+            sell_token_balance: convert_sell_token_source(&order.10 .0)?,
+            buy_token_balance: convert_buy_token_destination(&order.11 .0)?,
         };
 
         let pre_interactions = pre_interactions
@@ -93,10 +83,7 @@ pub trait CowAmm: Send + Sync {
             .map(convert_interaction)
             .collect();
 
-        // Prepend amm address so the settlement contract knows which contract
-        // this signature belongs to.
-        let signature = [self.address().as_bytes(), &signature.0].concat();
-        let signature = Signature::Eip1271(signature);
+        let signature = Signature::Eip1271(signature.0);
 
         Ok((order, signature, pre_interactions, post_interactions))
     }
@@ -107,6 +94,38 @@ fn convert_interaction(interaction: RawInteraction) -> InteractionData {
         target: interaction.0,
         value: interaction.1,
         call_data: interaction.2 .0,
+    }
+}
+
+// Hex strings for enums have been copied from
+// <https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol#L50>
+
+fn convert_kind(bytes: &[u8]) -> Result<OrderKind> {
+    match hex::encode(bytes).as_str() {
+        "f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775" => Ok(OrderKind::Sell),
+        "6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc" => Ok(OrderKind::Buy),
+        bytes => anyhow::bail!("unknown order type: {bytes}"),
+    }
+}
+
+const BALANCE_ERC20: &str = "5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9";
+const BALANCE_INTERNAL: &str = "4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce";
+const BALANCE_EXTERNAL: &str = "abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632";
+
+fn convert_sell_token_source(bytes: &[u8]) -> Result<SellTokenSource> {
+    match hex::encode(bytes).as_str() {
+        BALANCE_ERC20 => Ok(SellTokenSource::Erc20),
+        BALANCE_INTERNAL => Ok(SellTokenSource::Internal),
+        BALANCE_EXTERNAL => Ok(SellTokenSource::External),
+        bytes => anyhow::bail!("unknown sell token source: {bytes}"),
+    }
+}
+
+fn convert_buy_token_destination(bytes: &[u8]) -> Result<BuyTokenDestination> {
+    match hex::encode(bytes).as_str() {
+        BALANCE_ERC20 => Ok(BuyTokenDestination::Erc20),
+        BALANCE_INTERNAL => Ok(BuyTokenDestination::Internal),
+        bytes => anyhow::bail!("unknown buy token destination: {bytes}"),
     }
 }
 

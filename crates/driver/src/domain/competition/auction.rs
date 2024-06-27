@@ -351,7 +351,6 @@ impl AuctionProcessor {
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
-                .filter(|amm| amm.address().as_bytes() == hex::decode("301076c36e034948a747bb61bab9cd03f62672e3").unwrap())
                 .filter_map(|amm| {
                     let prices = amm
                         .traded_tokens()
@@ -365,7 +364,11 @@ impl AuctionProcessor {
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
                 })
-                .map(|(cow_amm, prices)| async move {
+                .map(|(cow_amm, mut prices)| async move {
+                    // the current implementation of the helper contract returns tokens in the
+                    // wrong order.
+                    // TODO fix with new helper contract before merge
+                    prices.reverse();
                     (*cow_amm.address(), cow_amm.template_order(prices).await)
                 }),
         )

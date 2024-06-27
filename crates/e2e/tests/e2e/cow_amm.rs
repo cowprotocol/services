@@ -381,51 +381,57 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    // TODO: imbalance one cow amm enough that the baseline solver is able to find a
-    // trade
-    let token_usdc = ERC20::at(
+    // find some USDC available onchain
+    const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
+        "28c6c06298d514db089934071355e5743bf21d60"
+    ));
+    let usdc_whale = forked_node_api
+        .impersonate(&USDC_WHALE_MAINNET)
+        .await
+        .unwrap();
+
+    // create necessary token instances
+    let usdc = ERC20::at(
         &web3,
         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
             .parse()
             .unwrap(),
     );
 
-    let token_usdt = ERC20::at(
+    let usdt = ERC20::at(
         &web3,
         "0xdac17f958d2ee523a2206206994597c13d831ec7"
             .parse()
             .unwrap(),
     );
 
-    const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
-        "28c6c06298d514db089934071355e5743bf21d60"
-    ));
-
-    // Give trader some USDC
-    let usdc_whale = forked_node_api
-        .impersonate(&USDC_WHALE_MAINNET)
-        .await
-        .unwrap();
-    tx!(
-        usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
-    );
-    // imbalance the cow amm
-    const USDC_WETH_POOL: H160 = H160(hex_literal::hex!(
+    // Unbalance the cow amm enough that baseline is able to rebalance
+    // it with the current liquidity.
+    const USDC_WETH_COW_AMM: H160 = H160(hex_literal::hex!(
         "301076c36e034948a747bb61bab9cd03f62672e3"
     ));
     tx!(
         usdc_whale,
-        token_usdc.transfer(USDC_WETH_POOL, to_wei_with_exp(5_000_000, 6))
+        usdc.transfer(USDC_WETH_COW_AMM, to_wei_with_exp(5_000_000, 6))
+    );
+    let amm_usdc_balance_before = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
+
+    // Now we create an unfillable order just so the orderbook is not empty.
+    // Otherwise all auctions would be skipped because there is no user order to
+    // settle.
+
+    // Give trader some USDC
+    tx!(
+        usdc_whale,
+        usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
     );
 
     // Approve GPv2 for trading
     tx!(
         trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
+        usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
     );
 
     // Place Orders
@@ -433,9 +439,9 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
-        sell_token: token_usdc.address(),
+        sell_token: usdc.address(),
         sell_amount: to_wei_with_exp(1000, 6),
-        buy_token: token_usdt.address(),
+        buy_token: usdt.address(),
         buy_amount: to_wei_with_exp(2000, 6),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
@@ -451,8 +457,8 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
     // may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
-            sell_token: token_usdc.address(),
-            buy_token: token_usdt.address(),
+            sell_token: usdc.address(),
+            buy_token: usdt.address(),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
                     value: to_wei_with_exp(1000, 6).try_into().unwrap(),
@@ -468,13 +474,15 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    tokio::spawn(async move {
-        loop {
-            tracing::error!("mine block");
-            onchain.send_wei(Default::default(), 1.into()).await;
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-    });
-    // For now just wait and see what happens...
-    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+    wait_for_condition(TIMEOUT, || async {
+        // Keep mining blocks to trigger the event indexing logic
+        onchain.mint_block().await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(1_000)).await;
+
+        let amm_usdc_balance_after = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
+        // CoW AMM traded automatically
+        amm_usdc_balance_after != amm_usdc_balance_before
+    })
+    .await
+    .unwrap();
 }

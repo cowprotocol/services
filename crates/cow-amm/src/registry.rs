@@ -78,7 +78,7 @@ impl Registry {
         let cow_amms = self.storage.read().await;
         cow_amms
             .values()
-            .flat_map(|storage| storage.cow_amms.values().cloned().flatten())
+            .flat_map(|storage| storage.cow_amms.values().flatten().cloned())
             .collect::<Vec<_>>()
     }
 }
