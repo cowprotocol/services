@@ -18,7 +18,6 @@ pub struct Contracts {
 pub struct Addresses {
     pub settlement: Option<H160>,
     pub weth: Option<H160>,
-    pub cow_amm_legacy_helper: Option<H160>,
 }
 
 impl Contracts {

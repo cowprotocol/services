@@ -157,7 +157,6 @@ pub async fn run(args: Arguments) {
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
-        cow_amm_legacy_helper: args.shared.cow_amm_factory_contract_address,
     };
     let eth = ethereum(
         web3.clone(),
