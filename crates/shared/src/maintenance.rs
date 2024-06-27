@@ -94,7 +94,7 @@ impl ServiceMaintenance {
                 .unwrap_or(Some(block)),
             None => blocks.next().await,
         } {
-            tracing::error!(
+            tracing::debug!(
                 ?block.number, ?block.hash,
                 "running maintenance",
             );

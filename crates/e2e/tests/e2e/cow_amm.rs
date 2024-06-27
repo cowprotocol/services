@@ -413,6 +413,14 @@ async fn forked_mainnet_cow_amm_test(web3: Web3) {
         usdc_whale,
         token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
     );
+    // imbalance the cow amm
+    const USDC_WETH_POOL: H160 = H160(hex_literal::hex!(
+        "301076c36e034948a747bb61bab9cd03f62672e3"
+    ));
+    tx!(
+        usdc_whale,
+        token_usdc.transfer(USDC_WETH_POOL, to_wei_with_exp(5_000_000, 6))
+    );
 
     // Approve GPv2 for trading
     tx!(

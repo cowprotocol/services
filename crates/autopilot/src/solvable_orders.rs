@@ -212,7 +212,6 @@ impl SolvableOrdersCache {
         }
 
         let cow_amms = self.cow_amm_registry.cow_amms().await;
-        tracing::error!(len = cow_amms.len(), "include prices for amms");
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())

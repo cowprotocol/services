@@ -83,7 +83,6 @@ pub trait CowAmm: Send + Sync {
             //order.11
             buy_token_balance: BuyTokenDestination::Erc20,
         };
-        tracing::error!(?order);
 
         let pre_interactions = pre_interactions
             .into_iter()

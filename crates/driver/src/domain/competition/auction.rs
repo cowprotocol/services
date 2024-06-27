@@ -348,10 +348,10 @@ impl AuctionProcessor {
         // Compute order templates for all indexed CoW AMMs where all required native
         // prices are in the auction.
         let cow_amms = eth.cow_amms().await;
-        tracing::error!(cow_amms = cow_amms.len(), "try generating orders");
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
+                .filter(|amm| amm.address().as_bytes() == hex::decode("301076c36e034948a747bb61bab9cd03f62672e3").unwrap())
                 .filter_map(|amm| {
                     let prices = amm
                         .traded_tokens()
@@ -370,8 +370,6 @@ impl AuctionProcessor {
                 }),
         )
         .await;
-
-        tracing::error!(orders = results.len());
 
         // Convert results to domain format.
         let domain_separator =
@@ -448,7 +446,7 @@ impl AuctionProcessor {
             .collect();
 
         if !orders.is_empty() {
-            tracing::error!(len = orders.len(), "generated cow amm template orders");
+            tracing::error!(?orders, "generated cow amm template orders");
         }
 
         orders
