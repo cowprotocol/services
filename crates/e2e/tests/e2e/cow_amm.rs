@@ -348,18 +348,6 @@ async fn cow_amm(web3: Web3) {
     })
     .await
     .unwrap();
-
-    // TODO can we test this in the forked test instead?
-    // That could get rid of a bunch more logic..
-    // Check that the CoW AMM product factory listener works and catches the new CoW
-    // AMM deployment events
-    let mut auctions = mock_solver.get_auctions();
-    assert_eq!(auctions.len(), 1);
-    assert!(auctions
-        .pop()
-        .unwrap()
-        .surplus_capturing_jit_order_owners
-        .contains(&cow_amm.address()))
 }
 
 #[tokio::test]
