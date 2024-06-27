@@ -11,7 +11,7 @@ use {
         UniswapV2Router02,
         WETH9,
     },
-    ethcontract::{Address, H256, U256},
+    ethcontract::{errors::DeployError, Address, H256, U256},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -42,7 +42,11 @@ impl Contracts {
         tracing::info!("connected to forked test network {}", network_id);
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
-        let cow_amm_helper = CowAmmLegacyHelper::deployed(web3).await.ok();
+        let cow_amm_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("failed to find deployed contract: {:?}", err),
+            Ok(contract) => Some(contract)
+        };
 
         Self {
             chain_id: network_id

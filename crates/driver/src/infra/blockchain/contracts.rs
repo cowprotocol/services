@@ -1,6 +1,6 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, errors::DeployError},
     thiserror::Error,
 };
 
@@ -61,7 +61,11 @@ impl Contracts {
                 .0,
         );
 
-        let cow_amm_legacy_helper = contracts::CowAmmLegacyHelper::deployed(web3).await.ok();
+        let cow_amm_legacy_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("failed to find deployed contract: {:?}", err),
+            Ok(contract) => Some(contract)
+        };
 
         Ok(Self {
             settlement,
