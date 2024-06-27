@@ -1,8 +1,8 @@
 use {
     anyhow::Result,
     ethcontract::{Address, U256},
-    ethrpc::Web3,
     model::{interaction::InteractionData, order::OrderData, signature::Signature},
+    contracts::CowAmmLegacyHelper,
 };
 
 #[derive(Clone)]
@@ -13,12 +13,11 @@ pub(crate) struct Amm {
 }
 
 impl Amm {
-    pub(crate) async fn new(address: Address, web3: &Web3) -> Result<Self> {
-        let helper = contracts::CowAmmLegacyHelper::deployed(web3).await?;
+    pub(crate) async fn new(address: Address, helper: &CowAmmLegacyHelper) -> Result<Self> {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {
-            helper,
+            helper: helper.clone(),
             address,
             tradeable_tokens,
         })

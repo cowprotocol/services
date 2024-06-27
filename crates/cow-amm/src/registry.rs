@@ -1,6 +1,8 @@
 use {
-    crate::{CowAmm, Deployment},
+    crate::{factories::Deployment, Amm},
     anyhow::Context,
+    contracts::CowAmmLegacyHelper,
+    ethcontract::Address,
     ethrpc::{
         current_block::{BlockRetrieving, CurrentBlockStream, RangeInclusive},
         Web3,
@@ -37,15 +39,17 @@ impl Registry {
         }
     }
 
-    pub async fn add_listener<C>(&self, first_block: u64, contract: C)
+    pub async fn add_listener<C>(&self, first_block: u64, contract: C, helper_contract: Address)
     where
         C: EventRetrieving + Send + Sync + 'static,
         <C as EventRetrieving>::Event: Deployment,
     {
         let type_id = TypeId::of::<C::Event>();
+        let helper = CowAmmLegacyHelper::at(&self.web3, helper_contract);
         let storage = Storage {
             cow_amms: Default::default(),
             first_block,
+            helper,
         };
 
         self.storage.write().await.insert(type_id, storage);
@@ -74,7 +78,7 @@ impl Registry {
     }
 
     /// Returns all the deployed CoW AMMs
-    pub async fn cow_amms(&self) -> Vec<Arc<dyn crate::CowAmm>> {
+    pub async fn cow_amms(&self) -> Vec<Arc<Amm>> {
         let cow_amms = self.storage.read().await;
         cow_amms
             .values()
@@ -86,10 +90,12 @@ impl Registry {
 /// Stores CoW AMMs indexes for the associated factory contract.
 struct Storage {
     /// Stores which AMMs were deployed on which block.
-    cow_amms: BTreeMap<u64, Vec<Arc<dyn CowAmm>>>,
+    cow_amms: BTreeMap<u64, Vec<Arc<Amm>>>,
     /// The block in which the associated factory contract was created.
     /// This is the block from which indexing should start.
     first_block: u64,
+    /// Helper contract to query required data from the cow amm.
+    helper: CowAmmLegacyHelper,
 }
 
 #[async_trait::async_trait]
@@ -135,13 +141,13 @@ where
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
             let block_number = meta.block_number;
-            if let Some(cow_amm) = event.data.deployed_amm(&self.web3).await? {
+            if let Some(cow_amm) = event.data.deployed_amm(&storage.helper).await? {
                 tracing::error!(amm = ?cow_amm.address(), "insert cow amm");
                 storage
                     .cow_amms
                     .entry(block_number)
                     .or_default()
-                    .push(cow_amm);
+                    .push(Arc::new(cow_amm));
             }
         }
         Ok(())

@@ -1,7 +1,6 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    cow_amm::CowAmm,
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
     std::{fmt, sync::Arc},
@@ -89,9 +88,9 @@ impl Ethereum {
 
         let cow_amms = cow_amm::Registry::new(web3.clone(), current_block_stream.clone());
         if let Some(contract) = contracts.cow_amm_legacy_helper() {
-            let contract = cow_amm::CowAmmStandaloneFactory::new(contract.clone());
+            let factory = cow_amm::CowAmmLegacyFactory::new(contract.clone());
             cow_amms
-                .add_listener(contract.deployment_block(), contract)
+                .add_listener(factory.start_indexing_at(), factory, contract.address())
                 .await;
         }
 
@@ -260,7 +259,7 @@ impl Ethereum {
             .map(|gas| gas.effective().0 .0)
     }
 
-    pub async fn cow_amms(&self) -> Vec<Arc<dyn CowAmm>> {
+    pub async fn cow_amms(&self) -> Vec<Arc<cow_amm::Amm>> {
         self.inner.cow_amms.cow_amms().await
     }
 }
