@@ -160,13 +160,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub submission_deadline: usize,
 
-    /// The maximum number of blocks to wait for a settlement to appear on
-    /// chain, in addition to the submission deadline. This is used to ensure
-    /// that the settlement mined at the very end on the deadline and reorged,
-    /// is still considered for payout.
-    #[clap(long, env, default_value = "5")]
-    pub additional_deadline_for_rewards: usize,
-
     /// The amount of time that the autopilot waits looking for a settlement
     /// transaction onchain after the driver acknowledges the receipt of a
     /// settlement.
@@ -258,7 +251,6 @@ impl std::fmt::Display for Arguments {
             trusted_tokens_update_interval,
             drivers,
             submission_deadline,
-            additional_deadline_for_rewards,
             shadow,
             solve_deadline,
             fee_policies,
@@ -317,11 +309,6 @@ impl std::fmt::Display for Arguments {
         )?;
         display_list(f, "drivers", drivers.iter())?;
         writeln!(f, "submission_deadline: {}", submission_deadline)?;
-        writeln!(
-            f,
-            "additional_deadline_for_rewards: {}",
-            additional_deadline_for_rewards
-        )?;
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
         writeln!(f, "fee_policies: {:?}", fee_policies)?;

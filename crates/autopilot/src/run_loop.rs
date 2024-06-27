@@ -47,7 +47,6 @@ pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
-    pub additional_deadline_for_rewards: u64,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
@@ -166,9 +165,7 @@ impl RunLoop {
 
             let mut prices = BTreeMap::new();
             let mut fee_policies = Vec::new();
-            let block_deadline = competition_simulation_block
-                + self.submission_deadline
-                + self.additional_deadline_for_rewards;
+            let block_deadline = competition_simulation_block + self.submission_deadline;
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
 
