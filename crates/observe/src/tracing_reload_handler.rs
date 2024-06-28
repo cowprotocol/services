@@ -17,17 +17,11 @@ pub(crate) fn spawn_reload_handler(
 ) {
     std::thread::spawn(move || {
         let id = std::process::id();
-        let name = std::env::current_exe()
-            .unwrap()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
+        let name = binary_name().unwrap_or_default();
 
         let socket_handle = format!("/tmp/log_filter_override_{name}_{id}.sock");
         tracing::warn!(addr = socket_handle, "open log filter reload socket");
-        let listener = UnixListener::bind(socket_handle).unwrap();
+        let listener = UnixListener::bind(socket_handle).expect("socket handle is unique");
 
         loop {
             handle_connection(&listener, &initial_filter, &reload_handle);
@@ -35,21 +29,39 @@ pub(crate) fn spawn_reload_handler(
     });
 }
 
+fn binary_name() -> Option<String> {
+    Some(
+        std::env::current_exe()
+            .ok()?
+            .file_name()?
+            .to_str()?
+            .to_string(),
+    )
+}
+
 fn handle_connection(
     listener: &UnixListener,
     initial_filter: &str,
     reload_handle: &reload::Handle<EnvFilter, Registry>,
 ) {
-    let (mut socket, _addr) = listener.accept().unwrap();
+    let Ok((mut socket, _addr)) = listener.accept() else {
+        tracing::warn!("failed to accept UNIX socket connection");
+        return;
+    };
+
     let _ = socket
         .write_all(format!("log filter on process startup was: {initial_filter:?}\n",).as_bytes());
 
     loop {
         let message = read_line(&mut socket);
 
-        let filter = match message.as_str() {
-            "reset" => initial_filter,
-            _ => &message,
+        let filter = match message.as_deref() {
+            None => {
+                log(&mut socket, "could not read message from socket".into());
+                continue;
+            }
+            Some("reset") => initial_filter,
+            Some(message) => message,
         };
 
         let Ok(env_filter) = EnvFilter::try_new(filter) else {
@@ -64,11 +76,11 @@ fn handle_connection(
     }
 }
 
-fn read_line(socket: &mut UnixStream) -> String {
+fn read_line(socket: &mut UnixStream) -> Option<String> {
     let mut reader = BufReader::new(socket);
     let mut buffer = String::new();
-    reader.read_line(&mut buffer).unwrap();
-    buffer.trim().to_owned()
+    reader.read_line(&mut buffer).ok()?;
+    Some(buffer.trim().to_owned())
 }
 
 /// Logs the message in this process' logs and reports it back to the
