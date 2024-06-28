@@ -5,9 +5,11 @@ use {
     tracing_subscriber::{
         fmt::{time::UtcTime, writer::MakeWriterExt as _},
         prelude::*,
+        reload,
         util::SubscriberInitExt,
         EnvFilter,
         Layer,
+        Registry,
     },
 };
 
@@ -34,6 +36,10 @@ pub fn initialize_reentrant(env_filter: &str, with_console: bool) {
 }
 
 fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_console: bool) {
+    let initial_filter = env_filter.to_string();
+    let (filter, reload_handle) =
+        tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
+
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(
             std::io::stdout
@@ -49,7 +55,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
         )))
         .with_ansi(atty::is(atty::Stream::Stdout))
-        .with_filter::<EnvFilter>(env_filter.into());
+        .with_filter(filter);
 
     let registry = tracing_subscriber::registry().with(fmt_layer);
     if with_console {
@@ -63,6 +69,61 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_
     } else {
         registry.init()
     }
+
+    spawn_filter_reload_handler(initial_filter, reload_handle);
+}
+
+/// Spawns a new thread that listens for `SIGHUP` signals.
+/// Whenever such an event gets detected the thread reads the file
+/// "/tmp/log_filter_override" to get a the new log filter.
+/// If we fail to read the file or it's empty the initial filter will be applied
+/// again.
+fn spawn_filter_reload_handler(
+    initial_filter: String,
+    reload_handle: reload::Handle<EnvFilter, Registry>,
+) {
+    use signal_hook::{consts::SIGHUP, iterator::Signals};
+
+    std::thread::spawn(move || {
+        const FILE_PATH: &str = "/tmp/log_filter_override";
+        let mut signals = Signals::new([SIGHUP]).unwrap();
+
+        for _sig in &mut signals {
+            let read_file = std::fs::read_to_string(FILE_PATH);
+
+            let new_filter_string = match read_file {
+                Ok(filter) if filter.is_empty() => {
+                    tracing::warn!(
+                        initial_filter,
+                        "new log filter is empty => revert back to initial filter"
+                    );
+                    initial_filter.clone()
+                }
+                Ok(filter) => filter.trim().to_owned(),
+                Err(err) => {
+                    tracing::error!(
+                        ?err,
+                        initial_filter,
+                        "failed to read new log filter => revert back to initial filter"
+                    );
+                    initial_filter.clone()
+                }
+            };
+
+            let new_filter = match EnvFilter::try_new(&new_filter_string) {
+                Ok(filter) => filter,
+                Err(err) => {
+                    tracing::error!(?err, "failed to parse new log filter => abort override");
+                    continue;
+                }
+            };
+
+            match reload_handle.reload(new_filter) {
+                Ok(_) => tracing::warn!(new_filter = new_filter_string, "applied new log filter"),
+                Err(err) => tracing::error!(?err, "failed to apply new log filter"),
+            }
+        }
+    });
 }
 
 /// Panic hook that prints roughly the same message as the default panic hook

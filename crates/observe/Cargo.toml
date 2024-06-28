@@ -13,6 +13,7 @@ once_cell = { workspace = true }
 pin-project-lite = "0.2.14"
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+signal-hook = "0.3.17"
 time = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
