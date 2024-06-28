@@ -119,9 +119,9 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
 
 ### Profiling
 
-In order to attach [tokio-console](https://github.com/tokio-rs/console) to the running process, compile the binary using `RUSTFLAGS="--cfg tokio_unstable"`.
+The most important binaries support [tokio-console](https://github.com/tokio-rs/console) to allow you a could look inside the tokio runtime.
 
-Then in another shell, simply run
+Simply enable the feature by passing `--enable-tokio-console true` when running a binary and then in another shell, run
 
 ```
 cargo install --locked tokio-console
