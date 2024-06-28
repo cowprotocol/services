@@ -1,4 +1,5 @@
-//! This module implements the observability for the driver. It exposes
+//! T
+//! his module implements the observability for the driver. It exposes
 //! functions which represent events that are meaningful to the system. These
 //! functions are called when the corresponding events occur. They log the event
 //! and update the metrics, if the event is worth measuring.
@@ -32,8 +33,8 @@ mod metrics;
 
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
-pub fn init(log: &str) {
-    observe::tracing::initialize_reentrant(log);
+pub fn init(log: &str, with_tokio_console: bool) {
+    observe::tracing::initialize_reentrant(log, with_tokio_console);
     metrics::init();
 }
 

@@ -14,8 +14,8 @@ use {
 /// Initializes tracing setup that is shared between the binaries.
 /// `env_filter` has similar syntax to env_logger. It is documented at
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
-pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
-    set_tracing_subscriber(env_filter, stderr_threshold);
+pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter, with_console: bool) {
+    set_tracing_subscriber(env_filter, stderr_threshold, with_console);
     std::panic::set_hook(Box::new(tracing_panic_hook));
 }
 
@@ -23,17 +23,17 @@ pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
 /// are ignored.
 ///
 /// Useful for tests.
-pub fn initialize_reentrant(env_filter: &str) {
+pub fn initialize_reentrant(env_filter: &str, with_console: bool) {
     // The tracing subscriber below is global object so initializing it again in the
     // same process by a different thread would fail.
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        set_tracing_subscriber(env_filter, LevelFilter::ERROR);
+        set_tracing_subscriber(env_filter, LevelFilter::ERROR, with_console);
         std::panic::set_hook(Box::new(tracing_panic_hook));
     });
 }
 
-fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
+fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_console: bool) {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(
             std::io::stdout
@@ -52,8 +52,13 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
         .with_filter::<EnvFilter>(env_filter.into());
 
     let registry = tracing_subscriber::registry().with(fmt_layer);
-    if cfg!(tokio_unstable) {
-        // Start with tokio_console subscriber
+    if with_console {
+        if !cfg!(tokio_unstable) {
+            panic!(
+                "compile with `RUSTFLAGS=\"--cfg tokio_unstable\"` if you want to enable the \
+                 tokio console"
+            );
+        }
         registry.with(console_subscriber::spawn()).init();
     } else {
         registry.init()
