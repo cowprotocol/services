@@ -350,8 +350,6 @@ impl AuctionProcessor {
         tokens: &Tokens,
         eligible_for_surplus: &HashSet<eth::Address>,
     ) -> Vec<Order> {
-        // Compute order templates for all indexed CoW AMMs where all required native
-        // prices are in the auction.
         let cow_amms = eth.cow_amms().await;
         let results: Vec<_> = futures::future::join_all(
             cow_amms
@@ -459,7 +457,7 @@ impl AuctionProcessor {
             .collect();
 
         if !orders.is_empty() {
-            tracing::error!(?orders, "generated cow amm template orders");
+            tracing::debug!(?orders, "generated cow amm template orders");
         }
 
         orders

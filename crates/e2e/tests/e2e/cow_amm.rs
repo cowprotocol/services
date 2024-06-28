@@ -511,7 +511,7 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     // all cow amms on mainnet the helper contract is aware of
     tracing::info!("Waiting for all cow amms to be indexed.");
-    let expected_cow_amms = vec![
+    let expected_cow_amms = [
         addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
         addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc"),
         addr!("301076c36e034948a747bb61bab9cd03f62672e3"),

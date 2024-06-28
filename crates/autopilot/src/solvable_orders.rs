@@ -220,7 +220,7 @@ impl SolvableOrdersCache {
             .cloned()
             .collect::<Vec<_>>();
         let cow_amm_prices =
-            Self::get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
+            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
         prices.extend(cow_amm_prices);
 
         let removed = counter.checkpoint("missing_price", &orders);
@@ -275,20 +275,6 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    fn get_native_prices(
-        tokens: &[H160],
-        native_price_estimator: &CachingNativePriceEstimator,
-    ) -> HashMap<H160, U256> {
-        native_price_estimator
-            .get_cached_prices(tokens)
-            .into_iter()
-            .flat_map(|(token, result)| {
-                let price = to_normalized_price(result.ok()?)?;
-                Some((token, price))
-            })
-            .collect()
-    }
-
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().update_time
     }
@@ -320,6 +306,20 @@ async fn filter_banned_user_orders(
             && !banned.contains(&order.data.receiver.unwrap_or_default())
     });
     orders
+}
+
+fn get_native_prices(
+    tokens: &[H160],
+    native_price_estimator: &CachingNativePriceEstimator,
+) -> HashMap<H160, U256> {
+    native_price_estimator
+        .get_cached_prices(tokens)
+        .into_iter()
+        .flat_map(|(token, result)| {
+            let price = to_normalized_price(result.ok()?)?;
+            Some((token, price))
+        })
+        .collect()
 }
 
 /// Filters unsigned PreSign and EIP-1271 orders whose signatures are no longer
@@ -490,14 +490,7 @@ fn get_orders_with_native_prices(
         .into_iter()
         .collect::<Vec<_>>();
 
-    let prices: HashMap<_, _> = native_price_estimator
-        .get_cached_prices(&traded_tokens)
-        .into_iter()
-        .flat_map(|(token, result)| {
-            let price = to_normalized_price(result.ok()?)?;
-            Some((token, price))
-        })
-        .collect();
+    let prices = get_native_prices(&traded_tokens, native_price_estimator);
 
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.
