@@ -69,7 +69,9 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_
         registry.init()
     }
 
-    spawn_reload_handler(initial_filter, reload_handle);
+    if cfg!(unix) {
+        spawn_reload_handler(initial_filter, reload_handle);
+    }
 }
 
 /// Panic hook that prints roughly the same message as the default panic hook
