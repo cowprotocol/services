@@ -128,6 +128,16 @@ cargo install --locked tokio-console
 tokio-console
 ```
 
+
+### Changing Log Filters
+
+It's possible to change the tracing log filter while the process is running. This can be useful to debug an error that requires more verbose logs but which might no longer appear after restarting the system.
+
+Each process opens a UNIX socket at `/tmp/log_filter_override_<program_name>_<pid>.sock`. To change the log filter connect to it with `nc -U <path>` and enter a new log filter.
+You can also reset the log filter to the filter the program was initially started with by entering `reset`.
+
+See [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for documentation on the supported log filter format.
+
 ## Running the Services Locally
 
 ### Prerequisites
