@@ -19,14 +19,28 @@ pub(crate) fn spawn_reload_handler(
         let id = std::process::id();
         let name = binary_name().unwrap_or_default();
 
-        let socket_handle = format!("/tmp/log_filter_override_{name}_{id}.sock");
-        tracing::warn!(addr = socket_handle, "open log filter reload socket");
-        let listener = UnixListener::bind(socket_handle).expect("socket handle is unique");
+        let socket_path = format!("/tmp/log_filter_override_{name}_{id}.sock");
+        tracing::warn!(file = socket_path, "open log filter reload socket");
+        let handle = SocketHandle {
+            listener: UnixListener::bind(&socket_path).expect("socket handle is unique"),
+            socket_path,
+        };
 
         loop {
-            handle_connection(&listener, &initial_filter, &reload_handle).await;
+            handle_connection(&handle.listener, &initial_filter, &reload_handle).await;
         }
     });
+}
+
+struct SocketHandle {
+    socket_path: String,
+    listener: UnixListener,
+}
+
+impl Drop for SocketHandle {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.socket_path);
+    }
 }
 
 fn binary_name() -> Option<String> {
