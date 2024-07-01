@@ -12,11 +12,7 @@ use {
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
-    model::{
-        interaction::InteractionData,
-        order::{BuyTokenDestination, OrderKind, SellTokenSource},
-        signature::Signature,
-    },
+    model::{order::OrderKind, signature::Signature},
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -401,20 +397,10 @@ impl AuctionProcessor {
                         token: template.order.sell_token.into(),
                     },
                     kind: order::Kind::Limit,
-                    side: match template.order.kind {
-                        OrderKind::Sell => order::Side::Sell,
-                        OrderKind::Buy => order::Side::Buy,
-                    },
+                    side: template.order.kind.into(),
                     app_data: order::AppData(Bytes(template.order.app_data.0)),
-                    buy_token_balance: match template.order.buy_token_balance {
-                        BuyTokenDestination::Erc20 => order::BuyTokenBalance::Erc20,
-                        BuyTokenDestination::Internal => order::BuyTokenBalance::Internal,
-                    },
-                    sell_token_balance: match template.order.sell_token_balance {
-                        SellTokenSource::Erc20 => order::SellTokenBalance::Erc20,
-                        SellTokenSource::Internal => order::SellTokenBalance::Internal,
-                        SellTokenSource::External => order::SellTokenBalance::External,
-                    },
+                    buy_token_balance: template.order.buy_token_balance.into(),
+                    sell_token_balance: template.order.sell_token_balance.into(),
                     partial: match template.order.partially_fillable {
                         true => order::Partial::Yes {
                             available: match template.order.kind {
@@ -427,12 +413,12 @@ impl AuctionProcessor {
                     pre_interactions: template
                         .pre_interactions
                         .into_iter()
-                        .map(convert_interaction)
+                        .map(Into::into)
                         .collect(),
                     post_interactions: template
                         .post_interactions
                         .into_iter()
-                        .map(convert_interaction)
+                        .map(Into::into)
                         .collect(),
                     signature: match template.signature {
                         Signature::Eip1271(bytes) => order::Signature {
@@ -472,14 +458,6 @@ impl AuctionProcessor {
             fut: futures::future::pending().boxed().shared(),
             eth,
         })))
-    }
-}
-
-fn convert_interaction(interaction: InteractionData) -> eth::Interaction {
-    eth::Interaction {
-        target: interaction.target.into(),
-        value: interaction.value.into(),
-        call_data: interaction.call_data.into(),
     }
 }
 
