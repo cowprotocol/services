@@ -71,8 +71,12 @@ async fn handle_connection(
         let message = read_line(&mut socket).await;
 
         let filter = match message.as_deref() {
+            Some("") => {
+                log(&mut socket, "client terminated connection".into()).await;
+                break;
+            }
             None => {
-                log(&mut socket, "could not read message from socket".into()).await;
+                log(&mut socket, "failed to read message from socket".into()).await;
                 continue;
             }
             Some("reset") => initial_filter,
