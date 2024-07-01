@@ -360,7 +360,7 @@ async fn forked_node_mainnet_cow_amm_driver_support() {
         cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")
             .expect("FORK_URL_MAINNET must be set to run forked tests"),
-        20183494, // block at which helper was deployed
+        20188650, // block at which helper was deployed
     )
     .await;
 }

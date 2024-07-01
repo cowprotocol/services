@@ -371,8 +371,7 @@ impl AuctionProcessor {
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
                 })
-                .map(|(cow_amm, mut prices)| async move {
-                    prices.reverse();
+                .map(|(cow_amm, prices)| async move {
                     (*cow_amm.address(), cow_amm.template_order(prices).await)
                 }),
         )
