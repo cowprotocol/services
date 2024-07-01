@@ -63,15 +63,16 @@ mod tests {
         super::*,
         num::{BigRational, Zero},
         serde_json::{json, value::Serializer},
+        shared::assert_json_matches,
     };
 
     #[test]
     fn serializer() {
-        assert_eq!(
+        assert_json_matches!(
             serialize(&BigRational::from_float(1.2).unwrap(), Serializer).unwrap(),
             json!("1.1999999999999999555910790149937383830547332763671875")
         );
-        assert_eq!(
+        assert_json_matches!(
             serialize(
                 &BigRational::new(1.into(), 3.into()),
                 Serializer
@@ -79,11 +80,11 @@ mod tests {
             .unwrap(),
             json!("0.3333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333")
         );
-        assert_eq!(
+        assert_json_matches!(
             serialize(&BigRational::zero(), Serializer).unwrap(),
             json!("0")
         );
-        assert_eq!(
+        assert_json_matches!(
             serialize(&BigRational::new((-1).into(), 1.into()), Serializer).unwrap(),
             json!("-1")
         );

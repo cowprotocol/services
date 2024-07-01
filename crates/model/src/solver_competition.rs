@@ -127,7 +127,7 @@ pub enum Order {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, maplit::btreemap};
+    use {super::*, maplit::btreemap, shared::assert_json_matches};
 
     #[test]
     fn serialize() {
@@ -226,7 +226,7 @@ mod tests {
         };
 
         let serialized = serde_json::to_value(&orig).unwrap();
-        assert_eq!(correct, serialized);
+        assert_json_matches!(correct, serialized);
         let deserialized: SolverCompetitionAPI = serde_json::from_value(correct).unwrap();
         assert_eq!(orig, deserialized);
     }
