@@ -388,51 +388,53 @@ impl AuctionProcessor {
         let orders: Vec<_> = results
             .into_iter()
             .filter_map(|(amm, result)| match result {
-                Ok((order, signature, pre_interactions, post_interactions)) => Some(Order {
-                    uid: order.uid(&domain_separator, &amm).0.into(),
-                    receiver: order.receiver.map(|addr| addr.into()),
-                    valid_to: order.valid_to.into(),
+                Ok(template) => Some(Order {
+                    uid: template.order.uid(&domain_separator, &amm).0.into(),
+                    receiver: template.order.receiver.map(|addr| addr.into()),
+                    valid_to: template.order.valid_to.into(),
                     buy: eth::Asset {
-                        amount: order.buy_amount.into(),
-                        token: order.buy_token.into(),
+                        amount: template.order.buy_amount.into(),
+                        token: template.order.buy_token.into(),
                     },
                     sell: eth::Asset {
-                        amount: order.sell_amount.into(),
-                        token: order.sell_token.into(),
+                        amount: template.order.sell_amount.into(),
+                        token: template.order.sell_token.into(),
                     },
                     kind: order::Kind::Limit,
-                    side: match order.kind {
+                    side: match template.order.kind {
                         OrderKind::Sell => order::Side::Sell,
                         OrderKind::Buy => order::Side::Buy,
                     },
-                    app_data: order::AppData(Bytes(order.app_data.0)),
-                    buy_token_balance: match order.buy_token_balance {
+                    app_data: order::AppData(Bytes(template.order.app_data.0)),
+                    buy_token_balance: match template.order.buy_token_balance {
                         BuyTokenDestination::Erc20 => order::BuyTokenBalance::Erc20,
                         BuyTokenDestination::Internal => order::BuyTokenBalance::Internal,
                     },
-                    sell_token_balance: match order.sell_token_balance {
+                    sell_token_balance: match template.order.sell_token_balance {
                         SellTokenSource::Erc20 => order::SellTokenBalance::Erc20,
                         SellTokenSource::Internal => order::SellTokenBalance::Internal,
                         SellTokenSource::External => order::SellTokenBalance::External,
                     },
-                    partial: match order.partially_fillable {
+                    partial: match template.order.partially_fillable {
                         true => order::Partial::Yes {
-                            available: match order.kind {
-                                OrderKind::Sell => order::TargetAmount(order.sell_amount),
-                                OrderKind::Buy => order::TargetAmount(order.buy_amount),
+                            available: match template.order.kind {
+                                OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
+                                OrderKind::Buy => order::TargetAmount(template.order.buy_amount),
                             },
                         },
                         false => order::Partial::No,
                     },
-                    pre_interactions: pre_interactions
+                    pre_interactions: template
+                        .pre_interactions
                         .into_iter()
                         .map(convert_interaction)
                         .collect(),
-                    post_interactions: post_interactions
+                    post_interactions: template
+                        .post_interactions
                         .into_iter()
                         .map(convert_interaction)
                         .collect(),
-                    signature: match signature {
+                    signature: match template.signature {
                         Signature::Eip1271(bytes) => order::Signature {
                             scheme: order::signature::Scheme::Eip1271,
                             data: Bytes(bytes),
@@ -440,7 +442,7 @@ impl AuctionProcessor {
                         },
                         _ => {
                             tracing::warn!(
-                                ?signature,
+                                signature = ?template.signature,
                                 ?amm,
                                 "signature for cow amm order has incorrect scheme"
                             );

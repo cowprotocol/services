@@ -41,15 +41,7 @@ impl Amm {
     /// prices. `prices` need to be computed using a common denominator and
     /// need to be supplied in the same order as `traded_tokens` returns
     /// token addresses.
-    pub async fn template_order(
-        &self,
-        prices: Vec<U256>,
-    ) -> Result<(
-        OrderData,
-        Signature,
-        Vec<InteractionData>,
-        Vec<InteractionData>,
-    )> {
+    pub async fn template_order(&self, prices: Vec<U256>) -> Result<TemplateOrder> {
         let (order, pre_interactions, post_interactions, signature) =
             self.helper.order(self.address, prices).call().await?;
         self.convert_orders_reponse(order, signature, pre_interactions, post_interactions)
@@ -64,12 +56,7 @@ impl Amm {
         signature: Bytes<Vec<u8>>,
         pre_interactions: Vec<RawInteraction>,
         post_interactions: Vec<RawInteraction>,
-    ) -> Result<(
-        OrderData,
-        Signature,
-        Vec<InteractionData>,
-        Vec<InteractionData>,
-    )> {
+    ) -> Result<TemplateOrder> {
         let order = OrderData {
             sell_token: order.0,
             buy_token: order.1,
@@ -90,8 +77,28 @@ impl Amm {
 
         let signature = Signature::Eip1271(signature.0);
 
-        Ok((order, signature, pre_interactions, post_interactions))
+        Ok(TemplateOrder {
+            order,
+            signature,
+            pre_interactions,
+            post_interactions,
+        })
     }
+}
+
+/// Order suggested by a CoW AMM helper contract to rebalance the AMM according
+/// to an external price vector.
+pub struct TemplateOrder {
+    /// CoW protocol order that should be executed.
+    pub order: OrderData,
+    /// Signature for the given order.
+    pub signature: Signature,
+    /// Transactions to be executed before transfering funds into the settlement
+    /// contract.
+    pub pre_interactions: Vec<InteractionData>,
+    /// Transactions to be executed after transfering funds out of the
+    /// settlement contract.
+    pub post_interactions: Vec<InteractionData>,
 }
 
 fn convert_interactions(interactions: Vec<RawInteraction>) -> Vec<InteractionData> {
