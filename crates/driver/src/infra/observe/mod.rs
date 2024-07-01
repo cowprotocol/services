@@ -1,5 +1,4 @@
-//! T
-//! his module implements the observability for the driver. It exposes
+//! This module implements the observability for the driver. It exposes
 //! functions which represent events that are meaningful to the system. These
 //! functions are called when the corresponding events occur. They log the event
 //! and update the metrics, if the event is worth measuring.
