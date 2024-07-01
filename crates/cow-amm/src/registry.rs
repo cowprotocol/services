@@ -142,7 +142,7 @@ where
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
             let block_number = meta.block_number;
             if let Some(cow_amm) = event.data.deployed_amm(&storage.helper).await? {
-                tracing::debug!(?cow_amm, "indexed new cow amm");
+                tracing::info!(?cow_amm, "indexed new cow amm");
                 storage
                     .cow_amms
                     .entry(block_number)
