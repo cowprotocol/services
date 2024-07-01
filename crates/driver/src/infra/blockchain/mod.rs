@@ -88,9 +88,12 @@ impl Ethereum {
 
         let cow_amms = cow_amm::Registry::new(web3.clone(), current_block_stream.clone());
         if let Some(contract) = contracts.cow_amm_legacy_helper() {
-            let factory = cow_amm::LegacyFactory::new(contract.clone());
             cow_amms
-                .add_listener(factory.start_indexing_at(), factory, contract.address())
+                .add_listener(
+                    ::contracts::deployment_block!(contract).unwrap(),
+                    contract.address(),
+                    contract.address(),
+                )
                 .await;
         }
 

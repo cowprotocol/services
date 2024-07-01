@@ -16,3 +16,4 @@ shared = { path = "../shared" }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 hex = { workspace = true }
+hex-literal = { workspace = true }

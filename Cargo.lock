@@ -1367,6 +1367,7 @@ dependencies = [
  "ethcontract",
  "ethrpc",
  "hex",
+ "hex-literal",
  "model",
  "primitive-types",
  "shared",

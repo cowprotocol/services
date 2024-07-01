@@ -360,11 +360,10 @@ pub async fn run(args: Arguments) {
     ));
     let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
     if let Some(cow_amm_factory) = eth.contracts().cow_amm_legacy_helper() {
-        let factory = cow_amm::LegacyFactory::new(cow_amm_factory.clone());
         cow_amm_registry
             .add_listener(
-                factory.start_indexing_at(),
-                factory,
+                contracts::deployment_block!(cow_amm_factory).unwrap(),
+                cow_amm_factory.address(),
                 cow_amm_factory.address(),
             )
             .await;

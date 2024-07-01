@@ -1,10 +1,6 @@
 mod amm;
-mod factories;
+mod cache;
+mod factory;
 mod registry;
 
-pub use {
-    amm::Amm,
-    contracts::CowAmmLegacyHelper as Helper,
-    factories::legacy::Factory as LegacyFactory,
-    registry::Registry,
-};
+pub use {amm::Amm, contracts::CowAmmLegacyHelper as Helper, registry::Registry};
