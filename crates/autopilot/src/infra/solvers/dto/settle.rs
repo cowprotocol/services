@@ -11,10 +11,8 @@ pub struct Request {
     /// Unique ID of the solution (per driver competition), to settle.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub solution_id: u64,
-    /// The maximum number of blocks the autopilot waits for a settlement to
-    /// appear on chain.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub submission_deadline: u64,
+    /// The last block number in which the solution TX can be included
+    pub block_deadline: u64,
 }
 
 #[serde_as]

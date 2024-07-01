@@ -284,7 +284,10 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver, solution, auction_id).await {
+            match self
+                .settle(driver, solution, auction_id, block_deadline)
+                .await
+            {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -434,6 +437,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solved: &competition::Solution,
         auction_id: i64,
+        block_deadline: u64,
     ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
@@ -441,7 +445,7 @@ impl RunLoop {
 
         let request = settle::Request {
             solution_id: solved.id(),
-            submission_deadline: self.submission_deadline,
+            block_deadline,
         };
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)

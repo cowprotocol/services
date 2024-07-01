@@ -8,4 +8,7 @@ pub struct Solution {
     /// Unique ID of the solution (per driver competition), to settle.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     solution_id: u64,
+    #[allow(dead_code)]
+    /// The last block number in which the solution TX can be included
+    pub block_deadline: u64,
 }
