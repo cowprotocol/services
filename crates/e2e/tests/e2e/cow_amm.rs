@@ -536,18 +536,15 @@ async fn cow_amm_driver_support(web3: Web3) {
     // all tokens traded by the cow amms
     tracing::error!("Waiting for all relevant native prices to be indexed.");
     let expected_prices = [
+        // missing due to insufficient liquidity in e2e test (we only index univ2)
+        // addr!("808507121B80c02388fAd14726482e061B8da827"), // PENDLE
+        // addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"), // COW
         addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"), // WETH
         addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"), // USDC
         addr!("aea46A60368A7bD060eec7DF8CBa43b7EF41Ad85"), // FET
         addr!("8390a1DA07E376ef7aDd4Be859BA74Fb83aA02D5"), // GROK
         addr!("514910771AF9Ca656af840dff83E8264EcF986CA"), // LINK
-        addr!("5afe3855358e112b5647b952709e6165e1c1eeee"), /* SAFE */
-
-                                                           /* missing due to insufficient
-                                                            * liquidity in e2e test (we only
-                                                            * index univ2)
-                                                            * addr!("808507121B80c02388fAd14726482e061B8da827"), // PENDLE
-                                                            * addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"), // COW */
+        addr!("5afe3855358e112b5647b952709e6165e1c1eeee"), // SAFE
     ];
 
     wait_for_condition(TIMEOUT, || async {
