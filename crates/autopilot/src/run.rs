@@ -101,6 +101,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
+        args.shared.logging.enable_tokio_console,
     );
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
