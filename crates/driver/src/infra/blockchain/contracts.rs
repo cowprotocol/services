@@ -1,6 +1,6 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
-    ethcontract::dyns::DynWeb3,
+    ethcontract::{dyns::DynWeb3, errors::DeployError},
     thiserror::Error,
 };
 
@@ -13,6 +13,7 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
+    cow_amm_legacy_helper: Option<contracts::CowAmmLegacyHelper>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -60,12 +61,19 @@ impl Contracts {
                 .0,
         );
 
+        let cow_amm_legacy_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("failed to find deployed contract: {:?}", err),
+            Ok(contract) => Some(contract),
+        };
+
         Ok(Self {
             settlement,
             vault_relayer,
             vault,
             weth,
             settlement_domain_separator,
+            cow_amm_legacy_helper,
         })
     }
 
@@ -91,6 +99,10 @@ impl Contracts {
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
         &self.settlement_domain_separator
+    }
+
+    pub fn cow_amm_legacy_helper(&self) -> Option<&contracts::CowAmmLegacyHelper> {
+        self.cow_amm_legacy_helper.as_ref()
     }
 }
 

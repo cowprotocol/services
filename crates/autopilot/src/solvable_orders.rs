@@ -81,6 +81,7 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
+    cow_amm_registry: cow_amm::Registry,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -105,6 +106,7 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
+        cow_amm_registry: cow_amm::Registry,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -122,6 +124,7 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fees,
+            cow_amm_registry,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -208,6 +211,18 @@ impl SolvableOrdersCache {
             entry.insert(weth_price);
         }
 
+        let cow_amms = self.cow_amm_registry.cow_amms().await;
+        let cow_amm_tokens = cow_amms
+            .iter()
+            .flat_map(|cow_amm| cow_amm.traded_tokens())
+            .unique()
+            .filter(|token| !prices.contains_key(token))
+            .cloned()
+            .collect::<Vec<_>>();
+        let cow_amm_prices =
+            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
+        prices.extend(cow_amm_prices);
+
         let removed = counter.checkpoint("missing_price", &orders);
         filtered_order_events.extend(removed);
 
@@ -291,6 +306,20 @@ async fn filter_banned_user_orders(
             && !banned.contains(&order.data.receiver.unwrap_or_default())
     });
     orders
+}
+
+fn get_native_prices(
+    tokens: &[H160],
+    native_price_estimator: &CachingNativePriceEstimator,
+) -> HashMap<H160, U256> {
+    native_price_estimator
+        .get_cached_prices(tokens)
+        .into_iter()
+        .flat_map(|(token, result)| {
+            let price = to_normalized_price(result.ok()?)?;
+            Some((token, price))
+        })
+        .collect()
 }
 
 /// Filters unsigned PreSign and EIP-1271 orders whose signatures are no longer
@@ -461,14 +490,7 @@ fn get_orders_with_native_prices(
         .into_iter()
         .collect::<Vec<_>>();
 
-    let prices: HashMap<_, _> = native_price_estimator
-        .get_cached_prices(&traded_tokens)
-        .into_iter()
-        .flat_map(|(token, result)| {
-            let price = to_normalized_price(result.ok()?)?;
-            Some((token, price))
-        })
-        .collect();
+    let prices = get_native_prices(&traded_tokens, native_price_estimator);
 
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.

@@ -268,6 +268,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "cow-amm",
  "database",
  "derivative",
  "derive_more",
@@ -1394,6 +1395,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06ea2b9bc92be3c2baa9334a323ebca2d6f074ff852cd1d7b11064035cd3868f"
 
 [[package]]
+name = "cow-amm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "app-data",
+ "async-trait",
+ "contracts",
+ "ethcontract",
+ "ethrpc",
+ "hex",
+ "hex-literal",
+ "model",
+ "primitive-types",
+ "shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1679,6 +1699,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "cow-amm",
  "derivative",
  "derive_more",
  "ethabi",
@@ -1740,6 +1761,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "cow-amm",
  "database",
  "driver",
  "ethcontract",
