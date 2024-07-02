@@ -3,6 +3,7 @@ mod deploy;
 #[macro_use]
 pub mod onchain_components;
 mod services;
+mod solver;
 
 use {
     crate::nodes::{Node, NODE_HOST},
@@ -19,7 +20,7 @@ use {
     },
     tempfile::TempPath,
 };
-pub use {deploy::*, onchain_components::*, services::*};
+pub use {deploy::*, onchain_components::*, services::*, solver::*};
 
 /// Create a temporary file with the given content.
 pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
@@ -157,7 +158,7 @@ async fn run<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
+    observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","), false);
     observe::panic_hook::install();
 
     // The mutex guarantees that no more than a test at a time is running on

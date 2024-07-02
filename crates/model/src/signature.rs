@@ -422,7 +422,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json};
+    use {super::*, serde_json::json, shared::assert_json_matches};
 
     #[test]
     fn onchain_signatures_cannot_recover_owners() {
@@ -550,7 +550,7 @@ mod tests {
             ),
         ] {
             assert_eq!(signature, serde_json::from_value(json.clone()).unwrap());
-            assert_eq!(json, json!(signature));
+            assert_json_matches!(json, json!(signature));
         }
     }
 

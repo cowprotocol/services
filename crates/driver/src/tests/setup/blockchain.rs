@@ -25,6 +25,7 @@ pub struct Pair {
     pool: Pool,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Blockchain {
     pub trader_address: ethcontract::H160,
