@@ -9,6 +9,5 @@ pub struct Solution {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     solution_id: u64,
     /// The last block number in which the solution TX can be included
-    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub submission_deadline: u64,
 }
