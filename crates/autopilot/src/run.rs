@@ -101,6 +101,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
+        args.shared.logging.enable_tokio_console,
     );
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
@@ -509,7 +510,6 @@ pub async fn run(args: Arguments) {
             .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
-        additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
