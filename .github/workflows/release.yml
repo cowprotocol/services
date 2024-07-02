@@ -33,7 +33,7 @@ jobs:
 
       - name: No changes detected
         if: env.CHANGES_DETECTED != 'true'
-        run: echo "No updates necessary. Dependencies are already up-to-date."
+        run: echo "No commits since previous release. Skipping release."
 
       - name: Create Tag
         id: tag_version
