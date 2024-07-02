@@ -41,12 +41,13 @@ impl Mempools {
         &self,
         solver: &Solver,
         settlement: &Settlement,
+        submission_deadline: u64,
     ) -> Result<eth::TxId, Error> {
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
                     let result = self
-                        .submit(&mempool, solver, settlement)
+                        .submit(&mempool, solver, settlement, submission_deadline)
                         .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                         .await;
                     observe::mempool_executed(&mempool, settlement, &result);
@@ -79,6 +80,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         solver: &Solver,
         settlement: &Settlement,
+        submission_deadline: u64,
     ) -> Result<eth::TxId, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -89,7 +91,6 @@ impl Mempools {
             return Err(Error::Disabled);
         }
 
-        let deadline = mempool.config().deadline();
         let tx = settlement.transaction(settlement::Internalization::Enable);
 
         // Instantiate block stream and skip the current block before we submit the
@@ -104,11 +105,15 @@ impl Mempools {
         let result = async {
             loop {
                 // Wait for the next block to be mined or we time out.
-                if tokio::time::timeout_at(deadline, block_stream.next())
-                    .await
-                    .is_err()
-                {
-                    tracing::info!(?hash, "tx not confirmed in time, cancelling");
+                let current_block = self.ethereum.current_block().borrow().number;
+                if current_block > submission_deadline {
+                    tracing::info!(
+                        ?hash,
+                        "current block: {}, submission deadline: {}, tx not confirmed in time, \
+                         cancelling",
+                        current_block,
+                        submission_deadline
+                    );
                     self.cancel(mempool, settlement.gas.price, solver).await?;
                     return Err(Error::Expired);
                 }

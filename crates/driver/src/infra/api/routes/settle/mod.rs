@@ -14,13 +14,13 @@ pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router
 
 async fn route(
     state: axum::extract::State<State>,
-    _: axum::Json<dto::Solution>,
+    solution: axum::Json<dto::Solution>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
     let auction_id = competition.auction_id().map(|id| id.0);
     let handle_request = async {
         observe::settling();
-        let result = competition.settle().await;
+        let result = competition.settle(solution.submission_deadline).await;
         observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
     };

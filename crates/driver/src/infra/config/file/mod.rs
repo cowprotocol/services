@@ -82,11 +82,6 @@ struct SubmissionConfig {
     #[serde(with = "humantime_serde", default = "default_retry_interval")]
     retry_interval: Duration,
 
-    /// The maximum time to spend trying to settle a transaction through the
-    /// Ethereum network before giving up.
-    #[serde(with = "humantime_serde", default = "default_max_confirm_time")]
-    max_confirm_time: Duration,
-
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
@@ -165,10 +160,6 @@ fn default_target_confirm_time() -> Duration {
 
 fn default_retry_interval() -> Duration {
     Duration::from_secs(2)
-}
-
-fn default_max_confirm_time() -> Duration {
-    Duration::from_secs(120)
 }
 
 /// 3 gwei

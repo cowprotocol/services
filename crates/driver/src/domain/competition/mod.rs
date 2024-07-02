@@ -272,7 +272,7 @@ impl Competition {
 
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
-    pub async fn settle(&self) -> Result<Settled, Error> {
+    pub async fn settle(&self, submission_deadline: u64) -> Result<Settled, Error> {
         let settlement = self
             .settlement
             .lock()
@@ -280,7 +280,10 @@ impl Competition {
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
 
-        let executed = self.mempools.execute(&self.solver, &settlement).await;
+        let executed = self
+            .mempools
+            .execute(&self.solver, &settlement, submission_deadline)
+            .await;
         notify::executed(
             &self.solver,
             settlement.auction_id,
