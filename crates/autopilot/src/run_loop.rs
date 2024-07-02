@@ -249,6 +249,11 @@ impl RunLoop {
                         settlement
                     })
                     .collect(),
+                surplus_capturing_jit_order_owners: self
+                    .surplus_capturing_jit_order_owners
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>(),
             };
             let competition = Competition {
                 auction_id,
