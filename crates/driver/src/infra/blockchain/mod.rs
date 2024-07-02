@@ -132,8 +132,10 @@ impl Ethereum {
     }
 
     fn max_block_size(&self) -> eth::U256 {
+        const ARBITRUM_ONE_CHAIN_ID: u64 = 42161;
+
         match self.inner.chain.0 {
-            42161 => 500_000_000,
+            ARBITRUM_ONE_CHAIN_ID => 500_000_000,
             _ => 30_000_000,
         }
         .into()
