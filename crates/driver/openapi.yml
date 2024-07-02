@@ -394,7 +394,7 @@ components:
           description: Id of the solution that should be executed.
           type: string
           example: "123"
-        blockDeadline:
+        submissionDeadline:
           description: The last block number in which the solution TX can be included.
           type: string
           example: "123"

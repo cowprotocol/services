@@ -262,7 +262,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 min_priority_fee: config.submission.min_priority_fee,
                 gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
-                max_confirm_time: config.submission.max_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 kind: match mempool {
                     file::Mempool::Public => {
