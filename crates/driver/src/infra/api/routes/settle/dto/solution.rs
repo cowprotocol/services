@@ -10,5 +10,6 @@ pub struct Solution {
     solution_id: u64,
     #[allow(dead_code)]
     /// The last block number in which the solution TX can be included
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub block_deadline: u64,
 }

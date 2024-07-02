@@ -135,7 +135,7 @@ pub fn reveal_req() -> serde_json::Value {
 pub fn settle_req() -> serde_json::Value {
     json!({
         "solutionId": "0",
-        "blockDeadline": 0,
+        "blockDeadline": "0",
     })
 }
 
