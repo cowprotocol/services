@@ -1,17 +1,20 @@
 use {
     app_data::AppDataHash,
+    contracts::ERC20,
     e2e::{
+        nodes::forked_node::ForkedNodeApi,
         setup::{colocation::SolverEngine, mock::Mock, *},
         tx,
         tx_value,
     },
-    ethcontract::{web3::ethabi::Token, BlockId, BlockNumber, U256},
+    ethcontract::{web3::ethabi::Token, BlockId, BlockNumber, H160, U256},
     model::{
-        order::{OrderCreation, OrderData, OrderKind},
+        order::{OrderClass, OrderCreation, OrderData, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{hashed_eip712_message, EcdsaSigningScheme},
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
+    shared::{addr, ethrpc::Web3},
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,
@@ -26,11 +29,13 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_cow_amm() {
-    run_test(cow_amm).await;
+async fn local_node_cow_amm_jit() {
+    run_test(cow_amm_jit).await;
 }
 
-async fn cow_amm(web3: Web3) {
+/// Tests that solvers are able to propose and settle cow amm orders
+/// on their own in the form of JIT orders.
+async fn cow_amm_jit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(100)).await;
@@ -343,6 +348,214 @@ async fn cow_amm(web3: Web3) {
         amm_received > cow_amm_order.buy_amount
             && bob_received > user_order.buy_amount
             && amm_received == bob_received
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_mainnet_cow_amm_driver_support() {
+    run_forked_test_with_block_number(
+        cow_amm_driver_support,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        20188650, // block at which helper was deployed
+    )
+    .await;
+}
+
+/// Tests that the driver is able to generate template orders for indexed
+/// cow amms and that they can be settled by solvers like regular orders.
+async fn cow_amm_driver_support(web3: Web3) {
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
+
+    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+
+    // find some USDC available onchain
+    const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
+        "28c6c06298d514db089934071355e5743bf21d60"
+    ));
+    let usdc_whale = forked_node_api
+        .impersonate(&USDC_WHALE_MAINNET)
+        .await
+        .unwrap();
+
+    // create necessary token instances
+    let usdc = ERC20::at(
+        &web3,
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            .parse()
+            .unwrap(),
+    );
+
+    let usdt = ERC20::at(
+        &web3,
+        "0xdac17f958d2ee523a2206206994597c13d831ec7"
+            .parse()
+            .unwrap(),
+    );
+
+    // Unbalance the cow amm enough that baseline is able to rebalance
+    // it with the current liquidity.
+    const USDC_WETH_COW_AMM: H160 = H160(hex_literal::hex!(
+        "301076c36e034948a747bb61bab9cd03f62672e3"
+    ));
+    tx!(
+        usdc_whale,
+        usdc.transfer(USDC_WETH_COW_AMM, to_wei_with_exp(5_000_000, 6))
+    );
+    let amm_usdc_balance_before = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
+
+    // Now we create an unfillable order just so the orderbook is not empty.
+    // Otherwise all auctions would be skipped because there is no user order to
+    // settle.
+
+    // Give trader some USDC
+    tx!(
+        usdc_whale,
+        usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
+    );
+
+    // Approve GPv2 for trading
+    tx!(
+        trader.account(),
+        usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
+    );
+
+    // spawn a mock solver so we can later assert things about the received auction
+    let mock_solver = Mock::default();
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            SolverEngine {
+                name: "test_solver".into(),
+                account: solver.clone(),
+                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
+                    .await,
+            },
+            SolverEngine {
+                name: "mock_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+    let services = Services::new(onchain.contracts()).await;
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--drivers=test_solver|http://localhost:11088/test_solver,mock_solver|http://localhost:11088/mock_solver".to_string(),
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // Place Orders
+    let order = OrderCreation {
+        sell_token: usdc.address(),
+        sell_amount: to_wei_with_exp(1000, 6),
+        buy_token: usdt.address(),
+        buy_amount: to_wei_with_exp(2000, 6),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+
+    // Warm up co-located driver by quoting the order (otherwise placing an order
+    // may time out)
+    let _ = services
+        .submit_quote(&OrderQuoteRequest {
+            sell_token: usdc.address(),
+            buy_token: usdt.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: to_wei_with_exp(1000, 6).try_into().unwrap(),
+                },
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async {
+        // Keep mining blocks to trigger the event indexing logic
+        onchain.mint_block().await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(1_000)).await;
+
+        let amm_usdc_balance_after = usdc.balance_of(USDC_WETH_COW_AMM).call().await.unwrap();
+        // CoW AMM traded automatically
+        amm_usdc_balance_after != amm_usdc_balance_before
+    })
+    .await
+    .unwrap();
+
+    // all cow amms on mainnet the helper contract is aware of
+    tracing::info!("Waiting for all cow amms to be indexed.");
+    let expected_cow_amms = [
+        addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
+        addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc"),
+        addr!("301076c36e034948a747bb61bab9cd03f62672e3"),
+        addr!("d7cb8cc1b56356bb7b78d02e785ead28e2158660"),
+        addr!("9941fd7db2003308e7ee17b04400012278f12ac6"),
+        addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
+        addr!("c6b13d5e662fa0458f03995bcb824a1934aa895f"),
+    ];
+
+    wait_for_condition(TIMEOUT, || async {
+        let auctions = mock_solver.get_auctions();
+        let found_cow_amms = &auctions.last().unwrap().surplus_capturing_jit_order_owners;
+
+        expected_cow_amms
+            .iter()
+            .all(|amm| found_cow_amms.contains(amm))
+    })
+    .await
+    .unwrap();
+
+    // all tokens traded by the cow amms
+    tracing::error!("Waiting for all relevant native prices to be indexed.");
+    let expected_prices = [
+        // missing due to insufficient liquidity in e2e test (we only index univ2)
+        // addr!("808507121B80c02388fAd14726482e061B8da827"), // PENDLE
+        // addr!("DEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"), // COW
+        addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"), // WETH
+        addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"), // USDC
+        addr!("aea46A60368A7bD060eec7DF8CBa43b7EF41Ad85"), // FET
+        addr!("8390a1DA07E376ef7aDd4Be859BA74Fb83aA02D5"), // GROK
+        addr!("514910771AF9Ca656af840dff83E8264EcF986CA"), // LINK
+        addr!("5afe3855358e112b5647b952709e6165e1c1eeee"), // SAFE
+    ];
+
+    wait_for_condition(TIMEOUT, || async {
+        let auctions = mock_solver.get_auctions();
+        let auction_prices = &auctions.last().unwrap().tokens;
+
+        expected_prices.iter().all(|token| {
+            auction_prices
+                .get(token)
+                .is_some_and(|t| t.reference_price.is_some())
+        })
     })
     .await
     .unwrap();

@@ -339,13 +339,22 @@ pub struct Interaction {
     pub call_data: Bytes<Vec<u8>>,
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<model::interaction::InteractionData> for Interaction {
-    fn into(self) -> model::interaction::InteractionData {
-        model::interaction::InteractionData {
-            target: self.target.into(),
-            value: self.value.into(),
-            call_data: self.call_data.into(),
+impl From<Interaction> for model::interaction::InteractionData {
+    fn from(interaction: Interaction) -> Self {
+        Self {
+            target: interaction.target.into(),
+            value: interaction.value.into(),
+            call_data: interaction.call_data.into(),
+        }
+    }
+}
+
+impl From<model::interaction::InteractionData> for Interaction {
+    fn from(interaction: model::interaction::InteractionData) -> Self {
+        Self {
+            target: interaction.target.into(),
+            value: interaction.value.into(),
+            call_data: interaction.call_data.into(),
         }
     }
 }

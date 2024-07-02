@@ -247,6 +247,15 @@ pub enum Side {
     Sell,
 }
 
+impl From<model::order::OrderKind> for Side {
+    fn from(value: model::order::OrderKind) -> Self {
+        match value {
+            model::order::OrderKind::Sell => Self::Sell,
+            model::order::OrderKind::Buy => Self::Buy,
+        }
+    }
+}
+
 impl From<[u8; UID_LEN]> for Uid {
     fn from(inner: [u8; UID_LEN]) -> Self {
         Self(inner.into())
@@ -318,6 +327,16 @@ impl From<SellTokenBalance> for SellTokenSource {
     }
 }
 
+impl From<SellTokenSource> for SellTokenBalance {
+    fn from(value: SellTokenSource) -> Self {
+        match value {
+            SellTokenSource::Erc20 => Self::Erc20,
+            SellTokenSource::Internal => Self::Internal,
+            SellTokenSource::External => Self::External,
+        }
+    }
+}
+
 impl SellTokenBalance {
     /// Returns the hash value for the specified source.
     pub fn hash(&self) -> eth::H256 {
@@ -342,6 +361,15 @@ impl From<BuyTokenBalance> for BuyTokenDestination {
         match value {
             BuyTokenBalance::Erc20 => Self::Erc20,
             BuyTokenBalance::Internal => Self::Internal,
+        }
+    }
+}
+
+impl From<BuyTokenDestination> for BuyTokenBalance {
+    fn from(value: BuyTokenDestination) -> Self {
+        match value {
+            BuyTokenDestination::Erc20 => Self::Erc20,
+            BuyTokenDestination::Internal => Self::Internal,
         }
     }
 }
