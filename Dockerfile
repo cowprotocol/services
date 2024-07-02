@@ -39,15 +39,8 @@ COPY --from=cargo-build /driver /usr/local/bin/driver
 ENTRYPOINT [ "driver" ]
 
 FROM intermediate as orderbook
-RUN apt-get update && \
-    apt-get install -y build-essential cmake git zlib1g-dev libelf-dev libdw-dev libboost-dev libboost-iostreams-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libunwind-dev libzstd-dev git
-RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
-    mkdir /heaptrack/build && cd /heaptrack/build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. && \
-    make -j$(nproc) && \
-    make install
 COPY --from=cargo-build /orderbook /usr/local/bin/orderbook
-ENTRYPOINT ["/bin/sh", "-c", "exec heaptrack -o /tmp/heaptrack/heaptrack.orderbook.$(shuf -i 1-99999 -n 1).gz orderbook"]
+ENTRYPOINT [ "orderbook" ]
 
 FROM intermediate as refunder
 COPY --from=cargo-build /refunder /usr/local/bin/refunder
