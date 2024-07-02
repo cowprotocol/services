@@ -47,12 +47,12 @@ pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
-    pub additional_deadline_for_rewards: u64,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub surplus_capturing_jit_order_owners: HashSet<H160>,
+    pub cow_amm_registry: cow_amm::Registry,
 }
 
 impl RunLoop {
@@ -166,9 +166,7 @@ impl RunLoop {
 
             let mut prices = BTreeMap::new();
             let mut fee_policies = Vec::new();
-            let block_deadline = competition_simulation_block
-                + self.submission_deadline
-                + self.additional_deadline_for_rewards;
+            let block_deadline = competition_simulation_block + self.submission_deadline;
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
 
@@ -307,12 +305,21 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
+        let mut surplus_capturing_jit_order_owners = self
+            .cow_amm_registry
+            .cow_amms()
+            .await
+            .into_iter()
+            .map(|cow_amm| *cow_amm.address())
+            .collect::<HashSet<_>>();
+        surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
+
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &self.surplus_capturing_jit_order_owners,
+            &surplus_capturing_jit_order_owners,
         );
         let request = &request;
 

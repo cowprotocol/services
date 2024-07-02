@@ -4,14 +4,15 @@ use {
         domain::{
             competition::{self, auction},
             eth,
-            liquidity::{self},
+            liquidity,
             time,
         },
         infra::{self, blockchain, observe, Ethereum},
-        util::{self},
+        util::{self, Bytes},
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
+    model::{order::OrderKind, signature::Signature},
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -164,15 +165,18 @@ impl AuctionProcessor {
         }
 
         let eth = lock.eth.clone();
+
         let rt = tokio::runtime::Handle::current();
         let tokens: Tokens = auction.tokens().clone();
+        let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
         let mut orders = auction.orders.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            Self::sort(&mut orders, tokens);
+            orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms)));
+            Self::sort(&mut orders, &tokens);
             let mut balances =
                 rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
             Self::filter_orders(&mut balances, &mut orders);
@@ -197,7 +201,7 @@ impl AuctionProcessor {
 
     /// Sort orders based on their price achievability using the reference
     /// prices contained in the auction (in the money first).
-    fn sort(orders: &mut [order::Order], tokens: Tokens) {
+    fn sort(orders: &mut [order::Order], tokens: &Tokens) {
         orders.sort_by_cached_key(|order| {
             // Market orders are preferred over limit orders, as the expectation is that
             // they should be immediately fulfillable. Liquidity orders come last, as they
@@ -211,7 +215,7 @@ impl AuctionProcessor {
                 class,
                 // If the orders are of the same kind, then sort by likelihood of fulfillment
                 // based on token prices.
-                order.likelihood(&tokens),
+                order.likelihood(tokens),
             ))
         });
     }
@@ -335,6 +339,115 @@ impl AuctionProcessor {
         .into_iter()
         .filter_map(|(key, value)| Some((key, value?)))
         .collect()
+    }
+
+    async fn cow_amm_orders(
+        eth: &Ethereum,
+        tokens: &Tokens,
+        eligible_for_surplus: &HashSet<eth::Address>,
+    ) -> Vec<Order> {
+        let cow_amms = eth.cow_amms().await;
+        let results: Vec<_> = futures::future::join_all(
+            cow_amms
+                .into_iter()
+                // Only generate orders for cow amms the auction told us about.
+                // Otherwise the solver would expect the order to get surplus but
+                // the autopilot would actually not count it.
+                .filter(|amm| eligible_for_surplus.contains(&eth::Address(*amm.address())))
+                // Only generate orders where the auction provided the required
+                // reference prices. Otherwise there will be an error during the
+                // surplus calculation which will also result in 0 surplus for
+                // this order.
+                .filter_map(|amm| {
+                    let prices = amm
+                        .traded_tokens()
+                        .iter()
+                        .map(|t| {
+                            tokens
+                                .get(eth::TokenAddress(eth::ContractAddress(*t)))
+                                .price
+                                .map(|p| p.0 .0)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some((amm, prices))
+                })
+                .map(|(cow_amm, prices)| async move {
+                    (*cow_amm.address(), cow_amm.template_order(prices).await)
+                }),
+        )
+        .await;
+
+        // Convert results to domain format.
+        let domain_separator =
+            model::DomainSeparator(eth.contracts().settlement_domain_separator().0);
+        let orders: Vec<_> = results
+            .into_iter()
+            .filter_map(|(amm, result)| match result {
+                Ok(template) => Some(Order {
+                    uid: template.order.uid(&domain_separator, &amm).0.into(),
+                    receiver: template.order.receiver.map(|addr| addr.into()),
+                    valid_to: template.order.valid_to.into(),
+                    buy: eth::Asset {
+                        amount: template.order.buy_amount.into(),
+                        token: template.order.buy_token.into(),
+                    },
+                    sell: eth::Asset {
+                        amount: template.order.sell_amount.into(),
+                        token: template.order.sell_token.into(),
+                    },
+                    kind: order::Kind::Limit,
+                    side: template.order.kind.into(),
+                    app_data: order::AppData(Bytes(template.order.app_data.0)),
+                    buy_token_balance: template.order.buy_token_balance.into(),
+                    sell_token_balance: template.order.sell_token_balance.into(),
+                    partial: match template.order.partially_fillable {
+                        true => order::Partial::Yes {
+                            available: match template.order.kind {
+                                OrderKind::Sell => order::TargetAmount(template.order.sell_amount),
+                                OrderKind::Buy => order::TargetAmount(template.order.buy_amount),
+                            },
+                        },
+                        false => order::Partial::No,
+                    },
+                    pre_interactions: template
+                        .pre_interactions
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    post_interactions: template
+                        .post_interactions
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    signature: match template.signature {
+                        Signature::Eip1271(bytes) => order::Signature {
+                            scheme: order::signature::Scheme::Eip1271,
+                            data: Bytes(bytes),
+                            signer: amm.into(),
+                        },
+                        _ => {
+                            tracing::warn!(
+                                signature = ?template.signature,
+                                ?amm,
+                                "signature for cow amm order has incorrect scheme"
+                            );
+                            return None;
+                        }
+                    },
+                    protocol_fees: vec![],
+                }),
+                Err(err) => {
+                    tracing::warn!(?err, ?amm, "failed to generate template order for cow amm");
+                    None
+                }
+            })
+            .collect();
+
+        if !orders.is_empty() {
+            tracing::debug!(?orders, "generated cow amm template orders");
+        }
+
+        orders
     }
 
     pub fn new(eth: &infra::Ethereum) -> Self {

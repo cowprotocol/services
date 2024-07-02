@@ -359,6 +359,17 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
+    let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
+    if let Some(cow_amm_factory) = eth.contracts().cow_amm_legacy_helper() {
+        cow_amm_registry
+            .add_listener(
+                contracts::deployment_block!(cow_amm_factory).unwrap(),
+                cow_amm_factory.address(),
+                cow_amm_factory.address(),
+            )
+            .await;
+    }
+
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(
@@ -459,6 +470,7 @@ pub async fn run(args: Arguments) {
             args.protocol_fee_exempt_addresses.as_slice(),
             args.enable_multiple_fees,
         ),
+        cow_amm_registry.clone(),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
@@ -498,7 +510,6 @@ pub async fn run(args: Arguments) {
             .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
-        additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
@@ -509,6 +520,7 @@ pub async fn run(args: Arguments) {
             .iter()
             .cloned()
             .collect::<HashSet<_>>(),
+        cow_amm_registry,
     };
     run.run_forever().await;
     unreachable!("run loop exited");
