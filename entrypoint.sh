@@ -1,10 +1,10 @@
 #!/bin/sh
-# Runs heaptrack for the orderbook binary only
 if [ "$1" = "orderbook" ]; then
   # Shift the 'orderbook' argument off the argument list
   shift
-  # Prepend heaptrack to the command
-  set -- heaptrack -o "/tmp/heaptrack/heaptrack.orderbook.$(shuf -i 1-99999 -n 1).gz" orderbook
+  # Run heaptrack to profile the 'orderbook' process
+  # Redirect the output to a file in /tmp/heaptrack with a unique name based on a random number
+  exec heaptrack -o "/tmp/heaptrack/heaptrack.orderbook.$(shuf -i 1-99999 -n 1).gz" /usr/local/bin/orderbook "$@"
+else
+  exec "$@"
 fi
-
-exec "$@"
