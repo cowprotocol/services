@@ -11,6 +11,7 @@ pub struct Order {
     pub sell_amount: ethcontract::U256,
     pub buy_amount: ethcontract::U256,
     pub valid_to: u32,
+    pub receiver: Option<ethcontract::H160>,
     pub user_fee: ethcontract::U256,
     pub side: competition::order::Side,
     pub secret_key: SecretKey,
@@ -36,6 +37,7 @@ impl Order {
             .with_buy_amount(self.buy_amount)
             .with_valid_to(self.valid_to)
             .with_fee_amount(self.user_fee)
+            .with_receiver(self.receiver)
             .with_kind(match self.side {
                 competition::order::Side::Buy => model::order::OrderKind::Buy,
                 competition::order::Side::Sell => model::order::OrderKind::Sell,

@@ -11,7 +11,7 @@ use {
             time::{self},
         },
         infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
-        tests::hex_address,
+        tests::{hex_address, setup::blockchain::Trade},
     },
     ethereum_types::H160,
     itertools::Itertools,
@@ -21,6 +21,7 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex},
     },
+    web3::signing::Key,
 };
 
 pub const NAME: &str = "test-solver";
@@ -39,6 +40,8 @@ pub struct Config<'a> {
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
     pub fee_handler: FeeHandler,
+    pub private_key: ethcontract::PrivateKey,
+    pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 impl Solver {
@@ -168,75 +171,158 @@ impl Solver {
             let mut interactions_json = Vec::new();
             let mut prices_json = HashMap::new();
             let mut trades_json = Vec::new();
-            for fulfillment in solution.fulfillments.iter() {
-                interactions_json.extend(fulfillment.interactions.iter().map(|interaction| {
-                    json!({
-                        "kind": "custom",
-                        "internalize": interaction.internalize,
-                        "target": hex_address(interaction.address),
-                        "value": "0",
-                        "callData": format!("0x{}", hex::encode(&interaction.calldata)),
-                        "allowances": [],
-                        "inputs": interaction.inputs.iter().map(|input| {
-                            json!({
-                                "token": hex_address(input.token.into()),
-                                "amount": input.amount.to_string(),
-                            })
-                        }).collect_vec(),
-                        "outputs": interaction.outputs.iter().map(|output| {
-                            json!({
-                                "token": hex_address(output.token.into()),
-                                "amount": output.amount.to_string(),
-                            })
-                        }).collect_vec(),
-                    })
-                }));
-                prices_json.insert(
-                    config
-                        .blockchain
-                        .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
-                    fulfillment.execution.buy.to_string(),
-                );
-                prices_json.insert(
-                    config
-                        .blockchain
-                        .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
-                    (fulfillment.execution.sell - fulfillment.quoted_order.order.surplus_fee())
-                        .to_string(),
-                );
-                {
-                    // trades have optional field `fee`
-                    let order = if config.quote {
-                        Default::default()
-                    } else {
-                        fulfillment.quoted_order.order_uid(config.blockchain)
-                    };
-                    let executed_amount = match fulfillment.quoted_order.order.executed {
-                        Some(executed) => executed.to_string(),
-                        None => match fulfillment.quoted_order.order.side {
-                            order::Side::Sell => (fulfillment.execution.sell
+            for trade in solution.trades.iter() {
+                match trade {
+                    Trade::Fulfillment(fulfillment) => {
+                        interactions_json.extend(fulfillment.interactions.iter().map(
+                            |interaction| {
+                                json!({
+                                    "kind": "custom",
+                                    "internalize": interaction.internalize,
+                                    "target": hex_address(interaction.address),
+                                    "value": "0",
+                                    "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                    "allowances": [],
+                                    "inputs": interaction.inputs.iter().map(|input| {
+                                        json!({
+                                            "token": hex_address(input.token.into()),
+                                            "amount": input.amount.to_string(),
+                                        })
+                                    }).collect_vec(),
+                                    "outputs": interaction.outputs.iter().map(|output| {
+                                        json!({
+                                            "token": hex_address(output.token.into()),
+                                            "amount": output.amount.to_string(),
+                                        })
+                                    }).collect_vec(),
+                                })
+                            },
+                        ));
+                        prices_json.insert(
+                            config
+                                .blockchain
+                                .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
+                            fulfillment.execution.buy.to_string(),
+                        );
+                        prices_json.insert(
+                            config
+                                .blockchain
+                                .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
+                            (fulfillment.execution.sell
                                 - fulfillment.quoted_order.order.surplus_fee())
                             .to_string(),
-                            order::Side::Buy => fulfillment.execution.buy.to_string(),
-                        },
-                    };
-                    let fee = fulfillment
-                        .quoted_order
-                        .order
-                        .solver_fee
-                        .map(|fee| fee.to_string());
-                    match fee {
-                        Some(fee) => trades_json.push(json!({
-                            "kind": "fulfillment",
-                            "order": order,
-                            "executedAmount": executed_amount,
-                            "fee": fee,
-                        })),
-                        None => trades_json.push(json!({
-                            "kind": "fulfillment",
-                            "order": order,
-                            "executedAmount": executed_amount,
-                        })),
+                        );
+                        {
+                            // trades have optional field `fee`
+                            let order = if config.quote {
+                                Default::default()
+                            } else {
+                                fulfillment.quoted_order.order_uid(config.blockchain)
+                            };
+                            let executed_amount = match fulfillment.quoted_order.order.executed {
+                                Some(executed) => executed.to_string(),
+                                None => match fulfillment.quoted_order.order.side {
+                                    order::Side::Sell => (fulfillment.execution.sell
+                                        - fulfillment.quoted_order.order.surplus_fee())
+                                    .to_string(),
+                                    order::Side::Buy => fulfillment.execution.buy.to_string(),
+                                },
+                            };
+                            let fee = fulfillment
+                                .quoted_order
+                                .order
+                                .solver_fee
+                                .map(|fee| fee.to_string());
+                            match fee {
+                                Some(fee) => trades_json.push(json!({
+                                    "kind": "fulfillment",
+                                    "order": order,
+                                    "executedAmount": executed_amount,
+                                    "fee": fee,
+                                })),
+                                None => trades_json.push(json!({
+                                    "kind": "fulfillment",
+                                    "order": order,
+                                    "executedAmount": executed_amount,
+                                })),
+                            }
+                        }
+                    }
+                    Trade::Jit(jit) => {
+                        interactions_json.extend(jit.interactions.iter().map(|interaction| {
+                            json!({
+                                "kind": "custom",
+                                "internalize": interaction.internalize,
+                                "target": hex_address(interaction.address),
+                                "value": "0",
+                                "callData": format!("0x{}", hex::encode(&interaction.calldata)),
+                                "allowances": [],
+                                "inputs": interaction.inputs.iter().map(|input| {
+                                    json!({
+                                        "token": hex_address(input.token.into()),
+                                        "amount": input.amount.to_string(),
+                                    })
+                                }).collect_vec(),
+                                "outputs": interaction.outputs.iter().map(|output| {
+                                    json!({
+                                        "token": hex_address(output.token.into()),
+                                        "amount": output.amount.to_string(),
+                                    })
+                                }).collect_vec(),
+                            })
+                        }));
+                        prices_json.insert(
+                            config
+                                .blockchain
+                                .get_token_wrapped(jit.quoted_order.order.sell_token),
+                            jit.execution.buy.to_string(),
+                        );
+                        prices_json.insert(
+                            config
+                                .blockchain
+                                .get_token_wrapped(jit.quoted_order.order.buy_token),
+                            (jit.execution.sell - jit.quoted_order.order.surplus_fee()).to_string(),
+                        );
+                        {
+                            let executed_amount = match jit.quoted_order.order.executed {
+                                Some(executed) => executed.to_string(),
+                                None => match jit.quoted_order.order.side {
+                                    order::Side::Sell => (jit.execution.sell
+                                        - jit.quoted_order.order.surplus_fee())
+                                    .to_string(),
+                                    order::Side::Buy => jit.execution.buy.to_string(),
+                                },
+                            };
+                            let mut jit = jit.clone();
+                            jit.quoted_order.order = jit
+                                .quoted_order
+                                .order
+                                .receiver(Some(config.private_key.address()));
+                            let fee_amount = jit.quoted_order.order.solver_fee.unwrap_or_default();
+                            let order = json!({
+                                "sellToken": config.blockchain.get_token(jit.quoted_order.order.sell_token),
+                                "buyToken": config.blockchain.get_token(jit.quoted_order.order.buy_token),
+                                "receiver": hex_address(jit.quoted_order.order.receiver.unwrap_or_default()),
+                                "sellAmount": jit.quoted_order.order.sell_amount.to_string(),
+                                "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
+                                "validTo": jit.quoted_order.order.valid_to,
+                                "appData": jit.quoted_order.order.app_data,
+                                "kind": match jit.quoted_order.order.side {
+                                            order::Side::Sell => "sell",
+                                            order::Side::Buy => "buy",
+                                },
+                                "sellTokenBalance": jit.quoted_order.order.sell_token_source,
+                                "buyTokenBalance": jit.quoted_order.order.buy_token_destination,
+                                "signature": if config.quote { "0x".to_string() } else { format!("0x{}", hex::encode(jit.quoted_order.order_signature_with_private_key(config.blockchain, &config.private_key))) },
+                                "signingScheme": if config.quote { "eip1271" } else { "eip712" },
+                            });
+                            trades_json.push(json!({
+                                "kind": "jit",
+                                "order": order,
+                                "executedAmount": executed_amount,
+                                "fee": fee_amount.to_string(),
+                            }));
+                        }
                     }
                 }
             }
@@ -251,9 +337,8 @@ impl Solver {
         let build_tokens = config
             .solutions
             .iter()
-            .flat_map(|s| s.fulfillments.iter())
+            .flat_map(|s| s.trades.iter())
             .flat_map(|f| {
-                let quote = &f;
                 let build_token = |token_name: String| async move {
                     let token = config.blockchain.get_token_wrapped(token_name.as_str());
                     let contract = contracts::ERC20::at(&config.blockchain.web3, token);
@@ -271,9 +356,13 @@ impl Solver {
                         }),
                     )
                 };
+                let order = match f {
+                    Trade::Fulfillment(fulfillment) => &fulfillment.quoted_order.order,
+                    Trade::Jit(jit) => &jit.quoted_order.order
+                };
                 [
-                    build_token(quote.quoted_order.order.sell_token.to_string()),
-                    build_token(quote.quoted_order.order.buy_token.to_string()),
+                    build_token(order.sell_token.to_string()),
+                    build_token(order.buy_token.to_string()),
                 ]
             });
         let tokens_json = futures::future::join_all(build_tokens)
@@ -331,7 +420,7 @@ impl Solver {
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline.solvers(),
-                        "surplusCapturingJitOrderOwners": [],
+                        "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
