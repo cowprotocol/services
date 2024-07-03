@@ -12,7 +12,7 @@ pub struct Request {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub solution_id: u64,
     /// The last block number in which the solution TX can be included
-    pub submission_deadline: u64,
+    pub submission_deadline_latest_block: u64,
 }
 
 #[serde_as]

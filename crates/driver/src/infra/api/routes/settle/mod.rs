@@ -20,7 +20,9 @@ async fn route(
     let auction_id = competition.auction_id().map(|id| id.0);
     let handle_request = async {
         observe::settling();
-        let result = competition.settle(solution.submission_deadline).await;
+        let result = competition
+            .settle(solution.submission_deadline_latest_block)
+            .await;
         observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
     };

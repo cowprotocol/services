@@ -444,7 +444,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solved: &competition::Solution,
         auction_id: i64,
-        submission_deadline: u64,
+        submission_deadline_latest_block: u64,
     ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
@@ -452,7 +452,7 @@ impl RunLoop {
 
         let request = settle::Request {
             solution_id: solved.id(),
-            submission_deadline,
+            submission_deadline_latest_block,
         };
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)

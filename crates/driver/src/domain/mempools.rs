@@ -103,15 +103,14 @@ impl Mempools {
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
-            loop {
+            while let Some(block) = block_stream.next().await {
                 // Wait for the next block to be mined or we time out.
-                let current_block = self.ethereum.current_block().borrow().number;
-                if current_block > submission_deadline {
+                if block.number > submission_deadline {
                     tracing::info!(
                         ?hash,
                         "current block: {}, submission deadline: {}, tx not confirmed in time, \
                          cancelling",
-                        current_block,
+                        block.number,
                         submission_deadline
                     );
                     self.cancel(mempool, settlement.gas.price, solver).await?;
@@ -148,6 +147,7 @@ impl Mempools {
                     }
                 }
             }
+            panic!("Block stream finished unexpectedly");
         }
         .await;
 
