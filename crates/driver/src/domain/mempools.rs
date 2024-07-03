@@ -146,7 +146,9 @@ impl Mempools {
                     }
                 }
             }
-            panic!("Block stream finished unexpectedly");
+            Err(Error::Other(anyhow::anyhow!(
+                "Block stream finished unexpectedly"
+            )))
         }
         .await;
 
