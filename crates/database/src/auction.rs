@@ -1,4 +1,4 @@
-use sqlx::{types::JsonValue, PgConnection};
+use sqlx::{types::JsonValue, Connection, PgConnection};
 
 pub type AuctionId = i64;
 
@@ -21,7 +21,13 @@ FROM auctions
 ORDER BY id DESC
 LIMIT 1
     ;"#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    let result = sqlx::query_as(QUERY).fetch_optional(ex as &mut _).await;
+    // This endpoint returns a lot of data. The connection never reduces the
+    // internal buffer size on its own. So if we execute this query with a lot
+    // of different connections we might end up with high memory usage.
+    // To combat that we manually shrink the internal buffer here.
+    ex.shrink_buffers();
+    result
 }
 
 pub async fn delete_all_auctions(ex: &mut PgConnection) -> Result<(), sqlx::Error> {
