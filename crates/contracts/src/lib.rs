@@ -40,6 +40,7 @@ include_contracts! {
     BaoswapRouter;
     CowAmm;
     CowAmmConstantProductFactory;
+    CowAmmLegacyHelper;
     CowAmmUniswapV2PriceOracle;
     CoWSwapEthFlow;
     CoWSwapOnchainOrders;

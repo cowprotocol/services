@@ -27,7 +27,7 @@ const MAX_BLOCKS_QUERIED: u64 = 2 * MAX_REORG_BLOCK_COUNT;
 const MAX_PARALLEL_RPC_CALLS: usize = 128;
 
 /// General idea behind the algorithm:
-/// 1. Use `last_handled_blocks` as an indicator of the begining of the block
+/// 1. Use `last_handled_blocks` as an indicator of the beginning of the block
 /// range that needs to be updated in current iteration. If it is empty, means
 /// we need to check the storage, and if there are events in the storage,
 /// continue from the last event block, if no events, do a full reindexing from
@@ -38,7 +38,7 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 /// deep history blocks, second one to update the latest blocks (last X
 /// canonical blocks) 4. Do the history update, and if successful, update
 /// `last_handled_blocks` to make sure the data is consistent. 5. If history
-/// update is successful, procceed with latest update, and if successful update
+/// update is successful, proceed with latest update, and if successful update
 /// `last_handled_blocks`.
 pub struct EventHandler<C, S>
 where
