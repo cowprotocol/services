@@ -104,20 +104,7 @@ impl Mempools {
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
             while let Some(block) = block_stream.next().await {
-                // Wait for the next block to be mined or we time out.
-                if block.number > submission_deadline {
-                    tracing::info!(
-                        ?hash,
-                        "current block: {}, submission deadline: {}, tx not confirmed in time, \
-                         cancelling",
-                        block.number,
-                        submission_deadline
-                    );
-                    self.cancel(mempool, settlement.gas.price, solver).await?;
-                    return Err(Error::Expired);
-                }
                 tracing::debug!(?hash, "checking if tx is confirmed");
-
                 let receipt = self
                     .ethereum
                     .transaction_status(&hash)
@@ -130,6 +117,18 @@ impl Mempools {
                     TxStatus::Executed => return Ok(hash.clone()),
                     TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
                     TxStatus::Pending => {
+                        // Check if the current block reached the submission deadline block number
+                        if block.number == submission_deadline {
+                            tracing::info!(
+                                ?hash,
+                                "current block: {}, submission deadline: {}, tx not confirmed in \
+                                 time, cancelling",
+                                block.number,
+                                submission_deadline
+                            );
+                            self.cancel(mempool, settlement.gas.price, solver).await?;
+                            return Err(Error::Expired);
+                        }
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {

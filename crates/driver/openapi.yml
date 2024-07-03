@@ -396,8 +396,8 @@ components:
           example: "123"
         submissionDeadlineLatestBlock:
           description: The last block number in which the solution TX can be included.
-          type: string
-          example: "123"
+          type: integer
+          example: 12345
     RevealedResponse:
       description: Response of the reveal endpoint.
       type: object
