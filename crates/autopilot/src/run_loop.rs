@@ -8,6 +8,7 @@ use {
                 SolutionError,
                 {self},
             },
+            surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
             OrderUid,
         },
         infra::{
@@ -27,7 +28,7 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
@@ -51,8 +52,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
-    pub surplus_capturing_jit_order_owners: HashSet<H160>,
-    pub cow_amm_registry: cow_amm::Registry,
+    pub surplus_capturing_jit_order_owners: SurplusCapturingJitOrderOwners,
 }
 
 impl RunLoop {
@@ -251,8 +251,9 @@ impl RunLoop {
                     .collect(),
                 surplus_capturing_jit_order_owners: self
                     .surplus_capturing_jit_order_owners
-                    .iter()
-                    .cloned()
+                    .list_all()
+                    .await
+                    .into_iter()
                     .collect::<Vec<_>>(),
             };
             let competition = Competition {
@@ -313,15 +314,8 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let mut surplus_capturing_jit_order_owners = self
-            .cow_amm_registry
-            .amms()
-            .await
-            .into_iter()
-            .map(|cow_amm| *cow_amm.address())
-            .collect::<HashSet<_>>();
-        surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
-
+        let surplus_capturing_jit_order_owners =
+            self.surplus_capturing_jit_order_owners.list_all().await;
         let request = solve::Request::new(
             id,
             auction,

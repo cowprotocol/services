@@ -11,7 +11,7 @@ use {
             },
             Postgres,
         },
-        domain,
+        domain::{self, surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners},
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         run_loop::RunLoop,
@@ -512,12 +512,10 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
-        surplus_capturing_jit_order_owners: args
-            .protocol_fee_exempt_addresses
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>(),
-        cow_amm_registry,
+        surplus_capturing_jit_order_owners: SurplusCapturingJitOrderOwners::new(
+            &args.protocol_fee_exempt_addresses,
+            cow_amm_registry,
+        ),
     };
     run.run_forever().await;
     unreachable!("run loop exited");
