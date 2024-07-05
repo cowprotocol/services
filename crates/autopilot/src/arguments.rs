@@ -506,7 +506,7 @@ impl FromStr for CowAmmConfig {
             .context("could not parse helper as H160")?;
         let index_start = parts
             .next()
-            .context("context is missing index_start")?
+            .context("config is missing index_start")?
             .parse()
             .context("could not parse index_start as u64")?;
         anyhow::ensure!(
