@@ -32,7 +32,7 @@ use-soft-cancellations = true
 [contracts] # Optionally override the contract addresses, necessary on less popular blockchains
 gp-v2-settlement = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-[contracts.cow-amms]
+[[contracts.cow-amms]]
 # address of factory creating new CoW AMMs
 factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"
 # address of contract to help interfacing with the created CoW AMMs
