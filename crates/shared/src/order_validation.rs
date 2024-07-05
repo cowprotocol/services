@@ -510,6 +510,7 @@ impl OrderValidating for OrderValidator {
         let app_data_signer = app_data.inner.protocol.signer;
 
         let owner = order.verify_owner(domain_separator, app_data_signer)?;
+        tracing::debug!(?owner, "recovered owner from order and signature");
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
             app_data: app_data.inner.hash,
