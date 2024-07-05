@@ -318,6 +318,21 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
+
+    /// List of all cow amm factories the driver should generate
+    /// rebalancing orders for.
+    cow_amms: Vec<CowAmmConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CowAmmConfig {
+    /// Which contract to index for CoW AMM deployment events.
+    pub factory: eth::H160,
+    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    pub helper: eth::H160,
+    /// At which block indexing should start on the factory.
+    pub index_start: u64,
 }
 
 #[derive(Debug, Deserialize)]

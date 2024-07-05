@@ -132,7 +132,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts, gas).await
+    Ethereum::new(ethrpc, config.contracts.clone(), gas).await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

@@ -12,7 +12,7 @@ use {
 };
 
 /// CoW AMM indexer which stores events in-memory.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Registry {
     web3: Web3,
     current_block_stream: CurrentBlockStream,

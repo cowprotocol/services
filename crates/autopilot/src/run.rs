@@ -359,14 +359,11 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
+
     let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
-    if let Some(cow_amm_factory) = eth.contracts().cow_amm_legacy_helper() {
+    for config in &args.cow_amm_configs {
         cow_amm_registry
-            .add_listener(
-                contracts::deployment_block!(cow_amm_factory).unwrap(),
-                cow_amm_factory.address(),
-                cow_amm_factory.address(),
-            )
+            .add_listener(config.index_start, config.factory, config.helper)
             .await;
     }
 
