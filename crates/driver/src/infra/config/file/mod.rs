@@ -321,6 +321,7 @@ struct ContractsConfig {
 
     /// List of all cow amm factories the driver should generate
     /// rebalancing orders for.
+    #[serde(default)]
     cow_amms: Vec<CowAmmConfig>,
 }
 
