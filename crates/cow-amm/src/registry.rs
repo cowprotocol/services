@@ -12,7 +12,7 @@ use {
 };
 
 /// CoW AMM indexer which stores events in-memory.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Registry {
     web3: Web3,
     current_block_stream: CurrentBlockStream,
@@ -56,7 +56,7 @@ impl Registry {
     }
 
     /// Returns all the deployed CoW AMMs
-    pub async fn cow_amms(&self) -> Vec<Arc<Amm>> {
+    pub async fn amms(&self) -> Vec<Arc<Amm>> {
         let mut result = vec![];
         let lock = self.storage.read().await;
         for cache in &*lock {

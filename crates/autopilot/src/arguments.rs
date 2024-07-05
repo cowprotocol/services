@@ -222,6 +222,17 @@ pub struct Arguments {
     /// `order_events` database table.
     #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_threshold: Duration,
+
+    /// Configurations for indexing CoW AMMs. Supplied in the form of:
+    /// "<factory1>|<helper1>|<block1>,<factory2>|<helper2>,<block2>"
+    /// - factory is contract address emmiting CoW AMM deployment events.
+    /// - helper is a contract address to interface with pools deployed by the
+    ///   factory
+    /// - block is the block at which indexing should start (should be 1 block
+    ///   before
+    /// the deployment of the factory)
+    #[clap(long, env, use_value_delimiter = true)]
+    pub cow_amm_configs: Vec<CowAmmConfig>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -265,6 +276,7 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait,
             s3,
             protocol_fee_exempt_addresses,
+            cow_amm_configs,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -346,6 +358,7 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait
         )?;
         writeln!(f, "s3: {:?}", s3)?;
+        writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
         Ok(())
     }
 }
@@ -462,6 +475,49 @@ impl FromStr for FeePolicy {
         Ok(FeePolicy {
             fee_policy_kind,
             fee_policy_order_class,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CowAmmConfig {
+    /// Which contract to index for CoW AMM deployment events.
+    pub factory: H160,
+    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    pub helper: H160,
+    /// At which block indexing should start on the factory.
+    pub index_start: u64,
+}
+
+impl FromStr for CowAmmConfig {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('|');
+        let factory = parts
+            .next()
+            .context("config is missing factory")?
+            .parse()
+            .context("could not parse factory as H160")?;
+        let helper = parts
+            .next()
+            .context("config is missing helper")?
+            .parse()
+            .context("could not parse helper as H160")?;
+        let index_start = parts
+            .next()
+            .context("config is missing index_start")?
+            .parse()
+            .context("could not parse index_start as u64")?;
+        anyhow::ensure!(
+            parts.next().is_none(),
+            "supplied too many arguments for cow amm config"
+        );
+
+        Ok(Self {
+            factory,
+            helper,
+            index_start,
         })
     }
 }
