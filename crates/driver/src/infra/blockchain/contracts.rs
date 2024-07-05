@@ -14,7 +14,7 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    cow_amms: cow_amm::Registry,
+    cow_amm_registry: cow_amm::Registry,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -64,9 +64,9 @@ impl Contracts {
                 .0,
         );
 
-        let cow_amms = cow_amm::Registry::new(web3.clone(), block_stream);
+        let cow_amm_registry = cow_amm::Registry::new(web3.clone(), block_stream);
         for config in addresses.cow_amms {
-            cow_amms
+            cow_amm_registry
                 .add_listener(config.index_start, config.factory, config.helper)
                 .await;
         }
@@ -77,7 +77,7 @@ impl Contracts {
             vault,
             weth,
             settlement_domain_separator,
-            cow_amms,
+            cow_amm_registry,
         })
     }
 
@@ -105,8 +105,8 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn cow_amms(&self) -> &cow_amm::Registry {
-        &self.cow_amms
+    pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
+        &self.cow_amm_registry
     }
 }
 

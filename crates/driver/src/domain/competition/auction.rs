@@ -346,7 +346,7 @@ impl AuctionProcessor {
         tokens: &Tokens,
         eligible_for_surplus: &HashSet<eth::Address>,
     ) -> Vec<Order> {
-        let cow_amms = eth.contracts().cow_amms().cow_amms().await;
+        let cow_amms = eth.contracts().cow_amm_registry().amms().await;
         let results: Vec<_> = futures::future::join_all(
             cow_amms
                 .into_iter()
