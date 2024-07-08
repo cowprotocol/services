@@ -58,7 +58,8 @@ RUN git clone https://invent.kde.org/sdk/heaptrack.git /heaptrack && \
     mkdir /heaptrack/build && cd /heaptrack/build && \
     cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=OFF .. && \
     make -j$(nproc) && \
-    make install
+    make install && \
+    cd / && rm -rf /heaptrack
 COPY --from=cargo-build /alerter /usr/local/bin/alerter
 COPY --from=cargo-build /autopilot /usr/local/bin/autopilot
 COPY --from=cargo-build /driver /usr/local/bin/driver
