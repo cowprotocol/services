@@ -61,7 +61,6 @@ struct Inner {
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockStream,
-    cow_amms: cow_amm::Registry,
 }
 
 impl Ethereum {
@@ -77,25 +76,15 @@ impl Ethereum {
         gas: Arc<GasPriceEstimator>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
-        let contracts = Contracts::new(&web3, chain, addresses)
-            .await
-            .expect("could not initialize important smart contracts");
 
         let current_block_stream =
             ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(500))
                 .await
                 .expect("couldn't initialize current block stream");
 
-        let cow_amms = cow_amm::Registry::new(web3.clone(), current_block_stream.clone());
-        if let Some(contract) = contracts.cow_amm_legacy_helper() {
-            cow_amms
-                .add_listener(
-                    ::contracts::deployment_block!(contract).unwrap(),
-                    contract.address(),
-                    contract.address(),
-                )
-                .await;
-        }
+        let contracts = Contracts::new(&web3, chain, addresses, current_block_stream.clone())
+            .await
+            .expect("could not initialize important smart contracts");
 
         Self {
             inner: Arc::new(Inner {
@@ -103,7 +92,6 @@ impl Ethereum {
                 chain,
                 contracts,
                 gas,
-                cow_amms,
             }),
             web3,
         }
@@ -260,10 +248,6 @@ impl Ethereum {
             .await
             .ok()
             .map(|gas| gas.effective().0 .0)
-    }
-
-    pub async fn cow_amms(&self) -> Vec<Arc<cow_amm::Amm>> {
-        self.inner.cow_amms.cow_amms().await
     }
 }
 

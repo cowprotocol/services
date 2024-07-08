@@ -211,7 +211,7 @@ impl SolvableOrdersCache {
             entry.insert(weth_price);
         }
 
-        let cow_amms = self.cow_amm_registry.cow_amms().await;
+        let cow_amms = self.cow_amm_registry.amms().await;
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())

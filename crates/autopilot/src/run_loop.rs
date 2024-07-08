@@ -310,7 +310,7 @@ impl RunLoop {
     ) -> Vec<Participant<'_>> {
         let mut surplus_capturing_jit_order_owners = self
             .cow_amm_registry
-            .cow_amms()
+            .amms()
             .await
             .into_iter()
             .map(|cow_amm| *cow_amm.address())

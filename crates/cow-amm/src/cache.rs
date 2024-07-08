@@ -7,7 +7,7 @@ use {
     tokio::sync::RwLock,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Storage(Arc<Inner>);
 
 impl Storage {
@@ -28,6 +28,7 @@ impl Storage {
     }
 }
 
+#[derive(Debug)]
 struct Inner {
     /// Store indexed data associated to the indexed events type id.
     /// That type erasure allows us to index multiple concrete contracts
