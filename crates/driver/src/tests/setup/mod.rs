@@ -940,7 +940,8 @@ impl Test {
     }
 
     pub async fn settle_with_solver(&self, solver_name: &str) -> Settle {
-        // The maximum number of blocks to wait for a settlement to appear on chain.
+        /// The maximum number of blocks to wait for a settlement to appear on
+        /// chain.
         const SUBMISSION_DEADLINE: u64 = 3;
         let submission_deadline_latest_block: u64 =
             u64::try_from(self.web3().eth().block_number().await.unwrap()).unwrap()

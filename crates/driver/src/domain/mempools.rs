@@ -121,10 +121,9 @@ impl Mempools {
                         if block.number == submission_deadline {
                             tracing::info!(
                                 ?hash,
-                                "current block: {}, submission deadline: {}, tx not confirmed in \
-                                 time, cancelling",
-                                block.number,
-                                submission_deadline
+                                deadline = submission_deadline,
+                                current_block = block.number,
+                                "tx not confirmed in time, cancelling",
                             );
                             self.cancel(mempool, settlement.gas.price, solver).await?;
                             return Err(Error::Expired);
