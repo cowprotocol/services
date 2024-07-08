@@ -8,15 +8,15 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
     },
     std::sync::Arc,
-    tokio::sync::Mutex,
+    tokio::sync::{Mutex, RwLock},
 };
 
 /// CoW AMM indexer which stores events in-memory.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Registry {
     web3: Web3,
     current_block_stream: CurrentBlockStream,
-    storage: Arc<Mutex<Vec<Storage>>>,
+    storage: Arc<RwLock<Vec<Storage>>>,
 }
 
 impl Registry {
@@ -41,7 +41,7 @@ impl Registry {
             deployment_block,
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
         );
-        self.storage.lock().await.push(storage.clone());
+        self.storage.write().await.push(storage.clone());
 
         let indexer = Factory {
             web3: self.web3.clone(),
@@ -56,9 +56,9 @@ impl Registry {
     }
 
     /// Returns all the deployed CoW AMMs
-    pub async fn cow_amms(&self) -> Vec<Arc<Amm>> {
+    pub async fn amms(&self) -> Vec<Arc<Amm>> {
         let mut result = vec![];
-        let lock = self.storage.lock().await;
+        let lock = self.storage.read().await;
         for cache in &*lock {
             result.extend(cache.cow_amms().await);
         }

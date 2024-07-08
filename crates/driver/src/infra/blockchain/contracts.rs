@@ -1,6 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
-    ethcontract::{dyns::DynWeb3, errors::DeployError},
+    ethcontract::dyns::DynWeb3,
+    ethrpc::current_block::CurrentBlockStream,
     thiserror::Error,
 };
 
@@ -13,13 +14,14 @@ pub struct Contracts {
 
     /// The domain separator for settlement contract used for signing orders.
     settlement_domain_separator: eth::DomainSeparator,
-    cow_amm_legacy_helper: Option<contracts::CowAmmLegacyHelper>,
+    cow_amm_registry: cow_amm::Registry,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
+    pub cow_amms: Vec<CowAmmConfig>,
 }
 
 impl Contracts {
@@ -27,6 +29,7 @@ impl Contracts {
         web3: &DynWeb3,
         chain: eth::ChainId,
         addresses: Addresses,
+        block_stream: CurrentBlockStream,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {
@@ -61,11 +64,12 @@ impl Contracts {
                 .0,
         );
 
-        let cow_amm_legacy_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("failed to find deployed contract: {:?}", err),
-            Ok(contract) => Some(contract),
-        };
+        let cow_amm_registry = cow_amm::Registry::new(web3.clone(), block_stream);
+        for config in addresses.cow_amms {
+            cow_amm_registry
+                .add_listener(config.index_start, config.factory, config.helper)
+                .await;
+        }
 
         Ok(Self {
             settlement,
@@ -73,7 +77,7 @@ impl Contracts {
             vault,
             weth,
             settlement_domain_separator,
-            cow_amm_legacy_helper,
+            cow_amm_registry,
         })
     }
 
@@ -101,9 +105,19 @@ impl Contracts {
         &self.settlement_domain_separator
     }
 
-    pub fn cow_amm_legacy_helper(&self) -> Option<&contracts::CowAmmLegacyHelper> {
-        self.cow_amm_legacy_helper.as_ref()
+    pub fn cow_amm_registry(&self) -> &cow_amm::Registry {
+        &self.cow_amm_registry
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct CowAmmConfig {
+    /// Which contract to index for CoW AMM deployment events.
+    pub factory: eth::H160,
+    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    pub helper: eth::H160,
+    /// At which block indexing should start on the factory.
+    pub index_start: u64,
 }
 
 /// Returns the address of a contract for the specified network, or `None` if
