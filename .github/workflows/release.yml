@@ -29,8 +29,7 @@ jobs:
 
       - name: Check for changes since last tag
         run: |
-          CHANGES=$(git log $LATEST_VERSION..HEAD --oneline)
-          if [[ -n "$CHANGES" ]]; then
+          if ! git diff $LATEST_VERSION..HEAD --quiet; then
             echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
           fi
 
