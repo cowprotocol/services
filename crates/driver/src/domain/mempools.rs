@@ -118,7 +118,7 @@ impl Mempools {
                     TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
                     TxStatus::Pending => {
                         // Check if the current block reached the submission deadline block number
-                        if block.number == submission_deadline {
+                        if block.number >= submission_deadline {
                             tracing::info!(
                                 ?hash,
                                 deadline = submission_deadline,
