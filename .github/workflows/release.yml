@@ -30,9 +30,7 @@ jobs:
 
       - name: Check for changes since last tag
         run: |
-          if ! git diff $LATEST_VERSION..HEAD --quiet; then
-            echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
-          fi
+          git diff --quiet ${{ steps.fetch_tag.outputs.latest }}..HEAD || echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
 
       - name: No changes detected
         if: env.CHANGES_DETECTED != 'true'
@@ -42,8 +40,8 @@ jobs:
         id: tag_version
         if: env.CHANGES_DETECTED == 'true'
         run: |
-          MAJOR=$(echo ${{ steps.fetch_tag.latest }} | cut -d. -f1)
-          MINOR=$(echo ${{ steps.fetch_tag.latest }} | cut -d. -f2)
+          MAJOR=$(echo ${{ steps.fetch_tag.outputs.latest }} | cut -d. -f1)
+          MINOR=$(echo ${{ steps.fetch_tag.outputs.latest }} | cut -d. -f2)
           NEW_MINOR=$((MINOR+1))
           NEW_TAG="${MAJOR}.${NEW_MINOR}.0"
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
