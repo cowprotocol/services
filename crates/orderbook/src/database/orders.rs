@@ -592,12 +592,23 @@ pub struct Solution {
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
 pub enum Status {
+    /// Order is part of the orderbook but not actively being worked on. This
+    /// can for example happen if the necessary balances are missing or if
+    /// the order's signature check fails.
     Open,
+    /// Order awaits being put into the current auction.
     Scheduled,
+    /// Order is part of the current and solvers are computing solutions for it.
     Active,
+    /// Some solvers proposed solutions for the orders but did not win the
+    /// competition.
     Solved(Vec<Solution>),
+    /// The order was contained in the winning solution which the solver
+    /// currently tries to submit onchain.
     Executing(Vec<Solution>),
+    /// The order was successfully executed onchain.
     Traded(Vec<Solution>),
+    /// The user cancelled the order. It will no longer show up in any auctions.
     Cancelled,
 }
 
