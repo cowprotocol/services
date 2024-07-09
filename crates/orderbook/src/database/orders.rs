@@ -365,38 +365,42 @@ impl OrderStoring for Postgres {
 
     async fn order_status(&self, order_uid: &OrderUid) -> Result<Status> {
         let mut ex = self.pool.begin().await.context("could not init tx")?;
-        let competition = database::solver_competition::load_latest_competition(&mut ex)
-            .await
-            .context("could not fetch latest competition")?
-            .unwrap()
-            .json;
-        let competition: Competition = serde_json::from_value(competition)
-            .context("could not parse solver competition data")?;
-
-        let solutions = competition
-            .solutions
-            .into_iter()
-            .filter_map(|solution| {
-                let order = solution.orders.iter().find(|o| o.uid.0 == order_uid.0)?;
-
-                Some(Solution {
-                    solver: solution.solver,
-                    sell_amount: order.sell_amount,
-                    buy_amount: order.buy_amount,
-                })
-            })
-            .collect();
-
         let status = database::order_events::get_label(&mut ex, &ByteArray(order_uid.0))
             .await
             .context("could not fetch status")?;
 
+        let fetch_solutions = || async move {
+            let competition = database::solver_competition::load_latest_competition(&mut ex)
+                .await
+                .context("could not fetch latest competition")?
+                .unwrap()
+                .json;
+            let competition: Competition = serde_json::from_value(competition)
+                .context("could not parse solver competition data")?;
+
+            let solutions = competition
+                .solutions
+                .into_iter()
+                .filter_map(|solution| {
+                    let order = solution.orders.iter().find(|o| o.uid.0 == order_uid.0)?;
+
+                    Some(Solution {
+                        solver: solution.solver,
+                        sell_amount: order.sell_amount,
+                        buy_amount: order.buy_amount,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            Ok::<Vec<_>, anyhow::Error>(solutions)
+        };
+
         let status = match status.label {
             OrderEventLabel::Ready => Status::Active,
             OrderEventLabel::Created => Status::Scheduled,
-            OrderEventLabel::Considered => Status::Solved(solutions),
-            OrderEventLabel::Executing => Status::Executing(solutions),
-            OrderEventLabel::Traded => Status::Traded(solutions),
+            OrderEventLabel::Considered => Status::Solved(fetch_solutions().await?),
+            OrderEventLabel::Executing => Status::Executing(fetch_solutions().await?),
+            OrderEventLabel::Traded => Status::Traded(fetch_solutions().await?),
             OrderEventLabel::Cancelled => Status::Cancelled,
             OrderEventLabel::Filtered => Status::Open,
             OrderEventLabel::Invalid => Status::Open,
