@@ -370,7 +370,8 @@ impl OrderStoring for Postgres {
             .context("could not fetch latest competition")?
             .unwrap()
             .json;
-        let competition: Competition = serde_json::from_value(competition).unwrap();
+        let competition: Competition = serde_json::from_value(competition)
+            .context("could not parse solver competition data")?;
 
         let solutions = competition
             .solutions
