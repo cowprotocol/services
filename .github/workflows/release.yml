@@ -27,9 +27,12 @@ jobs:
           fi
           echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Check for changes
+      - name: Check for changes since last tag
         run: |
-          git diff --exit-code || echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
+          CHANGES=$(git log $LATEST_VERSION..HEAD --oneline)
+          if [[ -n "$CHANGES" ]]; then
+            echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
+          fi
 
       - name: No changes detected
         if: env.CHANGES_DETECTED != 'true'
