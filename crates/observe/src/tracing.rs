@@ -1,5 +1,4 @@
 use {
-    crate::tracing_reload_handler::spawn_reload_handler,
     std::{panic::PanicInfo, sync::Once},
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
@@ -35,10 +34,6 @@ pub fn initialize_reentrant(env_filter: &str, with_console: bool) {
 }
 
 fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_console: bool) {
-    let initial_filter = env_filter.to_string();
-    let (filter, reload_handle) =
-        tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
-
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(
             std::io::stdout
@@ -54,7 +49,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
         )))
         .with_ansi(atty::is(atty::Stream::Stdout))
-        .with_filter(filter);
+        .with_filter::<EnvFilter>(env_filter.into());
 
     let registry = tracing_subscriber::registry().with(fmt_layer);
     if with_console {
@@ -67,10 +62,6 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter, with_
         registry.with(console_subscriber::spawn()).init();
     } else {
         registry.init()
-    }
-
-    if cfg!(unix) {
-        spawn_reload_handler(initial_filter, reload_handle);
     }
 }
 
