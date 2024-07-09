@@ -377,7 +377,7 @@ impl OrderStoring for Postgres {
             .solutions
             .into_iter()
             .filter_map(|solution| {
-                let order = solution.orders.iter().find(|o| o.id.0 == order_uid.0)?;
+                let order = solution.orders.iter().find(|o| o.uid.0 == order_uid.0)?;
 
                 Some(Solution {
                     solver: solution.solver,
@@ -614,7 +614,7 @@ struct CompetitionSolution {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CompetitionOrder {
-    id: OrderUid,
+    uid: OrderUid,
     #[serde_as(as = "HexOrDecimalU256")]
     sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
