@@ -117,17 +117,6 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
   --timestamp 1577836800
 ```
 
-### Profiling
-
-The most important binaries support [tokio-console](https://github.com/tokio-rs/console) to allow you a could look inside the tokio runtime.
-
-Simply enable the feature by passing `--enable-tokio-console true` when running a binary and then in another shell, run
-
-```
-cargo install --locked tokio-console
-tokio-console
-```
-
 ## Running the Services Locally
 
 ### Prerequisites
