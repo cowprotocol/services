@@ -4,7 +4,7 @@ use {
         eth,
     },
     crate::{
-        domain::{competition::solution::Settlement, eth::TxStatus},
+        domain::{competition::solution::Settlement, eth::TxStatus, BlockNo},
         infra::{self, observe, solver::Solver, Ethereum},
     },
     ethrpc::current_block::into_stream,
@@ -41,7 +41,7 @@ impl Mempools {
         &self,
         solver: &Solver,
         settlement: &Settlement,
-        submission_deadline: u64,
+        submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
@@ -80,7 +80,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         solver: &Solver,
         settlement: &Settlement,
-        submission_deadline: u64,
+        submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
