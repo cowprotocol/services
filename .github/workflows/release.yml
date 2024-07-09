@@ -2,7 +2,6 @@ name: Weekly Release
 
 on:
   workflow_dispatch:
-  push:
   schedule:
     # At 00:00 on Monday
     - cron: "0 0 * * 1"
