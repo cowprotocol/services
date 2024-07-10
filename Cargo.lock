@@ -3287,7 +3287,6 @@ dependencies = [
  "app-data",
  "app-data-hash",
  "async-trait",
- "axum",
  "bigdecimal",
  "cached",
  "chrono",
