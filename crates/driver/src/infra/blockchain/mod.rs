@@ -131,14 +131,18 @@ impl Ethereum {
         &self.inner.current_block
     }
 
-    fn max_block_size(&self) -> eth::U256 {
+    /// Returns the maximum block size for the current chain.
+    ///
+    /// Specifically set high gas because some nodes don't pick a sensible value
+    /// if omitted. And since we are only interested in access lists a very
+    /// high value is fine.
+    ///
+    /// Uses None for the Arbitrum One chain to make the Nitro node select a
+    /// reasonable gas limit automatically.
+    fn max_block_size(&self) -> Option<eth::U256> {
         const ARBITRUM_ONE_CHAIN_ID: u64 = 42161;
 
-        match self.inner.chain.0 {
-            ARBITRUM_ONE_CHAIN_ID => 500_000_000,
-            _ => 30_000_000,
-        }
-        .into()
+        (self.inner.chain.0 != ARBITRUM_ONE_CHAIN_ID).then_some(30_000_000.into())
     }
 
     /// Create access list used by a transaction.
@@ -149,9 +153,7 @@ impl Ethereum {
             value: Some(tx.value.into()),
             data: Some(tx.input.into()),
             access_list: Some(tx.access_list.into()),
-            // Specifically set high gas because some nodes don't pick a sensible value if omitted.
-            // And since we are only interested in access lists a very high value is fine.
-            gas: Some(self.max_block_size()),
+            gas: self.max_block_size(),
             gas_price: self.simulation_gas_price().await,
             ..Default::default()
         };
