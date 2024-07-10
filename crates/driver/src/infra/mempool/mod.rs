@@ -12,15 +12,8 @@ pub struct Config {
     pub min_priority_fee: eth::U256,
     pub gas_price_cap: eth::U256,
     pub target_confirm_time: std::time::Duration,
-    pub max_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     pub kind: Kind,
-}
-
-impl Config {
-    pub fn deadline(&self) -> tokio::time::Instant {
-        tokio::time::Instant::now() + self.max_confirm_time
-    }
 }
 
 #[derive(Debug, Clone)]
