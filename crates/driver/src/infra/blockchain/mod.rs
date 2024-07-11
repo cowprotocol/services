@@ -78,18 +78,19 @@ impl Ethereum {
         max_block_size: Option<eth::U256>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
-        let contracts = Contracts::new(&web3, chain, addresses)
+
+        let current_block_stream =
+            ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(500))
+                .await
+                .expect("couldn't initialize current block stream");
+
+        let contracts = Contracts::new(&web3, chain, addresses, current_block_stream.clone())
             .await
             .expect("could not initialize important smart contracts");
 
         Self {
             inner: Arc::new(Inner {
-                current_block: ethrpc::current_block::current_block_stream(
-                    url,
-                    std::time::Duration::from_millis(500),
-                )
-                .await
-                .expect("couldn't initialize current block stream"),
+                current_block: current_block_stream,
                 chain,
                 contracts,
                 gas,

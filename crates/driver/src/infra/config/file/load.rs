@@ -262,7 +262,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 min_priority_fee: config.submission.min_priority_fee,
                 gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
-                max_confirm_time: config.submission.max_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 kind: match mempool {
                     file::Mempool::Public => {
@@ -317,6 +316,16 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
+            cow_amms: config
+                .contracts
+                .cow_amms
+                .into_iter()
+                .map(|cfg| blockchain::contracts::CowAmmConfig {
+                    index_start: cfg.index_start,
+                    factory: cfg.factory,
+                    helper: cfg.helper,
+                })
+                .collect(),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

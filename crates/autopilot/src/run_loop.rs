@@ -47,12 +47,12 @@ pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
-    pub additional_deadline_for_rewards: u64,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub surplus_capturing_jit_order_owners: HashSet<H160>,
+    pub cow_amm_registry: cow_amm::Registry,
 }
 
 impl RunLoop {
@@ -166,9 +166,7 @@ impl RunLoop {
 
             let mut prices = BTreeMap::new();
             let mut fee_policies = Vec::new();
-            let block_deadline = competition_simulation_block
-                + self.submission_deadline
-                + self.additional_deadline_for_rewards;
+            let block_deadline = competition_simulation_block + self.submission_deadline;
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
 
@@ -284,7 +282,10 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver, solution, auction_id).await {
+            match self
+                .settle(driver, solution, auction_id, block_deadline)
+                .await
+            {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -307,12 +308,21 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
+        let mut surplus_capturing_jit_order_owners = self
+            .cow_amm_registry
+            .amms()
+            .await
+            .into_iter()
+            .map(|cow_amm| *cow_amm.address())
+            .collect::<HashSet<_>>();
+        surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
+
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &self.surplus_capturing_jit_order_owners,
+            &surplus_capturing_jit_order_owners,
         );
         let request = &request;
 
@@ -434,6 +444,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solved: &competition::Solution,
         auction_id: i64,
+        submission_deadline_latest_block: u64,
     ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
@@ -441,6 +452,7 @@ impl RunLoop {
 
         let request = settle::Request {
             solution_id: solved.id(),
+            submission_deadline_latest_block,
         };
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)
