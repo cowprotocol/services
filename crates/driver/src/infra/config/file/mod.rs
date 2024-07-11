@@ -35,6 +35,11 @@ struct Config {
     #[serde(default)]
     gas_estimator: GasEstimatorType,
 
+    /// Specifies the maximum gas limit that can be utilized for a transaction.
+    /// If not specified, the node decides which gas limit to use.
+    #[serde_as(as = "Option<serialize::U256>")]
+    max_block_size: Option<eth::U256>,
+
     /// Parameters related to settlement submission.
     #[serde(default)]
     submission: SubmissionConfig,

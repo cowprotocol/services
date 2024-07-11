@@ -14,6 +14,7 @@ pub struct Config {
     pub liquidity: liquidity::Config,
     pub simulator: Option<simulator::Config>,
     pub gas_estimator: GasEstimatorType,
+    pub max_block_size: Option<eth::U256>,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
 }
