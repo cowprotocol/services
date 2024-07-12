@@ -67,10 +67,44 @@ impl<const N: usize> Encode<'_, Postgres> for ByteArray<N> {
     }
 }
 
+impl<'de, const N: usize> serde::Deserialize<'de> for ByteArray<N> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ByteArrayVisitor<const N: usize>;
+
+        impl<'de, const N: usize> serde::de::Visitor<'de> for ByteArrayVisitor<N> {
+            type Value = ByteArray<N>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string with a '\\x' prefix")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let text = v.strip_prefix("\\x").ok_or_else(|| {
+                    serde::de::Error::invalid_value(serde::de::Unexpected::Str(v), &self)
+                })?;
+                let mut bytes = [0u8; N];
+                hex::decode_to_slice(text, &mut bytes).map_err(|_| {
+                    serde::de::Error::invalid_value(serde::de::Unexpected::Str(v), &self)
+                })?;
+                Ok(ByteArray(bytes))
+            }
+        }
+
+        deserializer.deserialize_str(ByteArrayVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
+        serde_json::json,
         sqlx::{Executor, PgPool, Row},
     };
 
@@ -112,6 +146,29 @@ mod tests {
         let result = sqlx::query_scalar::<_, ByteArray<4>>(&query)
             .fetch_one(&db)
             .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_byte_array() {
+        // Valid deserialization
+        let json_value = json!("\\x010203");
+        let byte_array: ByteArray<3> = serde_json::from_value(json_value).unwrap();
+        assert_eq!(byte_array, ByteArray([1, 2, 3]));
+
+        // Invalid deserialization: wrong prefix
+        let json_value = json!("010203");
+        let result: Result<ByteArray<3>, _> = serde_json::from_value(json_value);
+        assert!(result.is_err());
+
+        // Invalid deserialization: wrong length
+        let json_value = json!("\\x0102");
+        let result: Result<ByteArray<3>, _> = serde_json::from_value(json_value);
+        assert!(result.is_err());
+
+        // Invalid deserialization: non-hex characters
+        let json_value = json!("\\x01g203");
+        let result: Result<ByteArray<3>, _> = serde_json::from_value(json_value);
         assert!(result.is_err());
     }
 }

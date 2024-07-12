@@ -3,7 +3,7 @@ use {
     sqlx::{PgConnection, QueryBuilder},
 };
 
-#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow, serde::Deserialize)]
 pub struct FeePolicy {
     pub auction_id: AuctionId,
     pub order_uid: OrderUid,
@@ -15,7 +15,8 @@ pub struct FeePolicy {
     pub price_improvement_max_volume_factor: Option<f64>,
 }
 
-#[derive(Debug, Clone, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, sqlx::Type, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "PolicyKind", rename_all = "lowercase")]
 pub enum FeePolicyKind {
     Surplus,

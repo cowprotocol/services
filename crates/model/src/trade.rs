@@ -2,7 +2,7 @@
 //! as described by the openapi documentation.
 
 use {
-    crate::order::OrderUid,
+    crate::{fee_policy::FeePolicy, order::OrderUid},
     num::BigUint,
     primitive_types::{H160, H256},
     serde::{Deserialize, Serialize},
@@ -10,7 +10,7 @@ use {
 };
 
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     pub block_number: u64,
@@ -28,11 +28,19 @@ pub struct Trade {
     pub sell_token: H160,
     // Settlement Data
     pub tx_hash: Option<H256>,
+    // Fee Policy Data
+    pub fee_policies: Vec<FeePolicy>,
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, shared::assert_json_matches};
+    use {
+        super::*,
+        crate::fee_policy::Quote,
+        primitive_types::U256,
+        serde_json::json,
+        shared::assert_json_matches,
+    };
 
     #[test]
     fn deserialization_and_back() {
@@ -47,7 +55,31 @@ mod tests {
             "owner": "0x0000000000000000000000000000000000000001",
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
-            "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040"
+            "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040",
+            "feePolicies": [
+                {
+                    "surplus": {
+                        "factor": 1.1,
+                        "maxVolumeFactor": 2.2
+                    }
+                },
+                {
+                    "volume": {
+                        "factor": 0.9
+                    }
+                },
+                {
+                    "priceImprovement": {
+                        "factor": 1.2,
+                        "maxVolumeFactor": 1.5,
+                        "quote": {
+                            "sellAmount": "100",
+                            "buyAmount": "150",
+                            "fee": "5"
+                        }
+                    }
+                }
+            ]
         });
         let expected = Trade {
             block_number: 1337u64,
@@ -60,6 +92,22 @@ mod tests {
             buy_token: H160::from_low_u64_be(9),
             sell_token: H160::from_low_u64_be(10),
             tx_hash: Some(H256::from_low_u64_be(64)),
+            fee_policies: vec![
+                FeePolicy::Surplus {
+                    factor: 1.1,
+                    max_volume_factor: 2.2,
+                },
+                FeePolicy::Volume { factor: 0.9 },
+                FeePolicy::PriceImprovement {
+                    factor: 1.2,
+                    max_volume_factor: 1.5,
+                    quote: Quote {
+                        sell_amount: U256::from(100u64),
+                        buy_amount: U256::from(150u64),
+                        fee: U256::from(5u64),
+                    },
+                },
+            ],
         };
 
         let deserialized: Trade = serde_json::from_value(value.clone()).unwrap();
