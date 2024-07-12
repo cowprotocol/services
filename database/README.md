@@ -413,7 +413,7 @@ Indexes:
 
 ### auction\_cow\_amms
 
-Stores all cow amm owners that are part of an auction, and therefore allowed to be settled.
+Stores all cow amm owners that are part of an auction. Cow amm order is allowed to be settled in an auction only if it's owner was part of that auction.
 
  Column     | Type    | Nullable | Details
 ------------|---------|----------|--------
