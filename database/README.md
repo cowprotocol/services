@@ -411,6 +411,18 @@ order\_uids | bytea[] | not null | order uids that were included in the auction
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`)
 
+### auction\_cow\_amms
+
+Stores all cow amm owners that are part of an auction, and therefore allowed to be settled.
+
+ Column     | Type    | Nullable | Details
+------------|---------|----------|--------
+auction\_id | bigint  | not null | which auction this order was part of
+owners      | bytea[] | not null | cow amm owners included in the auction
+
+Indexes:
+- PRIMARY KEY: btree(`auction_uid`)
+
 ### Enums
 
 #### executiontime
