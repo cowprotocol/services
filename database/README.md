@@ -411,14 +411,14 @@ order\_uids | bytea[] | not null | order uids that were included in the auction
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`)
 
-### auction\_cow\_amms
+### auction\_surplus\_capturing\_jit\_order\_owners
 
-Stores all cow amm owners that are part of an auction. Cow amm order is allowed to be settled in an auction only if it's owner was part of that auction.
+Stores all surplus capturing jit order owners that are part of an auction. Surplus capturing jit order is allowed to be settled in an auction only if it's owner was part of that auction.
 
  Column     | Type    | Nullable | Details
 ------------|---------|----------|--------
 auction\_id | bigint  | not null | which auction this order was part of
-owners      | bytea[] | not null | cow amm owners included in the auction
+owners      | bytea[] | not null | surplus capturing jit order owner included in the auction
 
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`)
