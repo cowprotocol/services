@@ -7,6 +7,8 @@ use {
         byte_array::ByteArray,
         settlement_call_data::SettlementCallData,
         settlement_scores::Score,
+        surplus_capturing_jit_order_owners,
+        Address,
     },
     derivative::Derivative,
     model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
@@ -132,6 +134,23 @@ impl super::Postgres {
         )
         .await
         .context("auction_orders::insert")?;
+
+        ex.commit().await.context("commit")
+    }
+
+    pub async fn save_surplus_capturing_jit_orders_orders(
+        &self,
+        auction_id: AuctionId,
+        surplus_capturing_jit_order_owners: &[Address],
+    ) -> anyhow::Result<()> {
+        let mut ex = self.pool.begin().await.context("begin")?;
+
+        surplus_capturing_jit_order_owners::insert(
+            &mut ex,
+            auction_id,
+            surplus_capturing_jit_order_owners,
+        )
+        .await?;
 
         ex.commit().await.context("commit")
     }

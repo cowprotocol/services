@@ -20,7 +20,10 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
-    database::order_events::OrderEventLabel,
+    database::{
+        byte_array::ByteArray,
+        order_events::OrderEventLabel,
+    },
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -249,12 +252,6 @@ impl RunLoop {
                         settlement
                     })
                     .collect(),
-                surplus_capturing_jit_order_owners: self
-                    .surplus_capturing_jit_order_owners
-                    .list_all()
-                    .await
-                    .into_iter()
-                    .collect::<Vec<_>>(),
             };
             let competition = Competition {
                 auction_id,
@@ -272,6 +269,23 @@ impl RunLoop {
 
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.persistence.save_competition(&competition).await {
+                tracing::error!(?err, "failed to save competition");
+                return;
+            }
+
+            let surplus_capturing_jit_order_owners =
+                self.surplus_capturing_jit_order_owners.list_all().await;
+            if let Err(err) = self
+                .persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &surplus_capturing_jit_order_owners
+                        .into_iter()
+                        .map(|address| ByteArray(address.0))
+                        .collect::<Vec<_>>(),
+                )
+                .await
+            {
                 tracing::error!(?err, "failed to save competition");
                 return;
             }

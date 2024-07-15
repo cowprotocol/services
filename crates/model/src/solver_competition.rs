@@ -18,8 +18,6 @@ pub struct SolverCompetitionDB {
     pub competition_simulation_block: u64,
     pub auction: CompetitionAuction,
     pub solutions: Vec<SolverSettlement>,
-    #[serde(default)]
-    pub surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 /// Returned by the `/solver_competition` endpoint.
@@ -181,11 +179,6 @@ mod tests {
                     "callData": "0x13",
                     "uninternalizedCallData": "0x1314"
                 },
-            ],
-            "surplusCapturingJitOrderOwners": [
-                "0x4444444444444444444444444444444444444444",
-                "0x5555555555555555555555555555555555555555",
-                "0x6666666666666666666666666666666666666666"
             ]
         });
 
@@ -229,11 +222,6 @@ mod tests {
                     call_data: Some(vec![0x13]),
                     uninternalized_call_data: Some(vec![0x13, 0x14]),
                 }],
-                surplus_capturing_jit_order_owners: vec![
-                    H160([0x44; 20]),
-                    H160([0x55; 20]),
-                    H160([0x66; 20]),
-                ],
             },
         };
 
