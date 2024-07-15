@@ -25,12 +25,14 @@ impl FeePolicyRetrieving for Postgres {
     ) -> anyhow::Result<Vec<FeePolicy>> {
         let mut ex = self.pool.acquire().await?;
 
-        let _timer = super::Metrics::get()
+        let timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["fee_policies"])
             .start_timer();
 
         let fee_policies = database::fee_policies::fetch(&mut ex, auction_id, order_uid).await?;
+        timer.stop_and_record();
+
         let quote = fee_policies
             .iter()
             .any(|fp| {
