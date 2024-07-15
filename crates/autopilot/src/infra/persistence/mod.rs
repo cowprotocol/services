@@ -343,13 +343,11 @@ pub mod error {
         DbConversion(&'static str),
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
-        #[error("deadline not found in the database")]
-        MissingDeadline,
+        #[error("orders not found in the database for an existing auction id")]
+        MissingOrders,
         #[error("quote not found in the database for an existing order")]
         MissingQuote,
-        #[error("orders are missing from the auction")]
-        MissingOrders,
-        #[error("jit order owners are missing from the auction")]
+        #[error("jit order owners not found for an existing auction id")]
         MissingJitOrderOwners,
     }
 
