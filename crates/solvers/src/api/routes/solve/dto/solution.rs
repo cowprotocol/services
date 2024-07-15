@@ -48,18 +48,17 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::Solutions {
                                     receiver: trade.order.receiver,
                                     valid_to: trade.order.valid_to,
                                     app_data: trade.order.app_data.0,
-                                    fee_amount: 0.into(),
                                     kind: match trade.order.side {
                                         crate::domain::order::Side::Buy => Kind::Buy,
                                         crate::domain::order::Side::Sell => Kind::Sell,
                                     },
-                                    partially_fillable: trade.order.partially_fillable,
                                     sell_token_balance: SellTokenBalance::Erc20,
                                     buy_token_balance: BuyTokenBalance::Erc20,
                                     signing_scheme,
                                     signature,
                                 },
                                 executed_amount: trade.executed,
+                                fee: Some(trade.fee.0),
                             })
                         }
                     })

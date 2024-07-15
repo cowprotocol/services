@@ -3,6 +3,7 @@ use {
         BalancerV2Authorizer,
         BalancerV2Vault,
         CoWSwapEthFlow,
+        CowAmmLegacyHelper,
         GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
@@ -10,7 +11,7 @@ use {
         UniswapV2Router02,
         WETH9,
     },
-    ethcontract::{Address, H256, U256},
+    ethcontract::{errors::DeployError, Address, H256, U256},
     model::DomainSeparator,
     shared::ethrpc::Web3,
 };
@@ -27,6 +28,7 @@ pub struct Contracts {
     pub domain_separator: DomainSeparator,
     pub ethflow: CoWSwapEthFlow,
     pub hooks: HooksTrampoline,
+    pub cow_amm_helper: Option<CowAmmLegacyHelper>,
 }
 
 impl Contracts {
@@ -40,6 +42,11 @@ impl Contracts {
         tracing::info!("connected to forked test network {}", network_id);
 
         let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
+        let cow_amm_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
+            Err(DeployError::NotFound(_)) => None,
+            Err(err) => panic!("failed to find deployed contract: {:?}", err),
+            Ok(contract) => Some(contract),
+        };
 
         Self {
             chain_id: network_id
@@ -66,6 +73,7 @@ impl Contracts {
             ethflow: CoWSwapEthFlow::deployed(web3).await.unwrap(),
             hooks: HooksTrampoline::deployed(web3).await.unwrap(),
             gp_settlement,
+            cow_amm_helper,
         }
     }
 
@@ -165,6 +173,8 @@ impl Contracts {
             domain_separator,
             ethflow,
             hooks,
+            // Current helper contract only works in forked tests
+            cow_amm_helper: None,
         }
     }
 

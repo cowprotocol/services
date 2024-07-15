@@ -150,7 +150,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        calldata:
+        callData:
           description: Hex encoded bytes with `0x` prefix.
           type: string
     Token:
@@ -331,6 +331,12 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
+        surplusCapturingJitOrderOwners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
+          description: |
+            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
     SolveResponse:
       description: |
         Response of the solve endpoint.
@@ -384,9 +390,14 @@ components:
       description: Request to the settle and reveal endpoint.
       type: object
       properties:
-        auctionId:
-          description: Id of the auction that should be executed.
+        solutionId:
+          description: Id of the solution that should be executed.
+          type: string
+          example: "123"
+        submissionDeadlineLatestBlock:
+          description: The last block number in which the solution TX can be included.
           type: integer
+          example: 12345
     RevealedResponse:
       description: Response of the reveal endpoint.
       type: object

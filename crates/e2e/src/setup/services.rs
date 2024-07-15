@@ -154,6 +154,7 @@ impl<'a> Services<'a> {
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--quote-timeout=10s".to_string(),
             "--quote-verification=enforce-when-possible".to_string(),
         ]
         .into_iter()
@@ -381,6 +382,7 @@ impl<'a> Services<'a> {
         &self,
         order: &OrderCreation,
     ) -> Result<OrderUid, (StatusCode, String)> {
+        tracing::info!("Creating order: {order:?}");
         let placement = self
             .http
             .post(format!("{API_HOST}{ORDERS_ENDPOINT}"))

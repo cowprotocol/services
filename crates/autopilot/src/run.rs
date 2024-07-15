@@ -13,14 +13,14 @@ use {
         },
         domain,
         event_updater::EventUpdater,
-        infra::{self},
+        infra::{self, blockchain::ChainId},
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
-    ethcontract::{errors::DeployError, BlockNumber},
+    ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
@@ -87,11 +87,13 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
 }
 
 async fn ethereum(
-    ethrpc: infra::blockchain::Rpc,
+    web3: DynWeb3,
+    chain: ChainId,
+    url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(ethrpc, contracts, poll_interval).await
+    infra::Ethereum::new(web3, chain, url, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -99,6 +101,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
+        args.shared.logging.enable_tokio_console,
     );
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
@@ -149,13 +152,18 @@ pub async fn run(args: Arguments) {
     }
 
     let ethrpc = ethrpc(&args.shared.node_url).await;
+    let chain = ethrpc.chain();
+    let web3 = ethrpc.web3().clone();
+    let url = ethrpc.url().clone();
     let contracts = infra::blockchain::contracts::Addresses {
         settlement: args.shared.settlement_contract_address,
         weth: args.shared.native_token_address,
     };
     let eth = ethereum(
-        ethrpc,
-        contracts,
+        web3.clone(),
+        chain,
+        url,
+        contracts.clone(),
         args.shared.current_block.block_stream_poll_interval,
     )
     .await;
@@ -355,6 +363,14 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
+
+    let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
+    for config in &args.cow_amm_configs {
+        cow_amm_registry
+            .add_listener(config.index_start, config.factory, config.helper)
+            .await;
+    }
+
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(
@@ -455,6 +471,7 @@ pub async fn run(args: Arguments) {
             args.protocol_fee_exempt_addresses.as_slice(),
             args.enable_multiple_fees,
         ),
+        cow_amm_registry.clone(),
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
@@ -494,7 +511,6 @@ pub async fn run(args: Arguments) {
             .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
-        additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
@@ -505,6 +521,7 @@ pub async fn run(args: Arguments) {
             .iter()
             .cloned()
             .collect::<HashSet<_>>(),
+        cow_amm_registry,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

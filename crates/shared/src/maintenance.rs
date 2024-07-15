@@ -214,7 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn block_stream_retries_failed_blocks() {
-        observe::tracing::initialize("debug", tracing::Level::ERROR.into());
+        observe::tracing::initialize("debug", tracing::Level::ERROR.into(), false);
 
         let mut mock_maintenance = MockMaintaining::new();
         let mut sequence = Sequence::new();

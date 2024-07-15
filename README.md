@@ -117,13 +117,34 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
   --timestamp 1577836800
 ```
 
+### Profiling
+
+The most important binaries support [tokio-console](https://github.com/tokio-rs/console) to allow you a could look inside the tokio runtime.
+
+Simply enable the feature by passing `--enable-tokio-console true` when running a binary and then in another shell, run
+
+```
+cargo install --locked tokio-console
+tokio-console
+```
+
+
+### Changing Log Filters
+
+It's possible to change the tracing log filter while the process is running. This can be useful to debug an error that requires more verbose logs but which might no longer appear after restarting the system.
+
+Each process opens a UNIX socket at `/tmp/log_filter_override_<program_name>_<pid>.sock`. To change the log filter connect to it with `nc -U <path>` and enter a new log filter.
+You can also reset the log filter to the filter the program was initially started with by entering `reset`.
+
+See [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for documentation on the supported log filter format.
+
 ## Running the Services Locally
 
 ### Prerequisites
 
 Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third-party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
 After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
-Because services are only run on Mainnet, Görli, Sepolia, and Gnosis Chain you need to select one of those.
+Because services are only run on Mainnet, Gnosis Chain, Arbitrum One and Sepolia you need to select one of those.
 
 Note that the `node-url` is sensitive data. The `orderbook` and `solver` executables allow you to pass it with the `--node-url` parameter. This is very convenient for our examples but to minimize the possibility of sharing this information by accident you should consider setting the `NODE_URL` environment variable so you don't have to pass the `--node-url` argument to the executables.
 
@@ -178,16 +199,16 @@ The `solver-account` is responsible for signing transactions. Solutions for sett
 
 To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
 
-| Orderbook URL                       | Network      | Environment |
-|-------------------------------------|--------------|-------------|
-| https://barn.api.cow.fi/mainnet/api | Mainnet      | Staging     |
-| https://api.cow.fi/mainnet/api      | Mainnet      | Production  |
-| https://barn.api.cow.fi/goerli/api  | Görli        | Staging     |
-| https://api.cow.fi/goerli/api       | Görli        | Production  |
-| https://barn.api.cow.fi/sepolia/api | Sepolia      | Staging     |
-| https://api.cow.fi/sepolia/api      | Sepolia      | Production  |
-| https://barn.api.cow.fi/xdai/api    | Gnosis Chain | Staging     |
-| https://api.cow.fi/xdai/api         | Gnosis Chain | Production  |
+| Orderbook URL                              | Network      | Environment |
+|--------------------------------------------|--------------|-------------|
+| <https://barn.api.cow.fi/mainnet/api>      | Mainnet      | Staging     |
+| <https://api.cow.fi/mainnet/api>           | Mainnet      | Production  |
+| <https://barn.api.cow.fi/xdai/api>         | Gnosis Chain | Staging     |
+| <https://api.cow.fi/xdai/api>              | Gnosis Chain | Production  |
+| <https://barn.api.cow.fi/arbitrum_one/api> | Arbitrum One | Staging     |
+| <https://api.cow.fi/arbitrum_one/api>      | Arbitrum One | Production  |
+| <https://barn.api.cow.fi/sepolia/api>      | Sepolia      | Staging     |
+| <https://api.cow.fi/sepolia/api>           | Sepolia      | Production  |
 
 Always make sure that the `solver` and the `orderbook` it connects to are configured to use the same network.
 

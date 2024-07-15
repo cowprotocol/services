@@ -23,6 +23,7 @@ bigdecimal = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
+cow-amm = { path = "../cow-amm" }
 database = { path = "../database" }
 derivative = { workspace = true }
 derive_more = { workspace = true }

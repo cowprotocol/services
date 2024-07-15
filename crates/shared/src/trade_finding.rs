@@ -13,12 +13,6 @@ use {
     thiserror::Error,
 };
 
-/// Returns the default time limit used for quoting with external co-located
-/// solvers.
-pub fn time_limit() -> chrono::Duration {
-    chrono::Duration::seconds(5)
-}
-
 /// Find a trade for a token pair.
 ///
 /// This is similar to the `PriceEstimating` interface, but it expects calldata

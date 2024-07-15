@@ -12,6 +12,7 @@ use {
 pub struct BlockscoutTokenOwnerFinder {
     client: Client,
     base: Url,
+    api_key: Option<String>,
     rate_limiter: Option<RateLimiter>,
 }
 
@@ -22,18 +23,25 @@ impl BlockscoutTokenOwnerFinder {
             5 => "https://eth-goerli.blockscout.com/api",
             100 => "https://blockscout.com/xdai/mainnet/api",
             11155111 => "https://eth-sepolia.blockscout.com/api",
+            42161 => "https://arbitrum.blockscout.com/api",
             _ => bail!("Unsupported Network"),
         };
 
         Ok(Self {
             client,
             base: Url::parse(base_url)?,
+            api_key: None,
             rate_limiter: None,
         })
     }
 
     pub fn with_base_url(&mut self, base_url: Url) -> &mut Self {
         self.base = base_url;
+        self
+    }
+
+    pub fn with_api_key(&mut self, api_key: String) -> &mut Self {
+        self.api_key = Some(api_key);
         self
     }
 
@@ -52,7 +60,12 @@ impl BlockscoutTokenOwnerFinder {
             .append_pair("action", "getTokenHolders")
             .append_pair("contractaddress", &format!("{token:#x}"));
 
+        // Don't log the API key!
         tracing::debug!(%url, "Querying Blockscout API");
+
+        if let Some(api_key) = &self.api_key {
+            url.query_pairs_mut().append_pair("apikey", api_key);
+        }
 
         let request = self.client.get(url).send();
         let response = match &self.rate_limiter {

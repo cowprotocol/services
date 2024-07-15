@@ -42,7 +42,7 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
-    crate::infra::observe::init(&args.log);
+    crate::infra::observe::init(&args.log, args.enable_tokio_console);
 
     let ethrpc = ethrpc(&args).await;
     let web3 = ethrpc.web3().clone();
@@ -69,7 +69,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
-        encoding: config.encoding,
     }
     .serve(async {
         let _ = shutdown_receiver.await;
@@ -133,7 +132,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts, gas).await
+    Ethereum::new(ethrpc, config.contracts.clone(), gas).await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

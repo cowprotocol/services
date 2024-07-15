@@ -17,24 +17,38 @@ jobs:
           # Requires "Read and Write access to code" permission
           token: ${{ secrets.RELEASE_ACTION_ACCESS_TOKEN }}
 
-      - name: Create Tag
-        id: tag_version
+      - name: Fetch latest release version tag
+        id: fetch_tag
         run: |
-          # Extracts the latest version tag, bumps the minor version
-          LATEST_VERSION=$(git tag --sort=-authordate --merged=main | head --lines 1)
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/cowprotocol/services/releases/latest | jq -r '.tag_name')
           if ! [[ "$LATEST_VERSION" =~ ^v[0-9]+\.[0-9]+\..* ]]; then
             echo "Invalid tag format, cannot bump version of: $LATEST_VERSION"
             exit 1
           fi
-          MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
-          MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+          echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check for changes since last tag
+        run: |
+          git diff --quiet ${{ steps.fetch_tag.outputs.latest }}..HEAD || echo "CHANGES_DETECTED=true" >> $GITHUB_ENV
+
+      - name: No changes detected
+        if: env.CHANGES_DETECTED != 'true'
+        run: echo "No commits since previous release. Skipping release."
+
+      - name: Create Tag
+        id: tag_version
+        if: env.CHANGES_DETECTED == 'true'
+        run: |
+          MAJOR=$(echo ${{ steps.fetch_tag.outputs.latest }} | cut -d. -f1)
+          MINOR=$(echo ${{ steps.fetch_tag.outputs.latest }} | cut -d. -f2)
           NEW_MINOR=$((MINOR+1))
           NEW_TAG="${MAJOR}.${NEW_MINOR}.0"
-          echo ::set-output name=tag::$NEW_TAG
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
           git tag $NEW_TAG
           git push origin --tags
 
       - name: "Create release"
+        if: env.CHANGES_DETECTED == 'true'
         uses: "actions/github-script@v6"
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"

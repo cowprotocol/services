@@ -19,6 +19,7 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
         .unwrap()
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuctionTransaction {
     pub tx_hash: TransactionHash,
@@ -28,6 +29,7 @@ pub struct AuctionTransaction {
     pub log_index: i64,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Cip20Data {
     pub observation: database::settlement_observations::Observation,

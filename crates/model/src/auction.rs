@@ -58,6 +58,7 @@ mod tests {
         crate::order::{OrderMetadata, OrderUid},
         maplit::btreemap,
         serde_json::json,
+        shared::assert_json_matches,
     };
 
     #[test]
@@ -80,7 +81,7 @@ mod tests {
         };
         let auction = AuctionWithId { id: 0, auction };
 
-        assert_eq!(
+        assert_json_matches!(
             serde_json::to_value(&auction).unwrap(),
             json!({
                 "id": 0,
@@ -94,7 +95,7 @@ mod tests {
                     "0x0101010101010101010101010101010101010101": "1",
                     "0x0202020202020202020202020202020202020202": "2",
                 },
-            }),
+            })
         );
         assert_eq!(
             serde_json::from_value::<AuctionWithId>(serde_json::to_value(&auction).unwrap())
