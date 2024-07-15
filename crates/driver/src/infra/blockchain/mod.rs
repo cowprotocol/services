@@ -61,7 +61,6 @@ struct Inner {
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
     current_block: CurrentBlockStream,
-    max_block_size: Option<eth::U256>,
 }
 
 impl Ethereum {
@@ -75,7 +74,6 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
-        max_block_size: Option<eth::U256>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
 
@@ -94,7 +92,6 @@ impl Ethereum {
                 chain,
                 contracts,
                 gas,
-                max_block_size,
             }),
             web3,
         }
@@ -135,6 +132,20 @@ impl Ethereum {
         &self.inner.current_block
     }
 
+    /// Returns the maximum block size for the current chain.
+    ///
+    /// Specifically set high gas because some nodes don't pick a sensible value
+    /// if omitted. And since we are only interested in access lists a very
+    /// high value is fine.
+    ///
+    /// Uses None for the Arbitrum One chain to make the Nitro node select a
+    /// reasonable gas limit automatically.
+    fn max_block_size(&self) -> Option<eth::U256> {
+        const ARBITRUM_ONE_CHAIN_ID: u64 = 42161;
+
+        (self.inner.chain.0 != ARBITRUM_ONE_CHAIN_ID).then_some(30_000_000.into())
+    }
+
     /// Create access list used by a transaction.
     pub async fn create_access_list(&self, tx: eth::Tx) -> Result<eth::AccessList, Error> {
         let tx = web3::types::TransactionRequest {
@@ -143,7 +154,7 @@ impl Ethereum {
             value: Some(tx.value.into()),
             data: Some(tx.input.into()),
             access_list: Some(tx.access_list.into()),
-            gas: self.inner.max_block_size,
+            gas: self.max_block_size(),
             gas_price: self.simulation_gas_price().await,
             ..Default::default()
         };
