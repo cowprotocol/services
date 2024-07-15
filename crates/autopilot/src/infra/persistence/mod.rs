@@ -219,10 +219,20 @@ impl Persistence {
             fee_policies
         };
 
+        let surplus_capturing_jit_order_owners =
+            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
+                .await
+                .context("fetch surplus capturing jit order owners")?
+                .ok_or(error::Auction::MissingJitOrderOwners)?
+                .into_iter()
+                .map(|owner| eth::H160(owner.0).into())
+                .collect();
+
         Ok(domain::settlement::Auction {
             id: auction_id,
             prices,
             fee_policies,
+            surplus_capturing_jit_order_owners,
         })
     }
 
@@ -339,6 +349,8 @@ pub mod error {
         MissingQuote,
         #[error("orders are missing from the auction")]
         MissingOrders,
+        #[error("jit order owners are missing from the auction")]
+        MissingJitOrderOwners,
     }
 
     #[derive(Debug, thiserror::Error)]

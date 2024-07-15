@@ -4,13 +4,12 @@
 
 use crate::{domain::eth, infra};
 
-mod competition;
+mod auction;
 mod solution;
 mod trade;
 mod transaction;
 pub use {
-    competition::Auction,
-    error::Error,
+    auction::Auction,
     trade::{tokenized, Trade},
     transaction::Transaction,
 };
@@ -38,14 +37,10 @@ impl Settlement {
     }
 }
 
-mod error {
-    use super::*;
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Error {
-        #[error(transparent)]
-        Solution(#[from] solution::Error),
-        #[error(transparent)]
-        Auction(#[from] infra::persistence::error::Auction),
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Solution(#[from] solution::Error),
+    #[error(transparent)]
+    Auction(#[from] infra::persistence::error::Auction),
 }

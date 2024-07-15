@@ -3,7 +3,6 @@
 //! A winning solution becomes a [`Settlement::Solution`] once it is executed
 //! on-chain.
 
-pub use error::Error;
 use {
     super::{tokenized, trade, Trade, Transaction},
     crate::{
@@ -92,16 +91,12 @@ impl Solution {
     }
 }
 
-mod error {
-    use super::*;
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Error {
-        #[error(transparent)]
-        Decoding(#[from] tokenized::error::Decoding),
-        #[error("failed to recover order uid {0}")]
-        OrderUidRecover(tokenized::error::Uid),
-        #[error(transparent)]
-        Deadline(#[from] infra::persistence::error::Deadline),
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Decoding(#[from] tokenized::error::Decoding),
+    #[error("failed to recover order uid {0}")]
+    OrderUidRecover(tokenized::error::Uid),
+    #[error(transparent)]
+    Deadline(#[from] infra::persistence::error::Deadline),
 }
