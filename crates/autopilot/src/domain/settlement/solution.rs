@@ -18,10 +18,12 @@ use {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Solution {
+    trades: Vec<Trade>,
+    /// Data that was appended to the regular call data of the `settle()` call
+    /// as a form of on-chain meta data. This is used to associate a
+    /// solution with an auction for which this solution was picked as a winner.
     auction_id: auction::Id,
     deadline: eth::BlockNo,
-
-    trades: Vec<Trade>,
 }
 
 impl Solution {

@@ -10,6 +10,7 @@ mod trade;
 mod transaction;
 pub use {
     auction::Auction,
+    solution::Solution,
     trade::{tokenized, Trade},
     transaction::Transaction,
 };
@@ -20,7 +21,7 @@ pub use {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Settlement {
-    solution: solution::Solution,
+    solution: Solution,
     auction: Auction,
 }
 
@@ -30,7 +31,7 @@ impl Settlement {
         domain_separator: &eth::DomainSeparator,
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
-        let solution = solution::Solution::new(tx, domain_separator, persistence).await?;
+        let solution = Solution::new(tx, domain_separator, persistence).await?;
         let auction = persistence.get_auction(solution.auction_id()).await?;
 
         Ok(Self { solution, auction })
