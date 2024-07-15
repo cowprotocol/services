@@ -42,12 +42,12 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let auction = vec![ByteArray([1; 20]), ByteArray([2; 20])];
+        let owners = vec![ByteArray([1; 20]), ByteArray([2; 20])];
 
-        insert(&mut db, 1, &auction).await.unwrap();
+        insert(&mut db, 1, &owners).await.unwrap();
 
         let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(output, Some(auction));
+        assert_eq!(output, Some(owners));
 
         // non-existent auction
         let output = fetch(&mut db, 2).await.unwrap();

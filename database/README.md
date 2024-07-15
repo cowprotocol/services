@@ -411,9 +411,9 @@ order\_uids | bytea[] | not null | order uids that were included in the auction
 Indexes:
 - PRIMARY KEY: btree(`auction_uid`)
 
-### auction\_surplus\_capturing\_jit\_order\_owners
+### surplus\_capturing\_jit\_order\_owners
 
-Stores all surplus capturing jit order owners that are part of an auction. Surplus capturing jit order is allowed to be settled in an auction only if it's owner was part of that auction.
+Stores all surplus capturing jit order owners that are part of an auction. JIT orders settled for addresses which were not part of a given auction will not count towards surplus.
 
  Column     | Type    | Nullable | Details
 ------------|---------|----------|--------
@@ -421,7 +421,7 @@ auction\_id | bigint  | not null | which auction this order was part of
 owners      | bytea[] | not null | surplus capturing jit order owner included in the auction
 
 Indexes:
-- PRIMARY KEY: btree(`auction_uid`)
+- PRIMARY KEY: btree(`auction_id`)
 
 ### Enums
 
