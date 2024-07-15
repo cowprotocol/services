@@ -77,6 +77,11 @@ impl Settlement {
             ));
         }
 
+        let deadline = persistence.get_auction_deadline(auction_id).await?;
+        if deadline < tx.block {
+            // todo
+        }
+
         let auction = persistence.get_auction(auction_id).await?;
         let solution = persistence.get_competition_solution(auction_id).await?;
 
@@ -121,6 +126,8 @@ mod error {
         Score(#[from] Score),
         #[error(transparent)]
         Auction(#[from] infra::persistence::error::Auction),
+        #[error(transparent)]
+        Deadline(#[from] infra::persistence::error::Deadline),
         #[error(transparent)]
         Solution(#[from] infra::persistence::error::Solution),
     }

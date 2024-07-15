@@ -138,22 +138,29 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
+    /// Get auction deadline. Solvers are rewarded if they settle their solution
+    /// before the deadline.
+    pub async fn get_auction_deadline(
+        &self,
+        auction_id: domain::auction::Id,
+    ) -> Result<domain::eth::BlockNo, error::Deadline> {
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+
+        let scores = database::settlement_scores::fetch(&mut ex, auction_id)
+            .await
+            .context("fetch scores")?
+            // if score is missing, no competition / auction exist for this auction_id
+            .ok_or(error::Deadline::MissingDeadline)?;
+
+        Ok((scores.block_deadline as u64).into())
+    }
+
     /// Get auction data.
     pub async fn get_auction(
         &self,
         auction_id: domain::auction::Id,
     ) -> Result<domain::settlement::Auction, error::Auction> {
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
-
-        let deadline = {
-            let scores = database::settlement_scores::fetch(&mut ex, auction_id)
-            .await
-            .context("fetch scores")?
-            // if score is missing, no competition / auction exist for this auction_id
-            .ok_or(error::Auction::MissingDeadline)?;
-
-            (scores.block_deadline as u64).into()
-        };
 
         let prices = {
             let db_prices = database::auction_prices::fetch(&mut ex, auction_id)
@@ -215,7 +222,6 @@ impl Persistence {
         Ok(domain::settlement::Auction {
             id: auction_id,
             prices,
-            deadline,
             fee_policies,
         })
     }
@@ -310,6 +316,14 @@ pub enum Error {
 
 pub mod error {
     use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Deadline {
+        #[error("failed to read data from database")]
+        DbError(#[from] anyhow::Error),
+        #[error("deadline not found in the database")]
+        MissingDeadline,
+    }
 
     #[derive(Debug, thiserror::Error)]
     pub enum Auction {
