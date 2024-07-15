@@ -19,6 +19,9 @@ pub use error::Error;
 
 /// A solution that was executed on-chain.
 ///
+/// Contains only data observable on-chain. No off-chain data is used to create
+/// this struct.
+///
 /// Referenced as [`settlement::Solution`] in the codebase.
 #[derive(Debug)]
 pub struct Solution {

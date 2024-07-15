@@ -9,7 +9,8 @@ mod solution;
 mod transaction;
 pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
-/// A solution together with the `Auction` for which it was picked as a winner.
+/// A solution together with the `Auction` for which it was picked as a winner
+/// and executed on-chain.
 ///
 /// Referenced as a [`Settlement`] in the codebase.
 #[allow(dead_code)]
