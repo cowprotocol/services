@@ -13,8 +13,6 @@ use {
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
 };
 
-pub mod tokenized;
-
 /// A single trade executed on-chain, as part of the [`Settlement`].
 ///
 /// Referenced as [`settlement::Trade`] in the codebase.

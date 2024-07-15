@@ -6,14 +6,8 @@ use crate::{domain::eth, infra};
 
 mod auction;
 mod solution;
-mod trade;
 mod transaction;
-pub use {
-    auction::Auction,
-    solution::Solution,
-    trade::{tokenized, Trade},
-    transaction::Transaction,
-};
+pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
 /// A solution together with the `Auction` for which it was picked as a winner.
 ///
@@ -31,7 +25,7 @@ impl Settlement {
         domain_separator: &eth::DomainSeparator,
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
-        let solution = Solution::new(tx, domain_separator, persistence).await?;
+        let solution = Solution::new(&tx.input, domain_separator)?;
         let auction = persistence.get_auction(solution.auction_id()).await?;
 
         Ok(Self { solution, auction })
