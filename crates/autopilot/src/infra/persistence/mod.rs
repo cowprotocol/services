@@ -331,6 +331,8 @@ pub mod error {
     pub enum Solution {
         #[error("failed to read data from database")]
         DbError(#[from] anyhow::Error),
+        #[error("failed dto conversion from database")]
+        DbConversion(&'static str),
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
         #[error("score not found in the database")]
