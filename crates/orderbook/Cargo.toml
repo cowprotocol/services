@@ -34,6 +34,7 @@ hex = { workspace = true }
 hex-literal = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
+jemallocator = "0.5.4"
 maplit = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"
