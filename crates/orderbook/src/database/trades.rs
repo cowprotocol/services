@@ -38,9 +38,11 @@ impl TradeRetrieving for Postgres {
         )
         .map_err(anyhow::Error::from)
         .and_then(|trade| async move {
-            self.fee_policies(trade.auction_id, trade.order_uid)
-                .await
-                .and_then(|fee_policies| trade_from(trade, fee_policies))
+            match trade.auction_id {
+                Some(auction_id) => self.fee_policies(auction_id, trade.order_uid).await,
+                None => Ok(vec![]),
+            }
+            .and_then(|fee_policies| trade_from(trade, fee_policies))
         })
         .try_collect::<Vec<Trade>>()
         .await
