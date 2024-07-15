@@ -150,7 +150,7 @@ impl Persistence {
             .await
             .context("fetch scores")?
             // if score is missing, no competition / auction exist for this auction_id
-            .ok_or(error::Auction::MissingDeadline)?;
+            .ok_or(error::Auction::Missing)?;
 
             (scores.block_deadline as u64).into()
         };
@@ -176,7 +176,7 @@ impl Persistence {
             let orders = database::auction_orders::fetch(&mut ex, auction_id)
                 .await
                 .context("fetch auction orders")?
-                .ok_or(error::Auction::MissingOrders)?
+                .ok_or(error::Auction::Missing)?
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0));
 
@@ -241,25 +241,15 @@ pub mod error {
     use super::*;
 
     #[derive(Debug, thiserror::Error)]
-    pub enum Deadline {
-        #[error("failed to read data from database")]
-        DbError(#[from] anyhow::Error),
-        #[error("deadline not found in the database")]
-        MissingDeadline,
-    }
-
-    #[derive(Debug, thiserror::Error)]
     pub enum Auction {
         #[error("failed to read data from database")]
         DbError(#[from] anyhow::Error),
         #[error("failed dto conversion from database")]
         DbConversion(&'static str),
-        #[error("deadline not found in the database")]
-        MissingDeadline,
+        #[error("auction data not found in the database")]
+        Missing,
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
-        #[error("orders not found in the database for an existing auction id")]
-        MissingOrders,
         #[error("quote not found in the database for an existing order")]
         MissingQuote,
         #[error("jit order owners not found for an existing auction id")]

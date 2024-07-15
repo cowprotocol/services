@@ -13,7 +13,8 @@ pub struct Auction {
     /// Fee policies for all orders in the auction. For some orders, there may
     /// be no fee policies.
     pub fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
-    /// Deadline for the auction to be settled.
+    /// Deadline for an auction solution to be settled, so that it is eligible
+    /// for rewards.
     pub deadline: domain::eth::BlockNo,
     /// JIT orders with surplus capturing JIT order owners should capture
     /// surplus if settled.
