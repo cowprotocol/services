@@ -2,13 +2,13 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, competition, eth},
+        domain::{self, eth},
     },
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     std::{collections::HashMap, sync::Arc},
     tracing::Instrument,
 };
@@ -235,87 +235,6 @@ impl Persistence {
             surplus_capturing_jit_order_owners,
         })
     }
-
-    /// Get winning competition solution.
-    pub async fn get_competition_solution(
-        &self,
-        auction_id: domain::auction::Id,
-    ) -> Result<domain::competition::Solution, error::Solution> {
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
-
-        let (winner, score) = {
-            let scores = database::settlement_scores::fetch(&mut ex, auction_id)
-                .await
-                .context("fetch scores")?
-                // if score is missing, no competition / auction exist for this auction_id
-                .ok_or(error::Solution::MissingScore)?;
-
-            (
-                H160(scores.winner.0).into(),
-                competition::Score::new(
-                    big_decimal_to_u256(&scores.winning_score)
-                        .ok_or(error::Solution::DbConversion("score"))?
-                        .into(),
-                )?,
-            )
-        };
-
-        // TODO: stabilize the solver competition table to get promised solution.
-        // https://github.com/cowprotocol/services/issues/2716
-        // for now, this is a `good enough` solution to unblock other tasks.
-        let solver_competition = database::solver_competition::load_by_id(&mut ex, auction_id)
-            .await
-            .context("load solver competition")?
-            .ok_or(error::Solution::SolverCompetition(anyhow::anyhow!(
-                "missing solver competition"
-            )))?;
-        let competition: model::solver_competition::SolverCompetitionDB =
-            serde_json::from_value(solver_competition.json).map_err(|_| {
-                error::Solution::SolverCompetition(anyhow::anyhow!("json conversion"))
-            })?;
-        let winning_solution =
-            competition
-                .solutions
-                .last()
-                .ok_or(error::Solution::SolverCompetition(anyhow::anyhow!(
-                    "empty solutions"
-                )))?;
-        let mut orders = HashMap::new();
-        for order in winning_solution.orders.iter() {
-            match order {
-                model::solver_competition::Order::Colocated {
-                    id,
-                    sell_amount,
-                    buy_amount,
-                } => {
-                    orders.insert(
-                        domain::OrderUid(id.0),
-                        competition::TradedAmounts {
-                            sell: (*sell_amount).into(),
-                            buy: (*buy_amount).into(),
-                        },
-                    );
-                }
-                model::solver_competition::Order::Legacy {
-                    id: _,
-                    executed_amount: _,
-                } => {
-                    return Err(error::Solution::SolverCompetition(anyhow::anyhow!(
-                        "Legacy order"
-                    )))
-                }
-            }
-        }
-        let mut prices = HashMap::new();
-        for (token, price) in winning_solution.clearing_prices.clone().into_iter() {
-            prices.insert(
-                token.into(),
-                domain::auction::Price::new(price.into())
-                    .map_err(|_| error::Solution::Price(domain::auction::InvalidPrice))?,
-            );
-        }
-        Ok(competition::Solution::new(0, winner, score, orders, prices))
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -349,21 +268,5 @@ pub mod error {
         MissingQuote,
         #[error("jit order owners not found for an existing auction id")]
         MissingJitOrderOwners,
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Solution {
-        #[error("failed to read data from database")]
-        DbError(#[from] anyhow::Error),
-        #[error("failed dto conversion from database")]
-        DbConversion(&'static str),
-        #[error(transparent)]
-        Price(#[from] domain::auction::InvalidPrice),
-        #[error("score not found in the database")]
-        MissingScore,
-        #[error(transparent)]
-        ZeroScore(#[from] domain::competition::ZeroScore),
-        #[error("solver competition data is missing")]
-        SolverCompetition(anyhow::Error),
     }
 }
