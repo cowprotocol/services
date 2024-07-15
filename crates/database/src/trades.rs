@@ -1,12 +1,11 @@
 use {
-    crate::{fee_policies::FeePolicy, Address, OrderUid, TransactionHash},
+    crate::{auction::AuctionId, Address, OrderUid, TransactionHash},
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
-    serde_json::Value,
-    sqlx::{PgConnection, Row},
+    sqlx::PgConnection,
 };
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct TradesQueryRow {
     pub block_number: i64,
     pub log_index: i64,
@@ -18,51 +17,7 @@ pub struct TradesQueryRow {
     pub buy_token: Address,
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
-    pub fee_policies: Vec<FeePolicy>,
-    pub quote: Option<Quote>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Quote {
-    pub sell_amount: BigDecimal,
-    pub buy_amount: BigDecimal,
-    pub fee: f64,
-}
-
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for TradesQueryRow {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        let fee_policies: Value = row.try_get("fee_policies")?;
-        let fee_policies: Vec<FeePolicy> =
-            serde_json::from_value(fee_policies).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
-        let quote: (Option<BigDecimal>, Option<BigDecimal>, Option<f64>) = (
-            row.try_get("quote_sell_amount").ok(),
-            row.try_get("quote_buy_amount").ok(),
-            row.try_get("quote_fee").ok(),
-        );
-        let quote = match quote {
-            (Some(sell_amount), Some(buy_amount), Some(fee)) => Some(Quote {
-                sell_amount,
-                buy_amount,
-                fee,
-            }),
-            _ => None,
-        };
-
-        Ok(TradesQueryRow {
-            block_number: row.try_get("block_number")?,
-            log_index: row.try_get("log_index")?,
-            order_uid: row.try_get("order_uid")?,
-            buy_amount: row.try_get("buy_amount")?,
-            sell_amount: row.try_get("sell_amount")?,
-            sell_amount_before_fees: row.try_get("sell_amount_before_fees")?,
-            owner: row.try_get("owner")?,
-            buy_token: row.try_get("buy_token")?,
-            sell_token: row.try_get("sell_token")?,
-            tx_hash: row.try_get("tx_hash")?,
-            fee_policies,
-            quote,
-        })
-    }
+    pub auction_id: AuctionId,
 }
 
 pub fn trades<'a>(
@@ -82,21 +37,7 @@ SELECT
     o.buy_token,
     o.sell_token,
     settlement.tx_hash,
-    COALESCE(json_agg(
-            json_build_object(
-                'auction_id', fp.auction_id,
-                'order_uid', fp.order_uid,
-                'kind', fp.kind,
-                'surplus_factor', fp.surplus_factor,
-                'surplus_max_volume_factor', fp.surplus_max_volume_factor,
-                'volume_factor', fp.volume_factor,
-                'price_improvement_factor', fp.price_improvement_factor,
-                'price_improvement_max_volume_factor', fp.price_improvement_max_volume_factor
-            ) ORDER BY fp.application_order
-        ) FILTER (WHERE fp.auction_id IS NOT NULL), '[]') AS fee_policies,
-    oq.sell_amount AS quote_sell_amount,
-    oq.buy_amount AS quote_buy_amount,
-    (oq.gas_amount * oq.gas_price / oq.sell_token_price) AS quote_fee
+    settlement.auction_id
 FROM trades t
 LEFT OUTER JOIN LATERAL (
     SELECT tx_hash, auction_id FROM settlements s
@@ -105,29 +46,18 @@ LEFT OUTER JOIN LATERAL (
     ORDER BY s.log_index ASC
     LIMIT 1
 ) AS settlement ON true
-JOIN orders o ON o.uid = t.order_uid
-LEFT JOIN fee_policies fp ON fp.auction_id = settlement.auction_id AND fp.order_uid = t.order_uid
-LEFT JOIN order_quotes oq ON oq.order_uid = t.order_uid"#;
+JOIN orders o
+ON o.uid = t.order_uid"#;
     const QUERY: &str = const_format::concatcp!(
-        "WITH combined AS (",
         COMMON_QUERY,
         " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
-        " GROUP BY t.block_number, t.log_index, t.order_uid, o.owner, o.buy_token, o.sell_token, \
-         settlement.tx_hash, oq.sell_amount, oq.buy_amount, oq.gas_amount, oq.gas_price, \
-         oq.sell_token_price ",
-        " UNION ALL ",
+        "UNION",
         COMMON_QUERY,
         " LEFT OUTER JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
         " WHERE onchain_o.sender = $1",
         " AND ($2 IS NULL OR o.uid = $2)",
-        " GROUP BY t.block_number, t.log_index, t.order_uid, o.owner, o.buy_token, o.sell_token, \
-         settlement.tx_hash, oq.sell_amount, oq.buy_amount, oq.gas_amount, oq.gas_price, \
-         oq.sell_token_price ",
-        ") ",
-        "SELECT DISTINCT ON (block_number, log_index, order_uid) * FROM combined ",
-        "ORDER BY block_number DESC"
     );
 
     sqlx::query_as(QUERY)
@@ -141,10 +71,8 @@ mod tests {
     use {
         super::*,
         crate::{
-            auction::AuctionId,
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement, Trade},
-            fee_policies::{FeePolicy, FeePolicyKind},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
             orders::Order,
             PgTransaction,
@@ -397,24 +325,23 @@ mod tests {
         event_index: EventIndex,
         solver: Address,
         transaction_hash: TransactionHash,
-        auction_id: AuctionId,
     ) -> Settlement {
-        let settlement = Settlement {
-            solver,
-            transaction_hash,
-        };
-        crate::events::append(ex, &[(event_index, Event::Settlement(settlement))])
-            .await
-            .unwrap();
-        crate::settlements::update_settlement_auction(
+        crate::events::append(
             ex,
-            event_index.block_number,
-            event_index.log_index,
-            auction_id,
+            &[(
+                event_index,
+                Event::Settlement(Settlement {
+                    solver,
+                    transaction_hash,
+                }),
+            )],
         )
         .await
         .unwrap();
-        settlement
+        Settlement {
+            solver,
+            transaction_hash,
+        }
     }
 
     #[tokio::test]
@@ -435,7 +362,6 @@ mod tests {
             },
             Default::default(),
             Default::default(),
-            1,
         )
         .await;
 
@@ -484,7 +410,6 @@ mod tests {
             },
             Default::default(),
             Default::default(),
-            1,
         )
         .await;
 
@@ -533,7 +458,6 @@ mod tests {
             },
             Default::default(),
             Default::default(),
-            1,
         )
         .await;
         let settlement_b = add_settlement(
@@ -544,7 +468,6 @@ mod tests {
             },
             Default::default(),
             ByteArray([2; 32]),
-            1,
         )
         .await;
 
@@ -570,132 +493,6 @@ mod tests {
                 log_index: 2,
             },
             Some(settlement_b.transaction_hash),
-        )
-        .await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
-    }
-
-    // Testing trades with fee policies
-    async fn add_fee_policies(
-        ex: &mut PgTransaction<'_>,
-        trade: &mut TradesQueryRow,
-        fee_policies: Vec<FeePolicy>,
-    ) {
-        crate::fee_policies::insert_batch(ex, fee_policies.clone())
-            .await
-            .unwrap();
-        trade.fee_policies = fee_policies;
-    }
-
-    async fn add_quote(
-        ex: &mut PgTransaction<'_>,
-        trade: &mut TradesQueryRow,
-        quote: crate::orders::Quote,
-    ) {
-        crate::orders::insert_quote(ex, &quote).await.unwrap();
-        let quote = Quote {
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            fee: quote.gas_amount * quote.gas_price / quote.sell_token_price,
-        };
-        trade.quote = Some(quote);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_trades_with_and_without_fee_policies() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
-        assert_trades(&mut db, None, None, &[]).await;
-
-        let settlement = add_settlement(
-            &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 4,
-            },
-            Default::default(),
-            Default::default(),
-            1,
-        )
-        .await;
-
-        let mut trade_a = add_order_and_trade(
-            &mut db,
-            owners[0],
-            order_ids[0],
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Some(settlement.transaction_hash),
-        )
-        .await;
-        add_fee_policies(
-            &mut db,
-            &mut trade_a,
-            vec![
-                FeePolicy {
-                    auction_id: 1,
-                    order_uid: order_ids[0],
-                    kind: FeePolicyKind::Surplus,
-                    surplus_factor: Some(0.1),
-                    surplus_max_volume_factor: Some(0.99999),
-                    volume_factor: None,
-                    price_improvement_factor: None,
-                    price_improvement_max_volume_factor: None,
-                },
-                FeePolicy {
-                    auction_id: 1,
-                    order_uid: order_ids[0],
-                    kind: FeePolicyKind::Volume,
-                    surplus_factor: None,
-                    surplus_max_volume_factor: None,
-                    volume_factor: Some(0.1),
-                    price_improvement_factor: None,
-                    price_improvement_max_volume_factor: None,
-                },
-                FeePolicy {
-                    auction_id: 1,
-                    order_uid: order_ids[0],
-                    kind: FeePolicyKind::PriceImprovement,
-                    surplus_factor: None,
-                    surplus_max_volume_factor: None,
-                    volume_factor: None,
-                    price_improvement_factor: Some(0.1),
-                    price_improvement_max_volume_factor: Some(0.99999),
-                },
-            ],
-        )
-        .await;
-        add_quote(
-            &mut db,
-            &mut trade_a,
-            crate::orders::Quote {
-                order_uid: order_ids[0],
-                gas_amount: 6.0,
-                gas_price: 2.0,
-                sell_token_price: 4.0,
-                sell_amount: BigDecimal::from(100),
-                buy_amount: BigDecimal::from(100),
-                solver: owners[0],
-            },
-        )
-        .await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
-
-        let trade_b = add_order_and_trade(
-            &mut db,
-            owners[0],
-            order_ids[1],
-            EventIndex {
-                block_number: 0,
-                log_index: 1,
-            },
-            Some(settlement.transaction_hash),
         )
         .await;
         assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;

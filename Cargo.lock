@@ -1596,8 +1596,6 @@ dependencies = [
  "futures",
  "hex",
  "hex-literal",
- "serde",
- "serde_json",
  "sqlx",
  "strum",
  "tokio",
