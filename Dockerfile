@@ -7,7 +7,7 @@ WORKDIR /src/
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config git
+    apt-get install -y build-essential autoconf git libssl-dev pkg-config git
 
 # Copy and Build Code
 COPY . .
