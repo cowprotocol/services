@@ -3,7 +3,6 @@ pub mod auction;
 pub mod auction_orders;
 pub mod auction_participants;
 pub mod auction_prices;
-pub mod auction_surplus_capturing_jit_order_owners;
 pub mod byte_array;
 pub mod ethflow_orders;
 pub mod events;
@@ -19,6 +18,7 @@ pub mod settlement_observations;
 pub mod settlement_scores;
 pub mod settlements;
 pub mod solver_competition;
+pub mod surplus_capturing_jit_order_owners;
 pub mod trades;
 
 use {
