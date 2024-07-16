@@ -17,11 +17,6 @@ pub struct Args {
     )]
     pub log: String,
 
-    /// Captures metrics of the tokio runtime to inspect behavior of individual
-    /// tasks.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_tokio_console: bool,
-
     /// The node RPC API endpoint.
     #[clap(long, env)]
     pub ethrpc: Url,

@@ -452,6 +452,7 @@ async fn cow_amm_driver_support(web3: Web3) {
                 "--drivers=test_solver|http://localhost:11088/test_solver,mock_solver|http://localhost:11088/mock_solver".to_string(),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
+                "--cow-amm-configs=0x86f3df416979136cb4fdea2c0886301b911c163b|0x86f3df416979136cb4fdea2c0886301b911c163b|20188649".to_string()
             ],
         )
         .await;

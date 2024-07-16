@@ -1,14 +1,8 @@
-use {
-    super::ChainId,
-    crate::domain,
-    ethcontract::{dyns::DynWeb3, errors::DeployError},
-    primitive_types::H160,
-};
+use {super::ChainId, crate::domain, ethcontract::dyns::DynWeb3, primitive_types::H160};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
-    cow_amm_legacy_helper: Option<contracts::CowAmmLegacyHelper>,
     weth: contracts::WETH9,
     chainalysis_oracle: Option<contracts::ChainalysisOracle>,
 
@@ -41,12 +35,6 @@ impl Contracts {
             ),
         );
 
-        let cow_amm_legacy_helper = match contracts::CowAmmLegacyHelper::deployed(web3).await {
-            Err(DeployError::NotFound(_)) => None,
-            Err(err) => panic!("failed to find deployed contract: {:?}", err),
-            Ok(contract) => Some(contract),
-        };
-
         let weth = contracts::WETH9::at(
             web3,
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
@@ -78,16 +66,11 @@ impl Contracts {
             chainalysis_oracle,
             settlement_domain_separator,
             authenticator,
-            cow_amm_legacy_helper,
         }
     }
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
-    }
-
-    pub fn cow_amm_legacy_helper(&self) -> Option<&contracts::CowAmmLegacyHelper> {
-        self.cow_amm_legacy_helper.as_ref()
     }
 
     pub fn settlement_domain_separator(&self) -> &domain::eth::DomainSeparator {

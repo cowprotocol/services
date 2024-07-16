@@ -101,7 +101,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
-        args.shared.logging.enable_tokio_console,
     );
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
@@ -359,14 +358,11 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
+
     let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
-    if let Some(cow_amm_factory) = eth.contracts().cow_amm_legacy_helper() {
+    for config in &args.cow_amm_configs {
         cow_amm_registry
-            .add_listener(
-                contracts::deployment_block!(cow_amm_factory).unwrap(),
-                cow_amm_factory.address(),
-                cow_amm_factory.address(),
-            )
+            .add_listener(config.index_start, config.factory, config.helper)
             .await;
     }
 

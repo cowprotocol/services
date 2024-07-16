@@ -282,7 +282,10 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver, solution, auction_id).await {
+            match self
+                .settle(driver, solution, auction_id, block_deadline)
+                .await
+            {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -307,7 +310,7 @@ impl RunLoop {
     ) -> Vec<Participant<'_>> {
         let mut surplus_capturing_jit_order_owners = self
             .cow_amm_registry
-            .cow_amms()
+            .amms()
             .await
             .into_iter()
             .map(|cow_amm| *cow_amm.address())
@@ -441,6 +444,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solved: &competition::Solution,
         auction_id: i64,
+        submission_deadline_latest_block: u64,
     ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
@@ -448,6 +452,7 @@ impl RunLoop {
 
         let request = settle::Request {
             solution_id: solved.id(),
+            submission_deadline_latest_block,
         };
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)
