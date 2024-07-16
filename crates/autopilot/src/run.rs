@@ -11,10 +11,7 @@ use {
             },
             Postgres,
         },
-        domain::{
-            self,
-            auction::surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
-        },
+        domain::{self},
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         run_loop::RunLoop,
@@ -468,6 +465,11 @@ pub async fn run(args: Arguments) {
             args.protocol_fee_exempt_addresses.as_slice(),
             args.enable_multiple_fees,
         ),
+        args.protocol_fee_exempt_addresses
+            .clone()
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         cow_amm_registry.clone(),
     );
 
@@ -513,10 +515,6 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
-        surplus_capturing_jit_order_owners: SurplusCapturingJitOrderOwners::new(
-            &args.protocol_fee_exempt_addresses,
-            cow_amm_registry,
-        ),
     };
     run.run_forever().await;
     unreachable!("run loop exited");

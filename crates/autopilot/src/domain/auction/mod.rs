@@ -5,7 +5,6 @@ use {
 };
 
 pub mod order;
-pub mod surplus_capturing_jit_order_owners;
 
 /// Replicates [`crate::model::Auction`].
 #[derive(Clone, Debug, PartialEq)]

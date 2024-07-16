@@ -1,6 +1,9 @@
 use {
     crate::{
-        domain::{self},
+        domain::{
+            eth,
+            {self},
+        },
         infra::{self, banned},
     },
     anyhow::Result,
@@ -81,6 +84,7 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
+    surplus_capturing_jit_order_owners_config: Vec<eth::Address>,
     cow_amm_registry: cow_amm::Registry,
 }
 
@@ -106,6 +110,7 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
+        surplus_capturing_jit_order_owners_config: Vec<eth::Address>,
         cow_amm_registry: cow_amm::Registry,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
@@ -124,6 +129,7 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fees,
+            surplus_capturing_jit_order_owners_config,
             cow_amm_registry,
         });
         tokio::task::spawn(
@@ -250,6 +256,15 @@ impl SolvableOrdersCache {
             OrderEventLabel::Filtered,
         );
 
+        let mut surplus_capturing_jit_order_owners =
+            self.surplus_capturing_jit_order_owners_config.clone();
+        surplus_capturing_jit_order_owners.extend(
+            cow_amms
+                .iter()
+                .map(|cow_amm| cow_amm.address())
+                .cloned()
+                .map(eth::Address::from),
+        );
         let auction = domain::Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
@@ -265,7 +280,7 @@ impl SolvableOrdersCache {
                 })
                 .collect(),
             prices,
-            surplus_capturing_jit_order_owners: cow_amms.iter().map(|cow_amm| cow_amm.address()).cloned().map(Into::into).collect(),
+            surplus_capturing_jit_order_owners,
         };
         *self.cache.lock().unwrap() = Inner {
             auction: Some(auction),

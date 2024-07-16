@@ -3,10 +3,7 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::{
-                order::Class,
-                surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
-            },
+            auction::order::Class,
             competition::{
                 SolutionError,
                 {self},
@@ -54,7 +51,6 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
-    pub surplus_capturing_jit_order_owners: SurplusCapturingJitOrderOwners,
 }
 
 impl RunLoop {
@@ -272,16 +268,11 @@ impl RunLoop {
                 return;
             }
 
-            let surplus_capturing_jit_order_owners =
-                self.surplus_capturing_jit_order_owners.list_all().await;
             if let Err(err) = self
                 .persistence
                 .save_surplus_capturing_jit_orders_orders(
                     auction_id,
-                    &surplus_capturing_jit_order_owners
-                        .into_iter()
-                        .map(Into::into)
-                        .collect::<Vec<_>>(),
+                    &auction.surplus_capturing_jit_order_owners,
                 )
                 .await
             {
