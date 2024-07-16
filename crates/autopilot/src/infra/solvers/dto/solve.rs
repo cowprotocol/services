@@ -22,7 +22,7 @@ impl Request {
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
-        surplus_capturing_jit_order_owners: &HashSet<H160>,
+        surplus_capturing_jit_order_owners: &[H160],
     ) -> Self {
         Self {
             id,

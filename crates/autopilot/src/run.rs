@@ -45,7 +45,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -575,11 +574,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
-        &args
-            .protocol_fee_exempt_addresses
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>(),
     );
     shadow.run_forever().await;
 

@@ -20,10 +20,7 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
-    database::{
-        byte_array::ByteArray,
-        order_events::OrderEventLabel,
-    },
+    database::{byte_array::ByteArray, order_events::OrderEventLabel},
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -335,7 +332,10 @@ impl RunLoop {
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &surplus_capturing_jit_order_owners,
+            &surplus_capturing_jit_order_owners
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
         );
         let request = &request;
 
