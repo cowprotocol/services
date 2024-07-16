@@ -291,7 +291,6 @@ impl Solver {
                     min_priority_fee: Default::default(),
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
-                    max_confirm_time: Default::default(),
                     retry_interval: Default::default(),
                     kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
                 }],

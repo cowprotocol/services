@@ -4,7 +4,7 @@ use {
         eth,
     },
     crate::{
-        domain::{competition::solution::Settlement, eth::TxStatus},
+        domain::{competition::solution::Settlement, eth::TxStatus, BlockNo},
         infra::{self, observe, solver::Solver, Ethereum},
     },
     ethrpc::current_block::into_stream,
@@ -41,12 +41,13 @@ impl Mempools {
         &self,
         solver: &Solver,
         settlement: &Settlement,
+        submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
                     let result = self
-                        .submit(&mempool, solver, settlement)
+                        .submit(&mempool, solver, settlement, submission_deadline)
                         .instrument(tracing::info_span!("mempool", kind = mempool.to_string()))
                         .await;
                     observe::mempool_executed(&mempool, settlement, &result);
@@ -79,6 +80,7 @@ impl Mempools {
         mempool: &infra::mempool::Mempool,
         solver: &Solver,
         settlement: &Settlement,
+        submission_deadline: BlockNo,
     ) -> Result<eth::TxId, Error> {
         // Don't submit risky transactions if revert protection is
         // enabled and the settlement may revert in this mempool.
@@ -89,7 +91,6 @@ impl Mempools {
             return Err(Error::Disabled);
         }
 
-        let deadline = mempool.config().deadline();
         let tx = settlement.transaction(settlement::Internalization::Enable);
 
         // Instantiate block stream and skip the current block before we submit the
@@ -102,18 +103,8 @@ impl Mempools {
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
-            loop {
-                // Wait for the next block to be mined or we time out.
-                if tokio::time::timeout_at(deadline, block_stream.next())
-                    .await
-                    .is_err()
-                {
-                    tracing::info!(?hash, "tx not confirmed in time, cancelling");
-                    self.cancel(mempool, settlement.gas.price, solver).await?;
-                    return Err(Error::Expired);
-                }
+            while let Some(block) = block_stream.next().await {
                 tracing::debug!(?hash, "checking if tx is confirmed");
-
                 let receipt = self
                     .ethereum
                     .transaction_status(&hash)
@@ -126,6 +117,17 @@ impl Mempools {
                     TxStatus::Executed => return Ok(hash.clone()),
                     TxStatus::Reverted => return Err(Error::Revert(hash.clone())),
                     TxStatus::Pending => {
+                        // Check if the current block reached the submission deadline block number
+                        if block.number >= submission_deadline {
+                            tracing::info!(
+                                ?hash,
+                                deadline = submission_deadline,
+                                current_block = block.number,
+                                "tx not confirmed in time, cancelling",
+                            );
+                            self.cancel(mempool, settlement.gas.price, solver).await?;
+                            return Err(Error::Expired);
+                        }
                         // Check if transaction still simulates
                         if let Err(err) = self.ethereum.estimate_gas(tx).await {
                             if err.is_revert() {
@@ -143,6 +145,9 @@ impl Mempools {
                     }
                 }
             }
+            Err(Error::Other(anyhow::anyhow!(
+                "Block stream finished unexpectedly"
+            )))
         }
         .await;
 

@@ -145,7 +145,6 @@ base-tokens = []
 
 [submission]
 gas-price-cap = "1000000000000"
-max-confirm-time= "2s"
 
 [[submission.mempool]]
 mempool = "public"
