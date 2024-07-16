@@ -93,7 +93,7 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    /// Saves the surplus capturing jit order owners to the  DB
+    /// Saves the surplus capturing jit order owners to the DB
     pub async fn save_surplus_capturing_jit_orders_orders(
         &self,
         auction_id: AuctionId,

@@ -177,9 +177,9 @@ mod tests {
                         }
                     ],
                     "callData": "0x13",
-                    "uninternalizedCallData": "0x1314"
+                    "uninternalizedCallData": "0x1314",
                 },
-            ]
+            ],
         });
 
         let orig = SolverCompetitionAPI {
