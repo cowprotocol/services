@@ -6,6 +6,3 @@ pub mod metrics;
 pub mod panic_hook;
 pub mod request_id;
 pub mod tracing;
-
-#[cfg(unix)]
-mod tracing_reload_handler;
