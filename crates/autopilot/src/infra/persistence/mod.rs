@@ -146,12 +146,18 @@ impl Persistence {
         &self,
         auction_id: domain::auction::Id,
     ) -> Result<domain::settlement::Auction, error::Auction> {
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .context("begin")
+            .map_err(error::Auction::DbError)?;
 
         let deadline = {
             let scores = database::settlement_scores::fetch(&mut ex, auction_id)
             .await
-            .context("fetch scores")?
+            .context("fetch scores").map_err(error::Auction::DbError)?
             // if score is missing, no competition / auction exist for this auction_id
             .ok_or(error::Auction::Missing)?;
 
@@ -161,7 +167,8 @@ impl Persistence {
         let prices = {
             let db_prices = database::auction_prices::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch auction prices")?;
+                .context("fetch auction prices")
+                .map_err(error::Auction::DbError)?;
 
             let mut prices = HashMap::new();
             for price in db_prices {
@@ -179,19 +186,25 @@ impl Persistence {
             // get all orders from a competition auction
             let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch auction orders")?
+                .context("fetch auction orders")
+                .map_err(error::Auction::DbError)?
                 .ok_or(error::Auction::Missing)?
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
 
             // get quotes for all auction orders
-            let quotes = self.postgres.read_quotes(auction_orders.iter()).await?;
+            let quotes = self
+                .postgres
+                .read_quotes(auction_orders.iter())
+                .await
+                .map_err(error::Auction::DbError)?;
 
             // get fee policies for all orders that were part of the competition auction
             let policies = database::fee_policies::fetch_all_for_auction(&mut ex, auction_id)
                 .await
-                .context("fetch fee policies")?;
+                .context("fetch fee policies")
+                .map_err(error::Auction::DbError)?;
 
             // compile order data
             let mut orders = HashMap::new();
@@ -202,7 +215,8 @@ impl Persistence {
 
                 orders.insert(*order, vec![]);
                 for policy in policies.get(&ByteArray(order.0)).unwrap_or(&vec![]) {
-                    let policy = dto::fee_policy::into_domain(policy.clone(), quote)?;
+                    let policy = dto::fee_policy::into_domain(policy.clone(), quote)
+                        .map_err(error::Auction::DbConversion)?;
                     orders.entry(*order).and_modify(|policies| {
                         policies.push(policy);
                     });
@@ -214,7 +228,8 @@ impl Persistence {
         let surplus_capturing_jit_order_owners =
             database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch surplus capturing jit order owners")?
+                .context("fetch surplus capturing jit order owners")
+                .map_err(error::Auction::DbError)?
                 .ok_or(error::Auction::MissingJitOrderOwners)?
                 .into_iter()
                 .map(|owner| eth::H160(owner.0).into())
@@ -242,9 +257,9 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Auction {
         #[error("failed to read data from database")]
-        DbError(#[from] anyhow::Error),
+        DbError(anyhow::Error),
         #[error("failed dto conversion from database")]
-        DbConversion(&'static str),
+        DbConversion(anyhow::Error),
         #[error("auction data not found in the database")]
         Missing,
         #[error(transparent)]
