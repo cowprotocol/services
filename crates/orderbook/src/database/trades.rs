@@ -1,5 +1,5 @@
 use {
-    crate::database::{fee_policy::FeePolicyRetrieving, Postgres},
+    crate::database::Postgres,
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     ethcontract::H160,

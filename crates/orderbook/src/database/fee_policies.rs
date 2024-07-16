@@ -1,5 +1,4 @@
 use {
-    crate::database::Postgres,
     anyhow::Context,
     bigdecimal::{BigDecimal, FromPrimitive},
     database::{auction::AuctionId, OrderUid},
@@ -7,18 +6,8 @@ use {
     number::conversions::big_decimal_to_u256,
 };
 
-#[async_trait::async_trait]
-pub trait FeePolicyRetrieving: Send + Sync {
-    async fn fee_policies(
-        &self,
-        auction_id: AuctionId,
-        order_uid: OrderUid,
-    ) -> anyhow::Result<Vec<FeePolicy>>;
-}
-
-#[async_trait::async_trait]
-impl FeePolicyRetrieving for Postgres {
-    async fn fee_policies(
+impl super::Postgres {
+    pub async fn fee_policies(
         &self,
         auction_id: AuctionId,
         order_uid: OrderUid,

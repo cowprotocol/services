@@ -1,6 +1,6 @@
 pub mod app_data;
 pub mod auctions;
-mod fee_policy;
+mod fee_policies;
 pub mod orders;
 pub mod quotes;
 pub mod solver_competition;
