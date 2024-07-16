@@ -18,7 +18,7 @@ impl super::Postgres {
             .database_queries
             .with_label_values(&["fee_policies"])
             .start_timer();
-        let fee_policies = database::fee_policies::fetch(&mut ex, keys_filter).await?;
+        let fee_policies = database::fee_policies::fetch_all(&mut ex, keys_filter).await?;
         timer.stop_and_record();
 
         let quote_order_uids = fee_policies

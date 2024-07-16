@@ -53,7 +53,7 @@ pub async fn insert_batch(
     query_builder.build().execute(ex).await.map(|_| ())
 }
 
-pub async fn fetch(
+pub async fn fetch_all(
     ex: &mut PgConnection,
     keys_filter: &[(AuctionId, OrderUid)],
 ) -> Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>, sqlx::Error> {
@@ -103,6 +103,14 @@ mod tests {
         // same primary key for all fee policies
         let (auction_id_a, order_uid_a) = (1, ByteArray([1; 56]));
         let (auction_id_b, order_uid_b) = (2, ByteArray([2; 56]));
+
+        let output = fetch_all(
+            &mut db,
+            &[(auction_id_a, order_uid_a), (auction_id_b, order_uid_b)],
+        )
+        .await
+        .unwrap();
+        assert!(output.is_empty());
 
         // surplus fee policy without caps
         let fee_policy_1 = FeePolicy {
@@ -162,7 +170,7 @@ mod tests {
             (auction_id_a, order_uid_a),
             vec![fee_policy_1, fee_policy_4],
         );
-        let output = fetch(&mut db, &[(auction_id_a, order_uid_a)])
+        let output = fetch_all(&mut db, &[(auction_id_a, order_uid_a)])
             .await
             .unwrap();
         assert_eq!(output, expected);
@@ -171,7 +179,7 @@ mod tests {
             (auction_id_b, order_uid_b),
             vec![fee_policy_2, fee_policy_3],
         );
-        let output = fetch(
+        let output = fetch_all(
             &mut db,
             &[(auction_id_a, order_uid_a), (auction_id_b, order_uid_b)],
         )
