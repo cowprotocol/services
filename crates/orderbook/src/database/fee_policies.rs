@@ -14,12 +14,13 @@ impl super::Postgres {
     ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>> {
         let mut ex = self.pool.acquire().await?;
 
-        let _timer = super::Metrics::get()
+        let timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["fee_policies"])
             .start_timer();
-
         let fee_policies = database::fee_policies::fetch(&mut ex, keys_filter).await?;
+        timer.stop_and_record();
+
         let quote_order_uids = fee_policies
             .iter()
             .filter_map(|((_, order_uid), policies)| {
