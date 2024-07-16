@@ -144,10 +144,11 @@ mod tests {
         order_uid_filter: Option<&OrderUid>,
         expected: &[TradesQueryRow],
     ) {
-        let filtered = trades(db, owner_filter, order_uid_filter)
+        let mut filtered = trades(db, owner_filter, order_uid_filter)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
+        filtered.sort_by_key(|t| (t.block_number, t.log_index));
         assert_eq!(filtered, expected);
     }
 
@@ -175,7 +176,7 @@ mod tests {
         };
         let trade_b =
             add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None, None).await;
-        assert_trades(&mut db, None, None, &[trade_b, trade_a]).await;
+        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
     }
 
     #[tokio::test]
