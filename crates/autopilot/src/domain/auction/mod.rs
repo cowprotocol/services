@@ -1,6 +1,5 @@
 use {
     super::{eth, Order},
-    primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashMap},
 };
 
@@ -12,7 +11,7 @@ pub struct Auction {
     pub block: u64,
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: BTreeMap<eth::TokenAddress, eth::TokenAmount>,
     pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 

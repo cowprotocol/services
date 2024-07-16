@@ -1,9 +1,9 @@
-use {super::OrderUid, primitive_types::U256};
+use {super::OrderUid, crate::domain::eth};
 
 #[derive(Clone, Debug)]
 pub struct Quote {
     pub order_uid: OrderUid,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub fee: U256,
+    pub sell_amount: eth::TokenAmount,
+    pub buy_amount: eth::TokenAmount,
+    pub fee: eth::TokenAmount,
 }

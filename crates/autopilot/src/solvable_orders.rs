@@ -270,7 +270,7 @@ impl SolvableOrdersCache {
                     }
                 })
                 .collect(),
-            prices,
+            prices: prices.into_iter().map(|(key, value)| (key.into(), value.into())).collect(),
             surplus_capturing_jit_order_owners,
         };
         *self.cache.lock().unwrap() = Inner {

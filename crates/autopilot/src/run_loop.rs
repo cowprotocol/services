@@ -208,7 +208,11 @@ impl RunLoop {
                         .iter()
                         .map(|order| order.uid.into())
                         .collect(),
-                    prices: auction.prices.clone(),
+                    prices: auction
+                        .prices
+                        .into_iter()
+                        .map(|(key, value)| (key.into(), value.into()))
+                        .collect(),
                 },
                 solutions: solutions
                     .iter()
@@ -254,7 +258,10 @@ impl RunLoop {
                 winning_score,
                 reference_score,
                 participants,
-                prices,
+                prices: prices
+                    .into_iter()
+                    .map(|(key, value)| (key.into(), value.into()))
+                    .collect(),
                 block_deadline,
                 competition_simulation_block,
                 call_data,

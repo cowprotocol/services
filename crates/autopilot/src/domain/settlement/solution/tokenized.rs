@@ -14,7 +14,7 @@ use {
 // Original type for input of `GPv2Settlement.settle` function.
 pub(super) struct Tokenized {
     pub tokens: Vec<Address>,
-    pub clearing_prices: Vec<U256>,
+    pub clearing_prices: Vec<eth::TokenAmount>,
     pub trades: Vec<Trade>,
     pub interactions: [Vec<Interaction>; 3],
     pub auction_id: auction::Id,
@@ -50,7 +50,7 @@ impl Tokenized {
                 .map_err(|err| error::Decoding::Tokenizing(err, auction_id))?;
         Ok(Self {
             tokens,
-            clearing_prices,
+            clearing_prices: clearing_prices.into_iter().map(Into::into).collect(),
             trades,
             interactions,
             auction_id,
