@@ -11,40 +11,19 @@ impl super::Postgres {
         &self,
         auction_id: AuctionId,
         order_uid: OrderUid,
+        quote: Option<&database::orders::Quote>,
     ) -> anyhow::Result<Vec<FeePolicy>> {
         let mut ex = self.pool.acquire().await?;
 
-        let timer = super::Metrics::get()
+        let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["fee_policies"])
             .start_timer();
 
         let fee_policies = database::fee_policies::fetch(&mut ex, auction_id, order_uid).await?;
-        timer.stop_and_record();
-
-        let quote = fee_policies
-            .iter()
-            .any(|fp| {
-                matches!(
-                    fp.kind,
-                    database::fee_policies::FeePolicyKind::PriceImprovement
-                )
-            })
-            .then_some({
-                let timer = super::Metrics::get()
-                    .database_queries
-                    .with_label_values(&["order_quote"])
-                    .start_timer();
-
-                let order_quote = database::orders::read_quote(&mut ex, &order_uid)
-                    .await?
-                    .context("missing quote for order")?;
-                timer.stop_and_record();
-                order_quote
-            });
         fee_policies
             .into_iter()
-            .map(|db_fee_policy| fee_policy_from(db_fee_policy, quote.as_ref()))
+            .map(|db_fee_policy| fee_policy_from(db_fee_policy, quote, order_uid))
             .collect::<Result<Vec<_>, _>>()
     }
 }
@@ -52,6 +31,7 @@ impl super::Postgres {
 fn fee_policy_from(
     db_fee_policy: database::fee_policies::FeePolicy,
     quote: Option<&database::orders::Quote>,
+    order_uids: OrderUid,
 ) -> anyhow::Result<FeePolicy> {
     Ok(match db_fee_policy.kind {
         database::fee_policies::FeePolicyKind::Surplus => FeePolicy::Surplus {
@@ -68,7 +48,10 @@ fn fee_policy_from(
                 .context("missing volume factor")?,
         },
         database::fee_policies::FeePolicyKind::PriceImprovement => {
-            let quote = quote.context("missing price improvement quote")?;
+            let quote = quote.context(format!(
+                "missing price improvement quote for order '{:?}'",
+                order_uids
+            ))?;
             let fee = quote.gas_amount * quote.gas_price / quote.sell_token_price;
             FeePolicy::PriceImprovement {
                 factor: db_fee_policy
