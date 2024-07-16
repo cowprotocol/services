@@ -22,7 +22,7 @@ use {
     },
     ::observe::metrics,
     anyhow::Result,
-    database::{byte_array::ByteArray, order_events::OrderEventLabel},
+    database::order_events::OrderEventLabel,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -280,7 +280,7 @@ impl RunLoop {
                     auction_id,
                     &surplus_capturing_jit_order_owners
                         .into_iter()
-                        .map(|address| ByteArray(address.0))
+                        .map(Into::into)
                         .collect::<Vec<_>>(),
                 )
                 .await
@@ -327,16 +327,15 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let surplus_capturing_jit_order_owners =
-            self.surplus_capturing_jit_order_owners.list_all().await;
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &surplus_capturing_jit_order_owners
+            &auction
+                .surplus_capturing_jit_order_owners
                 .iter()
-                .cloned()
+                .map(|address| address.0)
                 .collect::<Vec<_>>(),
         );
         let request = &request;

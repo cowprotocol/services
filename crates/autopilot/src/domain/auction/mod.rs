@@ -14,7 +14,7 @@ pub struct Auction {
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     pub prices: BTreeMap<H160, U256>,
-    pub surplus_capturing_jit_order_owners: Vec<H160>,
+    pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
 pub type Id = i64;

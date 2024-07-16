@@ -265,7 +265,7 @@ impl SolvableOrdersCache {
                 })
                 .collect(),
             prices,
-            surplus_capturing_jit_order_owners: cow_amms.iter().map(|cow_amm| cow_amm.address()).cloned().collect(),
+            surplus_capturing_jit_order_owners: cow_amms.iter().map(|cow_amm| cow_amm.address()).cloned().map(Into::into).collect(),
         };
         *self.cache.lock().unwrap() = Inner {
             auction: Some(auction),

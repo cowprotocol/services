@@ -192,7 +192,11 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             self.solve_deadline,
-            &auction.surplus_capturing_jit_order_owners,
+            &auction
+                .surplus_capturing_jit_order_owners
+                .iter()
+                .map(|address| address.0)
+                .collect::<Vec<_>>(),
         );
         let request = &request;
 

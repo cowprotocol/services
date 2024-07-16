@@ -7,7 +7,7 @@ use {
     },
     anyhow::Context,
     chrono::Utc,
-    database::Address,
+    database::byte_array::ByteArray,
     primitive_types::H256,
     std::sync::Arc,
     tracing::Instrument,
@@ -97,12 +97,15 @@ impl Persistence {
     pub async fn save_surplus_capturing_jit_orders_orders(
         &self,
         auction_id: AuctionId,
-        surplus_capturing_jit_order_owners: &[Address],
+        surplus_capturing_jit_order_owners: &[domain::eth::Address],
     ) -> Result<(), Error> {
         self.postgres
             .save_surplus_capturing_jit_orders_orders(
                 auction_id,
-                surplus_capturing_jit_order_owners,
+                &surplus_capturing_jit_order_owners
+                    .iter()
+                    .map(|address| ByteArray(address.0.into()))
+                    .collect::<Vec<_>>(),
             )
             .await
             .map_err(Error::DbError)

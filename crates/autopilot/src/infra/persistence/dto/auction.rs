@@ -18,7 +18,11 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
             .map(super::order::from_domain)
             .collect(),
         prices: auction.prices,
-        surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+        surplus_capturing_jit_order_owners: auction
+            .surplus_capturing_jit_order_owners
+            .into_iter()
+            .map(Into::into)
+            .collect(),
     }
 }
 
@@ -32,7 +36,11 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
             .map(super::order::to_domain)
             .collect(),
         prices: auction.prices,
-        surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+        surplus_capturing_jit_order_owners: auction
+            .surplus_capturing_jit_order_owners
+            .into_iter()
+            .map(Into::into)
+            .collect(),
     }
 }
 
