@@ -11,7 +11,10 @@ use {
             },
             Postgres,
         },
-        domain::{self, surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners},
+        domain::{
+            self,
+            auction::surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
+        },
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         run_loop::RunLoop,

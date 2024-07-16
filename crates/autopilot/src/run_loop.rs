@@ -3,12 +3,14 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::order::Class,
+            auction::{
+                order::Class,
+                surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
+            },
             competition::{
                 SolutionError,
                 {self},
             },
-            surplus_capturing_jit_order_owners::SurplusCapturingJitOrderOwners,
             OrderUid,
         },
         infra::{
