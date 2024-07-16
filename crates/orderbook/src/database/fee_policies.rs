@@ -4,15 +4,15 @@ use {
     database::{auction::AuctionId, OrderUid},
     model::fee_policy::{FeePolicy, Quote},
     number::conversions::big_decimal_to_u256,
+    std::collections::HashMap,
 };
 
 impl super::Postgres {
     pub async fn fee_policies(
         &self,
-        auction_id: AuctionId,
-        order_uid: OrderUid,
-        quote: Option<&database::orders::Quote>,
-    ) -> anyhow::Result<Vec<FeePolicy>> {
+        keys_filter: &[(AuctionId, OrderUid)],
+        quotes: HashMap<OrderUid, database::orders::Quote>,
+    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>> {
         let mut ex = self.pool.acquire().await?;
 
         let _timer = super::Metrics::get()
@@ -20,11 +20,17 @@ impl super::Postgres {
             .with_label_values(&["fee_policies"])
             .start_timer();
 
-        let fee_policies = database::fee_policies::fetch(&mut ex, auction_id, order_uid).await?;
+        let fee_policies = database::fee_policies::fetch(&mut ex, keys_filter).await?;
         fee_policies
             .into_iter()
-            .map(|db_fee_policy| fee_policy_from(db_fee_policy, quote, order_uid))
-            .collect::<Result<Vec<_>, _>>()
+            .map(|((auction_id, order_uid), policies)| {
+                policies
+                    .into_iter()
+                    .map(|policy| fee_policy_from(policy, quotes.get(&order_uid), order_uid))
+                    .collect::<anyhow::Result<Vec<_>>>()
+                    .map(|policies| ((auction_id, order_uid), policies))
+            })
+            .collect::<anyhow::Result<HashMap<_, _>>>()
     }
 }
 

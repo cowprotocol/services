@@ -3,7 +3,7 @@ use {
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     ethcontract::H160,
-    futures::{future::try_join_all, stream::TryStreamExt},
+    futures::stream::TryStreamExt,
     model::{fee_policy::FeePolicy, order::OrderUid, trade::Trade},
     number::conversions::big_decimal_to_big_uint,
     primitive_types::H256,
@@ -53,24 +53,30 @@ impl TradeRetrieving for Postgres {
             .collect::<HashMap<_, _>>();
         timer.stop_and_record();
 
-        try_join_all(
-            trades
-                .into_iter()
-                .map(|trade| {
-                    let quote = quotes.get(&trade.order_uid);
-                    async move {
-                        match trade.auction_id {
-                            Some(auction_id) => {
-                                self.fee_policies(auction_id, trade.order_uid, quote).await
-                            }
-                            None => Ok(vec![]),
-                        }
-                        .and_then(|fee_policies| trade_from(trade, fee_policies))
-                    }
-                })
-                .collect::<Vec<_>>(),
-        )
-        .await
+        let auction_order_uids = trades
+            .iter()
+            .filter_map(|t| t.auction_id.map(|auction_id| (auction_id, t.order_uid)))
+            .collect::<Vec<_>>();
+        let fee_policies = self
+            .fee_policies(auction_order_uids.as_slice(), quotes)
+            .await?;
+
+        trades
+            .into_iter()
+            .map(|trade| {
+                let fee_policies = trade
+                    .auction_id
+                    .into_iter()
+                    .flat_map(|auction_id| {
+                        fee_policies
+                            .get(&(auction_id, trade.order_uid))
+                            .cloned()
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                trade_from(trade, fee_policies)
+            })
+            .collect::<Result<Vec<_>>>()
     }
 }
 
