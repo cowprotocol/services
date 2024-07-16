@@ -10,9 +10,9 @@ pub struct Auction {
     pub id: domain::auction::Id,
     /// Auction external prices
     pub prices: domain::auction::Prices,
-    /// Fee policies for all orders in the auction. For some orders, there may
-    /// be no fee policies.
-    pub fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
+    /// All orders from a competition auction. Some of them may contain fee
+    /// policies.
+    pub orders: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
     /// Deadline for an auction solution to be settled, so that it is eligible
     /// for rewards.
     pub deadline: domain::eth::BlockNo,

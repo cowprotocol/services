@@ -6,7 +6,6 @@ use {
     },
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
-    model::order::OrderUid,
     shared::maintenance::Maintaining,
     sqlx::types::chrono::{DateTime, Utc},
     std::collections::HashMap,
@@ -29,7 +28,7 @@ impl Postgres {
     /// Doesn't guarantee that all orders have quotes.
     pub async fn read_quotes(
         &self,
-        orders: impl Iterator<Item = &OrderUid>,
+        orders: impl Iterator<Item = &domain::OrderUid>,
     ) -> Result<HashMap<domain::OrderUid, domain::Quote>> {
         let mut ex = self.pool.acquire().await?;
         let order_uids: Vec<_> = orders.map(|uid| ByteArray(uid.0)).collect();

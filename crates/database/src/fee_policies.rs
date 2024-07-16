@@ -1,6 +1,7 @@
 use {
     crate::{auction::AuctionId, OrderUid},
     sqlx::{PgConnection, QueryBuilder},
+    std::collections::HashMap,
 };
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -70,6 +71,33 @@ pub async fn fetch(
         .into_iter()
         .collect();
     Ok(rows)
+}
+
+pub async fn fetch_all_for_auction(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+) -> Result<HashMap<OrderUid, Vec<FeePolicy>>, sqlx::Error> {
+    const QUERY: &str = r#"
+    SELECT * FROM fee_policies
+    WHERE auction_id = $1
+    ORDER BY order_uid, application_order
+    "#;
+
+    let rows: Vec<FeePolicy> = sqlx::query_as::<_, FeePolicy>(QUERY)
+        .bind(auction_id)
+        .fetch_all(ex)
+        .await?;
+
+    let mut grouped_fee_policies: HashMap<OrderUid, Vec<FeePolicy>> = HashMap::new();
+
+    for fee_policy in rows {
+        grouped_fee_policies
+            .entry(fee_policy.order_uid)
+            .or_default()
+            .push(fee_policy);
+    }
+
+    Ok(grouped_fee_policies)
 }
 
 #[cfg(test)]

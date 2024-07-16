@@ -9,7 +9,10 @@ use {
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
     primitive_types::H256,
-    std::{collections::HashMap, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     tracing::Instrument,
 };
 
@@ -172,44 +175,40 @@ impl Persistence {
             prices
         };
 
-        let fee_policies = {
-            let orders = database::auction_orders::fetch(&mut ex, auction_id)
+        let orders = {
+            // get all orders from a competition auction
+            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
                 .await
                 .context("fetch auction orders")?
                 .ok_or(error::Auction::Missing)?
                 .into_iter()
-                .map(|order| domain::OrderUid(order.0));
+                .map(|order| domain::OrderUid(order.0))
+                .collect::<HashSet<_>>();
 
-            let mut fee_policies = HashMap::new();
-            for order in orders {
-                fee_policies.insert(order, vec![]);
-                if database::orders::read_order(&mut ex, &ByteArray(order.0))
-                    .await
-                    .context("fetch order")?
-                    .is_some()
-                {
-                    let quote = database::orders::read_quote(&mut ex, &ByteArray(order.0))
-                        .await
-                        .context("fetch quote")?
-                        .map(dto::quote::into_domain)
-                        .transpose()
-                        .map_err(|_| error::Auction::DbConversion("quote overflow"))?
-                        .ok_or(error::Auction::MissingQuote)?;
+            // get quotes for all auction orders
+            let quotes = self.postgres.read_quotes(auction_orders.iter()).await?;
 
-                    let policies =
-                        database::fee_policies::fetch(&mut ex, auction_id, ByteArray(order.0))
-                            .await
-                            .context("fetch fee policies")?;
+            // get fee policies for all orders that were part of the competition auction
+            let policies = database::fee_policies::fetch_all_for_auction(&mut ex, auction_id)
+                .await
+                .context("fetch fee policies")?;
 
-                    for policy in policies {
-                        let policy = dto::fee_policy::into_domain(policy, &quote)?;
-                        fee_policies.entry(order).and_modify(|policies| {
-                            policies.push(policy);
-                        });
-                    }
+            // compile order data
+            let mut orders = HashMap::new();
+            for order in auction_orders.iter() {
+                let quote = quotes
+                    .get(order)
+                    .ok_or(error::Auction::MissingQuote(*order))?;
+
+                orders.insert(*order, vec![]);
+                for policy in policies.get(&ByteArray(order.0)).unwrap_or(&vec![]) {
+                    let policy = dto::fee_policy::into_domain(policy.clone(), quote)?;
+                    orders.entry(*order).and_modify(|policies| {
+                        policies.push(policy);
+                    });
                 }
             }
-            fee_policies
+            orders
         };
 
         let surplus_capturing_jit_order_owners =
@@ -224,7 +223,7 @@ impl Persistence {
         Ok(domain::settlement::Auction {
             id: auction_id,
             prices,
-            fee_policies,
+            orders,
             deadline,
             surplus_capturing_jit_order_owners,
         })
@@ -251,7 +250,7 @@ pub mod error {
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
         #[error("quote not found in the database for an existing order")]
-        MissingQuote,
+        MissingQuote(domain::OrderUid),
         #[error("jit order owners not found for an existing auction id")]
         MissingJitOrderOwners,
     }
