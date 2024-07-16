@@ -48,10 +48,7 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>(),
+            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners.to_vec(),
         }
     }
 }
