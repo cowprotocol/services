@@ -693,7 +693,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_univ3() {
-        observe::tracing::initialize_reentrant("shared=debug", false);
+        observe::tracing::initialize_reentrant("shared=debug");
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let base_tokens = vec![testlib::tokens::WETH];
