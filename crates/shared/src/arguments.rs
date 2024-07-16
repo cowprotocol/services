@@ -34,11 +34,6 @@ macro_rules! logging_args_with_default_filter {
 
             #[clap(long, env, default_value = "error")]
             pub log_stderr_threshold: LevelFilter,
-
-            /// Captures metrics of the tokio runtime to inspect behavior of individual
-            /// tasks.
-            #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-            pub enable_tokio_console: bool,
         }
 
         impl ::std::fmt::Display for $struct_name {
@@ -46,12 +41,10 @@ macro_rules! logging_args_with_default_filter {
                 let Self {
                     log_filter,
                     log_stderr_threshold,
-                    enable_tokio_console,
                 } = self;
 
                 writeln!(f, "log_filter: {}", log_filter)?;
                 writeln!(f, "log_stderr_threshold: {}", log_stderr_threshold)?;
-                writeln!(f, "enable_tokio_console: {}", enable_tokio_console)?;
                 Ok(())
             }
         }
