@@ -11,7 +11,6 @@ impl super::Postgres {
     pub async fn fee_policies(
         &self,
         keys_filter: &[(AuctionId, OrderUid)],
-        quotes: HashMap<OrderUid, database::orders::Quote>,
     ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>> {
         let mut ex = self.pool.acquire().await?;
 
@@ -21,6 +20,32 @@ impl super::Postgres {
             .start_timer();
 
         let fee_policies = database::fee_policies::fetch(&mut ex, keys_filter).await?;
+        let quote_order_uids = fee_policies
+            .iter()
+            .filter_map(|((_, order_uid), policies)| {
+                policies
+                    .iter()
+                    .any(|policy| {
+                        matches!(
+                            policy.kind,
+                            database::fee_policies::FeePolicyKind::PriceImprovement
+                        )
+                    })
+                    .then_some(*order_uid)
+            })
+            .collect::<Vec<_>>();
+
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["order_quotes"])
+            .start_timer();
+        let quotes = database::orders::read_quotes(&mut ex, quote_order_uids.as_slice())
+            .await?
+            .into_iter()
+            .map(|quote| (quote.order_uid, quote))
+            .collect::<HashMap<_, _>>();
+        timer.stop_and_record();
+
         fee_policies
             .into_iter()
             .map(|((auction_id, order_uid), policies)| {

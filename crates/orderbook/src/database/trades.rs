@@ -7,7 +7,7 @@ use {
     model::{fee_policy::FeePolicy, order::OrderUid, trade::Trade},
     number::conversions::big_decimal_to_big_uint,
     primitive_types::H256,
-    std::{collections::HashMap, convert::TryInto},
+    std::convert::TryInto,
 };
 
 #[async_trait::async_trait]
@@ -41,25 +41,11 @@ impl TradeRetrieving for Postgres {
         .await?;
         timer.stop_and_record();
 
-        let order_uids = trades.iter().map(|t| t.order_uid).collect::<Vec<_>>();
-        let timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["order_quotes"])
-            .start_timer();
-        let quotes = database::orders::read_quotes(&mut ex, order_uids.as_slice())
-            .await?
-            .into_iter()
-            .map(|quote| (quote.order_uid, quote))
-            .collect::<HashMap<_, _>>();
-        timer.stop_and_record();
-
         let auction_order_uids = trades
             .iter()
             .filter_map(|t| t.auction_id.map(|auction_id| (auction_id, t.order_uid)))
             .collect::<Vec<_>>();
-        let fee_policies = self
-            .fee_policies(auction_order_uids.as_slice(), quotes)
-            .await?;
+        let fee_policies = self.fee_policies(auction_order_uids.as_slice()).await?;
 
         trades
             .into_iter()
