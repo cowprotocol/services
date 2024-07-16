@@ -31,7 +31,7 @@ impl super::Postgres {
 fn fee_policy_from(
     db_fee_policy: database::fee_policies::FeePolicy,
     quote: Option<&database::orders::Quote>,
-    order_uids: OrderUid,
+    order_uid: OrderUid,
 ) -> anyhow::Result<FeePolicy> {
     Ok(match db_fee_policy.kind {
         database::fee_policies::FeePolicyKind::Surplus => FeePolicy::Surplus {
@@ -50,7 +50,7 @@ fn fee_policy_from(
         database::fee_policies::FeePolicyKind::PriceImprovement => {
             let quote = quote.context(format!(
                 "missing price improvement quote for order '{:?}'",
-                order_uids
+                order_uid
             ))?;
             let fee = quote.gas_amount * quote.gas_price / quote.sell_token_price;
             FeePolicy::PriceImprovement {
