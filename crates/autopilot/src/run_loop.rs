@@ -276,7 +276,7 @@ impl RunLoop {
                 )
                 .await
             {
-                tracing::error!(?err, "failed to save competition");
+                tracing::error!(?err, "failed to save surplus capturing jit order owners");
                 return;
             }
 
