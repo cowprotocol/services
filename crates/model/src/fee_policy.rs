@@ -1,12 +1,13 @@
 use {
     number::serialization::HexOrDecimalU256,
     primitive_types::U256,
-    serde::{Deserialize, Serialize},
+    serde::Serialize,
     serde_with::serde_as,
 };
 
 #[serde_as]
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug, Serialize)]
+#[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
@@ -22,7 +23,8 @@ pub enum FeePolicy {
 }
 
 #[serde_as]
-#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Debug, Serialize)]
+#[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
     #[serde_as(as = "HexOrDecimalU256")]

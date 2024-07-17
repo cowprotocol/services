@@ -5,12 +5,13 @@ use {
     crate::{fee_policy::FeePolicy, order::OrderUid},
     num::BigUint,
     primitive_types::{H160, H256},
-    serde::{Deserialize, Serialize},
+    serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
 };
 
 #[serde_as]
-#[derive(PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(PartialEq, Clone, Debug, Default, Serialize)]
+#[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     pub block_number: u64,
