@@ -7,10 +7,8 @@ use {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Order {
     pub uid: OrderUid,
-    pub sell_token: eth::TokenAddress,
-    pub buy_token: eth::TokenAddress,
-    pub sell_amount: eth::TokenAmount,
-    pub buy_amount: eth::TokenAmount,
+    pub sell_asset: eth::Asset,
+    pub buy_asset: eth::Asset,
     pub protocol_fees: Vec<fee::Policy>,
     pub side: Side,
     pub class: Class,
@@ -18,7 +16,7 @@ pub struct Order {
     pub receiver: Option<eth::Address>,
     pub owner: eth::Address,
     pub partially_fillable: bool,
-    pub executed: eth::TokenAmount,
+    pub executed: TargetAmount,
     // Partially fillable orders should have their pre-interactions only executed
     // on the first fill.
     pub pre_interactions: Vec<Interaction>,
