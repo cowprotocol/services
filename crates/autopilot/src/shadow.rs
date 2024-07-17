@@ -187,17 +187,8 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let request = solve::Request::new(
-            id,
-            auction,
-            &self.trusted_tokens.all(),
-            self.solve_deadline,
-            &auction
-                .surplus_capturing_jit_order_owners
-                .iter()
-                .map(|address| address.0)
-                .collect::<Vec<_>>(),
-        );
+        let request =
+            solve::Request::new(id, auction, &self.trusted_tokens.all(), self.solve_deadline);
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {

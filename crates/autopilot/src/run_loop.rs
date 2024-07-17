@@ -323,11 +323,6 @@ impl RunLoop {
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &auction
-                .surplus_capturing_jit_order_owners
-                .iter()
-                .map(|address| address.0)
-                .collect::<Vec<_>>(),
         );
         let request = &request;
 
