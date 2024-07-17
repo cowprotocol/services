@@ -11,7 +11,7 @@ use {
             },
             Postgres,
         },
-        domain::{self},
+        domain,
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         run_loop::RunLoop,

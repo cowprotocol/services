@@ -144,7 +144,7 @@ impl super::Postgres {
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[Address],
     ) -> anyhow::Result<()> {
-        let mut ex = self.pool.begin().await.context("begin")?;
+        let mut ex = self.pool.acquire().await.context("acquire")?;
 
         surplus_capturing_jit_order_owners::insert(
             &mut ex,
@@ -153,7 +153,7 @@ impl super::Postgres {
         )
         .await?;
 
-        ex.commit().await.context("commit")
+        Ok(())
     }
 
     pub async fn find_competition(

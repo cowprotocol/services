@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self},
+        domain,
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,

@@ -1,9 +1,6 @@
 use {
     crate::{
-        domain::{
-            eth,
-            {self},
-        },
+        domain::{self, eth},
         infra::{self, banned},
     },
     anyhow::Result,
@@ -84,7 +81,7 @@ pub struct SolvableOrdersCache {
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
-    surplus_capturing_jit_order_owners_config: Vec<eth::Address>,
+    surplus_capturing_jit_order_owners: Vec<eth::Address>,
     cow_amm_registry: cow_amm::Registry,
 }
 
@@ -110,7 +107,7 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
-        surplus_capturing_jit_order_owners_config: Vec<eth::Address>,
+        surplus_capturing_jit_order_owners: Vec<eth::Address>,
         cow_amm_registry: cow_amm::Registry,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
@@ -129,7 +126,7 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             protocol_fees,
-            surplus_capturing_jit_order_owners_config,
+            surplus_capturing_jit_order_owners,
             cow_amm_registry,
         });
         tokio::task::spawn(
@@ -257,7 +254,7 @@ impl SolvableOrdersCache {
         );
 
         let mut surplus_capturing_jit_order_owners =
-            self.surplus_capturing_jit_order_owners_config.clone();
+            self.surplus_capturing_jit_order_owners.clone();
         surplus_capturing_jit_order_owners.extend(
             cow_amms
                 .iter()
