@@ -1,6 +1,6 @@
 use {
     super::order::Order,
-    crate::domain,
+    crate::{domain, domain::auction::Price},
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -17,7 +17,11 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
             .into_iter()
             .map(super::order::from_domain)
             .collect(),
-        prices: auction.prices,
+        prices: auction
+            .prices
+            .into_iter()
+            .map(|(key, value)| (key.into(), value.get().into()))
+            .collect(),
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()
@@ -35,7 +39,17 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
             .into_iter()
             .map(super::order::to_domain)
             .collect(),
-        prices: auction.prices,
+        prices: auction
+            .prices
+            .into_iter()
+            .filter_map(|(key, value)| {
+                let price = Price::new(value.into());
+                if let Err(ref e) = price {
+                    tracing::warn!(?e, "failed to parse auction price")
+                }
+                Some((key.into(), price.ok()?))
+            })
+            .collect(),
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()

@@ -211,7 +211,7 @@ impl RunLoop {
                     prices: auction
                         .prices
                         .into_iter()
-                        .map(|(key, value)| (key.into(), value.into()))
+                        .map(|(key, value)| (key.into(), value.get().into()))
                         .collect(),
                 },
                 solutions: solutions
@@ -260,7 +260,7 @@ impl RunLoop {
                 participants,
                 prices: prices
                     .into_iter()
-                    .map(|(key, value)| (key.into(), value.into()))
+                    .map(|(key, value)| (key.into(), value.get().into()))
                     .collect(),
                 block_deadline,
                 competition_simulation_block,
