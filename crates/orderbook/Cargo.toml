@@ -16,7 +16,6 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
-axum = { workspace = true }
 anyhow = { workspace = true }
 app-data = { path = "../app-data" }
 app-data-hash = { path = "../app-data-hash" }

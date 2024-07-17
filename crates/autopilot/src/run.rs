@@ -45,7 +45,6 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
-        collections::HashSet,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -101,7 +100,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
-        args.shared.logging.enable_tokio_console,
     );
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
@@ -467,6 +465,11 @@ pub async fn run(args: Arguments) {
             args.protocol_fee_exempt_addresses.as_slice(),
             args.enable_multiple_fees,
         ),
+        args.protocol_fee_exempt_addresses
+            .clone()
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         cow_amm_registry.clone(),
     );
 
@@ -512,12 +515,6 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
-        surplus_capturing_jit_order_owners: args
-            .protocol_fee_exempt_addresses
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>(),
-        cow_amm_registry,
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -577,11 +574,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
-        &args
-            .protocol_fee_exempt_addresses
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>(),
     );
     shadow.run_forever().await;
 

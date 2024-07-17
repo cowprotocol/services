@@ -7,6 +7,8 @@ use {
         byte_array::ByteArray,
         settlement_call_data::SettlementCallData,
         settlement_scores::Score,
+        surplus_capturing_jit_order_owners,
+        Address,
     },
     derivative::Derivative,
     model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
@@ -134,6 +136,24 @@ impl super::Postgres {
         .context("auction_orders::insert")?;
 
         ex.commit().await.context("commit")
+    }
+
+    /// Saves the surplus capturing jit order owners to the DB
+    pub async fn save_surplus_capturing_jit_orders_orders(
+        &self,
+        auction_id: AuctionId,
+        surplus_capturing_jit_order_owners: &[Address],
+    ) -> anyhow::Result<()> {
+        let mut ex = self.pool.acquire().await.context("acquire")?;
+
+        surplus_capturing_jit_order_owners::insert(
+            &mut ex,
+            auction_id,
+            surplus_capturing_jit_order_owners,
+        )
+        .await?;
+
+        Ok(())
     }
 
     pub async fn find_competition(
