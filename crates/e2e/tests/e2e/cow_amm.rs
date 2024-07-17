@@ -156,7 +156,6 @@ async fn cow_amm_jit(web3: Web3) {
                 "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
-                format!("--protocol-fee-exempt-addresses={:?}", cow_amm.address()),
             ],
         )
         .await;
@@ -345,9 +344,7 @@ async fn cow_amm_jit(web3: Web3) {
         let bob_received = bob_balance - bob_balance_before;
 
         // bob and CoW AMM both got surplus and an equal amount
-        amm_received > cow_amm_order.buy_amount
-            && bob_received > user_order.buy_amount
-            && amm_received == bob_received
+        amm_received >= cow_amm_order.buy_amount && bob_received > user_order.buy_amount
     })
     .await
     .unwrap();

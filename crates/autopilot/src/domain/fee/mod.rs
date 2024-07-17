@@ -10,7 +10,7 @@ use {
     crate::{
         arguments::{self},
         boundary::{self},
-        domain::{self},
+        domain::{self, eth},
     },
     app_data::Validator,
     derive_more::Into,
@@ -56,9 +56,6 @@ pub type ProtocolFeeExemptAddresses = HashSet<H160>;
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
-    /// List of addresses which are exempt from the protocol
-    /// fees
-    protocol_fee_exempt_addresses: ProtocolFeeExemptAddresses,
     enable_protocol_fees: bool,
 }
 
@@ -66,7 +63,6 @@ impl ProtocolFees {
     pub fn new(
         fee_policies: &[arguments::FeePolicy],
         fee_policy_max_partner_fee: FeeFactor,
-        protocol_fee_exempt_addresses: &[H160],
         enable_protocol_fees: bool,
     ) -> Self {
         Self {
@@ -75,10 +71,6 @@ impl ProtocolFees {
                 .cloned()
                 .map(ProtocolFee::from)
                 .collect(),
-            protocol_fee_exempt_addresses: protocol_fee_exempt_addresses
-                .iter()
-                .cloned()
-                .collect::<HashSet<_>>(),
             max_partner_fee: fee_policy_max_partner_fee,
             enable_protocol_fees,
         }
@@ -86,7 +78,12 @@ impl ProtocolFees {
 
     /// Converts an order from the boundary layer to the domain layer, applying
     /// protocol fees if necessary.
-    pub fn apply(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+    pub fn apply(
+        &self,
+        order: boundary::Order,
+        quote: &domain::Quote,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+    ) -> domain::Order {
         let partner_fee = order
             .metadata
             .full_app_data
@@ -108,10 +105,7 @@ impl ProtocolFees {
             .into_iter()
             .collect::<Vec<_>>();
 
-        if self
-            .protocol_fee_exempt_addresses
-            .contains(&order.metadata.owner)
-        {
+        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
             return boundary::order::to_domain(order, partner_fee);
         }
 
