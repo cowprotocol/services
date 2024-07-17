@@ -52,14 +52,13 @@ impl TradeRetrieving for Postgres {
             .map(|trade| {
                 let fee_policies = trade
                     .auction_id
-                    .into_iter()
-                    .flat_map(|auction_id| {
+                    .map(|auction_id| {
                         fee_policies
                             .get(&(auction_id, trade.order_uid))
                             .cloned()
                             .unwrap_or_default()
                     })
-                    .collect();
+                    .unwrap_or_default();
                 trade_from(trade, fee_policies)
             })
             .collect::<Result<Vec<_>>>()

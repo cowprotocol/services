@@ -76,7 +76,7 @@ pub async fn fetch_all(
             .push(")");
     }
 
-    query_builder.push(" ORDER BY auction_id, order_uid, application_order");
+    query_builder.push(" ORDER BY application_order");
 
     let query = query_builder.build_query_as::<FeePolicy>();
     let rows = query.fetch_all(ex).await?;

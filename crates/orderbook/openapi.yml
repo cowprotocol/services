@@ -1122,7 +1122,7 @@ components:
           nullable: true
         feePolicies:
           description: | 
-           The fee policies that were used to compute the fees for this trade.
+           The fee policies that were used to compute the fees for this trade. Listed in the order they got applied.
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"

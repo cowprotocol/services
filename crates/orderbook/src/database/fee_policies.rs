@@ -1,10 +1,11 @@
 use {
     anyhow::Context,
-    bigdecimal::{BigDecimal, FromPrimitive},
+    bigdecimal::{num_traits::CheckedDiv, FromPrimitive},
     database::{auction::AuctionId, OrderUid},
     model::fee_policy::{FeePolicy, Quote},
-    number::conversions::big_decimal_to_u256,
-    std::collections::HashMap,
+    num::BigRational,
+    number::conversions::{big_decimal_to_u256, big_rational_to_u256},
+    std::{collections::HashMap, ops::Mul},
 };
 
 impl super::Postgres {
@@ -84,7 +85,18 @@ fn fee_policy_from(
                 "missing price improvement quote for order '{:?}'",
                 order_uid
             ))?;
-            let fee = quote.gas_amount * quote.gas_price / quote.sell_token_price;
+            let gas_amount =
+                BigRational::from_f64(quote.gas_amount).context("invalid quote gas amount")?;
+            let gas_price =
+                BigRational::from_f64(quote.gas_price).context("invalid quote gas price")?;
+            let sell_token_price = BigRational::from_f64(quote.sell_token_price)
+                .context("invalid quote sell token price")?;
+            let fee = big_rational_to_u256(
+                &gas_amount
+                    .mul(gas_price)
+                    .checked_div(&sell_token_price)
+                    .context("invalid price improvement quote fee value")?,
+            )?;
             FeePolicy::PriceImprovement {
                 factor: db_fee_policy
                     .price_improvement_factor
@@ -97,10 +109,7 @@ fn fee_policy_from(
                         .context("invalid price improvement quote sell amount value")?,
                     buy_amount: big_decimal_to_u256(&quote.buy_amount)
                         .context("invalid price improvement quote buy amount value")?,
-                    fee: BigDecimal::from_f64(fee)
-                        .as_ref()
-                        .and_then(big_decimal_to_u256)
-                        .context("invalid price improvement quote fee value")?,
+                    fee,
                 },
             }
         }
