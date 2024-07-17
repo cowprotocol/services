@@ -22,7 +22,6 @@ impl Request {
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
-        surplus_capturing_jit_order_owners: &HashSet<H160>,
     ) -> Self {
         Self {
             id,
@@ -48,9 +47,10 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
+            surplus_capturing_jit_order_owners: auction
+                .surplus_capturing_jit_order_owners
                 .iter()
-                .cloned()
+                .map(|address| address.0)
                 .collect::<Vec<_>>(),
         }
     }

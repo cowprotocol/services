@@ -27,7 +27,7 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
@@ -51,8 +51,6 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
-    pub surplus_capturing_jit_order_owners: HashSet<H160>,
-    pub cow_amm_registry: cow_amm::Registry,
 }
 
 impl RunLoop {
@@ -270,6 +268,18 @@ impl RunLoop {
                 return;
             }
 
+            if let Err(err) = self
+                .persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &auction.surplus_capturing_jit_order_owners,
+                )
+                .await
+            {
+                tracing::error!(?err, "failed to save surplus capturing jit order owners");
+                return;
+            }
+
             tracing::info!("saving fee policies");
             if let Err(err) = self
                 .persistence
@@ -308,21 +318,11 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let mut surplus_capturing_jit_order_owners = self
-            .cow_amm_registry
-            .amms()
-            .await
-            .into_iter()
-            .map(|cow_amm| *cow_amm.address())
-            .collect::<HashSet<_>>();
-        surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
-
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &surplus_capturing_jit_order_owners,
         );
         let request = &request;
 
