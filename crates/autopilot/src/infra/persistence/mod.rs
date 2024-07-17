@@ -256,15 +256,15 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Auction {
-        #[error("failed to read data from database")]
-        DbError(anyhow::Error),
-        #[error("failed dto conversion from database")]
+        #[error("failed to read data from database: {0}")]
+        DbError(#[source] anyhow::Error),
+        #[error("failed dto conversion from database: {0}")]
         DbConversion(anyhow::Error),
         #[error("auction data not found in the database")]
         Missing,
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
-        #[error("quote not found in the database for an existing order")]
+        #[error("quote not found in the database for an existing order: {0}")]
         MissingQuote(domain::OrderUid),
         #[error("jit order owners not found for an existing auction id")]
         MissingJitOrderOwners,
