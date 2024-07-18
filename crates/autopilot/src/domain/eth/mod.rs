@@ -58,6 +58,23 @@ pub struct SellTokenAmount(pub U256);
 #[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq, From, Into)]
 pub struct Gas(pub U256);
 
+/// The `effective_gas_price` as defined by EIP-1559.
+///
+/// https://eips.ethereum.org/EIPS/eip-1559#specification
+#[derive(Debug, Clone, Copy)]
+pub struct EffectiveGasPrice(pub Ether);
+
+impl From<U256> for EffectiveGasPrice {
+    fn from(value: U256) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<EffectiveGasPrice> for U256 {
+    fn from(value: EffectiveGasPrice) -> Self {
+        value.0.into()
+    }
+}
 impl std::ops::Sub<Self> for TokenAmount {
     type Output = TokenAmount;
 

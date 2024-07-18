@@ -176,19 +176,19 @@ impl RunLoop {
                 match auction_order {
                     Some(auction_order) => {
                         fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
-                        if let Some(price) = auction.prices.get(&auction_order.sell_asset.token) {
-                            prices.insert(auction_order.sell_asset.token, *price);
+                        if let Some(price) = auction.prices.get(&auction_order.sell.token) {
+                            prices.insert(auction_order.sell.token, *price);
                         } else {
                             tracing::error!(
-                                sell_token = ?auction_order.sell_asset.token,
+                                sell_token = ?auction_order.sell.token,
                                 "sell token price is missing in auction"
                             );
                         }
-                        if let Some(price) = auction.prices.get(&auction_order.buy_asset.token) {
-                            prices.insert(auction_order.buy_asset.token, *price);
+                        if let Some(price) = auction.prices.get(&auction_order.buy.token) {
+                            prices.insert(auction_order.buy.token, *price);
                         } else {
                             tracing::error!(
-                                buy_token = ?auction_order.buy_asset.token,
+                                buy_token = ?auction_order.buy.token,
                                 "buy token price is missing in auction"
                             );
                         }

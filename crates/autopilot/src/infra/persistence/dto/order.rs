@@ -43,10 +43,10 @@ pub struct Order {
 pub fn from_domain(order: domain::Order) -> Order {
     Order {
         uid: order.uid.into(),
-        sell_token: order.sell_asset.token.into(),
-        buy_token: order.buy_asset.token.into(),
-        sell_amount: order.sell_asset.amount.into(),
-        buy_amount: order.buy_asset.amount.into(),
+        sell_token: order.sell.token.into(),
+        buy_token: order.buy.token.into(),
+        sell_amount: order.sell.amount.into(),
+        buy_amount: order.buy.amount.into(),
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.side.into(),
@@ -71,11 +71,11 @@ pub fn from_domain(order: domain::Order) -> Order {
 pub fn to_domain(order: Order) -> domain::Order {
     domain::Order {
         uid: order.uid.into(),
-        sell_asset: eth::Asset {
+        sell: eth::Asset {
             token: order.sell_token.into(),
             amount: order.sell_amount.into(),
         },
-        buy_asset: eth::Asset {
+        buy: eth::Asset {
             token: order.buy_token.into(),
             amount: order.buy_amount.into(),
         },

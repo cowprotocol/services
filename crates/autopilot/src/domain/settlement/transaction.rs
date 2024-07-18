@@ -14,5 +14,5 @@ pub struct Transaction {
     /// The gas used by the transaction.
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
-    pub effective_gas_price: eth::Gas,
+    pub effective_gas_price: eth::EffectiveGasPrice,
 }

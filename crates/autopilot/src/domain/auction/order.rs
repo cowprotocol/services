@@ -7,8 +7,8 @@ use {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Order {
     pub uid: OrderUid,
-    pub sell_asset: eth::Asset,
-    pub buy_asset: eth::Asset,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
     pub protocol_fees: Vec<fee::Policy>,
     pub side: Side,
     pub class: Class,

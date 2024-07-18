@@ -2,7 +2,7 @@ use {
     super::order::Order,
     crate::{
         domain,
-        domain::auction::{Price, Prices},
+        domain::{auction::Price, eth},
     },
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
@@ -42,14 +42,13 @@ pub fn try_to_domain(auction: Auction) -> anyhow::Result<domain::Auction> {
             .into_iter()
             .map(super::order::to_domain)
             .collect(),
-        prices: {
-            let mut result = Prices::new();
-            auction.prices.into_iter().try_for_each(|(key, value)| {
-                result.insert(key.into(), Price::new(value.into())?);
-                Ok::<_, anyhow::Error>(())
-            })?;
-            result
-        },
+        prices: auction
+            .prices
+            .into_iter()
+            .map(|(key, value)| {
+                Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
+            })
+            .collect::<Result<_, _>>()?,
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()

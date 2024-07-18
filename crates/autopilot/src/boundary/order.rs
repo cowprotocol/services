@@ -12,11 +12,11 @@ pub fn to_domain(
 
     domain::Order {
         uid: order.metadata.uid.into(),
-        sell_asset: eth::Asset {
+        sell: eth::Asset {
             token: order.data.sell_token.into(),
             amount: order.data.sell_amount.into(),
         },
-        buy_asset: eth::Asset {
+        buy: eth::Asset {
             token: order.data.buy_token.into(),
             amount: order.data.buy_amount.into(),
         },
