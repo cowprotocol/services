@@ -53,24 +53,40 @@ pub async fn insert_batch(
     query_builder.build().execute(ex).await.map(|_| ())
 }
 
-pub async fn fetch(
+pub async fn fetch_all(
     ex: &mut PgConnection,
-    auction_id: AuctionId,
-    order_uid: OrderUid,
-) -> Result<Vec<FeePolicy>, sqlx::Error> {
-    const QUERY: &str = r#"
-    SELECT * FROM fee_policies
-    WHERE auction_id = $1 AND order_uid = $2
-    ORDER BY application_order
-"#;
-    let rows = sqlx::query_as::<_, FeePolicy>(QUERY)
-        .bind(auction_id)
-        .bind(order_uid)
-        .fetch_all(ex)
-        .await?
-        .into_iter()
-        .collect();
-    Ok(rows)
+    keys_filter: &[(AuctionId, OrderUid)],
+) -> Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>, sqlx::Error> {
+    if keys_filter.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query_builder = QueryBuilder::new("SELECT * FROM fee_policies WHERE ");
+    for (i, (auction_id, order_uid)) in keys_filter.iter().enumerate() {
+        if i > 0 {
+            query_builder.push(" OR ");
+        }
+        query_builder
+            .push("(")
+            .push("auction_id = ")
+            .push_bind(auction_id)
+            .push(" AND ")
+            .push("order_uid = ")
+            .push_bind(order_uid)
+            .push(")");
+    }
+
+    query_builder.push(" ORDER BY application_order");
+
+    let query = query_builder.build_query_as::<FeePolicy>();
+    let rows = query.fetch_all(ex).await?;
+    let mut result: HashMap<(AuctionId, OrderUid), Vec<FeePolicy>> = HashMap::new();
+    for row in rows {
+        let key = (row.auction_id, row.order_uid);
+        result.entry(key).or_default().push(row);
+    }
+
+    Ok(result)
 }
 
 pub async fn fetch_all_for_auction(
@@ -112,12 +128,21 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         // same primary key for all fee policies
-        let (auction_id, order_uid) = (1, ByteArray([1; 56]));
+        let (auction_id_a, order_uid_a) = (1, ByteArray([1; 56]));
+        let (auction_id_b, order_uid_b) = (2, ByteArray([2; 56]));
+
+        let output = fetch_all(
+            &mut db,
+            &[(auction_id_a, order_uid_a), (auction_id_b, order_uid_b)],
+        )
+        .await
+        .unwrap();
+        assert!(output.is_empty());
 
         // surplus fee policy without caps
         let fee_policy_1 = FeePolicy {
-            auction_id,
-            order_uid,
+            auction_id: auction_id_a,
+            order_uid: order_uid_a,
             kind: FeePolicyKind::Surplus,
             surplus_factor: Some(0.1),
             surplus_max_volume_factor: Some(0.99999),
@@ -127,8 +152,8 @@ mod tests {
         };
         // surplus fee policy with caps
         let fee_policy_2 = FeePolicy {
-            auction_id,
-            order_uid,
+            auction_id: auction_id_b,
+            order_uid: order_uid_b,
             kind: FeePolicyKind::Surplus,
             surplus_factor: Some(0.2),
             surplus_max_volume_factor: Some(0.05),
@@ -138,8 +163,8 @@ mod tests {
         };
         // volume based fee policy
         let fee_policy_3 = FeePolicy {
-            auction_id,
-            order_uid,
+            auction_id: auction_id_b,
+            order_uid: order_uid_b,
             kind: FeePolicyKind::Volume,
             surplus_factor: None,
             surplus_max_volume_factor: None,
@@ -149,8 +174,8 @@ mod tests {
         };
         // price improvement fee policy
         let fee_policy_4 = FeePolicy {
-            auction_id,
-            order_uid,
+            auction_id: auction_id_a,
+            order_uid: order_uid_a,
             kind: FeePolicyKind::PriceImprovement,
             surplus_factor: None,
             surplus_max_volume_factor: None,
@@ -159,11 +184,34 @@ mod tests {
             price_improvement_max_volume_factor: Some(0.99999),
         };
 
-        let fee_policies = vec![fee_policy_1, fee_policy_2, fee_policy_3, fee_policy_4];
-
+        let fee_policies = vec![
+            fee_policy_1.clone(),
+            fee_policy_2.clone(),
+            fee_policy_3.clone(),
+            fee_policy_4.clone(),
+        ];
         insert_batch(&mut db, fee_policies.clone()).await.unwrap();
 
-        let output = fetch(&mut db, 1, order_uid).await.unwrap();
-        assert_eq!(output, fee_policies);
+        let mut expected = HashMap::new();
+        expected.insert(
+            (auction_id_a, order_uid_a),
+            vec![fee_policy_1, fee_policy_4],
+        );
+        let output = fetch_all(&mut db, &[(auction_id_a, order_uid_a)])
+            .await
+            .unwrap();
+        assert_eq!(output, expected);
+
+        expected.insert(
+            (auction_id_b, order_uid_b),
+            vec![fee_policy_2, fee_policy_3],
+        );
+        let output = fetch_all(
+            &mut db,
+            &[(auction_id_a, order_uid_a), (auction_id_b, order_uid_b)],
+        )
+        .await
+        .unwrap();
+        assert_eq!(output, expected);
     }
 }
