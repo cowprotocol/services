@@ -214,12 +214,14 @@ impl Persistence {
                     .ok_or(error::Auction::MissingQuote(*order))?;
 
                 orders.insert(*order, vec![]);
-                for policy in policies.get(&ByteArray(order.0)).unwrap_or(&vec![]) {
-                    let policy = dto::fee_policy::into_domain(policy.clone(), quote)
-                        .map_err(error::Auction::DbConversion)?;
-                    orders.entry(*order).and_modify(|policies| {
-                        policies.push(policy);
-                    });
+                if let Some(policies) = policies.get(&ByteArray(order.0)) {
+                    for policy in policies {
+                        let policy = dto::fee_policy::into_domain(policy.clone(), quote)
+                            .map_err(error::Auction::DbConversion)?;
+                        orders.entry(*order).and_modify(|policies| {
+                            policies.push(policy);
+                        });
+                    }
                 }
             }
             orders
