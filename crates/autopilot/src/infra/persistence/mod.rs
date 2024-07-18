@@ -165,6 +165,11 @@ impl Persistence {
         &self,
         auction_id: domain::auction::Id,
     ) -> Result<domain::settlement::Auction, error::Auction> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_auction"])
+            .start_timer();
+
         let mut ex = self
             .postgres
             .pool
@@ -194,6 +199,16 @@ impl Persistence {
                 price.map(|price| (token, price))
             })
             .collect::<Result<_, _>>()?;
+
+        let surplus_capturing_jit_order_owners =
+            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
+                .await
+                .context("fetch surplus capturing jit order owners")
+                .map_err(error::Auction::DbError)?
+                .ok_or(error::Auction::MissingJitOrderOwners)?
+                .into_iter()
+                .map(|owner| eth::H160(owner.0).into())
+                .collect();
 
         let orders = {
             // get all orders from a competition auction
@@ -259,23 +274,26 @@ impl Persistence {
             orders
         };
 
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .context("fetch surplus capturing jit order owners")
-                .map_err(error::Auction::DbError)?
-                .ok_or(error::Auction::MissingJitOrderOwners)?
-                .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
-                .collect();
-
         Ok(domain::settlement::Auction {
             id: auction_id,
-            prices,
             orders,
+            prices,
             deadline,
             surplus_capturing_jit_order_owners,
         })
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Timing of db queries.
+    #[metric(name = "autopilot_database_queries", labels("type"))]
+    database_queries: prometheus::HistogramVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }
 
