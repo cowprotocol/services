@@ -204,11 +204,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0.01")]
     pub fee_policy_max_partner_fee: FeeFactor,
 
-    /// List of addresses which are exempt from the protocol
-    /// fees
-    #[clap(long, env, use_value_delimiter = true)]
-    pub protocol_fee_exempt_addresses: Vec<H160>,
-
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
     pub s3: infra::persistence::cli::S3,
@@ -275,7 +270,6 @@ impl std::fmt::Display for Arguments {
             auction_update_interval,
             max_settlement_transaction_wait,
             s3,
-            protocol_fee_exempt_addresses,
             cow_amm_configs,
         } = self;
 
@@ -324,11 +318,6 @@ impl std::fmt::Display for Arguments {
         display_option(f, "shadow", shadow)?;
         writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
         writeln!(f, "fee_policies: {:?}", fee_policies)?;
-        writeln!(
-            f,
-            "protocol_fee_exempt_addresses: {:?}",
-            protocol_fee_exempt_addresses
-        )?;
         writeln!(f, "enable_multiple_fees: {:?}", enable_multiple_fees)?;
         writeln!(
             f,
