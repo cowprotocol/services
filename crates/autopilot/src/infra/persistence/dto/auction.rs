@@ -1,6 +1,9 @@
 use {
     super::order::Order,
-    crate::{domain, domain::auction::Price},
+    crate::{
+        domain,
+        domain::auction::{Price, Prices},
+    },
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
@@ -30,8 +33,8 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
     }
 }
 
-pub fn to_domain(auction: Auction) -> domain::Auction {
-    domain::Auction {
+pub fn try_to_domain(auction: Auction) -> anyhow::Result<domain::Auction> {
+    Ok(domain::Auction {
         block: auction.block,
         latest_settlement_block: auction.latest_settlement_block,
         orders: auction
@@ -39,23 +42,20 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
             .into_iter()
             .map(super::order::to_domain)
             .collect(),
-        prices: auction
-            .prices
-            .into_iter()
-            .filter_map(|(key, value)| {
-                let price = Price::new(value.into());
-                if let Err(ref e) = price {
-                    tracing::warn!(?e, "failed to parse auction price")
-                }
-                Some((key.into(), price.ok()?))
-            })
-            .collect(),
+        prices: {
+            let mut result = Prices::new();
+            auction.prices.into_iter().try_for_each(|(key, value)| {
+                result.insert(key.into(), Price::new(value.into())?);
+                Ok::<_, anyhow::Error>(())
+            })?;
+            result
+        },
         surplus_capturing_jit_order_owners: auction
             .surplus_capturing_jit_order_owners
             .into_iter()
             .map(Into::into)
             .collect(),
-    }
+    })
 }
 
 #[serde_as]
@@ -73,12 +73,14 @@ pub struct Auction {
 
 pub type AuctionId = i64;
 
-impl From<AuctionWithId> for domain::AuctionWithId {
-    fn from(dto: AuctionWithId) -> Self {
-        domain::AuctionWithId {
+impl TryFrom<AuctionWithId> for domain::AuctionWithId {
+    type Error = anyhow::Error;
+
+    fn try_from(dto: AuctionWithId) -> anyhow::Result<Self> {
+        Ok(domain::AuctionWithId {
             id: dto.id,
-            auction: to_domain(dto.auction),
-        }
+            auction: try_to_domain(dto.auction)?,
+        })
     }
 }
 
