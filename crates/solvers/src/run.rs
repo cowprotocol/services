@@ -25,7 +25,7 @@ pub async fn run(
 }
 
 async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
-    observe::tracing::initialize_reentrant(&args.log, args.enable_tokio_console);
+    observe::tracing::initialize_reentrant(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
     let solver = match args.command {

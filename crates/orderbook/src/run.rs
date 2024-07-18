@@ -53,7 +53,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
-        args.shared.logging.enable_tokio_console,
     );
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
@@ -411,8 +410,9 @@ pub async fn run(args: Arguments) {
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
                 Ok(inner) => inner.expect("API failed during shutdown"),
-                Err(_) => panic!("API shutdown exceeded timeout"),
+                Err(_) => tracing::error!("API shutdown exceeded timeout"),
             }
+            std::process::exit(0);
         }
     };
 }

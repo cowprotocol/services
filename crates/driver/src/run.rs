@@ -42,7 +42,7 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
-    crate::infra::observe::init(&args.log, args.enable_tokio_console);
+    crate::infra::observe::init(&args.log);
 
     let ethrpc = ethrpc(&args).await;
     let web3 = ethrpc.web3().clone();

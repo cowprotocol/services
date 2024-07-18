@@ -3,6 +3,7 @@ use {
         boundary,
         database::{order_events::store_order_events, Postgres},
         domain::{self, eth},
+        infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
@@ -92,6 +93,24 @@ impl Persistence {
     pub async fn save_competition(&self, competition: &boundary::Competition) -> Result<(), Error> {
         self.postgres
             .save_competition(competition)
+            .await
+            .map_err(Error::DbError)
+    }
+
+    /// Saves the surplus capturing jit order owners to the DB
+    pub async fn save_surplus_capturing_jit_orders_orders(
+        &self,
+        auction_id: AuctionId,
+        surplus_capturing_jit_order_owners: &[domain::eth::Address],
+    ) -> Result<(), Error> {
+        self.postgres
+            .save_surplus_capturing_jit_orders_orders(
+                auction_id,
+                &surplus_capturing_jit_order_owners
+                    .iter()
+                    .map(|address| ByteArray(address.0.into()))
+                    .collect::<Vec<_>>(),
+            )
             .await
             .map_err(Error::DbError)
     }
