@@ -80,7 +80,8 @@ impl Amm {
         // The helper contract returns exactly that format but in our code base we
         // expect the signature to not already include the signer address (the parts
         // will be concatenated in the encoding logic) so we discard the first 20 bytes.
-        let signature = Signature::Eip1271(signature.0[20..].to_vec());
+        let raw_signature = signature.0.into_iter().skip(20).collect();
+        let signature = Signature::Eip1271(raw_signature);
 
         Ok(TemplateOrder {
             order,
