@@ -75,7 +75,13 @@ impl Amm {
         let pre_interactions = convert_interactions(pre_interactions);
         let post_interactions = convert_interactions(post_interactions);
 
-        let signature = Signature::Eip1271(signature.0);
+        // The settlement contract expects a signature composed of 2 parts: the
+        // signer address and the actual signature bytes.
+        // The helper contract returns exactly that format but in our code base we
+        // expect the signature to not already include the signer address (the parts
+        // will be concatenated in the encoding logic) so we discard the first 20 bytes.
+        let raw_signature = signature.0.into_iter().skip(20).collect();
+        let signature = Signature::Eip1271(raw_signature);
 
         Ok(TemplateOrder {
             order,

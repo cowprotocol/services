@@ -462,14 +462,8 @@ pub async fn run(args: Arguments) {
         domain::ProtocolFees::new(
             &args.fee_policies,
             args.fee_policy_max_partner_fee,
-            args.protocol_fee_exempt_addresses.as_slice(),
             args.enable_multiple_fees,
         ),
-        args.protocol_fee_exempt_addresses
-            .clone()
-            .into_iter()
-            .map(Into::into)
-            .collect(),
         cow_amm_registry.clone(),
     );
 
