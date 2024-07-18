@@ -69,15 +69,19 @@ pub struct TradedAmounts {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Score(eth::Ether);
 
-impl Score {
-    pub fn new(score: eth::Ether) -> Result<Self, ZeroScore> {
+impl TryFrom<eth::Ether> for Score {
+    type Error = ZeroScore;
+
+    fn try_from(score: eth::Ether) -> Result<Self, Self::Error> {
         if score.0.is_zero() {
             Err(ZeroScore)
         } else {
             Ok(Self(score))
         }
     }
+}
 
+impl Score {
     pub fn get(&self) -> &eth::Ether {
         &self.0
     }

@@ -29,10 +29,6 @@ pub struct Order {
     pub signature: Signature,
 }
 
-// uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Copy, Clone, PartialEq, Hash, Eq)]
-pub struct OrderUid(pub [u8; 56]);
-
 impl Order {
     pub fn is_limit_order(&self) -> bool {
         matches!(self.class, Class::Limit)
@@ -42,6 +38,25 @@ impl Order {
     /// are supposed to compute a reasonable fee themselves.
     pub fn solver_determines_fee(&self) -> bool {
         self.is_limit_order()
+    }
+}
+
+// uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
+#[derive(Copy, Clone, PartialEq, Hash, Eq)]
+pub struct OrderUid(pub [u8; 56]);
+
+impl OrderUid {
+    pub fn owner(&self) -> eth::Address {
+        self.parts().1.into()
+    }
+
+    /// Splits an order UID into its parts.
+    fn parts(&self) -> (H256, H160, u32) {
+        (
+            H256::from_slice(&self.0[0..32]),
+            H160::from_slice(&self.0[32..52]),
+            u32::from_le_bytes(self.0[52..].try_into().unwrap()),
+        )
     }
 }
 

@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain,
+        domain::{self, eth},
         infra::persistence::{dto, dto::order::Order},
     },
     chrono::{DateTime, Utc},
@@ -108,7 +108,7 @@ impl Solution {
         Ok(domain::competition::Solution::new(
             self.solution_id,
             self.submission_address.into(),
-            domain::competition::Score::new(self.score.into())?,
+            eth::Ether(self.score).try_into()?,
             self.orders
                 .into_iter()
                 .map(|(o, amounts)| {
