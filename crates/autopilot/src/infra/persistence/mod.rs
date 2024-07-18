@@ -183,23 +183,20 @@ impl Persistence {
             (scores.block_deadline as u64).into()
         };
 
-        let prices = {
-            let db_prices = database::auction_prices::fetch(&mut ex, auction_id)
-                .await
-                .context("fetch auction prices")
-                .map_err(error::Auction::DbError)?;
-
-            let mut prices = HashMap::new();
-            for price in db_prices {
+        let prices = database::auction_prices::fetch(&mut ex, auction_id)
+            .await
+            .context("fetch auction prices")
+            .map_err(error::Auction::DbError)?
+            .into_iter()
+            .map(|price| {
                 let token = eth::H160(price.token.0).into();
                 let price = big_decimal_to_u256(&price.price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::new(p.into()))
-                    .map_err(error::Auction::Price)?;
-                prices.insert(token, price);
-            }
-            prices
-        };
+                    .map_err(error::Auction::Price);
+                price.map(|price| (token, price))
+            })
+            .collect::<Result<_, _>>()?;
 
         let orders = {
             // get all orders from a competition auction
