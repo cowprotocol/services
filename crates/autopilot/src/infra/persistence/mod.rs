@@ -173,15 +173,12 @@ impl Persistence {
             .context("begin")
             .map_err(error::Auction::DbError)?;
 
-        let deadline = {
-            let scores = database::settlement_scores::fetch(&mut ex, auction_id)
+        let deadline = database::settlement_scores::fetch(&mut ex, auction_id)
             .await
-            .context("fetch scores").map_err(error::Auction::DbError)?
-            // if score is missing, no competition / auction exist for this auction_id
-            .ok_or(error::Auction::Missing)?;
-
-            (scores.block_deadline as u64).into()
-        };
+            .context("fetch scores")
+            .map_err(error::Auction::DbError)?
+            .ok_or(error::Auction::Missing)
+            .map(|scores| (scores.block_deadline as u64).into())?;
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
             .await
