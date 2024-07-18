@@ -212,36 +212,55 @@ impl Persistence {
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
 
-            // get quotes for all auction orders
+            // get fee policies for all orders that were part of the competition auction
+            let fee_policies = database::fee_policies::fetch_all(
+                &mut ex,
+                auction_orders
+                    .iter()
+                    .map(|o| (auction_id, ByteArray(o.0)))
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+            )
+            .await
+            .context("fetch fee policies")
+            .map_err(error::Auction::DbError)?
+            .into_iter()
+            .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
+            .collect::<HashMap<_, _>>();
+
+            // get quotes for all orders with PriceImprovement fee policy
             let quotes = self
                 .postgres
-                .read_quotes(auction_orders.iter())
+                .read_quotes(fee_policies.iter().filter_map(|(order_uid, policies)| {
+                    policies
+                        .iter()
+                        .any(|policy| {
+                            matches!(
+                                policy.kind,
+                                database::fee_policies::FeePolicyKind::PriceImprovement
+                            )
+                        })
+                        .then_some(order_uid)
+                }))
                 .await
-                .map_err(error::Auction::DbError)?;
-
-            // get fee policies for all orders that were part of the competition auction
-            let policies = database::fee_policies::fetch_all_for_auction(&mut ex, auction_id)
-                .await
-                .context("fetch fee policies")
                 .map_err(error::Auction::DbError)?;
 
             // compile order data
             let mut orders = HashMap::new();
             for order in auction_orders.iter() {
-                let quote = quotes
-                    .get(order)
-                    .ok_or(error::Auction::MissingQuote(*order))?;
-
-                orders.insert(*order, vec![]);
-                if let Some(policies) = policies.get(&ByteArray(order.0)) {
-                    for policy in policies {
-                        let policy = dto::fee_policy::into_domain(policy.clone(), quote)
-                            .map_err(error::Auction::DbConversion)?;
-                        orders.entry(*order).and_modify(|policies| {
-                            policies.push(policy);
-                        });
-                    }
-                }
+                let order_policies = match fee_policies.get(order) {
+                    Some(policies) => policies
+                        .iter()
+                        .cloned()
+                        .map(|policy| {
+                            dto::fee_policy::try_into_domain(policy, quotes.get(order))
+                                .context(format!("convert fee policy for order {}", order))
+                                .map_err(error::Auction::FeePolicy)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    None => vec![],
+                };
+                orders.insert(*order, order_policies);
             }
             orders
         };
@@ -280,13 +299,11 @@ pub mod error {
         #[error("failed to read data from database: {0}")]
         DbError(#[source] anyhow::Error),
         #[error("failed dto conversion from database: {0}")]
-        DbConversion(anyhow::Error),
+        FeePolicy(anyhow::Error),
         #[error("auction data not found in the database")]
         Missing,
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
-        #[error("quote not found in the database for an existing order: {0}")]
-        MissingQuote(domain::OrderUid),
         #[error("jit order owners not found for an existing auction id")]
         MissingJitOrderOwners,
     }

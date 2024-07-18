@@ -49,10 +49,10 @@ pub fn from_domain(
     }
 }
 
-pub fn into_domain(
+pub fn try_into_domain(
     policy: FeePolicy,
-    quote: &domain::quote::Quote,
-) -> anyhow::Result<domain::fee::Policy> {
+    quote: Option<&domain::quote::Quote>,
+) -> Result<domain::fee::Policy, Error> {
     let policy = match policy.kind {
         FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
             factor: policy.surplus_factor.unwrap().try_into()?,
@@ -67,12 +67,23 @@ pub fn into_domain(
                 .price_improvement_max_volume_factor
                 .unwrap()
                 .try_into()?,
-            quote: domain::fee::Quote {
-                sell_amount: quote.sell_amount,
-                buy_amount: quote.buy_amount,
-                fee: quote.fee,
+            quote: {
+                let quote = quote.ok_or(Error::MissingQuote)?;
+                domain::fee::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                }
             },
         },
     };
     Ok(policy)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("failed to convert database data to domain data {0}")]
+    Conversion(#[from] anyhow::Error),
+    #[error("missing quote for price improvement fee policy")]
+    MissingQuote,
 }
