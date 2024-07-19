@@ -17,6 +17,8 @@ pub struct Auction {
     pub orders: Vec<Order>,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
+    #[serde(default)]
+    pub surplus_capturing_jit_order_owners: Vec<H160>,
 }
 
 pub type AuctionId = i64;

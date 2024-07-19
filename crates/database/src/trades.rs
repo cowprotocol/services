@@ -1,5 +1,5 @@
 use {
-    crate::{Address, OrderUid, TransactionHash},
+    crate::{auction::AuctionId, Address, OrderUid, TransactionHash},
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
@@ -17,6 +17,7 @@ pub struct TradesQueryRow {
     pub buy_token: Address,
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
+    pub auction_id: Option<AuctionId>,
 }
 
 pub fn trades<'a>(
@@ -35,10 +36,11 @@ SELECT
     o.owner,
     o.buy_token,
     o.sell_token,
-    settlement.tx_hash
+    settlement.tx_hash,
+    settlement.auction_id
 FROM trades t
 LEFT OUTER JOIN LATERAL (
-    SELECT tx_hash FROM settlements s
+    SELECT tx_hash, auction_id FROM settlements s
     WHERE s.block_number = t.block_number
     AND   s.log_index > t.log_index
     ORDER BY s.log_index ASC
@@ -94,6 +96,7 @@ mod tests {
         order_uid: OrderUid,
         event_index: EventIndex,
         tx_hash: Option<TransactionHash>,
+        auction_id: Option<AuctionId>,
     ) -> TradesQueryRow {
         crate::events::append(
             ex,
@@ -113,6 +116,7 @@ mod tests {
             order_uid,
             owner,
             tx_hash,
+            auction_id,
             ..Default::default()
         }
     }
@@ -123,6 +127,7 @@ mod tests {
         order_uid: OrderUid,
         event_index: EventIndex,
         tx_hash: Option<TransactionHash>,
+        auction_id: Option<AuctionId>,
     ) -> TradesQueryRow {
         let order = Order {
             uid: order_uid,
@@ -130,7 +135,7 @@ mod tests {
             ..Default::default()
         };
         crate::orders::insert_order(ex, &order).await.unwrap();
-        add_trade(ex, owner, order_uid, event_index, tx_hash).await
+        add_trade(ex, owner, order_uid, event_index, tx_hash, auction_id).await
     }
 
     async fn assert_trades(
@@ -139,10 +144,11 @@ mod tests {
         order_uid_filter: Option<&OrderUid>,
         expected: &[TradesQueryRow],
     ) {
-        let filtered = trades(db, owner_filter, order_uid_filter)
+        let mut filtered = trades(db, owner_filter, order_uid_filter)
             .try_collect::<Vec<_>>()
             .await
             .unwrap();
+        filtered.sort_by_key(|t| (t.block_number, t.log_index));
         assert_eq!(filtered, expected);
     }
 
@@ -161,7 +167,7 @@ mod tests {
             log_index: 0,
         };
         let trade_a =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None).await;
+            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None, None).await;
         assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
 
         let event_index_b = EventIndex {
@@ -169,8 +175,8 @@ mod tests {
             log_index: 0,
         };
         let trade_b =
-            add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None).await;
-        assert_trades(&mut db, None, None, &[trade_b, trade_a]).await;
+            add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None, None).await;
+        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
     }
 
     #[tokio::test]
@@ -206,7 +212,7 @@ mod tests {
                 )
                 .await
                 .unwrap();
-                add_order_and_trade(&mut db, owner, order_uid, event_index_0, None).await;
+                add_order_and_trade(&mut db, owner, order_uid, event_index_0, None, None).await;
             }
         }
 
@@ -234,14 +240,14 @@ mod tests {
             log_index: 0,
         };
         let trade_0 =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None).await;
+            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None, None).await;
 
         let event_index_1 = EventIndex {
             block_number: 0,
             log_index: 1,
         };
         let trade_1 =
-            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
+            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None, None).await;
 
         assert_trades(&mut db, Some(&owners[0]), None, &[trade_0.clone()]).await;
         assert_trades(&mut db, Some(&owners[1]), None, &[trade_1]).await;
@@ -258,7 +264,7 @@ mod tests {
             .unwrap();
         assert_trades(&mut db, Some(&owners[3]), None, &[trade_0.clone()]).await;
 
-        add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None).await;
+        add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None, None).await;
         let onchain_order = OnchainOrderPlacement {
             order_uid: ByteArray(order_ids[3].0),
             sender: owners[3],
@@ -284,14 +290,14 @@ mod tests {
             log_index: 0,
         };
         let trade_0 =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None).await;
+            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None, None).await;
 
         let event_index_1 = EventIndex {
             block_number: 0,
             log_index: 1,
         };
         let trade_1 =
-            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
+            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None, None).await;
 
         assert_trades(&mut db, None, Some(&order_ids[0]), &[trade_0]).await;
         assert_trades(&mut db, None, Some(&order_ids[1]), &[trade_1]).await;
@@ -311,7 +317,7 @@ mod tests {
             block_number: 0,
             log_index: 0,
         };
-        add_trade(&mut db, owners[0], order_ids[0], event_index, None).await;
+        add_trade(&mut db, owners[0], order_ids[0], event_index, None, None).await;
         // Trade exists in DB but no matching order
         assert_trades(&mut db, None, Some(&order_ids[0]), &[]).await;
         assert_trades(&mut db, Some(&owners[0]), None, &[]).await;
@@ -323,23 +329,24 @@ mod tests {
         event_index: EventIndex,
         solver: Address,
         transaction_hash: TransactionHash,
+        auction_id: AuctionId,
     ) -> Settlement {
-        crate::events::append(
+        let settlement = Settlement {
+            solver,
+            transaction_hash,
+        };
+        crate::events::append(ex, &[(event_index, Event::Settlement(settlement))])
+            .await
+            .unwrap();
+        crate::settlements::update_settlement_auction(
             ex,
-            &[(
-                event_index,
-                Event::Settlement(Settlement {
-                    solver,
-                    transaction_hash,
-                }),
-            )],
+            event_index.block_number,
+            event_index.log_index,
+            auction_id,
         )
         .await
         .unwrap();
-        Settlement {
-            solver,
-            transaction_hash,
-        }
+        settlement
     }
 
     #[tokio::test]
@@ -360,6 +367,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            1,
         )
         .await;
 
@@ -372,6 +380,7 @@ mod tests {
                 log_index: 0,
             },
             Some(settlement.transaction_hash),
+            Some(1),
         )
         .await;
         assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
@@ -385,6 +394,7 @@ mod tests {
                 log_index: 1,
             },
             Some(settlement.transaction_hash),
+            Some(1),
         )
         .await;
         assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
@@ -408,6 +418,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            1,
         )
         .await;
 
@@ -420,6 +431,7 @@ mod tests {
                 log_index: 0,
             },
             Some(settlement.transaction_hash),
+            Some(1),
         )
         .await;
 
@@ -432,6 +444,7 @@ mod tests {
                 log_index: 1,
             },
             Some(settlement.transaction_hash),
+            Some(1),
         )
         .await;
         // Trades query returns nothing when there are no corresponding orders.
@@ -456,6 +469,7 @@ mod tests {
             },
             Default::default(),
             Default::default(),
+            1,
         )
         .await;
         let settlement_b = add_settlement(
@@ -466,6 +480,7 @@ mod tests {
             },
             Default::default(),
             ByteArray([2; 32]),
+            1,
         )
         .await;
 
@@ -478,6 +493,7 @@ mod tests {
                 log_index: 0,
             },
             Some(settlement_a.transaction_hash),
+            Some(1),
         )
         .await;
         assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
@@ -491,6 +507,7 @@ mod tests {
                 log_index: 2,
             },
             Some(settlement_b.transaction_hash),
+            Some(1),
         )
         .await;
         assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;

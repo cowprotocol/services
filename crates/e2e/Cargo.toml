@@ -21,7 +21,7 @@ ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
-model = { path = "../model" }
+model = { path = "../model", features = ["e2e"] }
 number = { path = "../number" }
 observe = { path = "../observe" }
 orderbook = { path = "../orderbook" }

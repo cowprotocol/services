@@ -366,7 +366,7 @@ paths:
         200:
           description: Version
           content:
-            text/plain: {}
+            text/plain: { }
   /api/v1/app_data/{app_data_hash}:
     get:
       summary: Get the full `appData` from contract `appDataHash`.
@@ -528,7 +528,7 @@ components:
             happen, for example, if the `validTo` is too high, or no valid quote was
             found or generated.
           type: string
-          enum: [QuoteNotFound, ValidToTooFarInFuture, PreValidationError]
+          enum: [ QuoteNotFound, ValidToTooFarInFuture, PreValidationError ]
       required:
         - sender
     EthflowData:
@@ -555,19 +555,19 @@ components:
     OrderKind:
       description: Is this order a buy or sell?
       type: string
-      enum: [buy, sell]
+      enum: [ buy, sell ]
     OrderClass:
       description: Order class.
       type: string
-      enum: [market, limit, liquidity]
+      enum: [ market, limit, liquidity ]
     SellTokenSource:
       description: Where should the `sellToken` be drawn from?
       type: string
-      enum: [erc20, internal, external]
+      enum: [ erc20, internal, external ]
     BuyTokenDestination:
       description: Where should the `buyToken` be transferred to?
       type: string
-      enum: [erc20, internal]
+      enum: [ erc20, internal ]
     PriceQuality:
       description: |
         How good should the price estimate be?
@@ -578,11 +578,11 @@ components:
 
         **NOTE**: Orders are supposed to be created from `verified` or `optimal` price estimates.
       type: string
-      enum: [fast, optimal, verified]
+      enum: [ fast, optimal, verified ]
     OrderStatus:
       description: The current order status.
       type: string
-      enum: [presignaturePending, open, fulfilled, cancelled, expired]
+      enum: [ presignaturePending, open, fulfilled, cancelled, expired ]
     OrderParameters:
       description: Order parameters.
       type: object
@@ -1019,6 +1019,12 @@ components:
             The solvable orders included in the auction.
         prices:
           $ref: "#/components/schemas/AuctionPrices"
+        surplusCapturingJitOrderOwners:
+          type: array
+          items:
+            $ref: "#/components/schemas/Address"
+          description: |
+            List of addresses on whose surplus will count towards the objective value of their solution (unlike other orders that were created by the solver).
     CompetitionAuction:
       description: |
         The components that describe a batch auction for the solver competition.
@@ -1120,6 +1126,12 @@ components:
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
           nullable: true
+        feePolicies:
+          description: | 
+           The fee policies that were used to compute the fees for this trade. Listed in the order they got applied.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeePolicy"
       required:
         - blockNumber
         - logIndex
@@ -1142,11 +1154,11 @@ components:
     SigningScheme:
       description: How was the order signed?
       type: string
-      enum: [eip712, ethsign, presign, eip1271]
+      enum: [ eip712, ethsign, presign, eip1271 ]
     EcdsaSigningScheme:
       description: How was the order signed?
       type: string
-      enum: [eip712, ethsign]
+      enum: [ eip712, ethsign ]
     Signature:
       description: A signature.
       oneOf:
@@ -1283,10 +1295,10 @@ components:
             - buyAmountAfterFee
     OrderQuoteSideKindSell:
       type: string
-      enum: [sell]
+      enum: [ sell ]
     OrderQuoteSideKindBuy:
       type: string
-      enum: [buy]
+      enum: [ buy ]
     OrderQuoteValidity:
       description: The validity for the order.
       oneOf:

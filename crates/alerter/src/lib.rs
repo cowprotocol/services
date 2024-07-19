@@ -382,7 +382,7 @@ struct Arguments {
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
-    observe::tracing::initialize("alerter=debug", tracing::Level::ERROR.into(), false);
+    observe::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_alerter".to_string()), None);
     tracing::info!("running alerter with {:#?}", args);
