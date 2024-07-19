@@ -147,18 +147,10 @@ impl Solution {
             let order = auction_orders
                 .get(order_uid)
                 .ok_or(error::Solution::MissingOrder(*order_uid))?;
-            let sell_token = order.sell_token.into();
-            let buy_token = order.buy_token.into();
             trades.push(trade::Trade::new(
                 order.uid,
-                eth::Asset {
-                    token: sell_token,
-                    amount: order.sell_amount.into(),
-                },
-                eth::Asset {
-                    token: buy_token,
-                    amount: order.buy_amount.into(),
-                },
+                order.sell,
+                order.buy,
                 order.side,
                 match order.side {
                     order::Side::Sell => traded.sell.0.into(),
@@ -168,14 +160,14 @@ impl Solution {
                     uniform: trade::ClearingPrices {
                         sell: solution
                             .prices()
-                            .get(&sell_token)
-                            .ok_or(error::Solution::MissingClearingPrice(sell_token))?
+                            .get(&order.sell.token)
+                            .ok_or(error::Solution::MissingClearingPrice(order.sell.token))?
                             .get()
                             .into(),
                         buy: solution
                             .prices()
-                            .get(&buy_token)
-                            .ok_or(error::Solution::MissingClearingPrice(buy_token))?
+                            .get(&order.buy.token)
+                            .ok_or(error::Solution::MissingClearingPrice(order.buy.token))?
                             .get()
                             .into(),
                     },

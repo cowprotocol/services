@@ -3,7 +3,7 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::{self, order::Class},
+            auction::order::Class,
             competition::{
                 SolutionError,
                 {self},
@@ -150,16 +150,6 @@ impl RunLoop {
                 // Also calculate the score from the solution itself
                 // For now, don't actually use it for ranking, instead log differences to solver
                 // provided score for debugging purposes.
-                let auction_prices = auction
-                    .prices
-                    .iter()
-                    .map(|(k, v)| {
-                        (
-                            (*k).into(),
-                            auction::Price::new(domain::eth::Ether(*v)).unwrap(),
-                        )
-                    })
-                    .collect();
                 let policies = auction
                     .orders
                     .iter()
@@ -168,7 +158,7 @@ impl RunLoop {
                 let settlement_solution = domain::settlement::Solution::from_competition_solution(
                     solution, &auction, auction_id,
                 )
-                .map(|s| s.score(&auction_prices, &policies));
+                .map(|s| s.score(&auction.prices, &policies));
 
                 if let Ok(Ok(score)) = settlement_solution {
                     if score != solution.score() {
