@@ -115,9 +115,9 @@ impl ProtocolFees {
             fee: order.data.fee_amount,
         };
         let quote_ = boundary::Amounts {
-            sell: quote.sell_amount,
-            buy: quote.buy_amount,
-            fee: quote.fee,
+            sell: quote.sell_amount.into(),
+            buy: quote.buy_amount.into(),
+            fee: quote.fee.into(),
         };
 
         if self.enable_protocol_fees {
@@ -278,9 +278,9 @@ pub struct Quote {
 impl From<domain::Quote> for Quote {
     fn from(value: domain::Quote) -> Self {
         Self {
-            sell_amount: value.sell_amount,
-            buy_amount: value.buy_amount,
-            fee: value.fee,
+            sell_amount: value.sell_amount.into(),
+            buy_amount: value.buy_amount.into(),
+            fee: value.fee.into(),
         }
     }
 }
