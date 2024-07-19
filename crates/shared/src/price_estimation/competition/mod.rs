@@ -121,12 +121,24 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                     elapsed = ?start.elapsed(),
                     "new price estimate"
                 );
+                if let Err(ref e) = result {
+                    tracing::warn!(?query,
+                        ?e,
+                        estimator = name,
+                        requests = requests.len(),
+                        elapsed = ?start.elapsed(),
+                        "failed to get price estimate");
+                }
                 results.push((estimator_index, result));
 
                 if missing_results(&results) == 0 {
                     break 'outer;
                 }
             }
+        }
+
+        if results.is_empty() {
+            tracing::warn!(?query, elapsed = ?start.elapsed(), "no price estimate found");
         }
 
         results
