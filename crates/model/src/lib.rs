@@ -1,6 +1,7 @@
 //! Contains models that are shared between the orderbook and the solver.
 
 pub mod auction;
+pub mod fee_policy;
 mod format;
 pub mod interaction;
 pub mod order;

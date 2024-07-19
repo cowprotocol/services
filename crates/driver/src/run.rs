@@ -69,7 +69,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
-        encoding: config.encoding,
     }
     .serve(async {
         let _ = shutdown_receiver.await;
@@ -133,7 +132,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts, gas).await
+    Ethereum::new(ethrpc, config.contracts.clone(), gas).await
 }
 
 async fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

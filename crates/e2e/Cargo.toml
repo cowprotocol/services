@@ -10,31 +10,38 @@ app-data = { path = "../app-data" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }
+axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
+cow-amm = { path = "../cow-amm" }
 database = { path = "../database" }
 driver = { path = "../driver" }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
-model = { path = "../model" }
+model = { path = "../model", features = ["e2e"] }
 number = { path = "../number" }
 observe = { path = "../observe" }
 orderbook = { path = "../orderbook" }
 reqwest = { workspace = true, features = ["blocking"] }
 secp256k1 = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
 solvers = { path = "../solvers" }
+solvers-dto = { path = "../solvers-dto" }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
+tower = "0.4"
+tower-http = { version = "0.4", features = ["limit", "trace"] }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 app-data-hash = { path = "../app-data-hash" }

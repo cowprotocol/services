@@ -112,12 +112,12 @@ impl Solution {
                 trade.9.into(),
                 trade::Prices {
                     uniform: trade::ClearingPrices {
-                        sell: clearing_prices[uniform_sell_token_index],
-                        buy: clearing_prices[uniform_buy_token_index],
+                        sell: clearing_prices[uniform_sell_token_index].into(),
+                        buy: clearing_prices[uniform_buy_token_index].into(),
                     },
                     custom: trade::ClearingPrices {
-                        sell: clearing_prices[sell_token_index],
-                        buy: clearing_prices[buy_token_index],
+                        sell: clearing_prices[sell_token_index].into(),
+                        buy: clearing_prices[buy_token_index].into(),
                     },
                 },
             ));

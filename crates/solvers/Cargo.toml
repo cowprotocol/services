@@ -52,7 +52,6 @@ solver = { path = "../solver" }
 tracing = { workspace = true }
 
 [dev-dependencies]
-glob = "0.3"
 tempfile = { workspace = true }
 hex-literal = { workspace = true }
 ethcontract = { workspace = true }

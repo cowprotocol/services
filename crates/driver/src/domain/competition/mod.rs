@@ -1,5 +1,5 @@
 use {
-    self::solution::{encoding, settlement},
+    self::solution::settlement,
     super::{
         time::{self, Remaining},
         Mempools,
@@ -50,7 +50,6 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
-    pub encoding: encoding::Strategy,
 }
 
 impl Competition {
@@ -120,7 +119,6 @@ impl Competition {
                         auction,
                         &self.eth,
                         &self.simulator,
-                        self.encoding,
                         self.solver.solver_native_token(),
                     )
                     .await;
@@ -274,7 +272,7 @@ impl Competition {
 
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
-    pub async fn settle(&self) -> Result<Settled, Error> {
+    pub async fn settle(&self, submission_deadline: u64) -> Result<Settled, Error> {
         let settlement = self
             .settlement
             .lock()
@@ -282,7 +280,10 @@ impl Competition {
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
 
-        let executed = self.mempools.execute(&self.solver, &settlement).await;
+        let executed = self
+            .mempools
+            .execute(&self.solver, &settlement, submission_deadline)
+            .await;
         notify::executed(
             &self.solver,
             settlement.auction_id,

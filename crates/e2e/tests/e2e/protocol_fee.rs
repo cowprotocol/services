@@ -64,17 +64,15 @@ async fn combined_protocol_fees(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(200)).await;
-    let [trader, trader_exempt] = onchain.make_accounts(to_wei(200)).await;
-    let [limit_order_token, market_order_token, partner_fee_order_token, fee_exempt_token] =
-        onchain
-            .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
-            .await;
+    let [trader] = onchain.make_accounts(to_wei(200)).await;
+    let [limit_order_token, market_order_token, partner_fee_order_token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(20), to_wei(20))
+        .await;
 
     for token in &[
         &limit_order_token,
         &market_order_token,
         &partner_fee_order_token,
-        &fee_exempt_token,
     ] {
         token.mint(solver.address(), to_wei(1000)).await;
         tx!(
@@ -84,7 +82,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 to_wei(1000)
             )
         );
-        for trader in &[&trader, &trader_exempt] {
+        for trader in &[&trader] {
             tx!(
                 trader.account(),
                 token.approve(onchain.contracts().uniswap_v2_router.address(), to_wei(100))
@@ -92,7 +90,7 @@ async fn combined_protocol_fees(web3: Web3) {
         }
     }
 
-    for trader in &[&trader, &trader_exempt] {
+    for trader in &[&trader] {
         tx!(
             trader.account(),
             onchain
@@ -117,10 +115,6 @@ async fn combined_protocol_fees(web3: Web3) {
     let autopilot_config = vec![
         ProtocolFeesConfig(vec![limit_surplus_policy, market_price_improvement_policy]).to_string(),
         "--fee-policy-max-partner-fee=0.02".to_string(),
-        format!(
-            "--protocol-fee-exempt-addresses={:?}",
-            trader_exempt.address()
-        ),
         "--enable-multiple-fees=true".to_string(),
     ];
     let services = Services::new(onchain.contracts()).await;
@@ -137,13 +131,12 @@ async fn combined_protocol_fees(web3: Web3) {
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
     let sell_amount = to_wei(10);
-    let [limit_quote_before, market_quote_before, partner_fee_quote, fee_exempt_quote] =
+    let [limit_quote_before, market_quote_before, partner_fee_quote] =
         futures::future::try_join_all(
             [
                 &limit_order_token,
                 &market_order_token,
                 &partner_fee_order_token,
-                &fee_exempt_token,
             ]
             .map(|token| {
                 get_quote(
@@ -195,16 +188,6 @@ async fn combined_protocol_fees(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    let fee_exempt_token_order = OrderCreation {
-        sell_amount,
-        buy_amount: to_wei(5),
-        ..sell_order_from_quote(&fee_exempt_quote)
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
-        &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_exempt.private_key()).unwrap()),
-    );
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
     onchain
@@ -231,7 +214,10 @@ async fn combined_protocol_fees(web3: Web3) {
         )
         .await
         .unwrap();
-        new_market_order_quote.quote.buy_amount != market_quote_before.quote.buy_amount
+        // Only proceed with test once the quote changes significantly (2x) to avoid
+        // progressing due to tiny fluctuations in gas price which would lead to
+        // errors down the line.
+        new_market_order_quote.quote.buy_amount > market_quote_before.quote.buy_amount * 2
     })
     .await
     .expect("Timeout waiting for eviction of the cached liquidity");
@@ -259,13 +245,12 @@ async fn combined_protocol_fees(web3: Web3) {
         .try_into()
         .expect("Expected exactly two elements");
 
-    let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid, fee_exempt_token_order_uid] =
+    let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid] =
         futures::future::try_join_all(
             [
                 &market_price_improvement_order,
                 &limit_surplus_order,
                 &partner_fee_order,
-                &fee_exempt_token_order,
             ]
             .map(|order| services.create_order(order)),
         )
@@ -282,7 +267,6 @@ async fn combined_protocol_fees(web3: Web3) {
                 &market_price_improvement_uid,
                 &limit_surplus_order_uid,
                 &partner_fee_order_uid,
-                &fee_exempt_token_order_uid,
             ]
             .map(|uid| async {
                 services
@@ -338,20 +322,12 @@ async fn combined_protocol_fees(web3: Web3) {
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(limit_executed_surplus_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
-    let fee_exempt_order = services
-        .get_order(&fee_exempt_token_order_uid)
-        .await
-        .unwrap();
-    let fee_exempt_surplus_fee_in_buy_token =
-        surplus_fee_in_buy_token(&fee_exempt_order, &fee_exempt_quote.quote);
-
-    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance, fee_exempt_order_token_balance] =
+    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance] =
         futures::future::try_join_all(
             [
                 &market_order_token,
                 &limit_order_token,
                 &partner_fee_order_token,
-                &fee_exempt_token,
             ]
             .map(|token| {
                 token
@@ -374,10 +350,6 @@ async fn combined_protocol_fees(web3: Web3) {
     assert_approximately_eq!(
         partner_fee_executed_surplus_fee_in_buy_token,
         partner_fee_order_token_balance
-    );
-    assert_approximately_eq!(
-        fee_exempt_surplus_fee_in_buy_token,
-        fee_exempt_order_token_balance
     );
 }
 

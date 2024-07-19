@@ -81,6 +81,7 @@ async fn sell_orders_on_both_sides() {
             ],
             "effectiveGasPrice": "15000000000",
             "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -206,6 +207,7 @@ async fn sell_orders_on_one_side() {
             ],
             "effectiveGasPrice": "15000000000",
             "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -331,6 +333,7 @@ async fn buy_orders_on_both_sides() {
             ],
             "effectiveGasPrice": "15000000000",
             "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 
@@ -456,6 +459,7 @@ async fn buy_and_sell_orders() {
             ],
             "effectiveGasPrice": "15000000000",
             "deadline": "2106-01-01T00:00:00.000Z",
+            "surplusCapturingJitOrderOwners": []
         }))
         .await;
 

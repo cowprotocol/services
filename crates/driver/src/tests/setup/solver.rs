@@ -291,7 +291,6 @@ impl Solver {
                     min_priority_fee: Default::default(),
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
-                    max_confirm_time: Default::default(),
                     retry_interval: Default::default(),
                     kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
                 }],
@@ -304,6 +303,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
+                cow_amms: vec![],
             },
             gas,
         )
@@ -331,6 +331,7 @@ impl Solver {
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline.solvers(),
+                        "surplusCapturingJitOrderOwners": [],
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

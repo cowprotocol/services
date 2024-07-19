@@ -1,6 +1,6 @@
 use {
-    crate::{nodes::NODE_HOST, setup::*},
-    ethcontract::H160,
+    crate::setup::*,
+    ethcontract::{common::DeploymentInformation, H160},
     reqwest::Url,
     tokio::task::JoinHandle,
 };
@@ -104,11 +104,37 @@ account = "{account}"
         .collect::<Vec<String>>()
         .join("\n");
     let liquidity = liquidity.to_string(contracts);
+
+    let cow_amms = contracts
+        .cow_amm_helper
+        .iter()
+        .map(|contract| {
+            let Some(DeploymentInformation::BlockNumber(block)) = contract.deployment_information()
+            else {
+                panic!("unknown deployment block for cow amm contract");
+            };
+
+            format!(
+                r#"
+[[contracts.cow-amms]]
+index-start = {}
+helper = "{:?}"
+factory = "{:?}"
+"#,
+                block - 1, // start indexing 1 block before the contract was deployed
+                contract.address(),
+                contract.address(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let config_file = config_tmp_file(format!(
         r#"
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
+{cow_amms}
 
 {solvers}
 
@@ -119,7 +145,6 @@ base-tokens = []
 
 [submission]
 gas-price-cap = "1000000000000"
-max-confirm-time= "2s"
 
 [[submission.mempool]]
 mempool = "public"

@@ -22,7 +22,6 @@ impl Request {
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
-        surplus_capturing_jit_order_owners: &HashSet<H160>,
     ) -> Self {
         Self {
             id,
@@ -36,9 +35,9 @@ impl Request {
                 .prices
                 .iter()
                 .map(|(address, price)| Token {
-                    address: address.to_owned(),
-                    price: Some(price.to_owned()),
-                    trusted: trusted_tokens.contains(address),
+                    address: address.to_owned().into(),
+                    price: Some(price.get().into()),
+                    trusted: trusted_tokens.contains(&(address.0)),
                 })
                 .chain(trusted_tokens.iter().map(|&address| Token {
                     address,
@@ -48,9 +47,10 @@ impl Request {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
-            surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
+            surplus_capturing_jit_order_owners: auction
+                .surplus_capturing_jit_order_owners
                 .iter()
-                .cloned()
+                .map(|address| address.0)
                 .collect::<Vec<_>>(),
         }
     }

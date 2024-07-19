@@ -91,4 +91,6 @@ pub enum SolutionError {
     ZeroScore(#[from] ZeroScore),
     #[error(transparent)]
     InvalidPrice(#[from] auction::InvalidPrice),
+    #[error("the solver got deny listed")]
+    SolverDenyListed,
 }

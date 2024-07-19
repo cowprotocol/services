@@ -1035,6 +1035,7 @@ mod tests {
         primitive_types::H256,
         secp256k1::{PublicKey, Secp256k1, SecretKey},
         serde_json::json,
+        shared::assert_json_matches,
         web3::signing::keccak256,
     };
 
@@ -1132,7 +1133,7 @@ mod tests {
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
-        assert_eq!(serialized, value);
+        assert_json_matches!(serialized, value);
     }
 
     #[test]
@@ -1195,7 +1196,7 @@ mod tests {
                 "from": from,
             });
 
-            assert_eq!(json!(order), order_json);
+            assert_json_matches!(json!(order), order_json);
             assert_eq!(order, serde_json::from_value(order_json).unwrap());
         }
     }
@@ -1216,7 +1217,7 @@ mod tests {
         let json = json!({
             "appData": hash_hex,
         });
-        assert_eq!(json!(s), json);
+        assert_json_matches!(json!(s), json);
         assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
 
         let s = S {
@@ -1227,7 +1228,7 @@ mod tests {
         let json = json!({
                 "appData": "a",
         });
-        assert_eq!(json!(s), json);
+        assert_json_matches!(json!(s), json);
         assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
 
         let s = S {
@@ -1240,7 +1241,7 @@ mod tests {
                 "appData": "a",
                 "appDataHash": hash_hex,
         });
-        assert_eq!(json!(s), json);
+        assert_json_matches!(json!(s), json);
         assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
     }
 

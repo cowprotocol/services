@@ -1,5 +1,6 @@
 pub mod app_data;
 pub mod auction;
+pub mod auction_orders;
 pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
@@ -17,6 +18,7 @@ pub mod settlement_observations;
 pub mod settlement_scores;
 pub mod settlements;
 pub mod solver_competition;
+pub mod surplus_capturing_jit_order_owners;
 pub mod trades;
 
 use {

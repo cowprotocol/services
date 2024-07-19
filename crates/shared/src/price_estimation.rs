@@ -195,6 +195,15 @@ pub struct Arguments {
         verbatim_doc_comment
     )]
     pub quote_verification: QuoteVerificationMode,
+
+    /// Time solvers have to compute a quote
+    #[clap(
+        long,
+        env,
+        default_value = "5s",
+        value_parser = humantime::parse_duration,
+    )]
+    pub quote_timeout: Duration,
 }
 
 /// Controls which level of quote verification gets applied.
@@ -226,6 +235,7 @@ impl Display for Arguments {
             one_inch_url,
             quote_inaccuracy_limit,
             quote_verification,
+            quote_timeout,
         } = self;
 
         display_option(
@@ -268,6 +278,7 @@ impl Display for Arguments {
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
+        writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
 
         Ok(())
     }

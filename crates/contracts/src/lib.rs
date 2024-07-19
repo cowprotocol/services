@@ -38,6 +38,10 @@ include_contracts! {
     BalancerV2WeightedPoolFactoryV3;
     BalancerV2WeightedPoolFactoryV4;
     BaoswapRouter;
+    CowAmm;
+    CowAmmConstantProductFactory;
+    CowAmmLegacyHelper;
+    CowAmmUniswapV2PriceOracle;
     CoWSwapEthFlow;
     CoWSwapOnchainOrders;
     CowProtocolToken;
@@ -50,6 +54,7 @@ include_contracts! {
     GnosisSafeCompatibilityFallbackHandler;
     GnosisSafeProxy;
     GnosisSafeProxyFactory;
+    Roles;
     HoneyswapRouter;
     HooksTrampoline;
     ISwaprPair;

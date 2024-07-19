@@ -54,9 +54,6 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
-
-    #[serde(default)]
-    encoding: encoding::Strategy,
 }
 
 #[serde_as]
@@ -84,11 +81,6 @@ struct SubmissionConfig {
     /// the ethereum network.
     #[serde(with = "humantime_serde", default = "default_retry_interval")]
     retry_interval: Duration,
-
-    /// The maximum time to spend trying to settle a transaction through the
-    /// Ethereum network before giving up.
-    #[serde(with = "humantime_serde", default = "default_max_confirm_time")]
-    max_confirm_time: Duration,
 
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
@@ -153,30 +145,6 @@ impl ManageNativeToken {
     }
 }
 
-pub mod encoding {
-    use {crate::domain::competition, serde::Deserialize};
-
-    /// Which logic to use to encode solutions into settlement transactions.
-    #[derive(Debug, Deserialize, Default)]
-    #[serde(rename_all = "kebab-case")]
-    pub enum Strategy {
-        /// Legacy solver crate strategy
-        #[default]
-        Boundary,
-        /// New encoding strategy
-        Domain,
-    }
-
-    impl Strategy {
-        pub fn to_domain(&self) -> competition::solution::encoding::Strategy {
-            match self {
-                Self::Boundary => competition::solution::encoding::Strategy::Boundary,
-                Self::Domain => competition::solution::encoding::Strategy::Domain,
-            }
-        }
-    }
-}
-
 fn default_additional_tip_percentage() -> f64 {
     0.05
 }
@@ -192,10 +160,6 @@ fn default_target_confirm_time() -> Duration {
 
 fn default_retry_interval() -> Duration {
     Duration::from_secs(2)
-}
-
-fn default_max_confirm_time() -> Duration {
-    Duration::from_secs(120)
 }
 
 /// 3 gwei
@@ -345,6 +309,22 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
+
+    /// List of all cow amm factories the driver should generate
+    /// rebalancing orders for.
+    #[serde(default)]
+    cow_amms: Vec<CowAmmConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CowAmmConfig {
+    /// Which contract to index for CoW AMM deployment events.
+    pub factory: eth::H160,
+    /// Which helper contract to use for interfacing with the indexed CoW AMMs.
+    pub helper: eth::H160,
+    /// At which block indexing should start on the factory.
+    pub index_start: u64,
 }
 
 #[derive(Debug, Deserialize)]
