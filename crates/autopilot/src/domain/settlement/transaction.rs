@@ -12,7 +12,7 @@ pub struct Transaction {
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
     /// The gas used by the transaction.
-    pub gas: eth::U256,
+    pub gas: eth::Gas,
     /// The effective gas price of the transaction.
-    pub effective_gas_price: eth::U256,
+    pub effective_gas_price: eth::EffectiveGasPrice,
 }

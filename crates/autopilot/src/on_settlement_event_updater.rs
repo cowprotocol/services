@@ -242,8 +242,8 @@ impl Inner {
         Ok(AuctionData {
             surplus,
             fee,
-            gas_used: tx.gas,
-            effective_gas_price: tx.effective_gas_price,
+            gas_used: tx.gas.into(),
+            effective_gas_price: tx.effective_gas_price.into(),
             order_executions,
         })
     }
