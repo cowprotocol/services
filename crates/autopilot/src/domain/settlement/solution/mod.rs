@@ -13,6 +13,7 @@ use {
 mod tokenized;
 mod trade;
 pub use error::Error;
+use {crate::domain, bigdecimal::Zero, std::collections::HashMap};
 
 /// A solution that was executed on-chain.
 ///
@@ -44,10 +45,19 @@ impl Solution {
             .try_into()?)
     }
 
-    pub fn native_surplus(&self, auction: &super::Auction) -> Result<eth::Ether, trade::Error> {
+    pub fn native_surplus(&self, auction: &super::Auction) -> eth::Ether {
         self.trades
             .iter()
-            .map(|trade| trade.native_surplus(auction))
+            .map(|trade| {
+                trade.native_surplus(auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        "possible incomplete surplus calculation for trade {}",
+                        trade.order_uid()
+                    );
+                    Zero::zero()
+                })
+            })
             .sum()
     }
 
@@ -56,6 +66,12 @@ impl Solution {
             .iter()
             .map(|trade| trade.native_fee(prices))
             .sum()
+    }
+
+    /// Returns fees denominated in sell token for each order in the solution.
+    pub fn fees(&self) -> HashMap<domain::OrderUid, Option<eth::Asset>> {
+        // todo
+        HashMap::new()
     }
 
     pub fn new(

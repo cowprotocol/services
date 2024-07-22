@@ -46,6 +46,10 @@ impl Trade {
         }
     }
 
+    pub fn order_uid(&self) -> &domain::OrderUid {
+        &self.order_uid
+    }
+
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
