@@ -16,7 +16,7 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
     let fee = big_rational_to_u256(
         &gas_amount
             .checked_mul(&gas_price)
-            .ok_or(QuoteError::AmountOverflow)?
+            .ok_or(QuoteError::BigRationalOverflow)?
             .checked_div(&sell_token_price)
             .ok_or(QuoteError::DivisionByZero)?,
     )
@@ -24,10 +24,10 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
     Ok(domain::Quote {
         order_uid: domain::OrderUid(quote.order_uid.0),
         sell_amount: big_decimal_to_u256(&quote.sell_amount)
-            .ok_or(QuoteError::U256AmountOverflow)?
+            .ok_or(QuoteError::U256Overflow)?
             .into(),
         buy_amount: big_decimal_to_u256(&quote.buy_amount)
-            .ok_or(QuoteError::U256AmountOverflow)?
+            .ok_or(QuoteError::U256Overflow)?
             .into(),
         fee: fee.into(),
     })
@@ -35,10 +35,10 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
 
 #[derive(Debug, thiserror::Error)]
 pub enum QuoteError {
-    #[error("amount overflow")]
-    AmountOverflow,
+    #[error("BigRational amount overflow")]
+    BigRationalOverflow,
     #[error("U256 amount overflow")]
-    U256AmountOverflow,
+    U256Overflow,
     #[error("invalid BigRational input")]
     InvalidInput,
     #[error("division by zero")]
