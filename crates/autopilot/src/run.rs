@@ -495,7 +495,7 @@ pub async fn run(args: Arguments) {
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
     let run = RunLoop {
-        eth,
+        eth: eth.clone(),
         solvable_orders_cache,
         drivers: args
             .drivers
@@ -510,6 +510,7 @@ pub async fn run(args: Arguments) {
         persistence: persistence.clone(),
         liveness: liveness.clone(),
     };
+    crate::domain::competition::runloop::runloop(&eth, &infra::config::Config::default()).await;
     run.run_forever().await;
     unreachable!("run loop exited");
 }

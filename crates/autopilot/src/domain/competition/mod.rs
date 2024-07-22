@@ -4,6 +4,8 @@ use {
     std::collections::HashMap,
 };
 
+pub mod runloop;
+
 type SolutionId = u64;
 
 pub struct Solution {

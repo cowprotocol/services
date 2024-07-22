@@ -1,4 +1,5 @@
 pub mod blockchain;
+pub mod config;
 pub mod persistence;
 pub mod shadow;
 pub mod solvers;
