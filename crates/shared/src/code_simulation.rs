@@ -115,6 +115,10 @@ impl TenderlyCodeSimulator {
     ) -> Result<SimulationRequest> {
         Ok(SimulationRequest {
             block_number: block,
+            // By default, tenderly simulates on the top of the specified block, whereas regular
+            // nodes simulate at the end of the specified block. This is to make
+            // simulation results match in case critical state changed within the block.
+            transaction_index: Some(-1),
             network_id: self.network_id.clone(),
             from: call.from.unwrap_or_default(),
             to: call.to.unwrap_or_default(),
