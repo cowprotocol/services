@@ -20,6 +20,7 @@ use {
     ::observe::metrics,
     anyhow::Result,
     database::order_events::OrderEventLabel,
+    futures::StreamExt,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -44,6 +45,9 @@ pub struct RunLoop {
     pub persistence: infra::Persistence,
     pub drivers: Vec<infra::Driver>,
 
+    // Target duration for a single auction run, expressed in number of blocks.
+    pub auction_duration: usize,
+
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
@@ -55,26 +59,22 @@ pub struct RunLoop {
 
 impl RunLoop {
     pub async fn run_forever(self) -> ! {
+        let mut block_stream = ethrpc::current_block::into_stream(self.eth.current_block().clone());
         let mut last_auction = None;
-        let mut last_block = None;
-        loop {
+        
+        while let Some(_block) = block_stream.next().await {
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
-                let current_block = self.eth.current_block().borrow().hash;
-                // Only run the solvers if the auction or block has changed.
                 let previous = last_auction.replace(auction.clone());
-                if previous.as_ref() != Some(&auction)
-                    || last_block.replace(current_block) != Some(current_block)
-                {
-                    observe::log_auction_delta(id, &previous, &auction);
-                    self.liveness.auction();
+                observe::log_auction_delta(id, &previous, &auction);
+                self.liveness.auction();
 
-                    self.single_run(id, &auction)
-                        .instrument(tracing::info_span!("auction", id))
-                        .await;
-                }
+                self.single_run(id, &auction)
+                    .instrument(tracing::info_span!("auction", id))
+                    .await;
             };
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
+
+        panic!("block stream ended unexpectedly");
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {

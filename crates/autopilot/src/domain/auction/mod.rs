@@ -68,6 +68,23 @@ impl Price {
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
 
+/// Auction duration. This is the time an auction is allowed to run.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Duration {
+    solving: chrono::Duration,
+    settling: chrono::Duration,
+}
+
+impl Duration {
+    // TODO
+    pub fn new(block_time: chrono::Duration, auction_block_duration: usize) -> Self {
+        Self {
+            solving: block_time * auction_block_duration as i32,
+            settling: block_time * 2,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("price cannot be zero")]
 pub struct InvalidPrice;
