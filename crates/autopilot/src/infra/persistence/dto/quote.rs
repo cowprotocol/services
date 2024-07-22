@@ -24,10 +24,10 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
     Ok(domain::Quote {
         order_uid: domain::OrderUid(quote.order_uid.0),
         sell_amount: big_decimal_to_u256(&quote.sell_amount)
-            .ok_or(QuoteError::AmountOverflow)?
+            .ok_or(QuoteError::U256AmountOverflow)?
             .into(),
         buy_amount: big_decimal_to_u256(&quote.buy_amount)
-            .ok_or(QuoteError::AmountOverflow)?
+            .ok_or(QuoteError::U256AmountOverflow)?
             .into(),
         fee: fee.into(),
     })
@@ -37,7 +37,9 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
 pub enum QuoteError {
     #[error("amount overflow")]
     AmountOverflow,
-    #[error("invalid input")]
+    #[error("U256 amount overflow")]
+    U256AmountOverflow,
+    #[error("invalid BigRational input")]
     InvalidInput,
     #[error("division by zero")]
     DivisionByZero,
