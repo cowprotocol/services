@@ -3,7 +3,7 @@ use {
         io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
         net::{UnixListener, UnixStream},
     },
-    tracing_subscriber::{reload, EnvFilter, Registry},
+    tracing_subscriber::{reload, EnvFilter},
 };
 
 /// Spawns a new thread that listens for connections to a UNIX socket
@@ -11,9 +11,9 @@ use {
 /// Whenever a line gets writtedn to that socket the reload handler
 /// uses it as the new log filter.
 /// To reset to the original log filter send the message "reset".
-pub(crate) fn spawn_reload_handler(
+pub(crate) fn spawn_reload_handler<T: 'static>(
     initial_filter: String,
-    reload_handle: reload::Handle<EnvFilter, Registry>,
+    reload_handle: reload::Handle<EnvFilter, T>,
 ) {
     tokio::spawn(async move {
         let id = std::process::id();
@@ -53,10 +53,10 @@ fn binary_name() -> Option<String> {
     )
 }
 
-async fn handle_connection(
+async fn handle_connection<T>(
     listener: &UnixListener,
     initial_filter: &str,
-    reload_handle: &reload::Handle<EnvFilter, Registry>,
+    reload_handle: &reload::Handle<EnvFilter, T>,
 ) {
     let Ok((mut socket, _addr)) = listener.accept().await else {
         tracing::warn!("failed to accept UNIX socket connection");

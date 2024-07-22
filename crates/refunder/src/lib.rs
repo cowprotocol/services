@@ -25,7 +25,6 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::tracing::initialize(
         args.logging.log_filter.as_str(),
         args.logging.log_stderr_threshold,
-        args.logging.enable_tokio_console,
     );
     observe::panic_hook::install();
     tracing::info!("running refunder with validated arguments:\n{}", args);

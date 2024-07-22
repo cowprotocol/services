@@ -37,7 +37,7 @@ mod tests {
     #[test]
     #[ignore]
     fn manual_thread() {
-        crate::tracing::initialize("info", tracing::level_filters::LevelFilter::OFF, false);
+        crate::tracing::initialize("info", tracing::level_filters::LevelFilter::OFF);
 
         // Should print panic trace log but not kill the process.
         let handle = std::thread::spawn(|| panic!("you should see this message"));
@@ -55,7 +55,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn manual_tokio() {
-        crate::tracing::initialize("info", tracing::level_filters::LevelFilter::OFF, false);
+        crate::tracing::initialize("info", tracing::level_filters::LevelFilter::OFF);
 
         let handle = tokio::task::spawn(async { panic!("you should see this message") });
         assert!(handle.await.is_err());

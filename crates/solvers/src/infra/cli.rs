@@ -17,11 +17,6 @@ pub struct Args {
     )]
     pub log: String,
 
-    /// Captures metrics of the tokio runtime to inspect behavior of individual
-    /// tasks.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_tokio_console: bool,
-
     /// The socket address to bind to.
     #[arg(long, env, default_value = "127.0.0.1:7872")]
     pub addr: SocketAddr,
