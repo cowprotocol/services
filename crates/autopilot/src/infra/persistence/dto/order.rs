@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, fee::FeeFactor},
+        domain::{self, eth, fee::FeeFactor},
     },
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
@@ -43,17 +43,17 @@ pub struct Order {
 pub fn from_domain(order: domain::Order) -> Order {
     Order {
         uid: order.uid.into(),
-        sell_token: order.sell_token,
-        buy_token: order.buy_token,
-        sell_amount: order.sell_amount,
-        buy_amount: order.buy_amount,
+        sell_token: order.sell.token.into(),
+        buy_token: order.buy.token.into(),
+        sell_amount: order.sell.amount.into(),
+        buy_amount: order.buy.amount.into(),
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.side.into(),
-        receiver: order.receiver,
-        owner: order.owner,
+        receiver: order.receiver.map(Into::into),
+        owner: order.owner.into(),
         partially_fillable: order.partially_fillable,
-        executed: order.executed,
+        executed: order.executed.into(),
         pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
         post_interactions: order
             .post_interactions
@@ -71,17 +71,21 @@ pub fn from_domain(order: domain::Order) -> Order {
 pub fn to_domain(order: Order) -> domain::Order {
     domain::Order {
         uid: order.uid.into(),
-        sell_token: order.sell_token,
-        buy_token: order.buy_token,
-        sell_amount: order.sell_amount,
-        buy_amount: order.buy_amount,
+        sell: eth::Asset {
+            token: order.sell_token.into(),
+            amount: order.sell_amount.into(),
+        },
+        buy: eth::Asset {
+            token: order.buy_token.into(),
+            amount: order.buy_amount.into(),
+        },
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         side: order.kind.into(),
-        receiver: order.receiver,
-        owner: order.owner,
+        receiver: order.receiver.map(Into::into),
+        owner: order.owner.into(),
         partially_fillable: order.partially_fillable,
-        executed: order.executed,
+        executed: order.executed.into(),
         pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
         post_interactions: order
             .post_interactions

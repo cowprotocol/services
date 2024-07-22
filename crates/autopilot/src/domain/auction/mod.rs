@@ -1,7 +1,6 @@
 use {
     super::{eth, Order},
-    primitive_types::{H160, U256},
-    std::collections::{BTreeMap, HashMap},
+    std::collections::HashMap,
 };
 
 pub mod order;
@@ -12,7 +11,7 @@ pub struct Auction {
     pub block: u64,
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
-    pub prices: BTreeMap<H160, U256>,
+    pub prices: Prices,
     pub surplus_capturing_jit_order_owners: Vec<eth::Address>,
 }
 
@@ -26,7 +25,7 @@ pub struct AuctionWithId {
 
 /// The price of a token in wei. This represents how much wei is needed to buy
 /// 10**18 of another token.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Price(eth::Ether);
 
 impl Price {

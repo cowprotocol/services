@@ -1,4 +1,7 @@
-use {crate::domain, shared::remaining_amounts};
+use {
+    crate::{domain, domain::eth},
+    shared::remaining_amounts,
+};
 
 pub fn to_domain(
     order: model::order::Order,
@@ -9,17 +12,21 @@ pub fn to_domain(
 
     domain::Order {
         uid: order.metadata.uid.into(),
-        sell_token: order.data.sell_token,
-        buy_token: order.data.buy_token,
-        sell_amount: order.data.sell_amount,
-        buy_amount: order.data.buy_amount,
+        sell: eth::Asset {
+            token: order.data.sell_token.into(),
+            amount: order.data.sell_amount.into(),
+        },
+        buy: eth::Asset {
+            token: order.data.buy_token.into(),
+            amount: order.data.buy_amount.into(),
+        },
         protocol_fees,
         valid_to: order.data.valid_to,
         side: order.data.kind.into(),
-        receiver: order.data.receiver,
-        owner: order.metadata.owner,
+        receiver: order.data.receiver.map(Into::into),
+        owner: order.metadata.owner.into(),
         partially_fillable: order.data.partially_fillable,
-        executed: remaining_order.executed_amount,
+        executed: remaining_order.executed_amount.into(),
         pre_interactions: order_is_untouched
             .then(|| order.interactions.pre.into_iter().map(Into::into).collect())
             .unwrap_or_default(),
