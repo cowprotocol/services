@@ -44,6 +44,7 @@ pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
     OneInchSpotPriceApi,
+    CoinGeckoProPriceApi,
 }
 
 impl Display for NativePriceEstimator {
@@ -51,6 +52,7 @@ impl Display for NativePriceEstimator {
         let formatter = match self {
             NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
+            NativePriceEstimator::CoinGeckoProPriceApi => "CoinGeckoProPriceApi".into(),
         };
         write!(f, "{}", formatter)
     }
@@ -100,6 +102,7 @@ impl FromStr for NativePriceEstimator {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
+            "CoinGeckoProPriceApi" => Ok(NativePriceEstimator::CoinGeckoProPriceApi),
             estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
                 estimator,
             )?)),
@@ -179,6 +182,14 @@ pub struct Arguments {
     #[clap(long, env, default_value = "https://api.1inch.dev/")]
     pub one_inch_url: Url,
 
+    /// The API key for the CoinGecko API.
+    #[clap(long, env)]
+    pub coin_gecko_api_key: Option<String>,
+
+    /// The base URL for the CoinGecko API.
+    #[clap(long, env, default_value = "https://api.coingecko.com/api/v3")]
+    pub coin_gecko_url: Url,
+
     /// How inaccurate a quote must be before it gets discarded provided as a
     /// factor.
     /// E.g. a value of `0.01` means at most 1 percent of the sell or buy tokens
@@ -233,6 +244,8 @@ impl Display for Arguments {
             balancer_sor_url,
             one_inch_api_key,
             one_inch_url,
+            coin_gecko_api_key,
+            coin_gecko_url,
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
@@ -276,6 +289,8 @@ impl Display for Arguments {
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
         display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
+        display_secret_option(f, "coin_gecko_api_key: {:?}", coin_gecko_api_key)?;
+        writeln!(f, "coin_gecko_api_url: {}", coin_gecko_url)?;
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
