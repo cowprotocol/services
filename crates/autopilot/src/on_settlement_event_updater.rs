@@ -204,10 +204,7 @@ impl Inner {
         let surplus_capturing_jit_order_owners =
             surplus_capturing_jit_order_owners::fetch(ex, auction_id)
                 .await?
-                .context(format!(
-                    "missing surplus capturing jit order owners for auction_id={:?}",
-                    auction_id
-                ))?
+                .unwrap_or_default()
                 .into_iter()
                 .map(|owner| H160(owner.0))
                 .collect::<HashSet<_>>();
