@@ -52,24 +52,30 @@ impl CoinGecko {
 impl NativePriceEstimating for CoinGecko {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let mut builder = self.client.get(format!(
-                "{}/simple/token_price/{}?contract_addresses=0x{token:x}&vs_currencies=eth",
+            let url = format!(
+                "{}/{}?contract_addresses={token:#x}&vs_currencies=eth",
                 self.base_url, self.chain
-            ));
+            );
+            let mut builder = self.client.get(&url);
             if let Some(ref api_key) = self.api_key {
                 builder = builder.header(AUTHORIZATION, api_key)
             }
-            let response = builder.send().await.map_err(|e| {
+            observe::coingecko_request(&url);
+            let response = builder.send().await;
+            observe::coingecko_response(&url, response.as_ref());
+            let response = response.map_err(|e| {
                 PriceEstimationError::EstimatorInternal(anyhow!(
                     "failed to sent CoinGecko price request: {e:?}"
                 ))
             })?;
             if !response.status().is_success() {
                 let status = response.status();
-                tracing::warn!(?status, "CoinGecko price request failed",);
                 return match status {
                     StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
-                    _ => Err(PriceEstimationError::NoLiquidity),
+                    status => Err(PriceEstimationError::EstimatorInternal(anyhow!(
+                        "failed to retrieve prices from CoinGecko: error with status code \
+                         {status}."
+                    ))),
                 };
             }
             let response = response.text().await.map_err(|e| {
@@ -94,13 +100,34 @@ impl NativePriceEstimating for CoinGecko {
     }
 }
 
+mod observe {
+    use reqwest::Response;
+
+    /// Observe a request to be sent to CoinGecko
+    pub fn coingecko_request(endpoint: &str) {
+        tracing::trace!(%endpoint, "sending request to CoinGecko");
+    }
+
+    /// Observe that a response was received from CoinGecko
+    pub fn coingecko_response(endpoint: &str, res: Result<&Response, &reqwest::Error>) {
+        match res {
+            Ok(res) => {
+                tracing::trace!(%endpoint, ?res, "received response from CoinGecko")
+            }
+            Err(err) => {
+                tracing::warn!(%endpoint, ?err, "failed to receive response from CoinGecko")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, std::str::FromStr};
 
     // It is ok to call this API without an API for local testing purposes as it is
     // difficulty to hit the rate limit manually
-    const BASE_URL: &str = "https://api.coingecko.com/api/v3";
+    const BASE_URL: &str = "https://api.coingecko.com/api/v3/simple/token_price";
 
     #[tokio::test]
     #[ignore]

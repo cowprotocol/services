@@ -44,7 +44,7 @@ pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 pub enum NativePriceEstimator {
     Driver(ExternalSolver),
     OneInchSpotPriceApi,
-    CoinGeckoProPriceApi,
+    CoinGecko,
 }
 
 impl Display for NativePriceEstimator {
@@ -52,7 +52,7 @@ impl Display for NativePriceEstimator {
         let formatter = match self {
             NativePriceEstimator::Driver(s) => format!("{}|{}", &s.name, s.url),
             NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi".into(),
-            NativePriceEstimator::CoinGeckoProPriceApi => "CoinGeckoProPriceApi".into(),
+            NativePriceEstimator::CoinGecko => "CoinGecko".into(),
         };
         write!(f, "{}", formatter)
     }
@@ -102,7 +102,7 @@ impl FromStr for NativePriceEstimator {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "OneInchSpotPriceApi" => Ok(NativePriceEstimator::OneInchSpotPriceApi),
-            "CoinGeckoProPriceApi" => Ok(NativePriceEstimator::CoinGeckoProPriceApi),
+            "CoinGecko" => Ok(NativePriceEstimator::CoinGecko),
             estimator => Ok(NativePriceEstimator::Driver(ExternalSolver::from_str(
                 estimator,
             )?)),
@@ -187,7 +187,11 @@ pub struct Arguments {
     pub coin_gecko_api_key: Option<String>,
 
     /// The base URL for the CoinGecko API.
-    #[clap(long, env, default_value = "https://api.coingecko.com/api/v3")]
+    #[clap(
+        long,
+        env,
+        default_value = "https://api.coingecko.com/api/v3/simple/token_price"
+    )]
     pub coin_gecko_url: Url,
 
     /// How inaccurate a quote must be before it gets discarded provided as a
