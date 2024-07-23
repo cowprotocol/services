@@ -263,8 +263,7 @@ impl Persistence {
                         .cloned()
                         .map(|policy| {
                             dto::fee_policy::try_into_domain(policy, quotes.get(order))
-                                .context(format!("convert fee policy for order {}", order))
-                                .map_err(error::Auction::FeePolicy)
+                                .map_err(|err| error::Auction::FeePolicy(err, *order))
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                     None => vec![],
@@ -310,8 +309,8 @@ pub mod error {
     pub enum Auction {
         #[error("failed to read data from database: {0}")]
         DbError(#[source] anyhow::Error),
-        #[error("failed dto conversion from database: {0}")]
-        FeePolicy(anyhow::Error),
+        #[error("failed dto conversion from database: {0} for order: {1}")]
+        FeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error("auction data not found in the database")]
         Missing,
         #[error(transparent)]

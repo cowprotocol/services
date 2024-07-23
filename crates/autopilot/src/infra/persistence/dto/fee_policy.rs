@@ -1,5 +1,6 @@
 use {
     crate::{boundary, domain},
+    anyhow::Context,
     database::fee_policies::{FeePolicy, FeePolicyKind},
 };
 
@@ -55,17 +56,29 @@ pub fn try_into_domain(
 ) -> Result<domain::fee::Policy, Error> {
     let policy = match policy.kind {
         FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
-            factor: policy.surplus_factor.unwrap().try_into()?,
-            max_volume_factor: policy.surplus_max_volume_factor.unwrap().try_into()?,
+            factor: policy
+                .surplus_factor
+                .context("missing surplus_factor")?
+                .try_into()?,
+            max_volume_factor: policy
+                .surplus_max_volume_factor
+                .context("missing surplus_max_volume_factor")?
+                .try_into()?,
         },
         FeePolicyKind::Volume => domain::fee::Policy::Volume {
-            factor: policy.volume_factor.unwrap().try_into()?,
+            factor: policy
+                .volume_factor
+                .context("missing volume_factor")?
+                .try_into()?,
         },
         FeePolicyKind::PriceImprovement => domain::fee::Policy::PriceImprovement {
-            factor: policy.price_improvement_factor.unwrap().try_into()?,
+            factor: policy
+                .price_improvement_factor
+                .context("missing price_improvement_factor")?
+                .try_into()?,
             max_volume_factor: policy
                 .price_improvement_max_volume_factor
-                .unwrap()
+                .context("missing price_improvement_max_volume_factor")?
                 .try_into()?,
             quote: {
                 let quote = quote.ok_or(Error::MissingQuote)?;
@@ -83,7 +96,7 @@ pub fn try_into_domain(
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to convert database data to domain data {0}")]
-    Conversion(#[from] anyhow::Error),
+    Inconsistency(#[from] anyhow::Error),
     #[error("missing quote for price improvement fee policy")]
     MissingQuote,
 }
