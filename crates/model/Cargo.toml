@@ -32,3 +32,6 @@ web3 = { workspace = true, features = ["signing"] }
 serde_json = { workspace = true }
 shared = { path = "../shared" }
 maplit = { workspace = true }
+
+[features]
+e2e = []

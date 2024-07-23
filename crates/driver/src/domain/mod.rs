@@ -10,3 +10,5 @@ pub use {
     liquidity::Liquidity,
     mempools::{Mempools, RevertProtection},
 };
+
+pub type BlockNo = u64;

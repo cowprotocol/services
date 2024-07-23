@@ -27,7 +27,7 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
@@ -51,8 +51,6 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
-    pub surplus_capturing_jit_order_owners: HashSet<H160>,
-    pub cow_amm_registry: cow_amm::Registry,
 }
 
 impl RunLoop {
@@ -178,19 +176,19 @@ impl RunLoop {
                 match auction_order {
                     Some(auction_order) => {
                         fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
-                        if let Some(price) = auction.prices.get(&auction_order.sell_token) {
-                            prices.insert(auction_order.sell_token, *price);
+                        if let Some(price) = auction.prices.get(&auction_order.sell.token) {
+                            prices.insert(auction_order.sell.token, *price);
                         } else {
                             tracing::error!(
-                                sell_token = ?auction_order.sell_token,
+                                sell_token = ?auction_order.sell.token,
                                 "sell token price is missing in auction"
                             );
                         }
-                        if let Some(price) = auction.prices.get(&auction_order.buy_token) {
-                            prices.insert(auction_order.buy_token, *price);
+                        if let Some(price) = auction.prices.get(&auction_order.buy.token) {
+                            prices.insert(auction_order.buy.token, *price);
                         } else {
                             tracing::error!(
-                                buy_token = ?auction_order.buy_token,
+                                buy_token = ?auction_order.buy.token,
                                 "buy token price is missing in auction"
                             );
                         }
@@ -210,7 +208,11 @@ impl RunLoop {
                         .iter()
                         .map(|order| order.uid.into())
                         .collect(),
-                    prices: auction.prices.clone(),
+                    prices: auction
+                        .prices
+                        .into_iter()
+                        .map(|(key, value)| (key.into(), value.get().into()))
+                        .collect(),
                 },
                 solutions: solutions
                     .iter()
@@ -256,7 +258,10 @@ impl RunLoop {
                 winning_score,
                 reference_score,
                 participants,
-                prices,
+                prices: prices
+                    .into_iter()
+                    .map(|(key, value)| (key.into(), value.get().into()))
+                    .collect(),
                 block_deadline,
                 competition_simulation_block,
                 call_data,
@@ -267,6 +272,18 @@ impl RunLoop {
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
+                return;
+            }
+
+            if let Err(err) = self
+                .persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &auction.surplus_capturing_jit_order_owners,
+                )
+                .await
+            {
+                tracing::error!(?err, "failed to save surplus capturing jit order owners");
                 return;
             }
 
@@ -282,7 +299,10 @@ impl RunLoop {
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
-            match self.settle(driver, solution, auction_id).await {
+            match self
+                .settle(driver, solution, auction_id, block_deadline)
+                .await
+            {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
                     Metrics::settle_err(driver, &err, submission_start.elapsed());
@@ -305,21 +325,11 @@ impl RunLoop {
         id: domain::auction::Id,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let mut surplus_capturing_jit_order_owners = self
-            .cow_amm_registry
-            .amms()
-            .await
-            .into_iter()
-            .map(|cow_amm| *cow_amm.address())
-            .collect::<HashSet<_>>();
-        surplus_capturing_jit_order_owners.extend(self.surplus_capturing_jit_order_owners.clone());
-
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.solve_deadline,
-            &surplus_capturing_jit_order_owners,
         );
         let request = &request;
 
@@ -441,6 +451,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solved: &competition::Solution,
         auction_id: i64,
+        submission_deadline_latest_block: u64,
     ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
@@ -448,6 +459,7 @@ impl RunLoop {
 
         let request = settle::Request {
             solution_id: solved.id(),
+            submission_deadline_latest_block,
         };
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)

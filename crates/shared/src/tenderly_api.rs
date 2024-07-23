@@ -166,7 +166,7 @@ pub struct SimulationRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_number: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_index: Option<u64>,
+    pub transaction_index: Option<i64>,
     pub from: H160,
     pub to: H160,
     #[serde(with = "bytes_hex")]

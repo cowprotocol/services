@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self},
+        domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
     anyhow::Result,
@@ -250,6 +250,12 @@ impl SolvableOrdersCache {
             OrderEventLabel::Filtered,
         );
 
+        let surplus_capturing_jit_order_owners = cow_amms
+            .iter()
+            .map(|cow_amm| cow_amm.address())
+            .cloned()
+            .map(eth::Address::from)
+            .collect::<Vec<_>>();
         let auction = domain::Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
@@ -257,14 +263,21 @@ impl SolvableOrdersCache {
                 .into_iter()
                 .filter_map(|order| {
                     if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        Some(self.protocol_fees.apply(order, quote))
+                        Some(self.protocol_fees.apply(order, quote, &surplus_capturing_jit_order_owners))
                     } else {
                         tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
                         None
                     }
                 })
                 .collect(),
-            prices,
+            prices:
+                prices
+                .into_iter()
+                .map(|(key, value)| {
+                    Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                })
+                .collect::<Result<_, _>>()?,
+            surplus_capturing_jit_order_owners,
         };
         *self.cache.lock().unwrap() = Inner {
             auction: Some(auction),
