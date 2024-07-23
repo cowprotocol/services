@@ -92,7 +92,10 @@ pub async fn delete_order_events_before(
         .map(|result| result.rows_affected())
 }
 
-pub async fn get_label(ex: &mut PgConnection, order: &OrderUid) -> Result<OrderEvent, sqlx::Error> {
+pub async fn get_latest(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+) -> Result<OrderEvent, sqlx::Error> {
     const QUERY: &str =
         r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp DESC LIMIT 1"#;
     sqlx::query_as(QUERY)
@@ -158,6 +161,9 @@ mod tests {
         assert_eq!(ids[1].label, OrderEventLabel::Invalid);
         assert_eq!(ids[2].order_uid, uid_b);
         assert_eq!(ids[2].label, OrderEventLabel::Invalid);
+
+        let latest = get_latest(&mut db, &uid_a).await.unwrap();
+        assert_eq!(latest, event_b);
     }
 
     async fn all_order_events(ex: &mut PgConnection) -> Vec<OrderEvent> {

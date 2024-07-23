@@ -365,16 +365,27 @@ impl OrderStoring for Postgres {
 
     async fn order_status(&self, order_uid: &OrderUid) -> Result<Status> {
         let mut ex = self.pool.begin().await.context("could not init tx")?;
-        let status = database::order_events::get_label(&mut ex, &ByteArray(order_uid.0))
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["latest_order_event"])
+            .start_timer();
+        let status = database::order_events::get_latest(&mut ex, &ByteArray(order_uid.0))
             .await
             .context("could not fetch status")?;
+        timer.stop_and_record();
 
         let fetch_solutions = || async move {
+            let timer = super::Metrics::get()
+                .database_queries
+                .with_label_values(&["load_latest_solver_competition"])
+                .start_timer();
             let competition = database::solver_competition::load_latest_competition(&mut ex)
                 .await
                 .context("could not fetch latest competition")?
                 .unwrap()
                 .json;
+            timer.stop_and_record();
+
             let competition: Competition = serde_json::from_value(competition)
                 .context("could not parse solver competition data")?;
 
