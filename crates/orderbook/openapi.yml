@@ -480,7 +480,7 @@ paths:
           required: true
       responses:
         200:
-          description: The order status.
+          description: The order status with solutions(if available).
           content:
             application/json:
               schema:
