@@ -38,7 +38,7 @@ impl CoinGecko {
             1 => "ethereum".to_string(),
             100 => "xdai".to_string(),
             42161 => "arbitrum-one".to_string(),
-            n => anyhow::bail!("unknown network {n}"),
+            n => anyhow::bail!("unsupported network {n}"),
         };
         Ok(Self {
             client,
