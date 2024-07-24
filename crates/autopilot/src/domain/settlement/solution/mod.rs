@@ -7,10 +7,7 @@ use {
         auction::{self},
         competition,
         eth,
-        fee,
-        OrderUid,
     },
-    std::collections::HashMap,
 };
 
 mod tokenized;
@@ -37,31 +34,20 @@ impl Solution {
         self.auction_id
     }
 
-    pub fn score(
-        &self,
-        prices: &auction::Prices,
-        policies: &HashMap<OrderUid, Vec<fee::Policy>>,
-    ) -> Result<competition::Score, error::Score> {
-        let score = self
-            .trades
-            .iter()
-            .map(|trade| {
-                trade.score(
-                    prices,
-                    policies
-                        .get(trade.order_uid())
-                        .map(|value| value.as_slice())
-                        .unwrap_or_default(),
-                )
-            })
-            .sum::<Result<eth::Ether, trade::Error>>()?;
-        Ok(competition::Score::new(score)?)
+    /// CIP38 score calculation
+    pub fn score(&self, auction: &super::Auction) -> Result<competition::Score, error::Score> {
+        Ok(competition::Score::new(
+            self.trades
+                .iter()
+                .map(|trade| trade.score(auction))
+                .sum::<Result<eth::Ether, trade::Error>>()?,
+        )?)
     }
 
-    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
+    pub fn native_surplus(&self, auction: &super::Auction) -> Result<eth::Ether, trade::Error> {
         self.trades
             .iter()
-            .map(|trade| trade.native_surplus(prices))
+            .map(|trade| trade.native_surplus(auction))
             .sum()
     }
 

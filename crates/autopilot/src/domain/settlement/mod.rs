@@ -2,7 +2,10 @@
 //!
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
-use crate::{domain::eth, infra};
+use {
+    super::competition,
+    crate::{domain::eth, infra},
+};
 
 mod auction;
 mod solution;
@@ -30,6 +33,11 @@ impl Settlement {
         let auction = persistence.get_auction(solution.auction_id()).await?;
 
         Ok(Self { solution, auction })
+    }
+
+    /// CIP38 score calculation
+    pub fn score(&self) -> Result<competition::Score, solution::error::Score> {
+        self.solution.score(&self.auction)
     }
 }
 
