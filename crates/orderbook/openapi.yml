@@ -469,6 +469,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TotalSurplus"
+  /api/v1/status/{order_uid}:
+    get:
+      summary: Get the status of an order.
+      parameters:
+        - in: path
+          name: order_uid
+          schema:
+              $ref: "#/components/schemas/UID"
+          required: true
+      responses:
+        200:
+          description: The order status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitionOrderStatus"
 components:
   schemas:
     TransactionHash:
@@ -1038,6 +1054,38 @@ components:
             The UIDs of the orders included in the auction.
         prices:
           $ref: "#/components/schemas/AuctionPrices"
+    CompetitionOrderSolution:
+      type: object
+      properties:
+        solver:
+          type: string
+        sellAmount:
+          $ref: "#/components/schemas/BigUint"
+        buyAmount:
+          $ref: '#/components/schemas/BigUint'
+      required:
+        - solver
+        - sellAmount
+        - buyAmount
+    CompetitionOrderStatus:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - Open
+            - Scheduled
+            - Active
+            - Solved
+            - Executing
+            - Traded
+            - Cancelled
+        value:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompetitionOrderSolution'
+      required:
+        - type
     AuctionPrices:
       description: |
         The reference prices for all traded tokens in the auction as a mapping from token
