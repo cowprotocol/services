@@ -178,14 +178,14 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
 
         database::onchain_broadcasted_orders::mark_as_reorged(
             &mut transaction,
-            *range.start() as i64,
+            i64::try_from(*range.start()).unwrap_or(i64::MAX),
         )
         .await
         .context("mark_onchain_order_events failed")?;
 
         database::onchain_invalidations::delete_invalidations(
             &mut transaction,
-            *range.start() as i64,
+            i64::try_from(*range.start()).unwrap_or(i64::MAX),
         )
         .await
         .context("invalidating_onchain_order_events failed")?;
