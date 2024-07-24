@@ -40,6 +40,7 @@ use {
         signature::SigningScheme,
         DomainSeparator,
     },
+    num::iter::Range,
     number::conversions::u256_to_big_decimal,
     shared::{
         db_order_conversions::{
@@ -235,59 +236,12 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
-        let order_placement_events = events
-            .clone()
-            .into_iter()
-            .filter(|EthContractEvent { data, .. }| {
-                matches!(data, ContractEvent::OrderPlacement(_))
-            })
-            .collect();
-        let invalidation_events = get_invalidation_events(events)?;
-        let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
-        let (custom_order_data, quotes, broadcasted_order_data, orders) = self
-            .extract_custom_and_general_order_data(order_placement_events)
-            .await?;
-
-        let _timer = DatabaseMetrics::get()
-            .database_queries
-            .with_label_values(&["append_onchain_order_events"])
-            .start_timer();
-        let mut transaction = self.db.pool.begin().await?;
-
-        database::onchain_invalidations::insert_onchain_invalidations(
-            &mut transaction,
-            invalided_order_uids.as_slice(),
+        // Appending events is equivalent to replacing events out of range.
+        self.replace_events(
+            events,
+            RangeInclusive::try_new(u64::MAX, u64::MAX).expect("valid range"),
         )
         .await
-        .context("insert_onchain_invalidations failed")?;
-        database::onchain_broadcasted_orders::append(
-            &mut transaction,
-            broadcasted_order_data.as_slice(),
-        )
-        .await
-        .context("append_onchain_orders failed")?;
-
-        self.custom_onchain_data_parser
-            .append_custom_order_info_to_db(&mut transaction, custom_order_data)
-            .await
-            .context("append_custom_onchain_orders failed")?;
-
-        // We only need to insert quotes for orders that will be included in an
-        // auction (they are needed to compute solver rewards). If placement
-        // failed, then the quote is not needed.
-        insert_quotes(
-            &mut transaction,
-            quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
-        )
-        .await
-        .context("appending quotes for onchain orders failed")?;
-
-        database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
-            .await
-            .context("insert_orders failed")?;
-
-        transaction.commit().await.context("commit")?;
-        Ok(())
     }
 
     async fn last_event_block(&self) -> Result<u64> {
