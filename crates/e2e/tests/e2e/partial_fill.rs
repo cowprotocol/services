@@ -104,13 +104,8 @@ async fn test(web3: Web3) {
     assert!(competition.common.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();
     assert_eq!(latest_competition, competition);
-    let solutions = vec![orderbook::database::orders::Solution {
-        solver: "test_solver".to_string(),
-        sell_amount: U256::from_dec_str("2000166391259569960").unwrap(),
-        buy_amount: U256::from_dec_str("1662497915624478906").unwrap(),
-    }];
     assert_eq!(
         services.get_order_status(&uid).await.unwrap(),
-        orderbook::database::orders::Status::Traded(solutions),
+        orderbook::database::orders::Status::Traded(vec!["test_solver".to_string()]),
     );
 }

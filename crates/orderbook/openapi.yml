@@ -480,7 +480,7 @@ paths:
           required: true
       responses:
         200:
-          description: The order status with solutions(if available).
+          description: The order status with a list of solvers that proposed solutions(if applicable).
           content:
             application/json:
               schema:
@@ -1054,19 +1054,6 @@ components:
             The UIDs of the orders included in the auction.
         prices:
           $ref: "#/components/schemas/AuctionPrices"
-    CompetitionOrderSolution:
-      type: object
-      properties:
-        solver:
-          type: string
-        sellAmount:
-          $ref: "#/components/schemas/BigUint"
-        buyAmount:
-          $ref: '#/components/schemas/BigUint'
-      required:
-        - solver
-        - sellAmount
-        - buyAmount
     CompetitionOrderStatus:
       type: object
       properties:
@@ -1081,9 +1068,10 @@ components:
             - Traded
             - Cancelled
         value:
+          description: List of solvers proposing solutions for the order.
           type: array
           items:
-            $ref: '#/components/schemas/CompetitionOrderSolution'
+            type: string
       required:
         - type
     AuctionPrices:

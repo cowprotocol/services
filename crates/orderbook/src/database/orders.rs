@@ -29,7 +29,7 @@ use {
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     serde::{Deserialize, Serialize},
     shared::{
         db_order_conversions::{
@@ -371,7 +371,7 @@ impl OrderStoring for Postgres {
             .context("could not fetch status")?;
         timer.stop_and_record();
 
-        let fetch_solutions = || async move {
+        let fetch_solvers = || async move {
             let timer = super::Metrics::get()
                 .database_queries
                 .with_label_values(&["load_latest_solver_competition"])
@@ -386,37 +386,34 @@ impl OrderStoring for Postgres {
             let competition: SolverCompetitionDB = serde_json::from_value(competition)
                 .context("could not parse solver competition data")?;
 
-            let solutions = competition
+            let solvers = competition
                 .solutions
                 .into_iter()
                 .filter_map(|solution| {
-                    let (sell_amount, buy_amount) =
-                        solution.orders.iter().find_map(|o| match o {
-                            model::solver_competition::Order::Colocated {
-                                id,
-                                sell_amount,
-                                buy_amount,
-                            } => (id.0 == order_uid.0).then_some((sell_amount, buy_amount)),
-                            model::solver_competition::Order::Legacy { .. } => None,
-                        })?;
-
-                    Some(Solution {
-                        solver: solution.solver,
-                        sell_amount: *sell_amount,
-                        buy_amount: *buy_amount,
-                    })
+                    solution
+                        .orders
+                        .iter()
+                        .any(|o| match o {
+                            model::solver_competition::Order::Colocated { id, .. } => {
+                                id.0 == order_uid.0
+                            }
+                            model::solver_competition::Order::Legacy { id, .. } => {
+                                id.0 == order_uid.0
+                            }
+                        })
+                        .then_some(solution.solver)
                 })
                 .collect::<Vec<_>>();
 
-            Ok::<Vec<_>, anyhow::Error>(solutions)
+            Ok::<Vec<_>, anyhow::Error>(solvers)
         };
 
         let status = match status.label {
             OrderEventLabel::Ready => Status::Active,
             OrderEventLabel::Created => Status::Scheduled,
-            OrderEventLabel::Considered => Status::Solved(fetch_solutions().await?),
-            OrderEventLabel::Executing => Status::Executing(fetch_solutions().await?),
-            OrderEventLabel::Traded => Status::Traded(fetch_solutions().await?),
+            OrderEventLabel::Considered => Status::Solved(fetch_solvers().await?),
+            OrderEventLabel::Executing => Status::Executing(fetch_solvers().await?),
+            OrderEventLabel::Traded => Status::Traded(fetch_solvers().await?),
             OrderEventLabel::Cancelled => Status::Cancelled,
             OrderEventLabel::Filtered => Status::Open,
             OrderEventLabel::Invalid => Status::Open,
@@ -598,14 +595,6 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Solution {
-    pub solver: String,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
 pub enum Status {
     /// Order is part of the orderbook but not actively being worked on. This
@@ -618,12 +607,12 @@ pub enum Status {
     Active,
     /// Some solvers proposed solutions for the orders but did not win the
     /// competition.
-    Solved(Vec<Solution>),
+    Solved(Vec<String>),
     /// The order was contained in the winning solution which the solver
     /// currently tries to submit onchain.
-    Executing(Vec<Solution>),
+    Executing(Vec<String>),
     /// The order was successfully executed onchain.
-    Traded(Vec<Solution>),
+    Traded(Vec<String>),
     /// The user cancelled the order. It will no longer show up in any auctions.
     Cancelled,
 }
