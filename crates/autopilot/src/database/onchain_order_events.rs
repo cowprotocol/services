@@ -40,7 +40,6 @@ use {
         signature::SigningScheme,
         DomainSeparator,
     },
-    num::iter::Range,
     number::conversions::u256_to_big_decimal,
     shared::{
         db_order_conversions::{
