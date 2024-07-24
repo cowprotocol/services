@@ -1,4 +1,4 @@
-use derive_more::{From, Into};
+use derive_more::{Display, From, Into};
 pub use primitive_types::{H160, H256, U256};
 
 /// An address. Can be an EOA or a smart contract address.
@@ -16,7 +16,7 @@ pub struct TxId(pub H256);
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct TokenAddress(pub H160);
 
 /// An ERC20 token amount.
@@ -45,6 +45,36 @@ impl TokenAmount {
     }
 }
 
+/// An ERC20 sell token amount.
+///
+/// https://eips.ethereum.org/EIPS/eip-20
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
+pub struct SellTokenAmount(pub U256);
+
+/// Gas amount in gas units.
+///
+/// The amount of Ether that is paid in transaction fees is proportional to this
+/// amount as well as the transaction's [`EffectiveGasPrice`].
+#[derive(Debug, Default, Display, Clone, Copy, Ord, Eq, PartialOrd, PartialEq, From, Into)]
+pub struct Gas(pub U256);
+
+/// The `effective_gas_price` as defined by EIP-1559.
+///
+/// https://eips.ethereum.org/EIPS/eip-1559#specification
+#[derive(Debug, Clone, Copy)]
+pub struct EffectiveGasPrice(pub Ether);
+
+impl From<U256> for EffectiveGasPrice {
+    fn from(value: U256) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<EffectiveGasPrice> for U256 {
+    fn from(value: EffectiveGasPrice) -> Self {
+        value.0.into()
+    }
+}
 impl std::ops::Sub<Self> for TokenAmount {
     type Output = TokenAmount;
 

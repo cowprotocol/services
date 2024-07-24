@@ -38,8 +38,8 @@ use {
         infra,
     },
     anyhow::{Context, Result},
-    database::PgTransaction,
-    primitive_types::H256,
+    database::{surplus_capturing_jit_order_owners, PgTransaction},
+    primitive_types::{H160, H256},
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
     std::{collections::HashSet, sync::Arc},
@@ -222,6 +222,13 @@ impl Inner {
             self.eth.contracts().weth().address(),
             auction.prices.clone(),
         )?;
+        let surplus_capturing_jit_order_owners =
+            surplus_capturing_jit_order_owners::fetch(ex, auction_id)
+                .await?
+                .unwrap_or_default()
+                .into_iter()
+                .map(|owner| H160(owner.0))
+                .collect::<HashSet<_>>();
 
         tracing::debug!(
             ?auction_id,
@@ -234,6 +241,7 @@ impl Inner {
         let surplus = settlement.total_surplus(
             &external_prices,
             &auction.orders.into_iter().collect::<HashSet<_>>(),
+            &surplus_capturing_jit_order_owners,
         );
         let (fee, order_executions) = {
             let all_fees = settlement.all_fees(&external_prices);
@@ -252,8 +260,8 @@ impl Inner {
         Ok(AuctionData {
             surplus,
             fee,
-            gas_used: tx.gas,
-            effective_gas_price: tx.effective_gas_price,
+            gas_used: tx.gas.into(),
+            effective_gas_price: tx.effective_gas_price.into(),
             order_executions,
         })
     }

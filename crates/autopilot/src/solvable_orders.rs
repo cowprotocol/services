@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, eth},
+        domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
     anyhow::Result,
@@ -270,7 +270,13 @@ impl SolvableOrdersCache {
                     }
                 })
                 .collect(),
-            prices,
+            prices:
+                prices
+                .into_iter()
+                .map(|(key, value)| {
+                    Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
+                })
+                .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
         *self.cache.lock().unwrap() = Inner {
