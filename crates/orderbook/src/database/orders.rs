@@ -30,7 +30,7 @@ use {
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, U256},
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -597,7 +597,7 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
     !executed_amount.is_zero() && *amount == *executed_amount
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub solver: String,
@@ -605,7 +605,7 @@ pub struct Solution {
     pub buy_amount: U256,
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
 pub enum Status {
     /// Order is part of the orderbook but not actively being worked on. This

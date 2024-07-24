@@ -23,6 +23,7 @@ use {
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
+pub const ORDER_STATUS_ENDPOINT: &str = "/api/v1/status";
 pub const QUOTING_ENDPOINT: &str = "/api/v1/quote";
 pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
@@ -442,6 +443,28 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_order_status(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<orderbook::database::orders::Status, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{ORDER_STATUS_ENDPOINT}/{uid}"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => {
+                Ok(serde_json::from_str::<orderbook::database::orders::Status>(&body).unwrap())
+            }
             code => Err((code, body)),
         }
     }
