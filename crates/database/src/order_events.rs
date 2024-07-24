@@ -163,7 +163,13 @@ mod tests {
         assert_eq!(ids[2].label, OrderEventLabel::Invalid);
 
         let latest = get_latest(&mut db, &uid_a).await.unwrap();
-        assert_eq!(latest, event_b);
+        assert_eq!(latest.order_uid, event_b.order_uid);
+        assert_eq!(latest.label, event_b.label);
+        // Postgres returns micros only while DateTime has nanos.
+        assert_eq!(
+            latest.timestamp.timestamp_micros(),
+            event_b.timestamp.timestamp_micros()
+        );
     }
 
     async fn all_order_events(ex: &mut PgConnection) -> Vec<OrderEvent> {
