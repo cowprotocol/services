@@ -205,6 +205,15 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.components.tokens.clone(),
                 )),
             )),
+            NativePriceEstimatorSource::CoinGecko => Ok((
+                "CoinGecko".into(),
+                Arc::new(native::CoinGecko::new(
+                    self.components.http_factory.create(),
+                    self.args.coin_gecko_url.clone(),
+                    self.args.coin_gecko_api_key.clone(),
+                    self.network.chain_id,
+                )?),
+            )),
         }
     }
 

@@ -7,11 +7,12 @@ use {
         },
         tests::{self, boundary, cases::EtherExt},
     },
-    ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
+    ethcontract::{dyns::DynWeb3, transport::DynTransport, PrivateKey, Web3},
     futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
     std::collections::HashMap,
+    web3::signing::Key,
 };
 
 // TODO Possibly might be a good idea to use an enum for tokens instead of
@@ -28,9 +29,7 @@ pub struct Pair {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Blockchain {
-    pub trader_address: ethcontract::H160,
     pub trader_secret_key: SecretKey,
-
     pub web3: Web3<DynTransport>,
     pub web3_url: String,
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
@@ -88,7 +87,25 @@ impl Pool {
 
 #[derive(Debug, Clone)]
 pub struct Solution {
-    pub fulfillments: Vec<Fulfillment>,
+    pub trades: Vec<Trade>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Trade {
+    Fulfillment(Fulfillment),
+    Jit(Fulfillment),
+}
+
+impl Trade {
+    pub fn from_fulfillment(fulfillment: Fulfillment) -> Self {
+        Trade::Fulfillment(fulfillment)
+    }
+
+    pub fn from_jit(mut fulfillment: Fulfillment) -> Self {
+        // The JIT orders do not have interactions in the tests for the time being
+        fulfillment.interactions = vec![];
+        Trade::Jit(fulfillment)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -132,26 +149,38 @@ impl QuotedOrder {
 
     /// The UID of the order.
     pub fn order_uid(&self, blockchain: &Blockchain) -> tests::boundary::OrderUid {
-        self.boundary(blockchain).uid()
+        self.boundary(blockchain, blockchain.trader_secret_key)
+            .uid()
     }
 
     /// The signature of the order.
     pub fn order_signature(&self, blockchain: &Blockchain) -> Vec<u8> {
-        self.boundary(blockchain).signature()
+        self.boundary(blockchain, blockchain.trader_secret_key)
+            .signature()
     }
 
-    fn boundary(&self, blockchain: &Blockchain) -> tests::boundary::Order {
+    /// The signature of the order with a specific private key
+    pub fn order_signature_with_private_key(
+        &self,
+        blockchain: &Blockchain,
+        private_key: &PrivateKey,
+    ) -> Vec<u8> {
+        self.boundary(blockchain, **private_key).signature()
+    }
+
+    fn boundary(&self, blockchain: &Blockchain, secret_key: SecretKey) -> tests::boundary::Order {
         tests::boundary::Order {
             sell_token: blockchain.get_token(self.order.sell_token),
             buy_token: blockchain.get_token(self.order.buy_token),
             sell_amount: self.sell_amount(),
             buy_amount: self.buy_amount(),
             valid_to: self.order.valid_to,
-            user_fee: 0.into(),
+            receiver: self.order.receiver,
+            user_fee: self.order.fee_amount,
             side: self.order.side,
-            secret_key: blockchain.trader_secret_key,
+            secret_key,
             domain_separator: blockchain.domain_separator,
-            owner: blockchain.trader_address,
+            owner: (&secret_key).address(),
             partially_fillable: matches!(self.order.partial, Partial::Yes { .. }),
         }
     }
@@ -159,8 +188,8 @@ impl QuotedOrder {
 
 pub struct Config {
     pub pools: Vec<Pool>,
-    pub trader_address: eth::H160,
-    pub trader_secret_key: SecretKey,
+    // Main trader secret key (the account deploying the contracts)
+    pub main_trader_secret_key: SecretKey,
     pub solvers: Vec<super::Solver>,
     pub settlement_address: Option<eth::H160>,
     pub rpc_args: Vec<String>,
@@ -180,12 +209,12 @@ impl Blockchain {
             web3::transports::Http::new(&node.url()).expect("valid URL"),
         ));
 
-        let trader_account = ethcontract::Account::Offline(
-            ethcontract::PrivateKey::from_slice(config.trader_secret_key.as_ref()).unwrap(),
+        let main_trader_account = ethcontract::Account::Offline(
+            ethcontract::PrivateKey::from_slice(config.main_trader_secret_key.as_ref()).unwrap(),
             None,
         );
 
-        // Use the primary account to fund the trader and the solver with ETH.
+        // Use the primary account to fund the trader, cow amm and the solver with ETH.
         let balance = web3
             .eth()
             .balance(primary_address(&web3).await, None)
@@ -196,7 +225,7 @@ impl Blockchain {
             web3.eth()
                 .send_transaction(web3::types::TransactionRequest {
                     from: primary_address(&web3).await,
-                    to: Some(config.trader_address),
+                    to: Some(main_trader_account.address()),
                     value: Some(balance / 5),
                     ..Default::default()
                 }),
@@ -204,11 +233,10 @@ impl Blockchain {
         .await
         .unwrap();
 
-        // Deploy WETH and wrap some funds in the primary account of the node.
         let weth = wait_for(
             &web3,
             contracts::WETH9::builder(&web3)
-                .from(trader_account.clone())
+                .from(main_trader_account.clone())
                 .deploy(),
         )
         .await
@@ -227,8 +255,8 @@ impl Blockchain {
         // Set up the settlement contract and related contracts.
         let vault_authorizer = wait_for(
             &web3,
-            contracts::BalancerV2Authorizer::builder(&web3, config.trader_address)
-                .from(trader_account.clone())
+            contracts::BalancerV2Authorizer::builder(&web3, main_trader_account.address())
+                .from(main_trader_account.clone())
                 .deploy(),
         )
         .await
@@ -242,7 +270,7 @@ impl Blockchain {
                 0.into(),
                 0.into(),
             )
-            .from(trader_account.clone())
+            .from(main_trader_account.clone())
             .deploy(),
         )
         .await
@@ -250,7 +278,7 @@ impl Blockchain {
         let authenticator = wait_for(
             &web3,
             contracts::GPv2AllowListAuthentication::builder(&web3)
-                .from(trader_account.clone())
+                .from(main_trader_account.clone())
                 .deploy(),
         )
         .await
@@ -258,7 +286,7 @@ impl Blockchain {
         let mut settlement = wait_for(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
-                .from(trader_account.clone())
+                .from(main_trader_account.clone())
                 .deploy(),
         )
         .await
@@ -287,19 +315,20 @@ impl Blockchain {
         wait_for(
             &web3,
             authenticator
-                .initialize_manager(config.trader_address)
-                .from(trader_account.clone())
+                .initialize_manager(main_trader_account.address())
+                .from(main_trader_account.clone())
                 .send(),
         )
         .await
         .unwrap();
 
+        let mut trader_accounts = Vec::new();
         for config in config.solvers {
             wait_for(
                 &web3,
                 authenticator
                     .add_solver(config.address())
-                    .from(trader_account.clone())
+                    .from(main_trader_account.clone())
                     .send(),
             )
             .await
@@ -316,6 +345,14 @@ impl Blockchain {
             )
             .await
             .unwrap();
+
+            if !config.balance.is_zero() {
+                let trader_account = ethcontract::Account::Offline(
+                    ethcontract::PrivateKey::from_slice(config.private_key.as_ref()).unwrap(),
+                    None,
+                );
+                trader_accounts.push(trader_account);
+            }
         }
 
         let domain_separator =
@@ -328,7 +365,7 @@ impl Blockchain {
                 let token = wait_for(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
-                        .from(trader_account.clone())
+                        .from(main_trader_account.clone())
                         .deploy(),
                 )
                 .await
@@ -339,7 +376,7 @@ impl Blockchain {
                 let token = wait_for(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
-                        .from(trader_account.clone())
+                        .from(main_trader_account.clone())
                         .deploy(),
                 )
                 .await
@@ -350,8 +387,8 @@ impl Blockchain {
         // Create the uniswap factory.
         let uniswap_factory = wait_for(
             &web3,
-            contracts::UniswapV2Factory::builder(&web3, config.trader_address)
-                .from(trader_account.clone())
+            contracts::UniswapV2Factory::builder(&web3, main_trader_account.address())
+                .from(main_trader_account.clone())
                 .deploy(),
         )
         .await
@@ -377,7 +414,7 @@ impl Blockchain {
                 &web3,
                 uniswap_factory
                     .create_pair(token_a, token_b)
-                    .from(trader_account.clone())
+                    .from(main_trader_account.clone())
                     .send(),
             )
             .await
@@ -414,14 +451,39 @@ impl Blockchain {
                 )
                 .await
                 .unwrap();
+                for trader_account in trader_accounts.iter() {
+                    wait_for(
+                        &web3,
+                        weth.transfer(trader_account.address(), pool.reserve_a.amount)
+                            .from(primary_account(&web3).await)
+                            .send(),
+                    )
+                    .await
+                    .unwrap();
+                }
             } else {
+                for trader_account in trader_accounts.iter() {
+                    let vault_relayer = settlement.vault_relayer().call().await.unwrap();
+                    wait_for(
+                        &web3,
+                        tokens
+                            .get(pool.reserve_a.token)
+                            .unwrap()
+                            .approve(vault_relayer, ethcontract::U256::max_value())
+                            .from(trader_account.clone())
+                            .send(),
+                    )
+                    .await
+                    .unwrap();
+                }
+
                 wait_for(
                     &web3,
                     tokens
                         .get(pool.reserve_a.token)
                         .unwrap()
                         .mint(pair.address(), pool.reserve_a.amount)
-                        .from(trader_account.clone())
+                        .from(main_trader_account.clone())
                         .send(),
                 )
                 .await
@@ -432,11 +494,25 @@ impl Blockchain {
                         .get(pool.reserve_a.token)
                         .unwrap()
                         .mint(settlement.address(), pool.reserve_a.amount)
-                        .from(trader_account.clone())
+                        .from(main_trader_account.clone())
                         .send(),
                 )
                 .await
                 .unwrap();
+
+                for trader_account in trader_accounts.iter() {
+                    wait_for(
+                        &web3,
+                        tokens
+                            .get(pool.reserve_a.token)
+                            .unwrap()
+                            .mint(trader_account.address(), pool.reserve_a.amount)
+                            .from(main_trader_account.clone())
+                            .send(),
+                    )
+                    .await
+                    .unwrap();
+                }
             }
             if pool.reserve_b.token == "WETH" {
                 wait_for(
@@ -455,14 +531,39 @@ impl Blockchain {
                 )
                 .await
                 .unwrap();
+                for trader_account in trader_accounts.iter() {
+                    wait_for(
+                        &web3,
+                        weth.transfer(trader_account.address(), pool.reserve_b.amount)
+                            .from(primary_account(&web3).await)
+                            .send(),
+                    )
+                    .await
+                    .unwrap();
+                }
             } else {
+                for trader_account in trader_accounts.iter() {
+                    let vault_relayer = settlement.vault_relayer().call().await.unwrap();
+                    wait_for(
+                        &web3,
+                        tokens
+                            .get(pool.reserve_b.token)
+                            .unwrap()
+                            .approve(vault_relayer, ethcontract::U256::max_value())
+                            .from(trader_account.clone())
+                            .send(),
+                    )
+                    .await
+                    .unwrap();
+                }
+
                 wait_for(
                     &web3,
                     tokens
                         .get(pool.reserve_b.token)
                         .unwrap()
                         .mint(pair.address(), pool.reserve_b.amount)
-                        .from(trader_account.clone())
+                        .from(main_trader_account.clone())
                         .send(),
                 )
                 .await
@@ -473,11 +574,24 @@ impl Blockchain {
                         .get(pool.reserve_b.token)
                         .unwrap()
                         .mint(settlement.address(), pool.reserve_b.amount)
-                        .from(trader_account.clone())
+                        .from(main_trader_account.clone())
                         .send(),
                 )
                 .await
                 .unwrap();
+                for trader_account in trader_accounts.iter() {
+                    wait_for(
+                        &web3,
+                        tokens
+                            .get(pool.reserve_b.token)
+                            .unwrap()
+                            .mint(trader_account.address(), pool.reserve_b.amount)
+                            .from(main_trader_account.clone())
+                            .send(),
+                    )
+                    .await
+                    .unwrap();
+                }
             }
             wait_for(
                 &web3,
@@ -486,7 +600,7 @@ impl Blockchain {
                         .parse()
                         .unwrap(),
                 )
-                .from(trader_account.clone())
+                .from(main_trader_account.clone())
                 .send(),
             )
             .await
@@ -505,8 +619,7 @@ impl Blockchain {
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
 
         Self {
-            trader_address: config.trader_address,
-            trader_secret_key: config.trader_secret_key,
+            trader_secret_key: config.main_trader_secret_key,
             tokens,
             settlement,
             domain_separator,
@@ -605,7 +718,7 @@ impl Blockchain {
         &self,
         orders: impl Iterator<Item = &Order>,
         solution: &super::Solution,
-    ) -> Solution {
+    ) -> Vec<Fulfillment> {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
@@ -630,7 +743,7 @@ impl Blockchain {
                         .get(order.sell_token)
                         .unwrap()
                         .mint(
-                            self.trader_address,
+                            trader_account.address(),
                             "1e-7".ether().into_wei() * execution.sell,
                         )
                         .from(trader_account.clone())
@@ -724,7 +837,7 @@ impl Blockchain {
                 ],
             });
         }
-        Solution { fulfillments }
+        fulfillments
     }
 
     /// Returns the address of the token with the given symbol.
