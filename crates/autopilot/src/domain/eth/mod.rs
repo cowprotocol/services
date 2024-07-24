@@ -6,7 +6,7 @@ pub use primitive_types::{H160, H256, U256};
 pub struct Address(pub H160);
 
 /// Block number.
-#[derive(Debug, Copy, Clone, From)]
+#[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd)]
 pub struct BlockNo(pub u64);
 
 /// A transaction ID, AKA transaction hash.

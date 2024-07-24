@@ -1,6 +1,6 @@
 use {
     super::Postgres,
-    crate::{boundary, infra::persistence::dto},
+    crate::{boundary, domain, infra::persistence::dto},
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     futures::{StreamExt, TryStreamExt},
@@ -83,7 +83,13 @@ impl Postgres {
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
         let quotes = self
-            .read_quotes(orders.iter().map(|order| &order.metadata.uid))
+            .read_quotes(
+                orders
+                    .iter()
+                    .map(|order| domain::OrderUid(order.metadata.uid.0))
+                    .collect::<Vec<_>>()
+                    .iter(),
+            )
             .await?;
         Ok(boundary::SolvableOrders {
             orders,
