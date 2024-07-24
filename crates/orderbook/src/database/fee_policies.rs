@@ -1,11 +1,14 @@
 use {
     anyhow::Context,
-    bigdecimal::{num_traits::CheckedDiv, FromPrimitive},
+    bigdecimal::{
+        num_traits::{CheckedDiv, CheckedMul},
+        FromPrimitive,
+    },
     database::{auction::AuctionId, OrderUid},
     model::fee_policy::{FeePolicy, Quote},
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256},
-    std::{collections::HashMap, ops::Mul},
+    std::collections::HashMap,
 };
 
 impl super::Postgres {
@@ -93,7 +96,8 @@ fn fee_policy_from(
                 .context("invalid quote sell token price")?;
             let fee = big_rational_to_u256(
                 &gas_amount
-                    .mul(gas_price)
+                    .checked_mul(&gas_price)
+                    .context("gas amount and gas price multiplication overflow")?
                     .checked_div(&sell_token_price)
                     .context("invalid price improvement quote fee value")?,
             )?;
