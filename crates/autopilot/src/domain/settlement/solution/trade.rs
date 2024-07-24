@@ -112,7 +112,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     pub fn native_surplus(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        if !self.is_surplus_capturing(auction) {
+        if !auction.is_surplus_capturing(&self.order_uid) {
             return Ok(Zero::zero());
         }
 
@@ -437,26 +437,6 @@ impl Trade {
             order::Side::Buy => self.sell.token,
             order::Side::Sell => self.buy.token,
         }
-    }
-
-    /// Protocol defines rules whether a trade is eligible to contribute to the
-    /// surplus of a settlement.
-    ///
-    /// This property is always evaluated in the context of an auction
-    /// accociated to a settlement.
-    fn is_surplus_capturing(&self, auction: &settlement::Auction) -> bool {
-        // All orders in the auction contribute to surplus
-        if auction.orders.contains_key(&self.order_uid) {
-            return true;
-        }
-        // Some JIT orders contribute to surplus, for example COW AMM orders
-        if auction
-            .surplus_capturing_jit_order_owners
-            .contains(&self.order_uid.owner())
-        {
-            return true;
-        }
-        false
     }
 }
 

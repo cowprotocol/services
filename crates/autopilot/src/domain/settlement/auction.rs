@@ -20,3 +20,22 @@ pub struct Auction {
     /// surplus if settled.
     pub surplus_capturing_jit_order_owners: Vec<domain::eth::Address>,
 }
+
+impl Auction {
+    /// Protocol defines rules whether an order is eligible to contribute to the
+    /// surplus of a settlement.
+    pub fn is_surplus_capturing(&self, order: &domain::OrderUid) -> bool {
+        // All orders in the auction contribute to surplus
+        if self.orders.contains_key(order) {
+            return true;
+        }
+        // Some JIT orders contribute to surplus, for example COW AMM orders
+        if self
+            .surplus_capturing_jit_order_owners
+            .contains(&order.owner())
+        {
+            return true;
+        }
+        false
+    }
+}
