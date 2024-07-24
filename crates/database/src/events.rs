@@ -57,20 +57,31 @@ pub async fn delete(
     delete_from_block_number: u64,
 ) -> Result<(), sqlx::Error> {
     const QUERY_INVALIDATION: &str = "DELETE FROM invalidations WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_INVALIDATION).bind(delete_from_block_number as i64))
-        .await?;
+    ex.execute(
+        sqlx::query(QUERY_INVALIDATION)
+            .bind(i64::try_from(delete_from_block_number).unwrap_or(i64::MAX)),
+    )
+    .await?;
 
     const QUERY_TRADE: &str = "DELETE FROM trades WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_TRADE).bind(delete_from_block_number as i64))
-        .await?;
+    ex.execute(
+        sqlx::query(QUERY_TRADE).bind(i64::try_from(delete_from_block_number).unwrap_or(i64::MAX)),
+    )
+    .await?;
 
     const QUERY_SETTLEMENTS: &str = "DELETE FROM settlements WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number as i64))
-        .await?;
+    ex.execute(
+        sqlx::query(QUERY_SETTLEMENTS)
+            .bind(i64::try_from(delete_from_block_number).unwrap_or(i64::MAX)),
+    )
+    .await?;
 
     const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number as i64))
-        .await?;
+    ex.execute(
+        sqlx::query(QUERY_PRESIGNATURES)
+            .bind(i64::try_from(delete_from_block_number).unwrap_or(i64::MAX)),
+    )
+    .await?;
 
     Ok(())
 }

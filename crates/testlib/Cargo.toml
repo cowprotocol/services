@@ -9,3 +9,6 @@ license = "MIT OR Apache-2.0"
 ethcontract = { workspace = true }
 ethcontract-mock = { workspace = true }
 hex-literal = { workspace = true }
+
+[lints]
+workspace = true

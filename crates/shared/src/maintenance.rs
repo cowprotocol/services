@@ -99,7 +99,9 @@ impl ServiceMaintenance {
                 "running maintenance",
             );
 
-            self.metrics.last_seen_block.set(block.number as _);
+            self.metrics
+                .last_seen_block
+                .set(i64::try_from(block.number).unwrap_or(i64::MAX));
 
             if let Err(err) = self
                 .run_maintenance()
@@ -115,7 +117,9 @@ impl ServiceMaintenance {
                 continue;
             }
 
-            self.metrics.last_updated_block.set(block.number as _);
+            self.metrics
+                .last_updated_block
+                .set(i64::try_from(block.number).unwrap_or(i64::MAX));
             self.metrics
                 .runs
                 .with_label_values(&["success", self.name()])
