@@ -6,6 +6,7 @@ use {
             auction::{self, order},
             eth,
             fee,
+            settlement,
         },
         util::conv::U256Ext,
     },
@@ -45,19 +46,11 @@ impl Trade {
         }
     }
 
-    pub fn order_uid(&self) -> &domain::OrderUid {
-        &self.order_uid
-    }
-
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(
-        &self,
-        prices: &auction::Prices,
-        policies: &[fee::Policy],
-    ) -> Result<eth::Ether, Error> {
-        Ok(self.native_surplus(prices)? + self.native_protocol_fee(prices, policies)?)
+    pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
+        Ok(self.native_surplus(auction)? + self.native_protocol_fee(auction)?)
     }
 
     /// A general surplus function.
@@ -118,9 +111,14 @@ impl Trade {
     /// fees have been applied.
     ///
     /// Denominated in NATIVE token
-    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+    pub fn native_surplus(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
+        if !auction.is_surplus_capturing(&self.order_uid) {
+            return Ok(Zero::zero());
+        }
+
         let surplus = self.surplus_over_limit_price()?;
-        let price = prices
+        let price = auction
+            .prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
 
@@ -217,7 +215,7 @@ impl Trade {
     /// the protocol fee from the trade.
     ///
     /// Note how the custom prices are expressed over actual traded amounts.
-    pub fn calculate_custom_prices(
+    fn calculate_custom_prices(
         &self,
         protocol_fee: eth::TokenAmount,
     ) -> Result<ClearingPrices, error::Math> {
@@ -418,13 +416,16 @@ impl Trade {
     /// Protocol fee is defined by fee policies attached to the order.
     ///
     /// Denominated in NATIVE token
-    fn native_protocol_fee(
-        &self,
-        prices: &auction::Prices,
-        policies: &[fee::Policy],
-    ) -> Result<eth::Ether, Error> {
-        let protocol_fee = self.protocol_fees(policies)?;
-        let price = prices
+    fn native_protocol_fee(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
+        let protocol_fee = self.protocol_fees(
+            auction
+                .orders
+                .get(&self.order_uid)
+                .map(|value| value.as_slice())
+                .unwrap_or_default(),
+        )?;
+        let price = auction
+            .prices
             .get(&protocol_fee.token)
             .ok_or(Error::MissingPrice(protocol_fee.token))?;
 
