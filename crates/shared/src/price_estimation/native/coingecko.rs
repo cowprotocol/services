@@ -64,9 +64,7 @@ impl NativePriceEstimating for CoinGecko {
                 builder = builder.header(Self::AUTHORIZATION, api_key)
             }
             observe::coingecko_request(&url);
-            let response = builder.send().await;
-            observe::coingecko_response(&url, response.as_ref());
-            let response = response.map_err(|e| {
+            let response = builder.send().await.map_err(|e| {
                 PriceEstimationError::EstimatorInternal(anyhow!(
                     "failed to sent CoinGecko price request: {e:?}"
                 ))
@@ -81,7 +79,9 @@ impl NativePriceEstimating for CoinGecko {
                     ))),
                 };
             }
-            let response = response.text().await.map_err(|e| {
+            let response = response.text().await;
+            observe::coingecko_response(&url, response.as_deref());
+            let response = response.map_err(|e| {
                 PriceEstimationError::EstimatorInternal(anyhow!(
                     "failed to fetch native CoinGecko prices: {e:?}"
                 ))
@@ -104,15 +104,13 @@ impl NativePriceEstimating for CoinGecko {
 }
 
 mod observe {
-    use reqwest::Response;
-
     /// Observe a request to be sent to CoinGecko
     pub fn coingecko_request(endpoint: &str) {
         tracing::trace!(%endpoint, "sending request to CoinGecko");
     }
 
     /// Observe that a response was received from CoinGecko
-    pub fn coingecko_response(endpoint: &str, res: Result<&Response, &reqwest::Error>) {
+    pub fn coingecko_response(endpoint: &str, res: Result<&str, &reqwest::Error>) {
         match res {
             Ok(res) => {
                 tracing::trace!(%endpoint, ?res, "received response from CoinGecko")
