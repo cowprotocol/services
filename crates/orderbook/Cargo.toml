@@ -65,3 +65,6 @@ tokio = { workspace = true, features = ["test-util"] }
 [build-dependencies]
 anyhow = { workspace = true }
 vergen = { version = "8", features = ["git", "gitcl"] }
+
+[features]
+e2e = []

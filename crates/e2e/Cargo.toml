@@ -24,7 +24,7 @@ hex-literal = { workspace = true }
 model = { path = "../model", features = ["e2e"] }
 number = { path = "../number" }
 observe = { path = "../observe" }
-orderbook = { path = "../orderbook" }
+orderbook = { path = "../orderbook", features = ["e2e"] }
 reqwest = { workspace = true, features = ["blocking"] }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
