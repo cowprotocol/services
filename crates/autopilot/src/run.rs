@@ -327,6 +327,7 @@ pub async fn run(args: Arguments) {
 
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
+            args.primary_native_price_estimator.as_deref(),
             args.native_price_estimators.as_slice(),
             args.native_price_estimation_results_required,
         )

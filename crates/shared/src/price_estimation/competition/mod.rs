@@ -1,6 +1,7 @@
 use {
     super::{native::NativePriceEstimating, QuoteVerificationMode},
     crate::price_estimation::PriceEstimationError,
+    anyhow::anyhow,
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{FuturesUnordered, StreamExt},
@@ -15,8 +16,16 @@ mod quote;
 
 /// Stage index and index within stage of an estimator stored in the
 /// [`CompetitionEstimator`] used as an identifier.
-#[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
-struct EstimatorIndex(usize, usize);
+#[derive(Copy, Debug, Clone, Eq, PartialEq)]
+struct EstimatorIndex(EstimatorStageIndex, usize);
+
+/// Stage index. It can be primary estimator (no index) or fallback estimator
+/// with its index
+#[derive(Copy, Debug, Clone, Eq, PartialEq)]
+enum EstimatorStageIndex {
+    Primary,
+    Fallback(usize),
+}
 
 type PriceEstimationStage<T> = Vec<(String, T)>;
 type ResultWithIndex<O> = (EstimatorIndex, Result<O, PriceEstimationError>);
@@ -29,18 +38,25 @@ type ResultWithIndex<O> = (EstimatorIndex, Result<O, PriceEstimationError>);
 /// successful estimates for every query or if all price sources returned an
 /// estimate.
 pub struct CompetitionEstimator<T> {
-    stages: Vec<PriceEstimationStage<T>>,
+    primary_stage: Option<PriceEstimationStage<T>>,
+    fallback_stages: Vec<PriceEstimationStage<T>>,
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
     verification_mode: QuoteVerificationMode,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(stages: Vec<PriceEstimationStage<T>>, ranking: PriceRanking) -> Self {
-        assert!(!stages.is_empty());
-        assert!(stages.iter().all(|stage| !stage.is_empty()));
+    pub fn new(
+        primary_stage: Option<PriceEstimationStage<T>>,
+        fallback_stages: Vec<PriceEstimationStage<T>>,
+        ranking: PriceRanking,
+    ) -> Self {
+        assert!(!fallback_stages.is_empty());
+        assert!(primary_stage.iter().all(|stage| !stage.is_empty()));
+        assert!(fallback_stages.iter().all(|stage| !stage.is_empty()));
         Self {
-            stages,
+            primary_stage,
+            fallback_stages,
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
             verification_mode: QuoteVerificationMode::Unverified,
@@ -57,9 +73,9 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         }
     }
 
-    /// Enables the estimator to return after it got the configured number of
-    /// successful results instead of having to wait for all estimators to
-    /// return a result.
+    /// Enables the fallback estimator to return after it got the configured
+    /// number of successful results instead of having to wait for all
+    /// estimators to return a result.
     pub fn with_early_return(self, usable_results_for_early_return: NonZeroUsize) -> Self {
         Self {
             usable_results_for_early_return,
@@ -67,15 +83,97 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         }
     }
 
+    /// Returns the number of missing results to fulfill
+    /// `usable_results_for_early_return`
+    fn missing_results<R>(
+        result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool,
+        usable_results_for_early_return: NonZeroUsize,
+        results: &[ResultWithIndex<R>],
+    ) -> usize
+    where
+        R: Clone + Debug + Send,
+    {
+        let usable = results.iter().filter(|(_, r)| result_is_usable(r)).count();
+        usable_results_for_early_return.get().saturating_sub(usable)
+    }
+
+    /// Send the requests for the `query` using the price estimator stage
+    /// provided
+    async fn send_requests<'a, Q, R>(
+        query: Q,
+        get_single_result: impl Fn(&T, Q) -> BoxFuture<'_, Result<R, PriceEstimationError>>
+            + Send
+            + 'static,
+        stage: &'a PriceEstimationStage<T>,
+        stage_index: EstimatorStageIndex,
+    ) -> FuturesUnordered<BoxFuture<'a, (EstimatorIndex, Result<R, PriceEstimationError>)>>
+    where
+        Q: Clone + Debug + Send + 'static,
+        R: Clone + Debug + Send + 'a,
+    {
+        let mut requests = FuturesUnordered::new();
+        let futures = stage.iter().enumerate().map(|(index, (_name, estimator))| {
+            get_single_result(estimator, query.clone())
+                .map(move |result| (EstimatorIndex(stage_index, index), result))
+                .boxed()
+        });
+        requests.extend(futures);
+        requests
+    }
+
+    /// Process the requests to the price estimators. Returns `true` if it gets
+    /// all needed valid results
+    async fn process_requests<Q, R>(
+        query: Q,
+        result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool + Copy,
+        mut requests: FuturesUnordered<
+            BoxFuture<'_, (EstimatorIndex, Result<R, PriceEstimationError>)>,
+        >,
+        stages: &[PriceEstimationStage<T>],
+        results: &mut Vec<(EstimatorIndex, Result<R, PriceEstimationError>)>,
+        usable_results_for_early_return: NonZeroUsize,
+        start: &Instant,
+    ) -> bool
+    where
+        Q: Clone + Debug + Send + 'static,
+        R: Clone + Debug + Send,
+    {
+        while let Some((estimator_index, result)) = requests.next().await {
+            let estimator_stage_index = match estimator_index.0 {
+                EstimatorStageIndex::Primary => 0,
+                EstimatorStageIndex::Fallback(index) => index,
+            };
+            let (name, _estimator) = &stages[estimator_stage_index][estimator_index.1];
+            tracing::debug!(
+                ?query,
+                ?result,
+                estimator = name,
+                requests = requests.len(),
+                results = results.len(),
+                elapsed = ?start.elapsed(),
+                "new price estimate"
+            );
+            results.push((estimator_index, result));
+
+            if Self::missing_results(result_is_usable, usable_results_for_early_return, results)
+                == 0
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Produce results for the given `input` until the caller does not expect
     /// any more results or we produced all the results we can.
     async fn produce_results<Q, R>(
         &self,
         query: Q,
-        result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool,
+        result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool + Copy,
         get_single_result: impl Fn(&T, Q) -> BoxFuture<'_, Result<R, PriceEstimationError>>
             + Send
-            + 'static,
+            + 'static
+            + Copy,
     ) -> Vec<ResultWithIndex<R>>
     where
         Q: Clone + Debug + Send + 'static,
@@ -85,50 +183,73 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         let mut results = vec![];
         let mut stage_index = 0;
 
-        let missing_results = |results: &[ResultWithIndex<R>]| {
-            let usable = results.iter().filter(|(_, r)| result_is_usable(r)).count();
-            self.usable_results_for_early_return
-                .get()
-                .saturating_sub(usable)
-        };
+        if let Some(stage) = &self.primary_stage {
+            // From the primary estimator we require one result
+            let usable_results_for_early_return = NonZeroUsize::new(1).unwrap();
+            let requests = Self::send_requests(
+                query.clone(),
+                get_single_result,
+                stage,
+                EstimatorStageIndex::Primary,
+            )
+            .await;
+            if Self::process_requests(
+                query.clone(),
+                result_is_usable,
+                requests,
+                self.fallback_stages.as_ref(),
+                &mut results,
+                usable_results_for_early_return,
+                &start,
+            )
+            .await
+            {
+                return results;
+            }
+        }
 
-        'outer: while stage_index < self.stages.len() {
+        // Fallback method
+        while stage_index < self.fallback_stages.len() {
             let mut requests = FuturesUnordered::new();
 
             // Collect requests until it's at least theoretically possible to produce enough
             // results to return early.
-            let requests_for_batch = missing_results(&results);
-            while stage_index < self.stages.len() && requests.len() < requests_for_batch {
-                let stage = &self.stages.get(stage_index).expect("index checked by loop");
-                let futures = stage.iter().enumerate().map(|(index, (_name, estimator))| {
-                    get_single_result(estimator, query.clone())
-                        .map(move |result| (EstimatorIndex(stage_index, index), result))
-                        .boxed()
-                });
+            let requests_for_batch = Self::missing_results(
+                result_is_usable,
+                self.usable_results_for_early_return,
+                &results,
+            );
+            while stage_index < self.fallback_stages.len() && requests.len() < requests_for_batch {
+                let stage = &self
+                    .fallback_stages
+                    .get(stage_index)
+                    .expect("index checked by loop");
+                let futures = Self::send_requests(
+                    query.clone(),
+                    get_single_result,
+                    stage,
+                    EstimatorStageIndex::Fallback(stage_index),
+                )
+                .await;
 
                 requests.extend(futures);
                 stage_index += 1;
             }
 
-            while let Some((estimator_index, result)) = requests.next().await {
-                let (name, _estimator) = &self.stages[estimator_index.0][estimator_index.1];
-                tracing::debug!(
-                    ?query,
-                    ?result,
-                    estimator = name,
-                    requests = requests.len(),
-                    results = results.len(),
-                    elapsed = ?start.elapsed(),
-                    "new price estimate"
-                );
-                results.push((estimator_index, result));
-
-                if missing_results(&results) == 0 {
-                    break 'outer;
-                }
+            if Self::process_requests(
+                query.clone(),
+                result_is_usable,
+                requests,
+                self.fallback_stages.as_ref(),
+                &mut results,
+                self.usable_results_for_early_return,
+                &start,
+            )
+            .await
+            {
+                return results;
             }
         }
-
         results
     }
 
@@ -139,7 +260,21 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         (index, result): ResultWithIndex<R>,
     ) -> Result<R, PriceEstimationError> {
         let EstimatorIndex(stage_index, estimator_index) = index;
-        let (name, _estimator) = &self.stages[stage_index][estimator_index];
+        let name = match stage_index {
+            EstimatorStageIndex::Primary => {
+                let primary_stage =
+                    self.primary_stage
+                        .as_ref()
+                        .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
+                            "primary stage not configured"
+                        )))?;
+                primary_stage[estimator_index].0.as_ref()
+            }
+            EstimatorStageIndex::Fallback(stage_index) => self.fallback_stages[stage_index]
+                [estimator_index]
+                .0
+                .as_ref(),
+        };
         tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
         if result.is_ok() {
             metrics()
@@ -306,6 +441,7 @@ mod tests {
         ]);
 
         let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            None,
             vec![vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
@@ -387,6 +523,7 @@ mod tests {
             .boxed()
         });
         let racing: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            None,
             vec![vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
@@ -457,7 +594,17 @@ mod tests {
             .boxed()
         });
 
+        let mut primary = MockPriceEstimating::new();
+        primary.expect_estimate().times(1).returning(move |_| {
+            async {
+                sleep(Duration::from_millis(20)).await;
+                Err(PriceEstimationError::NoLiquidity)
+            }
+            .boxed()
+        });
+
         let racing: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            Some(vec![("primary".to_owned(), Arc::new(primary))]),
             vec![
                 vec![
                     ("first".to_owned(), Arc::new(first)),
@@ -474,6 +621,54 @@ mod tests {
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(3));
+    }
+
+    #[tokio::test]
+    async fn primary_estimator_query() {
+        let query = Arc::new(Query {
+            verification: Default::default(),
+            sell_token: H160::from_low_u64_le(0),
+            buy_token: H160::from_low_u64_le(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Sell,
+            block_dependent: false,
+        });
+
+        fn estimate(amount: u64) -> Estimate {
+            Estimate {
+                out_amount: amount.into(),
+                gas: 1,
+                ..Default::default()
+            }
+        }
+
+        let mut first = MockPriceEstimating::new();
+        first.expect_estimate().never();
+
+        let mut second = MockPriceEstimating::new();
+        second.expect_estimate().never();
+
+        let mut primary = MockPriceEstimating::new();
+        primary.expect_estimate().times(1).returning(move |_| {
+            async {
+                sleep(Duration::from_millis(20)).await;
+                Ok(estimate(1))
+            }
+            .boxed()
+        });
+
+        let racing: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            Some(vec![("primary".to_owned(), Arc::new(primary))]),
+            vec![vec![
+                ("first".to_owned(), Arc::new(first)),
+                ("second".to_owned(), Arc::new(second)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+        let racing = racing.with_early_return(2.try_into().unwrap());
+
+        let result = racing.estimate(query).await;
+        assert_eq!(result.as_ref().unwrap(), &estimate(1));
     }
 
     #[tokio::test]
@@ -530,7 +725,8 @@ mod tests {
         fourth.expect_estimate().never();
 
         let racing: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator {
-            stages: vec![
+            primary_stage: None,
+            fallback_stages: vec![
                 vec![("first".to_owned(), Arc::new(first))],
                 vec![("second".to_owned(), Arc::new(second))],
                 vec![("third".to_owned(), Arc::new(third))],

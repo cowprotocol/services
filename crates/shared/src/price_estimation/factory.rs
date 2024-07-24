@@ -263,6 +263,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
         let competition_estimator = CompetitionEstimator::new(
+            None,
             vec![estimators],
             PriceRanking::BestBangForBuck { native, gas },
         )
@@ -281,6 +282,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         Ok(Arc::new(
             self.sanitized(Arc::new(
                 CompetitionEstimator::new(
+                    None,
                     vec![estimators],
                     PriceRanking::BestBangForBuck { native, gas },
                 )
@@ -291,15 +293,25 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn native_price_estimator(
         &mut self,
+        primary_native: Option<&[NativePriceEstimatorSource]>,
         native: &[Vec<NativePriceEstimatorSource>],
-        results_required: NonZeroUsize,
+        fallback_results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        let estimators = native
+        let primary_estimator = primary_native
+            .map(|stage| {
+                stage
+                    .iter()
+                    .map(|source| self.create_native_estimator(source))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?;
+
+        let fallback_estimators = native
             .iter()
             .map(|stage| {
                 stage
@@ -309,10 +321,13 @@ impl<'a> PriceEstimatorFactory<'a> {
             })
             .collect::<Result<Vec<Vec<_>>>>()?;
 
-        let competition_estimator =
-            CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
-                .with_verification(self.args.quote_verification)
-                .with_early_return(results_required);
+        let competition_estimator = CompetitionEstimator::new(
+            primary_estimator,
+            fallback_estimators,
+            PriceRanking::MaxOutAmount,
+        )
+        .with_verification(self.args.quote_verification)
+        .with_early_return(fallback_results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
             self.args.native_price_cache_max_age,

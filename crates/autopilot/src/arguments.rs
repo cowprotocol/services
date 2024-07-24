@@ -7,7 +7,7 @@ use {
         arguments::{display_list, display_option, ExternalSolver},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, NativePriceEstimators},
+        price_estimation::{self, NativePriceEstimator, NativePriceEstimators},
     },
     std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
     url::Url,
@@ -86,12 +86,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: NonZeroUsize,
 
-    /// Which estimators to use to estimate token prices in terms of the chain's
-    /// native token. Estimators with the same name need to also be specified as
-    /// built-in, legacy or external price estimators (lookup happens in this
-    /// order in case of name collisions)
+    /// Which estimators to use as a fallback to estimate token prices in terms
+    /// of the chain's native token. Estimators with the same name need to
+    /// also be specified as built-in, legacy or external price estimators
+    /// (lookup happens in this order in case of name collisions)
     #[clap(long, env)]
     pub native_price_estimators: NativePriceEstimators,
+
+    /// Which estimator to primary use to estimate token prices in terms of the
+    /// chain's native token.
+    #[clap(long, env)]
+    pub primary_native_price_estimator: Option<Vec<NativePriceEstimator>>,
 
     /// How many successful price estimates for each order will cause a native
     /// price estimation to return its result early. It's possible to pass
@@ -248,6 +253,7 @@ impl std::fmt::Display for Arguments {
             token_quality_cache_expiry,
             pool_cache_lru_size,
             native_price_estimators,
+            primary_native_price_estimator,
             min_order_validity_period,
             banned_users,
             max_auction_age,
@@ -294,6 +300,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
         writeln!(f, "native_price_estimators: {}", native_price_estimators)?;
+        writeln!(
+            f,
+            "primary_native_price_estimator: {:?}",
+            primary_native_price_estimator
+        )?;
         writeln!(
             f,
             "min_order_validity_period: {:?}",

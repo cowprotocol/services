@@ -72,6 +72,7 @@ mod tests {
 
         let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
             CompetitionEstimator::new(
+                None,
                 vec![estimates
                     .into_iter()
                     .enumerate()
