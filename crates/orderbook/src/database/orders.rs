@@ -394,10 +394,8 @@ impl OrderStoring for Postgres {
                         .orders
                         .iter()
                         .any(|o| match o {
-                            model::solver_competition::Order::Colocated { id, .. } => {
-                                id.0 == order_uid.0
-                            }
-                            model::solver_competition::Order::Legacy { id, .. } => {
+                            model::solver_competition::Order::Colocated { id, .. }
+                            | model::solver_competition::Order::Legacy { id, .. } => {
                                 id.0 == order_uid.0
                             }
                         })
