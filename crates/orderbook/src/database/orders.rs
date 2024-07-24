@@ -594,6 +594,8 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
     !executed_amount.is_zero() && *amount == *executed_amount
 }
 
+type SolverName = String;
+
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
@@ -608,12 +610,12 @@ pub enum Status {
     Active,
     /// Some solvers proposed solutions for the orders but did not win the
     /// competition.
-    Solved(Vec<String>),
+    Solved(Vec<SolverName>),
     /// The order was contained in the winning solution which the solver
     /// currently tries to submit onchain.
-    Executing(Vec<String>),
+    Executing(Vec<SolverName>),
     /// The order was successfully executed onchain.
-    Traded(Vec<String>),
+    Traded(Vec<SolverName>),
     /// The user cancelled the order. It will no longer show up in any auctions.
     Cancelled,
 }
