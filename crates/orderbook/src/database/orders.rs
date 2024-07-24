@@ -24,16 +24,13 @@ use {
             OrderUid,
         },
         signature::Signature,
+        solver_competition::SolverCompetitionDB,
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number::{
-        conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-        serialization::HexOrDecimalU256,
-    },
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, U256},
-    serde::{Deserialize, Serialize},
-    serde_with::serde_as,
+    serde::Serialize,
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -386,19 +383,27 @@ impl OrderStoring for Postgres {
                 .json;
             timer.stop_and_record();
 
-            let competition: Competition = serde_json::from_value(competition)
+            let competition: SolverCompetitionDB = serde_json::from_value(competition)
                 .context("could not parse solver competition data")?;
 
             let solutions = competition
                 .solutions
                 .into_iter()
                 .filter_map(|solution| {
-                    let order = solution.orders.iter().find(|o| o.uid.0 == order_uid.0)?;
+                    let (sell_amount, buy_amount) =
+                        solution.orders.iter().find_map(|o| match o {
+                            model::solver_competition::Order::Colocated {
+                                id,
+                                sell_amount,
+                                buy_amount,
+                            } => (id.0 == order_uid.0).then_some((sell_amount, buy_amount)),
+                            model::solver_competition::Order::Legacy { .. } => None,
+                        })?;
 
                     Some(Solution {
                         solver: solution.solver,
-                        sell_amount: order.sell_amount,
-                        buy_amount: order.buy_amount,
+                        sell_amount: *sell_amount,
+                        buy_amount: *buy_amount,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -621,30 +626,6 @@ pub enum Status {
     Traded(Vec<Solution>),
     /// The user cancelled the order. It will no longer show up in any auctions.
     Cancelled,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Competition {
-    solutions: Vec<CompetitionSolution>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CompetitionSolution {
-    solver: String,
-    orders: Vec<CompetitionOrder>,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CompetitionOrder {
-    uid: OrderUid,
-    #[serde_as(as = "HexOrDecimalU256")]
-    sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    buy_amount: U256,
 }
 
 #[cfg(test)]
