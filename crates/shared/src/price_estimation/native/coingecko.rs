@@ -4,7 +4,7 @@ use {
     anyhow::{anyhow, Result},
     futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
-    reqwest::{header::AUTHORIZATION, Client, StatusCode},
+    reqwest::{Client, StatusCode},
     serde::Deserialize,
     std::collections::HashMap,
     url::Url,
@@ -28,6 +28,9 @@ pub struct CoinGecko {
 }
 
 impl CoinGecko {
+    /// Authorization header for CoinGecko
+    const AUTHORIZATION: &'static str = "x-cg-pro-api-key";
+
     pub fn new(
         client: Client,
         base_url: Url,
@@ -58,7 +61,7 @@ impl NativePriceEstimating for CoinGecko {
             );
             let mut builder = self.client.get(&url);
             if let Some(ref api_key) = self.api_key {
-                builder = builder.header(AUTHORIZATION, api_key)
+                builder = builder.header(Self::AUTHORIZATION, api_key)
             }
             observe::coingecko_request(&url);
             let response = builder.send().await;
