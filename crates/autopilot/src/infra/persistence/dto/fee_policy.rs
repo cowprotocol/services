@@ -83,9 +83,9 @@ pub fn try_into_domain(
             quote: {
                 let quote = quote.ok_or(Error::MissingQuote)?;
                 domain::fee::Quote {
-                    sell_amount: quote.sell_amount,
-                    buy_amount: quote.buy_amount,
-                    fee: quote.fee,
+                    sell_amount: quote.sell_amount.into(),
+                    buy_amount: quote.buy_amount.into(),
+                    fee: quote.fee.into(),
                 }
             },
         },
