@@ -143,7 +143,7 @@ fn into_domain(
             .from
             .ok_or(anyhow::anyhow!("missing from"))?
             .into(),
-        input: crate::util::Bytes(transaction.input.0),
+        input: transaction.input.0.into(),
         block: receipt
             .block_number
             .ok_or(anyhow::anyhow!("missing block_number"))?
