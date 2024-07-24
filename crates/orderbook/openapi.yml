@@ -480,7 +480,7 @@ paths:
           required: true
       responses:
         200:
-          description: The order status with a list of solvers that proposed solutions(if applicable).
+          description: The order status with a list of solvers that proposed solutions (if applicable).
           content:
             application/json:
               schema:

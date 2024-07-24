@@ -379,7 +379,7 @@ impl OrderStoring for Postgres {
             let competition = database::solver_competition::load_latest_competition(&mut ex)
                 .await
                 .context("could not fetch latest competition")?
-                .unwrap()
+                .context("competition not found for the order")?
                 .json;
             timer.stop_and_record();
 
