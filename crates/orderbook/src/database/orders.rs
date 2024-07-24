@@ -403,6 +403,10 @@ impl OrderStoring for Postgres {
                 })
                 .collect::<Vec<_>>();
 
+            if solvers.is_empty() {
+                tracing::warn!(?order_uid, order_status = ?status.label, "no solvers found for order");
+            }
+
             Ok::<Vec<_>, anyhow::Error>(solvers)
         };
 
