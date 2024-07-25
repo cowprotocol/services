@@ -1068,10 +1068,17 @@ components:
             - Traded
             - Cancelled
         value:
-          description: List of solvers proposing solutions for the order.
+          description: List of solvers and whether their solution includes the order.
           type: array
           items:
-            type: string
+            type: object
+            properties:
+              solver:
+                type: string
+                description: Name of the solver.
+              order_included:
+                type: boolean
+                description: Whether the order is included in the solution proposed by the solver.
       required:
         - type
     AuctionPrices:
