@@ -377,15 +377,29 @@ impl OrderStoring for Postgres {
                     .database_queries
                     .with_label_values(&["load_latest_solver_competition"])
                     .start_timer();
-                let competition = database::solver_competition::load_latest_competition(&mut ex)
-                    .await
-                    .context("could not fetch latest competition")?
-                    .context("competition not found for the order")?
-                    .json;
+                let competition =
+                    database::solver_competition::load_latest_competition(&mut ex).await;
                 timer.stop_and_record();
 
-                let competition: SolverCompetitionDB = serde_json::from_value(competition)
-                    .context("could not parse solver competition data")?;
+                // Order status API needs to be available even if there is a problem with the
+                // competition fetching.
+                let competition: SolverCompetitionDB = match competition {
+                    Ok(Some(competition)) => match serde_json::from_value(competition.json) {
+                        Ok(competition) => competition,
+                        Err(err) => {
+                            tracing::error!(?err, "could not parse solver competition data");
+                            return Ok(Vec::new());
+                        }
+                    },
+                    Ok(None) => {
+                        tracing::warn!("no latest competition exists");
+                        return Ok(Vec::new());
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "could not load latest competition");
+                        return Ok(Vec::new());
+                    }
+                };
 
                 let solvers = competition
                     .solutions
