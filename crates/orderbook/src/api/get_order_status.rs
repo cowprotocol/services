@@ -14,10 +14,10 @@ fn get_status_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection>
 pub fn get_status(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    get_status_request().and_then(move |order_uid| {
+    get_status_request().and_then(move |uid| {
         let orderbook = orderbook.clone();
         async move {
-            let status = orderbook.get_order_status(&order_uid).await;
+            let status = orderbook.get_order_status(&uid).await;
 
             Result::<_, Infallible>::Ok(match status {
                 Ok(Some(status)) => {

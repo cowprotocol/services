@@ -138,6 +138,22 @@ paths:
           description: Invalid signature.
         404:
           description: Order was not found.
+  /api/v1/orders/{UID}/status:
+    get:
+      summary: Get the status of an order.
+      parameters:
+        - in: path
+          name: UID
+          schema:
+              $ref: "#/components/schemas/UID"
+          required: true
+      responses:
+        200:
+          description: The order status with a list of solvers that proposed solutions (if applicable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitionOrderStatus"
   /api/v1/transactions/{txHash}/orders:
     get:
       summary: Get orders by settlement transaction hash.
@@ -469,22 +485,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TotalSurplus"
-  /api/v1/status/{order_uid}:
-    get:
-      summary: Get the status of an order.
-      parameters:
-        - in: path
-          name: order_uid
-          schema:
-              $ref: "#/components/schemas/UID"
-          required: true
-      responses:
-        200:
-          description: The order status with a list of solvers that proposed solutions (if applicable).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CompetitionOrderStatus"
 components:
   schemas:
     TransactionHash:
