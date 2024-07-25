@@ -197,7 +197,10 @@ impl Inner {
             )
             .await;
 
-            tracing::info!(?settlement, "settlement object");
+            tracing::info!(
+                "settlement object {:?}",
+                settlement.map(|settlement| settlement.score())
+            );
         }
 
         Ok(true)
