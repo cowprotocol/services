@@ -14,7 +14,7 @@ pub struct Observation {
     /// The gas used by the settlement.
     pub gas: eth::Gas,
     /// The effective gas price at the time of settlement.
-    pub effective_gas_price: eth::EffectiveGasPrice,
+    pub gas_price: eth::EffectiveGasPrice,
     /// Total surplus expressed in native token.
     pub surplus: eth::Ether,
     /// Total fee expressed in native token.
