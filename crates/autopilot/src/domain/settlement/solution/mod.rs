@@ -13,6 +13,7 @@ use {
 mod tokenized;
 mod trade;
 pub use error::Error;
+use {crate::domain, std::collections::HashMap};
 
 /// A solution that was executed on-chain.
 ///
@@ -44,18 +45,52 @@ impl Solution {
         )?)
     }
 
-    pub fn native_surplus(&self, auction: &super::Auction) -> Result<eth::Ether, trade::Error> {
+    /// Total surplus for all trades in the solution.
+    ///
+    /// Always returns a value, even if some trades have incomplete surplus
+    /// calculation.
+    pub fn native_surplus(&self, auction: &super::Auction) -> eth::Ether {
         self.trades
             .iter()
-            .map(|trade| trade.native_surplus(auction))
+            .map(|trade| {
+                trade.native_surplus(auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        "possible incomplete surplus calculation for trade {}",
+                        trade.order_uid()
+                    );
+                    num::zero()
+                })
+            })
             .sum()
     }
 
-    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
+    /// Total fee for all trades in the solution.
+    ///
+    /// Always returns a value, even if some trades have incomplete fee
+    /// calculation.
+    pub fn native_fee(&self, prices: &auction::Prices) -> eth::Ether {
         self.trades
             .iter()
-            .map(|trade| trade.native_fee(prices))
+            .map(|trade| {
+                trade.native_fee(prices).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        "possible incomplete fee calculation for trade {}",
+                        trade.order_uid()
+                    );
+                    num::zero()
+                })
+            })
             .sum()
+    }
+
+    /// Returns fees denominated in sell token for each order in the solution.
+    pub fn fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+        self.trades
+            .iter()
+            .map(|trade| (*trade.order_uid(), trade.fee().ok()))
+            .collect()
     }
 
     pub fn new(
@@ -269,12 +304,12 @@ mod tests {
 
         // surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
-            solution.native_surplus(&auction).unwrap().0,
+            solution.native_surplus(&auction).0,
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
         assert_eq!(
-            solution.native_fee(&auction.prices).unwrap().0,
+            solution.native_fee(&auction.prices).0,
             eth::U256::from(6890975030480504u128)
         );
     }
