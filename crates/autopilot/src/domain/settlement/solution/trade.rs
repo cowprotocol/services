@@ -164,7 +164,6 @@ impl Trade {
                 .checked_div(&self.prices.uniform.sell.into())
                 .ok_or(error::Math::DivisionByZero)?,
         }
-        .0
         .into();
         Ok(fee_in_sell_token)
     }
