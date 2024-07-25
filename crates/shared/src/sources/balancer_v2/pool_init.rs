@@ -22,6 +22,7 @@ pub trait PoolInitializing: Send + Sync {
 ///
 /// This can be used to index all pools from events instead of relying on the
 /// Balancer subgraph for example.
+#[allow(dead_code)]
 pub struct EmptyPoolInitializer(u64);
 
 #[async_trait::async_trait]
@@ -49,6 +50,7 @@ impl PoolInitializing for BalancerSubgraphClient {
     }
 }
 
+#[allow(dead_code)]
 fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
     contract
         .networks
@@ -59,6 +61,7 @@ fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
         .ok_or_else(|| anyhow!("missing {} deployment for {}", contract.name, chain_id))
 }
 
+#[allow(dead_code)]
 async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
     let deployment_info = deployment(contract, chain_id)?
         .deployment_information
