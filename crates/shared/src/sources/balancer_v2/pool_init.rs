@@ -5,36 +5,12 @@
 
 use {
     super::graph_api::{BalancerSubgraphClient, RegisteredPools},
-    anyhow::{anyhow, bail, Result},
-    contracts::BalancerV2Vault,
-    ethcontract::{
-        common::{contract::Network, DeploymentInformation},
-        Contract,
-    },
+    anyhow::Result,
 };
 
 #[async_trait::async_trait]
 pub trait PoolInitializing: Send + Sync {
     async fn initialize_pools(&self) -> Result<RegisteredPools>;
-}
-
-/// A Balancer pool registry initializer that always returns empty pools.
-///
-/// This can be used to index all pools from events instead of relying on the
-/// Balancer subgraph for example.
-#[allow(dead_code)]
-pub struct EmptyPoolInitializer(u64);
-
-#[async_trait::async_trait]
-impl PoolInitializing for EmptyPoolInitializer {
-    async fn initialize_pools(&self) -> Result<RegisteredPools> {
-        let fetched_block_number =
-            deployment_block(BalancerV2Vault::raw_contract(), self.0).await?;
-        Ok(RegisteredPools {
-            fetched_block_number,
-            ..Default::default()
-        })
-    }
 }
 
 #[async_trait::async_trait]
@@ -47,53 +23,5 @@ impl PoolInitializing for BalancerSubgraphClient {
         );
 
         Ok(registered_pools)
-    }
-}
-
-#[allow(dead_code)]
-fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
-    contract
-        .networks
-        .get(&chain_id.to_string())
-        // Note that we are conflating network IDs with chain IDs. In general
-        // they cannot be considered the same, but for the networks that we
-        // support (xDAI, Görli and Mainnet) they are.
-        .ok_or_else(|| anyhow!("missing {} deployment for {}", contract.name, chain_id))
-}
-
-#[allow(dead_code)]
-async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
-    let deployment_info = deployment(contract, chain_id)?
-        .deployment_information
-        .ok_or_else(|| anyhow!("missing deployment information for {}", contract.name))?;
-
-    match deployment_info {
-        DeploymentInformation::BlockNumber(block) => Ok(block),
-        DeploymentInformation::TransactionHash(tx) => {
-            bail!("missing deployment block number for {}", tx)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn initializes_empty_pools() {
-        let initializer = EmptyPoolInitializer(5);
-        assert_eq!(
-            initializer.initialize_pools().await.unwrap(),
-            RegisteredPools {
-                fetched_block_number: 4648099,
-                ..Default::default()
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn empty_initializer_errors_on_missing_deployment() {
-        let initializer = EmptyPoolInitializer(999);
-        assert!(initializer.initialize_pools().await.is_err());
     }
 }
