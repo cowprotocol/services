@@ -51,6 +51,18 @@ impl TokenAmount {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct SellTokenAmount(pub U256);
 
+impl From<TokenAmount> for SellTokenAmount {
+    fn from(value: TokenAmount) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<SellTokenAmount> for TokenAmount {
+    fn from(value: SellTokenAmount) -> Self {
+        Self(value.0)
+    }
+}
+
 /// Gas amount in gas units.
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this

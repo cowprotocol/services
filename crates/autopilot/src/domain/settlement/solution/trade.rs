@@ -46,6 +46,10 @@ impl Trade {
         }
     }
 
+    pub fn order_uid(&self) -> &domain::OrderUid {
+        &self.order_uid
+    }
+
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
@@ -130,6 +134,18 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+        let fee = self.fee()?;
+        let price = prices
+            .get(&self.sell.token)
+            .ok_or(Error::MissingPrice(self.sell.token))?;
+        Ok(price.in_eth(fee.into()))
+    }
+
+    /// Total fee (protocol fee + network fee). Equal to a surplus difference
+    /// before and after applying the fees.
+    ///
+    /// Denominated in SELL token
+    pub fn fee(&self) -> Result<eth::SellTokenAmount, Error> {
         let fee = self
             .surplus_over_limit_price_before_fee()?
             .amount
@@ -147,12 +163,10 @@ impl Trade {
                 .ok_or(error::Math::Overflow)?
                 .checked_div(&self.prices.uniform.sell.into())
                 .ok_or(error::Math::DivisionByZero)?,
-        };
-
-        let price = prices
-            .get(&self.sell.token)
-            .ok_or(Error::MissingPrice(self.sell.token))?;
-        Ok(price.in_eth(fee_in_sell_token))
+        }
+        .0
+        .into();
+        Ok(fee_in_sell_token)
     }
 
     /// Protocol fees is defined by fee policies attached to the order.
