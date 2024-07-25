@@ -1076,7 +1076,7 @@ components:
               solver:
                 type: string
                 description: Name of the solver.
-              order_included:
+              orderIncluded:
                 type: boolean
                 description: Whether the order is included in the solution proposed by the solver.
       required:
