@@ -8,6 +8,7 @@
 CREATE TYPE OrderKind AS ENUM ('buy', 'sell');
 
 CREATE TABLE orders (
+    
     uid bytea PRIMARY KEY,
     owner bytea NOT NULL,
     creation_timestamp timestamptz NOT NULL,
