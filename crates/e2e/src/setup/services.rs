@@ -23,7 +23,6 @@ use {
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
-pub const ORDER_STATUS_ENDPOINT: &str = "/api/v1/status";
 pub const QUOTING_ENDPOINT: &str = "/api/v1/quote";
 pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
@@ -31,6 +30,10 @@ pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
+
+pub fn order_status_endpoint(uid: &OrderUid) -> String {
+    format!("/api/v1/orders/{uid}/status")
+}
 
 pub struct ServicesBuilder {
     timeout: Duration,
@@ -453,7 +456,7 @@ impl<'a> Services<'a> {
     ) -> Result<orderbook::database::orders::Status, (StatusCode, String)> {
         let response = self
             .http
-            .get(format!("{API_HOST}{ORDER_STATUS_ENDPOINT}/{uid}"))
+            .get(format!("{API_HOST}{}", order_status_endpoint(uid)))
             .send()
             .await
             .unwrap();

@@ -8,7 +8,7 @@ use {
 };
 
 fn get_status_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
-    warp::path!("v1" / "status" / OrderUid).and(warp::get())
+    warp::path!("v1" / "orders" / OrderUid / "status").and(warp::get())
 }
 
 pub fn get_status(
