@@ -353,11 +353,11 @@ impl std::fmt::Display for Arguments {
 
 /// A fee policy to be used for orders base on it's class.
 /// Examples:
-/// - Surplus with a high enough cap for limit orders surplus:0.5:0.9:limit
+/// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
 ///
 /// - Surplus with cap for market orders: surplus:0.5:0.06:market
 ///
-/// - Price improvement with a high enough cap for any order class
+/// - Price improvement with a high enough cap for any order class:
 ///   price_improvement:0.5:0.9:any
 ///
 /// - Price improvement with cap for limit orders:
