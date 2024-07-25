@@ -20,7 +20,13 @@ pub fn get_status(
             let status = orderbook.get_order_status(&order_uid).await;
 
             Result::<_, Infallible>::Ok(match status {
-                Ok(status) => warp::reply::with_status(warp::reply::json(&status), StatusCode::OK),
+                Ok(Some(status)) => {
+                    warp::reply::with_status(warp::reply::json(&status), StatusCode::OK)
+                }
+                Ok(None) => warp::reply::with_status(
+                    super::error("OrderNotFound", "Order not located in database"),
+                    StatusCode::NOT_FOUND,
+                ),
                 Err(err) => {
                     tracing::error!(?err, "get_order_status");
                     *Box::new(shared::api::internal_error_reply())

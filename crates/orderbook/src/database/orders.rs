@@ -77,7 +77,7 @@ pub trait OrderStoring: Send + Sync {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
-    async fn order_status(&self, order_uid: &OrderUid) -> Result<Status>;
+    async fn order_status(&self, order_uid: &OrderUid) -> Result<Option<Status>>;
 }
 
 pub struct SolvableOrders {
@@ -360,7 +360,7 @@ impl OrderStoring for Postgres {
         .await
     }
 
-    async fn order_status(&self, order_uid: &OrderUid) -> Result<Status> {
+    async fn order_status(&self, order_uid: &OrderUid) -> Result<Option<Status>> {
         let mut ex = self.pool.begin().await.context("could not init tx")?;
         let timer = super::Metrics::get()
             .database_queries
@@ -371,57 +371,57 @@ impl OrderStoring for Postgres {
             .context("could not fetch status")?;
         timer.stop_and_record();
 
-        let fetch_solvers = || async move {
-            let timer = super::Metrics::get()
-                .database_queries
-                .with_label_values(&["load_latest_solver_competition"])
-                .start_timer();
-            let competition = database::solver_competition::load_latest_competition(&mut ex)
-                .await
-                .context("could not fetch latest competition")?
-                .context("competition not found for the order")?
-                .json;
-            timer.stop_and_record();
+        if let Some(status) = status {
+            let fetch_solvers = || async move {
+                let timer = super::Metrics::get()
+                    .database_queries
+                    .with_label_values(&["load_latest_solver_competition"])
+                    .start_timer();
+                let competition = database::solver_competition::load_latest_competition(&mut ex)
+                    .await
+                    .context("could not fetch latest competition")?
+                    .context("competition not found for the order")?
+                    .json;
+                timer.stop_and_record();
 
-            let competition: SolverCompetitionDB = serde_json::from_value(competition)
-                .context("could not parse solver competition data")?;
+                let competition: SolverCompetitionDB = serde_json::from_value(competition)
+                    .context("could not parse solver competition data")?;
 
-            let solvers = competition
-                .solutions
-                .into_iter()
-                .filter_map(|solution| {
-                    solution
-                        .orders
-                        .iter()
-                        .any(|o| match o {
-                            model::solver_competition::Order::Colocated { id, .. }
-                            | model::solver_competition::Order::Legacy { id, .. } => {
-                                id.0 == order_uid.0
-                            }
-                        })
-                        .then_some(solution.solver)
-                })
-                .collect::<Vec<_>>();
+                let solvers = competition
+                    .solutions
+                    .into_iter()
+                    .filter_map(|solution| {
+                        solution
+                            .orders
+                            .iter()
+                            .any(|o| match o {
+                                model::solver_competition::Order::Colocated { id, .. }
+                                | model::solver_competition::Order::Legacy { id, .. } => {
+                                    id.0 == order_uid.0
+                                }
+                            })
+                            .then_some(solution.solver)
+                    })
+                    .collect::<Vec<_>>();
 
-            if solvers.is_empty() {
-                tracing::warn!(?order_uid, order_status = ?status.label, "no solvers found for order");
-            }
+                Ok::<Vec<_>, anyhow::Error>(solvers)
+            };
 
-            Ok::<Vec<_>, anyhow::Error>(solvers)
-        };
+            let status = match status.label {
+                OrderEventLabel::Ready => Status::Active,
+                OrderEventLabel::Created => Status::Scheduled,
+                OrderEventLabel::Considered => Status::Solved(fetch_solvers().await?),
+                OrderEventLabel::Executing => Status::Executing(fetch_solvers().await?),
+                OrderEventLabel::Traded => Status::Traded(fetch_solvers().await?),
+                OrderEventLabel::Cancelled => Status::Cancelled,
+                OrderEventLabel::Filtered => Status::Open,
+                OrderEventLabel::Invalid => Status::Open,
+            };
 
-        let status = match status.label {
-            OrderEventLabel::Ready => Status::Active,
-            OrderEventLabel::Created => Status::Scheduled,
-            OrderEventLabel::Considered => Status::Solved(fetch_solvers().await?),
-            OrderEventLabel::Executing => Status::Executing(fetch_solvers().await?),
-            OrderEventLabel::Traded => Status::Traded(fetch_solvers().await?),
-            OrderEventLabel::Cancelled => Status::Cancelled,
-            OrderEventLabel::Filtered => Status::Open,
-            OrderEventLabel::Invalid => Status::Open,
-        };
-
-        Ok(status)
+            Ok(Some(status))
+        } else {
+            Ok(None)
+        }
     }
 }
 

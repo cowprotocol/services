@@ -404,7 +404,7 @@ impl Orderbook {
             .context("get_user_orders error")
     }
 
-    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<Status> {
+    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<Option<Status>> {
         self.database
             .order_status(uid)
             .await

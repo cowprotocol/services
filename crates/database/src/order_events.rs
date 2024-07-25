@@ -95,12 +95,12 @@ pub async fn delete_order_events_before(
 pub async fn get_latest(
     ex: &mut PgConnection,
     order: &OrderUid,
-) -> Result<OrderEvent, sqlx::Error> {
+) -> Result<Option<OrderEvent>, sqlx::Error> {
     const QUERY: &str =
         r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp DESC LIMIT 1"#;
     sqlx::query_as(QUERY)
         .bind(ByteArray(order.0))
-        .fetch_one(ex)
+        .fetch_optional(ex)
         .await
 }
 
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(ids[2].order_uid, uid_b);
         assert_eq!(ids[2].label, OrderEventLabel::Invalid);
 
-        let latest = get_latest(&mut db, &uid_a).await.unwrap();
+        let latest = get_latest(&mut db, &uid_a).await.unwrap().unwrap();
         assert_eq!(latest.order_uid, event_b.order_uid);
         assert_eq!(latest.label, event_b.label);
         // Postgres returns micros only while DateTime has nanos.
