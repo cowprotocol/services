@@ -28,18 +28,18 @@ const MAX_PARALLEL_RPC_CALLS: usize = 128;
 
 /// General idea behind the algorithm:
 /// 1. Use `last_handled_blocks` as an indicator of the beginning of the block
-/// range that needs to be updated in current iteration. If it is empty, means
-/// we need to check the storage, and if there are events in the storage,
-/// continue from the last event block, if no events, do a full reindexing from
-/// block 0.
+///    crange that needs to be updated in current iteration. If it is empty,
+///    means we need to check the storage, and if there are events in the
+///    storage, continue from the last event block, if no events, do a full
+///    reindexing from block 0.
 ///
 /// 2. Define range of blocks that make sure no gaps or missed blocks exist.
 /// 3. If this range is too big, split it into two subranges, one to update the
-/// deep history blocks, second one to update the latest blocks (last X
-/// canonical blocks) 4. Do the history update, and if successful, update
-/// `last_handled_blocks` to make sure the data is consistent. 5. If history
-/// update is successful, proceed with latest update, and if successful update
-/// `last_handled_blocks`.
+///    deep history blocks, second one to update the latest blocks (last X
+///    canonical blocks) 4. Do the history update, and if successful, update
+///    `last_handled_blocks` to make sure the data is consistent. 5. If history
+///    update is successful, proceed with latest update, and if successful
+///    update `last_handled_blocks`.
 pub struct EventHandler<C, S>
 where
     C: EventRetrieving,

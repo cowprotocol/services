@@ -124,7 +124,7 @@ pub enum LimitOrderId {
 /// 1. Protocol - liquidity orders from the auction model of solvable orders
 /// 2. ZeroEx  - liquidity orders from the zeroex api liquidity collector
 /// 3. Foreign - liquidity orders received as part of the solution from
-/// searchers
+///    searchers
 ///
 /// (1) and (2) are gathered when the auction is cut and they are sent to
 /// searchers (3) are received from searchers as part of the solution.
