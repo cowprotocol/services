@@ -40,7 +40,6 @@ use {
         signature::SigningScheme,
         DomainSeparator,
     },
-    num::iter::Range,
     number::conversions::u256_to_big_decimal,
     shared::{
         db_order_conversions::{
@@ -332,7 +331,12 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         // failed, then the quote is not needed.
         insert_quotes(
             transaction,
-            quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
+            quotes
+                .clone()
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .as_slice(),
         )
         .await
         .context("appending quotes for onchain orders failed")?;
