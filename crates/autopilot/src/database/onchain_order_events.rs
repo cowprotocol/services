@@ -163,8 +163,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
 
         let mut transaction = self.db.pool.begin().await?;
 
-        self.delete_events(events.clone(), &mut transaction, range)
-            .await?;
+        self.delete_events(&mut transaction, range).await?;
         self.insert_events(events, &mut transaction).await?;
 
         transaction.commit().await.context("commit")?;
@@ -270,12 +269,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
 
     async fn delete_events(
         &self,
-        events: Vec<EthContractEvent<ContractEvent>>,
         transaction: &mut sqlx::Transaction<'static, sqlx::Postgres>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
-        let invalidation_events = get_invalidation_events(events)?;
-        let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
         database::onchain_broadcasted_orders::mark_as_reorged(
             transaction,
             i64::try_from(*range.start()).unwrap_or(i64::MAX),
@@ -289,17 +285,6 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         )
         .await
         .context("invalidating_onchain_order_events failed")?;
-
-        database::onchain_invalidations::insert_onchain_invalidations(
-            transaction,
-            invalided_order_uids.as_slice(),
-        )
-        .await
-        .context("insert_onchain_invalidations failed")?;
-
-        for order in &invalided_order_uids {
-            tracing::debug!(?order, "invalidated order");
-        }
 
         Ok(())
     }
@@ -316,9 +301,18 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
                 matches!(data, ContractEvent::OrderPlacement(_))
             })
             .collect();
+        let invalidation_events = get_invalidation_events(events)?;
+        let invalided_order_uids = extract_invalidated_order_uids(invalidation_events)?;
         let (custom_onchain_data, quotes, broadcasted_order_data, orders) = self
             .extract_custom_and_general_order_data(order_placement_events)
             .await?;
+
+        database::onchain_invalidations::insert_onchain_invalidations(
+            transaction,
+            invalided_order_uids.as_slice(),
+        )
+        .await
+        .context("insert_onchain_invalidations failed")?;
 
         self.custom_onchain_data_parser
             .append_custom_order_info_to_db(transaction, custom_onchain_data)
@@ -346,6 +340,9 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             .await
             .context("insert_orders failed")?;
 
+        for order in &invalided_order_uids {
+            tracing::debug!(?order, "invalidated order");
+        }
         for order in &orders {
             tracing::debug!(order =? order.uid, "upserted order");
         }
