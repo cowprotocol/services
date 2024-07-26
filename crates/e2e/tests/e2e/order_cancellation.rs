@@ -192,7 +192,7 @@ async fn order_cancellation(web3: Web3) {
         let order_status = services.get_order_status(uid).await.unwrap();
         assert!(matches!(
             order_status,
-            orderbook::database::orders::Status::Active
+            orderbook::dto::order::Status::Active
         ));
     }
 
@@ -214,7 +214,7 @@ async fn order_cancellation(web3: Web3) {
     );
     assert_eq!(
         services.get_order_status(&order_uids[0]).await.unwrap(),
-        orderbook::database::orders::Status::Cancelled,
+        orderbook::dto::order::Status::Cancelled,
     );
 
     // Cancel the other two.
@@ -253,7 +253,7 @@ async fn order_cancellation(web3: Web3) {
     );
     assert_eq!(
         services.get_order_status(&order_uids[2]).await.unwrap(),
-        orderbook::database::orders::Status::Cancelled,
+        orderbook::dto::order::Status::Cancelled,
     );
 
     for uid in &order_uids {

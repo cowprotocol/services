@@ -453,7 +453,7 @@ impl<'a> Services<'a> {
     pub async fn get_order_status(
         &self,
         uid: &OrderUid,
-    ) -> Result<orderbook::database::orders::Status, (StatusCode, String)> {
+    ) -> Result<orderbook::dto::order::Status, (StatusCode, String)> {
         let response = self
             .http
             .get(format!("{API_HOST}{}", order_status_endpoint(uid)))
@@ -466,7 +466,7 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => {
-                Ok(serde_json::from_str::<orderbook::database::orders::Status>(&body).unwrap())
+                Ok(serde_json::from_str::<orderbook::dto::order::Status>(&body).unwrap())
             }
             code => Err((code, body)),
         }

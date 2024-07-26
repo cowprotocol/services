@@ -18,7 +18,6 @@ pub fn get_status(
         let orderbook = orderbook.clone();
         async move {
             let status = orderbook.get_order_status(&uid).await;
-
             Result::<_, Infallible>::Ok(match status {
                 Ok(Some(status)) => {
                     warp::reply::with_status(warp::reply::json(&status), StatusCode::OK)

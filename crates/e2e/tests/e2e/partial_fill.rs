@@ -106,7 +106,7 @@ async fn test(web3: Web3) {
     assert_eq!(latest_competition, competition);
     assert_eq!(
         services.get_order_status(&uid).await.unwrap(),
-        orderbook::database::orders::Status::Traded(vec![orderbook::database::orders::Solution {
+        orderbook::dto::order::Status::Traded(vec![orderbook::dto::order::Solution {
             solver: "test_solver".to_string(),
             order_included: true
         }]),

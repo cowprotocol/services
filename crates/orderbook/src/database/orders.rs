@@ -24,13 +24,11 @@ use {
             OrderUid,
         },
         signature::Signature,
-        solver_competition::SolverCompetitionDB,
         time::now_in_epoch_seconds,
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::H160,
-    serde::Serialize,
     shared::{
         db_order_conversions::{
             buy_token_destination_from,
@@ -77,7 +75,7 @@ pub trait OrderStoring: Send + Sync {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
-    async fn order_status(&self, order_uid: &OrderUid) -> Result<Option<Status>>;
+    async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
 }
 
 pub struct SolvableOrders {
@@ -360,82 +358,16 @@ impl OrderStoring for Postgres {
         .await
     }
 
-    async fn order_status(&self, order_uid: &OrderUid) -> Result<Option<Status>> {
+    async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>> {
         let mut ex = self.pool.begin().await.context("could not init tx")?;
-        let timer = super::Metrics::get()
+        let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["latest_order_event"])
             .start_timer();
-        let status = database::order_events::get_latest(&mut ex, &ByteArray(order_uid.0))
+
+        database::order_events::get_latest(&mut ex, &ByteArray(order_uid.0))
             .await
-            .context("could not fetch status")?;
-        timer.stop_and_record();
-
-        if let Some(status) = status {
-            let fetch_solutions = || async move {
-                let timer = super::Metrics::get()
-                    .database_queries
-                    .with_label_values(&["load_latest_solver_competition"])
-                    .start_timer();
-                let competition =
-                    database::solver_competition::load_latest_competition(&mut ex).await;
-                timer.stop_and_record();
-
-                // Order status API needs to be available even if there is a problem with the
-                // competition fetching.
-                let competition: SolverCompetitionDB = match competition {
-                    Ok(Some(competition)) => match serde_json::from_value(competition.json) {
-                        Ok(competition) => competition,
-                        Err(err) => {
-                            tracing::error!(?err, "could not parse solver competition data");
-                            return Ok(Vec::new());
-                        }
-                    },
-                    Ok(None) => {
-                        tracing::warn!("no latest competition exists");
-                        return Ok(Vec::new());
-                    }
-                    Err(err) => {
-                        tracing::error!(?err, "could not load latest competition");
-                        return Ok(Vec::new());
-                    }
-                };
-
-                let solutions = competition
-                    .solutions
-                    .into_iter()
-                    .map(|solution| {
-                        let order_included = solution.orders.iter().any(|o| match o {
-                            model::solver_competition::Order::Colocated { id, .. }
-                            | model::solver_competition::Order::Legacy { id, .. } => {
-                                id.0 == order_uid.0
-                            }
-                        });
-                        Solution {
-                            solver: solution.solver,
-                            order_included,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                Ok::<Vec<_>, anyhow::Error>(solutions)
-            };
-
-            let status = match status.label {
-                OrderEventLabel::Ready => Status::Active,
-                OrderEventLabel::Created => Status::Scheduled,
-                OrderEventLabel::Considered => Status::Solved(fetch_solutions().await?),
-                OrderEventLabel::Executing => Status::Executing(fetch_solutions().await?),
-                OrderEventLabel::Traded => Status::Traded(fetch_solutions().await?),
-                OrderEventLabel::Cancelled => Status::Cancelled,
-                OrderEventLabel::Filtered => Status::Open,
-                OrderEventLabel::Invalid => Status::Open,
-            };
-
-            Ok(Some(status))
-        } else {
-            Ok(None)
-        }
+            .context("order_events::get_latest")
     }
 }
 
@@ -608,37 +540,6 @@ fn is_sell_order_filled(
 
 fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> bool {
     !executed_amount.is_zero() && *amount == *executed_amount
-}
-
-#[derive(Serialize, PartialEq, Debug, Clone)]
-#[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
-pub struct Solution {
-    pub solver: String,
-    pub order_included: bool,
-}
-
-#[derive(Serialize, PartialEq, Debug, Clone)]
-#[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
-#[serde(tag = "type", rename_all = "camelCase", content = "value")]
-pub enum Status {
-    /// Order is part of the orderbook but not actively being worked on. This
-    /// can for example happen if the necessary balances are missing or if
-    /// the order's signature check fails.
-    Open,
-    /// Order awaits being put into the current auction.
-    Scheduled,
-    /// Order is part of the current and solvers are computing solutions for it.
-    Active,
-    /// Some solvers proposed solutions for the orders but did not win the
-    /// competition.
-    Solved(Vec<Solution>),
-    /// The order was contained in the winning solution which the solver
-    /// currently tries to submit onchain.
-    Executing(Vec<Solution>),
-    /// The order was successfully executed onchain.
-    Traded(Vec<Solution>),
-    /// The user cancelled the order. It will no longer show up in any auctions.
-    Cancelled,
 }
 
 #[cfg(test)]
