@@ -20,3 +20,6 @@ ethcontract = { workspace = true }
 
 [features]
 test_helpers = []
+
+[lints]
+workspace = true

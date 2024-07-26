@@ -346,8 +346,8 @@ impl OrderStoring for Postgres {
         database::orders::user_orders(
             &mut ex,
             &ByteArray(owner.0),
-            offset as i64,
-            limit.map(|l| l as i64),
+            i64::try_from(offset).unwrap_or(i64::MAX),
+            limit.map(|l| i64::try_from(l).unwrap_or(i64::MAX)),
         )
         .map(|result| match result {
             Ok(order) => full_order_into_model_order(order),
