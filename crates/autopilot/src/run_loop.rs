@@ -269,7 +269,7 @@ impl RunLoop {
                 competition_table,
             };
 
-            tracing::info!(?competition, "saving competition");
+            tracing::trace!(?competition, "saving competition");
             if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
                 return;

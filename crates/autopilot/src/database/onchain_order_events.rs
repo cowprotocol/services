@@ -331,7 +331,12 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         // failed, then the quote is not needed.
         insert_quotes(
             transaction,
-            quotes.into_iter().flatten().collect::<Vec<_>>().as_slice(),
+            quotes
+                .clone()
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .as_slice(),
         )
         .await
         .context("appending quotes for onchain orders failed")?;
@@ -343,8 +348,8 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         for order in &invalided_order_uids {
             tracing::debug!(?order, "invalidated order");
         }
-        for order in &orders {
-            tracing::debug!(order =? order.uid, "upserted order");
+        for (order, quote) in orders.iter().zip(quotes.iter()) {
+            tracing::debug!(order =? order.uid, ?quote, "upserted order");
         }
 
         Ok(())
