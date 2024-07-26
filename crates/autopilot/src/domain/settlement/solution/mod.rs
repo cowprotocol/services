@@ -7,15 +7,13 @@ use {
         auction::{self},
         competition,
         eth,
-        fee,
-        OrderUid,
     },
-    std::collections::HashMap,
 };
 
 mod tokenized;
 mod trade;
 pub use error::Error;
+use {crate::domain, std::collections::HashMap};
 
 /// A solution that was executed on-chain.
 ///
@@ -37,39 +35,62 @@ impl Solution {
         self.auction_id
     }
 
-    pub fn score(
-        &self,
-        prices: &auction::Prices,
-        policies: &HashMap<OrderUid, Vec<fee::Policy>>,
-    ) -> Result<competition::Score, error::Score> {
-        let score = self
-            .trades
+    /// CIP38 score calculation
+    pub fn score(&self, auction: &super::Auction) -> Result<competition::Score, error::Score> {
+        Ok(competition::Score::new(
+            self.trades
+                .iter()
+                .map(|trade| trade.score(auction))
+                .sum::<Result<eth::Ether, trade::Error>>()?,
+        )?)
+    }
+
+    /// Total surplus for all trades in the solution.
+    ///
+    /// Always returns a value, even if some trades have incomplete surplus
+    /// calculation.
+    pub fn native_surplus(&self, auction: &super::Auction) -> eth::Ether {
+        self.trades
             .iter()
             .map(|trade| {
-                trade.score(
-                    prices,
-                    policies
-                        .get(trade.order_uid())
-                        .map(|value| value.as_slice())
-                        .unwrap_or_default(),
-                )
+                trade.native_surplus(auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        "possible incomplete surplus calculation for trade {}",
+                        trade.order_uid()
+                    );
+                    num::zero()
+                })
             })
-            .sum::<Result<eth::Ether, trade::Error>>()?;
-        Ok(competition::Score::new(score)?)
-    }
-
-    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
-        self.trades
-            .iter()
-            .map(|trade| trade.native_surplus(prices))
             .sum()
     }
 
-    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, trade::Error> {
+    /// Total fee for all trades in the solution.
+    ///
+    /// Always returns a value, even if some trades have incomplete fee
+    /// calculation.
+    pub fn native_fee(&self, prices: &auction::Prices) -> eth::Ether {
         self.trades
             .iter()
-            .map(|trade| trade.native_fee(prices))
+            .map(|trade| {
+                trade.native_fee(prices).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        "possible incomplete fee calculation for trade {}",
+                        trade.order_uid()
+                    );
+                    num::zero()
+                })
+            })
             .sum()
+    }
+
+    /// Returns fees denominated in sell token for each order in the solution.
+    pub fn fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+        self.trades
+            .iter()
+            .map(|trade| (*trade.order_uid(), trade.fee().ok()))
+            .collect()
     }
 
     pub fn new(
@@ -164,8 +185,12 @@ pub mod error {
 #[cfg(test)]
 mod tests {
     use {
-        crate::domain::{auction, eth},
+        crate::{
+            domain,
+            domain::{auction, eth},
+        },
         hex_literal::hex,
+        std::collections::HashMap,
     };
 
     // https://etherscan.io/tx/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
@@ -269,14 +294,22 @@ mod tests {
             ),
         ]);
 
+        let auction = super::super::Auction {
+            prices,
+            deadline: eth::BlockNo(0),
+            surplus_capturing_jit_order_owners: vec![],
+            id: 0,
+            orders: HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), vec![])]),
+        };
+
         // surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
-            solution.native_surplus(&prices).unwrap().0,
+            solution.native_surplus(&auction).0,
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
         assert_eq!(
-            solution.native_fee(&prices).unwrap().0,
+            solution.native_fee(&auction.prices).0,
             eth::U256::from(6890975030480504u128)
         );
     }

@@ -91,9 +91,8 @@ impl Pool {
     /// elements returned are (respectively)
     /// - the pool's reserve of token provided
     /// - the reserve of the other token
-    /// - the pool's other token
-    /// This is essentially a helper method for shuffling values in
-    /// `get_amount_in` and `get_amount_out`
+    /// - the pool's other token This is essentially a helper method for
+    ///   shuffling values in `get_amount_in` and `get_amount_out`
     fn get_relative_reserves(&self, token: H160) -> RelativeReserves {
         // https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/libraries/UniswapV2Library.sol#L53
         if token == self.tokens.get().0 {

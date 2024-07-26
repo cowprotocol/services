@@ -6,7 +6,7 @@ pub use primitive_types::{H160, H256, U256};
 pub struct Address(pub H160);
 
 /// Block number.
-#[derive(Debug, Copy, Clone, From)]
+#[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd)]
 pub struct BlockNo(pub u64);
 
 /// A transaction ID, AKA transaction hash.
@@ -50,6 +50,18 @@ impl TokenAmount {
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct SellTokenAmount(pub U256);
+
+impl From<TokenAmount> for SellTokenAmount {
+    fn from(value: TokenAmount) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<SellTokenAmount> for TokenAmount {
+    fn from(value: SellTokenAmount) -> Self {
+        Self(value.0)
+    }
+}
 
 /// Gas amount in gas units.
 ///

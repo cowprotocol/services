@@ -34,7 +34,7 @@ use {
             Postgres,
         },
         decoded_settlement::DecodedSettlement,
-        domain::settlement::Transaction,
+        domain::{self, settlement::Transaction},
         infra,
     },
     anyhow::{Context, Result},
@@ -52,6 +52,7 @@ pub struct OnSettlementEventUpdater {
 
 struct Inner {
     eth: infra::Ethereum,
+    persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
 }
@@ -68,9 +69,10 @@ enum AuctionIdRecoveryStatus {
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres) -> Self {
+    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
         let inner = Arc::new(Inner {
             eth,
+            persistence,
             db,
             notify: Notify::new(),
         });
@@ -179,6 +181,28 @@ impl Inner {
             .await
             .with_context(|| format!("insert_settlement_details: {update:?}"))?;
         ex.commit().await?;
+
+        {
+            // temporary to debug and compare with current implementation
+            // TODO: use instead of current implementation
+            let Ok(transaction) = self.eth.transaction(hash.into()).await else {
+                tracing::warn!(?hash, "transaction not found");
+                return Ok(true);
+            };
+            let domain_separator = self.eth.contracts().settlement_domain_separator();
+            let settlement = domain::settlement::Settlement::new(
+                transaction,
+                domain_separator,
+                &self.persistence,
+            )
+            .await;
+
+            tracing::info!(
+                "settlement object {:?}",
+                settlement.map(|settlement| (settlement.observation(), settlement.score()))
+            );
+        }
+
         Ok(true)
     }
 

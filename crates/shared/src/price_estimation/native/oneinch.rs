@@ -8,7 +8,7 @@ use {
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
     reqwest::{header::AUTHORIZATION, Client},
-    serde::{Deserialize, Serialize},
+    serde::Deserialize,
     serde_with::serde_as,
     std::{
         collections::HashMap,
@@ -18,7 +18,7 @@ use {
 };
 
 #[serde_as]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<H160, U256>);
 
 type Token = H160;

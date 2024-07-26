@@ -12,6 +12,7 @@ pub mod buy_eth;
 pub mod example_config;
 pub mod fees;
 pub mod internalization;
+pub mod jit_orders;
 pub mod merge_settlements;
 pub mod multiple_drivers;
 pub mod multiple_solutions;
@@ -115,4 +116,15 @@ impl EtherExt for f64 {
         assert!(self >= 0.0, "Ether supports non-negative values only");
         Ether(BigRational::from_f64(self).unwrap())
     }
+}
+
+// because of rounding errors, it's good enough to check that the expected value
+// is within a very narrow range of the executed value
+#[cfg(test)]
+pub fn is_approximately_equal(executed_value: eth::U256, expected_value: eth::U256) -> bool {
+    let lower =
+        expected_value * eth::U256::from(99999999999u128) / eth::U256::from(100000000000u128); // in percents = 99.999999999%
+    let upper =
+        expected_value * eth::U256::from(100000000001u128) / eth::U256::from(100000000000u128); // in percents = 100.000000001%
+    executed_value >= lower && executed_value <= upper
 }
