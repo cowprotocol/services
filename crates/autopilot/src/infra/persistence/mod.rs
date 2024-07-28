@@ -358,9 +358,9 @@ pub mod error {
     pub enum Competition {
         #[error("failed to read data from database: {0}")]
         DbError(#[source] anyhow::Error),
-        #[error("competition data not found in the database")]
+        #[error("competition data not found")]
         Missing,
-        #[error("failed to get score from database: {0}")]
+        #[error("failed to fetch score: {0}")]
         InvalidScore(anyhow::Error),
     }
 }
