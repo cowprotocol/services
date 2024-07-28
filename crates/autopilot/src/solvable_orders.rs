@@ -673,7 +673,7 @@ impl OrderFilterCounter {
             metrics
                 .auction_candidate_orders
                 .with_label_values(&[class])
-                .set(count as _);
+                .set(i64::try_from(count).unwrap_or(i64::MAX));
         }
 
         Self {
@@ -724,14 +724,14 @@ impl OrderFilterCounter {
             self.metrics
                 .auction_solvable_orders
                 .with_label_values(&[class])
-                .set(count as _);
+                .set(i64::try_from(count).unwrap_or(i64::MAX));
         }
 
         for (reason, count) in self.counts {
             self.metrics
                 .auction_filtered_orders
                 .with_label_values(&[reason])
-                .set(count as _);
+                .set(i64::try_from(count).unwrap_or(i64::MAX));
         }
 
         removed

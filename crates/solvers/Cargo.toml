@@ -55,3 +55,6 @@ tracing = { workspace = true }
 tempfile = { workspace = true }
 hex-literal = { workspace = true }
 ethcontract = { workspace = true }
+
+[lints]
+workspace = true

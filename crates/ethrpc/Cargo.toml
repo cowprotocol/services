@@ -39,3 +39,6 @@ itertools = { workspace = true }
 [dev-dependencies]
 maplit = { workspace = true }
 testlib = { path = "../testlib" }
+
+[lints]
+workspace = true

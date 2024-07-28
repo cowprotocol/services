@@ -35,3 +35,6 @@ maplit = { workspace = true }
 
 [features]
 e2e = []
+
+[lints]
+workspace = true
