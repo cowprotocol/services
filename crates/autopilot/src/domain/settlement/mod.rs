@@ -27,8 +27,8 @@ pub use {
 pub struct Settlement {
     solution: Solution,
     transaction: Transaction,
-    competition: domain::Competition,
     auction: Auction,
+    competition: domain::Competition,
 }
 
 impl Settlement {
@@ -38,8 +38,8 @@ impl Settlement {
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
-        let competition = persistence.get_competition(solution.auction_id()).await?;
         let auction = persistence.get_auction(solution.auction_id()).await?;
+        let competition = persistence.get_competition(solution.auction_id()).await?;
 
         Ok(Self {
             solution,
@@ -70,9 +70,9 @@ impl Settlement {
 pub enum Error {
     #[error(transparent)]
     Solution(#[from] solution::Error),
-    // TODO: Merge Competition and Auction errors into a single error type
-    #[error(transparent)]
-    Competition(#[from] infra::persistence::error::Competition),
+    // TODO: Merge Auction and Competition errors into a single error type
     #[error(transparent)]
     Auction(#[from] infra::persistence::error::Auction),
+    #[error(transparent)]
+    Competition(#[from] infra::persistence::error::Competition),
 }
