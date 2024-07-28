@@ -2,14 +2,14 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, eth},
+        domain::{self, competition, eth},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
-    primitive_types::H256,
+    primitive_types::{H160, H256},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -178,12 +178,15 @@ impl Persistence {
             .context("begin")
             .map_err(error::Auction::DbError)?;
 
-        let deadline = database::settlement_scores::fetch(&mut ex, auction_id)
-            .await
-            .context("fetch scores")
-            .map_err(error::Auction::DbError)?
-            .ok_or(error::Auction::Missing)
-            .map(|scores| (scores.block_deadline as u64).into())?;
+        let surplus_capturing_jit_order_owners =
+            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
+                .await
+                .context("fetch surplus capturing jit order owners")
+                .map_err(error::Auction::DbError)?
+                .ok_or(error::Auction::Missing)?
+                .into_iter()
+                .map(|owner| eth::H160(owner.0).into())
+                .collect();
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
             .await
@@ -199,16 +202,6 @@ impl Persistence {
                 price.map(|price| (token, price))
             })
             .collect::<Result<_, _>>()?;
-
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .context("fetch surplus capturing jit order owners")
-                .map_err(error::Auction::DbError)?
-                .ok_or(error::Auction::MissingJitOrderOwners)?
-                .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
-                .collect();
 
         let orders = {
             // get all orders from a competition auction
@@ -277,8 +270,52 @@ impl Persistence {
             id: auction_id,
             orders,
             prices,
-            deadline,
             surplus_capturing_jit_order_owners,
+        })
+    }
+
+    /// Get competition data.
+    pub async fn get_competition(
+        &self,
+        auction_id: domain::auction::Id,
+    ) -> Result<domain::competition::Competition, error::Competition> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_competition"])
+            .start_timer();
+
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .context("begin")
+            .map_err(error::Competition::DbError)?;
+
+        let (winner, score, deadline) = {
+            let scores = database::settlement_scores::fetch(&mut ex, auction_id)
+                .await
+                .context("fetch scores")
+                .map_err(error::Competition::DbError)?
+                .ok_or(error::Competition::Missing)?;
+            (
+                H160(scores.winner.0).into(),
+                competition::Score::new(
+                    big_decimal_to_u256(&scores.winning_score)
+                        .ok_or(error::Competition::InvalidScore(anyhow::anyhow!(
+                            "database score"
+                        )))?
+                        .into(),
+                )
+                .map_err(|_| error::Competition::InvalidScore(anyhow::anyhow!("zero score")))?,
+                (scores.block_deadline as u64).into(),
+            )
+        };
+
+        Ok(domain::competition::Competition {
+            winner,
+            score,
+            deadline,
         })
     }
 }
@@ -315,7 +352,15 @@ pub mod error {
         Missing,
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
-        #[error("jit order owners not found for an existing auction id")]
-        MissingJitOrderOwners,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Competition {
+        #[error("failed to read data from database: {0}")]
+        DbError(#[source] anyhow::Error),
+        #[error("competition data not found in the database")]
+        Missing,
+        #[error("failed to get score from database: {0}")]
+        InvalidScore(anyhow::Error),
     }
 }

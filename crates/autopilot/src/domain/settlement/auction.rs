@@ -13,9 +13,6 @@ pub struct Auction {
     pub orders: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
     /// Auction external prices
     pub prices: domain::auction::Prices,
-    /// Deadline for an auction solution to be settled, so that it is eligible
-    /// for rewards.
-    pub deadline: domain::eth::BlockNo,
     /// JIT orders with surplus capturing JIT order owners should capture
     /// surplus if settled.
     pub surplus_capturing_jit_order_owners: Vec<domain::eth::Address>,

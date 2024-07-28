@@ -4,7 +4,7 @@
 
 use {
     super::competition,
-    crate::{domain::eth, infra},
+    crate::{domain, domain::eth, infra},
 };
 
 mod auction;
@@ -27,6 +27,7 @@ pub use {
 pub struct Settlement {
     solution: Solution,
     transaction: Transaction,
+    competition: domain::Competition,
     auction: Auction,
 }
 
@@ -37,11 +38,13 @@ impl Settlement {
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
+        let competition = persistence.get_competition(solution.auction_id()).await?;
         let auction = persistence.get_auction(solution.auction_id()).await?;
 
         Ok(Self {
             solution,
             transaction,
+            competition,
             auction,
         })
     }
@@ -67,6 +70,9 @@ impl Settlement {
 pub enum Error {
     #[error(transparent)]
     Solution(#[from] solution::Error),
+    // TODO: Merge Competition and Auction errors into a single error type
+    #[error(transparent)]
+    Competition(#[from] infra::persistence::error::Competition),
     #[error(transparent)]
     Auction(#[from] infra::persistence::error::Auction),
 }
