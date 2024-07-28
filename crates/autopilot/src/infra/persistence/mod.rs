@@ -160,8 +160,8 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    /// Get auction data.
-    pub async fn get_auction(
+    /// Get auction if it doesn't have associated settlements.
+    pub async fn get_unprocessed_auction(
         &self,
         auction_id: domain::auction::Id,
     ) -> Result<domain::settlement::Auction, error::Auction> {
@@ -184,6 +184,14 @@ impl Persistence {
             .map_err(error::Auction::DbError)?
             .ok_or(error::Auction::Missing)
             .map(|scores| (scores.block_deadline as u64).into())?;
+
+        if database::settlements::already_processed(&mut ex, auction_id)
+            .await
+            .context("fetch already_processed")
+            .map_err(error::Auction::DbError)?
+        {
+            return Err(error::Auction::AlreadyProcessed);
+        }
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
             .await
@@ -309,10 +317,12 @@ pub mod error {
     pub enum Auction {
         #[error("failed to read data from database: {0}")]
         DbError(#[source] anyhow::Error),
-        #[error("failed dto conversion from database: {0} for order: {1}")]
-        FeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error("auction data not found in the database")]
         Missing,
+        #[error("auction exists but already processed")]
+        AlreadyProcessed,
+        #[error("failed dto conversion from database: {0} for order: {1}")]
+        FeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
         #[error("jit order owners not found for an existing auction id")]

@@ -37,7 +37,9 @@ impl Settlement {
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
-        let auction = persistence.get_auction(solution.auction_id()).await?;
+        let auction = persistence
+            .get_unprocessed_auction(solution.auction_id())
+            .await?;
 
         Ok(Self {
             solution,
