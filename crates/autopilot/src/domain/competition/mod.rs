@@ -1,6 +1,6 @@
 use super::eth;
 
-pub mod solution;
+mod solution;
 
 pub use solution::{Score, Solution, SolutionError, TradedAmounts, ZeroScore};
 
