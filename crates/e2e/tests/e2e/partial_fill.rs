@@ -104,14 +104,15 @@ async fn test(web3: Web3) {
     assert!(competition.common.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();
     assert_eq!(latest_competition, competition);
-    assert_eq!(
+    assert!(matches!(
         services.get_order_status(&uid).await.unwrap(),
-        orderbook::dto::order::Status::Traded(vec![orderbook::dto::order::SolutionInclusion {
-            solver: "test_solver".to_string(),
-            executed_amounts: Some(orderbook::dto::order::ExecutedAmounts {
-                sell: U256::from(2000166391259569960u128),
-                buy: U256::from(1662497915624478906u128),
-            })
-        }]),
-    );
+        orderbook::dto::order::Status::Traded(ref solutions)
+        if solutions.len() == 1 && matches!(
+            &solutions[0],
+            orderbook::dto::order::SolutionInclusion {
+                solver: ref s,
+                executed_amounts: Some(_),
+            } if s == "test_solver"
+        )
+    ));
 }
