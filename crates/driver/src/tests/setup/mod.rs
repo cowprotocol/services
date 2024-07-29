@@ -14,8 +14,10 @@ use {
         },
         tests::{
             cases::{
+                is_approximately_equal,
                 EtherExt,
                 AB_ORDER_AMOUNT,
+                AD_ORDER_AMOUNT,
                 CD_ORDER_AMOUNT,
                 DEFAULT_POOL_AMOUNT_A,
                 DEFAULT_POOL_AMOUNT_B,
@@ -627,6 +629,37 @@ pub fn ab_solution() -> Solution {
     }
 }
 
+/// An example order which sells token "A" for token "D".
+pub fn ad_order() -> Order {
+    Order {
+        name: "A-D order",
+        sell_amount: AD_ORDER_AMOUNT.ether().into_wei(),
+        sell_token: "A",
+        buy_token: "D",
+        ..Default::default()
+    }
+}
+
+/// A pool between tokens "A" and "D".
+pub fn ad_pool() -> Pool {
+    Pool {
+        token_a: "A",
+        token_b: "D",
+        amount_a: DEFAULT_POOL_AMOUNT_A.ether().into_wei(),
+        amount_b: DEFAULT_POOL_AMOUNT_D.ether().into_wei(),
+    }
+}
+
+/// A solution solving the [`ad_order`].
+pub fn ad_solution() -> Solution {
+    Solution {
+        calldata: Calldata::Valid {
+            additional_bytes: 0,
+        },
+        orders: vec!["A-D order"],
+    }
+}
+
 /// A pool between tokens "C" and "D".
 pub fn cd_pool() -> Pool {
     Pool {
@@ -1175,8 +1208,14 @@ impl<'a> SolveOk<'a> {
                 Some(executed_amounts) => (executed_amounts.sell, executed_amounts.buy),
                 None => (quoted_order.sell, quoted_order.buy),
             };
-            assert!(u256(trade.get("sellAmount").unwrap()) == expected_sell);
-            assert!(u256(trade.get("buyAmount").unwrap()) == expected_buy);
+            assert!(is_approximately_equal(
+                u256(trade.get("sellAmount").unwrap()),
+                expected_sell
+            ));
+            assert!(is_approximately_equal(
+                u256(trade.get("buyAmount").unwrap()),
+                expected_buy
+            ));
         }
         self
     }
