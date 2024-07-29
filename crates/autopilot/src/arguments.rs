@@ -224,8 +224,7 @@ pub struct Arguments {
     /// - helper is a contract address to interface with pools deployed by the
     ///   factory
     /// - block is the block at which indexing should start (should be 1 block
-    ///   before
-    /// the deployment of the factory)
+    ///   before the deployment of the factory)
     #[clap(long, env, use_value_delimiter = true)]
     pub cow_amm_configs: Vec<CowAmmConfig>,
 }
@@ -354,20 +353,17 @@ impl std::fmt::Display for Arguments {
 
 /// A fee policy to be used for orders base on it's class.
 /// Examples:
-/// - Surplus with a high enough cap for limit orders
-/// surplus:0.5:0.9:limit
+/// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
 ///
-/// - Surplus with cap for market orders:
-/// surplus:0.5:0.06:market
+/// - Surplus with cap for market orders: surplus:0.5:0.06:market
 ///
-/// - Price improvement with a high enough cap for any order class
-/// price_improvement:0.5:0.9:any
+/// - Price improvement with a high enough cap for any order class:
+///   price_improvement:0.5:0.9:any
 ///
 /// - Price improvement with cap for limit orders:
-/// price_improvement:0.5:0.06:limit
+///   price_improvement:0.5:0.06:limit
 ///
-/// - Volume based fee for any order class:
-/// volume:0.1:any
+/// - Volume based fee for any order class: volume:0.1:any
 #[derive(Debug, Clone)]
 pub struct FeePolicy {
     pub fee_policy_kind: FeePolicyKind,

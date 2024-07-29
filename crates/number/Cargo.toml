@@ -12,3 +12,6 @@ num = { workspace = true }
 primitive-types = { workspace = true }
 serde_with = { workspace = true }
 serde = { workspace = true }
+
+[lints]
+workspace = true

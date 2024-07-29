@@ -366,7 +366,9 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let mut included_orders = HashSet::new();
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
-        let expiry = Utc.timestamp_opt(order.order().expiry as i64, 0).unwrap();
+        let expiry = Utc
+            .timestamp_opt(i64::try_from(order.order().expiry).unwrap_or(i64::MAX), 0)
+            .unwrap();
 
         // only keep orders which are still valid and unique
         expiry > now && included_orders.insert(order.metadata().order_hash.clone())

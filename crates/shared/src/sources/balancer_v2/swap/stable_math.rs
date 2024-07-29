@@ -292,8 +292,10 @@ mod tests {
             }
         }
         let b = (invariant / (amplification_parameter * num_tokens)) + sum - invariant;
-        let c = (invariant.powi(num_tokens_usize as i32 + 1) * -1.)
-            / (amplification_parameter * num_tokens.powi(num_tokens_usize as i32 + 1) * prod);
+        let c = (invariant.powi(i32::try_from(num_tokens_usize).unwrap_or(i32::MAX) + 1) * -1.)
+            / (amplification_parameter
+                * num_tokens.powi(i32::try_from(num_tokens_usize).unwrap_or(i32::MAX) + 1)
+                * prod);
         let x = b.powi(2) - (c * 4.);
         let root_x = x.powf(0.5);
         let neg_b = b * -1.;

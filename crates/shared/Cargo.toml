@@ -68,3 +68,6 @@ regex = { workspace = true }
 testlib = { path = "../testlib" }
 app-data = { path = "../app-data", features = ["test_helpers"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -36,3 +36,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"], optio
 [build-dependencies]
 ethcontract = { workspace = true }
 ethcontract-generate = { workspace = true }
+
+[lints]
+workspace = true

@@ -191,7 +191,7 @@ impl Inner {
             };
             let domain_separator = self.eth.contracts().settlement_domain_separator();
             let settlement = domain::settlement::Settlement::new(
-                &transaction,
+                transaction,
                 domain_separator,
                 &self.persistence,
             )
@@ -199,7 +199,7 @@ impl Inner {
 
             tracing::info!(
                 "settlement object {:?}",
-                settlement.map(|settlement| settlement.score())
+                settlement.map(|settlement| (settlement.observation(), settlement.score()))
             );
         }
 
