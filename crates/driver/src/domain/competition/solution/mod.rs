@@ -495,8 +495,8 @@ fn scaling_factor(first: &Prices, second: &Prices) -> Option<BigRational> {
             let first_price = first[token];
             let second_price = second[token];
             BigRational::new(
-                number::conversions::u256_to_big_int(&second_price),
                 number::conversions::u256_to_big_int(&first_price),
+                number::conversions::u256_to_big_int(&second_price),
             )
         })
         .collect();
