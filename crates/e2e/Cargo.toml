@@ -48,3 +48,6 @@ app-data-hash = { path = "../app-data-hash" }
 futures = { workspace = true }
 rand = { workspace = true }
 refunder = { path = "../refunder" }
+
+[lints]
+workspace = true

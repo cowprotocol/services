@@ -58,3 +58,6 @@ ethcontract-mock = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }
 testlib = { path = "../testlib" }
+
+[lints]
+workspace = true

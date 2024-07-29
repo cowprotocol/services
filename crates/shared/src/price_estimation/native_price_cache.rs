@@ -192,14 +192,14 @@ impl UpdateTask {
         let metrics = Metrics::get();
         metrics
             .native_price_cache_size
-            .set(inner.cache.lock().unwrap().len() as i64);
+            .set(i64::try_from(inner.cache.lock().unwrap().len()).unwrap_or(i64::MAX));
 
         let max_age = inner.max_age.saturating_sub(self.prefetch_time);
         let mut outdated_entries = inner.sorted_tokens_to_update(max_age, Instant::now());
 
         metrics
             .native_price_cache_outdated_entries
-            .set(outdated_entries.len() as i64);
+            .set(i64::try_from(outdated_entries.len()).unwrap_or(i64::MAX));
 
         outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 

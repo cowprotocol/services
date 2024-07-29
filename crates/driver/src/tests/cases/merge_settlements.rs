@@ -5,6 +5,9 @@ use crate::tests::{
         ab_order,
         ab_pool,
         ab_solution,
+        ad_order,
+        ad_pool,
+        ad_solution,
         cd_order,
         cd_pool,
         cd_solution,
@@ -43,6 +46,27 @@ async fn possible() {
         .await
         .cd_order_executed()
         .await;
+}
+
+/// Test that settlements can be merged with two solutions containing a common
+/// token.
+#[tokio::test]
+#[ignore]
+async fn possible_common_token() {
+    let ab_order = ab_order();
+    let ad_order = ad_order();
+    let test: Test = setup::setup()
+        .solvers(vec![test_solver().merge_solutions()])
+        .pool(ab_pool())
+        .pool(ad_pool())
+        .order(ab_order.clone())
+        .order(ad_order.clone())
+        .solution(ab_solution())
+        .solution(ad_solution())
+        .done()
+        .await;
+
+    test.solve().await.ok().orders(&[ab_order, ad_order]);
 }
 
 /// Test that settlements are not merged if the clearing prices don't permit it.

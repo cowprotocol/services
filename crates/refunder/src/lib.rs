@@ -62,7 +62,7 @@ pub async fn run(args: arguments::Arguments) {
         pg_pool,
         web3,
         ethflow_contract,
-        args.min_validity_duration.as_secs() as i64,
+        i64::try_from(args.min_validity_duration.as_secs()).unwrap_or(i64::MAX),
         args.min_slippage_bps,
         refunder_account,
     );

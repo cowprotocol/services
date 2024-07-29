@@ -16,3 +16,6 @@ time = { workspace = true }
 tokio = { workspace = true, features = [] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
+
+[lints]
+workspace = true
