@@ -83,7 +83,7 @@ pub struct ExecutedAmounts {
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
-pub struct Solution {
+pub struct SolutionInclusion {
     pub solver: String,
     pub executed_amounts: Option<ExecutedAmounts>,
 }
@@ -102,12 +102,12 @@ pub enum Status {
     Active,
     /// Some solvers proposed solutions for the orders but did not win the
     /// competition.
-    Solved(Vec<Solution>),
+    Solved(Vec<SolutionInclusion>),
     /// The order was contained in the winning solution which the solver
     /// currently tries to submit onchain.
-    Executing(Vec<Solution>),
+    Executing(Vec<SolutionInclusion>),
     /// The order was successfully executed onchain.
-    Traded(Vec<Solution>),
+    Traded(Vec<SolutionInclusion>),
     /// The user cancelled the order. It will no longer show up in any auctions.
     Cancelled,
 }

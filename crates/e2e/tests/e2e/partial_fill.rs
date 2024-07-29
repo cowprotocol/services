@@ -106,7 +106,7 @@ async fn test(web3: Web3) {
     assert_eq!(latest_competition, competition);
     assert_eq!(
         services.get_order_status(&uid).await.unwrap(),
-        orderbook::dto::order::Status::Traded(vec![orderbook::dto::order::Solution {
+        orderbook::dto::order::Status::Traded(vec![orderbook::dto::order::SolutionInclusion {
             solver: "test_solver".to_string(),
             executed_amounts: Some(orderbook::dto::order::ExecutedAmounts {
                 sell: U256::from(2000166391259569960u128),

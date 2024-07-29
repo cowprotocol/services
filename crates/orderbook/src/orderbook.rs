@@ -438,7 +438,7 @@ impl Orderbook {
                                     buy: *buy_amount,
                                 }),
                             });
-                            dto::order::Solution {
+                            dto::order::SolutionInclusion {
                                 solver: solution.solver,
                                 executed_amounts,
                             }
