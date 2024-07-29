@@ -70,6 +70,7 @@ EthFlow orders get created with the very generic [`ICoWSwapOnchainOrders`](https
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
+- ethflow\_user\_valid\_to: btree(`valid_to`)
 
 ### ethflow\_refunds
 
