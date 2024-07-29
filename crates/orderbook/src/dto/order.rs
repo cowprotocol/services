@@ -80,11 +80,16 @@ pub struct ExecutedAmounts {
     pub buy: U256,
 }
 
+/// Indicates that a solver has provided a solution, with `executed_amounts`
+/// determining whether the solution was provided for the desired order.
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
 pub struct SolutionInclusion {
+    /// The name or identifier of the solver.
     pub solver: String,
+    /// The executed amounts for the order as proposed by the solver, included
+    /// if the solution was for the desired order, or omitted otherwise.
     pub executed_amounts: Option<ExecutedAmounts>,
 }
 
