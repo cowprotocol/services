@@ -213,7 +213,7 @@ impl Trade {
                 .0
                 .checked_mul(self.custom_price.sell)
                 .ok_or(Math::Overflow)?
-                .checked_div(self.custom_price.buy)
+                .checked_ceil_div(&self.custom_price.buy)
                 .ok_or(Math::DivisionByZero)?,
             order::Side::Buy => self.executed.0,
         }
