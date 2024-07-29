@@ -108,7 +108,10 @@ async fn test(web3: Web3) {
         services.get_order_status(&uid).await.unwrap(),
         orderbook::dto::order::Status::Traded(vec![orderbook::dto::order::Solution {
             solver: "test_solver".to_string(),
-            order_included: true
+            executed_amounts: Some(orderbook::dto::order::ExecutedAmounts {
+                sell: U256::from(2000166391259569960u128),
+                buy: U256::from(1662497915624478906u128),
+            })
         }]),
     );
 }

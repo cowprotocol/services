@@ -69,11 +69,23 @@ pub enum FeePolicy {
     },
 }
 
+#[serde_as]
 #[derive(Serialize, PartialEq, Debug, Clone)]
 #[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutedAmounts {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy: U256,
+}
+
+#[derive(Serialize, PartialEq, Debug, Clone)]
+#[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
+#[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub solver: String,
-    pub order_included: bool,
+    pub executed_amounts: Option<ExecutedAmounts>,
 }
 
 #[derive(Serialize, PartialEq, Debug, Clone)]

@@ -21,6 +21,7 @@ use {
             SignedOrderCancellations,
         },
         quote::QuoteId,
+        solver_competition,
         DomainSeparator,
     },
     primitive_types::H160,
@@ -426,15 +427,20 @@ impl Orderbook {
                         .solutions
                         .into_iter()
                         .map(|solution| {
-                            let order_included = solution.orders.iter().any(|o| match o {
-                                model::solver_competition::Order::Colocated { id, .. }
-                                | model::solver_competition::Order::Legacy { id, .. } => {
-                                    id.0 == uid.0
-                                }
+                            let executed_amounts = solution.orders.iter().find_map(|o| match o {
+                                solver_competition::Order::Legacy { .. } => None,
+                                solver_competition::Order::Colocated {
+                                    id,
+                                    sell_amount,
+                                    buy_amount,
+                                } => (id.0 == uid.0).then_some(dto::order::ExecutedAmounts {
+                                    sell: *sell_amount,
+                                    buy: *buy_amount,
+                                }),
                             });
                             dto::order::Solution {
                                 solver: solution.solver,
-                                order_included,
+                                executed_amounts,
                             }
                         })
                         .collect::<Vec<_>>();

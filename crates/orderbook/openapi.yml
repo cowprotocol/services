@@ -1054,6 +1054,16 @@ components:
             The UIDs of the orders included in the auction.
         prices:
           $ref: "#/components/schemas/AuctionPrices"
+    ExecutedAmounts:
+      type: object
+      properties:
+        sell:
+          $ref: "#/components/schemas/BigUint"
+        buy:
+          $ref: "#/components/schemas/BigUint"
+      required:
+        - sell
+        - buy
     CompetitionOrderStatus:
       type: object
       properties:
@@ -1076,9 +1086,10 @@ components:
               solver:
                 type: string
                 description: Name of the solver.
-              orderIncluded:
-                type: boolean
-                description: Whether the order is included in the solution proposed by the solver.
+              executedAmounts:
+                $ref: "#/components/schemas/ExecutedAmounts"
+            required:
+              - solver
       required:
         - type
     AuctionPrices:
