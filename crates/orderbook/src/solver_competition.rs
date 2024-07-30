@@ -2,7 +2,7 @@
 
 use {
     anyhow::Result,
-    database::auction::AuctionId,
+    database::{auction::AuctionId, OrderUid},
     model::solver_competition::SolverCompetitionAPI,
     primitive_types::H256,
     thiserror::Error,
@@ -11,6 +11,7 @@ use {
 pub enum Identifier {
     Id(AuctionId),
     Transaction(H256),
+    OrderUid(OrderUid),
 }
 
 /// Component used for saving and loading past solver competitions.
