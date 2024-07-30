@@ -113,7 +113,9 @@ impl RunLoop {
     async fn single_run(&self, id: domain::auction::Id, auction: &domain::Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(id);
-        Metrics::get().orders.set(auction.orders.len() as _);
+        Metrics::get()
+            .orders
+            .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
         let mut participants = self.competition(id, auction).await;
 

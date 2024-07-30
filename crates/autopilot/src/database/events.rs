@@ -93,8 +93,8 @@ pub async fn replace_events(
 
 pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
     EventIndex {
-        block_number: meta.block_number as i64,
-        log_index: meta.log_index as i64,
+        block_number: i64::try_from(meta.block_number).unwrap_or(i64::MAX),
+        log_index: i64::try_from(meta.log_index).unwrap_or(i64::MAX),
     }
 }
 

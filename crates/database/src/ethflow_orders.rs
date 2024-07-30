@@ -103,7 +103,7 @@ pub async fn insert_refund_tx_hash(
     ex.execute(
         sqlx::query(QUERY)
             .bind(refund.order_uid)
-            .bind(refund.block_number as i64)
+            .bind(i64::try_from(refund.block_number).unwrap_or(i64::MAX))
             .bind(refund.tx_hash),
     )
     .await?;

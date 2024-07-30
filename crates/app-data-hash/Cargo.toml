@@ -8,3 +8,6 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 hex-literal = { workspace = true }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
+
+[lints]
+workspace = true

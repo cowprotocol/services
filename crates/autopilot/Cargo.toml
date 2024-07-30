@@ -64,3 +64,6 @@ web3 = { workspace = true }
 mockall = { workspace = true }
 testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

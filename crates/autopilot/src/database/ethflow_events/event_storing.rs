@@ -71,8 +71,8 @@ impl EventStoring<EthFlowEvent> for Postgres {
         let mut ex = self.pool.begin().await?;
         database::ethflow_orders::delete_refunds(
             &mut ex,
-            *range.start() as i64,
-            *range.end() as i64,
+            i64::try_from(*range.start()).unwrap_or(i64::MAX),
+            i64::try_from(*range.end()).unwrap_or(i64::MAX),
         )
         .await?;
         database::ethflow_orders::insert_refund_tx_hashes(&mut ex, &refunds).await?;
