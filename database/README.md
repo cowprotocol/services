@@ -191,15 +191,16 @@ Indexes:
 
 Quotes that an order was created with. These quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.
 
- Colmun             | Type    | Nullable | Details
---------------------|---------|----------|--------
- order\_uid         | bytea   | not null | order that this quote belongs to
- gas\_amount        | double  | not null | estimated gas used by the quote used to create this order with
- gas\_price         | double  | not null | gas price at the time of order creation
- sell\_token\_price | double  | not null | ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.
- sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
- buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
- solver             | bytea   | not null | public address of the solver that provided this quote
+ Colmun              | Type        | Nullable | Details
+---------------------|-------------|----------|--------
+ order\_uid          | bytea       | not null | order that this quote belongs to
+ gas\_amount         | double      | not null | estimated gas used by the quote used to create this order with
+ gas\_price          | double      | not null | gas price at the time of order creation
+ sell\_token\_price  | double      | not null | ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.
+ sell\_amount        | numeric     | not null | sell\_amount of the quote used to create the order with
+ buy\_amount         | numeric     | not null | buy\_amount of the quote used to create the order with
+ solver              | bytea       | not null | public address of the solver that provided this quote
+ creation\_timestamp | timestamptz | not null | when the original quote was created
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -293,6 +294,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  sell\_amount          | numeric            | not null | amount that should be sold at most
  buy\_token            | bytea              | not null | address of token that should be bought
  buy\_amount           | numeric            | not null | amount that should be bought at least
+ creation\_timestamp   | timestamptz        | not null | when the quote was created
  expiration\_timestamp | timestamptz        | not null | when the quote should no longer be considered valid. Invalid quotes will get deleted shortly
  order\_kind           | [enum](#orderkind) | not null | trade semantics for the quoted order
  gas\_amount           | double             | not null | estimation of gas used to execute the order according to the quote
