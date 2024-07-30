@@ -4,6 +4,7 @@ use {
     chrono::Utc,
     database::{
         byte_array::ByteArray,
+        jit_orders::JitOrder,
         order_events::OrderEventLabel,
         settlement_observations::Observation,
     },
@@ -24,6 +25,7 @@ pub struct AuctionData {
     pub surplus: U256,
     pub fee: U256,
     pub order_executions: Vec<(OrderUid, ExecutedFee)>,
+    pub jit_orders: Vec<JitOrder>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +88,10 @@ impl super::Postgres {
                 )
                 .await
                 .context("save_order_executions")?;
+            }
+
+            for jit_order in auction_data.jit_orders {
+                database::jit_orders::upsert_order(ex, jit_order).await?;
             }
         }
         Ok(())

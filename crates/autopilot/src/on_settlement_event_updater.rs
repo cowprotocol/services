@@ -266,6 +266,7 @@ impl Inner {
             gas_used: tx.gas.into(),
             effective_gas_price: tx.effective_gas_price.into(),
             order_executions,
+            jit_orders: Default::default(), // TOOD: fetch jit orders
         })
     }
 
