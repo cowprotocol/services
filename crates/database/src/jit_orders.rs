@@ -54,7 +54,7 @@ pub async fn upsert_order(ex: &mut PgConnection, jit_order: JitOrder) -> Result<
         receiver,
         signing_scheme,
         sell_token_balance,
-        buy_token_balance,
+        buy_token_balance
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     ON CONFLICT (block_number, log_index) DO UPDATE 
