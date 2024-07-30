@@ -7,6 +7,7 @@ use {
         OrderUid,
         TransactionHash,
     },
+    derivative::Derivative,
     futures::stream::BoxStream,
     sqlx::{
         types::{
@@ -320,7 +321,8 @@ value = $4, data = $5
 }
 
 /// One row in the `order_quotes` table.
-#[derive(Clone, Default, Debug, PartialEq, sqlx::FromRow)]
+#[derive(Clone, Default, Debug, sqlx::FromRow, Derivative)]
+#[derivative(PartialEq)]
 pub struct Quote {
     pub order_uid: OrderUid,
     pub gas_amount: f64,
@@ -329,6 +331,8 @@ pub struct Quote {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub solver: Address,
+    #[derivative(PartialEq = "ignore")]
+    pub creation_timestamp: DateTime<Utc>,
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
@@ -346,9 +350,10 @@ INSERT INTO order_quotes (
     sell_token_price,
     sell_amount,
     buy_amount,
-    solver
+    solver,
+    creation_timestamp,
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#;
 
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
@@ -373,6 +378,7 @@ buy_amount = $6
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
+        .bind(quote.creation_timestamp)
         .execute(ex)
         .await?;
     Ok(())
@@ -387,6 +393,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.solver)
+        .bind(quote.creation_timestamp)
         .execute(ex)
         .await?;
     Ok(())
@@ -1161,6 +1168,7 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            creation_timestamp: Default::default(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1221,6 +1229,7 @@ mod tests {
             sell_amount: 4.into(),
             buy_amount: 5.into(),
             solver: ByteArray([1; 20]),
+            creation_timestamp: Default::default(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)

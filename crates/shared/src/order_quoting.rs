@@ -162,6 +162,7 @@ pub struct QuoteData {
     pub quoted_buy_amount: U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
+    pub creation: DateTime<Utc>,
     pub expiration: DateTime<Utc>,
     /// Since different quote kinds have different expirations,
     /// we need to store the quote kind to prevent missuse of quotes.
@@ -189,6 +190,7 @@ impl TryFrom<QuoteRow> for QuoteData {
                 sell_token_price: row.sell_token_price,
             },
             kind: order_kind_from(row.order_kind),
+            creation: row.creation_timestamp,
             expiration: row.expiration_timestamp,
             quote_kind: row.quote_kind,
             solver: H160(row.solver.0),
@@ -442,6 +444,7 @@ impl OrderQuoter {
             quote_kind,
             solver: trade_estimate.solver,
             verified: trade_estimate.verified,
+            creation: Utc::now(),
         };
 
         Ok(quote)
@@ -768,6 +771,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                creation: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -804,6 +808,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    creation: Default::default(),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -903,6 +908,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                creation: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -939,6 +945,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    creation: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1033,6 +1040,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                creation: Default::default(),
             }))
             .returning(|_| Ok(1337));
 
@@ -1069,6 +1077,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    creation: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1255,6 +1264,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                creation: Default::default(),
             }))
         });
 
@@ -1288,6 +1298,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    creation: Default::default(),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1335,6 +1346,7 @@ mod tests {
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
                 verified: false,
+                creation: Default::default(),
             }))
         });
 
@@ -1368,6 +1380,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    creation: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1416,6 +1429,7 @@ mod tests {
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
                         verified: false,
+                        creation: Default::default(),
                     },
                 )))
             });
@@ -1450,6 +1464,7 @@ mod tests {
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                     verified: false,
+                    creation: Default::default(),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),

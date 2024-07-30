@@ -1,6 +1,7 @@
 use {
     crate::{orders::OrderKind, Address},
     bigdecimal::BigDecimal,
+    derivative::Derivative,
     sqlx::{
         types::chrono::{DateTime, Utc},
         PgConnection,
@@ -20,7 +21,8 @@ pub enum QuoteKind {
 }
 
 /// One row in the `quotes` table.
-#[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
+#[derive(Clone, Debug, sqlx::FromRow, Derivative)]
+#[derivative(PartialEq)]
 pub struct Quote {
     pub id: QuoteId,
     pub sell_token: Address,
@@ -31,6 +33,8 @@ pub struct Quote {
     pub gas_price: f64,
     pub sell_token_price: f64,
     pub order_kind: OrderKind,
+    #[derivative(PartialEq = "ignore")]
+    pub creation_timestamp: DateTime<Utc>,
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
     pub solver: Address,
@@ -49,11 +53,12 @@ INSERT INTO quotes (
     gas_price,
     sell_token_price,
     order_kind,
+    creation_timestamp,
     expiration_timestamp,
     quote_kind,
     solver
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -65,6 +70,7 @@ RETURNING id
         .bind(quote.gas_price)
         .bind(quote.sell_token_price)
         .bind(quote.order_kind)
+        .bind(quote.creation_timestamp)
         .bind(quote.expiration_timestamp)
         .bind(&quote.quote_kind)
         .bind(quote.solver)
@@ -181,6 +187,7 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
+            creation_timestamp: Default::default(),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -214,6 +221,7 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([1; 20]),
+            creation_timestamp: Default::default(),
         };
 
         let token_b = ByteArray([2; 20]);
@@ -230,6 +238,7 @@ mod tests {
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
             solver: ByteArray([2; 20]),
+            creation_timestamp: Default::default(),
         };
 
         // Save two measurements for token_a
@@ -401,6 +410,7 @@ mod tests {
                 expiration_timestamp: now,
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
                 solver: ByteArray([1; 20]),
+                creation_timestamp: Default::default(),
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
