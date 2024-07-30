@@ -281,6 +281,23 @@ impl Persistence {
             surplus_capturing_jit_order_owners,
         })
     }
+
+    /// Checks if the given order is JIT order
+    ///
+    /// Order is considered JIT if it is not present in the database
+    pub async fn is_jit_order(&self, order_uid: &domain::OrderUid) -> Result<bool, Error> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["is_jit_order"])
+            .start_timer();
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        Ok(
+            database::orders::read_order(&mut ex, &ByteArray(order_uid.0))
+                .await
+                .map(|order| order.is_some())
+                .context("read_order")?,
+        )
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

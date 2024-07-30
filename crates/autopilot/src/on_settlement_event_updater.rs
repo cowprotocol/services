@@ -30,7 +30,7 @@
 use {
     crate::{
         database::{
-            on_settlement_event_updater::{AuctionData, SettlementUpdate},
+            on_settlement_event_updater::{AuctionData, JitOrder, SettlementUpdate},
             Postgres,
         },
         decoded_settlement::DecodedSettlement,
@@ -197,10 +197,16 @@ impl Inner {
             )
             .await;
 
-            tracing::info!(
-                "settlement object {:?}",
-                settlement.map(|settlement| (settlement.observation(), settlement.score()))
-            );
+            match &settlement {
+                Ok(settlement) => {
+                    let observation = settlement.observation(&self.persistence).await;
+                    let score = settlement.score();
+                    tracing::info!("settlement object {:?}", (observation, score));
+                }
+                Err(err) => {
+                    tracing::info!("settlement error {}", err);
+                }
+            }
         }
 
         Ok(true)
@@ -232,6 +238,29 @@ impl Inner {
                 .into_iter()
                 .map(|owner| H160(owner.0))
                 .collect::<HashSet<_>>();
+        let mut jit_orders = Vec::new();
+        for trade in &settlement.trades {
+            if self
+                .persistence
+                .is_jit_order(&domain::OrderUid(trade.order_uid.0))
+                .await?
+            {
+                jit_orders.push(JitOrder {
+                    uid: trade.order_uid,
+                    sell_token: todo!(),
+                    buy_token: todo!(),
+                    sell_amount: todo!(),
+                    buy_amount: todo!(),
+                    valid_to: todo!(),
+                    app_data: todo!(),
+                    kind: todo!(),
+                    signature: todo!(),
+                    receiver: todo!(),
+                    sell_token_balance: todo!(),
+                    buy_token_balance: todo!(),
+                });
+            }
+        }
 
         tracing::debug!(
             ?auction_id,
@@ -266,7 +295,7 @@ impl Inner {
             gas_used: tx.gas.into(),
             effective_gas_price: tx.effective_gas_price.into(),
             order_executions,
-            jit_orders: Default::default(), // TOOD: fetch jit orders
+            jit_orders,
         })
     }
 

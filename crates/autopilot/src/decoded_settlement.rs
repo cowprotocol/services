@@ -55,7 +55,7 @@ pub struct DecodedSettlement {
     pub metadata: Option<Bytes<[u8; Self::META_DATA_LEN]>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedTrade {
     pub order_uid: OrderUid,
     pub sell_token_index: U256,
@@ -151,7 +151,7 @@ impl DecodedTrade {
 /// Trade flags are encoded in a 256-bit integer field. For more information on
 /// how flags are encoded see:
 /// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
-#[derive(Debug, PartialEq, Eq, From)]
+#[derive(Debug, Clone, PartialEq, Eq, From)]
 pub struct TradeFlags(pub U256);
 
 impl TradeFlags {

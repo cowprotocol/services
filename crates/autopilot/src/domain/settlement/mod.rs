@@ -8,11 +8,13 @@ use {
 };
 
 mod auction;
+mod jit_order;
 mod observation;
 mod solution;
 mod transaction;
 pub use {
     auction::Auction,
+    jit_order::JitOrder,
     observation::Observation,
     solution::Solution,
     transaction::Transaction,
@@ -52,13 +54,14 @@ impl Settlement {
     }
 
     /// Returns the observation of the settlement.
-    pub fn observation(&self) -> Observation {
+    pub async fn observation(&self, persistence: &infra::Persistence) -> Observation {
         Observation {
             gas: self.transaction.gas,
             gas_price: self.transaction.effective_gas_price,
             surplus: self.solution.native_surplus(&self.auction),
             fee: self.solution.native_fee(&self.auction.prices),
             order_fees: self.solution.fees(),
+            jit_orders: self.solution.jit_orders(persistence).await,
         }
     }
 }

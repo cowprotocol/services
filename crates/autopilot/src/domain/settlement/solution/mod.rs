@@ -13,7 +13,11 @@ use {
 mod tokenized;
 mod trade;
 pub use error::Error;
-use {crate::domain, std::collections::HashMap};
+use {
+    super::JitOrder,
+    crate::{boundary, domain, infra},
+    std::collections::HashMap,
+};
 
 /// A solution that was executed on-chain.
 ///
@@ -93,6 +97,23 @@ impl Solution {
             .collect()
     }
 
+    /// Returns all JIT trades from the solution.
+    pub async fn jit_orders(&self, persistence: &infra::Persistence) -> Vec<JitOrder> {
+        let mut jit_orders = Vec::new();
+        for trade in &self.trades {
+            match persistence.is_jit_order(trade.order_uid()).await {
+                Ok(true) => jit_orders.push(trade.clone().into()),
+                Ok(false) => continue,
+                Err(err) => tracing::warn!(
+                    ?err,
+                    "failed to check if trade is JIT, order {}",
+                    trade.order_uid()
+                ),
+            }
+        }
+        jit_orders
+    }
+
     pub fn new(
         calldata: &eth::Calldata,
         domain_separator: &eth::DomainSeparator,
@@ -130,6 +151,14 @@ impl Solution {
                     amount: trade.4.into(),
                 },
                 flags.side(),
+                trade.2.into(),
+                trade.5,
+                domain::auction::order::AppDataHash(trade.6 .0),
+                flags.sell_token_balance().into(),
+                flags.buy_token_balance().into(),
+                (boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
+                    .map_err(Error::SignatureRecover)?)
+                .into(),
                 trade.9.into(),
                 trade::Prices {
                     uniform: trade::ClearingPrices {
@@ -157,6 +186,8 @@ pub mod error {
         Decoding(#[from] tokenized::error::Decoding),
         #[error("failed to recover order uid {0} for auction {1}")]
         OrderUidRecover(tokenized::error::Uid, auction::Id),
+        #[error("failed to recover signature {0}")]
+        SignatureRecover(#[source] anyhow::Error),
     }
 
     #[derive(Debug, thiserror::Error)]

@@ -1,22 +1,41 @@
 use {
-    crate::{database::order_events::store_order_events, domain::auction},
+    crate::{database::order_events::store_order_events, domain::auction, util::Bytes},
     anyhow::{Context, Result},
     chrono::Utc,
     database::{
         byte_array::ByteArray,
-        jit_orders::JitOrder,
         order_events::OrderEventLabel,
         settlement_observations::Observation,
     },
     ethcontract::U256,
-    model::order::OrderUid,
+    model::{
+        order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
+        signature::Signature,
+    },
     number::conversions::u256_to_big_decimal,
+    primitive_types::H160,
     sqlx::PgConnection,
 };
 
 /// Executed network fee for the gas costs. This fee is solver determined.
 type ExecutedFee = U256;
 pub type AuctionId = i64;
+
+#[derive(Debug, Default, Clone)]
+pub struct JitOrder {
+    pub uid: OrderUid,
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub valid_to: u32,
+    pub app_data: Bytes<[u8; 32]>,
+    pub kind: OrderKind,
+    pub signature: Signature,
+    pub receiver: H160,
+    pub sell_token_balance: SellTokenSource,
+    pub buy_token_balance: BuyTokenDestination,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
@@ -90,8 +109,31 @@ impl super::Postgres {
                 .context("save_order_executions")?;
             }
 
+            let now = Utc::now();
             for jit_order in auction_data.jit_orders {
-                database::jit_orders::upsert_order(ex, jit_order).await?;
+                database::jit_orders::upsert_order(
+                    ex,
+                    database::jit_orders::JitOrder {
+                        block_number: settlement_update.block_number,
+                        log_index: settlement_update.log_index,
+                        uid: database::byte_array::ByteArray(jit_order.uid.0),
+                        owner: database::byte_array::ByteArray(jit_order.uid.parts().1 .0),
+                        creation_timestamp: now,
+                        sell_token: database::byte_array::ByteArray(jit_order.sell_token.0),
+                        buy_token: database::byte_array::ByteArray(jit_order.buy_token.0),
+                        sell_amount: u256_to_big_decimal(&jit_order.sell_amount),
+                        buy_amount: u256_to_big_decimal(&jit_order.buy_amount),
+                        valid_to: todo!(),
+                        app_data: todo!(),
+                        kind: todo!(),
+                        signature: todo!(),
+                        receiver: todo!(),
+                        signing_scheme: todo!(),
+                        sell_token_balance: todo!(),
+                        buy_token_balance: todo!(),
+                    },
+                )
+                .await?;
             }
         }
         Ok(())

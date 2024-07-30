@@ -5,6 +5,7 @@
 //! the state of the settlement to the persistence layer.
 
 use {
+    super::JitOrder,
     crate::domain::{self, eth},
     std::collections::HashMap,
 };
@@ -22,4 +23,6 @@ pub struct Observation {
     /// Per order fees denominated in sell token. Contains all orders from the
     /// settlement
     pub order_fees: HashMap<domain::OrderUid, Option<eth::SellTokenAmount>>,
+    /// Executed JIT orders in the settlement.
+    pub jit_orders: Vec<JitOrder>,
 }

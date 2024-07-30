@@ -150,6 +150,25 @@ pub enum Signature {
     PreSign,
 }
 
+impl Signature {
+    pub fn scheme(&self) -> SigningScheme {
+        match self {
+            Signature::Eip712(_) => SigningScheme::Eip712,
+            Signature::EthSign(_) => SigningScheme::EthSign,
+            Signature::Eip1271(_) => SigningScheme::Eip1271,
+            Signature::PreSign => SigningScheme::PreSign,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SigningScheme {
+    Eip712,
+    EthSign,
+    Eip1271,
+    PreSign,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct EcdsaSignature {
     pub r: H256,
