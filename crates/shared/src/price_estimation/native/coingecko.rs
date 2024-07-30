@@ -55,11 +55,11 @@ impl CoinGecko {
 impl NativePriceEstimating for CoinGecko {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let url = format!(
-                "{}/{}?contract_addresses={token:#x}&vs_currencies=eth",
-                self.base_url, self.chain
-            );
-            let mut builder = self.client.get(&url);
+            let mut url = crate::url::join(&self.base_url, &self.chain);
+            url.query_pairs_mut()
+                .append_pair("contract_addresses", &token.to_string())
+                .append_pair("vs_currencies", "eth");
+            let mut builder = self.client.get(url.clone());
             if let Some(ref api_key) = self.api_key {
                 builder = builder.header(Self::AUTHORIZATION, api_key)
             }
@@ -104,13 +104,15 @@ impl NativePriceEstimating for CoinGecko {
 }
 
 mod observe {
+    use url::Url;
+
     /// Observe a request to be sent to CoinGecko
-    pub fn coingecko_request(endpoint: &str) {
+    pub fn coingecko_request(endpoint: &Url) {
         tracing::trace!(%endpoint, "sending request to CoinGecko");
     }
 
     /// Observe that a response was received from CoinGecko
-    pub fn coingecko_response(endpoint: &str, res: Result<&str, &reqwest::Error>) {
+    pub fn coingecko_response(endpoint: &Url, res: Result<&str, &reqwest::Error>) {
         match res {
             Ok(res) => {
                 tracing::trace!(%endpoint, ?res, "received response from CoinGecko")
