@@ -565,22 +565,6 @@ impl RunLoop {
 
         auction
     }
-
-    fn report_unsettled_orders(auction: &domain::Auction, solutions: &[Participant]) {
-        if solutions.len() < 2 {
-            return;
-        }
-        // Extract the winning settlement
-        let settled = solutions
-            .last()
-            .expect("early return above")
-            .solution
-            .order_ids()
-            .collect::<HashSet<_>>();
-
-        // Check remaining settlements for orders that had
-        solutions[0..solutions.len() - 1].flat_map(|p| p.solution.orders.filters)
-    }
 }
 
 /// Orders settled in the previous auction that might still be in-flight.
