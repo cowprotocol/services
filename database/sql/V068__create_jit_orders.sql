@@ -1,4 +1,4 @@
--- Create a new table based on the structure of the existing table
+-- JIT orders are stored in a separate table which contains data related only to JIT orders.
 CREATE TABLE jit_orders (
     block_number bigint NOT NULL,
     log_index bigint NOT NULL,
