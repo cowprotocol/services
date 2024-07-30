@@ -20,9 +20,10 @@ CREATE TABLE jit_orders (
     signing_scheme SigningScheme NOT NULL,
     --settlement_contract bytea NOT NULL
     sell_token_balance SellTokenSource NOT NULL,
-    buy_token_balance BuyTokenDestination NOT NULL
+    buy_token_balance BuyTokenDestination NOT NULL,
     --full_fee_amount numeric(78,0) NOT NULL
     --class OrderClass NOT NULL
+    UNIQUE (block_number, log_index)
 );
 
 -- Get a specific user's orders.
