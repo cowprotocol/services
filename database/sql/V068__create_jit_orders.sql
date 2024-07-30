@@ -33,3 +33,6 @@ CREATE INDEX jit_order_creation_timestamp ON jit_orders USING BTREE (creation_ti
 -- To optimize the performance of the user_orders query, we introduce a new index that allows
 -- us to quickly get the latest orders from a owner
 CREATE INDEX jit_user_order_creation_timestamp ON jit_orders USING BTREE (owner, creation_timestamp DESC);
+
+-- To optimize deletion of reorged orders
+CREATE INDEX jit_block_number ON jit_orders USING BTREE (block_number);
