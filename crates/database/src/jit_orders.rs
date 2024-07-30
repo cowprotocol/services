@@ -37,7 +37,7 @@ pub struct JitOrder {
 
 pub async fn upsert_order(ex: &mut PgConnection, jit_order: JitOrder) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-    INSERT INTO orders (
+    INSERT INTO jit_orders (
         block_number,
         log_index,
         uid,
