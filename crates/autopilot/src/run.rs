@@ -50,6 +50,7 @@ use {
     },
     tracing::Instrument,
     url::Url,
+    web3::Transport,
 };
 
 pub struct Liveness {

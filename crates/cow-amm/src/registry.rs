@@ -4,7 +4,7 @@ use {
     ethcontract::Address,
     ethrpc::{current_block::CurrentBlockStream, Web3},
     shared::{
-        event_handling::EventHandler,
+        event_handling::{EventHandler, EventStoring},
         maintenance::{Maintaining, ServiceMaintenance},
     },
     std::sync::Arc,
@@ -63,5 +63,23 @@ impl Registry {
             result.extend(cache.cow_amms().await);
         }
         result
+    }
+}
+
+pub struct EmptyAmmsHandler {
+    storage: Arc<RwLock<Vec<Storage>>>,
+    web3: Web3,
+}
+
+impl Maintaining for EmptyAmmsHandler {
+    async fn run_maintenance(&self) -> anyhow::Result<()> {
+        let lock = self.storage.read().await;
+        for storage in &*lock {
+            storage.drop_empty_amms(&self.web3)
+        }
+    }
+
+    fn name(&self) -> &str {
+        "EmptyAmmsHandler"
     }
 }
