@@ -75,8 +75,6 @@ FROM solver_competitions sc
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 JOIN order_execution oe ON oe.auction_id = sc.id
 WHERE oe.order_uid = $1
-ORDER BY oe.auction_id DESC
-LIMIT 1
     ;"#;
     sqlx::query_as(QUERY)
         .bind(order_uid)
