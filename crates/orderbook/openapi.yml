@@ -1588,7 +1588,9 @@ components:
           maximum: 1.0
           exclusiveMaximum: true
         quote:
-          $ref: "#/components/schemas/Quote"
+          description: The best quote received.
+          allOf:
+            - $ref: "#/components/schemas/Quote"
       required:
         - factor
         - maxVolumeFactor
