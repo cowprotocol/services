@@ -3,6 +3,7 @@ use {
     contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper, ERC20},
     ethcontract::{futures::future::join_all, Address},
     ethrpc::{current_block::RangeInclusive, Web3},
+    itertools::Itertools,
     primitive_types::U256,
     shared::event_handling::EventStoring,
     std::{
@@ -37,8 +38,8 @@ impl Storage {
             let lock = self.0.cache.read().await;
             lock.values()
                 .flat_map(|amms| amms.iter().cloned())
-                .???
-                .collect()
+                .unique_by(|amm| *amm.address())
+                .collect::<Vec<_>>()
         };
 
         let futures: Vec<_> = amms_to_check
@@ -48,15 +49,11 @@ impl Storage {
                 let tokens = amm.traded_tokens();
                 async move {
                     for token in tokens {
-                        match ERC20::at(web3, token.clone())
-                            .balance_of(address.clone())
-                            .call()
-                            .await
-                        {
+                        match ERC20::at(web3, *token).balance_of(*address).call().await {
                             Ok(balance) => return (balance == U256::zero()).then_some(*address),
                             Err(err) => {
                                 tracing::warn!(
-                                    ?address,
+                                    amm = ?address,
                                     ?token,
                                     ?err,
                                     "failed to check AMM token balance"

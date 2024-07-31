@@ -1,10 +1,10 @@
 use {
-    crate::{cache::Storage, factory::Factory, Amm},
+    crate::{cache::Storage, factory::Factory, maintainers::AmmTokenBalanceMaintainer, Amm},
     contracts::CowAmmLegacyHelper,
     ethcontract::Address,
     ethrpc::{current_block::CurrentBlockStream, Web3},
     shared::{
-        event_handling::{EventHandler, EventStoring},
+        event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
     },
     std::sync::Arc,
@@ -48,8 +48,13 @@ impl Registry {
             address: factory,
         };
         let event_handler = EventHandler::new(Arc::new(self.web3.clone()), indexer, storage, None);
-        let event_handler: Vec<Arc<dyn Maintaining>> = vec![Arc::new(Mutex::new(event_handler))];
-        let service_maintainer = ServiceMaintenance::new(event_handler);
+        let token_balance_maintainer =
+            AmmTokenBalanceMaintainer::new(self.storage.clone(), self.web3.clone());
+        let maintainers: Vec<Arc<dyn Maintaining>> = vec![
+            Arc::new(Mutex::new(event_handler)),
+            Arc::new(token_balance_maintainer),
+        ];
+        let service_maintainer = ServiceMaintenance::new(maintainers);
         tokio::task::spawn(
             service_maintainer.run_maintenance_on_new_block(self.current_block_stream.clone()),
         );
@@ -63,23 +68,5 @@ impl Registry {
             result.extend(cache.cow_amms().await);
         }
         result
-    }
-}
-
-pub struct EmptyAmmsHandler {
-    storage: Arc<RwLock<Vec<Storage>>>,
-    web3: Web3,
-}
-
-impl Maintaining for EmptyAmmsHandler {
-    async fn run_maintenance(&self) -> anyhow::Result<()> {
-        let lock = self.storage.read().await;
-        for storage in &*lock {
-            storage.drop_empty_amms(&self.web3)
-        }
-    }
-
-    fn name(&self) -> &str {
-        "EmptyAmmsHandler"
     }
 }
