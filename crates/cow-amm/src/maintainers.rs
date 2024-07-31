@@ -7,19 +7,19 @@ use {
     tokio::sync::RwLock,
 };
 
-pub struct AmmTokenBalanceMaintainer {
+pub struct EmptyPoolRemoval {
     storage: Arc<RwLock<Vec<Storage>>>,
     web3: Web3,
 }
 
-impl AmmTokenBalanceMaintainer {
+impl EmptyPoolRemoval {
     pub fn new(storage: Arc<RwLock<Vec<Storage>>>, web3: Web3) -> Self {
         Self { storage, web3 }
     }
 }
 
 #[async_trait::async_trait]
-impl Maintaining for AmmTokenBalanceMaintainer {
+impl Maintaining for EmptyPoolRemoval {
     async fn run_maintenance(&self) -> anyhow::Result<()> {
         let lock = self.storage.read().await;
         let futures: Vec<_> = lock

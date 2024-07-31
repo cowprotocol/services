@@ -1,5 +1,5 @@
 use {
-    crate::{cache::Storage, factory::Factory, maintainers::AmmTokenBalanceMaintainer, Amm},
+    crate::{cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval, Amm},
     contracts::CowAmmLegacyHelper,
     ethcontract::Address,
     ethrpc::{current_block::CurrentBlockStream, Web3},
@@ -50,7 +50,7 @@ impl Registry {
         };
         let event_handler = EventHandler::new(Arc::new(self.web3.clone()), indexer, storage, None);
         let token_balance_maintainer =
-            AmmTokenBalanceMaintainer::new(self.storage.clone(), self.web3.clone());
+            EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
         let maintainers: Vec<Arc<dyn Maintaining>> = vec![
             Arc::new(Mutex::new(event_handler)),
             Arc::new(token_balance_maintainer),
