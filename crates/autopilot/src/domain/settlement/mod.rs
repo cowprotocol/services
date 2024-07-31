@@ -37,6 +37,17 @@ impl Settlement {
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
+
+        if persistence
+            .auction_has_settlement(solution.auction_id())
+            .await?
+        {
+            // This settlement has already been processed by another environment.
+            //
+            // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
+            return Err(Error::WrongEnvironment);
+        }
+
         let auction = persistence.get_auction(solution.auction_id()).await?;
 
         Ok(Self {
@@ -67,6 +78,10 @@ impl Settlement {
 pub enum Error {
     #[error(transparent)]
     Solution(#[from] solution::Error),
+    #[error("settlement refers to an auction from a different environment")]
+    WrongEnvironment,
+    #[error("connection to the persistence layer failed: {0}")]
+    PersistenceConnection(#[from] infra::persistence::Error),
     #[error(transparent)]
     Auction(#[from] infra::persistence::error::Auction),
 }
