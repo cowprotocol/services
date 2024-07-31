@@ -3,6 +3,7 @@ use {
         domain,
         domain::{auction, eth},
     },
+    derive_more::Display,
     std::collections::HashMap,
 };
 
@@ -68,7 +69,7 @@ pub struct TradedAmounts {
     pub buy: eth::TokenAmount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Display)]
 pub struct Score(eth::Ether);
 
 impl Score {

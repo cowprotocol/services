@@ -297,14 +297,14 @@ impl Persistence {
         })
     }
 
-    /// Get competition data.
-    pub async fn get_competition(
+    /// Get competition winner.
+    pub async fn get_winner(
         &self,
         auction_id: domain::auction::Id,
-    ) -> Result<domain::competition::Competition, error::Competition> {
+    ) -> Result<(eth::Address, competition::Score, eth::BlockNo), error::Winner> {
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["get_competition"])
+            .with_label_values(&["get_winner"])
             .start_timer();
 
         let mut ex = self
@@ -313,33 +313,29 @@ impl Persistence {
             .begin()
             .await
             .context("begin")
-            .map_err(error::Competition::DbError)?;
+            .map_err(error::Winner::DbError)?;
 
         let (winner, score, deadline) = {
             let scores = database::settlement_scores::fetch(&mut ex, auction_id)
                 .await
                 .context("fetch scores")
-                .map_err(error::Competition::DbError)?
-                .ok_or(error::Competition::Missing)?;
+                .map_err(error::Winner::DbError)?
+                .ok_or(error::Winner::Missing)?;
             (
                 H160(scores.winner.0).into(),
                 competition::Score::new(
                     big_decimal_to_u256(&scores.winning_score)
-                        .ok_or(error::Competition::InvalidScore(anyhow::anyhow!(
+                        .ok_or(error::Winner::InvalidScore(anyhow::anyhow!(
                             "database score"
                         )))?
                         .into(),
                 )
-                .map_err(|_| error::Competition::InvalidScore(anyhow::anyhow!("zero score")))?,
+                .map_err(|_| error::Winner::InvalidScore(anyhow::anyhow!("zero score")))?,
                 (scores.block_deadline as u64).into(),
             )
         };
 
-        Ok(domain::competition::Competition {
-            winner,
-            score,
-            deadline,
-        })
+        Ok((winner, score, deadline))
     }
 }
 
@@ -378,10 +374,10 @@ pub mod error {
     }
 
     #[derive(Debug, thiserror::Error)]
-    pub enum Competition {
+    pub enum Winner {
         #[error("failed to read data from database: {0}")]
         DbError(#[source] anyhow::Error),
-        #[error("competition data not found")]
+        #[error("winner competition data not found")]
         Missing,
         #[error("failed to fetch score: {0}")]
         InvalidScore(anyhow::Error),

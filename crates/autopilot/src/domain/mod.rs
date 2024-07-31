@@ -11,7 +11,6 @@ pub use {
         Auction,
         AuctionWithId,
     },
-    competition::Competition,
     fee::ProtocolFees,
     quote::Quote,
 };

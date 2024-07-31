@@ -2,7 +2,9 @@ use derive_more::{Display, From, Into};
 pub use primitive_types::{H160, H256, U256};
 
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,
+)]
 pub struct Address(pub H160);
 
 /// Block number.
@@ -168,7 +170,7 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into, Display)]
 pub struct Ether(pub U256);
 
 impl std::ops::Add for Ether {

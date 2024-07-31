@@ -4,7 +4,7 @@
 
 use {
     super::competition,
-    crate::{domain, domain::eth, infra},
+    crate::{domain::eth, infra},
 };
 
 mod auction;
@@ -28,7 +28,6 @@ pub struct Settlement {
     solution: Solution,
     transaction: Transaction,
     auction: Auction,
-    competition: domain::Competition,
 }
 
 impl Settlement {
@@ -50,19 +49,36 @@ impl Settlement {
         }
 
         let auction = persistence.get_auction(solution.auction_id()).await?;
-        let competition = persistence.get_competition(solution.auction_id()).await?;
+        let (winner, winner_score, deadline) =
+            persistence.get_winner(solution.auction_id()).await?;
+
+        if transaction.solver != winner {
+            return Err(Error::WinnerMismatch {
+                expected: winner,
+                got: transaction.solver,
+            });
+        }
+
+        let score = solution.score(&auction)?;
+        if score != winner_score {
+            return Err(Error::ScoreMismatch {
+                expected: winner_score,
+                got: score,
+            });
+        }
+
+        if transaction.block >= deadline {
+            tracing::warn!(
+                "Settlement for auction {} was submitted after the deadline",
+                solution.auction_id()
+            );
+        }
 
         Ok(Self {
             solution,
             transaction,
-            competition,
             auction,
         })
-    }
-
-    /// CIP38 score calculation
-    pub fn score(&self) -> Result<competition::Score, solution::error::Score> {
-        self.solution.score(&self.auction)
     }
 
     /// Returns the observation of the settlement.
@@ -83,11 +99,22 @@ pub enum Error {
     Solution(#[from] solution::Error),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
-    #[error("connection to the persistence layer failed: {0}")]
+    #[error(transparent)]
     PersistenceConnection(#[from] infra::persistence::Error),
-    // TODO: Merge Auction and Competition errors into a single error type
     #[error(transparent)]
     Auction(#[from] infra::persistence::error::Auction),
     #[error(transparent)]
-    Competition(#[from] infra::persistence::error::Competition),
+    Winner(#[from] infra::persistence::error::Winner),
+    #[error("winner mismatch: expected {expected}, got {got}")]
+    WinnerMismatch {
+        expected: eth::Address,
+        got: eth::Address,
+    },
+    #[error("score mismatch: expected {expected}, got {got}")]
+    ScoreMismatch {
+        expected: competition::Score,
+        got: competition::Score,
+    },
+    #[error(transparent)]
+    Score(#[from] solution::error::Score),
 }

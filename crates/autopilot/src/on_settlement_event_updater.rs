@@ -199,7 +199,7 @@ impl Inner {
 
             tracing::info!(
                 "settlement object {:?}",
-                settlement.map(|settlement| (settlement.observation(), settlement.score()))
+                settlement.map(|settlement| (settlement.observation()))
             );
         }
 
