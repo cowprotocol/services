@@ -160,6 +160,29 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
+    /// Checks if an auction already has an accociated settlement.
+    ///
+    /// This function is used to detect processing of a staging settlement on
+    /// production and vice versa, because staging and production environments
+    /// don't have a disjunctive sets of auction ids.
+    pub async fn auction_has_settlement(
+        &self,
+        auction_id: domain::auction::Id,
+    ) -> Result<bool, Error> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["auction_has_settlement"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+
+        Ok(
+            database::settlements::already_processed(&mut ex, auction_id)
+                .await
+                .context("fetch already_processed")?,
+        )
+    }
+
     /// Get auction data.
     pub async fn get_auction(
         &self,
@@ -346,10 +369,10 @@ pub mod error {
     pub enum Auction {
         #[error("failed to read data from database: {0}")]
         DbError(#[source] anyhow::Error),
-        #[error("failed dto conversion from database: {0} for order: {1}")]
-        FeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error("auction data not found in the database")]
         Missing,
+        #[error("failed dto conversion from database: {0} for order: {1}")]
+        FeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error(transparent)]
         Price(#[from] domain::auction::InvalidPrice),
     }
