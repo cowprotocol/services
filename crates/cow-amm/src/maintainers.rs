@@ -31,6 +31,6 @@ impl Maintaining for AmmTokenBalanceMaintainer {
     }
 
     fn name(&self) -> &str {
-        "AmmTokenBalanceHandler"
+        "AmmTokenBalanceMaintainer"
     }
 }

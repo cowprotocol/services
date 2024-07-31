@@ -68,6 +68,7 @@ impl Storage {
             .collect();
 
         let empty_amms: HashSet<Address> = join_all(futures).await.into_iter().flatten().collect();
+        tracing::debug!(amms = ?empty_amms, "removing AMMs with 0 token balance");
         let mut lock = self.0.cache.write().await;
         for (_, amms) in lock.iter_mut() {
             amms.retain(|amm| !empty_amms.contains(amm.address()))
