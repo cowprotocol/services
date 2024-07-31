@@ -38,6 +38,9 @@ pub const DEFAULT_POOL_AMOUNT_D: u64 = 6000;
 /// The order amount for orders selling token "A" for "B".
 pub const AB_ORDER_AMOUNT: u64 = 50;
 
+/// The order amount for orders selling token "A" for "D".
+pub const AD_ORDER_AMOUNT: u64 = 48;
+
 /// The order amount for orders selling token "C" for "D".
 pub const CD_ORDER_AMOUNT: u64 = 40;
 
