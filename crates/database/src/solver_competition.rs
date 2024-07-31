@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, OrderUid, TransactionHash},
+    crate::{auction::AuctionId, TransactionHash},
     sqlx::{types::JsonValue, PgConnection},
 };
 
@@ -62,24 +62,6 @@ JOIN settlements s ON sc.id = s.auction_id
 WHERE s.tx_hash = $1
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
-}
-
-pub async fn load_by_order_uid(
-    ex: &mut PgConnection,
-    order_uid: OrderUid,
-) -> Result<Option<LoadCompetition>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT sc.json, sc.id, s.tx_hash
-FROM solver_competitions sc
--- outer joins because the data might not have been indexed yet
-LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
-JOIN order_execution oe ON oe.auction_id = sc.id
-WHERE oe.order_uid = $1
-    ;"#;
-    sqlx::query_as(QUERY)
-        .bind(order_uid)
-        .fetch_optional(ex)
-        .await
 }
 
 #[cfg(test)]
@@ -158,36 +140,5 @@ mod tests {
         // By id also sees the hash now.
         let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
         assert_eq!(hash, value_by_id.tx_hash.unwrap());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_by_order_uid() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let id: i64 = 5;
-        let value = JsonValue::Bool(true);
-        save(&mut db, id, &value).await.unwrap();
-
-        let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
-        assert_eq!(value, value_by_id.json);
-        let order_uid = ByteArray([1; 56]);
-        assert!(load_by_order_uid(&mut db, order_uid)
-            .await
-            .unwrap()
-            .is_none());
-
-        crate::order_execution::save(&mut db, &order_uid, id, 0, &Default::default())
-            .await
-            .unwrap();
-
-        let competition = load_by_order_uid(&mut db, order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(id, competition.id);
-        assert_eq!(value, competition.json);
     }
 }

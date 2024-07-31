@@ -54,18 +54,6 @@ impl SolverCompetitionStoring for Postgres {
                     .context("solver_competition::load_by_tx_hash")?
                     .map(|row| deserialize_solver_competition(row.json, row.id, Some(hash)))
             }
-            Identifier::OrderUid(order_uid) => {
-                database::solver_competition::load_by_order_uid(&mut ex, order_uid)
-                    .await
-                    .context("solver_competition::load_by_order_uid")?
-                    .map(|row| {
-                        deserialize_solver_competition(
-                            row.json,
-                            row.id,
-                            row.tx_hash.map(|hash| H256(hash.0)),
-                        )
-                    })
-            }
         }
         .ok_or(LoadSolverCompetitionError::NotFound)?
     }
@@ -105,19 +93,6 @@ mod tests {
 
         let result = db
             .load_competition(Identifier::Transaction(Default::default()))
-            .await
-            .unwrap_err();
-        assert!(matches!(result, LoadSolverCompetitionError::NotFound));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn not_found_order() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let result = db
-            .load_competition(Identifier::OrderUid(Default::default()))
             .await
             .unwrap_err();
         assert!(matches!(result, LoadSolverCompetitionError::NotFound));

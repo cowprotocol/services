@@ -2,12 +2,12 @@ use {
     crate::{
         database::orders::{InsertionError, OrderStoring},
         dto,
-        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+        solver_competition::{LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     chrono::Utc,
-    database::{byte_array::ByteArray, order_events::OrderEventLabel},
+    database::order_events::OrderEventLabel,
     ethcontract::H256,
     model::{
         order::{
@@ -412,18 +412,14 @@ impl Orderbook {
             None => Ok(None),
             Some(event) => {
                 let fetch_solutions = || async move {
-                    let competition = match self
-                        .database
-                        .load_competition(Identifier::OrderUid(ByteArray(uid.0)))
-                        .await
-                    {
+                    let competition = match self.database.load_latest_competition().await {
                         Ok(competition) => competition.common,
                         Err(LoadSolverCompetitionError::NotFound) => {
-                            tracing::warn!(order_uid = ?uid, "no competition exists for the order");
+                            tracing::warn!("no latest competition exists");
                             return Ok(Vec::new());
                         }
                         Err(err) => {
-                            tracing::error!(?err, "could not load competition");
+                            tracing::error!(?err, "could not load latest competition");
                             return Ok(Vec::new());
                         }
                     };
