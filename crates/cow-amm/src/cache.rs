@@ -17,12 +17,13 @@ use {
 pub(crate) struct Storage(Arc<Inner>);
 
 impl Storage {
-    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper) -> Self {
+    pub(crate) fn new(deployment_block: u64, helper: CowAmmLegacyHelper, web3: Web3) -> Self {
         Self(Arc::new(Inner {
             cache: Default::default(),
             // make sure to start 1 block **before** the deployment to get all the events
             start_of_index: deployment_block - 1,
             helper,
+            web3,
         }))
     }
 
@@ -85,6 +86,7 @@ struct Inner {
     start_of_index: u64,
     /// Helper contract to query required data from the cow amm.
     helper: CowAmmLegacyHelper,
+    web3: Web3,
 }
 
 #[async_trait::async_trait]
@@ -124,10 +126,31 @@ impl EventStoring<CowAmmEvent> for Storage {
             let CowAmmEvent::CowammpoolCreated(cow_amm) = event.data;
             let cow_amm = cow_amm.amm;
 
+            let amm = Amm::new(cow_amm, &self.0.helper).await?;
+            let futures: Vec<_> = amm
+                .traded_tokens()
+                .iter()
+                .map(|token| {
+                    let web3 = self.0.web3.clone();
+                    async move {
+                        match ERC20::at(&web3, *token).balance_of(cow_amm).call().await {
+                            Ok(balance) if balance == U256::zero() => {
+                                Err(anyhow::anyhow!(format!("AMM token {} balance is 0", token)))
+                            }
+                            _ => Ok(()),
+                        }
+                    }
+                })
+                .collect();
+            join_all(futures)
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+
             cache
                 .entry(meta.block_number)
                 .or_default()
-                .push(Arc::new(Amm::new(cow_amm, &self.0.helper).await?));
+                .push(Arc::new(amm));
             tracing::info!(?cow_amm, "indexed new cow amm");
         }
         Ok(())

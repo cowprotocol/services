@@ -40,6 +40,7 @@ impl Registry {
         let storage = Storage::new(
             deployment_block,
             CowAmmLegacyHelper::at(&self.web3, helper_contract),
+            self.web3.clone(),
         );
         self.storage.write().await.push(storage.clone());
 
