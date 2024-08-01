@@ -310,10 +310,16 @@ impl RunLoop {
                 }
             }
             let solution_uids = solution.order_ids().copied().collect::<HashSet<_>>();
+            let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
+
             let unsettled_orders: HashSet<_> = solutions
                 .iter()
+                // Report orders that were part of any solution candidate
                 .flat_map(|p| p.solution.order_ids())
+                // but not part of the winning one
                 .filter(|uid| !solution_uids.contains(uid))
+                // yet still part of the auction (filter out jit orders)
+                .filter(|uid| auction_uids.contains(uid))
                 .collect();
             Metrics::matched_unsettled(driver, unsettled_orders);
         }
