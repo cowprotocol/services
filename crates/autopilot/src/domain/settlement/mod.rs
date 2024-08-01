@@ -28,10 +28,6 @@ pub struct Settlement {
 }
 
 impl Settlement {
-    pub fn auction_id(&self) -> domain::auction::Id {
-        self.solution.auction_id()
-    }
-
     pub async fn new(
         transaction: Transaction,
         domain_separator: &eth::DomainSeparator,
@@ -55,14 +51,14 @@ impl Settlement {
             .await
             .map_err(Error::from)?;
 
-        let competition_winner = persistence
-            .get_competition_winner(solution.auction_id())
+        let winning_solution = persistence
+            .get_winning_solution(solution.auction_id())
             .await
             .map_err(Error::from)?;
 
-        if transaction.solver != competition_winner.solver() {
-            return Err(Error::WinnerMismatch {
-                expected: competition_winner.solver(),
+        if transaction.solver != winning_solution.solver() {
+            return Err(Error::SolverMismatch {
+                expected: winning_solution.solver(),
                 got: transaction.solver,
             });
         }
@@ -76,18 +72,21 @@ impl Settlement {
                     score
                 );
 
-                if score < competition_winner.score() {
+                if score < winning_solution.score() {
                     tracing::warn!(
-                        "Settlement for auction {} has lower score {} than the competition winner \
-                         {}",
+                        "Settlement for auction {} has lower score {} than the winning solution {}",
                         solution.auction_id(),
                         score,
-                        competition_winner.score()
+                        winning_solution.score()
                     );
                 }
             }
             Err(err) => {
-                tracing::warn!(?err, "failed to calculate score for settlement");
+                tracing::warn!(
+                    ?err,
+                    "Settlement for auction {} failed to calculate score",
+                    solution.auction_id()
+                );
             }
         }
 
@@ -113,58 +112,87 @@ impl Settlement {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed communication with the database: {0}")]
-    DatabaseError(sqlx::Error),
-    #[error(transparent)]
-    Solution(#[from] solution::Error),
+    BadCommunication(sqlx::Error),
+    #[error("failed to prepare the data fetched from database for domain: {0}")]
+    BadPersistenceData(BadPersistenceData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
-    #[error("auction not found in the database")]
-    MissingAuction,
-    #[error("failed to get fee policy from database: {0} for order: {1}")]
-    FeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
-    #[error("failed to get price from database for token: {0}")]
-    Price(eth::TokenAddress),
-    #[error("winner mismatch: expected competition winner {expected}, settlement solver {got}")]
-    WinnerMismatch {
+    #[error(transparent)]
+    BuildingSolution(#[from] solution::Error),
+    #[error(transparent)]
+    BuildingScore(#[from] solution::error::Score),
+    #[error("solver mismatch: expected competition solver {expected}, settlement solver {got}")]
+    SolverMismatch {
         expected: eth::Address,
         got: eth::Address,
     },
-    #[error("failed to get score from database for a coresponding competition solution, err: {0}")]
+}
+
+/// Errors that can occur when fetching data from the persistence layer.
+///
+/// These errors cover missing data, conversion of data into domain objects etc.
+///
+/// This is a separate enum to allow for more specific error handling.
+#[derive(Debug, thiserror::Error)]
+pub enum BadPersistenceData {
+    #[error("auction not found in the persistence layer")]
+    AuctionNotFound,
+    #[error("proposed solution not found in the persistence layer")]
+    SolutionNotFound,
+    #[error("invalid fee policy fetched from persistence layer: {0} for order: {1}")]
+    InvalidFeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
+    #[error("invalid fetched price from persistence layer for token: {0}")]
+    InvalidPricce(eth::TokenAddress),
+    #[error(
+        "invalid score fetched from persistence layer for a coresponding competition solution, \
+         err: {0}"
+    )]
     InvalidScore(anyhow::Error),
-    #[error(transparent)]
-    Score(#[from] solution::error::Score),
-    #[error("failed to get competition data from database {0}")]
-    SolverCompetition(anyhow::Error),
+    #[error("invalid solver competition data fetched from persistence layer: {0}")]
+    InvalidSolverCompetition(anyhow::Error),
 }
 
 impl From<infra::persistence::error::Auction> for Error {
     fn from(err: infra::persistence::error::Auction) -> Self {
         match err {
-            infra::persistence::error::Auction::DatabaseError(err) => Self::DatabaseError(err),
-            infra::persistence::error::Auction::Missing => Self::MissingAuction,
-            infra::persistence::error::Auction::FeePolicy(err, order) => {
-                Self::FeePolicy(err, order)
+            infra::persistence::error::Auction::BadCommunication(err) => {
+                Self::BadCommunication(err)
             }
-            infra::persistence::error::Auction::Price(token) => Self::Price(token),
+            infra::persistence::error::Auction::NotFound => {
+                Self::BadPersistenceData(BadPersistenceData::AuctionNotFound)
+            }
+            infra::persistence::error::Auction::InvalidFeePolicy(err, order) => {
+                Self::BadPersistenceData(BadPersistenceData::InvalidFeePolicy(err, order))
+            }
+            infra::persistence::error::Auction::InvalidPrice(token) => {
+                Self::BadPersistenceData(BadPersistenceData::InvalidPricce(token))
+            }
         }
     }
 }
 
-impl From<infra::persistence::error::Winner> for Error {
-    fn from(err: infra::persistence::error::Winner) -> Self {
+impl From<infra::persistence::error::Solution> for Error {
+    fn from(err: infra::persistence::error::Solution) -> Self {
         match err {
-            infra::persistence::error::Winner::DatabaseError(err) => Self::DatabaseError(err),
-            infra::persistence::error::Winner::Missing => Self::MissingAuction,
-            infra::persistence::error::Winner::InvalidScore(err) => Self::InvalidScore(err),
-            infra::persistence::error::Winner::SolverCompetition(err) => {
-                Self::SolverCompetition(err)
+            infra::persistence::error::Solution::BadCommunication(err) => {
+                Self::BadCommunication(err)
             }
+            infra::persistence::error::Solution::NotFound => {
+                Self::BadPersistenceData(BadPersistenceData::SolutionNotFound)
+            }
+            infra::persistence::error::Solution::InvalidScore(err) => {
+                Self::BadPersistenceData(BadPersistenceData::InvalidScore(err))
+            }
+            infra::persistence::error::Solution::InvalidSolverCompetition(err) => {
+                Self::BadPersistenceData(BadPersistenceData::InvalidSolverCompetition(err))
+            }
+            infra::persistence::error::Solution::InvalidPrice(_) => todo!(),
         }
     }
 }
 
 impl From<infra::persistence::DatabaseError> for Error {
     fn from(err: infra::persistence::DatabaseError) -> Self {
-        Self::DatabaseError(err.0)
+        Self::BadCommunication(err.0)
     }
 }
