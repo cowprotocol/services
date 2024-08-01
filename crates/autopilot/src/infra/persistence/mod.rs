@@ -304,24 +304,21 @@ impl Persistence {
             .await
             .map_err(error::Winner::DatabaseError)?;
 
-        let (winner, score, deadline) = {
-            let scores = database::settlement_scores::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Winner::DatabaseError)?
-                .ok_or(error::Winner::Missing)?;
-            (
-                H160(scores.winner.0).into(),
-                competition::Score::new(
-                    big_decimal_to_u256(&scores.winning_score)
-                        .ok_or(error::Winner::InvalidScore(anyhow::anyhow!(
-                            "database score"
-                        )))?
-                        .into(),
-                )
-                .map_err(|_| error::Winner::InvalidScore(anyhow::anyhow!("zero score")))?,
-                (scores.block_deadline as u64).into(),
-            )
-        };
+        let competition = database::settlement_scores::fetch(&mut ex, auction_id)
+            .await
+            .map_err(error::Winner::DatabaseError)?
+            .ok_or(error::Winner::Missing)?;
+
+        let winner = H160(competition.winner.0).into();
+        let score = competition::Score::new(
+            big_decimal_to_u256(&competition.winning_score)
+                .ok_or(error::Winner::InvalidScore(anyhow::anyhow!(
+                    "database score"
+                )))?
+                .into(),
+        )
+        .map_err(|_| error::Winner::InvalidScore(anyhow::anyhow!("zero score")))?;
+        let deadline = (competition.block_deadline as u64).into();
 
         Ok((winner, score, deadline))
     }
