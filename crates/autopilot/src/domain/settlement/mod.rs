@@ -4,7 +4,7 @@
 
 use {
     super::competition,
-    crate::{domain::eth, infra},
+    crate::{domain, domain::eth, infra},
 };
 
 mod auction;
@@ -31,6 +31,10 @@ pub struct Settlement {
 }
 
 impl Settlement {
+    pub fn auction_id(&self) -> domain::auction::Id {
+        self.solution.auction_id()
+    }
+
     pub async fn new(
         transaction: Transaction,
         domain_separator: &eth::DomainSeparator,
@@ -40,7 +44,8 @@ impl Settlement {
 
         if persistence
             .auction_has_settlement(solution.auction_id())
-            .await?
+            .await
+            .map_err(Error::from)?
         {
             // This settlement has already been processed by another environment.
             //
@@ -48,9 +53,15 @@ impl Settlement {
             return Err(Error::WrongEnvironment);
         }
 
-        let auction = persistence.get_auction(solution.auction_id()).await?;
-        let (winner, winner_score, deadline) =
-            persistence.get_winner(solution.auction_id()).await?;
+        let auction = persistence
+            .get_auction(solution.auction_id())
+            .await
+            .map_err(Error::from)?;
+
+        let (winner, winner_score, deadline) = persistence
+            .get_winner(solution.auction_id())
+            .await
+            .map_err(Error::from)?;
 
         if transaction.solver != winner {
             return Err(Error::WinnerMismatch {
@@ -95,26 +106,59 @@ impl Settlement {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("failed communication with the database: {0}")]
+    DatabaseError(sqlx::Error),
     #[error(transparent)]
     Solution(#[from] solution::Error),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
-    #[error(transparent)]
-    PersistenceConnection(#[from] infra::persistence::Error),
-    #[error(transparent)]
-    Auction(#[from] infra::persistence::error::Auction),
-    #[error(transparent)]
-    Winner(#[from] infra::persistence::error::Winner),
-    #[error("winner mismatch: expected {expected}, got {got}")]
+    #[error("auction not found in the database")]
+    MissingAuction,
+    #[error("failed to get fee policy from database: {0} for order: {1}")]
+    FeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
+    #[error("failed to get price from database for token: {0}")]
+    Price(eth::TokenAddress),
+    #[error("winner mismatch: expected competition winner {expected}, settlement solver {got}")]
     WinnerMismatch {
         expected: eth::Address,
         got: eth::Address,
     },
-    #[error("score mismatch: expected {expected}, got {got}")]
+    #[error("failed to get score from database for a coresponding competition solution, err: {0}")]
+    InvalidScore(anyhow::Error),
+    #[error(transparent)]
+    Score(#[from] solution::error::Score),
+    #[error("score mismatch: expected competition score {expected}, settlement score {got}")]
     ScoreMismatch {
         expected: competition::Score,
         got: competition::Score,
     },
-    #[error(transparent)]
-    Score(#[from] solution::error::Score),
+}
+
+impl From<infra::persistence::error::Auction> for Error {
+    fn from(err: infra::persistence::error::Auction) -> Self {
+        match err {
+            infra::persistence::error::Auction::DatabaseError(err) => Self::DatabaseError(err),
+            infra::persistence::error::Auction::Missing => Self::MissingAuction,
+            infra::persistence::error::Auction::FeePolicy(err, order) => {
+                Self::FeePolicy(err, order)
+            }
+            infra::persistence::error::Auction::Price(token) => Self::Price(token),
+        }
+    }
+}
+
+impl From<infra::persistence::error::Winner> for Error {
+    fn from(err: infra::persistence::error::Winner) -> Self {
+        match err {
+            infra::persistence::error::Winner::DatabaseError(err) => Self::DatabaseError(err),
+            infra::persistence::error::Winner::Missing => Self::MissingAuction,
+            infra::persistence::error::Winner::InvalidScore(err) => Self::InvalidScore(err),
+        }
+    }
+}
+
+impl From<infra::persistence::DatabaseError> for Error {
+    fn from(err: infra::persistence::DatabaseError) -> Self {
+        Self::DatabaseError(err.0)
+    }
 }

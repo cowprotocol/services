@@ -18,7 +18,7 @@ pub struct TxId(pub H256);
 /// An ERC20 token address.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display)]
 pub struct TokenAddress(pub H160);
 
 /// An ERC20 token amount.

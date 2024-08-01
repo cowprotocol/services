@@ -168,19 +168,14 @@ impl Persistence {
     pub async fn auction_has_settlement(
         &self,
         auction_id: domain::auction::Id,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["auction_has_settlement"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
-
-        Ok(
-            database::settlements::already_processed(&mut ex, auction_id)
-                .await
-                .context("fetch already_processed")?,
-        )
+        let mut ex = self.postgres.pool.begin().await?;
+        Ok(database::settlements::already_processed(&mut ex, auction_id).await?)
     }
 
     /// Get auction data.
@@ -198,14 +193,12 @@ impl Persistence {
             .pool
             .begin()
             .await
-            .context("begin")
-            .map_err(error::Auction::DbError)?;
+            .map_err(error::Auction::DatabaseError)?;
 
         let surplus_capturing_jit_order_owners =
             database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch surplus capturing jit order owners")
-                .map_err(error::Auction::DbError)?
+                .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::Missing)?
                 .into_iter()
                 .map(|owner| eth::H160(owner.0).into())
@@ -213,15 +206,14 @@ impl Persistence {
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
             .await
-            .context("fetch auction prices")
-            .map_err(error::Auction::DbError)?
+            .map_err(error::Auction::DatabaseError)?
             .into_iter()
             .map(|price| {
                 let token = eth::H160(price.token.0).into();
                 let price = big_decimal_to_u256(&price.price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::new(p.into()))
-                    .map_err(error::Auction::Price);
+                    .map_err(|_err| error::Auction::Price(token));
                 price.map(|price| (token, price))
             })
             .collect::<Result<_, _>>()?;
@@ -230,8 +222,7 @@ impl Persistence {
             // get all orders from a competition auction
             let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch auction orders")
-                .map_err(error::Auction::DbError)?
+                .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::Missing)?
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
@@ -247,8 +238,7 @@ impl Persistence {
                     .as_slice(),
             )
             .await
-            .context("fetch fee policies")
-            .map_err(error::Auction::DbError)?
+            .map_err(error::Auction::DatabaseError)?
             .into_iter()
             .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
             .collect::<HashMap<_, _>>();
@@ -268,7 +258,7 @@ impl Persistence {
                         .then_some(order_uid)
                 }))
                 .await
-                .map_err(error::Auction::DbError)?;
+                .map_err(error::Auction::DatabaseError)?;
 
             // compile order data
             let mut orders = HashMap::new();
@@ -312,14 +302,12 @@ impl Persistence {
             .pool
             .begin()
             .await
-            .context("begin")
-            .map_err(error::Winner::DbError)?;
+            .map_err(error::Winner::DatabaseError)?;
 
         let (winner, score, deadline) = {
             let scores = database::settlement_scores::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch scores")
-                .map_err(error::Winner::DbError)?
+                .map_err(error::Winner::DatabaseError)?
                 .ok_or(error::Winner::Missing)?;
             (
                 H160(scores.winner.0).into(),
@@ -354,29 +342,33 @@ impl Metrics {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("failed to read data from database")]
+    #[error("failed communication with the database")]
     DbError(#[from] anyhow::Error),
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("failed communication with the database")]
+pub struct DatabaseError(#[from] pub sqlx::Error);
 
 pub mod error {
     use super::*;
 
     #[derive(Debug, thiserror::Error)]
     pub enum Auction {
-        #[error("failed to read data from database: {0}")]
-        DbError(#[source] anyhow::Error),
+        #[error("failed communication with the database: {0}")]
+        DatabaseError(#[from] sqlx::Error),
         #[error("auction data not found in the database")]
         Missing,
         #[error("failed dto conversion from database: {0} for order: {1}")]
         FeePolicy(dto::fee_policy::Error, domain::OrderUid),
-        #[error(transparent)]
-        Price(#[from] domain::auction::InvalidPrice),
+        #[error("failed to fetch price for token: {0}")]
+        Price(eth::TokenAddress),
     }
 
     #[derive(Debug, thiserror::Error)]
     pub enum Winner {
-        #[error("failed to read data from database: {0}")]
-        DbError(#[source] anyhow::Error),
+        #[error("failed communication with the database: {0}")]
+        DatabaseError(#[from] sqlx::Error),
         #[error("winner competition data not found")]
         Missing,
         #[error("failed to fetch score: {0}")]
