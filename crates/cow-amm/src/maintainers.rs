@@ -62,18 +62,20 @@ impl Maintaining for EmptyPoolRemoval {
             });
 
         let empty_amms: HashSet<Address> = join_all(futures).await.into_iter().flatten().collect();
-        tracing::debug!(amms = ?empty_amms, "removing AMMs with zero token balance");
-        let lock = self.storage.read().await;
-        join_all(
-            lock.iter()
-                .map(|storage| async { storage.remove_amms(&empty_amms).await }),
-        )
-        .await;
+        if !empty_amms.is_empty() {
+            tracing::debug!(amms = ?empty_amms, "removing AMMs with zero token balance");
+            let lock = self.storage.read().await;
+            join_all(
+                lock.iter()
+                    .map(|storage| async { storage.remove_amms(&empty_amms).await }),
+            )
+            .await;
+        }
 
         Ok(())
     }
 
     fn name(&self) -> &str {
-        "AmmTokenBalanceMaintainer"
+        "EmptyPoolRemoval"
     }
 }
