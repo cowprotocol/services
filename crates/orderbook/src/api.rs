@@ -14,6 +14,7 @@ mod get_app_data;
 mod get_auction;
 mod get_native_price;
 mod get_order_by_uid;
+mod get_order_status;
 mod get_orders_by_tx;
 mod get_solver_competition;
 mod get_total_surplus;
@@ -43,6 +44,10 @@ pub fn handle_all_routes(
         (
             "v1/get_order",
             box_filter(get_order_by_uid::get_order_by_uid(orderbook.clone())),
+        ),
+        (
+            "v1/get_order_status",
+            box_filter(get_order_status::get_status(orderbook.clone())),
         ),
         (
             "v1/get_trades",

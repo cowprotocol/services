@@ -75,6 +75,7 @@ pub trait OrderStoring: Send + Sync {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
+    async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
 }
 
 pub struct SolvableOrders {
@@ -355,6 +356,18 @@ impl OrderStoring for Postgres {
         })
         .try_collect()
         .await
+    }
+
+    async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>> {
+        let mut ex = self.pool.begin().await.context("could not init tx")?;
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["latest_order_event"])
+            .start_timer();
+
+        database::order_events::get_latest(&mut ex, &ByteArray(order_uid.0))
+            .await
+            .context("order_events::get_latest")
     }
 }
 
