@@ -532,7 +532,7 @@ async fn cow_amm_driver_support(web3: Web3) {
     .unwrap();
 
     // all tokens traded by the cow amms
-    tracing::error!("Waiting for all relevant native prices to be indexed.");
+    tracing::info!("Waiting for all relevant native prices to be indexed.");
     let expected_prices = [
         // missing due to insufficient liquidity in e2e test (we only index univ2)
         // addr!("808507121B80c02388fAd14726482e061B8da827"), // PENDLE
