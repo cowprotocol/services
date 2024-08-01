@@ -2,10 +2,7 @@
 //!
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
-use {
-    super::competition,
-    crate::{domain, domain::eth, infra},
-};
+use crate::{domain, domain::eth, infra};
 
 mod auction;
 mod observation;
@@ -70,12 +67,20 @@ impl Settlement {
             });
         }
 
-        let score = solution.score(&auction)?;
-        if score != winner_score {
-            return Err(Error::ScoreMismatch {
-                expected: winner_score,
-                got: score,
-            });
+        match solution.score(&auction) {
+            Ok(score) if score != winner_score => {
+                tracing::warn!(
+                    "Settlement for auction {} has a different score {} than the competition \
+                     winner {}",
+                    solution.auction_id(),
+                    score,
+                    winner_score
+                );
+            }
+            Err(err) => {
+                tracing::warn!(?err, "failed to calculate score for settlement");
+            }
+            _ => {}
         }
 
         if transaction.block >= deadline {
@@ -127,11 +132,6 @@ pub enum Error {
     InvalidScore(anyhow::Error),
     #[error(transparent)]
     Score(#[from] solution::error::Score),
-    #[error("score mismatch: expected competition score {expected}, settlement score {got}")]
-    ScoreMismatch {
-        expected: competition::Score,
-        got: competition::Score,
-    },
 }
 
 impl From<infra::persistence::error::Auction> for Error {
