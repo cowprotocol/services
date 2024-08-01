@@ -1,13 +1,10 @@
 use {
-    crate::cache::Storage,
+    crate::{cache::Storage, Amm},
     contracts::ERC20,
     ethcontract::{errors::MethodError, futures::future::join_all, Address},
     ethrpc::Web3,
     shared::maintenance::Maintaining,
-    std::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::HashSet, sync::Arc},
     tokio::sync::RwLock,
 };
 
@@ -38,22 +35,18 @@ impl EmptyPoolRemoval {
 #[async_trait::async_trait]
 impl Maintaining for EmptyPoolRemoval {
     async fn run_maintenance(&self) -> anyhow::Result<()> {
-        let mut amms_to_check = HashMap::<Address, HashSet<Address>>::new();
+        let mut amms_to_check = Vec::<Arc<Amm>>::new();
         {
             let lock = self.storage.read().await;
             for storage in lock.iter() {
-                for amm in storage.cow_amms().await {
-                    amms_to_check
-                        .entry(*amm.address())
-                        .or_default()
-                        .extend(amm.traded_tokens())
-                }
+                amms_to_check.extend(storage.cow_amms().await);
             }
         }
-        let futures = amms_to_check.into_iter().flat_map(|(amm_address, tokens)| {
-            tokens.into_iter().map(move |token| async move {
-                match self.check_balance(token, amm_address).await {
-                    Ok(is_empty) => is_empty.then_some(amm_address),
+        let futures = amms_to_check.iter().flat_map(|amm| {
+            let amm_address = amm.address();
+            amm.traded_tokens().iter().map(move |token| async move {
+                match self.check_balance(*token, *amm_address).await {
+                    Ok(is_empty) => is_empty.then_some(*amm_address),
                     Err(err) => {
                         tracing::warn!(
                             amm = ?amm_address,
