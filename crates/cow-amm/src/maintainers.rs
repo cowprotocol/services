@@ -39,7 +39,7 @@ impl EmptyPoolRemoval {
                 }
             }
         });
-        !join_all(futures).await.into_iter().any(|is_empty| is_empty)
+        join_all(futures).await.into_iter().any(|is_empty| is_empty)
     }
 }
 
