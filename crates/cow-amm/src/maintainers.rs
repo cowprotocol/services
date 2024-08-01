@@ -1,9 +1,8 @@
 use {
     crate::cache::Storage,
     contracts::ERC20,
-    ethcontract::{futures::future::join_all, Address},
+    ethcontract::{errors::MethodError, futures::future::join_all, Address},
     ethrpc::Web3,
-    primitive_types::U256,
     shared::maintenance::Maintaining,
     std::{
         collections::{HashMap, HashSet},
@@ -20,6 +19,19 @@ pub struct EmptyPoolRemoval {
 impl EmptyPoolRemoval {
     pub fn new(storage: Arc<RwLock<Vec<Storage>>>, web3: Web3) -> Self {
         Self { storage, web3 }
+    }
+
+    /// Checks if the given AMM has a zero balance of the specified token.
+    async fn check_single(
+        &self,
+        token: Address,
+        amm_address: Address,
+    ) -> Result<bool, MethodError> {
+        ERC20::at(&self.web3, token)
+            .balance_of(amm_address)
+            .call()
+            .await
+            .map(|balance| balance.is_zero())
     }
 }
 
@@ -40,12 +52,8 @@ impl Maintaining for EmptyPoolRemoval {
         }
         let futures = amms_to_check.into_iter().flat_map(|(amm_address, tokens)| {
             tokens.into_iter().map(move |token| async move {
-                match ERC20::at(&self.web3, token)
-                    .balance_of(amm_address)
-                    .call()
-                    .await
-                {
-                    Ok(balance) => (balance == U256::zero()).then_some(amm_address),
+                match self.check_single(token, amm_address).await {
+                    Ok(is_empty) => is_empty.then_some(amm_address),
                     Err(err) => {
                         tracing::warn!(
                             amm = ?amm_address,
