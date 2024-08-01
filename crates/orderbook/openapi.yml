@@ -1583,6 +1583,23 @@ components:
           items:
             $ref: "#/components/schemas/CallData"
           description: The call data to be used for the interaction.
+    Quote:
+      description: |
+        A calculated order quote.
+      type: object
+      properties:
+        sellAmount:
+          description: The amount of the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: The amount of the buy token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        fee:
+          description: The amount that needs to be paid, denominated in the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
     Surplus:
       description: The protocol fee is taken as a percent of the surplus.
       type: object
@@ -1625,9 +1642,14 @@ components:
           minimum: 0.0
           maximum: 1.0
           exclusiveMaximum: true
+        quote:
+          description: The best quote received.
+          allOf:
+            - $ref: "#/components/schemas/Quote"
       required:
         - factor
         - maxVolumeFactor
+        - quote
     FeePolicy:
       description: Defines the ways to calculate the protocol fee.
       oneOf:

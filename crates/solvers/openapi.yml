@@ -400,6 +400,8 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         buy_amount:
           $ref: "#/components/schemas/TokenAmount"
+        fee:
+          $ref: "#/components/schemas/TokenAmount"
     TokenReserve:
       description: |
         A reserve of tokens in an on-chain liquidity pool.
