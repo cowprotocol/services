@@ -93,21 +93,17 @@ impl EventStoring<CowAmmEvent> for Storage {
             let cow_amm = cow_amm.amm;
 
             let amm = Amm::new(cow_amm, &self.0.helper).await?;
-            let futures: Vec<_> = amm
-                .traded_tokens()
-                .iter()
-                .map(|token| {
-                    let web3 = self.0.web3.clone();
-                    async move {
-                        match ERC20::at(&web3, *token).balance_of(cow_amm).call().await {
-                            Ok(balance) if balance == U256::zero() => {
-                                Err(anyhow::anyhow!(format!("AMM token {} balance is 0", token)))
-                            }
-                            _ => Ok(()),
+            let futures = amm.traded_tokens().iter().map(|token| {
+                let web3 = self.0.web3.clone();
+                async move {
+                    match ERC20::at(&web3, *token).balance_of(cow_amm).call().await {
+                        Ok(balance) if balance == U256::zero() => {
+                            Err(anyhow::anyhow!(format!("AMM token {} balance is 0", token)))
                         }
+                        _ => Ok(()),
                     }
-                })
-                .collect();
+                }
+            });
             join_all(futures)
                 .await
                 .into_iter()
