@@ -429,12 +429,21 @@ async fn cow_amm_driver_support(web3: Web3) {
         .await
         .unwrap();
     let pendle_token = ERC20::at(&web3, addr!("808507121b80c02388fad14726482e061b8da827"));
-    let balance = pendle_token.balance_of(zero_balance_amm).call().await.unwrap();
+    let balance = pendle_token
+        .balance_of(zero_balance_amm)
+        .call()
+        .await
+        .unwrap();
     tx!(
         zero_balance_amm_account,
         pendle_token.transfer(addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"), balance)
     );
-    assert!(pendle_token.balance_of(zero_balance_amm).call().await.unwrap().is_zero());
+    assert!(pendle_token
+        .balance_of(zero_balance_amm)
+        .call()
+        .await
+        .unwrap()
+        .is_zero());
 
     // spawn a mock solver so we can later assert things about the received auction
     let mock_solver = Mock::default();
