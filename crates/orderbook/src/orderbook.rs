@@ -2,10 +2,12 @@ use {
     crate::{
         database::orders::{InsertionError, OrderStoring},
         dto,
+        solver_competition::{LoadSolverCompetitionError, SolverCompetitionStoring},
     },
     anyhow::{Context, Result},
     app_data::{AppDataHash, Validator},
     chrono::Utc,
+    database::order_events::OrderEventLabel,
     ethcontract::H256,
     model::{
         order::{
@@ -19,6 +21,7 @@ use {
             SignedOrderCancellations,
         },
         quote::QuoteId,
+        solver_competition,
         DomainSeparator,
     },
     primitive_types::H160,
@@ -402,6 +405,66 @@ impl Orderbook {
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
+    }
+
+    pub async fn get_order_status(&self, uid: &OrderUid) -> Result<Option<dto::order::Status>> {
+        match self.database.latest_order_event(uid).await? {
+            None => Ok(None),
+            Some(event) => {
+                let fetch_solutions = || async move {
+                    let competition = match self.database.load_latest_competition().await {
+                        Ok(competition) => competition.common,
+                        Err(LoadSolverCompetitionError::NotFound) => {
+                            tracing::warn!("no latest competition exists");
+                            return Ok(Vec::new());
+                        }
+                        Err(err) => {
+                            tracing::error!(?err, "could not load latest competition");
+                            return Ok(Vec::new());
+                        }
+                    };
+                    let solutions = competition
+                        .solutions
+                        .into_iter()
+                        .map(|solution| {
+                            let executed_amounts = solution.orders.iter().find_map(|o| match o {
+                                solver_competition::Order::Legacy { .. } => None,
+                                solver_competition::Order::Colocated {
+                                    id,
+                                    sell_amount,
+                                    buy_amount,
+                                } => (id.0 == uid.0).then_some(dto::order::ExecutedAmounts {
+                                    sell: *sell_amount,
+                                    buy: *buy_amount,
+                                }),
+                            });
+                            dto::order::SolutionInclusion {
+                                solver: solution.solver,
+                                executed_amounts,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
+                    Ok::<Vec<_>, anyhow::Error>(solutions)
+                };
+                let status = match event.label {
+                    OrderEventLabel::Ready => dto::order::Status::Active,
+                    OrderEventLabel::Created => dto::order::Status::Scheduled,
+                    OrderEventLabel::Considered => {
+                        dto::order::Status::Solved(fetch_solutions().await?)
+                    }
+                    OrderEventLabel::Executing => {
+                        dto::order::Status::Executing(fetch_solutions().await?)
+                    }
+                    OrderEventLabel::Traded => dto::order::Status::Traded(fetch_solutions().await?),
+                    OrderEventLabel::Cancelled => dto::order::Status::Cancelled,
+                    OrderEventLabel::Filtered => dto::order::Status::Open,
+                    OrderEventLabel::Invalid => dto::order::Status::Open,
+                };
+
+                Ok(Some(status))
+            }
+        }
     }
 }
 

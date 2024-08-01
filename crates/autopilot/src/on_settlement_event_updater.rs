@@ -312,19 +312,19 @@ impl Inner {
                 );
                 Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
             }
+            (Some(_), true) => {
+                tracing::warn!(
+                    auction_id,
+                    "settlement data already recorded for this auction"
+                );
+                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
+            }
             (Some(score), _) if score.winner.0 != tx_from.0 => {
                 tracing::warn!(
                     auction_id,
                     ?tx_from,
                     winner = ?score.winner,
                     "solution submitted by solver other than the winner"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), true) => {
-                tracing::warn!(
-                    auction_id,
-                    "settlement data already recorded for this auction"
                 );
                 Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
             }

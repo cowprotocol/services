@@ -57,7 +57,7 @@ impl NativePriceEstimating for CoinGecko {
         async move {
             let mut url = crate::url::join(&self.base_url, &self.chain);
             url.query_pairs_mut()
-                .append_pair("contract_addresses", &token.to_string())
+                .append_pair("contract_addresses", &format!("{:#x}", token))
                 .append_pair("vs_currencies", "eth");
             let mut builder = self.client.get(url.clone());
             if let Some(ref api_key) = self.api_key {
