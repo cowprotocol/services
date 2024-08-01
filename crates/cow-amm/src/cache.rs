@@ -4,10 +4,7 @@ use {
     ethcontract::Address,
     ethrpc::current_block::RangeInclusive,
     shared::event_handling::EventStoring,
-    std::{
-        collections::{BTreeMap, HashSet},
-        sync::Arc,
-    },
+    std::{collections::BTreeMap, sync::Arc},
     tokio::sync::RwLock,
 };
 
@@ -31,7 +28,7 @@ impl Storage {
             .collect()
     }
 
-    pub(crate) async fn remove_amms(&self, amm_addresses: &HashSet<Address>) {
+    pub(crate) async fn remove_amms(&self, amm_addresses: &[Address]) {
         let mut lock = self.0.cache.write().await;
         for (_, amms) in lock.iter_mut() {
             amms.retain(|amm| !amm_addresses.contains(amm.address()))

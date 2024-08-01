@@ -4,7 +4,7 @@ use {
     ethcontract::{errors::MethodError, futures::future::join_all, Address},
     ethrpc::Web3,
     shared::maintenance::Maintaining,
-    std::{collections::HashSet, sync::Arc},
+    std::sync::Arc,
     tokio::sync::RwLock,
 };
 
@@ -60,7 +60,7 @@ impl Maintaining for EmptyPoolRemoval {
             })
         });
 
-        let empty_amms: HashSet<Address> = join_all(futures).await.into_iter().flatten().collect();
+        let empty_amms: Vec<_> = join_all(futures).await.into_iter().flatten().collect();
         if !empty_amms.is_empty() {
             tracing::debug!(amms = ?empty_amms, "removing AMMs with zero token balance");
             let lock = self.storage.read().await;
