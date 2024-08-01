@@ -38,28 +38,26 @@ impl Maintaining for EmptyPoolRemoval {
                 }
             }
         }
-        let futures = amms_to_check
-            .into_iter()
-            .map(|(amm_address, tokens)| async move {
-                for token in tokens {
-                    match ERC20::at(&self.web3, token)
-                        .balance_of(amm_address)
-                        .call()
-                        .await
-                    {
-                        Ok(balance) => return (balance == U256::zero()).then_some(amm_address),
-                        Err(err) => {
-                            tracing::warn!(
-                                amm = ?amm_address,
-                                ?token,
-                                ?err,
-                                "failed to check AMM token balance"
-                            );
-                        }
+        let futures = amms_to_check.into_iter().flat_map(|(amm_address, tokens)| {
+            tokens.into_iter().map(move |token| async move {
+                match ERC20::at(&self.web3, token)
+                    .balance_of(amm_address)
+                    .call()
+                    .await
+                {
+                    Ok(balance) => (balance == U256::zero()).then_some(amm_address),
+                    Err(err) => {
+                        tracing::warn!(
+                            amm = ?amm_address,
+                            ?token,
+                            ?err,
+                            "failed to check AMM token balance"
+                        );
+                        None
                     }
                 }
-                None
-            });
+            })
+        });
 
         let empty_amms: HashSet<Address> = join_all(futures).await.into_iter().flatten().collect();
         if !empty_amms.is_empty() {
