@@ -288,13 +288,13 @@ impl Persistence {
     }
 
     /// Get competition winner.
-    pub async fn get_winner(
+    pub async fn get_competition_winner(
         &self,
         auction_id: domain::auction::Id,
-    ) -> Result<(eth::Address, competition::Score, eth::BlockNo), error::Winner> {
+    ) -> Result<domain::competition::Solution, error::Winner> {
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["get_winner"])
+            .with_label_values(&["get_competition_winner"])
             .start_timer();
 
         let mut ex = self
@@ -318,9 +318,60 @@ impl Persistence {
                 .into(),
         )
         .map_err(|_| error::Winner::InvalidScore(anyhow::anyhow!("zero score")))?;
-        let deadline = (competition.block_deadline as u64).into();
 
-        Ok((winner, score, deadline))
+        let solution = {
+            // TODO: stabilize the solver competition table to get promised solution.
+            let solver_competition = database::solver_competition::load_by_id(&mut ex, auction_id)
+                .await
+                .map_err(error::Winner::DatabaseError)?
+                .ok_or(error::Winner::Missing)?;
+            let competition: model::solver_competition::SolverCompetitionDB =
+                serde_json::from_value(solver_competition.json)
+                    .context("deserialize SolverCompetitionDB")
+                    .map_err(error::Winner::SolverCompetition)?;
+            let winning_solution = competition.solutions.last().ok_or(error::Winner::Missing)?;
+            let mut orders = HashMap::new();
+            for order in winning_solution.orders.iter() {
+                match order {
+                    model::solver_competition::Order::Colocated {
+                        id,
+                        sell_amount,
+                        buy_amount,
+                    } => {
+                        orders.insert(
+                            domain::OrderUid(id.0),
+                            competition::TradedAmounts {
+                                sell: (*sell_amount).into(),
+                                buy: (*buy_amount).into(),
+                            },
+                        );
+                    }
+                    model::solver_competition::Order::Legacy {
+                        id: _,
+                        executed_amount: _,
+                    } => {
+                        return Err(error::Winner::SolverCompetition(anyhow::anyhow!(
+                            "Legacy order"
+                        )))
+                    }
+                }
+            }
+            let mut prices = HashMap::new();
+            for (token, price) in winning_solution.clearing_prices.clone().into_iter() {
+                prices.insert(
+                    token.into(),
+                    domain::auction::Price::new(price.into()).map_err(|_| {
+                        error::Winner::SolverCompetition(anyhow::anyhow!(
+                            "invalid token price for token {}",
+                            token
+                        ))
+                    })?,
+                );
+            }
+            competition::Solution::new(winner, score, orders, prices)
+        };
+
+        Ok(solution)
     }
 }
 
@@ -370,5 +421,7 @@ pub mod error {
         Missing,
         #[error("failed to fetch score: {0}")]
         InvalidScore(anyhow::Error),
+        #[error("failed to fetch solver competition data from database: {0}")]
+        SolverCompetition(anyhow::Error),
     }
 }

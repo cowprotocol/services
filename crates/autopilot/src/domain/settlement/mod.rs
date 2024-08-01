@@ -55,39 +55,40 @@ impl Settlement {
             .await
             .map_err(Error::from)?;
 
-        let (winner, winner_score, deadline) = persistence
-            .get_winner(solution.auction_id())
+        let competition_winner = persistence
+            .get_competition_winner(solution.auction_id())
             .await
             .map_err(Error::from)?;
 
-        if transaction.solver != winner {
+        if transaction.solver != competition_winner.solver() {
             return Err(Error::WinnerMismatch {
-                expected: winner,
+                expected: competition_winner.solver(),
                 got: transaction.solver,
             });
         }
 
+        // only debugging for now
         match solution.score(&auction) {
-            Ok(score) if score != winner_score => {
-                tracing::warn!(
-                    "Settlement for auction {} has a different score {} than the competition \
-                     winner {}",
+            Ok(score) => {
+                tracing::debug!(
+                    "Settlement for auction {} has score {}",
                     solution.auction_id(),
-                    score,
-                    winner_score
+                    score
                 );
+
+                if score < competition_winner.score() {
+                    tracing::warn!(
+                        "Settlement for auction {} has lower score {} than the competition winner \
+                         {}",
+                        solution.auction_id(),
+                        score,
+                        competition_winner.score()
+                    );
+                }
             }
             Err(err) => {
                 tracing::warn!(?err, "failed to calculate score for settlement");
             }
-            _ => {}
-        }
-
-        if transaction.block >= deadline {
-            tracing::warn!(
-                "Settlement for auction {} was submitted after the deadline",
-                solution.auction_id()
-            );
         }
 
         Ok(Self {
@@ -132,6 +133,8 @@ pub enum Error {
     InvalidScore(anyhow::Error),
     #[error(transparent)]
     Score(#[from] solution::error::Score),
+    #[error("failed to get competition data from database {0}")]
+    SolverCompetition(anyhow::Error),
 }
 
 impl From<infra::persistence::error::Auction> for Error {
@@ -153,6 +156,9 @@ impl From<infra::persistence::error::Winner> for Error {
             infra::persistence::error::Winner::DatabaseError(err) => Self::DatabaseError(err),
             infra::persistence::error::Winner::Missing => Self::MissingAuction,
             infra::persistence::error::Winner::InvalidScore(err) => Self::InvalidScore(err),
+            infra::persistence::error::Winner::SolverCompetition(err) => {
+                Self::SolverCompetition(err)
+            }
         }
     }
 }
