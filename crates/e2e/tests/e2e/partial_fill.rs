@@ -42,7 +42,7 @@ async fn test(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(onchain.contracts()).await;
-    services.start_protocol(solver).await;
+    services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
@@ -104,4 +104,15 @@ async fn test(web3: Web3) {
     assert!(competition.common.auction.orders.contains(&uid));
     let latest_competition = services.get_latest_solver_competition().await.unwrap();
     assert_eq!(latest_competition, competition);
+    assert!(matches!(
+        services.get_order_status(&uid).await.unwrap(),
+        orderbook::dto::order::Status::Traded(ref solutions)
+        if solutions.len() == 1 && matches!(
+            &solutions[0],
+            orderbook::dto::order::SolutionInclusion {
+                solver: ref s,
+                executed_amounts: Some(_),
+            } if s == "test_solver"
+        )
+    ));
 }

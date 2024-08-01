@@ -68,3 +68,6 @@ vergen = { version = "8", features = ["git", "gitcl"] }
 
 [lints]
 workspace = true
+
+[features]
+e2e = []
