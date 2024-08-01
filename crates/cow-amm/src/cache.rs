@@ -1,9 +1,8 @@
 use {
     crate::Amm,
-    contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper, ERC20},
-    ethcontract::{futures::future::join_all, Address},
-    ethrpc::{current_block::RangeInclusive, Web3},
-    primitive_types::U256,
+    contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper},
+    ethcontract::Address,
+    ethrpc::current_block::RangeInclusive,
     shared::event_handling::EventStoring,
     std::{
         collections::{BTreeMap, HashSet},
