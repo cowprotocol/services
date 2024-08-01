@@ -8,7 +8,6 @@ use {
     },
     anyhow::Result,
     contracts::{IUniswapLikePair, ERC20},
-    delay_map::HashSetDelay,
     ethcontract::{errors::MethodError, BlockId, H160, U256},
     futures::{
         future::{self, BoxFuture},
@@ -16,7 +15,8 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{collections::HashSet, sync::RwLock, time::Duration},
+    std::{collections::HashSet, sync::RwLock, time::Duration, usize},
+    ttl_cache::TtlCache,
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -187,7 +187,8 @@ impl BaselineSolvable for Pool {
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
-    pub non_existent_pools: RwLock<HashSetDelay<TokenPair>>,
+    pub cache_time: Duration,
+    pub non_existent_pools: RwLock<TtlCache<TokenPair, ()>>,
 }
 
 impl<Reader> PoolFetcher<Reader> {
@@ -195,7 +196,8 @@ impl<Reader> PoolFetcher<Reader> {
         Self {
             pool_reader: reader,
             web3,
-            non_existent_pools: RwLock::new(HashSetDelay::new(cache_time)),
+            cache_time,
+            non_existent_pools: RwLock::new(TtlCache::new(usize::MAX)),
         }
     }
 }
@@ -231,7 +233,7 @@ where
             tracing::debug!(token_pairs = ?new_missing_pairs, "stop indexing liquidity");
             let mut non_existent_pools = self.non_existent_pools.write().unwrap();
             for pair in new_missing_pairs {
-                non_existent_pools.insert(pair);
+                non_existent_pools.insert(pair, (), self.cache_time);
             }
         }
         Ok(pools)
