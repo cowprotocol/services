@@ -22,7 +22,7 @@ impl EmptyPoolRemoval {
     }
 
     /// Checks if the given AMM has a zero balance of the specified token.
-    async fn check_single(
+    async fn check_balance(
         &self,
         token: Address,
         amm_address: Address,
@@ -52,7 +52,7 @@ impl Maintaining for EmptyPoolRemoval {
         }
         let futures = amms_to_check.into_iter().flat_map(|(amm_address, tokens)| {
             tokens.into_iter().map(move |token| async move {
-                match self.check_single(token, amm_address).await {
+                match self.check_balance(token, amm_address).await {
                     Ok(is_empty) => is_empty.then_some(amm_address),
                     Err(err) => {
                         tracing::warn!(
