@@ -81,7 +81,7 @@ impl ProtocolFees {
     pub fn apply(
         &self,
         order: boundary::Order,
-        quote: &domain::Quote,
+        quote: Option<domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> domain::Order {
         let partner_fee = order
@@ -114,6 +114,15 @@ impl ProtocolFees {
             buy: order.data.buy_amount,
             fee: order.data.fee_amount,
         };
+
+        // In case there is no quote, we assume the limit price is accurate
+        let quote = quote.unwrap_or(domain::Quote {
+            order_uid: order.metadata.uid.into(),
+            sell_amount: order.data.sell_amount.into(),
+            buy_amount: order.data.buy_amount.into(),
+            fee: order.data.fee_amount.into(),
+        });
+
         let quote_ = boundary::Amounts {
             sell: quote.sell_amount.into(),
             buy: quote.buy_amount.into(),
@@ -121,9 +130,9 @@ impl ProtocolFees {
         };
 
         if self.enable_protocol_fees {
-            self.apply_multiple_policies(order, quote, order_, quote_, partner_fee)
+            self.apply_multiple_policies(order, &quote, order_, quote_, partner_fee)
         } else {
-            self.apply_single_policy(order, quote, order_, quote_, partner_fee)
+            self.apply_single_policy(order, &quote, order_, quote_, partner_fee)
         }
     }
 
