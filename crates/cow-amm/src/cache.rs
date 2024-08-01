@@ -3,7 +3,6 @@ use {
     contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper, ERC20},
     ethcontract::{futures::future::join_all, Address},
     ethrpc::{current_block::RangeInclusive, Web3},
-    itertools::Itertools,
     primitive_types::U256,
     shared::event_handling::EventStoring,
     std::{
@@ -34,44 +33,10 @@ impl Storage {
             .collect()
     }
 
-    pub(crate) async fn drop_empty_amms(&self, web3: &Web3) {
-        let amms_to_check = {
-            let lock = self.0.cache.read().await;
-            lock.values()
-                .flat_map(|amms| amms.iter().cloned())
-                .unique_by(|amm| *amm.address())
-                .collect::<Vec<_>>()
-        };
-
-        let futures: Vec<_> = amms_to_check
-            .iter()
-            .map(|amm| {
-                let address = amm.address();
-                let tokens = amm.traded_tokens();
-                async move {
-                    for token in tokens {
-                        match ERC20::at(web3, *token).balance_of(*address).call().await {
-                            Ok(balance) => return (balance == U256::zero()).then_some(*address),
-                            Err(err) => {
-                                tracing::warn!(
-                                    amm = ?address,
-                                    ?token,
-                                    ?err,
-                                    "failed to check AMM token balance"
-                                );
-                            }
-                        }
-                    }
-                    None
-                }
-            })
-            .collect();
-
-        let empty_amms: HashSet<Address> = join_all(futures).await.into_iter().flatten().collect();
-        tracing::debug!(amms = ?empty_amms, "removing AMMs with 0 token balance");
+    pub(crate) async fn remove_amms(&self, amm_addresses: &HashSet<Address>) {
         let mut lock = self.0.cache.write().await;
         for (_, amms) in lock.iter_mut() {
-            amms.retain(|amm| !empty_amms.contains(amm.address()))
+            amms.retain(|amm| !amm_addresses.contains(amm.address()))
         }
     }
 }

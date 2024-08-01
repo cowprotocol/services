@@ -1,9 +1,14 @@
 use {
     crate::cache::Storage,
-    ethcontract::futures::future::join_all,
+    contracts::ERC20,
+    ethcontract::{futures::future::join_all, Address},
     ethrpc::Web3,
+    primitive_types::U256,
     shared::maintenance::Maintaining,
-    std::sync::Arc,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     tokio::sync::RwLock,
 };
 
@@ -21,12 +26,50 @@ impl EmptyPoolRemoval {
 #[async_trait::async_trait]
 impl Maintaining for EmptyPoolRemoval {
     async fn run_maintenance(&self) -> anyhow::Result<()> {
+        let mut amms_to_check = HashMap::<Address, HashSet<Address>>::new();
+        {
+            let lock = self.storage.read().await;
+            for storage in lock.iter() {
+                for amm in storage.cow_amms().await {
+                    amms_to_check
+                        .entry(*amm.address())
+                        .or_default()
+                        .extend(amm.traded_tokens())
+                }
+            }
+        }
+        let futures = amms_to_check
+            .into_iter()
+            .map(|(amm_address, tokens)| async move {
+                for token in tokens {
+                    match ERC20::at(&self.web3, token)
+                        .balance_of(amm_address)
+                        .call()
+                        .await
+                    {
+                        Ok(balance) => return (balance == U256::zero()).then_some(amm_address),
+                        Err(err) => {
+                            tracing::warn!(
+                                amm = ?amm_address,
+                                ?token,
+                                ?err,
+                                "failed to check AMM token balance"
+                            );
+                        }
+                    }
+                }
+                None
+            });
+
+        let empty_amms: HashSet<Address> = join_all(futures).await.into_iter().flatten().collect();
+        tracing::debug!(amms = ?empty_amms, "removing AMMs with zero token balance");
         let lock = self.storage.read().await;
-        let futures: Vec<_> = lock
-            .iter()
-            .map(|storage| async move { storage.drop_empty_amms(&self.web3.clone()).await })
-            .collect();
-        join_all(futures).await;
+        join_all(
+            lock.iter()
+                .map(|storage| async { storage.remove_amms(&empty_amms).await }),
+        )
+        .await;
+
         Ok(())
     }
 

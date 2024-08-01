@@ -1368,7 +1368,6 @@ dependencies = [
  "ethrpc",
  "hex",
  "hex-literal",
- "itertools 0.12.1",
  "model",
  "primitive-types",
  "shared",
