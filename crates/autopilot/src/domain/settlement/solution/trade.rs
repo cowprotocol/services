@@ -215,7 +215,7 @@ impl Trade {
     /// The effective amount the user received after all fees.
     ///
     /// Note how the `executed` amount is used to build actual traded amounts.
-    /// 
+    ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {

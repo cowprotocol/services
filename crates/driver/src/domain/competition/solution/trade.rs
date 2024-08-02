@@ -79,7 +79,7 @@ impl Trade {
     }
 
     /// The effective amount the user received after all fees.
-    /// 
+    ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.side() {
@@ -217,7 +217,7 @@ impl Fulfillment {
     }
 
     /// The effective amount the user received after all fees.
-    /// 
+    ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
     pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.order.side {
