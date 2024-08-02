@@ -4,7 +4,7 @@
 use {
     self::trade::Trade,
     crate::domain::{
-        auction::{self},
+        auction::{self, order},
         competition,
         eth,
     },
@@ -146,6 +146,71 @@ impl Solution {
 
         Ok(Self { trades, auction_id })
     }
+
+    /// Build a `settlement::Solution` from a `competition::Solution`.
+    ///
+    /// Since `competition::Solution` does not contain JIT orders, the resulting
+    /// `settlement::Solution` might be a subset of it's onchain observable
+    /// twin.
+    pub fn from_competition_solution(
+        solution: &competition::Solution,
+        auction: &auction::Auction,
+        auction_id: auction::Id,
+    ) -> Result<Self, error::Solution> {
+        let auction_orders = auction
+            .orders
+            .iter()
+            .map(|o| (o.uid, o))
+            .collect::<HashMap<_, _>>();
+
+        let mut trades = Vec::with_capacity(solution.orders().len());
+        for (order_uid, traded) in solution.orders().iter() {
+            let order = auction_orders
+                .get(order_uid)
+                .ok_or(error::Solution::MissingOrder(*order_uid))?;
+            trades.push(trade::Trade::new(
+                order.uid,
+                order.sell,
+                order.buy,
+                order.side,
+                match order.side {
+                    order::Side::Sell => traded.sell.0.into(),
+                    order::Side::Buy => traded.buy.0.into(),
+                },
+                trade::Prices {
+                    uniform: trade::ClearingPrices {
+                        sell: solution
+                            .prices()
+                            .get(&order.sell.token)
+                            .ok_or(error::Solution::MissingClearingPrice(order.sell.token))?
+                            .get()
+                            .into(),
+                        buy: solution
+                            .prices()
+                            .get(&order.buy.token)
+                            .ok_or(error::Solution::MissingClearingPrice(order.buy.token))?
+                            .get()
+                            .into(),
+                    },
+                    custom: trade::ClearingPrices {
+                        // settlement contract uses this formula to convert executed amounts:
+                        // SELL order: executedBuyAmount = executed * sellPrice / buyPrice;
+                        // BUY order: executedSellAmount = executed * buyPrice / sellPrice;
+                        //
+                        // With an example of converting 1 GNO for 100 DAI:
+                        // SELL order: executedBuyAmount = 1 * 100 / 1 = 100 =>
+                        // (sellPrice = 100, buyPrice = 1)
+                        // BUY order: executedSellAmount = 100 * 1 / 100 = 1 =>
+                        // (sellPrice = 100, buyPrice = 1)
+                        sell: traded.buy.into(),
+                        buy: traded.sell.into(),
+                    },
+                },
+            ));
+        }
+
+        Ok(Self { trades, auction_id })
+    }
 }
 
 pub mod error {
@@ -179,6 +244,14 @@ pub mod error {
                 trade::Error::Math(err) => Self::Math(err),
             }
         }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Solution {
+        #[error("order not found in the auction for uid {0:?}")]
+        MissingOrder(OrderUid),
+        #[error("referenced clearing price missing for token {0:?}")]
+        MissingClearingPrice(eth::TokenAddress),
     }
 }
 

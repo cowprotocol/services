@@ -146,6 +146,33 @@ impl RunLoop {
                 }
             };
 
+            {
+                // Also calculate the score from the solution itself
+                // For now, don't actually use it for ranking, instead log differences to solver
+                // provided score for debugging purposes.
+                let policies = auction
+                    .orders
+                    .iter()
+                    .map(|order| (order.uid, order.protocol_fees.clone()))
+                    .collect();
+                let settlement_solution = domain::settlement::Solution::from_competition_solution(
+                    solution, &auction, auction_id,
+                )
+                .map(|s| s.score(&auction.prices, &policies));
+
+                if let Ok(Ok(score)) = settlement_solution {
+                    if score != solution.score() {
+                        tracing::warn!(
+                            "score mismatch: solver provided score: {:?}, calculated score: {:?}",
+                            solution.score(),
+                            score
+                        );
+                    }
+                } else {
+                    tracing::warn!(?settlement_solution, "failed to calculate score");
+                }
+            }
+
             let order_uids = solution.order_ids().copied().collect();
             self.persistence
                 .store_order_events(order_uids, OrderEventLabel::Considered);
