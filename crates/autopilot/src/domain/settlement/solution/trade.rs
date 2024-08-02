@@ -6,7 +6,7 @@ use {
             auction::{self, order},
             eth,
             fee,
-            settlement,
+            settlement::{self},
         },
         util::conv::U256Ext,
     },
@@ -23,16 +23,29 @@ pub struct Trade {
     sell: eth::Asset,
     buy: eth::Asset,
     side: order::Side,
+    receiver: eth::Address,
+    valid_to: u32,
+    app_data: order::AppDataHash,
+    sell_token_balance: order::SellTokenSource,
+    buy_token_balance: order::BuyTokenDestination,
+    signature: order::Signature,
     executed: order::TargetAmount,
     prices: Prices,
 }
 
 impl Trade {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         order_uid: domain::OrderUid,
         sell: eth::Asset,
         buy: eth::Asset,
         side: order::Side,
+        receiver: eth::Address,
+        valid_to: u32,
+        app_data: order::AppDataHash,
+        sell_token_balance: order::SellTokenSource,
+        buy_token_balance: order::BuyTokenDestination,
+        signature: order::Signature,
         executed: order::TargetAmount,
         prices: Prices,
     ) -> Self {
@@ -41,6 +54,12 @@ impl Trade {
             sell,
             buy,
             side,
+            receiver,
+            valid_to,
+            app_data,
+            sell_token_balance,
+            buy_token_balance,
+            signature,
             executed,
             prices,
         }
@@ -449,6 +468,24 @@ impl Trade {
         match self.side {
             order::Side::Buy => self.sell.token,
             order::Side::Sell => self.buy.token,
+        }
+    }
+}
+
+impl From<Trade> for settlement::JitOrder {
+    fn from(trade: Trade) -> Self {
+        settlement::JitOrder {
+            uid: trade.order_uid,
+            sell: trade.sell,
+            buy: trade.buy,
+            side: trade.side,
+            valid_to: trade.valid_to,
+            receiver: trade.receiver,
+            owner: trade.order_uid.owner(),
+            sell_token_balance: trade.sell_token_balance,
+            buy_token_balance: trade.buy_token_balance,
+            app_data: trade.app_data,
+            signature: trade.signature,
         }
     }
 }

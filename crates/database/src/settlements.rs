@@ -108,6 +108,13 @@ pub async fn delete(
     )
     .await?;
 
+    const QUERY_JIT_ORDERS: &str = "DELETE FROM jit_orders WHERE block_number >= $1;";
+    ex.execute(
+        sqlx::query(QUERY_JIT_ORDERS)
+            .bind(i64::try_from(delete_from_block_number).unwrap_or(i64::MAX)),
+    )
+    .await?;
+
     Ok(())
 }
 
