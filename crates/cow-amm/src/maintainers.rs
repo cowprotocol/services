@@ -1,7 +1,7 @@
 use {
     crate::{cache::Storage, Amm},
     contracts::ERC20,
-    ethcontract::futures::future::join_all,
+    ethcontract::futures::future::{join_all, select_ok},
     ethrpc::Web3,
     shared::maintenance::Maintaining,
     std::sync::Arc,
@@ -21,25 +21,26 @@ impl EmptyPoolRemoval {
     /// Checks if the given AMM has a zero token balance.
     async fn check_single(&self, amm: Arc<Amm>) -> bool {
         let amm_address = amm.address();
-        let futures = amm.traded_tokens().iter().map(move |token| async move {
-            match ERC20::at(&self.web3, *token)
-                .balance_of(*amm_address)
-                .call()
-                .await
-            {
-                Ok(balance) => balance.is_zero(),
-                Err(err) => {
-                    tracing::warn!(
-                        amm = ?amm_address,
-                        ?token,
-                        ?err,
-                        "failed to check AMM token balance"
-                    );
-                    false
-                }
-            }
-        });
-        join_all(futures).await.into_iter().any(|is_empty| is_empty)
+        let futures = amm
+            .traded_tokens()
+            .iter()
+            .map(move |token| async move {
+                ERC20::at(&self.web3, *token)
+                    .balance_of(*amm_address)
+                    .call()
+                    .await
+                    .map_err(|err| {
+                        tracing::warn!(
+                            amm = ?amm_address,
+                            ?token,
+                            ?err,
+                            "failed to check AMM token balance"
+                        );
+                    })
+                    .and_then(|balance| if balance.is_zero() { Ok(()) } else { Err(()) })
+            })
+            .map(Box::pin);
+        select_ok(futures).await.is_ok()
     }
 }
 
