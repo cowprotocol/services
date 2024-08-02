@@ -19,7 +19,7 @@ impl EmptyPoolRemoval {
     }
 
     /// Checks if the given AMM has a zero token balance.
-    async fn check_single(&self, amm: Arc<Amm>) -> bool {
+    async fn has_zero_balance(&self, amm: Arc<Amm>) -> bool {
         let amm_address = amm.address();
         let futures = amm
             .traded_tokens()
@@ -40,6 +40,7 @@ impl EmptyPoolRemoval {
                     .and_then(|balance| if balance.is_zero() { Ok(()) } else { Err(()) })
             })
             .map(Box::pin);
+        // If any future resolved to Ok(()), then there exists a non-zero balance.
         select_ok(futures).await.is_ok()
     }
 }
@@ -55,7 +56,7 @@ impl Maintaining for EmptyPoolRemoval {
             }
         }
         let futures = amms_to_check.iter().map(|amm| async {
-            self.check_single(amm.clone())
+            self.has_zero_balance(amm.clone())
                 .await
                 .then_some(*amm.address())
         });
