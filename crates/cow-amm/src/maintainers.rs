@@ -40,7 +40,7 @@ impl EmptyPoolRemoval {
                     .and_then(|balance| if balance.is_zero() { Ok(()) } else { Err(()) })
             })
             .map(Box::pin);
-        // If any future resolved to Ok(()), then there exists a non-zero balance.
+        // If any future resolved to Ok(()), then there exists a zero balance.
         select_ok(futures).await.is_ok()
     }
 }
