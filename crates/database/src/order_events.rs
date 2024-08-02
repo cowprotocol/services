@@ -2,7 +2,7 @@
 //! This information gets used to compuate service level indicators.
 
 use {
-    crate::OrderUid,
+    crate::{byte_array::ByteArray, OrderUid},
     chrono::Utc,
     sqlx::{types::chrono::DateTime, PgConnection, PgPool},
 };
@@ -92,6 +92,18 @@ pub async fn delete_order_events_before(
         .map(|result| result.rows_affected())
 }
 
+pub async fn get_latest(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+) -> Result<Option<OrderEvent>, sqlx::Error> {
+    const QUERY: &str =
+        r#"SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp DESC LIMIT 1"#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(order.0))
+        .fetch_optional(ex)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -149,6 +161,15 @@ mod tests {
         assert_eq!(ids[1].label, OrderEventLabel::Invalid);
         assert_eq!(ids[2].order_uid, uid_b);
         assert_eq!(ids[2].label, OrderEventLabel::Invalid);
+
+        let latest = get_latest(&mut db, &uid_a).await.unwrap().unwrap();
+        assert_eq!(latest.order_uid, event_b.order_uid);
+        assert_eq!(latest.label, event_b.label);
+        // Postgres returns micros only while DateTime has nanos.
+        assert_eq!(
+            latest.timestamp.timestamp_micros(),
+            event_b.timestamp.timestamp_micros()
+        );
     }
 
     async fn all_order_events(ex: &mut PgConnection) -> Vec<OrderEvent> {
