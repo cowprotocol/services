@@ -45,6 +45,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rate-limit = { path = "../rate-limit" }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
+rust_decimal = "1.35.0"
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
