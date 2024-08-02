@@ -20,7 +20,7 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
-delay_map = "0.3"
+ttl_cache = "0.5"
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
