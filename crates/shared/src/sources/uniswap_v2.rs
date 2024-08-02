@@ -116,11 +116,8 @@ impl UniV2BaselineSourceParameters {
             PoolReadingStyle::Default => Box::new(pool_reader),
             PoolReadingStyle::Swapr => Box::new(SwaprPoolReader(pool_reader)),
         };
-        let fetcher = pool_fetching::PoolFetcher {
-            pool_reader,
-            web3: web3.clone(),
-            non_existent_pools: Default::default(),
-        };
+        let fetcher =
+            pool_fetching::PoolFetcher::new(pool_reader, web3.clone(), Default::default());
         Ok(UniV2BaselineSource {
             router,
             pair_provider,
