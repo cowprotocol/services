@@ -15,7 +15,7 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{collections::HashSet, sync::RwLock, time::Duration, usize},
+    std::{collections::HashSet, sync::RwLock, time::Duration},
     ttl_cache::TtlCache,
 };
 
