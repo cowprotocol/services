@@ -62,6 +62,7 @@ static NODE_MUTEX: Mutex<()> = Mutex::new(());
 const DEFAULT_FILTERS: &[&str] = &[
     "warn",
     "autopilot=debug",
+    "cow_amm=debug",
     "driver=debug",
     "e2e=debug",
     "orderbook=debug",

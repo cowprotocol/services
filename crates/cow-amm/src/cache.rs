@@ -1,6 +1,7 @@
 use {
     crate::Amm,
     contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper},
+    ethcontract::Address,
     ethrpc::current_block::RangeInclusive,
     shared::event_handling::EventStoring,
     std::{collections::BTreeMap, sync::Arc},
@@ -25,6 +26,13 @@ impl Storage {
         lock.values()
             .flat_map(|amms| amms.iter().cloned())
             .collect()
+    }
+
+    pub(crate) async fn remove_amms(&self, amm_addresses: &[Address]) {
+        let mut lock = self.0.cache.write().await;
+        for (_, amms) in lock.iter_mut() {
+            amms.retain(|amm| !amm_addresses.contains(amm.address()))
+        }
     }
 }
 
