@@ -364,7 +364,7 @@ mod tests {
 
         assert_eq!(
             solution.score(&auction).unwrap().get().0,
-            eth::U256::from(769018961144626u128)
+            eth::U256::from(769018961144624u128) // 2 x surplus
         );
     }
 }
