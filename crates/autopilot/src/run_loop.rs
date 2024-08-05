@@ -385,8 +385,10 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         request: &solve::Request,
-    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
-    {
+    ) -> Result<
+        Vec<Result<competition::SolutionWithId, domain::competition::SolutionError>>,
+        SolveError,
+    > {
         let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -455,7 +457,7 @@ impl RunLoop {
     async fn settle(
         &self,
         driver: &infra::Driver,
-        solved: &competition::Solution,
+        solved: &competition::SolutionWithId,
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<(), SettleError> {
@@ -577,7 +579,7 @@ pub struct InFlightOrders {
 
 struct Participant<'a> {
     driver: &'a infra::Driver,
-    solution: competition::Solution,
+    solution: competition::SolutionWithId,
 }
 
 #[derive(Debug, thiserror::Error)]
