@@ -296,7 +296,6 @@ mod tests {
 
         let auction = super::super::Auction {
             prices,
-            deadline: eth::BlockNo(0),
             surplus_capturing_jit_order_owners: vec![],
             id: 0,
             orders: HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), vec![])]),

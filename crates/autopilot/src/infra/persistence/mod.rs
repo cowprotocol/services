@@ -2,14 +2,14 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, eth},
+        domain::{self, competition, eth},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::Utc,
     number::conversions::big_decimal_to_u256,
-    primitive_types::H256,
+    primitive_types::{H160, H256},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -168,19 +168,14 @@ impl Persistence {
     pub async fn auction_has_settlement(
         &self,
         auction_id: domain::auction::Id,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["auction_has_settlement"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
-
-        Ok(
-            database::settlements::already_processed(&mut ex, auction_id)
-                .await
-                .context("fetch already_processed")?,
-        )
+        let mut ex = self.postgres.pool.begin().await?;
+        Ok(database::settlements::already_processed(&mut ex, auction_id).await?)
     }
 
     /// Get auction data.
@@ -198,48 +193,37 @@ impl Persistence {
             .pool
             .begin()
             .await
-            .context("begin")
-            .map_err(error::Auction::DbError)?;
+            .map_err(error::Auction::BadCommunication)?;
 
-        let deadline = database::settlement_scores::fetch(&mut ex, auction_id)
-            .await
-            .context("fetch scores")
-            .map_err(error::Auction::DbError)?
-            .ok_or(error::Auction::Missing)
-            .map(|scores| (scores.block_deadline as u64).into())?;
+        let surplus_capturing_jit_order_owners =
+            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
+                .await
+                .map_err(error::Auction::BadCommunication)?
+                .ok_or(error::Auction::NotFound)?
+                .into_iter()
+                .map(|owner| eth::H160(owner.0).into())
+                .collect();
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
             .await
-            .context("fetch auction prices")
-            .map_err(error::Auction::DbError)?
+            .map_err(error::Auction::BadCommunication)?
             .into_iter()
             .map(|price| {
                 let token = eth::H160(price.token.0).into();
                 let price = big_decimal_to_u256(&price.price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::new(p.into()))
-                    .map_err(error::Auction::Price);
+                    .map_err(|_err| error::Auction::InvalidPrice(token));
                 price.map(|price| (token, price))
             })
             .collect::<Result<_, _>>()?;
-
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .context("fetch surplus capturing jit order owners")
-                .map_err(error::Auction::DbError)?
-                .ok_or(error::Auction::MissingJitOrderOwners)?
-                .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
-                .collect();
 
         let orders = {
             // get all orders from a competition auction
             let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
                 .await
-                .context("fetch auction orders")
-                .map_err(error::Auction::DbError)?
-                .ok_or(error::Auction::Missing)?
+                .map_err(error::Auction::BadCommunication)?
+                .ok_or(error::Auction::NotFound)?
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
@@ -254,8 +238,7 @@ impl Persistence {
                     .as_slice(),
             )
             .await
-            .context("fetch fee policies")
-            .map_err(error::Auction::DbError)?
+            .map_err(error::Auction::BadCommunication)?
             .into_iter()
             .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
             .collect::<HashMap<_, _>>();
@@ -275,7 +258,7 @@ impl Persistence {
                         .then_some(order_uid)
                 }))
                 .await
-                .map_err(error::Auction::DbError)?;
+                .map_err(error::Auction::BadCommunication)?;
 
             // compile order data
             let mut orders = HashMap::new();
@@ -286,7 +269,7 @@ impl Persistence {
                         .cloned()
                         .map(|policy| {
                             dto::fee_policy::try_into_domain(policy, quotes.get(order))
-                                .map_err(|err| error::Auction::FeePolicy(err, *order))
+                                .map_err(|err| error::Auction::InvalidFeePolicy(err, *order))
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                     None => vec![],
@@ -300,9 +283,96 @@ impl Persistence {
             id: auction_id,
             orders,
             prices,
-            deadline,
             surplus_capturing_jit_order_owners,
         })
+    }
+
+    /// Returns the proposed solver solution that won the competition for a
+    /// given auction.
+    ///
+    /// It is expected for a solution to exist, so missing data is considered an
+    /// error.
+    ///
+    /// Returns error for old non-colocated auctions.
+    pub async fn get_winning_solution(
+        &self,
+        auction_id: domain::auction::Id,
+    ) -> Result<domain::competition::Solution, error::Solution> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_competition_winner"])
+            .start_timer();
+
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .map_err(error::Solution::BadCommunication)?;
+
+        let competition = database::settlement_scores::fetch(&mut ex, auction_id)
+            .await
+            .map_err(error::Solution::BadCommunication)?
+            .ok_or(error::Solution::NotFound)?;
+
+        let winner = H160(competition.winner.0).into();
+        let score = competition::Score::new(
+            big_decimal_to_u256(&competition.winning_score)
+                .ok_or(error::Solution::InvalidScore(anyhow::anyhow!(
+                    "database score"
+                )))?
+                .into(),
+        )
+        .map_err(|err| error::Solution::InvalidScore(anyhow::anyhow!("score, {}", err)))?;
+
+        let solution = {
+            // TODO: stabilize the solver competition table to get promised solution.
+            let solver_competition = database::solver_competition::load_by_id(&mut ex, auction_id)
+                .await
+                .map_err(error::Solution::BadCommunication)?
+                .ok_or(error::Solution::NotFound)?;
+            let competition: model::solver_competition::SolverCompetitionDB =
+                serde_json::from_value(solver_competition.json)
+                    .context("deserialize SolverCompetitionDB")
+                    .map_err(error::Solution::InvalidSolverCompetition)?;
+            let winning_solution = competition
+                .solutions
+                .last()
+                .ok_or(error::Solution::NotFound)?;
+            let mut orders = HashMap::new();
+            for order in winning_solution.orders.iter() {
+                match order {
+                    model::solver_competition::Order::Colocated {
+                        id,
+                        sell_amount,
+                        buy_amount,
+                    } => {
+                        orders.insert(
+                            domain::OrderUid(id.0),
+                            competition::TradedAmounts {
+                                sell: (*sell_amount).into(),
+                                buy: (*buy_amount).into(),
+                            },
+                        );
+                    }
+                    model::solver_competition::Order::Legacy {
+                        id: _,
+                        executed_amount: _,
+                    } => return Err(error::Solution::NotFound),
+                }
+            }
+            let mut prices = HashMap::new();
+            for (token, price) in winning_solution.clearing_prices.clone().into_iter() {
+                prices.insert(
+                    token.into(),
+                    domain::auction::Price::new(price.into())
+                        .map_err(|_| error::Solution::InvalidPrice(eth::TokenAddress(token)))?,
+                );
+            }
+            competition::Solution::new(winner, score, orders, prices)
+        };
+
+        Ok(solution)
     }
 }
 
@@ -321,24 +391,40 @@ impl Metrics {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("failed to read data from database")]
+    #[error("failed communication with the database")]
     DbError(#[from] anyhow::Error),
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("failed communication with the database")]
+pub struct DatabaseError(#[from] pub sqlx::Error);
 
 pub mod error {
     use super::*;
 
     #[derive(Debug, thiserror::Error)]
     pub enum Auction {
-        #[error("failed to read data from database: {0}")]
-        DbError(#[source] anyhow::Error),
-        #[error("auction data not found in the database")]
-        Missing,
-        #[error("failed dto conversion from database: {0} for order: {1}")]
-        FeePolicy(dto::fee_policy::Error, domain::OrderUid),
-        #[error(transparent)]
-        Price(#[from] domain::auction::InvalidPrice),
-        #[error("jit order owners not found for an existing auction id")]
-        MissingJitOrderOwners,
+        #[error("failed communication with the database: {0}")]
+        BadCommunication(#[from] sqlx::Error),
+        #[error("auction not found")]
+        NotFound,
+        #[error("invalid fee policy fetched from database: {0} for order: {1}")]
+        InvalidFeePolicy(dto::fee_policy::Error, domain::OrderUid),
+        #[error("invalid price fetched from database for token: {0:?}")]
+        InvalidPrice(eth::TokenAddress),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Solution {
+        #[error("failed communication with the database: {0}")]
+        BadCommunication(#[from] sqlx::Error),
+        #[error("solution not found")]
+        NotFound,
+        #[error("invalid score fetched from database: {0}")]
+        InvalidScore(anyhow::Error),
+        #[error("invalid price fetched from database for token: {0:?}")]
+        InvalidPrice(eth::TokenAddress),
+        #[error("invalid solver competition data fetched from database: {0}")]
+        InvalidSolverCompetition(anyhow::Error),
     }
 }
