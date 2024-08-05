@@ -141,7 +141,7 @@ pub enum InconsistentData {
     SolutionNotFound,
     #[error("invalid fee policy fetched from persistence layer: {0} for order: {1}")]
     InvalidFeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
-    #[error("invalid fetched price from persistence layer for token: {0}")]
+    #[error("invalid fetched price from persistence layer for token: {0:?}")]
     InvalidPrice(eth::TokenAddress),
     #[error(
         "invalid score fetched from persistence layer for a coresponding competition solution, \

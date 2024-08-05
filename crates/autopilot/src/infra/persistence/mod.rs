@@ -323,7 +323,7 @@ impl Persistence {
                 )))?
                 .into(),
         )
-        .map_err(|_| error::Solution::InvalidScore(anyhow::anyhow!("zero score")))?;
+        .map_err(|err| error::Solution::InvalidScore(anyhow::anyhow!("score, {}", err)))?;
 
         let solution = {
             // TODO: stabilize the solver competition table to get promised solution.
@@ -410,7 +410,7 @@ pub mod error {
         NotFound,
         #[error("invalid fee policy fetched from database: {0} for order: {1}")]
         InvalidFeePolicy(dto::fee_policy::Error, domain::OrderUid),
-        #[error("invalid price fetched from database for token: {0}")]
+        #[error("invalid price fetched from database for token: {0:?}")]
         InvalidPrice(eth::TokenAddress),
     }
 
@@ -422,7 +422,7 @@ pub mod error {
         NotFound,
         #[error("invalid score fetched from database: {0}")]
         InvalidScore(anyhow::Error),
-        #[error("invalid price fetched from database for token: {0}")]
+        #[error("invalid price fetched from database for token: {0:?}")]
         InvalidPrice(eth::TokenAddress),
         #[error("invalid solver competition data fetched from database: {0}")]
         InvalidSolverCompetition(anyhow::Error),
