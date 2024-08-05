@@ -2,7 +2,10 @@
 //!
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
-use crate::{domain, domain::eth, infra};
+use {
+    super::competition,
+    crate::{domain, domain::eth, infra},
+};
 
 mod auction;
 mod observation;
@@ -51,43 +54,35 @@ impl Settlement {
             .await
             .map_err(Error::from)?;
 
-        let winning_solution = persistence
+        // winning solution - solution promised during solver competition
+        let promised_solution = persistence
             .get_winning_solution(solution.auction_id())
             .await
             .map_err(Error::from)?;
 
-        if transaction.solver != winning_solution.solver() {
+        if transaction.solver != promised_solution.solver() {
             return Err(Error::SolverMismatch {
-                expected: winning_solution.solver(),
+                expected: promised_solution.solver(),
                 got: transaction.solver,
             });
         }
 
-        // only debugging for now
-        match solution.score(&auction) {
-            Ok(score) => {
-                tracing::debug!(
-                    "Settlement for auction {} has score {}",
-                    solution.auction_id(),
-                    score
-                );
+        let score = solution.score(&auction)?;
 
-                if score < winning_solution.score() {
-                    tracing::warn!(
-                        "Settlement for auction {} has lower score {} than the winning solution {}",
-                        solution.auction_id(),
-                        score,
-                        winning_solution.score()
-                    );
-                }
-            }
-            Err(err) => {
-                tracing::warn!(
-                    ?err,
-                    "Settlement for auction {} failed to calculate score",
-                    solution.auction_id()
-                );
-            }
+        // temp log
+        if score != promised_solution.score() {
+            tracing::debug!(
+                auction_id = ?solution.auction_id(),
+                "score mismatch: expected competition score {}, settlement score {}",
+                promised_solution.score(),
+                score,
+            );
+        }
+        if score < promised_solution.score() {
+            return Err(Error::ScoreMismatch {
+                expected: promised_solution.score(),
+                got: score,
+            });
         }
 
         Ok(Self {
@@ -112,9 +107,9 @@ impl Settlement {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed communication with the database: {0}")]
-    BadCommunication(sqlx::Error),
+    Infra(sqlx::Error),
     #[error("failed to prepare the data fetched from database for domain: {0}")]
-    BadPersistenceData(BadPersistenceData),
+    InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
     #[error(transparent)]
@@ -126,6 +121,11 @@ pub enum Error {
         expected: eth::Address,
         got: eth::Address,
     },
+    #[error("score mismatch: expected competition score {expected}, settlement score {got}")]
+    ScoreMismatch {
+        expected: competition::Score,
+        got: competition::Score,
+    },
 }
 
 /// Errors that can occur when fetching data from the persistence layer.
@@ -134,7 +134,7 @@ pub enum Error {
 ///
 /// This is a separate enum to allow for more specific error handling.
 #[derive(Debug, thiserror::Error)]
-pub enum BadPersistenceData {
+pub enum InconsistentData {
     #[error("auction not found in the persistence layer")]
     AuctionNotFound,
     #[error("proposed solution not found in the persistence layer")]
@@ -142,7 +142,7 @@ pub enum BadPersistenceData {
     #[error("invalid fee policy fetched from persistence layer: {0} for order: {1}")]
     InvalidFeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
     #[error("invalid fetched price from persistence layer for token: {0}")]
-    InvalidPricce(eth::TokenAddress),
+    InvalidPrice(eth::TokenAddress),
     #[error(
         "invalid score fetched from persistence layer for a coresponding competition solution, \
          err: {0}"
@@ -155,17 +155,15 @@ pub enum BadPersistenceData {
 impl From<infra::persistence::error::Auction> for Error {
     fn from(err: infra::persistence::error::Auction) -> Self {
         match err {
-            infra::persistence::error::Auction::BadCommunication(err) => {
-                Self::BadCommunication(err)
-            }
+            infra::persistence::error::Auction::BadCommunication(err) => Self::Infra(err),
             infra::persistence::error::Auction::NotFound => {
-                Self::BadPersistenceData(BadPersistenceData::AuctionNotFound)
+                Self::InconsistentData(InconsistentData::AuctionNotFound)
             }
             infra::persistence::error::Auction::InvalidFeePolicy(err, order) => {
-                Self::BadPersistenceData(BadPersistenceData::InvalidFeePolicy(err, order))
+                Self::InconsistentData(InconsistentData::InvalidFeePolicy(err, order))
             }
             infra::persistence::error::Auction::InvalidPrice(token) => {
-                Self::BadPersistenceData(BadPersistenceData::InvalidPricce(token))
+                Self::InconsistentData(InconsistentData::InvalidPrice(token))
             }
         }
     }
@@ -174,17 +172,15 @@ impl From<infra::persistence::error::Auction> for Error {
 impl From<infra::persistence::error::Solution> for Error {
     fn from(err: infra::persistence::error::Solution) -> Self {
         match err {
-            infra::persistence::error::Solution::BadCommunication(err) => {
-                Self::BadCommunication(err)
-            }
+            infra::persistence::error::Solution::BadCommunication(err) => Self::Infra(err),
             infra::persistence::error::Solution::NotFound => {
-                Self::BadPersistenceData(BadPersistenceData::SolutionNotFound)
+                Self::InconsistentData(InconsistentData::SolutionNotFound)
             }
             infra::persistence::error::Solution::InvalidScore(err) => {
-                Self::BadPersistenceData(BadPersistenceData::InvalidScore(err))
+                Self::InconsistentData(InconsistentData::InvalidScore(err))
             }
             infra::persistence::error::Solution::InvalidSolverCompetition(err) => {
-                Self::BadPersistenceData(BadPersistenceData::InvalidSolverCompetition(err))
+                Self::InconsistentData(InconsistentData::InvalidSolverCompetition(err))
             }
             infra::persistence::error::Solution::InvalidPrice(_) => todo!(),
         }
@@ -193,6 +189,6 @@ impl From<infra::persistence::error::Solution> for Error {
 
 impl From<infra::persistence::DatabaseError> for Error {
     fn from(err: infra::persistence::DatabaseError) -> Self {
-        Self::BadCommunication(err.0)
+        Self::Infra(err.0)
     }
 }
