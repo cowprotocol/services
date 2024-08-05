@@ -1,5 +1,5 @@
 use {
-    crate::{cache::Storage, factory::Factory, Amm},
+    crate::{cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval, Amm},
     contracts::CowAmmLegacyHelper,
     ethcontract::Address,
     ethrpc::{current_block::CurrentBlockStream, Web3},
@@ -48,8 +48,13 @@ impl Registry {
             address: factory,
         };
         let event_handler = EventHandler::new(Arc::new(self.web3.clone()), indexer, storage, None);
-        let event_handler: Vec<Arc<dyn Maintaining>> = vec![Arc::new(Mutex::new(event_handler))];
-        let service_maintainer = ServiceMaintenance::new(event_handler);
+        let token_balance_maintainer =
+            EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
+        let maintainers: Vec<Arc<dyn Maintaining>> = vec![
+            Arc::new(Mutex::new(event_handler)),
+            Arc::new(token_balance_maintainer),
+        ];
+        let service_maintainer = ServiceMaintenance::new(maintainers);
         tokio::task::spawn(
             service_maintainer.run_maintenance_on_new_block(self.current_block_stream.clone()),
         );

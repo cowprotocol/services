@@ -31,6 +31,10 @@ pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
+pub fn order_status_endpoint(uid: &OrderUid) -> String {
+    format!("/api/v1/orders/{uid}/status")
+}
+
 pub struct ServicesBuilder {
     timeout: Duration,
 }
@@ -442,6 +446,28 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_order_status(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<orderbook::dto::order::Status, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{}", order_status_endpoint(uid)))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => {
+                Ok(serde_json::from_str::<orderbook::dto::order::Status>(&body).unwrap())
+            }
             code => Err((code, body)),
         }
     }
