@@ -75,7 +75,7 @@ pub struct Gas(pub U256);
 /// The `effective_gas_price` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Display)]
 pub struct EffectiveGasPrice(pub Ether);
 
 impl From<U256> for EffectiveGasPrice {
@@ -205,3 +205,9 @@ pub struct DomainSeparator(pub [u8; 32]);
 
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
+
+/// An event emitted by a settlement smart contract.
+pub struct Event {
+    pub block: BlockNo,
+    pub log_index: u64,
+}

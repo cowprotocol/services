@@ -1,7 +1,7 @@
 use crate::domain::eth;
 
 /// An on-chain transaction that settled a solution.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transaction {
     /// The hash of the transaction.
     pub hash: eth::TxId,
