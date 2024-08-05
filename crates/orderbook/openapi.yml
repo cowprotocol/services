@@ -1079,7 +1079,8 @@ components:
             - Cancelled
         value:
           description: |
-            A list of solvers who participated in the latest competition. The presence of executed amounts defines whether the solver provided a solution for the desired order.
+            A list of solvers who participated in the latest competition, sorted by score in ascending order, where the last element is the winner.
+            The presence of executed amounts defines whether the solver provided a solution for the desired order.
           type: array
           items:
             type: object
