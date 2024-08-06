@@ -1070,13 +1070,13 @@ components:
         type:
           type: string
           enum:
-            - Open
-            - Scheduled
-            - Active
-            - Solved
-            - Executing
-            - Traded
-            - Cancelled
+            - open
+            - scheduled
+            - active
+            - solved
+            - executing
+            - traded
+            - cancelled
         value:
           description: |
             A list of solvers who participated in the latest competition, sorted by score in ascending order, where the last element is the winner.
