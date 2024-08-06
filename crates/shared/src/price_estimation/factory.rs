@@ -176,9 +176,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn create_native_estimator(
+    async fn create_native_estimator(
         &mut self,
         source: &NativePriceEstimatorSource,
+        weth: &contracts::WETH9,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
             NativePriceEstimatorSource::Driver(driver) => {
@@ -207,12 +208,16 @@ impl<'a> PriceEstimatorFactory<'a> {
             )),
             NativePriceEstimatorSource::CoinGecko => Ok((
                 "CoinGecko".into(),
-                Arc::new(native::CoinGecko::new(
-                    self.components.http_factory.create(),
-                    self.args.coin_gecko_url.clone(),
-                    self.args.coin_gecko_api_key.clone(),
-                    self.network.chain_id,
-                )?),
+                Arc::new(
+                    native::CoinGecko::new(
+                        self.components.http_factory.create(),
+                        self.args.coin_gecko_url.clone(),
+                        self.args.coin_gecko_api_key.clone(),
+                        self.network.chain_id,
+                        weth,
+                    )
+                    .await?,
+                ),
             )),
         }
     }
@@ -289,25 +294,25 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    pub fn native_price_estimator(
+    pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
+        weth: contracts::WETH9,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        let estimators = native
-            .iter()
-            .map(|stage| {
-                stage
-                    .iter()
-                    .map(|source| self.create_native_estimator(source))
-                    .collect::<Result<Vec<_>>>()
-            })
-            .collect::<Result<Vec<Vec<_>>>>()?;
+        let mut estimators = Vec::with_capacity(native.len());
+        for stage in native.iter() {
+            let mut stages = Vec::with_capacity(stage.len());
+            for source in stage {
+                stages.push(self.create_native_estimator(source, &weth).await?);
+            }
+            estimators.push(stages);
+        }
 
         let competition_estimator =
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)

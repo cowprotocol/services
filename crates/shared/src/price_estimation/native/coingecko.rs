@@ -3,7 +3,6 @@ use {
     crate::price_estimation::PriceEstimationError,
     anyhow::{anyhow, Result},
     futures::{future::BoxFuture, FutureExt},
-    lazy_static::lazy_static,
     primitive_types::H160,
     reqwest::{Client, StatusCode},
     rust_decimal::prelude::ToPrimitive,
@@ -35,26 +34,32 @@ enum NativePrice {
     Other(Token),
 }
 
-lazy_static! {
-    static ref WXDAI_TOKEN_ADDRESS: H160 = "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d"
-        .parse()
-        .unwrap();
-}
-
 impl CoinGecko {
     /// Authorization header for CoinGecko
     const AUTHORIZATION: &'static str = "x-cg-pro-api-key";
 
-    pub fn new(
+    pub async fn new(
         client: Client,
         base_url: Url,
         api_key: Option<String>,
         chain_id: u64,
+        weth: &contracts::WETH9,
     ) -> Result<Self> {
-        let (chain, native_price) = match chain_id {
-            1 => ("ethereum".to_string(), NativePrice::Eth),
-            100 => ("xdai".to_string(), NativePrice::Other(*WXDAI_TOKEN_ADDRESS)),
-            42161 => ("arbitrum-one".to_string(), NativePrice::Eth),
+        let native_price = match weth
+            .symbol()
+            .call()
+            .await
+            .unwrap()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "weth" => NativePrice::Eth,
+            _ => NativePrice::Other(weth.address()),
+        };
+        let chain = match chain_id {
+            1 => "ethereum".to_string(),
+            100 => "xdai".to_string(),
+            42161 => "arbitrum-one".to_string(),
             n => anyhow::bail!("unsupported network {n}"),
         };
         Ok(Self {
@@ -169,41 +174,5 @@ mod observe {
                 tracing::warn!(%endpoint, ?err, "failed to receive response from CoinGecko")
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use {super::*, std::str::FromStr};
-
-    // It is ok to call this API without an API for local testing purposes as it is
-    // difficulty to hit the rate limit manually
-    const BASE_URL: &str = "https://api.coingecko.com/api/v3/simple/token_price";
-
-    #[tokio::test]
-    #[ignore]
-    async fn works() {
-        let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
-        let instance =
-            CoinGecko::new(Client::default(), Url::parse(BASE_URL).unwrap(), None, 1).unwrap();
-
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
-        // Since the WETH precise price against ETH is not always exact to 1.0 (it can
-        // vary slightly)
-        assert!((0.95..=1.05).contains(&estimated_price));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn works_xdai() {
-        // USDT
-        let native_token = H160::from_str("0x4ECaBa5870353805a9F068101A40E0f32ed605C6").unwrap();
-        let instance =
-            CoinGecko::new(Client::default(), Url::parse(BASE_URL).unwrap(), None, 100).unwrap();
-
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
-        // Since the USDT precise price against XDAI is not always exact to 1.0
-        // (it can vary slightly)
-        assert!((0.95..=1.05).contains(&estimated_price));
     }
 }
