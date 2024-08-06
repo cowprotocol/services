@@ -26,10 +26,10 @@ pub struct CoinGecko {
     base_url: Url,
     api_key: Option<String>,
     chain: String,
-    native_price: NativePrice,
+    quote_token: QuoteToken,
 }
 
-enum NativePrice {
+enum QuoteToken {
     Eth,
     Other(Token),
 }
@@ -45,7 +45,7 @@ impl CoinGecko {
         chain_id: u64,
         weth: &contracts::WETH9,
     ) -> Result<Self> {
-        let native_price = match weth
+        let quote_token = match weth
             .symbol()
             .call()
             .await
@@ -53,8 +53,8 @@ impl CoinGecko {
             .to_ascii_lowercase()
             .as_str()
         {
-            "weth" => NativePrice::Eth,
-            _ => NativePrice::Other(weth.address()),
+            "weth" => QuoteToken::Eth,
+            _ => QuoteToken::Other(weth.address()),
         };
         let chain = match chain_id {
             1 => "ethereum".to_string(),
@@ -67,7 +67,7 @@ impl CoinGecko {
             base_url,
             api_key,
             chain,
-            native_price,
+            quote_token,
         })
     }
 
@@ -121,9 +121,9 @@ impl CoinGecko {
 impl NativePriceEstimating for CoinGecko {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            match self.native_price {
-                NativePrice::Eth => self.send_request_price_in_eth(token).await,
-                NativePrice::Other(native_price_token) => {
+            match self.quote_token {
+                QuoteToken::Eth => self.send_request_price_in_eth(token).await,
+                QuoteToken::Other(native_price_token) => {
                     let token_eth = rust_decimal::Decimal::try_from(
                         self.send_request_price_in_eth(token).await?,
                     )
