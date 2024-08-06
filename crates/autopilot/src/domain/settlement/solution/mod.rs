@@ -86,10 +86,13 @@ impl Solution {
     }
 
     /// Returns fees denominated in sell token for each order in the solution.
-    pub fn fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+    pub fn fees(
+        &self,
+        prices: &auction::Prices,
+    ) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
         self.trades
             .iter()
-            .map(|trade| (*trade.order_uid(), trade.fee().ok()))
+            .map(|trade| (*trade.order_uid(), trade.fee_in_sell_token(prices).ok()))
             .collect()
     }
 
@@ -307,9 +310,15 @@ mod tests {
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        // "executedSurplusFee" and native fee are equal because the sell token is ETH
         assert_eq!(
             solution.native_fee(&auction.prices).0,
-            eth::U256::from(6890975030480504u128)
+            eth::U256::from(6752697350740628u128)
+        );
+        // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        assert_eq!(
+            solution.fees(&auction.prices),
+            HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), Some(eth::SellTokenAmount(eth::U256::from(6752697350740628u128))))])
         );
     }
 }
