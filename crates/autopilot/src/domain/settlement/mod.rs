@@ -99,7 +99,7 @@ impl Settlement {
             gas_price: self.transaction.effective_gas_price,
             surplus: self.solution.native_surplus(&self.auction),
             fee: self.solution.native_fee(&self.auction.prices),
-            order_fees: self.solution.fees(),
+            order_fees: self.solution.fees(&self.auction.prices),
         }
     }
 }
