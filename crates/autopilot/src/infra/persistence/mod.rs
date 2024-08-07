@@ -218,16 +218,16 @@ impl Persistence {
             })
             .collect::<Result<_, _>>()?;
 
-        // get all orders from a competition auction
-        let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
-            .await
-            .map_err(error::Auction::BadCommunication)?
-            .ok_or(error::Auction::NotFound)?
-            .into_iter()
-            .map(|order| domain::OrderUid(order.0))
-            .collect::<HashSet<_>>();
+        let orders = {
+            // get all orders from a competition auction
+            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
+                .await
+                .map_err(error::Auction::BadCommunication)?
+                .ok_or(error::Auction::NotFound)?
+                .into_iter()
+                .map(|order| domain::OrderUid(order.0))
+                .collect::<HashSet<_>>();
 
-        let fee_policies = {
             // get fee policies for all orders that were part of the competition auction
             let fee_policies = database::fee_policies::fetch_all(
                 &mut ex,
@@ -243,6 +243,23 @@ impl Persistence {
             .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
             .collect::<HashMap<_, _>>();
 
+            // get quotes for all orders with PriceImprovement fee policy
+            let quotes = self
+                .postgres
+                .read_quotes(fee_policies.iter().filter_map(|(order_uid, policies)| {
+                    policies
+                        .iter()
+                        .any(|policy| {
+                            matches!(
+                                policy.kind,
+                                database::fee_policies::FeePolicyKind::PriceImprovement
+                            )
+                        })
+                        .then_some(order_uid)
+                }))
+                .await
+                .map_err(error::Auction::BadCommunication)?;
+
             // compile order data
             let mut orders = HashMap::new();
             for order in auction_orders.iter() {
@@ -251,7 +268,7 @@ impl Persistence {
                         .iter()
                         .cloned()
                         .map(|policy| {
-                            dto::fee_policy::try_into_domain(policy)
+                            dto::fee_policy::try_into_domain(policy, quotes.get(order))
                                 .map_err(|err| error::Auction::InvalidFeePolicy(err, *order))
                         })
                         .collect::<Result<Vec<_>, _>>()?,
@@ -262,17 +279,9 @@ impl Persistence {
             orders
         };
 
-        // get quotes for all orders
-        let quotes = self
-            .postgres
-            .read_quotes(auction_orders.iter())
-            .await
-            .map_err(error::Auction::BadCommunication)?;
-
         Ok(domain::settlement::Auction {
             id: auction_id,
-            fee_policies,
-            quotes,
+            orders,
             prices,
             surplus_capturing_jit_order_owners,
         })

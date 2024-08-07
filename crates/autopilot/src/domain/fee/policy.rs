@@ -63,13 +63,18 @@ impl Surplus {
 }
 
 impl PriceImprovement {
-    pub fn apply(&self, order: &boundary::Order) -> Option<domain::fee::Policy> {
+    pub fn apply(
+        &self,
+        order: &boundary::Order,
+        quote: &domain::Quote,
+    ) -> Option<domain::fee::Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => None,
             boundary::OrderClass::Liquidity => None,
             boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
                 factor: self.factor,
                 max_volume_factor: self.max_volume_factor,
+                quote: (*quote).into(),
             }),
         }
     }

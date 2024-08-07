@@ -15,7 +15,7 @@ use {
     app_data::Validator,
     derive_more::Into,
     itertools::Itertools,
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     prometheus::core::Number,
     std::{collections::HashSet, str::FromStr},
 };
@@ -144,7 +144,7 @@ impl ProtocolFees {
             .find_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
-            .and_then(|policy| Self::variant_fee_apply(&order, policy))
+            .and_then(|policy| Self::variant_fee_apply(&order, quote, policy))
             .into_iter()
             .collect_vec();
         boundary::order::to_domain(order, protocol_fees, quote)
@@ -164,16 +164,20 @@ impl ProtocolFees {
             .filter_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
-            .flat_map(|policy| Self::variant_fee_apply(&order, policy))
+            .flat_map(|policy| Self::variant_fee_apply(&order, quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
         boundary::order::to_domain(order, protocol_fees, quote)
     }
 
-    fn variant_fee_apply(order: &boundary::Order, policy: &policy::Policy) -> Option<Policy> {
+    fn variant_fee_apply(
+        order: &boundary::Order,
+        quote: &domain::Quote,
+        policy: &policy::Policy,
+    ) -> Option<Policy> {
         match policy {
             policy::Policy::Surplus(variant) => variant.apply(order),
-            policy::Policy::PriceImprovement(variant) => variant.apply(order),
+            policy::Policy::PriceImprovement(variant) => variant.apply(order, quote),
             policy::Policy::Volume(variant) => variant.apply(order),
         }
     }
@@ -218,6 +222,7 @@ pub enum Policy {
     PriceImprovement {
         factor: FeeFactor,
         max_volume_factor: FeeFactor,
+        quote: Quote,
     },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
@@ -257,5 +262,25 @@ impl FromStr for FeeFactor {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<f64>().map(FeeFactor::try_from)?
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Quote {
+    /// The amount of the sell token.
+    pub sell_amount: U256,
+    /// The amount of the buy token.
+    pub buy_amount: U256,
+    /// The amount that needs to be paid, denominated in the sell token.
+    pub fee: U256,
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(value: domain::Quote) -> Self {
+        Self {
+            sell_amount: value.sell_amount.into(),
+            buy_amount: value.buy_amount.into(),
+            fee: value.fee.into(),
+        }
     }
 }

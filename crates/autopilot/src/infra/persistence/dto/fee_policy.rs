@@ -36,6 +36,7 @@ pub fn from_domain(
         domain::fee::Policy::PriceImprovement {
             factor,
             max_volume_factor,
+            quote: _,
         } => FeePolicy {
             auction_id,
             order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
@@ -49,7 +50,10 @@ pub fn from_domain(
     }
 }
 
-pub fn try_into_domain(policy: FeePolicy) -> Result<domain::fee::Policy, Error> {
+pub fn try_into_domain(
+    policy: FeePolicy,
+    quote: Option<&domain::quote::Quote>,
+) -> Result<domain::fee::Policy, Error> {
     let policy = match policy.kind {
         FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
             factor: policy
@@ -76,6 +80,14 @@ pub fn try_into_domain(policy: FeePolicy) -> Result<domain::fee::Policy, Error> 
                 .price_improvement_max_volume_factor
                 .context("missing price_improvement_max_volume_factor")?
                 .try_into()?,
+            quote: {
+                let quote = quote.ok_or(Error::MissingQuote)?;
+                domain::fee::Quote {
+                    sell_amount: quote.sell_amount.into(),
+                    buy_amount: quote.buy_amount.into(),
+                    fee: quote.fee.into(),
+                }
+            },
         },
     };
     Ok(policy)

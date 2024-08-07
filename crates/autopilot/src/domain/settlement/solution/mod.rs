@@ -298,8 +298,7 @@ mod tests {
             prices,
             surplus_capturing_jit_order_owners: vec![],
             id: 0,
-            fee_policies: HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), vec![])]),
-            quotes: HashMap::new(),
+            orders: HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), vec![])]),
         };
 
         // surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
