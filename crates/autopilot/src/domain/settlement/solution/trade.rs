@@ -171,11 +171,15 @@ impl Trade {
     /// Protocol fees is defined by fee policies attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fees(&self, policies: &[fee::Policy]) -> Result<eth::Asset, Error> {
+    fn protocol_fees(
+        &self,
+        quote: Option<&domain::Quote>,
+        policies: &[fee::Policy],
+    ) -> Result<eth::Asset, Error> {
         let mut current_trade = self.clone();
         let mut amount = eth::TokenAmount::default();
         for (i, protocol_fee) in policies.iter().enumerate().rev() {
-            let fee = current_trade.protocol_fee(protocol_fee)?;
+            let fee = current_trade.protocol_fee(protocol_fee, quote)?;
             // Do not need to calculate the last custom prices because in the last iteration
             // the prices are not used anymore to calculate the protocol fee
             amount += fee;
@@ -255,7 +259,11 @@ impl Trade {
     /// Protocol fee is defined by a fee policy attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fee(&self, fee_policy: &fee::Policy) -> Result<eth::TokenAmount, Error> {
+    fn protocol_fee(
+        &self,
+        fee_policy: &fee::Policy,
+        quote: Option<&domain::Quote>,
+    ) -> Result<eth::TokenAmount, Error> {
         match fee_policy {
             fee::Policy::Surplus {
                 factor,
@@ -271,21 +279,30 @@ impl Trade {
             fee::Policy::PriceImprovement {
                 factor,
                 max_volume_factor,
-                quote,
-            } => {
-                let price_improvement = self.price_improvement(quote)?;
-                let fee = std::cmp::min(
-                    self.surplus_fee(price_improvement, (*factor).into())?
-                        .amount,
-                    self.volume_fee((*max_volume_factor).into())?.amount,
-                );
-                Ok(fee)
-            }
+            } => match quote {
+                Some(quote) => {
+                    let price_improvement = self.price_improvement(quote)?;
+                    let fee = std::cmp::min(
+                        self.surplus_fee(price_improvement, (*factor).into())?
+                            .amount,
+                        self.volume_fee((*max_volume_factor).into())?.amount,
+                    );
+                    Ok(fee)
+                }
+                None => {
+                    let surplus = self.surplus_over_limit_price()?;
+                    let fee = std::cmp::min(
+                        self.surplus_fee(surplus, (*factor).into())?.amount,
+                        self.volume_fee((*max_volume_factor).into())?.amount,
+                    );
+                    Ok::<eth::TokenAmount, Error>(fee)
+                }
+            },
             fee::Policy::Volume { factor } => Ok(self.volume_fee((*factor).into())?.amount),
         }
     }
 
-    fn price_improvement(&self, quote: &domain::fee::Quote) -> Result<eth::Asset, Error> {
+    fn price_improvement(&self, quote: &domain::Quote) -> Result<eth::Asset, Error> {
         let surplus = self.surplus_over_quote(quote);
         // negative surplus is not error in this case, as solutions often have no
         // improvement over quote which results in negative surplus
@@ -318,7 +335,7 @@ impl Trade {
         self.surplus_over(&self.prices.uniform, limit_price)
     }
 
-    fn surplus_over_quote(&self, quote: &domain::fee::Quote) -> Result<eth::Asset, error::Math> {
+    fn surplus_over_quote(&self, quote: &domain::Quote) -> Result<eth::Asset, error::Math> {
         let quote = adjust_quote_to_order_limits(
             Order {
                 sell: self.sell.amount,
@@ -327,7 +344,7 @@ impl Trade {
             },
             Quote {
                 sell: quote.sell_amount.into(),
-                buy: quote.buy_amount.into(),
+                buy: quote.buy_amount,
                 fee: quote.fee.into(),
             },
         )?;
@@ -430,13 +447,13 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_protocol_fee(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        let protocol_fee = self.protocol_fees(
-            auction
-                .orders
-                .get(&self.order_uid)
-                .map(|value| value.as_slice())
-                .unwrap_or_default(),
-        )?;
+        let fee_policies = auction
+            .fee_policies
+            .get(&self.order_uid)
+            .map(|value| value.as_slice())
+            .unwrap_or_default();
+        let quote = auction.quotes.get(&self.order_uid);
+        let protocol_fee = self.protocol_fees(quote, fee_policies)?;
         let price = auction
             .prices
             .get(&protocol_fee.token)

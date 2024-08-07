@@ -9,8 +9,10 @@ use {
 pub struct Auction {
     pub id: domain::auction::Id,
     /// All orders from a competition auction. Some of them may contain fee
-    /// policies.
-    pub orders: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
+    /// policies and quotes.
+    pub fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
+    /// All quotes from a competition auction orders.
+    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     /// Auction external prices
     pub prices: domain::auction::Prices,
     /// JIT orders with surplus capturing JIT order owners should capture
@@ -23,7 +25,7 @@ impl Auction {
     /// surplus of a settlement.
     pub fn is_surplus_capturing(&self, order: &domain::OrderUid) -> bool {
         // All orders in the auction contribute to surplus
-        if self.orders.contains_key(order) {
+        if self.fee_policies.contains_key(order) {
             return true;
         }
         // Some JIT orders contribute to surplus, for example COW AMM orders
