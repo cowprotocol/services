@@ -580,14 +580,24 @@ pub enum GasEstimatorType {
     Web3,
 }
 
+/// Defines various strategies to prioritize orders.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum OrderPriorityStrategy {
+    /// Strategy to prioritize orders based on external price.
+    /// This strategy uses the likelihood that an order will be fulfilled,
+    /// based on token prices. A larger value means that the order is more
+    /// likely to be fulfilled.
     ExternalPrice,
+    /// Strategy to prioritize orders based on their creation timestamp. The
+    /// most recently created orders are given the highest priority.
     CreationTimestamp,
+    /// Strategy to prioritize orders based on whether the current solver
+    /// provided the winning quote for the order.
     OwnQuotes,
 }
 
+/// Returns the default order priority strategies in a specific order.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     vec![
         OrderPriorityStrategy::CreationTimestamp,
