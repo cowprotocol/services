@@ -122,8 +122,9 @@ impl Solution {
             let uniform_buy_token_index =
                 tokens.iter().position(|token| token == &buy_token).unwrap();
             trades.push(trade::Trade::new(
-                tokenized::order_uid(&trade, &tokens, domain_separator)
-                    .map_err(|err| Error::OrderUidRecover(err, auction_id))?,
+                tokenized::order_uid(&trade, &tokens, domain_separator).map_err(|err| {
+                    Error::Decoding(error::Decoding::OrderUidRecover(err), auction_id)
+                })?,
                 eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
@@ -156,10 +157,22 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
-        #[error(transparent)]
-        Decoding(#[from] tokenized::error::Decoding),
-        #[error("failed to recover order uid {0} for auction {1}")]
-        OrderUidRecover(tokenized::error::Uid, auction::Id),
+        #[error("transaction calldata is not a settlement")]
+        NotSettlement,
+        #[error("no auction id found in calldata")]
+        MissingAuctionId,
+        #[error("decoding error {0} for auction {1}")]
+        Decoding(#[source] Decoding, auction::Id),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Decoding {
+        #[error("calldata not in an expected abi format: {0}")]
+        Ethabi(web3::ethabi::Error),
+        #[error("unable to tokenize calldata into expected format: {0}")]
+        Tokenizing(ethcontract::tokens::Error),
+        #[error("failed to recover order uid {0}")]
+        OrderUidRecover(tokenized::error::Uid),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -180,6 +193,21 @@ pub mod error {
             match err {
                 trade::Error::MissingPrice(token) => Self::MissingPrice(token),
                 trade::Error::Math(err) => Self::Math(err),
+            }
+        }
+    }
+
+    impl From<tokenized::error::Decoding> for Error {
+        fn from(err: tokenized::error::Decoding) -> Self {
+            match err {
+                tokenized::error::Decoding::InvalidSelector => Self::NotSettlement,
+                tokenized::error::Decoding::MissingAuctionId => Self::MissingAuctionId,
+                tokenized::error::Decoding::Ethabi(err, auction_id) => {
+                    Self::Decoding(Decoding::Ethabi(err), auction_id)
+                }
+                tokenized::error::Decoding::Tokenizing(err, auction_id) => {
+                    Self::Decoding(Decoding::Tokenizing(err), auction_id)
+                }
             }
         }
     }

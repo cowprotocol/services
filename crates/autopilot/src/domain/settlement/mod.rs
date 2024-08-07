@@ -37,52 +37,59 @@ impl Settlement {
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
+        let auction_id = solution.auction_id();
 
         if persistence
-            .auction_has_settlement(solution.auction_id())
+            .auction_has_settlement(auction_id)
             .await
-            .map_err(Error::from)?
+            .map_err(with(auction_id))?
         {
             // This settlement has already been processed by another environment.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
-            return Err(Error::WrongEnvironment);
+            return Err(Error::Error(SettlementError::WrongEnvironment, auction_id));
         }
 
         let auction = persistence
-            .get_auction(solution.auction_id())
+            .get_auction(auction_id)
             .await
-            .map_err(Error::from)?;
+            .map_err(with(auction_id))?;
 
         // winning solution - solution promised during solver competition
         let promised_solution = persistence
-            .get_winning_solution(solution.auction_id())
+            .get_winning_solution(auction_id)
             .await
-            .map_err(Error::from)?;
+            .map_err(with(auction_id))?;
 
         if transaction.solver != promised_solution.solver() {
-            return Err(Error::SolverMismatch {
-                expected: promised_solution.solver(),
-                got: transaction.solver,
-            });
+            return Err(Error::Error(
+                SettlementError::SolverMismatch {
+                    expected: promised_solution.solver(),
+                    got: transaction.solver,
+                },
+                auction_id,
+            ));
         }
 
-        let score = solution.score(&auction)?;
+        let score = solution.score(&auction).map_err(with(auction_id))?;
 
         // temp log
         if score != promised_solution.score() {
             tracing::debug!(
-                auction_id = ?solution.auction_id(),
+                auction_id = ?auction_id,
                 "score mismatch: expected competition score {}, settlement score {}",
                 promised_solution.score(),
                 score,
             );
         }
         if score < promised_solution.score() {
-            return Err(Error::ScoreMismatch {
-                expected: promised_solution.score(),
-                got: score,
-            });
+            return Err(Error::Error(
+                SettlementError::ScoreMismatch {
+                    expected: promised_solution.score(),
+                    got: score,
+                },
+                auction_id,
+            ));
         }
 
         Ok(Self {
@@ -106,14 +113,36 @@ impl Settlement {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("calldata is not a settlement transaction")]
+    NotSettlement,
+    #[error("auction id not attached to the calldata")]
+    MissingAuctionId,
+    #[error("error {0} for auction {1}")]
+    Error(SettlementError, domain::auction::Id),
+}
+
+impl Error {
+    pub fn auction_id(&self) -> Option<domain::auction::Id> {
+        match self {
+            Self::NotSettlement => None,
+            Self::MissingAuctionId => None,
+            Self::Error(_, auction) => Some(*auction),
+        }
+    }
+}
+
+/// Errors that can occur only after auction id is successfully decoded from
+/// calldata.
+#[derive(Debug, thiserror::Error)]
+pub enum SettlementError {
     #[error("failed communication with the database: {0}")]
     Infra(sqlx::Error),
     #[error("failed to prepare the data fetched from database for domain: {0}")]
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
-    #[error(transparent)]
-    BuildingSolution(#[from] solution::Error),
+    #[error("failed to decode settlement: {0}")]
+    Decoding(solution::error::Decoding),
     #[error(transparent)]
     BuildingScore(#[from] solution::error::Score),
     #[error("solver mismatch: expected competition solver {expected}, settlement solver {got}")]
@@ -152,7 +181,7 @@ pub enum InconsistentData {
     InvalidSolverCompetition(anyhow::Error),
 }
 
-impl From<infra::persistence::error::Auction> for Error {
+impl From<infra::persistence::error::Auction> for SettlementError {
     fn from(err: infra::persistence::error::Auction) -> Self {
         match err {
             infra::persistence::error::Auction::BadCommunication(err) => Self::Infra(err),
@@ -169,7 +198,7 @@ impl From<infra::persistence::error::Auction> for Error {
     }
 }
 
-impl From<infra::persistence::error::Solution> for Error {
+impl From<infra::persistence::error::Solution> for SettlementError {
     fn from(err: infra::persistence::error::Solution) -> Self {
         match err {
             infra::persistence::error::Solution::BadCommunication(err) => Self::Infra(err),
@@ -187,8 +216,30 @@ impl From<infra::persistence::error::Solution> for Error {
     }
 }
 
-impl From<infra::persistence::DatabaseError> for Error {
+impl From<infra::persistence::DatabaseError> for SettlementError {
     fn from(err: infra::persistence::DatabaseError) -> Self {
         Self::Infra(err.0)
+    }
+}
+
+impl From<solution::Error> for Error {
+    fn from(err: solution::Error) -> Self {
+        match err {
+            solution::Error::NotSettlement => Self::NotSettlement,
+            solution::Error::MissingAuctionId => Self::MissingAuctionId,
+            solution::Error::Decoding(err, auction_id) => {
+                Self::Error(SettlementError::Decoding(err), auction_id)
+            }
+        }
+    }
+}
+
+fn with<E>(auction: domain::auction::Id) -> impl FnOnce(E) -> Error
+where
+    E: Into<SettlementError>,
+{
+    move |err| {
+        let err = err.into();
+        Error::Error(err, auction)
     }
 }
