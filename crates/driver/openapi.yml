@@ -194,6 +194,10 @@ components:
         buyAmount:
           description: Amount to be bought
           $ref: "#/components/schemas/TokenAmount"
+        created:
+          description: Creation time of the order. Encoded as ISO 8601 UTC.
+          type: string
+          example: "2020-12-03T18:35:18.814523Z"
         validTo:
           description: The time until which the order is valid.
           type: integer
@@ -251,6 +255,31 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        quote:
+          description: |
+            A winning quote.
+          allOf:
+            - $ref: "#/components/schemas/OrderQuote"
+      required:
+        - uid
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - validTo
+        - kind
+        - receiver
+        - owner
+        - partiallyFillable
+        - executed
+        - preInteractions
+        - postInteractions
+        - sellTokenBalance
+        - buyTokenBalance
+        - class
+        - appData
+        - signature
+        - protocolFees
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string
@@ -461,10 +490,23 @@ components:
     Quote:
       type: object
       properties:
-        sell_amount:
+        sellAmount:
           $ref: "#/components/schemas/TokenAmount"
-        buy_amount:
+        buyAmount:
           $ref: "#/components/schemas/TokenAmount"
+        fee:
+          $ref: "#/components/schemas/TokenAmount"
+    OrderQuote:
+      type: object
+      properties:
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        fee:
+          $ref: "#/components/schemas/TokenAmount"
+        solver:
+          $ref: "#/components/schemas/Address"
     Error:
       description: Response on API errors.
       type: object

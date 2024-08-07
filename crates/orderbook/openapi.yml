@@ -930,6 +930,10 @@ components:
           description: see `OrderParameters::buyAmount`
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        created:
+          description: Creation time of the order. Encoded as ISO 8601 UTC.
+          type: string
+          example: "2020-12-03T18:35:18.814523Z"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer
@@ -986,6 +990,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        quote:
+          description: |
+            A winning quote.
+          allOf:
+            - $ref: "#/components/schemas/OrderQuote"
       required:
         - uid
         - sellToken
@@ -1600,6 +1609,27 @@ components:
           description: The amount that needs to be paid, denominated in the sell token.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+    OrderQuote:
+      description: |
+        A calculated order quote.
+      type: object
+      properties:
+        sellAmount:
+          description: The amount of the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: The amount of the buy token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        fee:
+          description: The amount that needs to be paid, denominated in the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        solver:
+          description: The solver that provided the quote.
+          allOf:
+            - $ref: "#/components/schemas/Address"
     Surplus:
       description: The protocol fee is taken as a percent of the surplus.
       type: object
