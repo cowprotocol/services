@@ -76,7 +76,7 @@ impl Settlement {
         // temp log
         if score != promised_solution.score() {
             tracing::debug!(
-                auction_id = ?auction_id,
+                ?auction_id,
                 "score mismatch: expected competition score {}, settlement score {}",
                 promised_solution.score(),
                 score,
