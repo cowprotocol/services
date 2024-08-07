@@ -74,7 +74,7 @@ impl PriceImprovement {
             boundary::OrderClass::Limit => Some(domain::fee::Policy::PriceImprovement {
                 factor: self.factor,
                 max_volume_factor: self.max_volume_factor,
-                quote: quote.clone().into(),
+                quote: (*quote).into(),
             }),
         }
     }

@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, eth, fee::FeeFactor},
+        domain::{self, eth, fee::FeeFactor, OrderUid},
     },
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
@@ -102,7 +102,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        quote: order.quote.into(),
+        quote: order.quote.to_domain(order.uid.into()),
     }
 }
 
@@ -308,6 +308,29 @@ pub struct OrderQuote {
     pub solver: H160,
 }
 
+impl OrderQuote {
+    pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
+        domain::Quote {
+            order_uid,
+            sell_amount: self.sell_amount.into(),
+            buy_amount: self.buy_amount.into(),
+            fee: self.fee.into(),
+            solver: self.solver.into(),
+        }
+    }
+}
+
+impl From<domain::Quote> for OrderQuote {
+    fn from(quote: domain::Quote) -> Self {
+        OrderQuote {
+            sell_amount: quote.sell_amount.0,
+            buy_amount: quote.buy_amount.0,
+            fee: quote.fee.0,
+            solver: quote.solver.0,
+        }
+    }
+}
+
 impl From<domain::fee::Policy> for FeePolicy {
     fn from(policy: domain::fee::Policy) -> Self {
         match policy {
@@ -364,28 +387,6 @@ impl From<FeePolicy> for domain::fee::Policy {
             FeePolicy::Volume { factor } => Self::Volume {
                 factor: FeeFactor::try_from(factor).unwrap(),
             },
-        }
-    }
-}
-
-impl From<domain::auction::order::Quote> for OrderQuote {
-    fn from(quote: domain::auction::order::Quote) -> Self {
-        OrderQuote {
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            fee: quote.fee,
-            solver: quote.solver.0,
-        }
-    }
-}
-
-impl From<OrderQuote> for domain::auction::order::Quote {
-    fn from(quote: OrderQuote) -> Self {
-        domain::auction::order::Quote {
-            sell_amount: quote.sell_amount,
-            buy_amount: quote.buy_amount,
-            fee: quote.fee,
-            solver: quote.solver.into(),
         }
     }
 }

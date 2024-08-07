@@ -1,6 +1,6 @@
 use {super::OrderUid, crate::domain::eth};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quote {
     pub order_uid: OrderUid,
     pub sell_amount: eth::SellTokenAmount,
