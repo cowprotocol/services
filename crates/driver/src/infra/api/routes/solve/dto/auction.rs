@@ -34,7 +34,7 @@ impl Auction {
                 .map(|order| competition::Order {
                     uid: order.uid.into(),
                     receiver: order.receiver.map(Into::into),
-                    created: order.created.into(),
+                    created: order.created.map(Into::into),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
                         amount: order.buy_amount.into(),
@@ -138,7 +138,9 @@ impl Auction {
                             }
                         })
                         .collect(),
-                    quote: Some(order.quote.into_domain(order.sell_token, order.buy_token)),
+                    quote: order
+                        .quote
+                        .map(|q| q.into_domain(order.sell_token, order.buy_token)),
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -236,7 +238,7 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     protocol_fees: Vec<FeePolicy>,
-    created: u32,
+    created: Option<u32>,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,
@@ -257,7 +259,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    quote: OrderQuote,
+    quote: Option<OrderQuote>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -387,9 +387,11 @@ impl AuctionProcessor {
                 Ok(template) => Some(Order {
                     uid: template.order.uid(&domain_separator, &amm).0.into(),
                     receiver: template.order.receiver.map(|addr| addr.into()),
-                    created: u32::try_from(Utc::now().timestamp())
-                        .unwrap_or(u32::MAX)
-                        .into(),
+                    created: Some(
+                        u32::try_from(Utc::now().timestamp())
+                            .unwrap_or(u32::MAX)
+                            .into(),
+                    ),
                     valid_to: template.order.valid_to.into(),
                     buy: eth::Asset {
                         amount: template.order.buy_amount.into(),

@@ -88,9 +88,11 @@ impl Solution {
                         buy: jit.order().buy,
                         signature: jit.order().signature.clone(),
                         receiver: Some(jit.order().receiver),
-                        created: u32::try_from(Utc::now().timestamp())
-                            .unwrap_or(u32::MAX)
-                            .into(),
+                        created: Some(
+                            u32::try_from(Utc::now().timestamp())
+                                .unwrap_or(u32::MAX)
+                                .into(),
+                        ),
                         valid_to: jit.order().valid_to,
                         app_data: jit.order().app_data,
                         partial: jit.order().partially_fillable(),
