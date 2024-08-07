@@ -116,18 +116,14 @@ pub struct ErrorWithAuction {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("calldata is not a settlement transaction")]
-    NotSettlement,
-    #[error("auction id not attached to the calldata")]
-    MissingAuctionId,
-    #[error("failed to decode settlement: {0}")]
-    Decoding(#[source] solution::error::Decoding),
     #[error("failed communication with the database: {0}")]
     Infra(sqlx::Error),
     #[error("failed to prepare the data fetched from database for domain: {0}")]
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
+    #[error(transparent)]
+    BuildingSolution(#[from] solution::Error),
     #[error(transparent)]
     BuildingScore(#[from] solution::error::Score),
     #[error("solver mismatch: expected competition solver {expected}, settlement solver {got}")]
@@ -209,19 +205,9 @@ impl From<infra::persistence::DatabaseError> for Error {
 
 impl From<solution::Error> for ErrorWithAuction {
     fn from(err: solution::Error) -> Self {
-        match err {
-            solution::Error::NotSettlement => ErrorWithAuction {
-                inner: Error::NotSettlement,
-                auction_id: None,
-            },
-            solution::Error::MissingAuctionId => ErrorWithAuction {
-                inner: Error::MissingAuctionId,
-                auction_id: None,
-            },
-            solution::Error::Decoding(err, auction_id) => ErrorWithAuction {
-                inner: Error::Decoding(err),
-                auction_id: Some(auction_id),
-            },
+        Self {
+            auction_id: err.auction_id(),
+            inner: Error::BuildingSolution(err),
         }
     }
 }
