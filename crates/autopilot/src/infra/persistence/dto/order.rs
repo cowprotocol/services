@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, eth, fee::FeeFactor, OrderUid},
+        domain::{self, eth, fee::FeeFactor},
     },
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
@@ -39,7 +39,7 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
-    pub quote: Option<OrderQuote>,
+    pub quote: Option<Quote>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -297,42 +297,7 @@ pub struct Quote {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderQuote {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee: U256,
     pub solver: H160,
-}
-
-impl OrderQuote {
-    pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
-        domain::Quote {
-            order_uid,
-            sell_amount: self.sell_amount.into(),
-            buy_amount: self.buy_amount.into(),
-            fee: self.fee.into(),
-            solver: self.solver.into(),
-        }
-    }
-}
-
-impl From<domain::Quote> for OrderQuote {
-    fn from(quote: domain::Quote) -> Self {
-        OrderQuote {
-            sell_amount: quote.sell_amount.0,
-            buy_amount: quote.buy_amount.0,
-            fee: quote.fee.0,
-            solver: quote.solver.0,
-        }
-    }
 }
 
 impl FeePolicy {
@@ -356,6 +321,7 @@ impl FeePolicy {
                         sell_amount: quote.sell_amount.0,
                         buy_amount: quote.buy_amount.0,
                         fee: quote.fee.0,
+                        solver: quote.solver.0,
                     },
                 },
                 None => Self::Surplus {
@@ -391,6 +357,29 @@ impl From<FeePolicy> for domain::fee::Policy {
             FeePolicy::Volume { factor } => Self::Volume {
                 factor: FeeFactor::try_from(factor).unwrap(),
             },
+        }
+    }
+}
+
+impl Quote {
+    pub fn to_domain(&self, order_uid: domain::OrderUid) -> domain::Quote {
+        domain::Quote {
+            order_uid,
+            sell_amount: self.sell_amount.into(),
+            buy_amount: self.buy_amount.into(),
+            fee: self.fee.into(),
+            solver: self.solver.into(),
+        }
+    }
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(quote: domain::Quote) -> Self {
+        Quote {
+            sell_amount: quote.sell_amount.0,
+            buy_amount: quote.buy_amount.0,
+            fee: quote.fee.0,
+            solver: quote.solver.0,
         }
     }
 }
