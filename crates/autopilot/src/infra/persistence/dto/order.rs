@@ -22,7 +22,7 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub protocol_fees: Vec<FeePolicy>,
-    pub created: u32,
+    pub created: Option<u32>,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,
@@ -39,7 +39,7 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
-    pub quote: OrderQuote,
+    pub quote: Option<OrderQuote>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -68,7 +68,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        quote: order.quote.into(),
+        quote: order.quote.map(Into::into),
     }
 }
 
@@ -102,7 +102,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        quote: order.quote.to_domain(order.uid.into()),
+        quote: order.quote.map(|q| q.to_domain(order.uid.into())),
     }
 }
 
