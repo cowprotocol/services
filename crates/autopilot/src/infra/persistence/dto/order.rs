@@ -22,7 +22,7 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub protocol_fees: Vec<FeePolicy>,
-    pub created: Option<u32>,
+    pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,

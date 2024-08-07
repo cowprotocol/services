@@ -21,7 +21,7 @@ pub struct Order {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
-    pub created: Option<util::Timestamp>,
+    pub created: util::Timestamp,
     pub valid_to: util::Timestamp,
     /// The minimum amount this order must buy when completely filled.
     pub buy: eth::Asset,
@@ -453,7 +453,7 @@ mod tests {
         let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| Order {
             uid: Default::default(),
             receiver: Default::default(),
-            created: Default::default(),
+            created: util::Timestamp(100),
             valid_to: util::Timestamp(u32::MAX),
             buy: buy(buy_amount),
             sell: sell(sell_amount),

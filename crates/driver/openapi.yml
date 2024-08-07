@@ -266,6 +266,7 @@ components:
         - buyToken
         - sellAmount
         - buyAmount
+        - created
         - validTo
         - kind
         - receiver

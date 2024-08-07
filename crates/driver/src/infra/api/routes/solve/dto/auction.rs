@@ -34,7 +34,7 @@ impl Auction {
                 .map(|order| competition::Order {
                     uid: order.uid.into(),
                     receiver: order.receiver.map(Into::into),
-                    created: order.created.map(Into::into),
+                    created: order.created.into(),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
                         amount: order.buy_amount.into(),
@@ -238,7 +238,7 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     protocol_fees: Vec<FeePolicy>,
-    created: Option<u32>,
+    created: u32,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,
