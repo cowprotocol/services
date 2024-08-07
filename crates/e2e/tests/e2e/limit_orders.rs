@@ -3,6 +3,7 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{prelude::U256, H160},
+    fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -718,10 +719,40 @@ async fn no_liquidity_limit_order(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(10))
     );
 
-    // Place Orders
-    let services = Services::new(onchain.contracts()).await;
-    services.start_protocol(solver.clone()).await;
+    // Setup services
+    let protocol_fees_config = ProtocolFeesConfig(vec![
+        ProtocolFee {
+            policy: fee::FeePolicyKind::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.01,
+            },
+            policy_order_class: FeePolicyOrderClass::Limit,
+        },
+        ProtocolFee {
+            policy: fee::FeePolicyKind::PriceImprovement {
+                factor: 0.5,
+                max_volume_factor: 0.01,
+            },
+            policy_order_class: FeePolicyOrderClass::Market,
+        },
+    ])
+    .to_string();
 
+    let services = Services::new(onchain.contracts()).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec![
+                    protocol_fees_config,
+                    "--enable-multiple-fees=true".to_string(),
+                ],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    // Place order
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
@@ -770,4 +801,13 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await
         .unwrap();
     assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    assert_eq!(
+        trades.first().unwrap().fee_policies,
+        vec![model::fee_policy::FeePolicy::Surplus {
+            factor: 0.5,
+            max_volume_factor: 0.01
+        }],
+    );
 }

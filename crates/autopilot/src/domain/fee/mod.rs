@@ -20,6 +20,7 @@ use {
     std::{collections::HashSet, str::FromStr},
 };
 
+#[derive(Debug)]
 enum OrderClass {
     Market,
     Limit,
@@ -115,11 +116,12 @@ impl ProtocolFees {
             fee: order.data.fee_amount,
         };
 
-        // In case there is no quote, we assume the limit price is accurate
+        // In case there is no quote, we assume 0 buy amount so that the order ends up
+        // being considered out of market price.
         let quote = quote.unwrap_or(domain::Quote {
             order_uid: order.metadata.uid.into(),
             sell_amount: order.data.sell_amount.into(),
-            buy_amount: order.data.buy_amount.into(),
+            buy_amount: U256::zero().into(),
             fee: order.data.fee_amount.into(),
         });
 
