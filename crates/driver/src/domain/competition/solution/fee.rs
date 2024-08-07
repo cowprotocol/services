@@ -110,25 +110,20 @@ impl Fulfillment {
             FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
+                quote,
             } => {
-                let price_limits = match &self.order().quote {
-                    Some(quote) => adjust_quote_to_order_limits(
-                        Order {
-                            sell_amount: self.order().sell.amount.0,
-                            buy_amount: self.order().buy.amount.0,
-                            side: self.order().side,
-                        },
-                        Quote {
-                            sell_amount: quote.sell.amount.0,
-                            buy_amount: quote.buy.amount.0,
-                            fee_amount: quote.fee.amount.0,
-                        },
-                    )?,
-                    None => PriceLimits {
-                        sell: self.order().sell.amount,
-                        buy: self.order().buy.amount,
+                let price_limits = adjust_quote_to_order_limits(
+                    Order {
+                        sell_amount: self.order().sell.amount.0,
+                        buy_amount: self.order().buy.amount.0,
+                        side: self.order().side,
                     },
-                };
+                    Quote {
+                        sell_amount: quote.sell.amount.0,
+                        buy_amount: quote.buy.amount.0,
+                        fee_amount: quote.fee.amount.0,
+                    },
+                )?;
                 self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
             FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),

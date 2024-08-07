@@ -156,7 +156,7 @@ impl Auction {
                                 .protocol_fees
                                 .iter()
                                 .cloned()
-                                .map(|p| FeePolicy::from_domain(p, order.quote.as_ref()))
+                                .map(Into::into)
                                 .collect(),
                         ),
                         app_data: AppDataHash(order.app_data.0.into()),
@@ -409,9 +409,9 @@ pub enum FeePolicy {
     Volume { factor: f64 },
 }
 
-impl FeePolicy {
-    fn from_domain(fee_policy: order::FeePolicy, quote: Option<&order::Quote>) -> Self {
-        match fee_policy {
+impl From<fees::FeePolicy> for FeePolicy {
+    fn from(value: order::FeePolicy) -> Self {
+        match value {
             order::FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
@@ -422,19 +422,14 @@ impl FeePolicy {
             order::FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
-            } => match quote {
-                Some(quote) => FeePolicy::PriceImprovement {
-                    factor,
-                    max_volume_factor,
-                    quote: Quote {
-                        sell_amount: quote.sell.amount.into(),
-                        buy_amount: quote.buy.amount.into(),
-                        fee: quote.fee.amount.into(),
-                    },
-                },
-                None => FeePolicy::Surplus {
-                    factor,
-                    max_volume_factor,
+                quote,
+            } => FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell.amount.into(),
+                    buy_amount: quote.buy.amount.into(),
+                    fee: quote.fee.amount.into(),
                 },
             },
             order::FeePolicy::Volume { factor } => FeePolicy::Volume { factor },
