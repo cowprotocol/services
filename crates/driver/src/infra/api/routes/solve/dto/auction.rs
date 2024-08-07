@@ -127,11 +127,9 @@ impl Auction {
                             FeePolicy::PriceImprovement {
                                 factor,
                                 max_volume_factor,
-                                quote,
                             } => competition::order::FeePolicy::PriceImprovement {
                                 factor,
                                 max_volume_factor,
-                                quote: quote.into_domain(order.sell_token, order.buy_token),
                             },
                             FeePolicy::Volume { factor } => {
                                 competition::order::FeePolicy::Volume { factor }
@@ -259,7 +257,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    quote: Option<OrderQuote>,
+    quote: Option<Quote>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -320,11 +318,7 @@ enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
-    PriceImprovement {
-        factor: f64,
-        max_volume_factor: f64,
-        quote: Quote,
-    },
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }
@@ -339,50 +333,11 @@ pub struct Quote {
     pub buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     pub fee: eth::U256,
-}
-
-impl Quote {
-    fn into_domain(
-        self,
-        sell_token: eth::H160,
-        buy_token: eth::H160,
-    ) -> competition::order::fees::Quote {
-        competition::order::fees::Quote {
-            sell: eth::Asset {
-                amount: self.sell_amount.into(),
-                token: sell_token.into(),
-            },
-            buy: eth::Asset {
-                amount: self.buy_amount.into(),
-                token: buy_token.into(),
-            },
-            fee: eth::Asset {
-                amount: self.fee.into(),
-                token: sell_token.into(),
-            },
-        }
-    }
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OrderQuote {
-    #[serde_as(as = "serialize::U256")]
-    pub sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub fee: eth::U256,
     pub solver: eth::H160,
 }
 
-impl OrderQuote {
-    pub fn into_domain(
-        self,
-        sell_token: eth::H160,
-        buy_token: eth::H160,
-    ) -> competition::order::Quote {
+impl Quote {
+    fn into_domain(self, sell_token: eth::H160, buy_token: eth::H160) -> competition::order::Quote {
         competition::order::Quote {
             sell: eth::Asset {
                 amount: self.sell_amount.into(),

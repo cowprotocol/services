@@ -229,6 +229,10 @@ impl Solution {
                     .clearing_price(buy.token)
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
+            let quote = match trade {
+                Trade::Fulfillment(fulfillment) => fulfillment.order().quote.clone(),
+                Trade::Jit(_) => None,
+            };
             trades.push(scoring::Trade::new(
                 sell,
                 buy,
@@ -236,6 +240,7 @@ impl Solution {
                 executed,
                 trade.custom_prices(&uniform_prices)?,
                 trade.protocol_fees(),
+                quote,
             ))
         }
 

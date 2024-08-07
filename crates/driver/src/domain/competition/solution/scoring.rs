@@ -16,7 +16,7 @@ use {
         domain::{
             competition::{
                 auction,
-                order::{fees::Quote, FeePolicy},
+                order::FeePolicy,
                 solution::{
                     error,
                     fee::{self, adjust_quote_to_order_limits},
@@ -73,6 +73,7 @@ pub struct Trade {
     executed: order::TargetAmount,
     custom_price: CustomClearingPrices,
     policies: Vec<FeePolicy>,
+    quote: Option<order::Quote>,
 }
 
 impl Trade {
@@ -83,6 +84,7 @@ impl Trade {
         executed: order::TargetAmount,
         custom_price: CustomClearingPrices,
         policies: Vec<FeePolicy>,
+        quote: Option<order::Quote>,
     ) -> Self {
         Self {
             sell,
@@ -91,6 +93,7 @@ impl Trade {
             executed,
             custom_price,
             policies,
+            quote,
         }
     }
 
@@ -267,20 +270,29 @@ impl Trade {
             FeePolicy::PriceImprovement {
                 factor,
                 max_volume_factor,
-                quote,
-            } => {
-                let price_improvement = self.price_improvement(quote)?;
-                let fee = std::cmp::min(
-                    self.surplus_fee(price_improvement, *factor)?.amount,
-                    self.volume_fee(*max_volume_factor)?.amount,
-                );
-                Ok(fee)
-            }
+            } => match &self.quote {
+                Some(quote) => {
+                    let price_improvement = self.price_improvement(quote)?;
+                    let fee = std::cmp::min(
+                        self.surplus_fee(price_improvement, *factor)?.amount,
+                        self.volume_fee(*max_volume_factor)?.amount,
+                    );
+                    Ok(fee)
+                }
+                None => {
+                    let surplus = self.surplus_over_limit_price()?;
+                    let fee = std::cmp::min(
+                        self.surplus_fee(surplus, *factor)?.amount,
+                        self.volume_fee(*max_volume_factor)?.amount,
+                    );
+                    Ok::<TokenAmount, Error>(fee)
+                }
+            },
             FeePolicy::Volume { factor } => Ok(self.volume_fee(*factor)?.amount),
         }
     }
 
-    fn price_improvement(&self, quote: &Quote) -> Result<eth::Asset, Error> {
+    fn price_improvement(&self, quote: &order::Quote) -> Result<eth::Asset, Error> {
         let quote = adjust_quote_to_order_limits(
             fee::Order {
                 sell_amount: self.sell.amount.0,

@@ -1,5 +1,3 @@
-use crate::domain::eth;
-
 #[derive(Clone, Debug)]
 pub enum FeePolicy {
     /// If the order receives more than limit price, take the protocol fee as a
@@ -33,8 +31,6 @@ pub enum FeePolicy {
         factor: f64,
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
-        /// The best quote received.
-        quote: Quote,
     },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
@@ -44,11 +40,4 @@ pub enum FeePolicy {
         /// fee.
         factor: f64,
     },
-}
-
-#[derive(Clone, Debug)]
-pub struct Quote {
-    pub sell: eth::Asset,
-    pub buy: eth::Asset,
-    pub fee: eth::Asset,
 }
