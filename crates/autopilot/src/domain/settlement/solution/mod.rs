@@ -168,9 +168,9 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Decoding {
         #[error("calldata not in an expected abi format: {0}")]
-        Ethabi(web3::ethabi::Error),
+        Ethabi(#[source] web3::ethabi::Error),
         #[error("unable to tokenize calldata into expected format: {0}")]
-        Tokenizing(ethcontract::tokens::Error),
+        Tokenizing(#[source] ethcontract::tokens::Error),
         #[error("failed to recover order uid {0}")]
         OrderUidRecover(tokenized::error::Uid),
     }

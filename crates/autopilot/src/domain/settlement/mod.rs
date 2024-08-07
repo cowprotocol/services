@@ -35,7 +35,7 @@ impl Settlement {
         transaction: Transaction,
         domain_separator: &eth::DomainSeparator,
         persistence: &infra::Persistence,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ErrorWithAuction> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
         let auction_id = solution.auction_id();
 
@@ -47,7 +47,7 @@ impl Settlement {
             // This settlement has already been processed by another environment.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
-            return Err(Error::Error(SettlementError::WrongEnvironment, auction_id));
+            return Err(Error::WrongEnvironment).map_err(with(auction_id));
         }
 
         let auction = persistence
@@ -62,13 +62,11 @@ impl Settlement {
             .map_err(with(auction_id))?;
 
         if transaction.solver != promised_solution.solver() {
-            return Err(Error::Error(
-                SettlementError::SolverMismatch {
-                    expected: promised_solution.solver(),
-                    got: transaction.solver,
-                },
-                auction_id,
-            ));
+            return Err(Error::SolverMismatch {
+                expected: promised_solution.solver(),
+                got: transaction.solver,
+            })
+            .map_err(with(auction_id));
         }
 
         let score = solution.score(&auction).map_err(with(auction_id))?;
@@ -83,13 +81,11 @@ impl Settlement {
             );
         }
         if score < promised_solution.score() {
-            return Err(Error::Error(
-                SettlementError::ScoreMismatch {
-                    expected: promised_solution.score(),
-                    got: score,
-                },
-                auction_id,
-            ));
+            return Err(Error::ScoreMismatch {
+                expected: promised_solution.score(),
+                got: score,
+            })
+            .map_err(with(auction_id));
         }
 
         Ok(Self {
@@ -111,38 +107,27 @@ impl Settlement {
     }
 }
 
+#[derive(Debug)]
+pub struct ErrorWithAuction {
+    #[allow(dead_code)]
+    pub inner: Error,
+    pub auction_id: Option<domain::auction::Id>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("calldata is not a settlement transaction")]
     NotSettlement,
     #[error("auction id not attached to the calldata")]
     MissingAuctionId,
-    #[error("error {0} for auction {1}")]
-    Error(SettlementError, domain::auction::Id),
-}
-
-impl Error {
-    pub fn auction_id(&self) -> Option<domain::auction::Id> {
-        match self {
-            Self::NotSettlement => None,
-            Self::MissingAuctionId => None,
-            Self::Error(_, auction) => Some(*auction),
-        }
-    }
-}
-
-/// Errors that can occur only after auction id is successfully decoded from
-/// calldata.
-#[derive(Debug, thiserror::Error)]
-pub enum SettlementError {
+    #[error("failed to decode settlement: {0}")]
+    Decoding(#[source] solution::error::Decoding),
     #[error("failed communication with the database: {0}")]
     Infra(sqlx::Error),
     #[error("failed to prepare the data fetched from database for domain: {0}")]
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
-    #[error("failed to decode settlement: {0}")]
-    Decoding(solution::error::Decoding),
     #[error(transparent)]
     BuildingScore(#[from] solution::error::Score),
     #[error("solver mismatch: expected competition solver {expected}, settlement solver {got}")]
@@ -181,7 +166,7 @@ pub enum InconsistentData {
     InvalidSolverCompetition(anyhow::Error),
 }
 
-impl From<infra::persistence::error::Auction> for SettlementError {
+impl From<infra::persistence::error::Auction> for Error {
     fn from(err: infra::persistence::error::Auction) -> Self {
         match err {
             infra::persistence::error::Auction::BadCommunication(err) => Self::Infra(err),
@@ -198,7 +183,7 @@ impl From<infra::persistence::error::Auction> for SettlementError {
     }
 }
 
-impl From<infra::persistence::error::Solution> for SettlementError {
+impl From<infra::persistence::error::Solution> for Error {
     fn from(err: infra::persistence::error::Solution) -> Self {
         match err {
             infra::persistence::error::Solution::BadCommunication(err) => Self::Infra(err),
@@ -216,30 +201,40 @@ impl From<infra::persistence::error::Solution> for SettlementError {
     }
 }
 
-impl From<infra::persistence::DatabaseError> for SettlementError {
+impl From<infra::persistence::DatabaseError> for Error {
     fn from(err: infra::persistence::DatabaseError) -> Self {
         Self::Infra(err.0)
     }
 }
 
-impl From<solution::Error> for Error {
+impl From<solution::Error> for ErrorWithAuction {
     fn from(err: solution::Error) -> Self {
         match err {
-            solution::Error::NotSettlement => Self::NotSettlement,
-            solution::Error::MissingAuctionId => Self::MissingAuctionId,
-            solution::Error::Decoding(err, auction_id) => {
-                Self::Error(SettlementError::Decoding(err), auction_id)
-            }
+            solution::Error::NotSettlement => ErrorWithAuction {
+                inner: Error::NotSettlement,
+                auction_id: None,
+            },
+            solution::Error::MissingAuctionId => ErrorWithAuction {
+                inner: Error::MissingAuctionId,
+                auction_id: None,
+            },
+            solution::Error::Decoding(err, auction_id) => ErrorWithAuction {
+                inner: Error::Decoding(err),
+                auction_id: Some(auction_id),
+            },
         }
     }
 }
 
-fn with<E>(auction: domain::auction::Id) -> impl FnOnce(E) -> Error
+fn with<E>(auction: domain::auction::Id) -> impl FnOnce(E) -> ErrorWithAuction
 where
-    E: Into<SettlementError>,
+    E: Into<Error>,
 {
     move |err| {
         let err = err.into();
-        Error::Error(err, auction)
+        ErrorWithAuction {
+            inner: err,
+            auction_id: Some(auction),
+        }
     }
 }
