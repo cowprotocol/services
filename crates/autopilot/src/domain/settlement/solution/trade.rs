@@ -88,12 +88,17 @@ impl Trade {
             }
             order::Side::Sell => {
                 // scale limit buy to support partially fillable orders
+
+                // `checked_ceil_div`` to be consistent with how settlement contract calculates
+                // traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract is
+                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
                 let limit_buy = self
                     .executed
                     .0
                     .checked_mul(price_limits.buy.0)
                     .ok_or(error::Math::Overflow)?
-                    .checked_div(price_limits.sell.0)
+                    .checked_ceil_div(&price_limits.sell.0)
                     .ok_or(error::Math::DivisionByZero)?;
                 let bought = self
                     .executed
@@ -228,6 +233,8 @@ impl Trade {
     /// The effective amount the user received after all fees.
     ///
     /// Note how the `executed` amount is used to build actual traded amounts.
+    ///
+    /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
             order::Side::Sell => self
@@ -235,7 +242,7 @@ impl Trade {
                 .0
                 .checked_mul(self.prices.custom.sell)
                 .ok_or(error::Math::Overflow)?
-                .checked_div(self.prices.custom.buy)
+                .checked_ceil_div(&self.prices.custom.buy)
                 .ok_or(error::Math::DivisionByZero)?,
             order::Side::Buy => self.executed.0,
         }
