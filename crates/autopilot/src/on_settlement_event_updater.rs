@@ -177,11 +177,6 @@ impl Inner {
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
 
-        Postgres::update_settlement_details(&mut ex, update.clone())
-            .await
-            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
-        ex.commit().await?;
-
         {
             // temporary to debug and compare with current implementation
             // TODO: use instead of current implementation
@@ -199,9 +194,14 @@ impl Inner {
 
             tracing::info!(
                 "settlement object {:?}",
-                settlement.map(|settlement| (settlement.observation(), settlement.score()))
+                settlement.map(|settlement| (settlement.observation()))
             );
         }
+
+        Postgres::update_settlement_details(&mut ex, update.clone())
+            .await
+            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
+        ex.commit().await?;
 
         Ok(true)
     }
