@@ -54,6 +54,11 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    /// Defines order prioritization strategies that will be applied in the
+    /// specified order.
+    #[serde(default = "default_order_priority_strategies")]
+    order_priority_strategies: Vec<OrderPriorityStrategy>,
 }
 
 #[serde_as]
@@ -573,4 +578,20 @@ pub enum GasEstimatorType {
     #[default]
     Native,
     Web3,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum OrderPriorityStrategy {
+    ExternalPrice,
+    CreationTimestamp,
+    OwnQuotes,
+}
+
+fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
+    vec![
+        OrderPriorityStrategy::CreationTimestamp,
+        OrderPriorityStrategy::OwnQuotes,
+        OrderPriorityStrategy::ExternalPrice,
+    ]
 }

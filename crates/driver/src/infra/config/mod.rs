@@ -1,6 +1,13 @@
 use crate::{
     domain::eth,
-    infra::{blockchain, config::file::GasEstimatorType, liquidity, mempool, simulator, solver},
+    infra::{
+        blockchain,
+        config::file::{GasEstimatorType, OrderPriorityStrategy},
+        liquidity,
+        mempool,
+        simulator,
+        solver,
+    },
 };
 
 pub mod file;
@@ -16,4 +23,5 @@ pub struct Config {
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
+    pub order_priority_strategies: Vec<OrderPriorityStrategy>,
 }

@@ -3,18 +3,19 @@ use {
     crate::{
         domain::{
             competition::{self, auction},
-            eth,
+            eth::{self},
             liquidity,
             time,
         },
-        infra::{self, blockchain, observe, Ethereum},
+        infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
         util::{self, Bytes},
     },
-    chrono::Utc,
+    chrono::{Duration, Utc},
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
     std::{
+        cmp::Ordering,
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
     },
@@ -131,10 +132,36 @@ impl Auction {
 #[derive(Clone)]
 pub struct AuctionProcessor(Arc<Mutex<Inner>>);
 
+trait OrderComparator: Send + Sync {
+    fn compare(
+        &self,
+        order_a: &order::Order,
+        order_b: &order::Order,
+        tokens: &Tokens,
+        solver: &eth::H160,
+    ) -> Ordering;
+}
+
+impl<F> OrderComparator for F
+where
+    F: Fn(&order::Order, &order::Order, &Tokens, &eth::H160) -> Ordering + Send + Sync,
+{
+    fn compare(
+        &self,
+        order_a: &order::Order,
+        order_b: &order::Order,
+        tokens: &Tokens,
+        solver: &eth::H160,
+    ) -> Ordering {
+        self(order_a, order_b, tokens, solver)
+    }
+}
+
 struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
     eth: infra::Ethereum,
+    order_comparators: Vec<Arc<dyn OrderComparator>>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -143,14 +170,18 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 impl AuctionProcessor {
     /// Prioritize well priced and filter out unfillable orders from the given
     /// auction.
-    pub async fn prioritize(&self, auction: Auction) -> Auction {
+    pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
         Auction {
-            orders: self.prioritize_orders(&auction).await,
+            orders: self.prioritize_orders(&auction, solver).await,
             ..auction
         }
     }
 
-    fn prioritize_orders(&self, auction: &Auction) -> Shared<BoxFuture<'static, Vec<Order>>> {
+    fn prioritize_orders(
+        &self,
+        auction: &Auction,
+        solver: &eth::H160,
+    ) -> Shared<BoxFuture<'static, Vec<Order>>> {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
@@ -171,13 +202,15 @@ impl AuctionProcessor {
         let tokens: Tokens = auction.tokens().clone();
         let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
         let mut orders = auction.orders.clone();
+        let solver = *solver;
+        let order_comparators = lock.order_comparators.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
             orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms)));
-            Self::sort(&mut orders, &tokens);
+            Self::sort(&mut orders, &tokens, &solver, &order_comparators);
             let mut balances =
                 rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
             Self::filter_orders(&mut balances, &mut orders);
@@ -202,22 +235,20 @@ impl AuctionProcessor {
 
     /// Sort orders based on their price achievability using the reference
     /// prices contained in the auction (in the money first).
-    fn sort(orders: &mut [order::Order], tokens: &Tokens) {
-        orders.sort_by_cached_key(|order| {
-            // Market orders are preferred over limit orders, as the expectation is that
-            // they should be immediately fulfillable. Liquidity orders come last, as they
-            // are the most niche and rarely used.
-            let class = match order.kind {
-                order::Kind::Market => 2,
-                order::Kind::Limit { .. } => 1,
-                order::Kind::Liquidity => 0,
-            };
-            std::cmp::Reverse((
-                class,
-                // If the orders are of the same kind, then sort by likelihood of fulfillment
-                // based on token prices.
-                order.likelihood(tokens),
-            ))
+    fn sort(
+        orders: &mut [order::Order],
+        tokens: &Tokens,
+        solver: &eth::H160,
+        order_comparators: &Vec<Arc<dyn OrderComparator>>,
+    ) {
+        orders.sort_by(|a, b| {
+            for cmp in order_comparators {
+                let ordering = cmp.compare(a, b, tokens, solver);
+                if ordering != Ordering::Equal {
+                    return ordering;
+                }
+            }
+            Ordering::Equal
         });
     }
 
@@ -457,12 +488,28 @@ impl AuctionProcessor {
         orders
     }
 
-    pub fn new(eth: &infra::Ethereum) -> Self {
+    pub fn new(
+        eth: &infra::Ethereum,
+        order_priority_strategies: Vec<OrderPriorityStrategy>,
+    ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
+        let mut order_comparators = Vec::<Arc<dyn OrderComparator>>::new();
+
+        order_comparators.push(OrderClass.comparator());
+
+        for strategy in order_priority_strategies {
+            let comparator: Arc<dyn OrderComparator> = match strategy {
+                OrderPriorityStrategy::ExternalPrice => ExternalPrice.comparator(),
+                OrderPriorityStrategy::CreationTimestamp => CreationTimestamp.comparator(),
+                OrderPriorityStrategy::OwnQuotes => OwnQuotes.comparator(),
+            };
+            order_comparators.push(comparator);
+        }
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
             eth,
+            order_comparators,
         })))
     }
 }
@@ -611,4 +658,71 @@ pub enum Error {
     InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
+}
+
+trait OrderingKey: Send + Sync + 'static {
+    type Key: Ord + Send + Sync + 'static;
+
+    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> Self::Key;
+
+    /// Returns a comparator that compares two orders based on the key in
+    /// reverse order.
+    fn comparator(&self) -> Arc<dyn OrderComparator + '_> {
+        Arc::new(
+            move |a: &order::Order, b: &order::Order, tokens: &Tokens, solver: &eth::H160| {
+                self.key(a, tokens, solver)
+                    .cmp(&self.key(b, tokens, solver))
+                    .reverse()
+            },
+        )
+    }
+}
+
+struct OrderClass;
+impl OrderingKey for OrderClass {
+    type Key = i32;
+
+    // Market orders are preferred over limit orders, as the expectation is that
+    // they should be immediately fulfillable. Liquidity orders come last, as they
+    // are the most niche and rarely used.
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
+        match order.kind {
+            order::Kind::Market => 2,
+            order::Kind::Limit { .. } => 1,
+            order::Kind::Liquidity => 0,
+        }
+    }
+}
+
+struct ExternalPrice;
+impl OrderingKey for ExternalPrice {
+    type Key = num::BigRational;
+
+    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
+        order.likelihood(tokens)
+    }
+}
+
+struct CreationTimestamp;
+impl CreationTimestamp {
+    const THRESHOLD: Duration = Duration::minutes(2);
+}
+impl OrderingKey for CreationTimestamp {
+    type Key = Option<util::Timestamp>;
+
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
+        order.created.filter(|timestamp| {
+            timestamp.0
+                > u32::try_from((Utc::now() - Self::THRESHOLD).timestamp()).unwrap_or(u32::MAX)
+        })
+    }
+}
+
+struct OwnQuotes;
+impl OrderingKey for OwnQuotes {
+    type Key = bool;
+
+    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> Self::Key {
+        order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver)
+    }
 }
