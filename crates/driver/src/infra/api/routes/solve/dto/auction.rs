@@ -34,6 +34,7 @@ impl Auction {
                 .map(|order| competition::Order {
                     uid: order.uid.into(),
                     receiver: order.receiver.map(Into::into),
+                    created: order.created.into(),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
                         amount: order.buy_amount.into(),
@@ -137,6 +138,7 @@ impl Auction {
                             }
                         })
                         .collect(),
+                    quote: Some(order.quote.into_domain(order.sell_token, order.buy_token)),
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -234,6 +236,7 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     protocol_fees: Vec<FeePolicy>,
+    created: u32,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,
@@ -254,6 +257,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    quote: OrderQuote,
 }
 
 #[derive(Debug, Deserialize)]
@@ -354,6 +358,43 @@ impl Quote {
                 amount: self.fee.into(),
                 token: sell_token.into(),
             },
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OrderQuote {
+    #[serde_as(as = "serialize::U256")]
+    pub sell_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub buy_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub fee: eth::U256,
+    pub solver: eth::H160,
+}
+
+impl OrderQuote {
+    pub fn into_domain(
+        self,
+        sell_token: eth::H160,
+        buy_token: eth::H160,
+    ) -> competition::order::Quote {
+        competition::order::Quote {
+            sell: eth::Asset {
+                amount: self.sell_amount.into(),
+                token: sell_token.into(),
+            },
+            buy: eth::Asset {
+                amount: self.buy_amount.into(),
+                token: buy_token.into(),
+            },
+            fee: eth::Asset {
+                amount: self.fee.into(),
+                token: sell_token.into(),
+            },
+            solver: self.solver.into(),
         }
     }
 }

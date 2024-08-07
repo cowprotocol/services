@@ -10,6 +10,7 @@ use {
         infra::{self, blockchain, observe, Ethereum},
         util::{self, Bytes},
     },
+    chrono::Utc,
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
@@ -386,6 +387,9 @@ impl AuctionProcessor {
                 Ok(template) => Some(Order {
                     uid: template.order.uid(&domain_separator, &amm).0.into(),
                     receiver: template.order.receiver.map(|addr| addr.into()),
+                    created: u32::try_from(Utc::now().timestamp())
+                        .unwrap_or(u32::MAX)
+                        .into(),
                     valid_to: template.order.valid_to.into(),
                     buy: eth::Asset {
                         amount: template.order.buy_amount.into(),
@@ -435,6 +439,7 @@ impl AuctionProcessor {
                         }
                     },
                     protocol_fees: vec![],
+                    quote: None,
                 }),
                 Err(err) => {
                     tracing::warn!(?err, ?amm, "failed to generate template order for cow amm");
