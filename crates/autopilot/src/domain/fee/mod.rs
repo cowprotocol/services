@@ -106,7 +106,7 @@ impl ProtocolFees {
             .collect::<Vec<_>>();
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
-            return boundary::order::to_domain(order, partner_fee);
+            return boundary::order::to_domain(order, partner_fee, quote);
         }
 
         let order_ = boundary::Amounts {
@@ -136,7 +136,7 @@ impl ProtocolFees {
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
         if let Some(partner_fee) = partner_fees.first() {
-            return boundary::order::to_domain(order, vec![*partner_fee]);
+            return boundary::order::to_domain(order, vec![*partner_fee], quote);
         }
         let protocol_fees = self
             .fee_policies
@@ -147,7 +147,7 @@ impl ProtocolFees {
             .and_then(|policy| Self::variant_fee_apply(&order, quote, policy))
             .into_iter()
             .collect_vec();
-        boundary::order::to_domain(order, protocol_fees)
+        boundary::order::to_domain(order, protocol_fees, quote)
     }
 
     fn apply_multiple_policies(
@@ -167,7 +167,7 @@ impl ProtocolFees {
             .flat_map(|policy| Self::variant_fee_apply(&order, quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
-        boundary::order::to_domain(order, protocol_fees)
+        boundary::order::to_domain(order, protocol_fees, quote)
     }
 
     fn variant_fee_apply(

@@ -1,5 +1,8 @@
 use {
-    crate::domain::{eth, fee},
+    crate::{
+        domain,
+        domain::{eth, fee},
+    },
     primitive_types::{H160, H256, U256},
     std::fmt::{self, Display},
 };
@@ -12,6 +15,7 @@ pub struct Order {
     pub protocol_fees: Vec<fee::Policy>,
     pub side: Side,
     pub class: Class,
+    pub created: u32,
     pub valid_to: u32,
     pub receiver: Option<eth::Address>,
     pub owner: eth::Address,
@@ -25,6 +29,7 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub app_data: AppDataHash,
     pub signature: Signature,
+    pub quote: Quote,
 }
 
 impl Order {
@@ -171,5 +176,28 @@ impl From<eth::U256> for TargetAmount {
 impl From<TargetAmount> for eth::U256 {
     fn from(value: TargetAmount) -> Self {
         value.0
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Quote {
+    /// The amount of the sell token.
+    pub sell_amount: U256,
+    /// The amount of the buy token.
+    pub buy_amount: U256,
+    /// The amount that needs to be paid, denominated in the sell token.
+    pub fee: U256,
+    /// The address of the solver that provided the quote.
+    pub solver: eth::Address,
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(value: domain::Quote) -> Self {
+        Self {
+            sell_amount: value.sell_amount.into(),
+            buy_amount: value.buy_amount.into(),
+            fee: value.fee.into(),
+            solver: value.solver,
+        }
     }
 }

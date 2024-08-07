@@ -6,4 +6,5 @@ pub struct Quote {
     pub sell_amount: eth::SellTokenAmount,
     pub buy_amount: eth::TokenAmount,
     pub fee: eth::SellTokenAmount,
+    pub solver: eth::Address,
 }

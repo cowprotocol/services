@@ -6,6 +6,7 @@ use {
 pub fn to_domain(
     order: model::order::Order,
     protocol_fees: Vec<domain::fee::Policy>,
+    quote: &domain::Quote,
 ) -> domain::Order {
     let remaining_order = remaining_amounts::Order::from(order.clone());
     let order_is_untouched = remaining_order.executed_amount.is_zero();
@@ -21,6 +22,7 @@ pub fn to_domain(
             amount: order.data.buy_amount.into(),
         },
         protocol_fees,
+        created: u32::try_from(order.metadata.creation_date.timestamp()).unwrap_or(u32::MAX),
         valid_to: order.data.valid_to,
         side: order.data.kind.into(),
         receiver: order.data.receiver.map(Into::into),
@@ -41,5 +43,6 @@ pub fn to_domain(
         class: order.metadata.class.into(),
         app_data: order.data.app_data.into(),
         signature: order.signature.into(),
+        quote: quote.clone().into(),
     }
 }
