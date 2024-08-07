@@ -276,17 +276,7 @@ components:
         - sellToken
         - buyToken
         - sellAmount
-        - fullSellAmount
         - buyAmount
-        - fullBuyAmount
-        - validTo
-        - owner
-        - preInteractions
-        - postInteractions
-        - sellTokenSource
-        - buyTokenDestination
-        - appData
-        - signingScheme
         - kind
         - partiallyFillable
         - class
@@ -311,8 +301,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
-        created:
-          type: integer
         validTo:
           type: integer
         kind:
@@ -351,8 +339,6 @@ components:
           $ref: "#/components/schemas/SigningScheme"
         signature:
           $ref: "#/components/schemas/Signature"
-        quote:
-          $ref: "#/components/schemas/OrderQuote"
     FeePolicy:
       description: |
         A fee policy that applies to an order.
@@ -425,17 +411,7 @@ components:
       properties:
         balance:
           $ref: "#/components/schemas/TokenAmount"
-    OrderQuote:
-      type: object
-      properties:
-        sell_amount:
-          $ref: "#/components/schemas/TokenAmount"
-        buy_amount:
-          $ref: "#/components/schemas/TokenAmount"
-        fee:
-          $ref: "#/components/schemas/TokenAmount"
-        solver:
-          $ref: "#/components/schemas/Address"
+
     ConstantProductPool:
       description: |
         A UniswapV2-like constant product liquidity pool for a token pair.
