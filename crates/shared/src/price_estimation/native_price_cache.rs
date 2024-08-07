@@ -536,7 +536,8 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         for _ in 0..10 {
-            // Launch requests and see we get the response `1` from the native batch fetcher instead of the one from the maintenance job
+            // Launch requests and see we get the response `1` from the native batch fetcher
+            // instead of the one from the maintenance job
             let result = estimator.estimate_native_price(token(0)).await;
             assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
         }

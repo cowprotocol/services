@@ -845,6 +845,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            None,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
@@ -852,7 +853,7 @@ mod tests {
         // background task to fetch the missing prices so we'll have them in the
         // next call.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics).await;
         assert!(filtered_orders.is_empty());
         assert!(prices.is_empty());
 
@@ -861,7 +862,7 @@ mod tests {
 
         // Now we have all the native prices we want.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics).await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
