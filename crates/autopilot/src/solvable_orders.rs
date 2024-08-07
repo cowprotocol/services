@@ -197,7 +197,8 @@ impl SolvableOrdersCache {
             orders.clone(),
             &self.native_price_estimator,
             self.metrics,
-        );
+        )
+        .await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
@@ -220,7 +221,7 @@ impl SolvableOrdersCache {
             .cloned()
             .collect::<Vec<_>>();
         let cow_amm_prices =
-            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
+            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator).await;
         prices.extend(cow_amm_prices);
 
         let removed = counter.checkpoint("missing_price", &orders);
@@ -321,12 +322,13 @@ async fn filter_banned_user_orders(
     orders
 }
 
-fn get_native_prices(
+async fn get_native_prices(
     tokens: &[H160],
     native_price_estimator: &CachingNativePriceEstimator,
 ) -> HashMap<H160, U256> {
     native_price_estimator
         .get_cached_prices(tokens)
+        .await
         .into_iter()
         .flat_map(|(token, result)| {
             let price = to_normalized_price(result.ok()?)?;
@@ -491,7 +493,7 @@ async fn update_task(
     }
 }
 
-fn get_orders_with_native_prices(
+async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
@@ -503,7 +505,7 @@ fn get_orders_with_native_prices(
         .into_iter()
         .collect::<Vec<_>>();
 
-    let prices = get_native_prices(&traded_tokens, native_price_estimator);
+    let prices = get_native_prices(&traded_tokens, native_price_estimator).await;
 
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.
