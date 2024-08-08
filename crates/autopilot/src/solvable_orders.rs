@@ -252,6 +252,12 @@ impl SolvableOrdersCache {
 
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()
+            .filter(|cow_amm| {
+                cow_amm
+                    .traded_tokens()
+                    .iter()
+                    .all(|token| prices.contains_key(token))
+            })
             .map(|cow_amm| cow_amm.address())
             .cloned()
             .map(eth::Address::from)
