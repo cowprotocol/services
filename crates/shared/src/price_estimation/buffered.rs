@@ -166,7 +166,7 @@ where
     ) -> Result<Option<NativePriceResult>, Elapsed> {
         tokio::time::timeout(timeout_duration, async {
             match rx.recv().await {
-                Ok(value) => (value.0 == *token).then(|| value),
+                Ok(value) => (value.0 == *token).then_some(value),
                 Err(_) => None,
             }
         })
