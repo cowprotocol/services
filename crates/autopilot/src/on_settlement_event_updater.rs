@@ -244,8 +244,15 @@ impl Inner {
                         }
                     }
                 }
-                (Err(_), None) => {
-                    // todo check auction_ids are equal
+                (Err(err), None) => {
+                    // make sure the auction_ids are equal
+                    if err.auction_id.unwrap_or_default() != auction_id {
+                        tracing::warn!(
+                            ?auction_id,
+                            ?err,
+                            "automatic check error: auction_id mismatch"
+                        );
+                    }
                 }
                 (Err(err), Some(_)) => {
                     // bug: settlement should have been properly built
