@@ -51,7 +51,7 @@ pub trait NativePriceBatchFetcher: Sync + Send {
     async fn fetch_native_prices(
         &self,
         tokens: &HashSet<H160>,
-    ) -> Result<HashMap<H160, Result<f64, PriceEstimationError>>, PriceEstimationError>;
+    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>;
 }
 
 /// Buffered implementation that implements automatic batching of
