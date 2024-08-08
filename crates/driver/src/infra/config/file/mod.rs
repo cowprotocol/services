@@ -620,7 +620,10 @@ pub enum OrderPriorityStrategy {
     OwnQuotes,
 }
 
-/// Returns the default order priority strategies in a specific order.
+/// The default prioritization process first considers
+/// the order timestamp, then checks if the solver is working with its own
+/// quotes, and finally considers the likelihood of order fulfillment based on
+/// external price data.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     vec![
         OrderPriorityStrategy::CreationTimestamp,
