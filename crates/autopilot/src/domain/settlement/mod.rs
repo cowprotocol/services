@@ -3,20 +3,14 @@
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
 use {
-    super::competition,
     crate::{domain, domain::eth, infra},
+    std::collections::HashMap,
 };
 
 mod auction;
-mod observation;
 mod solution;
 mod transaction;
-pub use {
-    auction::Auction,
-    observation::Observation,
-    solution::Solution,
-    transaction::Transaction,
-};
+pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
 /// A solution together with the `Auction` for which it was picked as a winner
 /// and executed on-chain.
@@ -80,13 +74,6 @@ impl Settlement {
                 score,
             );
         }
-        if score < promised_solution.score() {
-            return Err(Error::ScoreMismatch {
-                expected: promised_solution.score(),
-                got: score,
-            })
-            .map_err(with(auction_id));
-        }
 
         Ok(Self {
             solution,
@@ -95,15 +82,30 @@ impl Settlement {
         })
     }
 
-    /// Returns the observation of the settlement.
-    pub fn observation(&self) -> Observation {
-        Observation {
-            gas: self.transaction.gas,
-            gas_price: self.transaction.effective_gas_price,
-            surplus: self.solution.native_surplus(&self.auction),
-            fee: self.solution.native_fee(&self.auction.prices),
-            order_fees: self.solution.fees(&self.auction.prices),
-        }
+    /// The gas used by the settlement.
+    pub fn gas(&self) -> eth::Gas {
+        self.transaction.gas
+    }
+
+    /// The effective gas price at the time of settlement.
+    pub fn gas_price(&self) -> eth::EffectiveGasPrice {
+        self.transaction.effective_gas_price
+    }
+
+    /// Total surplus expressed in native token.
+    pub fn native_surplus(&self) -> eth::Ether {
+        self.solution.native_surplus(&self.auction)
+    }
+
+    /// Total fee expressed in native token.
+    pub fn native_fee(&self) -> eth::Ether {
+        self.solution.native_fee(&self.auction.prices)
+    }
+
+    /// Per order fees denominated in sell token. Contains all orders from the
+    /// settlement
+    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+        self.solution.fees(&self.auction.prices)
     }
 }
 
@@ -130,11 +132,6 @@ pub enum Error {
     SolverMismatch {
         expected: eth::Address,
         got: eth::Address,
-    },
-    #[error("score mismatch: expected competition score {expected}, settlement score {got}")]
-    ScoreMismatch {
-        expected: competition::Score,
-        got: competition::Score,
     },
 }
 
