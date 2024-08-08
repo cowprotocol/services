@@ -42,11 +42,12 @@ pub struct Configuration {
 pub trait NativePriceBatchFetcher: Sync + Send {
     /// Fetches a batch of native price estimates.
     ///
-    /// It returns a HashMap which maps the token with its price
+    /// It returns a HashMap which maps the token with its native price
+    /// estimator result
     async fn fetch_native_prices(
         &self,
         tokens: &HashSet<H160>,
-    ) -> Result<HashMap<H160, f64>, PriceEstimationError>;
+    ) -> Result<HashMap<H160, Result<f64, PriceEstimationError>>, PriceEstimationError>;
 }
 
 /// Buffered implementation that implements automatic batching of
@@ -116,7 +117,7 @@ where
                             .into_iter()
                             .map(|(token, price)| NativePriceResult {
                                 token,
-                                result: Ok::<_, PriceEstimationError>(price),
+                                result: price,
                             })
                             .collect(),
                         Err(err) => {
@@ -257,7 +258,7 @@ mod tests {
             .returning(|input| {
                 Ok(input
                     .iter()
-                    .map(|token| (*token, 1.0))
+                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
                     .collect::<HashMap<_, _>>())
             });
         let config = Configuration {
@@ -281,7 +282,7 @@ mod tests {
             .returning(|input| {
                 Ok(input
                     .iter()
-                    .map(|token| (*token, 1.0))
+                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
                     .collect::<HashMap<_, _>>())
             });
         let config = Configuration {
@@ -358,7 +359,7 @@ mod tests {
             .returning(|input| {
                 Ok(input
                     .iter()
-                    .map(|token| (*token, 1.0))
+                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
                     .collect::<HashMap<_, _>>())
             });
 
@@ -387,7 +388,7 @@ mod tests {
             .returning(|input| {
                 Ok(input
                     .iter()
-                    .map(|token| (*token, 1.0))
+                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
                     .collect::<HashMap<_, _>>())
             });
 
@@ -437,7 +438,7 @@ mod tests {
             .returning(|input| {
                 Ok(input
                     .iter()
-                    .map(|token| (*token, 1.0))
+                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
                     .collect::<HashMap<_, _>>())
             });
 
