@@ -201,14 +201,14 @@ impl AuctionProcessor {
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
         })
-            .map(|res| {
-                res.expect(
-                    "Either runtime was shut down before spawning the task or no OS threads are \
-                 available; no sense in handling those errors",
-                )
-            })
-            .boxed()
-            .shared();
+        .map(|res| {
+            res.expect(
+                "Either runtime was shut down before spawning the task or no OS threads are \
+             available; no sense in handling those errors",
+            )
+        })
+        .boxed()
+        .shared();
 
         tracing::debug!("started new prioritization task");
         lock.auction = new_id;
