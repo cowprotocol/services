@@ -179,7 +179,7 @@ impl Inner {
 
         {
             // temporary to debug and compare with current implementation
-            let transaction = domain::settlement::Transaction::try_from(transaction);
+            let transaction = domain::settlement::Transaction::new(&transaction, domain_separator);
             if transaction.is_err() {
                 // make sure the old code handles this case correctly
                 if auction_id != 0 {
@@ -191,12 +191,9 @@ impl Inner {
             }
 
             if let Ok(transaction) = transaction {
-                let settlement = domain::settlement::Settlement::new(
-                    transaction.clone(),
-                    domain_separator,
-                    &self.persistence,
-                )
-                .await;
+                let settlement =
+                    domain::settlement::Settlement::new(transaction.clone(), &self.persistence)
+                        .await;
 
                 // automatic checks vs current implementation
                 match (settlement, auction_data) {

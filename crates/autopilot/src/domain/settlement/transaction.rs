@@ -1,6 +1,6 @@
 use {
     crate::domain::{self, eth},
-    ethcontract::common::FunctionExt,
+    anyhow::anyhow,
 };
 
 /// An on-chain transaction that settled a solution, with calldata in a valid
@@ -13,68 +13,45 @@ pub struct Transaction {
     pub auction_id: domain::auction::Id,
     /// The address of the solver that submitted the transaction.
     pub solver: eth::Address,
-    /// The call data of the transaction.
-    pub input: Calldata,
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
     /// The gas used by the transaction.
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
     pub effective_gas_price: eth::EffectiveGasPrice,
+    /// The solution that was settled.
+    pub solution: domain::settlement::Solution,
+}
+
+impl Transaction {
+    pub fn new(
+        transaction: &eth::Transaction,
+        domain_separator: &eth::DomainSeparator,
+    ) -> anyhow::Result<Self> {
+        let (_, metadata) = transaction
+            .input
+            .0
+            .split_at(transaction.input.0.len() - META_DATA_LEN);
+        let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
+        let auction_id = metadata
+            .map(crate::domain::auction::Id::from_be_bytes)
+            .ok_or(anyhow!("missing auction id"))?;
+        Ok(Self {
+            hash: transaction.hash,
+            auction_id,
+            solver: transaction.solver,
+            block: transaction.block,
+            gas: transaction.gas,
+            effective_gas_price: transaction.effective_gas_price,
+            solution: domain::settlement::Solution::new(&transaction.input, domain_separator)
+                .map_err(|err| anyhow!("solution build {}", err))?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Calldata(pub eth::Calldata);
 
-impl From<eth::Calldata> for Calldata {
-    fn from(calldata: eth::Calldata) -> Self {
-        // strip auction id
-        let (calldata, _) = calldata.0.split_at(calldata.0.len() - META_DATA_LEN);
-        Self(crate::util::Bytes(calldata.to_vec()))
-    }
-}
-
 /// Number of bytes that may be appended to the calldata to store an auction
 /// id.
 const META_DATA_LEN: usize = 8;
-
-impl TryFrom<eth::Transaction> for Transaction {
-    type Error = Error;
-
-    fn try_from(transaction: eth::Transaction) -> Result<Self, Self::Error> {
-        let function = contracts::GPv2Settlement::raw_contract()
-            .interface
-            .abi
-            .function("settle")
-            .unwrap();
-        let data = transaction
-            .input
-            .0
-            .strip_prefix(&function.selector())
-            .ok_or(Error::InvalidSelector)?;
-
-        let (calldata, metadata) = data.split_at(data.len() - META_DATA_LEN);
-        let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
-        let auction_id = metadata
-            .map(crate::domain::auction::Id::from_be_bytes)
-            .ok_or(Error::MissingAuctionId)?;
-
-        Ok(Self {
-            hash: transaction.hash,
-            auction_id,
-            solver: transaction.solver,
-            input: Calldata(crate::util::Bytes(calldata.to_vec())),
-            block: transaction.block,
-            gas: transaction.gas,
-            effective_gas_price: transaction.effective_gas_price,
-        })
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("transaction calldata is not a settlement")]
-    InvalidSelector,
-    #[error("no auction id found in calldata")]
-    MissingAuctionId,
-}

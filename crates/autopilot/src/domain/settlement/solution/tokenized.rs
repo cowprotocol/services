@@ -1,10 +1,10 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, eth, settlement},
+        domain::{self, auction::order, eth},
     },
     app_data::AppDataHash,
-    ethcontract::{tokens::Tokenize, Address, Bytes, U256},
+    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
 };
 
 // Original type for input of `GPv2Settlement.settle` function.
@@ -16,14 +16,18 @@ pub(super) struct Tokenized {
 }
 
 impl Tokenized {
-    pub fn new(calldata: &settlement::transaction::Calldata) -> Result<Self, error::Decoding> {
+    pub fn new(calldata: &eth::Calldata) -> Result<Self, error::Decoding> {
         let function = contracts::GPv2Settlement::raw_contract()
             .interface
             .abi
             .function("settle")
             .unwrap();
+        let data = calldata
+            .0
+            .strip_prefix(&function.selector())
+            .ok_or(error::Decoding::InvalidSelector)?;
         let tokenized = function
-            .decode_input(&calldata.0 .0)
+            .decode_input(data)
             .map_err(error::Decoding::Ethabi)?;
         let (tokens, clearing_prices, trades, interactions) =
             <Solution>::from_token(web3::ethabi::Token::Tuple(tokenized))
@@ -157,6 +161,8 @@ pub mod error {
 
     #[derive(Debug, thiserror::Error)]
     pub enum Decoding {
+        #[error("transaction calldata is not a settlement")]
+        InvalidSelector,
         #[error("unable to decode settlement calldata: {0}")]
         Ethabi(web3::ethabi::Error),
         #[error("unable to tokenize calldata into expected format: {0}")]
