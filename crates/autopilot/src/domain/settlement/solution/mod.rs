@@ -162,6 +162,15 @@ pub mod error {
         OrderUidRecover(tokenized::error::Uid, auction::Id),
     }
 
+    impl Error {
+        pub fn auction_id(&self) -> Option<auction::Id> {
+            match self {
+                Self::Decoding(err) => err.auction_id(),
+                Self::OrderUidRecover(_, auction_id) => Some(*auction_id),
+            }
+        }
+    }
+
     #[derive(Debug, thiserror::Error)]
     pub enum Score {
         /// Per CIP38, zero score solutions are rejected.
