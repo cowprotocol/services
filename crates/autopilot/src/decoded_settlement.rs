@@ -313,7 +313,6 @@ impl DecodedSettlement {
             .map(|trade| {
                 self.fee(trade, external_prices).unwrap_or_else(|| {
                     tracing::warn!("possible incomplete fee calculation");
-                    println!("possible incomplete fee calculation");
                     // we should have an order execution for every trade
                     Fees {
                         order: trade.order_uid,
