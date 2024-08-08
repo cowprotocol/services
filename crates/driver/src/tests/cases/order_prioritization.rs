@@ -25,12 +25,14 @@ async fn sorting() {
         // since it participates in the hash function, which makes it possible to validate orders sorting.
         //
         // Most recent orders get higher priority.
-        .order(ab_order().created(now - 1).reduce_amount("2e-3".ether().into_wei()).valid_to(u32::MAX - 1))
+        .order(ab_order().created(now - 1).reduce_amount("2e-3".ether().into_wei()))
         // Then orders with own quotes.
-        .order(ab_order().rename("2").created(now - 2).quote(OrderQuote::default().solver(solver.address())).valid_to(u32::MAX - 2))
+        .order(ab_order().rename("2").created(now - 2).quote(OrderQuote::default().solver(solver.address())).valid_to(u32::MAX - 1))
         // Orders with better price ratios come first.
-        .order(ab_order().rename("3").created(now - 2).quote(OrderQuote::default().solver(solver.address())).reduce_amount("1e-3".ether().into_wei()).valid_to(u32::MAX - 3))
+        .order(ab_order().rename("3").created(now - 2).quote(OrderQuote::default().solver(solver.address())).reduce_amount("1e-3".ether().into_wei()).valid_to(u32::MAX - 2))
+        // Even though the order has the better price, it was created earlier and its quote comes from another solver.
         .order(ab_order().rename("4"))
+        // Similar to the previous order, but has a worse price gets lowest priority.
         .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("5"))
         // Limit orders come after market orders.
         .order(
