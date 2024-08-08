@@ -136,11 +136,9 @@ impl Order {
             vec![competition::Order {
                 uid: Default::default(),
                 receiver: None,
-                created: Some(
-                    u32::try_from(Utc::now().timestamp())
-                        .unwrap_or(u32::MAX)
-                        .into(),
-                ),
+                created: u32::try_from(Utc::now().timestamp())
+                    .unwrap_or(u32::MAX)
+                    .into(),
                 valid_to: util::Timestamp::MAX,
                 buy: self.buy(),
                 sell: self.sell(),

@@ -168,8 +168,6 @@ impl Auction {
                             Scheme::PreSign => SigningScheme::PreSign,
                         },
                         valid_to: order.valid_to.into(),
-                        created: order.created.map(Into::into),
-                        quote: order.quote.clone().map(Into::into),
                     }
                 })
                 .collect(),
@@ -354,7 +352,6 @@ struct Order {
     full_sell_amount: eth::U256,
     #[serde(skip_serializing_if = "Option::is_none")]
     fee_policies: Option<Vec<FeePolicy>>,
-    created: Option<u32>,
     valid_to: u32,
     kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -370,7 +367,6 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde(with = "bytes_hex")]
     signature: Vec<u8>,
-    quote: Option<OrderQuote>,
 }
 
 #[derive(Debug, Serialize)]
@@ -451,30 +447,6 @@ pub struct Quote {
     pub buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     pub fee: eth::U256,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderQuote {
-    #[serde_as(as = "serialize::U256")]
-    pub sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub fee: eth::U256,
-    pub solver: eth::H160,
-}
-
-impl From<order::Quote> for OrderQuote {
-    fn from(quote: order::Quote) -> Self {
-        Self {
-            sell_amount: quote.sell.amount.into(),
-            buy_amount: quote.buy.amount.into(),
-            fee: quote.fee.amount.into(),
-            solver: quote.solver.0,
-        }
-    }
 }
 
 #[serde_as]
