@@ -7,6 +7,7 @@ use {
         auction::{self},
         competition,
         eth,
+        settlement,
     },
 };
 
@@ -89,7 +90,7 @@ impl Solution {
     }
 
     pub fn new(
-        calldata: &eth::Calldata,
+        calldata: &settlement::transaction::Calldata,
         domain_separator: &eth::DomainSeparator,
     ) -> Result<Self, Error> {
         let tokenized::Tokenized {
@@ -269,7 +270,8 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let solution = super::Solution::new(&calldata.into(), &domain_separator).unwrap();
+        let solution =
+            super::Solution::new(&crate::util::Bytes(calldata).into(), &domain_separator).unwrap();
         assert_eq!(solution.trades.len(), 1);
 
         // prices read from https://solver-instances.s3.eu-central-1.amazonaws.com/prod/mainnet/legacy/8655372.json
@@ -399,7 +401,8 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let solution = super::Solution::new(&calldata.into(), &domain_separator).unwrap();
+        let solution =
+            super::Solution::new(&crate::util::Bytes(calldata).into(), &domain_separator).unwrap();
         assert_eq!(solution.trades.len(), 1);
 
         let prices: auction::Prices = From::from([

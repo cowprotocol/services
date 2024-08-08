@@ -14,13 +14,24 @@ pub struct Transaction {
     /// The address of the solver that submitted the transaction.
     pub solver: eth::Address,
     /// The call data of the transaction.
-    pub input: eth::Calldata,
+    pub input: Calldata,
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
     /// The gas used by the transaction.
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
     pub effective_gas_price: eth::EffectiveGasPrice,
+}
+
+#[derive(Debug, Clone)]
+pub struct Calldata(pub eth::Calldata);
+
+impl From<eth::Calldata> for Calldata {
+    fn from(calldata: eth::Calldata) -> Self {
+        // strip auction id
+        let (calldata, _) = calldata.0.split_at(calldata.0.len() - META_DATA_LEN);
+        Self(crate::util::Bytes(calldata.to_vec()))
+    }
 }
 
 /// Number of bytes that may be appended to the calldata to store an auction
@@ -52,7 +63,7 @@ impl TryFrom<eth::Transaction> for Transaction {
             hash: transaction.hash,
             auction_id,
             solver: transaction.solver,
-            input: crate::util::Bytes(calldata.to_vec()),
+            input: Calldata(crate::util::Bytes(calldata.to_vec())),
             block: transaction.block,
             gas: transaction.gas,
             effective_gas_price: transaction.effective_gas_price,

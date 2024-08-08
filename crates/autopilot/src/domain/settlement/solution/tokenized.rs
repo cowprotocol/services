@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, eth},
+        domain::{self, auction::order, eth, settlement},
     },
     app_data::AppDataHash,
     ethcontract::{tokens::Tokenize, Address, Bytes, U256},
@@ -16,14 +16,14 @@ pub(super) struct Tokenized {
 }
 
 impl Tokenized {
-    pub fn new(calldata: &eth::Calldata) -> Result<Self, error::Decoding> {
+    pub fn new(calldata: &settlement::transaction::Calldata) -> Result<Self, error::Decoding> {
         let function = contracts::GPv2Settlement::raw_contract()
             .interface
             .abi
             .function("settle")
             .unwrap();
         let tokenized = function
-            .decode_input(&calldata.0)
+            .decode_input(&calldata.0 .0)
             .map_err(error::Decoding::Ethabi)?;
         let (tokens, clearing_prices, trades, interactions) =
             <Solution>::from_token(web3::ethabi::Token::Tuple(tokenized))
