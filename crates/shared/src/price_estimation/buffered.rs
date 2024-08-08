@@ -18,11 +18,7 @@ use {
         sync::Arc,
         time::Duration,
     },
-    tokio::{
-        sync::broadcast,
-        task::JoinHandle,
-        time::{error::Elapsed, sleep},
-    },
+    tokio::{sync::broadcast, task::JoinHandle, time::error::Elapsed},
 };
 
 /// Buffered configuration.
@@ -109,7 +105,7 @@ where
             let broadcast_sender = broadcast_sender.clone();
             async move {
                 let batch = batch.into_iter().collect::<HashSet<_>>();
-                if batch.len() != 0 {
+                if !batch.is_empty() {
                     let results = match inner.fetch_native_prices(&batch).await {
                         Ok(results) => results
                             .into_iter()
@@ -170,13 +166,7 @@ where
     ) -> Result<Option<NativePriceResult>, Elapsed> {
         tokio::time::timeout(timeout_duration, async {
             match rx.recv().await {
-                Ok(value) => {
-                    if value.0 == *token {
-                        Some(value)
-                    } else {
-                        None
-                    }
-                }
+                Ok(value) => (value.0 == *token).then(|| value),
                 Err(_) => None,
             }
         })
@@ -233,6 +223,7 @@ mod tests {
         crate::price_estimation::native::MockNativePriceEstimating,
         futures::future::try_join_all,
         num::ToPrimitive,
+        tokio::time::sleep,
     };
 
     fn token(u: u64) -> H160 {
