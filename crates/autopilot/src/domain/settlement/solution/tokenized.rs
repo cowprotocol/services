@@ -189,4 +189,15 @@ pub mod error {
         #[error("unable to tokenize calldata into expected format: {0}")]
         Tokenizing(ethcontract::tokens::Error, auction::Id),
     }
+
+    impl Decoding {
+        pub fn auction_id(&self) -> Option<auction::Id> {
+            match self {
+                Decoding::InvalidSelector => None,
+                Decoding::MissingAuctionId => None,
+                Decoding::Ethabi(_, auction_id) => Some(*auction_id),
+                Decoding::Tokenizing(_, auction_id) => Some(*auction_id),
+            }
+        }
+    }
 }
