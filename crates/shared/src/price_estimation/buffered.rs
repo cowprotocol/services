@@ -60,7 +60,12 @@ pub struct BufferedTransport<Inner> {
     broadcast_sender: broadcast::Sender<NativePriceResult>,
 }
 
-type NativePriceResult = (H160, Result<f64, PriceEstimationError>);
+/// Object to map the token with its native price estimator result
+#[derive(Clone)]
+struct NativePriceResult {
+    token: H160,
+    result: Result<f64, PriceEstimationError>,
+}
 
 impl<Inner> BufferedTransport<Inner>
 where
@@ -106,17 +111,23 @@ where
             async move {
                 let batch = batch.into_iter().collect::<HashSet<_>>();
                 if !batch.is_empty() {
-                    let results = match inner.fetch_native_prices(&batch).await {
+                    let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
                         Ok(results) => results
                             .into_iter()
-                            .map(|(token, price)| (token, Ok::<_, PriceEstimationError>(price)))
-                            .collect::<HashMap<_, _>>(),
+                            .map(|(token, price)| NativePriceResult {
+                                token,
+                                result: Ok::<_, PriceEstimationError>(price),
+                            })
+                            .collect(),
                         Err(err) => {
                             tracing::error!(?err, "failed to send native price batch request");
                             batch
                                 .into_iter()
-                                .map(|token| (token, Err(err.clone())))
-                                .collect::<HashMap<_, _>>()
+                                .map(|token| NativePriceResult {
+                                    token,
+                                    result: Err(err.clone()),
+                                })
+                                .collect()
                         }
                     };
                     for result in results {
@@ -127,8 +138,8 @@ where
         }))
     }
 
-    /// Blocking operation to get estimate prices in a batch
-    pub async fn blocking_buffered_estimate_prices(
+    /// Request to get estimate prices in a batch
+    pub async fn request_buffered_estimate_prices(
         &self,
         token: &H160,
     ) -> NativePriceEstimateResult {
@@ -146,7 +157,7 @@ where
                 if let Ok(Some(result)) =
                     Self::receive_with_timeout(&mut rx, token, self.config.batch_delay).await
                 {
-                    return result.1;
+                    return result.result;
                 }
             }
         })
@@ -166,7 +177,7 @@ where
     ) -> Result<Option<NativePriceResult>, Elapsed> {
         tokio::time::timeout(timeout_duration, async {
             match rx.recv().await {
-                Ok(value) => (value.0 == *token).then_some(value),
+                Ok(value) => (value.token == *token).then_some(value),
                 Err(_) => None,
             }
         })
@@ -256,7 +267,7 @@ mod tests {
         };
 
         let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
-        let result = buffered.blocking_buffered_estimate_prices(&token(0)).await;
+        let result = buffered.request_buffered_estimate_prices(&token(0)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
 
@@ -281,7 +292,7 @@ mod tests {
 
         let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
 
-        let result = buffered.blocking_buffered_estimate_prices(&token(0)).await;
+        let result = buffered.request_buffered_estimate_prices(&token(0)).await;
 
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
@@ -305,7 +316,7 @@ mod tests {
 
         let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
 
-        let result = buffered.blocking_buffered_estimate_prices(&token(0)).await;
+        let result = buffered.request_buffered_estimate_prices(&token(0)).await;
 
         assert_eq!(result, Err(PriceEstimationError::NoLiquidity));
     }
@@ -320,7 +331,7 @@ mod tests {
             let buffered = buffered.clone();
             futures.push(tokio::spawn(async move {
                 buffered
-                    .blocking_buffered_estimate_prices(&token(i.try_into().unwrap()))
+                    .request_buffered_estimate_prices(&token(i.try_into().unwrap()))
                     .await
             }));
         }
