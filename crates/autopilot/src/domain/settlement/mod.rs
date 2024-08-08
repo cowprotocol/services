@@ -110,7 +110,7 @@ impl Settlement {
 #[derive(Debug)]
 pub struct ErrorWithAuction {
     #[allow(dead_code)]
-    pub inner: Error,
+    inner: Error,
     pub auction_id: Option<domain::auction::Id>,
 }
 
