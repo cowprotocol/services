@@ -455,22 +455,26 @@ impl AuctionProcessor {
 
     pub fn new(eth: &infra::Ethereum, order_priority_config: OrderPriorityConfig) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
-        let order_timestamp_threshold =
-            Duration::from_std(order_priority_config.order_creation_timestamp_threshold).unwrap();
-        let mut order_comparators = Vec::<Arc<dyn sorting::OrderComparator>>::new();
+        let mut order_comparators = Vec::<Arc<dyn sorting::OrderComparator>>::with_capacity(
+            order_priority_config.strategies.len(),
+        );
 
-        order_comparators.push(Arc::new(sorting::OrderClass).comparator());
+        order_comparators.push(sorting::OrderClass.into_comparator());
 
         for strategy in order_priority_config.strategies {
             let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
-                OrderPriorityStrategy::ExternalPrice => {
-                    Arc::new(sorting::ExternalPrice).comparator()
+                OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.into_comparator(),
+                OrderPriorityStrategy::CreationTimestamp => {
+                    let order_timestamp_threshold = Duration::from_std(
+                        order_priority_config.order_creation_timestamp_threshold,
+                    )
+                    .unwrap();
+                    sorting::CreationTimestamp {
+                        threshold: order_timestamp_threshold,
+                    }
+                    .into_comparator()
                 }
-                OrderPriorityStrategy::CreationTimestamp => Arc::new(sorting::CreationTimestamp {
-                    threshold: order_timestamp_threshold,
-                })
-                .comparator(),
-                OrderPriorityStrategy::OwnQuotes => Arc::new(sorting::OwnQuotes).comparator(),
+                OrderPriorityStrategy::OwnQuotes => sorting::OwnQuotes.into_comparator(),
             };
             order_comparators.push(comparator);
         }

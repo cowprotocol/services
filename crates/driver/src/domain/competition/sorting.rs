@@ -42,7 +42,10 @@ pub trait OrderingKey: Send + Sync + 'static {
 
     /// Returns a comparator that compares two orders based on the key in
     /// reverse order.
-    fn comparator(self: Arc<Self>) -> Arc<dyn OrderComparator> {
+    fn into_comparator(self) -> Arc<dyn OrderComparator>
+    where
+        Self: Sized,
+    {
         Arc::new(
             move |a: &order::Order, b: &order::Order, tokens: &Tokens, solver: &eth::H160| {
                 self.key(a, tokens, solver)
@@ -106,7 +109,7 @@ pub fn sort_orders(
     orders: &mut [order::Order],
     tokens: &Tokens,
     solver: &eth::H160,
-    order_comparators: &Vec<Arc<dyn OrderComparator>>,
+    order_comparators: &[Arc<dyn OrderComparator>],
 ) {
     orders.sort_by(|a, b| {
         for cmp in order_comparators {
