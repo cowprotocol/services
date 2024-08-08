@@ -20,6 +20,7 @@ use {
     ::observe::metrics,
     anyhow::Result,
     database::order_events::OrderEventLabel,
+    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -130,6 +131,14 @@ impl RunLoop {
         };
         let competition_simulation_block = self.eth.current_block().borrow().number;
 
+        let considered_orders = solutions
+            .iter()
+            .flat_map(|solution| solution.solution.order_ids().copied())
+            .unique()
+            .collect();
+        self.persistence
+            .store_order_events(considered_orders, OrderEventLabel::Considered);
+
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
@@ -145,10 +154,6 @@ impl RunLoop {
                     return;
                 }
             };
-
-            let order_uids = solution.order_ids().copied().collect();
-            self.persistence
-                .store_order_events(order_uids, OrderEventLabel::Considered);
 
             let winner = solution.solver().into();
             let winning_score = solution.score().get().0;
