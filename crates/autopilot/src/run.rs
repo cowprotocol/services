@@ -329,7 +329,9 @@ pub async fn run(args: Arguments) {
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.native_price_estimation_results_required,
+            eth.contracts().weth().clone(),
         )
+        .await
         .unwrap();
     let price_estimator = price_estimator_factory
         .price_estimator(
