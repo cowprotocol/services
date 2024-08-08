@@ -145,6 +145,8 @@ struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
     eth: infra::Ethereum,
+    /// Comparators should be in the same order as the strategies in the
+    /// `OrderPriorityConfig`.
     order_comparators: Vec<Arc<dyn sorting::OrderComparator>>,
 }
 
