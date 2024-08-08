@@ -89,7 +89,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
         tracing_subscriber::registry()
             // Without this the subscriber ignores the next log after an `tracing::event!()` which
             // `sqlx` uses under the hood.
-            .with(tracing::level_filters::LevelFilter::INFO)
+            .with(tracing::level_filters::LevelFilter::TRACE)
             .with(fmt_layer!(env_filter, stderr_threshold))
             .init();
 
