@@ -34,6 +34,8 @@ pub struct Configuration {
     ///
     /// The delay starts counting after receiving the first request.
     pub batch_delay: Duration,
+    /// The timeout to wait for the result to be ready
+    pub result_ready_timeout: Duration,
 }
 
 /// Trait for fetching a batch of native price estimates.
@@ -153,7 +155,7 @@ where
 
         let mut rx = self.broadcast_sender.subscribe();
 
-        tokio::time::timeout(self.config.batch_delay.saturating_mul(3), async {
+        tokio::time::timeout(self.config.result_ready_timeout, async {
             loop {
                 if let Ok(Some(result)) =
                     Self::receive_with_timeout(&mut rx, token, self.config.batch_delay).await
@@ -265,6 +267,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
@@ -289,6 +292,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
@@ -313,6 +317,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
@@ -367,6 +372,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let buffered = Arc::new(BufferedTransport::with_config(
@@ -396,6 +402,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let buffered = Arc::new(BufferedTransport::with_config(
@@ -417,6 +424,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let _buffered = Arc::new(BufferedTransport::with_config(
@@ -446,6 +454,7 @@ mod tests {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
         };
 
         let buffered = Arc::new(BufferedTransport::with_config(
