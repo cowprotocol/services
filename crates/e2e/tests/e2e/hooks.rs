@@ -42,19 +42,6 @@ async fn local_node_gas_limit() {
     run_test(gas_limit).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_logging() {
-    run_test(logging_test).await;
-}
-
-async fn logging_test(_web3: Web3) {
-    let summary = "dummy value";
-    ::tracing::event!(target: "sqlx::query", tracing::Level::DEBUG, summary);
-    ::tracing::debug!("does not get printed");
-    ::tracing::debug!("gets printed");
-}
-
 async fn gas_limit(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
