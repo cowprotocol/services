@@ -1,9 +1,12 @@
-use crate::{
-    infra::config::file::FeeHandler,
-    tests::{
-        cases::EtherExt,
-        setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order},
+use {
+    crate::{
+        infra::config::file::FeeHandler,
+        tests::{
+            cases::EtherExt,
+            setup::{ab_order, ab_pool, ab_solution, setup, test_solver, Order, OrderQuote},
+        },
     },
+    chrono::Utc,
 };
 
 /// Test that orders are sorted correctly before being sent to the solver:
@@ -13,21 +16,29 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn sorting() {
+    let now = Utc::now().timestamp() as u32;
+    let solver = test_solver().fee_handler(FeeHandler::Driver);
     let test = setup()
-        .solvers(vec![
-            test_solver().fee_handler(FeeHandler::Driver)
-        ])
+        .solvers(vec![solver.clone()])
         .pool(ab_pool())
+        // A different `valid_to` is required in order to generate a separate UID,
+        // since it participates in the hash function, which makes it possible to validate orders sorting.
+        //
+        // Most recent orders get higher priority.
+        .order(ab_order().created(now - 1).reduce_amount("2e-3".ether().into_wei()).valid_to(u32::MAX - 1))
+        // Then orders with own quotes.
+        .order(ab_order().rename("2").created(now - 2).quote(OrderQuote::default().solver(solver.address())).valid_to(u32::MAX - 2))
         // Orders with better price ratios come first.
-        .order(ab_order())
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
+        .order(ab_order().rename("3").created(now - 2).quote(OrderQuote::default().solver(solver.address())).reduce_amount("1e-3".ether().into_wei()).valid_to(u32::MAX - 3))
+        .order(ab_order().rename("4"))
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("5"))
         // Limit orders come after market orders.
         .order(
             ab_order()
-                .rename("third order")
+                .rename("6")
                 .limit()
         )
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("fourth order").limit())
+        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("7").limit())
         .solution(ab_solution())
         .done()
         .await;
