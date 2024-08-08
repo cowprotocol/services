@@ -23,6 +23,7 @@ use {
 
 /// Buffered configuration.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Configuration {
     /// The maximum amount of concurrent batches to request.
     ///
@@ -39,6 +40,7 @@ pub struct Configuration {
 }
 
 /// Trait for fetching a batch of native price estimates.
+#[allow(dead_code)]
 #[mockall::automock]
 #[async_trait]
 pub trait NativePriceBatchFetcher: Sync + Send {
@@ -54,22 +56,24 @@ pub trait NativePriceBatchFetcher: Sync + Send {
 
 /// Buffered implementation that implements automatic batching of
 /// native prices requests.
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct BufferedTransport<Inner> {
     config: Configuration,
-    #[allow(dead_code)]
     inner: Arc<Inner>,
     calls: mpsc::UnboundedSender<H160>,
     broadcast_sender: broadcast::Sender<NativePriceResult>,
 }
 
 /// Object to map the token with its native price estimator result
+#[allow(dead_code)]
 #[derive(Clone)]
 struct NativePriceResult {
     token: H160,
     result: Result<f64, PriceEstimationError>,
 }
 
+#[allow(dead_code)]
 impl<Inner> BufferedTransport<Inner>
 where
     Inner: NativePriceBatchFetcher + Send + Sync + 'static,
@@ -280,7 +284,7 @@ mod tests {
         let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested just one, because for the econd call it fetches the cached one
+            // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
             .returning(|input| {
                 Ok(input
@@ -381,6 +385,60 @@ mod tests {
         ));
 
         check_batching_many(buffered, tokens_requested).await;
+    }
+
+    #[tokio::test]
+    async fn batching_many_in_one_batch_with_mixed_results_estimates() {
+        let tokens_requested = 2;
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        native_price_batch_fetcher
+            .expect_fetch_native_prices()
+            // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
+            .times(1)
+            .returning(|input| {
+                Ok(input
+                    .iter()
+                    .enumerate()
+                    .map(|(i, token)|
+                        if i % 2 == 0 {
+                            (*token, Ok::<_, PriceEstimationError>(1.0))
+                        } else {
+                            (*token, Err(PriceEstimationError::NoLiquidity))
+                        }
+                    ).collect::<HashMap<_, _>>())
+            });
+
+        let config = Configuration {
+            max_concurrent_requests: NonZeroUsize::new(1),
+            max_batch_len: 20,
+            batch_delay: Duration::from_millis(50),
+            result_ready_timeout: Duration::from_millis(500),
+        };
+
+        let buffered = Arc::new(BufferedTransport::with_config(
+            native_price_batch_fetcher,
+            config,
+        ));
+
+        let mut futures = Vec::with_capacity(tokens_requested);
+        for i in 0..tokens_requested {
+            let buffered = buffered.clone();
+            futures.push(tokio::spawn(async move {
+                buffered
+                    .request_buffered_estimate_prices(&token(i.try_into().unwrap()))
+                    .await
+            }));
+        }
+
+        let results = try_join_all(futures).await.expect(
+            "valid
+    futures",
+        );
+
+        // We got two results, one must be correct and the other with an error
+        assert_eq!(results.len(), 2);
+        assert!(results.contains(&Ok(1.0)));
+        assert!(results.contains(&Err(PriceEstimationError::NoLiquidity)));
     }
 
     #[tokio::test]
