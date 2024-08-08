@@ -24,17 +24,9 @@ use {crate::domain, std::collections::HashMap};
 #[derive(Debug)]
 pub struct Solution {
     trades: Vec<Trade>,
-    /// Data that was appended to the regular call data of the `settle()` call
-    /// as a form of on-chain meta data. This is used to associate a
-    /// solution with an auction for which this solution was picked as a winner.
-    auction_id: auction::Id,
 }
 
 impl Solution {
-    pub fn auction_id(&self) -> auction::Id {
-        self.auction_id
-    }
-
     /// CIP38 score calculation
     pub fn score(&self, auction: &super::Auction) -> Result<competition::Score, error::Score> {
         Ok(competition::Score::new(
@@ -105,7 +97,6 @@ impl Solution {
             clearing_prices,
             trades: decoded_trades,
             interactions: _interactions,
-            auction_id,
         } = tokenized::Tokenized::new(calldata)?;
 
         let mut trades = Vec::with_capacity(decoded_trades.len());
@@ -123,7 +114,7 @@ impl Solution {
                 tokens.iter().position(|token| token == &buy_token).unwrap();
             trades.push(trade::Trade::new(
                 tokenized::order_uid(&trade, &tokens, domain_separator)
-                    .map_err(|err| Error::OrderUidRecover(err, auction_id))?,
+                    .map_err(Error::OrderUidRecover)?,
                 eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
@@ -147,7 +138,7 @@ impl Solution {
             ));
         }
 
-        Ok(Self { trades, auction_id })
+        Ok(Self { trades })
     }
 }
 
@@ -158,17 +149,8 @@ pub mod error {
     pub enum Error {
         #[error(transparent)]
         Decoding(#[from] tokenized::error::Decoding),
-        #[error("failed to recover order uid {0} for auction {1}")]
-        OrderUidRecover(tokenized::error::Uid, auction::Id),
-    }
-
-    impl Error {
-        pub fn auction_id(&self) -> Option<auction::Id> {
-            match self {
-                Self::Decoding(err) => err.auction_id(),
-                Self::OrderUidRecover(_, auction_id) => Some(*auction_id),
-            }
-        }
+        #[error("failed to recover order uid {0}")]
+        OrderUidRecover(tokenized::error::Uid),
     }
 
     #[derive(Debug, thiserror::Error)]

@@ -205,3 +205,20 @@ pub struct DomainSeparator(pub [u8; 32]);
 
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
+
+/// An on-chain transaction.
+#[derive(Debug)]
+pub struct Transaction {
+    /// The hash of the transaction.
+    pub hash: TxId,
+    /// The address of the solver that submitted the transaction.
+    pub solver: Address,
+    /// The call data of the transaction.
+    pub input: Calldata,
+    /// The block number of the block that contains the transaction.
+    pub block: BlockNo,
+    /// The gas used by the transaction.
+    pub gas: Gas,
+    /// The effective gas price of the transaction.
+    pub effective_gas_price: EffectiveGasPrice,
+}
