@@ -330,6 +330,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
-        order_priority_strategies: config.order_priority_strategies,
+        order_priority_config: config.order_priority_config,
     }
 }

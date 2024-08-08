@@ -42,7 +42,7 @@ pub trait OrderingKey: Send + Sync + 'static {
 
     /// Returns a comparator that compares two orders based on the key in
     /// reverse order.
-    fn comparator(&self) -> Arc<dyn OrderComparator + '_> {
+    fn comparator(self: Arc<Self>) -> Arc<dyn OrderComparator> {
         Arc::new(
             move |a: &order::Order, b: &order::Order, tokens: &Tokens, solver: &eth::H160| {
                 self.key(a, tokens, solver)
@@ -78,9 +78,8 @@ impl OrderingKey for ExternalPrice {
     }
 }
 
-pub struct CreationTimestamp;
-impl CreationTimestamp {
-    const THRESHOLD: Duration = Duration::minutes(2);
+pub struct CreationTimestamp {
+    pub threshold: Duration,
 }
 impl OrderingKey for CreationTimestamp {
     type Key = Option<util::Timestamp>;
@@ -88,7 +87,7 @@ impl OrderingKey for CreationTimestamp {
     fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
         order.created.filter(|timestamp| {
             timestamp.0
-                > u32::try_from((Utc::now() - Self::THRESHOLD).timestamp()).unwrap_or(u32::MAX)
+                > u32::try_from((Utc::now() - self.threshold).timestamp()).unwrap_or(u32::MAX)
         })
     }
 }

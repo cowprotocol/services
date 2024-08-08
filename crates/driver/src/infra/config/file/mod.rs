@@ -55,10 +55,8 @@ struct Config {
     #[serde(default)]
     liquidity: LiquidityConfig,
 
-    /// Defines order prioritization strategies that will be applied in the
-    /// specified order.
-    #[serde(default = "default_order_priority_strategies")]
-    order_priority_strategies: Vec<OrderPriorityStrategy>,
+    #[serde(default)]
+    order_priority_config: OrderPriorityConfig,
 }
 
 #[serde_as]
@@ -580,6 +578,31 @@ pub enum GasEstimatorType {
     Web3,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OrderPriorityConfig {
+    /// Defines order prioritization strategies that will be applied in the
+    /// specified order.
+    #[serde(default = "default_order_priority_strategies")]
+    pub strategies: Vec<OrderPriorityStrategy>,
+
+    /// Configures the threshold for `CreationTimestamp` order prioritization
+    /// strategy. Orders created within this threshold will be prioritized.
+    /// Takes effect only if `CreationTimestamp` is specified in
+    /// `order_priority_strategies`.
+    #[serde(default = "default_order_creation_timestamp_threshold")]
+    pub order_creation_timestamp_threshold: Duration,
+}
+
+impl Default for OrderPriorityConfig {
+    fn default() -> Self {
+        OrderPriorityConfig {
+            strategies: default_order_priority_strategies(),
+            order_creation_timestamp_threshold: default_order_creation_timestamp_threshold(),
+        }
+    }
+}
+
 /// Defines various strategies to prioritize orders.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -604,4 +627,8 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
         OrderPriorityStrategy::OwnQuotes,
         OrderPriorityStrategy::ExternalPrice,
     ]
+}
+
+fn default_order_creation_timestamp_threshold() -> Duration {
+    Duration::from_secs(120)
 }

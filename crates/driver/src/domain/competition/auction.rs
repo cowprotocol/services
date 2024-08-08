@@ -11,10 +11,16 @@ use {
             liquidity,
             time,
         },
-        infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
+        infra::{
+            self,
+            blockchain,
+            config::file::{OrderPriorityConfig, OrderPriorityStrategy},
+            observe,
+            Ethereum,
+        },
         util::{self, Bytes},
     },
-    chrono::Utc,
+    chrono::{Duration, Utc},
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
@@ -195,14 +201,14 @@ impl AuctionProcessor {
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
         })
-        .map(|res| {
-            res.expect(
-                "Either runtime was shut down before spawning the task or no OS threads are \
+            .map(|res| {
+                res.expect(
+                    "Either runtime was shut down before spawning the task or no OS threads are \
                  available; no sense in handling those errors",
-            )
-        })
-        .boxed()
-        .shared();
+                )
+            })
+            .boxed()
+            .shared();
 
         tracing::debug!("started new prioritization task");
         lock.auction = new_id;
@@ -357,7 +363,7 @@ impl AuctionProcessor {
                             tokens
                                 .get(eth::TokenAddress(eth::ContractAddress(*t)))
                                 .price
-                                .map(|p| p.0 .0)
+                                .map(|p| p.0.0)
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
@@ -447,20 +453,24 @@ impl AuctionProcessor {
         orders
     }
 
-    pub fn new(
-        eth: &infra::Ethereum,
-        order_priority_strategies: Vec<OrderPriorityStrategy>,
-    ) -> Self {
+    pub fn new(eth: &infra::Ethereum, order_priority_config: OrderPriorityConfig) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
+        let order_timestamp_threshold =
+            Duration::from_std(order_priority_config.order_creation_timestamp_threshold).unwrap();
         let mut order_comparators = Vec::<Arc<dyn sorting::OrderComparator>>::new();
 
-        order_comparators.push(sorting::OrderClass.comparator());
+        order_comparators.push(Arc::new(sorting::OrderClass).comparator());
 
-        for strategy in order_priority_strategies {
+        for strategy in order_priority_config.strategies {
             let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
-                OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.comparator(),
-                OrderPriorityStrategy::CreationTimestamp => sorting::CreationTimestamp.comparator(),
-                OrderPriorityStrategy::OwnQuotes => sorting::OwnQuotes.comparator(),
+                OrderPriorityStrategy::ExternalPrice => {
+                    Arc::new(sorting::ExternalPrice).comparator()
+                }
+                OrderPriorityStrategy::CreationTimestamp => Arc::new(sorting::CreationTimestamp {
+                    threshold: order_timestamp_threshold,
+                })
+                .comparator(),
+                OrderPriorityStrategy::OwnQuotes => Arc::new(sorting::OwnQuotes).comparator(),
             };
             order_comparators.push(comparator);
         }
