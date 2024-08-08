@@ -49,9 +49,6 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Calldata(pub eth::Calldata);
-
 /// Number of bytes that may be appended to the calldata to store an auction
 /// id.
 const META_DATA_LEN: usize = 8;

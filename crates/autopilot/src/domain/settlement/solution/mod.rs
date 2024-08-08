@@ -399,8 +399,7 @@ mod tests {
         let domain_separator = eth::DomainSeparator(hex!(
             "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
         ));
-        let solution =
-            super::Solution::new(&calldata.into(), &domain_separator).unwrap();
+        let solution = super::Solution::new(&calldata.into(), &domain_separator).unwrap();
         assert_eq!(solution.trades.len(), 1);
 
         let prices: auction::Prices = From::from([
