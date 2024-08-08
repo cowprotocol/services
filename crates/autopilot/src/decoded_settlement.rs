@@ -313,6 +313,7 @@ impl DecodedSettlement {
             .map(|trade| {
                 self.fee(trade, external_prices).unwrap_or_else(|| {
                     tracing::warn!("possible incomplete fee calculation");
+                    println!("possible incomplete fee calculation");
                     // we should have an order execution for every trade
                     Fees {
                         order: trade.order_uid,
@@ -331,8 +332,8 @@ impl DecodedSettlement {
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let (kind, fee) = match trade.fee_amount.is_zero() {
-            false => (FeeKind::User, trade.fee_amount),
+        let (kind, fee, surplus_token) = match trade.fee_amount.is_zero() {
+            false => (FeeKind::User, trade.fee_amount, sell_token),
             true => {
                 // get executed(adjusted) prices
                 let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
@@ -345,7 +346,8 @@ impl DecodedSettlement {
                 let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
-                let fee = match trade.flags.order_kind() {
+                // returns fee in surplus token
+                let (fee, surplus_token) = match trade.flags.order_kind() {
                     OrderKind::Buy => {
                         let required_sell_amount = trade
                             .executed_amount
@@ -355,35 +357,49 @@ impl DecodedSettlement {
                             .executed_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
-                        required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
+                        (
+                            required_sell_amount.checked_sub(required_sell_amount_with_ucp)?,
+                            sell_token,
+                        )
                     }
                     OrderKind::Sell => {
                         let received_buy_amount = trade
                             .executed_amount
                             .checked_mul(adjusted_sell_price)?
                             .checked_div(adjusted_buy_price)?;
-                        let sell_amount_needed_with_ucp = received_buy_amount
-                            .checked_mul(uniform_buy_price)?
-                            .checked_div(uniform_sell_price)?;
-                        trade
+                        // how much the user would have received if the uniform clearing price was
+                        // used
+                        let zero_fee_received_buy_amount = trade
                             .executed_amount
-                            .checked_sub(sell_amount_needed_with_ucp)?
+                            .checked_mul(uniform_sell_price)?
+                            .checked_div(uniform_buy_price)?;
+                        (
+                            zero_fee_received_buy_amount.checked_sub(received_buy_amount)?,
+                            buy_token,
+                        )
                     }
                 };
-                (FeeKind::Surplus, fee)
+                (FeeKind::Surplus, fee, surplus_token)
             }
         };
 
-        // converts the fee which is denominated in `sell_token` to the native token.
+        // converts the fee which is denominated in `surplus token` to the native token.
         tracing::trace!(?fee, "fee before conversion to native token");
         let native =
-            external_prices.try_get_native_amount(*sell_token, u256_to_big_rational(&fee))?;
+            external_prices.try_get_native_amount(*surplus_token, u256_to_big_rational(&fee))?;
         tracing::trace!(?native, "fee after conversion to native token");
 
         Some(Fees {
             order: trade.order_uid,
             kind,
-            sell: fee,
+            sell: match trade.flags.order_kind() {
+                OrderKind::Buy => fee,
+                OrderKind::Sell => big_rational_to_u256(
+                    &(u256_to_big_rational(&fee) * external_prices.price(buy_token)?
+                        / external_prices.price(sell_token)?),
+                )
+                .ok()?,
+            },
             native: big_rational_to_u256(&native).ok()?,
         })
     }
@@ -854,6 +870,9 @@ mod tests {
         // 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2: 1000000000000000000
 
         // fees: 3768095572151423
+        // the fee was calculated using uniform prices to convert the fees to the sell
+        // token. Now the fee is calculated in surplus token and converted to
+        // native using external prices so the expected value is 3909580119489879
 
         let call_data = hex_literal::hex!(
             "13d79a0b
@@ -929,7 +948,7 @@ mod tests {
         let fees = settlement.all_fees(&external_prices);
         let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                                                   // competition
-        assert_eq!(fee, 3768095572151424.);
+        assert_eq!(fee, 3909580119489879.);
     }
 
     #[test]
@@ -1372,19 +1391,19 @@ mod tests {
         let auction_external_prices = BTreeMap::from([
             (
                 addr!("31429d1856ad1377a8a0079410b297e1a9e214c2"),
-                U256::from(1000000000000000000u128),
+                U256::from(13651729965787u128),
             ),
             (
                 addr!("d533a949740bb3306d119cc777fa900ba034cd52"),
-                U256::from(1000000000000000000u128),
+                U256::from(297240362652567u128),
             ),
             (
                 addr!("da816459f1ab5631232fe5e97a05bbbb94970c95"),
-                U256::from(1000000000000000000u128),
+                U256::from(490332962282438u128),
             ),
             (
                 addr!("fbeb78a723b8087fd2ea7ef1afec93d35e8bed42"),
-                U256::from(1000000000000000000u128),
+                U256::from(2812973786294373u128),
             ),
         ]);
         let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
@@ -1393,6 +1412,6 @@ mod tests {
 
         let fees = decoded.all_fees(&external_prices);
         let fees = order_executions(fees);
-        assert_eq!(fees[1].sell, 7487413756444483822u128.into());
+        assert_eq!(fees[1].sell, 7455890682015520251u128.into());
     }
 }
