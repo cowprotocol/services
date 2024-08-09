@@ -639,9 +639,9 @@ impl<'de> Deserialize<'de> for OrderPriorityStrategy {
 }
 
 /// The default prioritization process first considers
-/// the order timestamp, then checks if the solver is working with its own
-/// quotes, and finally considers the likelihood of order fulfillment based on
-/// external price data.
+/// the order timestamp(2 minutes threshold by default), then checks if the
+/// solver is working with its own quotes, and finally considers the likelihood
+/// of order fulfillment based on external price data.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     const DEFAULT_MAX_ORDER_AGE: Duration = Duration::from_secs(120);
     vec![

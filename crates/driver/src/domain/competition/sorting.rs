@@ -56,6 +56,8 @@ pub trait OrderingKey: Send + Sync + 'static {
     }
 }
 
+/// Prioritize orders by their class: market orders -> limit orders ->
+/// liquidity.
 pub struct OrderClass;
 impl OrderingKey for OrderClass {
     type Key = i32;
@@ -72,6 +74,9 @@ impl OrderingKey for OrderClass {
     }
 }
 
+/// Orders are sorted by their likelihood of being fulfilled, with the most
+/// likely orders coming first. See more details in the `likelihood` function
+/// docs.
 pub struct ExternalPrice;
 impl OrderingKey for ExternalPrice {
     type Key = num::BigRational;
@@ -81,6 +86,9 @@ impl OrderingKey for ExternalPrice {
     }
 }
 
+/// Orders are sorted by their creation timestamp, with the most recent orders
+/// coming first. If `max_order_age` is set, only orders created within the
+/// specified duration will be considered.
 pub struct CreationTimestamp {
     pub max_order_age: Option<Duration>,
 }
@@ -97,6 +105,8 @@ impl OrderingKey for CreationTimestamp {
     }
 }
 
+/// Prioritize orders based on whether the current solver provided the winning
+/// quote for the order.
 pub struct OwnQuotes;
 impl OrderingKey for OwnQuotes {
     type Key = bool;
