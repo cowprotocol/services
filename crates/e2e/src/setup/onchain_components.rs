@@ -341,9 +341,9 @@ impl OnchainComponents {
         tokens
     }
 
-    pub async fn seed_weth_uni_v2_pools<'a, I: Iterator<Item = &'a MintableToken>>(
+    pub async fn seed_weth_uni_v2_pools(
         &self,
-        tokens: I,
+        tokens: impl IntoIterator<Item = &MintableToken>,
         token_amount: U256,
         weth_amount: U256,
     ) {
