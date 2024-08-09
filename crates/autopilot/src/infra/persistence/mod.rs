@@ -8,7 +8,8 @@ use {
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::Utc,
-    number::conversions::big_decimal_to_u256,
+    database::{order_events::OrderEventLabel, settlement_observations::Observation},
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, H256},
     std::{
         collections::{HashMap, HashSet},
@@ -374,6 +375,88 @@ impl Persistence {
 
         Ok(solution)
     }
+
+    pub async fn save_settlement(
+        &self,
+        event: domain::eth::Event,
+        auction: domain::auction::Id,
+        settlement: Option<&domain::settlement::Settlement>,
+    ) -> Result<(), error::Settlement> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["save_settlement"])
+            .start_timer();
+
+        let mut ex = self
+            .postgres
+            .pool
+            .begin()
+            .await
+            .map_err(error::Settlement::BadCommunication)?;
+
+        let block_number = event.block.0.try_into().unwrap(); // todo fix
+        let log_index = event.log_index.try_into().unwrap();
+
+        database::settlements::update_settlement_auction(&mut ex, block_number, log_index, auction)
+            .await
+            .map_err(error::Settlement::BadCommunication)?;
+
+        if let Some(settlement) = settlement {
+            let gas = settlement.gas();
+            let gas_price = settlement.gas_price();
+            let surplus = settlement.native_surplus();
+            let fee = settlement.native_fee();
+            let order_fees = settlement.order_fees();
+
+            tracing::debug!(
+                ?auction,
+                "settlement update: gas: {}, gas_price: {}, surplus: {}, fee: {}, order_fees: {:?}",
+                gas,
+                gas_price,
+                surplus,
+                fee,
+                order_fees
+            );
+
+            database::settlement_observations::upsert(
+                &mut ex,
+                Observation {
+                    block_number,
+                    log_index,
+                    gas_used: u256_to_big_decimal(&gas.0),
+                    effective_gas_price: u256_to_big_decimal(&gas_price.0 .0),
+                    surplus: u256_to_big_decimal(&surplus.0),
+                    fee: u256_to_big_decimal(&fee.0),
+                },
+            )
+            .await
+            .map_err(error::Settlement::BadCommunication)?;
+
+            store_order_events(
+                &mut ex,
+                order_fees.keys().cloned().collect(),
+                OrderEventLabel::Traded,
+                Utc::now(),
+            )
+            .await;
+
+            for (order, executed_fee) in order_fees {
+                database::order_execution::save(
+                    &mut ex,
+                    &ByteArray(order.0),
+                    auction,
+                    block_number,
+                    &u256_to_big_decimal(&executed_fee.unwrap_or_default().0),
+                )
+                .await
+                .map_err(error::Settlement::BadCommunication)?;
+            }
+        }
+
+        ex.commit()
+            .await
+            .map_err(error::Settlement::BadCommunication)
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -426,5 +509,11 @@ pub mod error {
         InvalidPrice(eth::TokenAddress),
         #[error("invalid solver competition data fetched from database: {0}")]
         InvalidSolverCompetition(anyhow::Error),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Settlement {
+        #[error("failed communication with the database: {0}")]
+        BadCommunication(#[from] sqlx::Error),
     }
 }

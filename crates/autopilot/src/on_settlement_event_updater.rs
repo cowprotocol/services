@@ -29,20 +29,14 @@
 
 use {
     crate::{
-        database::{
-            on_settlement_event_updater::{AuctionData, SettlementUpdate},
-            Postgres,
-        },
-        decoded_settlement::DecodedSettlement,
-        domain::{self, settlement::Transaction},
+        database::Postgres,
+        domain::{self},
         infra,
     },
-    anyhow::{Context, Result},
-    database::{surplus_capturing_jit_order_owners, PgTransaction},
-    primitive_types::{H160, H256},
-    shared::external_prices::ExternalPrices,
-    sqlx::PgConnection,
-    std::{collections::HashSet, sync::Arc},
+    anyhow::{anyhow, Context, Result},
+    database::PgTransaction,
+    primitive_types::H256,
+    std::sync::Arc,
     tokio::sync::Notify,
 };
 
@@ -55,15 +49,6 @@ struct Inner {
     persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
-}
-
-enum AuctionIdRecoveryStatus {
-    /// The auction id was recovered and the auction data should be added.
-    AddAuctionData(i64, DecodedSettlement),
-    /// The auction id was recovered but the auction data should not be added.
-    DoNotAddAuctionData(i64),
-    /// The auction id was not recovered.
-    InvalidCalldata,
 }
 
 impl OnSettlementEventUpdater {
@@ -129,273 +114,55 @@ impl Inner {
             .begin()
             .await
             .context("acquire DB connection")?;
-        let event = match database::settlements::get_settlement_without_auction(&mut ex)
+        let (hash, event) = match database::settlements::get_settlement_without_auction(&mut ex)
             .await
             .context("get_settlement_without_auction")?
         {
-            Some(event) => event,
+            Some(event) => (
+                domain::eth::TxId(H256(event.tx_hash.0)),
+                domain::eth::Event {
+                    block: (event.block_number as u64).into(),
+                    log_index: event.log_index as u64,
+                },
+            ),
             None => return Ok(false),
         };
 
-        let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let Ok(transaction) = self.eth.transaction(hash.into()).await else {
+        let Ok(transaction) = self.eth.transaction(hash).await else {
             tracing::warn!(?hash, "no tx found");
             return Ok(false);
         };
         let domain_separator = self.eth.contracts().settlement_domain_separator();
-
-        let (auction_id, auction_data) = match Self::recover_auction_id_from_calldata(
-            &mut ex,
-            &transaction,
-            &model::DomainSeparator(domain_separator.0),
+        let settlement = domain::settlement::Settlement::new(
+            transaction.clone(),
+            domain_separator,
+            &self.persistence,
         )
-        .await?
-        {
-            AuctionIdRecoveryStatus::InvalidCalldata => {
-                // To not get stuck on indexing the same transaction over and over again, we
-                // insert the default auction ID (0)
-                (Default::default(), None)
-            }
-            AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id) => (auction_id, None),
-            AuctionIdRecoveryStatus::AddAuctionData(auction_id, settlement) => (
-                auction_id,
-                Some(
-                    self.fetch_auction_data(settlement, auction_id, &transaction, &mut ex)
-                        .await?,
-                ),
-            ),
-        };
+        .await;
 
-        let update = SettlementUpdate {
-            block_number: event.block_number,
-            log_index: event.log_index,
-            auction_id,
-            auction_data: auction_data.clone(),
-        };
-
-        tracing::debug!(?hash, ?update, "updating settlement details for tx");
-
-        {
-            // temporary to debug and compare with current implementation
-            let settlement = domain::settlement::Settlement::new(
-                transaction,
-                domain_separator,
-                &self.persistence,
-            )
-            .await;
-
-            // automatic checks vs current implementation
-            match (settlement, auction_data) {
-                (Ok(_), None) => {
-                    // bug: we should have an auction_data
-                    tracing::warn!(?auction_id, "automatic check error: missing auction_data");
-                }
-                (Ok(settlement), Some(auction_data)) => {
-                    // staging settlement properly built
-                    let surplus = settlement.native_surplus();
-                    if surplus.0 != auction_data.surplus {
-                        tracing::warn!(
-                            ?auction_id,
-                            ?surplus,
-                            ?auction_data.surplus,
-                            "automatic check error: surplus mismatch"
-                        );
-                    }
-                    let fee = settlement.native_fee();
-                    if fee.0 != auction_data.fee {
-                        tracing::warn!(
-                            ?auction_id,
-                            ?fee,
-                            ?auction_data.fee,
-                            "automatic check error: fee mismatch"
-                        );
-                    }
-                    let order_fees = settlement.order_fees();
-                    if order_fees.len() != auction_data.order_executions.len() {
-                        tracing::warn!(
-                            ?auction_id,
-                            ?order_fees,
-                            ?auction_data.order_executions,
-                            "automatic check error: order_fees mismatch"
-                        );
-                    }
-                    for fee in auction_data.order_executions {
-                        if !order_fees.contains_key(&domain::OrderUid(fee.0 .0)) {
-                            tracing::warn!(
-                                ?auction_id,
-                                ?fee,
-                                ?order_fees,
-                                "automatic check error: order_fees missing"
-                            );
-                        } else {
-                            let settlement_fee = order_fees[&domain::OrderUid(fee.0 .0)];
-                            if settlement_fee.unwrap_or_default().0 != fee.1 {
-                                tracing::warn!(
-                                    ?auction_id,
-                                    ?settlement_fee,
-                                    ?fee,
-                                    "automatic check error: order_fees value mismatch"
-                                );
-                            }
-                        }
-                    }
-                }
-                (Err(err), None) => {
-                    // make sure the auction_ids are equal
-                    if err.auction_id.unwrap_or_default() != auction_id {
-                        tracing::warn!(
-                            ?auction_id,
-                            ?err,
-                            "automatic check error: auction_id mismatch"
-                        );
-                    }
-                }
-                (Err(err), Some(_)) => {
-                    // bug: settlement should have been properly built
-                    tracing::warn!(
-                        ?auction_id,
-                        ?err,
-                        "automatic check error: settlement error for valid auction_data"
-                    );
+        let auction_id = match &settlement {
+            Ok(settlement) => settlement.auction_id(),
+            Err(error) => {
+                if error.should_retry() {
+                    return Err(anyhow!("{hash:?}, infra error"));
+                } else {
+                    error.auction_id.unwrap_or_default()
                 }
             }
-        }
+        };
 
-        Postgres::update_settlement_details(&mut ex, update.clone())
+        tracing::debug!(?hash, ?auction_id, "updating settlement details for tx");
+
+        if let Err(err) = self
+            .persistence
+            .save_settlement(event, auction_id, settlement.as_ref().ok())
             .await
-            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
-        ex.commit().await?;
+        {
+            return Err(anyhow!("{hash:?}, {auction_id}, {err}"));
+        }
 
         Ok(true)
-    }
-
-    async fn fetch_auction_data(
-        &self,
-        settlement: DecodedSettlement,
-        auction_id: i64,
-        tx: &Transaction,
-        ex: &mut PgConnection,
-    ) -> Result<AuctionData> {
-        let auction = Postgres::find_competition(auction_id, ex)
-            .await?
-            .context(format!(
-                "missing competition for auction_id={:?}",
-                auction_id
-            ))?
-            .common
-            .auction;
-        let external_prices = ExternalPrices::try_from_auction_prices(
-            self.eth.contracts().weth().address(),
-            auction.prices.clone(),
-        )?;
-        let surplus_capturing_jit_order_owners =
-            surplus_capturing_jit_order_owners::fetch(ex, auction_id)
-                .await?
-                .unwrap_or_default()
-                .into_iter()
-                .map(|owner| H160(owner.0))
-                .collect::<HashSet<_>>();
-
-        tracing::debug!(
-            ?auction_id,
-            auction_external_prices=?auction.prices,
-            ?external_prices,
-            "observations input"
-        );
-
-        // surplus and fees calculation
-        let surplus = settlement.total_surplus(
-            &external_prices,
-            &auction.orders.into_iter().collect::<HashSet<_>>(),
-            &surplus_capturing_jit_order_owners,
-        );
-        let (fee, order_executions) = {
-            let all_fees = settlement.all_fees(&external_prices);
-            // total fee used for CIP20 rewards
-            let fee = all_fees
-                .iter()
-                .fold(0.into(), |acc, fees| acc + fees.native);
-            // executed surplus fees for each order execution
-            let order_executions = all_fees
-                .into_iter()
-                .map(|fee| (fee.order, fee.executed_surplus_fee().unwrap_or(0.into())))
-                .collect();
-            (fee, order_executions)
-        };
-
-        Ok(AuctionData {
-            surplus,
-            fee,
-            gas_used: tx.gas.into(),
-            effective_gas_price: tx.effective_gas_price.into(),
-            order_executions,
-        })
-    }
-
-    /// With solver driver colocation solvers are supposed to append the
-    /// `auction_id` to the settlement calldata. This function tries to
-    /// recover that `auction_id`. It also indicates whether the auction
-    /// should be indexed with its metadata. (ie. if it comes from this
-    /// environment and not from a different instance of the autopilot, e.g.
-    /// running in barn/prod). This function only returns an error
-    /// if retrying the operation makes sense.
-    async fn recover_auction_id_from_calldata(
-        ex: &mut PgConnection,
-        tx: &Transaction,
-        domain_separator: &model::DomainSeparator,
-    ) -> Result<AuctionIdRecoveryStatus> {
-        let tx_from = tx.solver.0;
-        let settlement = match DecodedSettlement::new(&tx.input.0, domain_separator) {
-            Ok(settlement) => settlement,
-            Err(err) => {
-                tracing::warn!(
-                    ?tx,
-                    ?err,
-                    "could not decode settlement tx, unclear which auction it belongs to"
-                );
-                return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
-            }
-        };
-        let auction_id = match settlement.metadata {
-            Some(bytes) => i64::from_be_bytes(bytes.0),
-            None => {
-                tracing::warn!(?tx, "could not recover the auction_id from the calldata");
-                return Ok(AuctionIdRecoveryStatus::InvalidCalldata);
-            }
-        };
-
-        let score = database::settlement_scores::fetch(ex, auction_id).await?;
-        let data_already_recorded =
-            database::settlements::already_processed(ex, auction_id).await?;
-        match (score, data_already_recorded) {
-            (None, _) => {
-                tracing::debug!(
-                    auction_id,
-                    "calldata claims to settle auction that has no competition"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), true) => {
-                tracing::warn!(
-                    auction_id,
-                    "settlement data already recorded for this auction"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(score), _) if score.winner.0 != tx_from.0 => {
-                tracing::warn!(
-                    auction_id,
-                    ?tx_from,
-                    winner = ?score.winner,
-                    "solution submitted by solver other than the winner"
-                );
-                Ok(AuctionIdRecoveryStatus::DoNotAddAuctionData(auction_id))
-            }
-            (Some(_), false) => Ok(AuctionIdRecoveryStatus::AddAuctionData(
-                auction_id, settlement,
-            )),
-        }
     }
 }

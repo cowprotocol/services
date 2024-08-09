@@ -82,6 +82,11 @@ impl Settlement {
         })
     }
 
+    /// The auction for which the solution was picked as a winner.
+    pub fn auction_id(&self) -> domain::auction::Id {
+        self.solution.auction_id()
+    }
+
     /// The gas used by the settlement.
     pub fn gas(&self) -> eth::Gas {
         self.transaction.gas
@@ -114,6 +119,13 @@ pub struct ErrorWithAuction {
     #[allow(dead_code)]
     inner: Error,
     pub auction_id: Option<domain::auction::Id>,
+}
+
+impl ErrorWithAuction {
+    /// Whether the Settlement construction should be retried.
+    pub fn should_retry(&self) -> bool {
+        matches!(self.inner, Error::Infra(_))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
