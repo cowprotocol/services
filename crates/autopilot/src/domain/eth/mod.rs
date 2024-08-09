@@ -211,8 +211,8 @@ pub type Calldata = crate::util::Bytes<Vec<u8>>;
 pub struct Transaction {
     /// The hash of the transaction.
     pub hash: TxId,
-    /// The address of the solver that submitted the transaction.
-    pub solver: Address,
+    /// The address of the sender of the transaction.
+    pub from: Address,
     /// The call data of the transaction.
     pub input: Calldata,
     /// The block number of the block that contains the transaction.

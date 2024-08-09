@@ -133,7 +133,7 @@ fn into_domain(
 ) -> anyhow::Result<eth::Transaction> {
     Ok(eth::Transaction {
         hash: transaction.hash.into(),
-        solver: transaction
+        from: transaction
             .from
             .ok_or(anyhow::anyhow!("missing from"))?
             .into(),

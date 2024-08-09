@@ -28,7 +28,11 @@ impl Transaction {
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
     ) -> anyhow::Result<Self> {
-        let (_, metadata) = transaction
+        /// Number of bytes that may be appended to the calldata to store an
+        /// auction id.
+        const META_DATA_LEN: usize = 8;
+
+        let (data, metadata) = transaction
             .input
             .0
             .split_at(transaction.input.0.len() - META_DATA_LEN);
@@ -39,16 +43,15 @@ impl Transaction {
         Ok(Self {
             hash: transaction.hash,
             auction_id,
-            solver: transaction.solver,
+            solver: transaction.from,
             block: transaction.block,
             gas: transaction.gas,
             effective_gas_price: transaction.effective_gas_price,
-            solution: domain::settlement::Solution::new(&transaction.input, domain_separator)
-                .map_err(|err| anyhow!("solution build {}", err))?,
+            solution: domain::settlement::Solution::new(
+                &crate::util::Bytes(data.to_vec()),
+                domain_separator,
+            )
+            .map_err(|err| anyhow!("solution build {}", err))?,
         })
     }
 }
-
-/// Number of bytes that may be appended to the calldata to store an auction
-/// id.
-const META_DATA_LEN: usize = 8;

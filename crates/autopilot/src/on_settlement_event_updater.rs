@@ -356,7 +356,7 @@ impl Inner {
         tx: &domain::eth::Transaction,
         domain_separator: &model::DomainSeparator,
     ) -> Result<AuctionIdRecoveryStatus> {
-        let tx_from = tx.solver.0;
+        let tx_from = tx.from.0;
         let settlement = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement,
             Err(err) => {
