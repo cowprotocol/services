@@ -35,8 +35,8 @@ pub struct Configuration {
     pub max_batch_len: usize,
     /// An additional minimum delay to wait for collecting requests.
     ///
-    /// The delay starts counting after receiving the first request.
-    pub batch_delay: Duration,
+    /// The delay to start counting after receiving the first request.
+    pub debouncing_time: Duration,
     /// The timeout to wait for the result to be ready
     pub result_ready_timeout: Duration,
     /// Maximum capacity of the broadcast channel to store the native prices
@@ -102,7 +102,8 @@ where
             tokio::time::timeout(self.config.result_ready_timeout, async {
                 loop {
                     if let Ok(Some(result)) =
-                        Self::receive_with_timeout(&mut rx, &token, self.config.batch_delay).await
+                        Self::receive_with_timeout(&mut rx, &token, self.config.debouncing_time)
+                            .await
                     {
                         return result.result;
                     }
@@ -228,9 +229,12 @@ where
     let batches = stream::unfold(items, move |mut items| async move {
         let mut chunk = vec![items.next().await?];
 
-        let delay = tokio::time::sleep(config.batch_delay).fuse();
+        let delay = tokio::time::sleep(config.debouncing_time).fuse();
         futures::pin_mut!(delay);
 
+        // Append new elements to the bulk until reaching either of the scenarios:
+        // - reach maximum number of elements per batch (`max_batch_len)
+        // - we reach the `debouncing_time`
         while chunk.len() < config.max_batch_len {
             futures::select_biased! {
                 item = items.next() => match item {
@@ -305,7 +309,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -332,7 +336,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -358,7 +362,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -415,7 +419,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -453,7 +457,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -503,7 +507,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -526,7 +530,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -558,7 +562,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(10),
+            debouncing_time: Duration::from_millis(10),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
