@@ -8,7 +8,7 @@ use {
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     model::order::BUY_ETH_ADDRESS,
-    shared::request_sharing::BoxRequestSharing,
+    shared::{garbage_collector, request_sharing::BoxRequestSharing},
     std::{
         collections::HashMap,
         sync::{Arc, RwLock},
@@ -34,7 +34,10 @@ impl Fetcher {
         let inner = Arc::new(Inner {
             eth,
             cache: RwLock::new(HashMap::new()),
-            requests: BoxRequestSharing::labelled("token_info".into()),
+            requests: BoxRequestSharing::labelled(
+                "token_info".into(),
+                garbage_collector::singleton(),
+            ),
         });
         tokio::task::spawn(
             update_task(block_stream, Arc::downgrade(&inner))

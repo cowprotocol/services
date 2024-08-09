@@ -12,6 +12,7 @@ use {
         Query,
     },
     crate::{
+        garbage_collector,
         request_sharing::RequestSharing,
         trade_finding::{TradeError, TradeFinding},
     },
@@ -47,7 +48,10 @@ impl TradeEstimator {
                 finder,
                 verifier: None,
             }),
-            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
+            sharing: RequestSharing::labelled(
+                format!("estimator_{}", label),
+                garbage_collector::singleton(),
+            ),
             rate_limiter,
         }
     }

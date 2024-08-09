@@ -1,4 +1,5 @@
 use {
+    crate::garbage_collector::{GarbageCollecting, GarbageCollector},
     futures::{
         future::{BoxFuture, Shared, WeakShared},
         FutureExt,
@@ -9,23 +10,13 @@ use {
         future::Future,
         hash::Hash,
         sync::{Arc, Mutex},
-        time::Duration,
     },
 };
-
-// The design of this module is intentionally simple. Every time a shared future
-// is requested we loop through all futures to collect garbage. Because of this
-// there is no advantage from using a hash map.
-//
-// Alternatively we could collect garbage in a background task or return a
-// wrapper future that collects garbage on drop. In that case we would use a
-// hash map. This alternative approach is more complex and unnecessary because
-// we do not expect there to be a large number of futures in flight.
 
 /// Share an expensive to compute response with multiple requests that occur
 /// while one of them is already in flight.
 pub struct RequestSharing<Request, Fut: Future> {
-    in_flight: Arc<Mutex<HashMap<Request, WeakShared<Fut>>>>,
+    in_flight: Arc<Cache<Request, Fut>>,
     request_label: String,
 }
 
@@ -36,33 +27,39 @@ pub type BoxRequestSharing<Request, Response> =
 /// A boxed shared future.
 pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
-type Cache<Request, Response> = Arc<Mutex<HashMap<Request, WeakShared<Response>>>>;
+/// Cache mapping a request type to a shared future that returns the respective
+/// response.
+#[derive(Debug)]
+struct Cache<Request, Response: Future>(Mutex<HashMap<Request, WeakShared<Response>>>);
+
+impl<Request, Response: Future> Default for Cache<Request, Response> {
+    fn default() -> Self {
+        Self(Mutex::new(HashMap::default()))
+    }
+}
+
+impl<Request, Response: Future + Send> GarbageCollecting for Cache<Request, Response>
+where
+    <Response as Future>::Output: Send + Sync,
+    Request: Send,
+{
+    fn collect_garbage(&self) {
+        let mut cache = self.0.lock().unwrap();
+        cache.retain(|_request, weak| weak.upgrade().is_some());
+    }
+}
 
 impl<Request: Send + 'static, Fut: Future + Send + 'static> RequestSharing<Request, Fut>
 where
     Fut::Output: Send + Sync,
 {
-    pub fn labelled(request_label: String) -> Self {
-        let cache: Cache<Request, Fut> = Default::default();
-        Self::spawn_gc(cache.clone());
+    pub fn labelled(request_label: String, gc: &GarbageCollector) -> Self {
+        let cache: Arc<Cache<Request, Fut>> = Arc::new(Default::default());
+        gc.trace_memory(&cache);
         Self {
             in_flight: cache,
             request_label,
         }
-    }
-
-    fn collect_garbage(cache: &Cache<Request, Fut>) {
-        let mut cache = cache.lock().unwrap();
-        cache.retain(|_request, weak| weak.upgrade().is_some());
-    }
-
-    fn spawn_gc(cache: Cache<Request, Fut>) {
-        tokio::task::spawn(async move {
-            loop {
-                Self::collect_garbage(&cache);
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-        });
     }
 }
 
@@ -105,7 +102,7 @@ where
     where
         F: FnOnce(&Request) -> Fut,
     {
-        let mut in_flight = self.in_flight.lock().unwrap();
+        let mut in_flight = self.in_flight.0.lock().unwrap();
 
         // collect garbage and find copy of existing request
         let existing = in_flight.get(&request).and_then(WeakShared::upgrade);
@@ -152,9 +149,9 @@ mod tests {
     async fn shares_request() {
         // Manually create [`RequestSharing`] so we can have fine grained control
         // over the garbage collection.
-        let cache: Cache<u64, BoxFuture<u64>> = Default::default();
+        let cache: Arc<Cache<u64, BoxFuture<u64>>> = Default::default();
         let sharing = RequestSharing {
-            in_flight: cache,
+            in_flight: cache.clone(),
             request_label: Default::default(),
         };
 
@@ -170,16 +167,16 @@ mod tests {
         assert_eq!(shared1.weak_count().unwrap(), 1);
 
         // GC does not delete any keys because some tasks still use the future
-        RequestSharing::collect_garbage(&sharing.in_flight);
-        assert_eq!(sharing.in_flight.lock().unwrap().len(), 1);
-        assert!(sharing.in_flight.lock().unwrap().get(&0).is_some());
+        cache.collect_garbage();
+        assert_eq!(sharing.in_flight.0.lock().unwrap().len(), 1);
+        assert!(sharing.in_flight.0.lock().unwrap().get(&0).is_some());
 
         // complete second shared
         assert_eq!(shared1.now_or_never().unwrap(), 0);
 
-        RequestSharing::collect_garbage(&sharing.in_flight);
+        sharing.in_flight.collect_garbage();
 
         // GC deleted all now unused futures
-        assert!(sharing.in_flight.lock().unwrap().is_empty());
+        assert!(sharing.in_flight.0.lock().unwrap().is_empty());
     }
 }
