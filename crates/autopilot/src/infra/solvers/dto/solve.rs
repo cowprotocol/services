@@ -59,7 +59,7 @@ impl Request {
 impl Response {
     pub fn into_domain(
         self,
-    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
+    ) -> Vec<Result<domain::competition::SolutionWithId, domain::competition::SolutionError>> {
         self.solutions
             .into_iter()
             .map(Solution::into_domain)
@@ -104,8 +104,8 @@ pub struct TradedAmounts {
 impl Solution {
     pub fn into_domain(
         self,
-    ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
-        Ok(domain::competition::Solution::new(
+    ) -> Result<domain::competition::SolutionWithId, domain::competition::SolutionError> {
+        Ok(domain::competition::SolutionWithId::new(
             self.solution_id,
             self.submission_address.into(),
             domain::competition::Score::new(self.score.into())?,

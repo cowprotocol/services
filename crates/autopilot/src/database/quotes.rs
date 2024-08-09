@@ -29,7 +29,7 @@ impl Postgres {
     pub async fn read_quotes(
         &self,
         orders: impl Iterator<Item = &domain::OrderUid>,
-    ) -> Result<HashMap<domain::OrderUid, domain::Quote>> {
+    ) -> Result<HashMap<domain::OrderUid, domain::Quote>, sqlx::Error> {
         let mut ex = self.pool.acquire().await?;
         let order_uids: Vec<_> = orders.map(|uid| ByteArray(uid.0)).collect();
         let quotes: HashMap<_, _> = database::orders::read_quotes(&mut ex, &order_uids)

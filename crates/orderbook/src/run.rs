@@ -276,7 +276,9 @@ pub async fn run(args: Arguments) {
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.fast_price_estimation_results_required,
+            native_token.clone(),
         )
+        .await
         .unwrap();
     let price_estimator = price_estimator_factory
         .price_estimator(
@@ -410,9 +412,8 @@ pub async fn run(args: Arguments) {
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
                 Ok(inner) => inner.expect("API failed during shutdown"),
-                Err(_) => tracing::error!("API shutdown exceeded timeout"),
+                Err(_) => panic!("API shutdown exceeded timeout"),
             }
-            std::process::exit(0);
         }
     };
 }
