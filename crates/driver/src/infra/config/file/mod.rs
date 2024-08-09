@@ -607,6 +607,11 @@ impl Default for OrderPriorityConfig {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum OrderPriorityStrategy {
+    /// Strategy to prioritize orders based on their class. Market orders are
+    /// preferred over limit orders, as the expectation is that they should
+    /// be immediately fulfillable. Liquidity orders come last, as they are
+    /// the most niche and rarely used.
+    OrderClass,
     /// Strategy to prioritize orders based on external price.
     /// This strategy uses the likelihood that an order will be fulfilled,
     /// based on token prices. A larger value means that the order is more
@@ -626,6 +631,7 @@ pub enum OrderPriorityStrategy {
 /// external price data.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     vec![
+        OrderPriorityStrategy::OrderClass,
         OrderPriorityStrategy::CreationTimestamp,
         OrderPriorityStrategy::OwnQuotes,
         OrderPriorityStrategy::ExternalPrice,

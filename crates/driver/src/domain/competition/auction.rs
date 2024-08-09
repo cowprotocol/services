@@ -459,10 +459,9 @@ impl AuctionProcessor {
             order_priority_config.strategies.len(),
         );
 
-        order_comparators.push(sorting::OrderClass.into_comparator());
-
         for strategy in order_priority_config.strategies {
             let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
+                OrderPriorityStrategy::OrderClass => sorting::OrderClass.into_comparator(),
                 OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.into_comparator(),
                 OrderPriorityStrategy::CreationTimestamp => {
                     let max_order_age = Duration::from_std(
