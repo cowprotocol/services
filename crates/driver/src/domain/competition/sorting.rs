@@ -97,9 +97,11 @@ impl OrderingKey for CreationTimestamp {
 
     fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
         match self.max_order_age {
-            Some(max_order_age) => (order.created.0
-                > u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX))
-            .then_some(order.created),
+            Some(max_order_age) => {
+                let earliest_allowed_creation =
+                    u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
+                (order.created.0 > earliest_allowed_creation).then_some(order.created)
+            }
             None => Some(order.created),
         }
     }
