@@ -137,7 +137,7 @@ impl Order {
                 uid: Default::default(),
                 receiver: None,
                 created: u32::try_from(Utc::now().timestamp())
-                    .unwrap_or(u32::MAX)
+                    .unwrap_or(u32::MIN)
                     .into(),
                 valid_to: util::Timestamp::MAX,
                 buy: self.buy(),
