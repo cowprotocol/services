@@ -2,9 +2,13 @@
 //! requests into batches.
 
 use {
-    crate::price_estimation::{native::NativePriceEstimateResult, PriceEstimationError},
+    crate::price_estimation::{
+        native::{NativePriceEstimateResult, NativePriceEstimating},
+        PriceEstimationError,
+    },
     anyhow::anyhow,
     async_trait::async_trait,
+    ethcontract::jsonrpc::futures_util::future::BoxFuture,
     futures::{
         channel::mpsc,
         future::FutureExt as _,
@@ -43,7 +47,7 @@ pub struct Configuration {
 #[allow(dead_code)]
 #[mockall::automock]
 #[async_trait]
-pub trait NativePriceBatchFetcher: Sync + Send {
+pub trait NativePriceBatchFetcher: Sync + Send + NativePriceEstimating {
     /// Fetches a batch of native price estimates.
     ///
     /// It returns a HashMap which maps the token with its native price
@@ -54,11 +58,22 @@ pub trait NativePriceBatchFetcher: Sync + Send {
     ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>;
 }
 
+#[async_trait]
+impl NativePriceEstimating for MockNativePriceBatchFetcher {
+    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
+        let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
+        prices
+            .get(&token)
+            .cloned()
+            .ok_or(PriceEstimationError::NoLiquidity)?
+    }
+}
+
 /// Buffered implementation that implements automatic batching of
 /// native prices requests.
 #[allow(dead_code)]
 #[derive(Clone)]
-pub struct BufferedTransport<Inner> {
+pub struct BufferedRequest<Inner> {
     config: Configuration,
     inner: Arc<Inner>,
     calls: mpsc::UnboundedSender<H160>,
@@ -74,9 +89,9 @@ struct NativePriceResult {
 }
 
 #[allow(dead_code)]
-impl<Inner> BufferedTransport<Inner>
+impl<Inner> BufferedRequest<Inner>
 where
-    Inner: NativePriceBatchFetcher + Send + Sync + 'static,
+    Inner: NativePriceBatchFetcher + Send + Sync + NativePriceEstimating + 'static,
 {
     /// Maximum capacity of the broadcast channel, the messages are discarded as
     /// soon as they are sent, so this limit should be enough to hold the
@@ -117,29 +132,30 @@ where
             let broadcast_sender = broadcast_sender.clone();
             async move {
                 let batch = batch.into_iter().collect::<HashSet<_>>();
-                if !batch.is_empty() {
-                    let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
-                        Ok(results) => results
+                if batch.is_empty() {
+                    return;
+                }
+                let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
+                    Ok(results) => results
+                        .into_iter()
+                        .map(|(token, price)| NativePriceResult {
+                            token,
+                            result: price,
+                        })
+                        .collect(),
+                    Err(err) => {
+                        tracing::error!(?err, "failed to send native price batch request");
+                        batch
                             .into_iter()
-                            .map(|(token, price)| NativePriceResult {
+                            .map(|token| NativePriceResult {
                                 token,
-                                result: price,
+                                result: Err(err.clone()),
                             })
-                            .collect(),
-                        Err(err) => {
-                            tracing::error!(?err, "failed to send native price batch request");
-                            batch
-                                .into_iter()
-                                .map(|token| NativePriceResult {
-                                    token,
-                                    result: Err(err.clone()),
-                                })
-                                .collect()
-                        }
-                    };
-                    for result in results {
-                        let _ = broadcast_sender.send(result);
+                            .collect()
                     }
+                };
+                for result in results {
+                    let _ = broadcast_sender.send(result);
                 }
             }
         }))
@@ -176,7 +192,11 @@ where
         })?
     }
 
-    // Function to receive with a timeout
+    /// Function waiting to receive in the broadcast channel the requested token
+    /// with timeout
+    /// Because we shouldn't block the requester's petition, so we should return
+    /// early in case we do not receive a response soon (meaning there is
+    /// some underlying issue)
     async fn receive_with_timeout(
         rx: &mut broadcast::Receiver<NativePriceResult>,
         token: &H160,
@@ -274,7 +294,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
+        let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
         let result = buffered.request_buffered_estimate_prices(&token(0)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
@@ -299,7 +319,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
+        let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
 
         let result = buffered.request_buffered_estimate_prices(&token(0)).await;
 
@@ -324,7 +344,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = BufferedTransport::with_config(native_price_batch_fetcher, config);
+        let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
 
         let result = buffered.request_buffered_estimate_prices(&token(0)).await;
 
@@ -333,7 +353,7 @@ mod tests {
 
     // Function to check batching of many tokens
     async fn check_batching_many(
-        buffered: Arc<BufferedTransport<MockNativePriceBatchFetcher>>,
+        buffered: Arc<BufferedRequest<MockNativePriceBatchFetcher>>,
         tokens_requested: usize,
     ) {
         let mut futures = Vec::with_capacity(tokens_requested);
@@ -379,7 +399,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = Arc::new(BufferedTransport::with_config(
+        let buffered = Arc::new(BufferedRequest::with_config(
             native_price_batch_fetcher,
             config,
         ));
@@ -415,7 +435,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = Arc::new(BufferedTransport::with_config(
+        let buffered = Arc::new(BufferedRequest::with_config(
             native_price_batch_fetcher,
             config,
         ));
@@ -463,7 +483,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = Arc::new(BufferedTransport::with_config(
+        let buffered = Arc::new(BufferedRequest::with_config(
             native_price_batch_fetcher,
             config,
         ));
@@ -485,7 +505,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let _buffered = Arc::new(BufferedTransport::with_config(
+        let _buffered = Arc::new(BufferedRequest::with_config(
             native_price_batch_fetcher,
             config,
         ));
@@ -515,7 +535,7 @@ mod tests {
             result_ready_timeout: Duration::from_millis(500),
         };
 
-        let buffered = Arc::new(BufferedTransport::with_config(
+        let buffered = Arc::new(BufferedRequest::with_config(
             native_price_batch_fetcher,
             config,
         ));

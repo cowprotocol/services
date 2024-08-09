@@ -1,6 +1,6 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::FutureExt,
+    async_trait::async_trait,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
@@ -26,15 +26,13 @@ pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U2
 }
 
 #[mockall::automock]
+#[async_trait]
 pub trait NativePriceEstimating: Send + Sync {
     /// Like `PriceEstimating::estimate`.
     ///
     /// Prices are denominated in native token (i.e. the amount of native token
     /// that is needed to buy 1 unit of the specified token).
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
+    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult;
 }
 
 /// Wrapper around price estimators specialized to estimate a token's price
@@ -70,17 +68,12 @@ impl NativePriceEstimator {
     }
 }
 
+#[async_trait]
 impl NativePriceEstimating for NativePriceEstimator {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            let query = Arc::new(self.query(&token));
-            let estimate = self.inner.estimate(query.clone()).await?;
-            Ok(estimate.price_in_buy_token_f64(&query))
-        }
-        .boxed()
+    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
+        let query = Arc::new(self.query(&token));
+        let estimate = self.inner.estimate(query.clone()).await?;
+        Ok(estimate.price_in_buy_token_f64(&query))
     }
 }
 

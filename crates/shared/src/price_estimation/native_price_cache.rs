@@ -1,7 +1,8 @@
 use {
     super::PriceEstimationError,
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
-    futures::{FutureExt, StreamExt},
+    async_trait::async_trait,
+    futures::StreamExt,
     indexmap::IndexSet,
     primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
@@ -292,36 +293,31 @@ impl CachingNativePriceEstimator {
     }
 }
 
+#[async_trait]
 impl NativePriceEstimating for CachingNativePriceEstimator {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            let cached = {
-                let now = Instant::now();
-                let mut cache = self.0.cache.lock().unwrap();
-                Inner::get_cached_price(token, now, &mut cache, &self.0.max_age, false)
-            };
+    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
+        let cached = {
+            let now = Instant::now();
+            let mut cache = self.0.cache.lock().unwrap();
+            Inner::get_cached_price(token, now, &mut cache, &self.0.max_age, false)
+        };
 
-            let label = if cached.is_some() { "hits" } else { "misses" };
-            Metrics::get()
-                .native_price_cache_access
-                .with_label_values(&[label])
-                .inc_by(1);
+        let label = if cached.is_some() { "hits" } else { "misses" };
+        Metrics::get()
+            .native_price_cache_access
+            .with_label_values(&[label])
+            .inc_by(1);
 
-            if let Some(price) = cached {
-                return price;
-            }
-
-            self.0
-                .estimate_prices_and_update_cache(&[token], self.0.max_age, 1)
-                .next()
-                .await
-                .unwrap()
-                .1
+        if let Some(price) = cached {
+            return price;
         }
-        .boxed()
+
+        self.0
+            .estimate_prices_and_update_cache(&[token], self.0.max_age, 1)
+            .next()
+            .await
+            .unwrap()
+            .1
     }
 }
 

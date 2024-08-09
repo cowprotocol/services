@@ -2,8 +2,9 @@ use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
+    async_trait::async_trait,
     ethrpc::current_block::{into_stream, CurrentBlockStream},
-    futures::{future::BoxFuture, FutureExt, StreamExt},
+    futures::StreamExt,
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
     primitive_types::{H160, U256},
@@ -87,16 +88,14 @@ impl OneInch {
     }
 }
 
+#[async_trait]
 impl NativePriceEstimating for OneInch {
-    fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            let prices = self.prices.lock().unwrap();
-            prices
-                .get(&token)
-                .cloned()
-                .ok_or_else(|| PriceEstimationError::NoLiquidity)
-        }
-        .boxed()
+    async fn estimate_native_price(&self, token: Token) -> NativePriceEstimateResult {
+        let prices = self.prices.lock().unwrap();
+        prices
+            .get(&token)
+            .cloned()
+            .ok_or_else(|| PriceEstimationError::NoLiquidity)
     }
 }
 

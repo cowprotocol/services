@@ -1,28 +1,23 @@
 use {
     super::{compare_error, CompetitionEstimator},
     crate::price_estimation::{native::NativePriceEstimating, PriceEstimationError},
-    futures::future::{BoxFuture, FutureExt},
+    async_trait::async_trait,
     model::order::OrderKind,
     primitive_types::H160,
     std::{cmp::Ordering, sync::Arc},
 };
 
+#[async_trait]
 impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimating>> {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> BoxFuture<'_, Result<f64, PriceEstimationError>> {
-        async move {
-            let results = self
-                .produce_results(token, Result::is_ok, |e, q| e.estimate_native_price(q))
-                .await;
-            let winner = results
-                .into_iter()
-                .max_by(|a, b| compare_native_result(&a.1, &b.1))
-                .expect("we get passed at least 1 result and did not filter out any of them");
-            self.report_winner(&token, OrderKind::Buy, winner)
-        }
-        .boxed()
+    async fn estimate_native_price(&self, token: H160) -> Result<f64, PriceEstimationError> {
+        let results = self
+            .produce_results(token, Result::is_ok, |e, q| e.estimate_native_price(q))
+            .await;
+        let winner = results
+            .into_iter()
+            .max_by(|a, b| compare_native_result(&a.1, &b.1))
+            .expect("we get passed at least 1 result and did not filter out any of them");
+        self.report_winner(&token, OrderKind::Buy, winner)
     }
 }
 
