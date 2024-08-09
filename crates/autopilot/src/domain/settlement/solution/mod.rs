@@ -85,14 +85,20 @@ impl Solution {
             .sum()
     }
 
-    /// Returns fees denominated in sell token for each order in the solution.
-    pub fn fees(
-        &self,
-        prices: &auction::Prices,
-    ) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+    /// Returns fees breakdown for each order in the solution.
+    pub fn fees(&self, auction: &super::Auction) -> HashMap<domain::OrderUid, Option<OrderFee>> {
         self.trades
             .iter()
-            .map(|trade| (*trade.order_uid(), trade.fee_in_sell_token(prices).ok()))
+            .map(|trade| {
+                (*trade.order_uid(), {
+                    let total = trade.fee_in_sell_token(&auction.prices);
+                    let protocol = trade.protocol_fees(auction);
+                    match (total, protocol) {
+                        (Ok(total), Ok(protocol)) => Some(OrderFee { total, protocol }),
+                        _ => None,
+                    }
+                })
+            })
             .collect()
     }
 
@@ -192,6 +198,16 @@ pub mod error {
             }
         }
     }
+}
+
+/// Fee per trade in a solution. Contains breakdown of protocol fees and total
+/// fee.
+#[derive(Debug, Clone)]
+pub struct OrderFee {
+    /// Gas fee + protocol fees. Total fee taken for the execution of the order.
+    pub total: eth::SellTokenAmount,
+    /// Breakdown of protocol fees.
+    pub protocol: Vec<eth::Asset>,
 }
 
 #[cfg(test)]

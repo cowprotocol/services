@@ -3,6 +3,7 @@
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
 use {
+    self::solution::OrderFee,
     crate::{domain, domain::eth, infra},
     std::collections::HashMap,
 };
@@ -102,10 +103,9 @@ impl Settlement {
         self.solution.native_fee(&self.auction.prices)
     }
 
-    /// Per order fees denominated in sell token. Contains all orders from the
-    /// settlement
-    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
-        self.solution.fees(&self.auction.prices)
+    /// Per order fees breakdown. Contains all orders from the settlement
+    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<OrderFee>> {
+        self.solution.fees(&self.auction)
     }
 }
 

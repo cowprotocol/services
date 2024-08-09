@@ -191,26 +191,28 @@ impl Trade {
         })
     }
 
-    /// Protocol fees is defined by fee policies attached to the order.
+    /// Protocol fees are defined by fee policies attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fees(&self, policies: &[fee::Policy]) -> Result<eth::Asset, Error> {
+    pub fn protocol_fees(&self, auction: &settlement::Auction) -> Result<Vec<eth::Asset>, Error> {
+        let policies = auction
+            .orders
+            .get(&self.order_uid)
+            .map(|value| value.as_slice())
+            .unwrap_or_default();
         let mut current_trade = self.clone();
-        let mut amount = eth::TokenAmount::default();
+        let mut fees = vec![];
         for (i, protocol_fee) in policies.iter().enumerate().rev() {
             let fee = current_trade.protocol_fee(protocol_fee)?;
             // Do not need to calculate the last custom prices because in the last iteration
             // the prices are not used anymore to calculate the protocol fee
-            amount += fee;
+            fees.push(fee);
             if !i.is_zero() {
-                current_trade.prices.custom = self.calculate_custom_prices(amount)?;
+                current_trade.prices.custom = self.calculate_custom_prices(fee.amount)?;
             }
         }
-
-        Ok(eth::Asset {
-            token: self.surplus_token(),
-            amount,
-        })
+        // Reverse the fees to have them in the same order as the policies
+        Ok(fees.into_iter().rev().collect())
     }
 
     /// The effective amount that left the user's wallet including all fees.
@@ -280,18 +282,17 @@ impl Trade {
     /// Protocol fee is defined by a fee policy attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fee(&self, fee_policy: &fee::Policy) -> Result<eth::TokenAmount, Error> {
-        match fee_policy {
+    fn protocol_fee(&self, fee_policy: &fee::Policy) -> Result<eth::Asset, Error> {
+        let amount = match fee_policy {
             fee::Policy::Surplus {
                 factor,
                 max_volume_factor,
             } => {
                 let surplus = self.surplus_over_limit_price()?;
-                let fee = std::cmp::min(
+                std::cmp::min(
                     self.surplus_fee(surplus, (*factor).into())?.amount,
                     self.volume_fee((*max_volume_factor).into())?.amount,
-                );
-                Ok::<eth::TokenAmount, Error>(fee)
+                )
             }
             fee::Policy::PriceImprovement {
                 factor,
@@ -299,15 +300,18 @@ impl Trade {
                 quote,
             } => {
                 let price_improvement = self.price_improvement(quote)?;
-                let fee = std::cmp::min(
+                std::cmp::min(
                     self.surplus_fee(price_improvement, (*factor).into())?
                         .amount,
                     self.volume_fee((*max_volume_factor).into())?.amount,
-                );
-                Ok(fee)
+                )
             }
-            fee::Policy::Volume { factor } => Ok(self.volume_fee((*factor).into())?.amount),
-        }
+            fee::Policy::Volume { factor } => self.volume_fee((*factor).into())?.amount,
+        };
+        Ok(eth::Asset {
+            token: self.surplus_token(),
+            amount,
+        })
     }
 
     fn price_improvement(&self, quote: &domain::fee::Quote) -> Result<eth::Asset, Error> {
@@ -455,19 +459,16 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     fn native_protocol_fee(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        let protocol_fee = self.protocol_fees(
-            auction
-                .orders
-                .get(&self.order_uid)
-                .map(|value| value.as_slice())
-                .unwrap_or_default(),
-        )?;
-        let price = auction
-            .prices
-            .get(&protocol_fee.token)
-            .ok_or(Error::MissingPrice(protocol_fee.token))?;
-
-        Ok(price.in_eth(protocol_fee.amount))
+        self.protocol_fees(auction)?
+            .into_iter()
+            .map(|fee| {
+                let price = auction
+                    .prices
+                    .get(&fee.token)
+                    .ok_or(Error::MissingPrice(fee.token))?;
+                Ok(price.in_eth(fee.amount))
+            })
+            .sum()
     }
 
     fn surplus_token(&self) -> eth::TokenAddress {
