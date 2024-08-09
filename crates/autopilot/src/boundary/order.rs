@@ -43,6 +43,6 @@ pub fn to_domain(
         class: order.metadata.class.into(),
         app_data: order.data.app_data.into(),
         signature: order.signature.into(),
-        quote: Some(*quote),
+        quote: Some(quote.clone()),
     }
 }
