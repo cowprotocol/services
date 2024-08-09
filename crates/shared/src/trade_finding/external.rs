@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        garbage_collector,
         price_estimation::{PriceEstimationError, Query},
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
@@ -42,7 +43,10 @@ impl ExternalTradeFinder {
     ) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
-            sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
+            sharing: RequestSharing::labelled(
+                format!("tradefinder_{}", driver),
+                garbage_collector::singleton(),
+            ),
             client,
             block_stream,
             timeout: Arc::new(timeout),

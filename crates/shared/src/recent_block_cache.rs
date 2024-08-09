@@ -25,7 +25,7 @@
 //! could simplify this module if it was only used by by the former.
 
 use {
-    crate::request_sharing::BoxRequestSharing,
+    crate::{garbage_collector, request_sharing::BoxRequestSharing},
     anyhow::{Context, Result},
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
@@ -177,7 +177,10 @@ where
             delay_between_retries: config.delay_between_retries,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             metrics_label,
-            requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
+            requests: BoxRequestSharing::labelled(
+                "liquidity_fetching".into(),
+                garbage_collector::singleton(),
+            ),
         });
 
         Self::spawn_gc_task(
