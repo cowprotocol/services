@@ -85,14 +85,20 @@ impl Solution {
             .sum()
     }
 
-    /// Returns fees denominated in sell token for each order in the solution.
-    pub fn fees(
-        &self,
-        prices: &auction::Prices,
-    ) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+    /// Returns fees breakdown for each order in the solution.
+    pub fn fees(&self, auction: &super::Auction) -> HashMap<domain::OrderUid, Option<OrderFee>> {
         self.trades
             .iter()
-            .map(|trade| (*trade.order_uid(), trade.fee_in_sell_token(prices).ok()))
+            .map(|trade| {
+                (*trade.order_uid(), {
+                    let total = trade.fee_in_sell_token(&auction.prices);
+                    let protocol = trade.protocol_fees(auction);
+                    match (total, protocol) {
+                        (Ok(total), Ok(protocol)) => Some(OrderFee { total, protocol }),
+                        _ => None,
+                    }
+                })
+            })
             .collect()
     }
 
@@ -192,6 +198,16 @@ pub mod error {
             }
         }
     }
+}
+
+/// Fee per trade in a solution. Contains breakdown of protocol fees and total
+/// fee.
+#[derive(Debug, Clone)]
+pub struct OrderFee {
+    /// Gas fee + protocol fees. Total fee taken for the execution of the order.
+    pub total: eth::SellTokenAmount,
+    /// Breakdown of protocol fees.
+    pub protocol: Vec<eth::Asset>,
 }
 
 #[cfg(test)]
@@ -325,10 +341,9 @@ mod tests {
             eth::U256::from(6752697350740628u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
-        assert_eq!(
-            solution.fees(&auction.prices),
-            HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), Some(eth::SellTokenAmount(eth::U256::from(6752697350740628u128))))])
-        );
+        let order_fees = solution.fees(&auction);
+        let order_fee = order_fees.get(&domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff"))).unwrap().clone().unwrap();
+        assert_eq!(order_fee.total.0, eth::U256::from(6752697350740628u128));
     }
 
     // https://etherscan.io/tx/0x688508eb59bd20dc8c0d7c0c0b01200865822c889f0fcef10113e28202783243
