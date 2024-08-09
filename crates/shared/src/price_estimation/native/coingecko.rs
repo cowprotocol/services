@@ -2,7 +2,7 @@ use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
     anyhow::{anyhow, Result},
-    async_trait::async_trait,
+    futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
     rust_decimal::prelude::ToPrimitive,
@@ -118,37 +118,41 @@ impl CoinGecko {
     }
 }
 
-#[async_trait]
 impl NativePriceEstimating for CoinGecko {
-    async fn estimate_native_price(&self, token: Token) -> NativePriceEstimateResult {
-        match self.quote_token {
-            QuoteToken::Eth => self.send_request_price_in_eth(token).await,
-            QuoteToken::Other(native_price_token) => {
-                let token_eth =
-                    rust_decimal::Decimal::try_from(self.send_request_price_in_eth(token).await?)
-                        .map_err(|e| {
+    fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            match self.quote_token {
+                QuoteToken::Eth => self.send_request_price_in_eth(token).await,
+                QuoteToken::Other(native_price_token) => {
+                    let token_eth = rust_decimal::Decimal::try_from(
+                        self.send_request_price_in_eth(token).await?,
+                    )
+                    .map_err(|e| {
                         PriceEstimationError::EstimatorInternal(anyhow!(
                             "failed to parse requested token in ETH to rust decimal: {e:?}"
                         ))
                     })?;
-                let native_price_token_eth = rust_decimal::Decimal::try_from(
-                    self.send_request_price_in_eth(native_price_token).await?,
-                )
-                .map_err(|e| {
-                    PriceEstimationError::EstimatorInternal(anyhow!(
-                        "failed to parse native price token in ETH to rust decimal: {e:?}"
-                    ))
-                })?;
-                let token_in_native_price = token_eth.checked_div(native_price_token_eth).ok_or(
-                    PriceEstimationError::EstimatorInternal(anyhow!("division by zero")),
-                )?;
-                token_in_native_price
-                    .to_f64()
-                    .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
-                        "failed to parse result to f64"
-                    )))
+                    let native_price_token_eth = rust_decimal::Decimal::try_from(
+                        self.send_request_price_in_eth(native_price_token).await?,
+                    )
+                    .map_err(|e| {
+                        PriceEstimationError::EstimatorInternal(anyhow!(
+                            "failed to parse native price token in ETH to rust decimal: {e:?}"
+                        ))
+                    })?;
+                    let token_in_native_price =
+                        token_eth.checked_div(native_price_token_eth).ok_or(
+                            PriceEstimationError::EstimatorInternal(anyhow!("division by zero")),
+                        )?;
+                    token_in_native_price
+                        .to_f64()
+                        .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
+                            "failed to parse result to f64"
+                        )))
+                }
             }
         }
+        .boxed()
     }
 }
 

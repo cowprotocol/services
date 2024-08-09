@@ -7,7 +7,6 @@ use {
         PriceEstimationError,
     },
     anyhow::anyhow,
-    async_trait::async_trait,
     futures::{
         channel::mpsc,
         future::FutureExt as _,
@@ -48,26 +47,33 @@ pub struct Configuration {
 /// Trait for fetching a batch of native price estimates.
 #[allow(dead_code)]
 #[mockall::automock]
-#[async_trait]
 pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     /// Fetches a batch of native price estimates.
     ///
     /// It returns a HashMap which maps the token with its native price
     /// estimator result
-    async fn fetch_native_prices(
+    fn fetch_native_prices(
         &self,
         tokens: &HashSet<H160>,
-    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>;
+    ) -> futures::future::BoxFuture<
+        '_,
+        Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
+    >;
 }
 
-#[async_trait]
 impl NativePriceEstimating for MockNativePriceBatchFetching {
-    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
-        let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
-        prices
-            .get(&token)
-            .cloned()
-            .ok_or(PriceEstimationError::NoLiquidity)?
+    fn estimate_native_price(
+        &self,
+        token: H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
+            prices
+                .get(&token)
+                .cloned()
+                .ok_or(PriceEstimationError::NoLiquidity)?
+        }
+        .boxed()
     }
 }
 
@@ -90,37 +96,42 @@ struct NativePriceResult {
     result: Result<f64, PriceEstimationError>,
 }
 
-#[async_trait]
 impl<Inner> NativePriceEstimating for BufferedRequest<Inner>
 where
     Inner: NativePriceBatchFetching + Send + Sync + NativePriceEstimating + 'static,
 {
     /// Request to get estimate prices in a batch
-    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
-        // Sends the token for requesting price
-        self.calls.unbounded_send(token).map_err(|e| {
-            PriceEstimationError::ProtocolInternal(anyhow!(
-                "failed to append a new token to the queue: {e:?}"
-            ))
-        })?;
+    fn estimate_native_price(
+        &self,
+        token: H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            // Sends the token for requesting price
+            self.calls.unbounded_send(token).map_err(|e| {
+                PriceEstimationError::ProtocolInternal(anyhow!(
+                    "failed to append a new token to the queue: {e:?}"
+                ))
+            })?;
 
-        let mut rx = self.broadcast_sender.subscribe();
+            let mut rx = self.broadcast_sender.subscribe();
 
-        tokio::time::timeout(self.config.result_ready_timeout, async {
-            loop {
-                if let Ok(Some(result)) =
-                    Self::receive_with_timeout(&mut rx, &token, self.config.batch_delay).await
-                {
-                    return result.result;
+            tokio::time::timeout(self.config.result_ready_timeout, async {
+                loop {
+                    if let Ok(Some(result)) =
+                        Self::receive_with_timeout(&mut rx, &token, self.config.batch_delay).await
+                    {
+                        return result.result;
+                    }
                 }
-            }
-        })
-        .await
-        .map_err(|_| {
-            PriceEstimationError::ProtocolInternal(anyhow!(
-                "blocking buffered estimate prices timeout elapsed"
-            ))
-        })?
+            })
+            .await
+            .map_err(|_| {
+                PriceEstimationError::ProtocolInternal(anyhow!(
+                    "blocking buffered estimate prices timeout elapsed"
+                ))
+            })?
+        }
+        .boxed()
     }
 }
 
@@ -282,10 +293,13 @@ mod tests {
             // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
             .returning(|input| {
-                Ok(input
+                let input_cloned = input.clone();
+                async move {
+                    Ok(input_cloned
                     .iter()
                     .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
                     .collect::<HashMap<_, _>>())
+                }.boxed()
             });
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
@@ -308,10 +322,11 @@ mod tests {
             // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
             .returning(|input| {
-                Ok(input
+                let input_cloned = input.clone();
+                async move { Ok(input_cloned
                     .iter()
                     .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>())
+                    .collect::<HashMap<_, _>>()) }.boxed()
             });
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
@@ -336,7 +351,7 @@ mod tests {
             // We expect this to be requested just one
             .times(1)
             .returning(|_| {
-                Err(PriceEstimationError::NoLiquidity)
+                async { Err(PriceEstimationError::NoLiquidity) }.boxed()
             });
 
         let config = Configuration {
@@ -389,10 +404,11 @@ mod tests {
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
             .times(1)
             .returning(|input| {
-                Ok(input
+                let input_cloned = input.clone();
+                async move { Ok(input_cloned
                     .iter()
                     .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>())
+                    .collect::<HashMap<_, _>>()) }.boxed()
             });
 
         let config = Configuration {
@@ -420,7 +436,8 @@ mod tests {
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
             .times(1)
             .returning(|input| {
-                Ok(input
+                let input_cloned = input.clone();
+                async move { Ok(input_cloned
                     .iter()
                     .enumerate()
                     .map(|(i, token)|
@@ -429,7 +446,7 @@ mod tests {
                         } else {
                             (*token, Err(PriceEstimationError::NoLiquidity))
                         }
-                    ).collect::<HashMap<_, _>>())
+                    ).collect::<HashMap<_, _>>()) }.boxed()
             });
 
         let config = Configuration {
@@ -475,10 +492,11 @@ mod tests {
             // We expect this to be requested exactly two times because the max batch is 20, so all petitions fit into one batch request
             .times(2)
             .returning(|input| {
-                Ok(input
+                let input_cloned = input.clone();
+                async move { Ok(input_cloned
                     .iter()
                     .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>())
+                    .collect::<HashMap<_, _>>()) }.boxed()
             });
 
         let config = Configuration {
@@ -529,10 +547,11 @@ mod tests {
             // We expect this to be requested exactly two times because there are two batches petitions separated by 250 ms
             .times(2)
             .returning(|input| {
-                Ok(input
+                let input_cloned = input.clone();
+                async move { Ok(input_cloned
                     .iter()
                     .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>())
+                    .collect::<HashMap<_, _>>()) }.boxed()
             });
 
         let config = Configuration {
