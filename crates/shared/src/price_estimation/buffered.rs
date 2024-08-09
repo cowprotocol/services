@@ -8,7 +8,6 @@ use {
     },
     anyhow::anyhow,
     async_trait::async_trait,
-    ethcontract::jsonrpc::futures_util::future::BoxFuture,
     futures::{
         channel::mpsc,
         future::FutureExt as _,
@@ -41,13 +40,16 @@ pub struct Configuration {
     pub batch_delay: Duration,
     /// The timeout to wait for the result to be ready
     pub result_ready_timeout: Duration,
+    /// Maximum capacity of the broadcast channel to store the native prices
+    /// results
+    pub broadcast_channel_capacity: usize,
 }
 
 /// Trait for fetching a batch of native price estimates.
 #[allow(dead_code)]
 #[mockall::automock]
 #[async_trait]
-pub trait NativePriceBatchFetcher: Sync + Send + NativePriceEstimating {
+pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     /// Fetches a batch of native price estimates.
     ///
     /// It returns a HashMap which maps the token with its native price
@@ -59,7 +61,7 @@ pub trait NativePriceBatchFetcher: Sync + Send + NativePriceEstimating {
 }
 
 #[async_trait]
-impl NativePriceEstimating for MockNativePriceBatchFetcher {
+impl NativePriceEstimating for MockNativePriceBatchFetching {
     async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
         let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
         prices
@@ -88,22 +90,51 @@ struct NativePriceResult {
     result: Result<f64, PriceEstimationError>,
 }
 
+#[async_trait]
+impl<Inner> NativePriceEstimating for BufferedRequest<Inner>
+where
+    Inner: NativePriceBatchFetching + Send + Sync + NativePriceEstimating + 'static,
+{
+    /// Request to get estimate prices in a batch
+    async fn estimate_native_price(&self, token: H160) -> NativePriceEstimateResult {
+        // Sends the token for requesting price
+        self.calls.unbounded_send(token).map_err(|e| {
+            PriceEstimationError::ProtocolInternal(anyhow!(
+                "failed to append a new token to the queue: {e:?}"
+            ))
+        })?;
+
+        let mut rx = self.broadcast_sender.subscribe();
+
+        tokio::time::timeout(self.config.result_ready_timeout, async {
+            loop {
+                if let Ok(Some(result)) =
+                    Self::receive_with_timeout(&mut rx, &token, self.config.batch_delay).await
+                {
+                    return result.result;
+                }
+            }
+        })
+        .await
+        .map_err(|_| {
+            PriceEstimationError::ProtocolInternal(anyhow!(
+                "blocking buffered estimate prices timeout elapsed"
+            ))
+        })?
+    }
+}
+
 #[allow(dead_code)]
 impl<Inner> BufferedRequest<Inner>
 where
-    Inner: NativePriceBatchFetcher + Send + Sync + NativePriceEstimating + 'static,
+    Inner: NativePriceBatchFetching + Send + Sync + NativePriceEstimating + 'static,
 {
-    /// Maximum capacity of the broadcast channel, the messages are discarded as
-    /// soon as they are sent, so this limit should be enough to hold the
-    /// flow
-    const BROADCAST_CHANNEL_CAPACITY: usize = 50;
-
     /// Creates a new buffered transport with the specified configuration.
     pub fn with_config(inner: Inner, config: Configuration) -> Self {
         let inner = Arc::new(inner);
         let (calls, receiver) = mpsc::unbounded();
 
-        let (broadcast_sender, _) = broadcast::channel(Self::BROADCAST_CHANNEL_CAPACITY);
+        let (broadcast_sender, _) = broadcast::channel(config.broadcast_channel_capacity);
 
         Self::background_worker(
             inner.clone(),
@@ -159,37 +190,6 @@ where
                 }
             }
         }))
-    }
-
-    /// Request to get estimate prices in a batch
-    pub async fn request_buffered_estimate_prices(
-        &self,
-        token: &H160,
-    ) -> NativePriceEstimateResult {
-        // Sends the token for requesting price
-        self.calls.unbounded_send(*token).map_err(|e| {
-            PriceEstimationError::ProtocolInternal(anyhow!(
-                "failed to append a new token to the queue: {e:?}"
-            ))
-        })?;
-
-        let mut rx = self.broadcast_sender.subscribe();
-
-        tokio::time::timeout(self.config.result_ready_timeout, async {
-            loop {
-                if let Ok(Some(result)) =
-                    Self::receive_with_timeout(&mut rx, token, self.config.batch_delay).await
-                {
-                    return result.result;
-                }
-            }
-        })
-        .await
-        .map_err(|_| {
-            PriceEstimationError::ProtocolInternal(anyhow!(
-                "blocking buffered estimate prices timeout elapsed"
-            ))
-        })?
     }
 
     /// Function waiting to receive in the broadcast channel the requested token
@@ -276,7 +276,7 @@ mod tests {
             // Because it gets the value from the batch estimator, it does not need to do this call at all
             .never();
 
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested just one, because for the second call it fetches the cached one
@@ -292,16 +292,17 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
-        let result = buffered.request_buffered_estimate_prices(&token(0)).await;
+        let result = buffered.estimate_native_price(token(0)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
 
     #[tokio::test]
     async fn batching_successful_estimates() {
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested just one, because for the second call it fetches the cached one
@@ -317,18 +318,19 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
 
-        let result = buffered.request_buffered_estimate_prices(&token(0)).await;
+        let result = buffered.estimate_native_price(token(0)).await;
 
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
     }
 
     #[tokio::test]
     async fn batching_unsuccessful_estimates() {
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested just one
@@ -342,18 +344,19 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = BufferedRequest::with_config(native_price_batch_fetcher, config);
 
-        let result = buffered.request_buffered_estimate_prices(&token(0)).await;
+        let result = buffered.estimate_native_price(token(0)).await;
 
         assert_eq!(result, Err(PriceEstimationError::NoLiquidity));
     }
 
     // Function to check batching of many tokens
     async fn check_batching_many(
-        buffered: Arc<BufferedRequest<MockNativePriceBatchFetcher>>,
+        buffered: Arc<BufferedRequest<MockNativePriceBatchFetching>>,
         tokens_requested: usize,
     ) {
         let mut futures = Vec::with_capacity(tokens_requested);
@@ -361,7 +364,7 @@ mod tests {
             let buffered = buffered.clone();
             futures.push(tokio::spawn(async move {
                 buffered
-                    .request_buffered_estimate_prices(&token(i.try_into().unwrap()))
+                    .estimate_native_price(token(i.try_into().unwrap()))
                     .await
             }));
         }
@@ -380,7 +383,7 @@ mod tests {
     #[tokio::test]
     async fn batching_many_in_one_batch_successful_estimates() {
         let tokens_requested = 20;
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
@@ -397,6 +400,7 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = Arc::new(BufferedRequest::with_config(
@@ -410,7 +414,7 @@ mod tests {
     #[tokio::test]
     async fn batching_many_in_one_batch_with_mixed_results_estimates() {
         let tokens_requested = 2;
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
@@ -433,6 +437,7 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = Arc::new(BufferedRequest::with_config(
@@ -445,7 +450,7 @@ mod tests {
             let buffered = buffered.clone();
             futures.push(tokio::spawn(async move {
                 buffered
-                    .request_buffered_estimate_prices(&token(i.try_into().unwrap()))
+                    .estimate_native_price(token(i.try_into().unwrap()))
                     .await
             }));
         }
@@ -464,7 +469,7 @@ mod tests {
     #[tokio::test]
     async fn batching_many_in_two_batch_successful_estimates() {
         let tokens_requested = 21;
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly two times because the max batch is 20, so all petitions fit into one batch request
@@ -481,6 +486,7 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = Arc::new(BufferedRequest::with_config(
@@ -493,7 +499,7 @@ mod tests {
 
     #[tokio::test]
     async fn batching_no_calls() {
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We are testing the native prices are never called
@@ -503,6 +509,7 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let _buffered = Arc::new(BufferedRequest::with_config(
@@ -516,7 +523,7 @@ mod tests {
     #[tokio::test]
     async fn batching_many_in_multiple_times_successful_estimates() {
         let tokens_requested = 20;
-        let mut native_price_batch_fetcher = MockNativePriceBatchFetcher::new();
+        let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly two times because there are two batches petitions separated by 250 ms
@@ -533,6 +540,7 @@ mod tests {
             max_batch_len: 20,
             batch_delay: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
+            broadcast_channel_capacity: 50,
         };
 
         let buffered = Arc::new(BufferedRequest::with_config(
