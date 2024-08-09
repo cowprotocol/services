@@ -82,14 +82,14 @@ impl OrderingKey for ExternalPrice {
 }
 
 pub struct CreationTimestamp {
-    pub threshold: Duration,
+    pub max_order_age: Duration,
 }
 impl OrderingKey for CreationTimestamp {
     type Key = Option<util::Timestamp>;
 
     fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
         (order.created.0
-            > u32::try_from((Utc::now() - self.threshold).timestamp()).unwrap_or(u32::MAX))
+            > u32::try_from((Utc::now() - self.max_order_age).timestamp()).unwrap_or(u32::MAX))
         .then_some(order.created)
     }
 }

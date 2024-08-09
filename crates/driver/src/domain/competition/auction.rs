@@ -465,14 +465,11 @@ impl AuctionProcessor {
             let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
                 OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.into_comparator(),
                 OrderPriorityStrategy::CreationTimestamp => {
-                    let order_timestamp_threshold = Duration::from_std(
+                    let max_order_age = Duration::from_std(
                         order_priority_config.order_creation_timestamp_threshold,
                     )
                     .unwrap();
-                    sorting::CreationTimestamp {
-                        threshold: order_timestamp_threshold,
-                    }
-                    .into_comparator()
+                    sorting::CreationTimestamp { max_order_age }.into_comparator()
                 }
                 OrderPriorityStrategy::OwnQuotes => sorting::OwnQuotes.into_comparator(),
             };
