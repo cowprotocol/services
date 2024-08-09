@@ -77,18 +77,18 @@ impl Settlement {
 
     /// Total surplus expressed in native token.
     pub fn native_surplus(&self) -> eth::Ether {
-        self.settled.native_surplus(&self.auction)
+        self.settled.solution.native_surplus(&self.auction)
     }
 
     /// Total fee expressed in native token.
     pub fn native_fee(&self) -> eth::Ether {
-        self.settled.native_fee(&self.auction.prices)
+        self.settled.solution.native_fee(&self.auction.prices)
     }
 
     /// Per order fees denominated in sell token. Contains all orders from the
     /// settlement
     pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
-        self.settled.fees(&self.auction.prices)
+        self.settled.solution.fees(&self.auction.prices)
     }
 }
 
