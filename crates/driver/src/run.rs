@@ -74,7 +74,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         async {
             let _ = shutdown_receiver.await;
         },
-        config.order_priority_config,
+        config.order_priority_strategies,
     );
 
     futures::pin_mut!(serve);

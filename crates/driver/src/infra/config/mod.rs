@@ -2,7 +2,7 @@ use crate::{
     domain::eth,
     infra::{
         blockchain,
-        config::file::{GasEstimatorType, OrderPriorityConfig},
+        config::file::{GasEstimatorType, OrderPriorityStrategy},
         liquidity,
         mempool,
         simulator,
@@ -23,5 +23,5 @@ pub struct Config {
     pub gas_estimator: GasEstimatorType,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
-    pub order_priority_config: OrderPriorityConfig,
+    pub order_priority_strategies: Vec<OrderPriorityStrategy>,
 }

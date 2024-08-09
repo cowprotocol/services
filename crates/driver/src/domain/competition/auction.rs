@@ -11,13 +11,7 @@ use {
             liquidity,
             time,
         },
-        infra::{
-            self,
-            blockchain,
-            config::file::{OrderPriorityConfig, OrderPriorityStrategy},
-            observe,
-            Ethereum,
-        },
+        infra::{self, blockchain, config::file::OrderPriorityStrategy, observe, Ethereum},
         util::{self, Bytes},
     },
     chrono::{Duration, Utc},
@@ -206,7 +200,7 @@ impl AuctionProcessor {
         .map(|res| {
             res.expect(
                 "Either runtime was shut down before spawning the task or no OS threads are \
-             available; no sense in handling those errors",
+         available; no sense in handling those errors",
             )
         })
         .boxed()
@@ -453,22 +447,24 @@ impl AuctionProcessor {
         orders
     }
 
-    pub fn new(eth: &infra::Ethereum, order_priority_config: OrderPriorityConfig) -> Self {
+    pub fn new(
+        eth: &infra::Ethereum,
+        order_priority_strategies: Vec<OrderPriorityStrategy>,
+    ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
         let mut order_comparators = Vec::<Arc<dyn sorting::OrderComparator>>::with_capacity(
-            order_priority_config.strategies.len(),
+            order_priority_strategies.len(),
         );
 
-        for strategy in order_priority_config.strategies {
+        for strategy in order_priority_strategies {
             let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
                 OrderPriorityStrategy::OrderClass => sorting::OrderClass.into_comparator(),
                 OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.into_comparator(),
-                OrderPriorityStrategy::CreationTimestamp => {
-                    let max_order_age = Duration::from_std(
-                        order_priority_config.order_creation_timestamp_threshold,
-                    )
-                    .unwrap();
-                    sorting::CreationTimestamp { max_order_age }.into_comparator()
+                OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
+                    sorting::CreationTimestamp {
+                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
+                    }
+                    .into_comparator()
                 }
                 OrderPriorityStrategy::OwnQuotes => sorting::OwnQuotes.into_comparator(),
             };

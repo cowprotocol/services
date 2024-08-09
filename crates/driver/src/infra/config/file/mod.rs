@@ -2,7 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
@@ -55,8 +55,10 @@ struct Config {
     #[serde(default)]
     liquidity: LiquidityConfig,
 
-    #[serde(default)]
-    order_priority_config: OrderPriorityConfig,
+    /// Defines order prioritization strategies that will be applied in the
+    /// specified order.
+    #[serde(default = "default_order_priority_strategies")]
+    order_priority_strategies: Vec<OrderPriorityStrategy>,
 }
 
 #[serde_as]
@@ -578,34 +580,8 @@ pub enum GasEstimatorType {
     Web3,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct OrderPriorityConfig {
-    /// Defines order prioritization strategies that will be applied in the
-    /// specified order.
-    #[serde(default = "default_order_priority_strategies")]
-    pub strategies: Vec<OrderPriorityStrategy>,
-
-    /// Configures the threshold for `CreationTimestamp` order prioritization
-    /// strategy. Orders created within this threshold will be prioritized.
-    /// Takes effect only if `CreationTimestamp` is specified in
-    /// `order_priority_strategies`.
-    #[serde(default = "default_order_creation_timestamp_threshold")]
-    pub order_creation_timestamp_threshold: Duration,
-}
-
-impl Default for OrderPriorityConfig {
-    fn default() -> Self {
-        OrderPriorityConfig {
-            strategies: default_order_priority_strategies(),
-            order_creation_timestamp_threshold: default_order_creation_timestamp_threshold(),
-        }
-    }
-}
-
 /// Defines various strategies to prioritize orders.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug)]
 pub enum OrderPriorityStrategy {
     /// Strategy to prioritize orders based on their class. Market orders are
     /// preferred over limit orders, as the expectation is that they should
@@ -619,10 +595,47 @@ pub enum OrderPriorityStrategy {
     ExternalPrice,
     /// Strategy to prioritize orders based on their creation timestamp. The
     /// most recently created orders are given the highest priority.
-    CreationTimestamp,
+    CreationTimestamp {
+        /// When specified, orders created within this threshold will be
+        /// prioritized.
+        ///
+        /// Example: creation-timestamp:120s
+        max_order_age: Option<Duration>,
+    },
     /// Strategy to prioritize orders based on whether the current solver
     /// provided the winning quote for the order.
     OwnQuotes,
+}
+
+impl<'de> Deserialize<'de> for OrderPriorityStrategy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let parts: Vec<&str> = s.split(':').collect();
+
+        match parts[0] {
+            "order-class" => Ok(OrderPriorityStrategy::OrderClass),
+            "external-price" => Ok(OrderPriorityStrategy::ExternalPrice),
+            "creation-timestamp" => {
+                let max_order_age = (parts.len() == 2).then_some(
+                    humantime::parse_duration(parts[1]).map_err(serde::de::Error::custom)?,
+                );
+                Ok(OrderPriorityStrategy::CreationTimestamp { max_order_age })
+            }
+            "own-quotes" => Ok(OrderPriorityStrategy::OwnQuotes),
+            unsupported => Err(serde::de::Error::unknown_variant(
+                unsupported,
+                &[
+                    "order-class",
+                    "external-price",
+                    "creation-timestamp",
+                    "own-quotes",
+                ],
+            )),
+        }
+    }
 }
 
 /// The default prioritization process first considers
@@ -630,14 +643,13 @@ pub enum OrderPriorityStrategy {
 /// quotes, and finally considers the likelihood of order fulfillment based on
 /// external price data.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
+    const DEFAULT_MAX_ORDER_AGE: Duration = Duration::from_secs(120);
     vec![
         OrderPriorityStrategy::OrderClass,
-        OrderPriorityStrategy::CreationTimestamp,
+        OrderPriorityStrategy::CreationTimestamp {
+            max_order_age: Some(DEFAULT_MAX_ORDER_AGE),
+        },
         OrderPriorityStrategy::OwnQuotes,
         OrderPriorityStrategy::ExternalPrice,
     ]
-}
-
-fn default_order_creation_timestamp_threshold() -> Duration {
-    Duration::from_secs(120)
 }
