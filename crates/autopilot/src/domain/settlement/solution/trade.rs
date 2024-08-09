@@ -201,14 +201,16 @@ impl Trade {
             .map(|value| value.as_slice())
             .unwrap_or_default();
         let mut current_trade = self.clone();
+        let mut total = eth::TokenAmount::default();
         let mut fees = vec![];
         for (i, protocol_fee) in policies.iter().enumerate().rev() {
             let fee = current_trade.protocol_fee(protocol_fee)?;
             // Do not need to calculate the last custom prices because in the last iteration
             // the prices are not used anymore to calculate the protocol fee
             fees.push(fee);
+            total += fee.amount;
             if !i.is_zero() {
-                current_trade.prices.custom = self.calculate_custom_prices(fee.amount)?;
+                current_trade.prices.custom = self.calculate_custom_prices(total)?;
             }
         }
         // Reverse the fees to have them in the same order as the policies
