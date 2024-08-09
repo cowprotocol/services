@@ -193,8 +193,10 @@ pub mod error {
     impl Decoding {
         pub fn auction_id(&self) -> Option<auction::Id> {
             match self {
-                Self::InvalidSelector | Self::MissingAuctionId => None,
-                Self::Ethabi(_, id) | Self::Tokenizing(_, id) => Some(*id),
+                Decoding::InvalidSelector => None,
+                Decoding::MissingAuctionId => None,
+                Decoding::Ethabi(_, auction_id) => Some(*auction_id),
+                Decoding::Tokenizing(_, auction_id) => Some(*auction_id),
             }
         }
     }

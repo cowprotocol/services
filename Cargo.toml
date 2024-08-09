@@ -47,7 +47,7 @@ tempfile = "3.10.1"
 time = { version = "0.3.36", features = ["macros"] }
 thiserror = "1.0.61"
 toml = "0.8.14"
-tokio = "1.38.0"
+tokio = { version = "1.38.0", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"

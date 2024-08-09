@@ -144,16 +144,11 @@ impl Inner {
 
         let auction_id = match &settlement {
             Ok(settlement) => settlement.auction_id(),
-            Err(domain::settlement::Error::Infra(err)) => {
-                return Err(anyhow!("{hash:?}, infra error {err}"))
-            }
-            Err(err) => {
-                tracing::warn!(?hash, ?err, "invalid settlement");
-                match domain::settlement::Solution::new(&transaction.input, domain_separator) {
-                    Ok(solution) => solution.auction_id(),
-                    // if auction_id can't be extracted, do update with auction_id=0 to avoid being
-                    // stuck
-                    Err(err) => err.auction_id().unwrap_or_default(),
+            Err(error) => {
+                if error.should_retry() {
+                    return Err(anyhow!("{hash:?}, infra error"));
+                } else {
+                    error.auction_id.unwrap_or_default()
                 }
             }
         };

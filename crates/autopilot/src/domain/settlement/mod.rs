@@ -3,7 +3,6 @@
 //! A winning solution becomes a [`Settlement`] once it is executed on-chain.
 
 use {
-    super::competition,
     crate::{domain, domain::eth, infra},
     std::collections::HashMap,
 };
@@ -30,59 +29,51 @@ impl Settlement {
         transaction: Transaction,
         domain_separator: &eth::DomainSeparator,
         persistence: &infra::Persistence,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ErrorWithAuction> {
         let solution = Solution::new(&transaction.input, domain_separator)?;
+        let auction_id = solution.auction_id();
 
         if persistence
-            .auction_has_settlement(solution.auction_id())
+            .auction_has_settlement(auction_id)
             .await
-            .map_err(Error::from)?
+            .map_err(with(auction_id))?
         {
             // This settlement has already been processed by another environment.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
-            return Err(Error::WrongEnvironment);
+            return Err(Error::WrongEnvironment).map_err(with(auction_id));
         }
 
         let auction = persistence
-            .get_auction(solution.auction_id())
+            .get_auction(auction_id)
             .await
-            .map_err(Error::from)?;
+            .map_err(with(auction_id))?;
 
         // winning solution - solution promised during solver competition
         let promised_solution = persistence
-            .get_winning_solution(solution.auction_id())
+            .get_winning_solution(auction_id)
             .await
-            .map_err(Error::from)?;
+            .map_err(with(auction_id))?;
 
         if transaction.solver != promised_solution.solver() {
             return Err(Error::SolverMismatch {
                 expected: promised_solution.solver(),
                 got: transaction.solver,
-            });
+            })
+            .map_err(with(auction_id));
         }
 
-        let score = solution.score(&auction)?;
+        let score = solution.score(&auction).map_err(with(auction_id))?;
 
         // temp log
         if score != promised_solution.score() {
             tracing::debug!(
-                auction_id = ?solution.auction_id(),
+                ?auction_id,
                 "score mismatch: expected competition score {}, settlement score {}",
                 promised_solution.score(),
                 score,
             );
         }
-        // temporarily disabled due to inconsistencies with rounding of surplus
-        //
-        // https://github.com/cowprotocol/services/pull/2857
-
-        // if score < promised_solution.score() {
-        //     return Err(Error::ScoreMismatch {
-        //         expected: promised_solution.score(),
-        //         got: score,
-        //     });
-        // }
 
         Ok(Self {
             solution,
@@ -91,6 +82,7 @@ impl Settlement {
         })
     }
 
+    /// The auction for which the solution was picked as a winner.
     pub fn auction_id(&self) -> domain::auction::Id {
         self.solution.auction_id()
     }
@@ -118,7 +110,21 @@ impl Settlement {
     /// Per order fees denominated in sell token. Contains all orders from the
     /// settlement
     pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
-        self.solution.fees()
+        self.solution.fees(&self.auction.prices)
+    }
+}
+
+#[derive(Debug)]
+pub struct ErrorWithAuction {
+    #[allow(dead_code)]
+    inner: Error,
+    pub auction_id: Option<domain::auction::Id>,
+}
+
+impl ErrorWithAuction {
+    /// Whether the Settlement construction should be retried.
+    pub fn should_retry(&self) -> bool {
+        matches!(self.inner, Error::Infra(_))
     }
 }
 
@@ -138,11 +144,6 @@ pub enum Error {
     SolverMismatch {
         expected: eth::Address,
         got: eth::Address,
-    },
-    #[error("score mismatch: expected competition score {expected}, settlement score {got}")]
-    ScoreMismatch {
-        expected: competition::Score,
-        got: competition::Score,
     },
 }
 
@@ -208,5 +209,27 @@ impl From<infra::persistence::error::Solution> for Error {
 impl From<infra::persistence::DatabaseError> for Error {
     fn from(err: infra::persistence::DatabaseError) -> Self {
         Self::Infra(err.0)
+    }
+}
+
+impl From<solution::Error> for ErrorWithAuction {
+    fn from(err: solution::Error) -> Self {
+        Self {
+            auction_id: err.auction_id(),
+            inner: Error::BuildingSolution(err),
+        }
+    }
+}
+
+fn with<E>(auction: domain::auction::Id) -> impl FnOnce(E) -> ErrorWithAuction
+where
+    E: Into<Error>,
+{
+    move |err| {
+        let err = err.into();
+        ErrorWithAuction {
+            inner: err,
+            auction_id: Some(auction),
+        }
     }
 }

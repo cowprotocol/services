@@ -88,12 +88,17 @@ impl Trade {
             }
             order::Side::Sell => {
                 // scale limit buy to support partially fillable orders
+
+                // `checked_ceil_div`` to be consistent with how settlement contract calculates
+                // traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract is
+                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
                 let limit_buy = self
                     .executed
                     .0
                     .checked_mul(price_limits.buy.0)
                     .ok_or(error::Math::Overflow)?
-                    .checked_div(price_limits.sell.0)
+                    .checked_ceil_div(&price_limits.sell.0)
                     .ok_or(error::Math::DivisionByZero)?;
                 let bought = self
                     .executed
@@ -136,36 +141,54 @@ impl Trade {
     pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let fee = self.fee()?;
         let price = prices
-            .get(&self.sell.token)
-            .ok_or(Error::MissingPrice(self.sell.token))?;
-        Ok(price.in_eth(fee.into()))
+            .get(&fee.token)
+            .ok_or(Error::MissingPrice(fee.token))?;
+        Ok(price.in_eth(fee.amount))
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
     ///
     /// Denominated in SELL token
-    pub fn fee(&self) -> Result<eth::SellTokenAmount, Error> {
+    pub fn fee_in_sell_token(
+        &self,
+        prices: &auction::Prices,
+    ) -> Result<eth::SellTokenAmount, Error> {
+        let fee = self.fee()?;
+        let fee_in_sell_token = match self.side {
+            order::Side::Buy => fee.amount,
+            order::Side::Sell => {
+                let buy_price = prices
+                    .get(&self.buy.token)
+                    .ok_or(Error::MissingPrice(self.buy.token))?;
+                let sell_price = prices
+                    .get(&self.sell.token)
+                    .ok_or(Error::MissingPrice(self.sell.token))?;
+                fee.amount
+                    .checked_mul(&buy_price.get().0.into())
+                    .ok_or(error::Math::Overflow)?
+                    .checked_div(&sell_price.get().0.into())
+                    .ok_or(error::Math::DivisionByZero)?
+            }
+        }
+        .into();
+        Ok(fee_in_sell_token)
+    }
+
+    /// Total fee (protocol fee + network fee). Equal to a surplus difference
+    /// before and after applying the fees.
+    ///
+    /// Denominated in SURPLUS token
+    fn fee(&self) -> Result<eth::Asset, Error> {
         let fee = self
             .surplus_over_limit_price_before_fee()?
             .amount
             .checked_sub(&self.surplus_over_limit_price()?.amount)
             .ok_or(error::Math::Negative)?;
-        // We don't have to convert the fee to the sell token, we can just use the fee
-        // in surplus token. This is done just because it was done like this in
-        // the previous implementation
-        //
-        // https://github.com/cowprotocol/services/blob/main/crates/autopilot/src/decoded_settlement.rs#L345
-        let fee_in_sell_token = match self.side {
-            order::Side::Buy => fee,
-            order::Side::Sell => fee
-                .checked_mul(&self.prices.uniform.buy.into())
-                .ok_or(error::Math::Overflow)?
-                .checked_div(&self.prices.uniform.sell.into())
-                .ok_or(error::Math::DivisionByZero)?,
-        }
-        .into();
-        Ok(fee_in_sell_token)
+        Ok(eth::Asset {
+            token: self.surplus_token(),
+            amount: fee,
+        })
     }
 
     /// Protocol fees is defined by fee policies attached to the order.
@@ -210,6 +233,8 @@ impl Trade {
     /// The effective amount the user received after all fees.
     ///
     /// Note how the `executed` amount is used to build actual traded amounts.
+    ///
+    /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self) -> Result<eth::TokenAmount, error::Math> {
         Ok(match self.side {
             order::Side::Sell => self
@@ -217,7 +242,7 @@ impl Trade {
                 .0
                 .checked_mul(self.prices.custom.sell)
                 .ok_or(error::Math::Overflow)?
-                .checked_div(self.prices.custom.buy)
+                .checked_ceil_div(&self.prices.custom.buy)
                 .ok_or(error::Math::DivisionByZero)?,
             order::Side::Buy => self.executed.0,
         }
