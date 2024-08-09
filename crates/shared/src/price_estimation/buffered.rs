@@ -20,7 +20,7 @@ use {
         sync::Arc,
         time::Duration,
     },
-    tokio::{sync::broadcast, task::JoinHandle, time::error::Elapsed},
+    tokio::{sync::broadcast, task::JoinHandle},
 };
 
 /// Buffered configuration.
@@ -101,11 +101,13 @@ where
 
             tokio::time::timeout(self.config.result_ready_timeout, async {
                 loop {
-                    if let Ok(Some(result)) =
-                        Self::receive_with_timeout(&mut rx, &token, self.config.debouncing_time)
-                            .await
-                    {
-                        return result.result;
+                    match rx.recv().await {
+                        Ok(value) => {
+                            if value.token == token {
+                                return value.result;
+                            }
+                        }
+                        Err(_) => continue,
                     }
                 }
             })
@@ -186,25 +188,6 @@ where
                 }
             }
         }))
-    }
-
-    /// Function waiting to receive in the broadcast channel the requested token
-    /// with timeout
-    /// Because we shouldn't block the requester's petition, so we should return
-    /// early in case we do not receive a response soon (meaning there is
-    /// some underlying issue)
-    async fn receive_with_timeout(
-        rx: &mut broadcast::Receiver<NativePriceResult>,
-        token: &H160,
-        timeout_duration: Duration,
-    ) -> Result<Option<NativePriceResult>, Elapsed> {
-        tokio::time::timeout(timeout_duration, async {
-            match rx.recv().await {
-                Ok(value) => (value.token == *token).then_some(value),
-                Err(_) => None,
-            }
-        })
-        .await
     }
 }
 
