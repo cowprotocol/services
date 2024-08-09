@@ -46,7 +46,7 @@ pub struct Configuration {
 
 /// Trait for fetching a batch of native price estimates.
 #[allow(dead_code)]
-#[mockall::automock]
+#[cfg_attr(test, mockall::automock)]
 pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     /// Fetches a batch of native price estimates.
     ///
@@ -59,22 +59,6 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
         '_,
         Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
     >;
-}
-
-impl NativePriceEstimating for MockNativePriceBatchFetching {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
-            prices
-                .get(&token)
-                .cloned()
-                .ok_or(PriceEstimationError::NoLiquidity)?
-        }
-        .boxed()
-    }
 }
 
 /// Buffered implementation that implements automatic batching of
@@ -98,7 +82,7 @@ struct NativePriceResult {
 
 impl<Inner> NativePriceEstimating for BufferedRequest<Inner>
 where
-    Inner: NativePriceBatchFetching + Send + Sync + NativePriceEstimating + 'static,
+    Inner: NativePriceBatchFetching + NativePriceEstimating + 'static,
 {
     /// Request to get estimate prices in a batch
     fn estimate_native_price(
@@ -263,6 +247,23 @@ where
     });
 
     batches.for_each_concurrent(concurrency_limit, work)
+}
+
+#[cfg(test)]
+impl NativePriceEstimating for MockNativePriceBatchFetching {
+    fn estimate_native_price(
+        &self,
+        token: H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
+            prices
+                .get(&token)
+                .cloned()
+                .ok_or(PriceEstimationError::NoLiquidity)?
+        }
+        .boxed()
+    }
 }
 
 #[cfg(test)]
@@ -557,7 +558,7 @@ mod tests {
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
             max_batch_len: 20,
-            batch_delay: Duration::from_millis(50),
+            batch_delay: Duration::from_millis(10),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
         };
@@ -569,7 +570,7 @@ mod tests {
 
         check_batching_many(buffered.clone(), tokens_requested).await;
 
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(20)).await;
 
         check_batching_many(buffered, tokens_requested).await;
     }
