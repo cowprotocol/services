@@ -30,6 +30,7 @@ use {
 pub mod auction;
 pub mod order;
 pub mod solution;
+mod sorting;
 
 pub use {
     auction::{Auction, AuctionProcessor},

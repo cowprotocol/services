@@ -2,15 +2,25 @@ use {
     super::{order, Order},
     crate::{
         domain::{
-            competition::{self, auction},
-            eth,
+            competition::{
+                self,
+                auction,
+                sorting::{self, OrderingKey},
+            },
+            eth::{self},
             liquidity,
             time,
         },
-        infra::{self, blockchain, observe, Ethereum},
+        infra::{
+            self,
+            blockchain,
+            config::file::{OrderPriorityConfig, OrderPriorityStrategy},
+            observe,
+            Ethereum,
+        },
         util::{self, Bytes},
     },
-    chrono::Utc,
+    chrono::{Duration, Utc},
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
     itertools::Itertools,
     model::{order::OrderKind, signature::Signature},
@@ -135,6 +145,9 @@ struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
     eth: infra::Ethereum,
+    /// Comparators should be in the same order as the strategies in the
+    /// `OrderPriorityConfig`.
+    order_comparators: Vec<Arc<dyn sorting::OrderComparator>>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -143,14 +156,18 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 impl AuctionProcessor {
     /// Prioritize well priced and filter out unfillable orders from the given
     /// auction.
-    pub async fn prioritize(&self, auction: Auction) -> Auction {
+    pub async fn prioritize(&self, auction: Auction, solver: &eth::H160) -> Auction {
         Auction {
-            orders: self.prioritize_orders(&auction).await,
+            orders: self.prioritize_orders(&auction, solver).await,
             ..auction
         }
     }
 
-    fn prioritize_orders(&self, auction: &Auction) -> Shared<BoxFuture<'static, Vec<Order>>> {
+    fn prioritize_orders(
+        &self,
+        auction: &Auction,
+        solver: &eth::H160,
+    ) -> Shared<BoxFuture<'static, Vec<Order>>> {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
@@ -171,13 +188,15 @@ impl AuctionProcessor {
         let tokens: Tokens = auction.tokens().clone();
         let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
         let mut orders = auction.orders.clone();
+        let solver = *solver;
+        let order_comparators = lock.order_comparators.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
             orders.extend(rt.block_on(Self::cow_amm_orders(&eth, &tokens, &cow_amms)));
-            Self::sort(&mut orders, &tokens);
+            sorting::sort_orders(&mut orders, &tokens, &solver, &order_comparators);
             let mut balances =
                 rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
             Self::filter_orders(&mut balances, &mut orders);
@@ -187,7 +206,7 @@ impl AuctionProcessor {
         .map(|res| {
             res.expect(
                 "Either runtime was shut down before spawning the task or no OS threads are \
-                 available; no sense in handling those errors",
+             available; no sense in handling those errors",
             )
         })
         .boxed()
@@ -198,27 +217,6 @@ impl AuctionProcessor {
         lock.fut = fut.clone();
 
         fut
-    }
-
-    /// Sort orders based on their price achievability using the reference
-    /// prices contained in the auction (in the money first).
-    fn sort(orders: &mut [order::Order], tokens: &Tokens) {
-        orders.sort_by_cached_key(|order| {
-            // Market orders are preferred over limit orders, as the expectation is that
-            // they should be immediately fulfillable. Liquidity orders come last, as they
-            // are the most niche and rarely used.
-            let class = match order.kind {
-                order::Kind::Market => 2,
-                order::Kind::Limit { .. } => 1,
-                order::Kind::Liquidity => 0,
-            };
-            std::cmp::Reverse((
-                class,
-                // If the orders are of the same kind, then sort by likelihood of fulfillment
-                // based on token prices.
-                order.likelihood(tokens),
-            ))
-        });
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner.
@@ -367,7 +365,7 @@ impl AuctionProcessor {
                             tokens
                                 .get(eth::TokenAddress(eth::ContractAddress(*t)))
                                 .price
-                                .map(|p| p.0 .0)
+                                .map(|p| p.0.0)
                         })
                         .collect::<Option<Vec<_>>>()?;
                     Some((amm, prices))
@@ -455,12 +453,32 @@ impl AuctionProcessor {
         orders
     }
 
-    pub fn new(eth: &infra::Ethereum) -> Self {
+    pub fn new(eth: &infra::Ethereum, order_priority_config: OrderPriorityConfig) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
+        let mut order_comparators = Vec::<Arc<dyn sorting::OrderComparator>>::with_capacity(
+            order_priority_config.strategies.len(),
+        );
+
+        for strategy in order_priority_config.strategies {
+            let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
+                OrderPriorityStrategy::OrderClass => sorting::OrderClass.into_comparator(),
+                OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.into_comparator(),
+                OrderPriorityStrategy::CreationTimestamp => {
+                    let max_order_age = Duration::from_std(
+                        order_priority_config.order_creation_timestamp_threshold,
+                    )
+                    .unwrap();
+                    sorting::CreationTimestamp { max_order_age }.into_comparator()
+                }
+                OrderPriorityStrategy::OwnQuotes => sorting::OwnQuotes.into_comparator(),
+            };
+            order_comparators.push(comparator);
+        }
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
             eth,
+            order_comparators,
         })))
     }
 }

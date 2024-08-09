@@ -54,6 +54,9 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    #[serde(default)]
+    order_priority_config: OrderPriorityConfig,
 }
 
 #[serde_as]
@@ -573,4 +576,68 @@ pub enum GasEstimatorType {
     #[default]
     Native,
     Web3,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OrderPriorityConfig {
+    /// Defines order prioritization strategies that will be applied in the
+    /// specified order.
+    #[serde(default = "default_order_priority_strategies")]
+    pub strategies: Vec<OrderPriorityStrategy>,
+
+    /// Configures the threshold for `CreationTimestamp` order prioritization
+    /// strategy. Orders created within this threshold will be prioritized.
+    /// Takes effect only if `CreationTimestamp` is specified in
+    /// `order_priority_strategies`.
+    #[serde(default = "default_order_creation_timestamp_threshold")]
+    pub order_creation_timestamp_threshold: Duration,
+}
+
+impl Default for OrderPriorityConfig {
+    fn default() -> Self {
+        OrderPriorityConfig {
+            strategies: default_order_priority_strategies(),
+            order_creation_timestamp_threshold: default_order_creation_timestamp_threshold(),
+        }
+    }
+}
+
+/// Defines various strategies to prioritize orders.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum OrderPriorityStrategy {
+    /// Strategy to prioritize orders based on their class. Market orders are
+    /// preferred over limit orders, as the expectation is that they should
+    /// be immediately fulfillable. Liquidity orders come last, as they are
+    /// the most niche and rarely used.
+    OrderClass,
+    /// Strategy to prioritize orders based on external price.
+    /// This strategy uses the likelihood that an order will be fulfilled,
+    /// based on token prices. A larger value means that the order is more
+    /// likely to be fulfilled.
+    ExternalPrice,
+    /// Strategy to prioritize orders based on their creation timestamp. The
+    /// most recently created orders are given the highest priority.
+    CreationTimestamp,
+    /// Strategy to prioritize orders based on whether the current solver
+    /// provided the winning quote for the order.
+    OwnQuotes,
+}
+
+/// The default prioritization process first considers
+/// the order timestamp, then checks if the solver is working with its own
+/// quotes, and finally considers the likelihood of order fulfillment based on
+/// external price data.
+fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
+    vec![
+        OrderPriorityStrategy::OrderClass,
+        OrderPriorityStrategy::CreationTimestamp,
+        OrderPriorityStrategy::OwnQuotes,
+        OrderPriorityStrategy::ExternalPrice,
+    ]
+}
+
+fn default_order_creation_timestamp_threshold() -> Duration {
+    Duration::from_secs(120)
 }

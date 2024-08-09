@@ -35,8 +35,10 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
+    number::serialization::HexOrDecimalU256,
     primitive_types::H160,
     secp256k1::SecretKey,
+    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -134,6 +136,7 @@ pub struct Order {
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub app_data: AppDataHash,
+    pub quote: Option<OrderQuote>,
 }
 
 impl Order {
@@ -254,6 +257,21 @@ impl Order {
         Self { executed, ..self }
     }
 
+    pub fn created(self, created: u32) -> Self {
+        Self { created, ..self }
+    }
+
+    pub fn valid_to(self, valid_to: u32) -> Self {
+        Self { valid_to, ..self }
+    }
+
+    pub fn quote(self, quote: OrderQuote) -> Self {
+        Self {
+            quote: Some(quote),
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -296,6 +314,7 @@ impl Default for Order {
             sell_token_source: Default::default(),
             buy_token_destination: Default::default(),
             app_data: Default::default(),
+            quote: Default::default(),
         }
     }
 }
@@ -1337,6 +1356,25 @@ impl QuoteOk<'_> {
             assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
         }
         self
+    }
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuote {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: eth::U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: eth::U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: eth::U256,
+    pub solver: eth::H160,
+}
+
+impl OrderQuote {
+    pub fn solver(self, solver: eth::H160) -> Self {
+        Self { solver, ..self }
     }
 }
 
