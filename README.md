@@ -119,11 +119,11 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
 
 ### Profiling
 
-The most important binaries support [tokio-console](https://github.com/tokio-rs/console) to allow you a could look inside the tokio runtime.
+All binaries are compiled with support for [tokio-console](https://github.com/tokio-rs/console) by default to allow you to look inside the tokio runtime.
+However, this feature is not enabled at runtime by default because it comes with a pretty significant memory overhead. To enable it you just have to set the environment variable `TOKIO_CONSOLE=true` and run the binary you want to instrument.
 
-Simply enable the feature by passing `--enable-tokio-console true` when running a binary and then in another shell, run
-
-```
+You can install and run `tokio-console` with:
+```bash
 cargo install --locked tokio-console
 tokio-console
 ```
