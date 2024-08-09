@@ -26,6 +26,7 @@ use {
     thiserror::Error,
 };
 
+mod buffered;
 pub mod competition;
 pub mod external;
 pub mod factory;

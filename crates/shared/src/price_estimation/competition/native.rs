@@ -1,17 +1,17 @@
 use {
     super::{compare_error, CompetitionEstimator},
-    crate::price_estimation::{native::NativePriceEstimating, PriceEstimationError},
-    futures::future::{BoxFuture, FutureExt},
+    crate::price_estimation::{
+        native::{NativePriceEstimateResult, NativePriceEstimating},
+        PriceEstimationError,
+    },
+    futures::{future::BoxFuture, FutureExt},
     model::order::OrderKind,
     primitive_types::H160,
     std::{cmp::Ordering, sync::Arc},
 };
 
 impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimating>> {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> BoxFuture<'_, Result<f64, PriceEstimationError>> {
+    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let results = self
                 .produce_results(token, Result::is_ok, |e, q| e.estimate_native_price(q))
