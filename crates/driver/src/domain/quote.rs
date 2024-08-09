@@ -16,6 +16,7 @@ use {
         util::{self, conv::u256::U256Ext},
     },
     anyhow::Context,
+    chrono::Utc,
     num::CheckedDiv,
     std::{collections::HashSet, iter, ops::Mul},
 };
@@ -135,6 +136,9 @@ impl Order {
             vec![competition::Order {
                 uid: Default::default(),
                 receiver: None,
+                created: u32::try_from(Utc::now().timestamp())
+                    .unwrap_or(u32::MIN)
+                    .into(),
                 valid_to: util::Timestamp::MAX,
                 buy: self.buy(),
                 sell: self.sell(),
@@ -156,6 +160,7 @@ impl Order {
                     signer: Default::default(),
                 },
                 protocol_fees: Default::default(),
+                quote: Default::default(),
             }],
             [
                 auction::Token {

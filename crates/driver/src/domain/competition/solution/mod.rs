@@ -15,6 +15,7 @@ use {
             Simulator,
         },
     },
+    chrono::Utc,
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
@@ -87,6 +88,9 @@ impl Solution {
                         buy: jit.order().buy,
                         signature: jit.order().signature.clone(),
                         receiver: Some(jit.order().receiver),
+                        created: u32::try_from(Utc::now().timestamp())
+                            .unwrap_or(u32::MIN)
+                            .into(),
                         valid_to: jit.order().valid_to,
                         app_data: jit.order().app_data,
                         partial: jit.order().partially_fillable(),
@@ -95,6 +99,7 @@ impl Solution {
                         sell_token_balance: jit.order().sell_token_balance,
                         buy_token_balance: jit.order().buy_token_balance,
                         protocol_fees: vec![],
+                        quote: None,
                     },
                     jit.executed(),
                     Fee::Dynamic(jit.fee()),

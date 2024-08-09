@@ -21,6 +21,7 @@ pub struct Order {
     pub uid: Uid,
     /// The user specified a custom address to receive the output of this order.
     pub receiver: Option<eth::Address>,
+    pub created: util::Timestamp,
     pub valid_to: util::Timestamp,
     /// The minimum amount this order must buy when completely filled.
     pub buy: eth::Asset,
@@ -45,6 +46,8 @@ pub struct Order {
     /// Unless otherwise configured, the driver modifies solutions to take
     /// sufficient fee in the form of positive slippage.
     pub protocol_fees: Vec<FeePolicy>,
+    /// The winning quote.
+    pub quote: Option<Quote>,
 }
 
 /// An amount denominated in the sell token of an [`Order`].
@@ -424,6 +427,14 @@ impl Jit {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Quote {
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub fee: eth::Asset,
+    pub solver: eth::Address,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -442,6 +453,7 @@ mod tests {
         let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| Order {
             uid: Default::default(),
             receiver: Default::default(),
+            created: util::Timestamp(100),
             valid_to: util::Timestamp(u32::MAX),
             buy: buy(buy_amount),
             sell: sell(sell_amount),
@@ -468,6 +480,7 @@ mod tests {
                 signer: Default::default(),
             },
             protocol_fees: Default::default(),
+            quote: Default::default(),
         };
 
         assert_eq!(

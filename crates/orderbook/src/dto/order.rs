@@ -23,6 +23,7 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub protocol_fees: Vec<FeePolicy>,
+    pub created: u32,
     pub valid_to: u32,
     pub kind: OrderKind,
     pub receiver: Option<H160>,
@@ -39,6 +40,7 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,
+    pub quote: OrderQuote,
 }
 
 #[serde_as]
@@ -51,6 +53,19 @@ pub struct Quote {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuote {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: U256,
+    pub solver: H160,
 }
 
 #[serde_as]

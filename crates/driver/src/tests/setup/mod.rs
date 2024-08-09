@@ -104,6 +104,7 @@ pub struct Order {
     pub internalize: bool,
     pub side: order::Side,
     pub partial: Partial,
+    pub created: u32,
     pub valid_to: u32,
     pub kind: order::Kind,
 
@@ -275,6 +276,7 @@ impl Default for Order {
             internalize: Default::default(),
             side: order::Side::Sell,
             partial: Default::default(),
+            created: u32::MIN,
             valid_to: u32::MAX,
             kind: order::Kind::Market,
             solver_fee: Default::default(),
