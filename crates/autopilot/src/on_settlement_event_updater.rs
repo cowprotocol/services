@@ -203,49 +203,47 @@ impl Inner {
                     }
                     (Ok(settlement), Some(auction_data)) => {
                         // staging settlement properly built
-                        let observation = settlement.observation();
-                        if observation.surplus.0 != auction_data.surplus {
+                        let surplus = settlement.native_surplus();
+                        if surplus.0 != auction_data.surplus {
                             tracing::warn!(
                                 ?auction_id,
-                                ?observation.surplus,
+                                ?surplus,
                                 ?auction_data.surplus,
                                 "automatic check error: surplus mismatch"
                             );
                         }
-                        if observation.fee.0 != auction_data.fee {
+                        let fee = settlement.native_fee();
+                        if fee.0 != auction_data.fee {
                             tracing::warn!(
                                 ?auction_id,
-                                ?observation.fee,
+                                ?fee,
                                 ?auction_data.fee,
                                 "automatic check error: fee mismatch"
                             );
                         }
-                        if observation.order_fees.len() != auction_data.order_executions.len() {
+                        let order_fees = settlement.order_fees();
+                        if order_fees.len() != auction_data.order_executions.len() {
                             tracing::warn!(
                                 ?auction_id,
-                                ?observation.order_fees,
+                                ?order_fees,
                                 ?auction_data.order_executions,
                                 "automatic check error: order_fees mismatch"
                             );
                         }
                         for fee in auction_data.order_executions {
-                            if !observation
-                                .order_fees
-                                .contains_key(&domain::OrderUid(fee.0 .0))
-                            {
+                            if !order_fees.contains_key(&domain::OrderUid(fee.0 .0)) {
                                 tracing::warn!(
                                     ?auction_id,
                                     ?fee,
-                                    ?observation.order_fees,
+                                    ?order_fees,
                                     "automatic check error: order_fees missing"
                                 );
                             } else {
-                                let observation_fee =
-                                    observation.order_fees[&domain::OrderUid(fee.0 .0)];
-                                if observation_fee.unwrap_or_default().0 != fee.1 {
+                                let settlement_fee = order_fees[&domain::OrderUid(fee.0 .0)];
+                                if settlement_fee.unwrap_or_default().0 != fee.1 {
                                     tracing::warn!(
                                         ?auction_id,
-                                        ?observation_fee,
+                                        ?settlement_fee,
                                         ?fee,
                                         "automatic check error: order_fees value mismatch"
                                     );

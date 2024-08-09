@@ -2,7 +2,7 @@
 
 use {
     crate::domain::{self},
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
 };
 
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct Auction {
     pub prices: domain::auction::Prices,
     /// JIT orders with surplus capturing JIT order owners should capture
     /// surplus if settled.
-    pub surplus_capturing_jit_order_owners: Vec<domain::eth::Address>,
+    pub surplus_capturing_jit_order_owners: HashSet<domain::eth::Address>,
 }
 
 impl Auction {
