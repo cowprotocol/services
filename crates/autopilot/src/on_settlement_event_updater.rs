@@ -172,19 +172,13 @@ impl Inner {
             block_number: event.block_number,
             log_index: event.log_index,
             auction_id,
-            auction_data,
+            auction_data: auction_data.clone(),
         };
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
 
         {
             // temporary to debug and compare with current implementation
-            // TODO: use instead of current implementation
-            let Ok(transaction) = self.eth.transaction(hash.into()).await else {
-                tracing::warn!(?hash, "transaction not found");
-                return Ok(true);
-            };
-            let domain_separator = self.eth.contracts().settlement_domain_separator();
             let settlement = domain::settlement::Settlement::new(
                 transaction,
                 domain_separator,
@@ -192,10 +186,81 @@ impl Inner {
             )
             .await;
 
-            tracing::info!(
-                "settlement object {:?}",
-                settlement.map(|settlement| (settlement.observation()))
-            );
+            // automatic checks vs current implementation
+            match (settlement, auction_data) {
+                (Ok(_), None) => {
+                    // bug: we should have an auction_data
+                    tracing::warn!(?auction_id, "automatic check error: missing auction_data");
+                }
+                (Ok(settlement), Some(auction_data)) => {
+                    // staging settlement properly built
+                    let surplus = settlement.native_surplus();
+                    if surplus.0 != auction_data.surplus {
+                        tracing::warn!(
+                            ?auction_id,
+                            ?surplus,
+                            ?auction_data.surplus,
+                            "automatic check error: surplus mismatch"
+                        );
+                    }
+                    let fee = settlement.native_fee();
+                    if fee.0 != auction_data.fee {
+                        tracing::warn!(
+                            ?auction_id,
+                            ?fee,
+                            ?auction_data.fee,
+                            "automatic check error: fee mismatch"
+                        );
+                    }
+                    let order_fees = settlement.order_fees();
+                    if order_fees.len() != auction_data.order_executions.len() {
+                        tracing::warn!(
+                            ?auction_id,
+                            ?order_fees,
+                            ?auction_data.order_executions,
+                            "automatic check error: order_fees mismatch"
+                        );
+                    }
+                    for fee in auction_data.order_executions {
+                        if !order_fees.contains_key(&domain::OrderUid(fee.0 .0)) {
+                            tracing::warn!(
+                                ?auction_id,
+                                ?fee,
+                                ?order_fees,
+                                "automatic check error: order_fees missing"
+                            );
+                        } else {
+                            let settlement_fee = order_fees[&domain::OrderUid(fee.0 .0)];
+                            if settlement_fee.unwrap_or_default().0 != fee.1 {
+                                tracing::warn!(
+                                    ?auction_id,
+                                    ?settlement_fee,
+                                    ?fee,
+                                    "automatic check error: order_fees value mismatch"
+                                );
+                            }
+                        }
+                    }
+                }
+                (Err(err), None) => {
+                    // make sure the auction_ids are equal
+                    if err.auction_id.unwrap_or_default() != auction_id {
+                        tracing::warn!(
+                            ?auction_id,
+                            ?err,
+                            "automatic check error: auction_id mismatch"
+                        );
+                    }
+                }
+                (Err(err), Some(_)) => {
+                    // bug: settlement should have been properly built
+                    tracing::warn!(
+                        ?auction_id,
+                        ?err,
+                        "automatic check error: settlement error for valid auction_data"
+                    );
+                }
+            }
         }
 
         Postgres::update_settlement_details(&mut ex, update.clone())
