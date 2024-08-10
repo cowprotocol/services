@@ -160,10 +160,12 @@ mod tests {
 
         let shared0 = sharing.shared(0, futures::future::ready(0).boxed());
         let shared1 = sharing.shared(0, async { panic!() }.boxed());
-        // Would use Arc::ptr_eq but Shared doesn't implement it.
+
+        assert!(shared0.ptr_eq(&shared1));
         assert_eq!(shared0.strong_count().unwrap(), 2);
         assert_eq!(shared1.strong_count().unwrap(), 2);
         assert_eq!(shared0.weak_count().unwrap(), 1);
+
         // complete first shared
         assert_eq!(shared0.now_or_never().unwrap(), 0);
         assert_eq!(shared1.strong_count().unwrap(), 1);
