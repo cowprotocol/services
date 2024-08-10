@@ -3,7 +3,10 @@ use {
         future::{BoxFuture, Shared, WeakShared},
         FutureExt,
     },
-    prometheus::IntCounterVec,
+    prometheus::{
+        core::{AtomicU64, GenericGauge},
+        IntCounterVec,
+    },
     std::{
         collections::HashMap,
         future::Future,
@@ -53,7 +56,11 @@ where
 
     fn collect_garbage(cache: &Cache<Request, Fut>) {
         let mut cache = cache.lock().unwrap();
+        let len_before = cache.len() as u64;
         cache.retain(|_request, weak| weak.upgrade().is_some());
+        Metrics::get()
+            .request_sharing_cached_items
+            .sub(len_before - cache.len() as u64);
     }
 
     fn spawn_gc(cache: Cache<Request, Fut>) {
@@ -127,6 +134,7 @@ where
         // unwrap because downgrade only returns None if the Shared has already
         // completed which cannot be the case because we haven't polled it yet.
         in_flight.insert(request, shared.downgrade().unwrap());
+        Metrics::get().request_sharing_cached_items.inc();
         shared
     }
 }
@@ -136,6 +144,9 @@ struct Metrics {
     /// Request sharing hits & misses
     #[metric(labels("request_label", "result"))]
     request_sharing_access: IntCounterVec,
+
+    /// Number of all currently cached requests
+    request_sharing_cached_items: GenericGauge<AtomicU64>,
 }
 
 impl Metrics {
