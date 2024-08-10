@@ -37,7 +37,7 @@ sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
 tower = "0.4"
-tower-http = { version = "0.4", features = ["limit", "trace"] }
+tower-http = { version = "0.5", features = ["limit", "trace"] }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }

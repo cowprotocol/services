@@ -51,7 +51,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = { workspace = true }
 tower = "0.4"
-tower-http = { version = "0.4", features = ["limit", "trace"] }
+tower-http = { version = "0.5", features = ["limit", "trace"] }
 url = { workspace = true, features = ["serde"] }
 web3 = { workspace = true, features = ["http"] }
 

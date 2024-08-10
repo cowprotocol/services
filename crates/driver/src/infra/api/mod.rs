@@ -13,7 +13,7 @@ use {
     error::Error,
     futures::Future,
     std::{net::SocketAddr, sync::Arc},
-    tokio::sync::oneshot,
+    tokio::{net::TcpListener, sync::oneshot},
 };
 
 mod error;
@@ -37,7 +37,7 @@ impl Api {
     pub async fn serve(
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
-    ) -> Result<(), hyper::Error> {
+    ) -> Result<(), std::io::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
             tower::ServiceBuilder::new()
@@ -92,10 +92,12 @@ impl Api {
         let make_svc = observe::make_service_with_task_local_storage!(app);
 
         // Start the server.
-        let server = axum::Server::bind(&self.addr).serve(make_svc);
-        tracing::info!(port = server.local_addr().port(), "serving driver");
+        let listener = TcpListener::bind(&self.addr).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = axum::serve(listener, make_svc);
+        tracing::info!(port = addr.port(), "serving driver");
         if let Some(addr_sender) = self.addr_sender {
-            addr_sender.send(server.local_addr()).unwrap();
+            addr_sender.send(addr).unwrap();
         }
         server.with_graceful_shutdown(shutdown).await
     }

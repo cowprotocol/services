@@ -53,7 +53,8 @@ impl Default for Mock {
             .with_state(state.clone());
 
         let make_svc = observe::make_service_with_task_local_storage!(app);
-        let server = axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(make_svc);
+        let listener = TcpListener::bind(&"0.0.0.0:0").await.unwrap();
+        let server = axum::serve(listener, make_svc);
 
         let mock = Mock {
             state,

@@ -3,7 +3,7 @@
 use {
     crate::domain::solver::Solver,
     std::{future::Future, net::SocketAddr, sync::Arc},
-    tokio::sync::oneshot,
+    tokio::{net::TcpListener, sync::oneshot},
 };
 
 mod routes;
@@ -20,7 +20,7 @@ impl Api {
         self,
         bind: Option<oneshot::Sender<SocketAddr>>,
         shutdown: impl Future<Output = ()> + Send + 'static,
-    ) -> Result<(), hyper::Error> {
+    ) -> Result<(), std::io::Error> {
         let app = axum::Router::new()
             .layer(tower::ServiceBuilder::new().layer(
                 tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
@@ -37,9 +37,11 @@ impl Api {
 
         let make_svc = observe::make_service_with_task_local_storage!(app);
 
-        let server = axum::Server::bind(&self.addr).serve(make_svc);
+        let listener = TcpListener::bind(&self.addr).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = axum::serve(listener, make_svc);
         if let Some(bind) = bind {
-            let _ = bind.send(server.local_addr());
+            let _ = bind.send(addr);
         }
 
         server.with_graceful_shutdown(shutdown).await

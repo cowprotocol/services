@@ -50,12 +50,12 @@ macro_rules! make_service_with_task_local_storage {
     ($service:expr) => {{
         {
             let internal_request_id = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-            hyper::service::make_service_fn(move |_| {
+            tower::service_fn(move |_conn: axum::serve::IncomingStream| {
                 let warp_svc = $service.clone();
                 let internal_request_id = internal_request_id.clone();
                 async move {
                     let svc =
-                        hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
+                        tower::service_fn(move |req: axum::extract::Request<axum::body::Body>| {
                             let mut warp_svc = warp_svc.clone();
                             let id = if let Some(header) = req.headers().get("X-Request-ID") {
                                 String::from_utf8_lossy(header.as_bytes()).to_string()
@@ -68,7 +68,7 @@ macro_rules! make_service_with_task_local_storage {
                             };
                             let span = tracing::info_span!("request", id);
                             let handle_request = observe::request_id::REQUEST_ID
-                                .scope(id, hyper::service::Service::call(&mut warp_svc, req));
+                                .scope(id, tower::Service::call(&mut warp_svc, req));
                             tracing::Instrument::instrument(handle_request, span)
                         });
                     Ok::<_, std::convert::Infallible>(svc)
