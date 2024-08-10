@@ -87,7 +87,7 @@ impl Inner {
             };
 
             return verifier
-                .verify(&price_query, &query.verification, trade.clone())
+                .verify(&price_query, &query.verification, trade)
                 .await
                 .map_err(PriceEstimationError::EstimatorInternal);
         }
