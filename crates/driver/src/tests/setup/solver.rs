@@ -5,11 +5,7 @@ use {
         Partial,
     },
     crate::{
-        domain::{
-            competition::order,
-            eth,
-            time::{self},
-        },
+        domain::{competition::order, eth, time},
         infra::{self, blockchain::contracts::Addresses, config::file::FeeHandler, Ethereum},
         tests::{hex_address, setup::blockchain::Trade},
     },
@@ -21,6 +17,7 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex},
     },
+    tokio::net::TcpListener,
     web3::signing::Key,
 };
 
@@ -433,10 +430,12 @@ impl Solver {
             ),
         )
         .with_state(State(state));
-        let server =
-            axum::Server::bind(&"0.0.0.0:0".parse().unwrap()).serve(app.into_make_service());
-        let addr = server.local_addr();
+
+        let listener = TcpListener::bind(&"0.0.0.0:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = axum::serve(listener, app);
         tokio::spawn(async move { server.await.unwrap() });
+
         Self { addr }
     }
 }

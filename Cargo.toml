@@ -6,6 +6,7 @@ members = ["crates/*"]
 anyhow = "=1.0.76"
 async-trait = "0.1.80"
 axum = "0.7.5"
+axum-prometheus = "0.7"
 bigdecimal = "0.3"
 cached = { version = "0.49.3", default-features = false }
 chrono = { version = "0.4.38", default-features = false }
@@ -48,6 +49,7 @@ time = { version = "0.3.36", features = ["macros"] }
 thiserror = "1.0.61"
 toml = "0.8.14"
 tower = "0.4.13"
+tower-http = { version = "0.5", features = ["limit", "trace", "cors"] }
 tokio = { version = "1.38.0", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tracing = "0.1.40"

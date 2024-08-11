@@ -1,23 +1,49 @@
 use {
+    super::with_status,
     anyhow::Result,
     app_data::{AppDataDocument, AppDataHash},
-    reqwest::StatusCode,
-    shared::api::{internal_error_reply, IntoWarpReply},
-    std::{convert::Infallible, sync::Arc},
-    warp::{body, reply, Filter, Rejection},
+    axum::{http::StatusCode, routing::MethodRouter},
+    shared::api::{error, internal_error_reply, ApiReply, IntoApiReply},
 };
 
-fn request(
-    max_size: usize,
-) -> impl Filter<Extract = (Option<AppDataHash>, AppDataDocument), Error = Rejection> + Clone {
-    let opt = warp::path::param::<AppDataHash>()
-        .map(Some)
-        .or_else(|_| async { Ok::<(Option<AppDataHash>,), std::convert::Infallible>((None,)) });
-    warp::path!("v1" / "app_data" / ..)
-        .and(opt)
-        .and(warp::put())
-        .and(body::content_length_limit(max_size as _))
-        .and(body::json())
+pub fn without_hash_route() -> (&'static str, MethodRouter<super::State>) {
+    (
+        WITHOUT_HASH_ENDPOINT,
+        axum::routing::put(without_hash_handler),
+    )
+}
+
+const WITHOUT_HASH_ENDPOINT: &str = "/api/v1/app_data";
+// TODO double check that we can indeed omit the app data hash in the path
+// and figure out how we limit the request body size
+async fn without_hash_handler(
+    state: axum::extract::State<super::State>,
+    document: axum::extract::Json<AppDataDocument>,
+) -> ApiReply {
+    let result = state
+        .app_data
+        .register(None, document.0.full_app_data.as_bytes())
+        .await;
+    response(result)
+}
+
+pub fn with_hash_route() -> (&'static str, MethodRouter<super::State>) {
+    (WITH_HASH_ENDPOINT, axum::routing::put(with_hash_handler))
+}
+
+const WITH_HASH_ENDPOINT: &str = "/api/v1/app_data/:app_data_hash";
+// TODO double check that we can indeed omit the app data hash in the path
+// and figure out how we limit the request body size
+async fn with_hash_handler(
+    state: axum::extract::State<super::State>,
+    hash: axum::extract::Path<AppDataHash>,
+    document: axum::extract::Json<AppDataDocument>,
+) -> ApiReply {
+    let result = state
+        .app_data
+        .register(Some(hash.0), document.0.full_app_data.as_bytes())
+        .await;
+    response(result)
 }
 
 fn response(
@@ -29,39 +55,25 @@ fn response(
                 crate::app_data::Registered::New => StatusCode::CREATED,
                 crate::app_data::Registered::AlreadyExisted => StatusCode::OK,
             };
-            reply::with_status(reply::json(&hash), status)
+            with_status(serde_json::to_value(hash).unwrap(), status)
         }
-        Err(err) => err.into_warp_reply(),
+        Err(err) => err.into_api_reply(),
     }
 }
 
-pub fn filter(
-    registry: Arc<crate::app_data::Registry>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request(registry.size_limit()).and_then(move |hash, document: AppDataDocument| {
-        let registry = registry.clone();
-        async move {
-            let result = registry
-                .register(hash, document.full_app_data.as_bytes())
-                .await;
-            Result::<_, Infallible>::Ok(response(result))
-        }
-    })
-}
-
-impl IntoWarpReply for crate::app_data::RegisterError {
-    fn into_warp_reply(self) -> super::ApiReply {
+impl IntoApiReply for crate::app_data::RegisterError {
+    fn into_api_reply(self) -> super::ApiReply {
         match self {
-            Self::Invalid(err) => reply::with_status(
-                super::error("AppDataInvalid", err.to_string()),
+            Self::Invalid(err) => with_status(
+                error("AppDataInvalid", err.to_string()),
                 StatusCode::BAD_REQUEST,
             ),
-            err @ Self::HashMismatch { .. } => reply::with_status(
-                super::error("AppDataHashMismatch", err.to_string()),
+            err @ Self::HashMismatch { .. } => with_status(
+                error("AppDataHashMismatch", err.to_string()),
                 StatusCode::BAD_REQUEST,
             ),
-            err @ Self::DataMismatch { .. } => reply::with_status(
-                super::error("AppDataMismatch", err.to_string()),
+            err @ Self::DataMismatch { .. } => with_status(
+                error("AppDataMismatch", err.to_string()),
                 StatusCode::BAD_REQUEST,
             ),
             Self::Other(err) => {

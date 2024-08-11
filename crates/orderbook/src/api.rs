@@ -1,11 +1,10 @@
 use {
     crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
-    shared::{
-        api::{box_filter, error, finalize_router, ApiReply},
-        price_estimation::native::NativePriceEstimating,
-    },
+    axum::{http::HeaderName, routing::MethodRouter},
+    hyper::{Method, Uri},
+    shared::{api::ApiReply, price_estimation::native::NativePriceEstimating},
     std::sync::Arc,
-    warp::{Filter, Rejection, Reply},
+    tower_http::cors::{AllowHeaders, AllowOrigin},
 };
 
 mod cancel_order;
@@ -25,83 +24,106 @@ mod post_quote;
 mod put_app_data;
 mod version;
 
-pub fn handle_all_routes(
+#[derive(Clone)]
+pub struct State {
+    database: Postgres,
+    orderbook: Arc<Orderbook>,
+    quoter: Arc<QuoteHandler>,
+    app_data: Arc<app_data::Registry>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
+}
+
+pub fn build_router(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<app_data::Registry>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    // Note that we add a string with endpoint's name to all responses.
-    // This string will be used later to report metrics.
-    // It is not used to form the actual server response.
+) -> axum::Router<()> {
+    axum::Router::new()
+       // PROBLEM: we have multiple identical paths with different methods
+       // how do we differentiate for the metrics?
+       .route_tupled(version::route())
+       .route_tupled(post_order::route())
+       .route_tupled(cancel_orders::route())
+       .route_tupled(get_order_by_uid::route())
+       .route_tupled(cancel_order::route())
+       .route_tupled(get_order_status::route())
+       .route_tupled(get_app_data::route())
+       .route_tupled(put_app_data::with_hash_route())
+       .route_tupled(put_app_data::without_hash_route())
+       .route_tupled(get_auction::route())
+       .route_tupled(get_native_price::route())
+       .route_tupled(get_orders_by_tx::route())
+       .route_tupled(get_solver_competition::latest_route())
+       .route_tupled(get_solver_competition::by_tx_hash_route())
+       .route_tupled(get_solver_competition::by_auction_id_route())
+       .route_tupled(get_total_surplus::route())
+       .route_tupled(get_trades::route())
+       .route_tupled(get_user_orders::route())
+       .route_tupled(post_quote::route())
+       .fallback(|uri: Uri, payload: Option<axum::extract::Json<serde_json::Value>>| async move {
+           tracing::error!(?uri, payload = payload.map(|p| serde_json::to_string(&p.0).unwrap()), "fallback handler");
+       })
+       // TRIPLE CHECK THAT THESE LAYERS WORK AS BEFORE!!
+       // also does ordering make a difference here?
+       .layer(tower_http::trace::TraceLayer::new_for_http())
+       .layer(tower_http::cors::CorsLayer::new()
+            .allow_methods([
+                 Method::GET,
+                 Method::POST,
+                 Method::DELETE,
+                 Method::OPTIONS,
+                 Method::PUT,
+                 Method::PATCH
+            ])
+            .allow_headers(AllowHeaders::list([
+                HeaderName::from_static("origin"),
+                HeaderName::from_static("content-type"),
+                HeaderName::from_static("x-auth-token"),
+                HeaderName::from_static("x-appid"),
+            ]))
+            .allow_origin(AllowOrigin::any())
+        )
+        .layer(axum_prometheus::PrometheusMetricLayer::new())
+        .with_state(State {
+            database,
+            orderbook,
+            quoter: quotes,
+            app_data,
+            native_price_estimator,
+        })
+    // TODO fallback handler
+    //     do we have to add one?
+    //     does it set CORS headers correctly?
+    // TODO see if the existing unit tests for the endpoints can be converted
+    // TODO move api helper function into orderbook??
+    // TODO improve error conversions?
+    // TODO get rid of unwraps when serializing JSON
+    // TODO test timing
+    // TODO test tracing
+    // TODO test CORS
+    // TODO add log prefix
+    // TODO add rejection handler
+    // TODO double check internal server error handling
+    //     currently tests return some errors and I'm not sure if they should be
+    // logged     as errors as well
+}
 
-    let routes = vec![
-        (
-            "v1/create_order",
-            box_filter(post_order::post_order(orderbook.clone())),
-        ),
-        (
-            "v1/get_order",
-            box_filter(get_order_by_uid::get_order_by_uid(orderbook.clone())),
-        ),
-        (
-            "v1/get_order_status",
-            box_filter(get_order_status::get_status(orderbook.clone())),
-        ),
-        (
-            "v1/get_trades",
-            box_filter(get_trades::get_trades(database.clone())),
-        ),
-        (
-            "v1/cancel_order",
-            box_filter(cancel_order::cancel_order(orderbook.clone())),
-        ),
-        (
-            "v1/cancel_orders",
-            box_filter(cancel_orders::filter(orderbook.clone())),
-        ),
-        (
-            "v1/get_user_orders",
-            box_filter(get_user_orders::get_user_orders(orderbook.clone())),
-        ),
-        (
-            "v1/get_orders_by_tx",
-            box_filter(get_orders_by_tx::get_orders_by_tx(orderbook.clone())),
-        ),
-        ("v1/post_quote", box_filter(post_quote::post_quote(quotes))),
-        (
-            "v1/auction",
-            box_filter(get_auction::get_auction(orderbook.clone())),
-        ),
-        (
-            "v1/solver_competition",
-            box_filter(get_solver_competition::get(Arc::new(database.clone()))),
-        ),
-        (
-            "v1/solver_competition/latest",
-            box_filter(get_solver_competition::get_latest(Arc::new(
-                database.clone(),
-            ))),
-        ),
-        ("v1/version", box_filter(version::version())),
-        (
-            "v1/get_native_price",
-            box_filter(get_native_price::get_native_price(native_price_estimator)),
-        ),
-        (
-            "v1/get_app_data",
-            get_app_data::get(database.clone()).boxed(),
-        ),
-        (
-            "v1/put_app_data",
-            box_filter(put_app_data::filter(app_data)),
-        ),
-        (
-            "v1/get_total_surplus",
-            box_filter(get_total_surplus::get(database)),
-        ),
-    ];
+pub fn with_status(reply: serde_json::Value, status: axum::http::StatusCode) -> ApiReply {
+    ApiReply { status, reply }
+}
 
-    finalize_router(routes, "orderbook::api::request_summary")
+trait RouterExt<S> {
+    /// Pass `path` and `handler` via a tuple which allows defining the handler
+    /// together with the path in a separate file which makes reveiwing easier.
+    /// Additionally that way types needed parse the request (e.g. JSON payload)
+    /// can stay private to the module.
+    fn route_tupled(self, route: (&str, MethodRouter<S>)) -> Self;
+}
+
+impl<S: Clone + Send + Sync + 'static> RouterExt<S> for axum::Router<S> {
+    fn route_tupled(self, (path, handler): (&str, MethodRouter<S>)) -> Self {
+        self.route(path, handler)
+    }
 }

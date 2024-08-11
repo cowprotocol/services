@@ -1,30 +1,19 @@
 use {
-    crate::orderbook::{OrderCancellationError, Orderbook},
-    anyhow::Result,
+    axum::routing::MethodRouter,
     model::order::SignedOrderCancellations,
-    shared::api::{convert_json_response, extract_payload},
-    std::{convert::Infallible, sync::Arc},
-    warp::{Filter, Rejection},
+    shared::api::{convert_json_response, ApiReply},
 };
 
-pub fn request() -> impl Filter<Extract = (SignedOrderCancellations,), Error = Rejection> + Clone {
-    warp::path!("v1" / "orders")
-        .and(warp::delete())
-        .and(extract_payload())
+const ENDPOINT: &str = "/api/v1/orders";
+
+pub fn route() -> (&'static str, MethodRouter<super::State>) {
+    (ENDPOINT, axum::routing::delete(handler))
 }
 
-pub fn response(result: Result<(), OrderCancellationError>) -> super::ApiReply {
+async fn handler(
+    state: axum::extract::State<super::State>,
+    cancellations: axum::extract::Json<SignedOrderCancellations>,
+) -> ApiReply {
+    let result = state.orderbook.cancel_orders(cancellations.0).await;
     convert_json_response(result.map(|_| "Cancelled"))
-}
-
-pub fn filter(
-    orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request().and_then(move |cancellations| {
-        let orderbook = orderbook.clone();
-        async move {
-            let result = orderbook.cancel_orders(cancellations).await;
-            Result::<_, Infallible>::Ok(response(result))
-        }
-    })
 }

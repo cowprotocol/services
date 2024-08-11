@@ -36,8 +36,8 @@ solvers-dto = { path = "../solvers-dto" }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
-tower = "0.4"
-tower-http = { version = "0.5", features = ["limit", "trace"] }
+tower = { workspace = true }
+tower-http = { workspace = true }
 tracing = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true, features = ["http"] }

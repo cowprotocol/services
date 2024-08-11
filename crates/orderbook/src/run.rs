@@ -13,7 +13,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
-    futures::{FutureExt, StreamExt},
+    futures::StreamExt,
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
     order_validation,
     shared::{
@@ -44,8 +44,10 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    tokio::{task, task::JoinHandle},
-    warp::Filter,
+    tokio::{
+        net::TcpListener,
+        task::{self, JoinHandle},
+    },
 };
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -396,7 +398,8 @@ pub async fn run(args: Arguments) {
             let _ = shutdown_receiver.await;
         },
         native_price_estimator,
-    );
+    )
+    .await;
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -453,7 +456,7 @@ async fn check_database_connection(orderbook: &Orderbook) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn serve_api(
+async fn serve_api(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
@@ -462,22 +465,18 @@ fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(
+    let router = api::build_router(
         database,
         orderbook,
         quotes,
         app_data,
         native_price_estimator,
-    )
-    .boxed();
+    );
+    let router = observe::make_service_with_task_local_storage!(router);
+    let listener = TcpListener::bind(&address).await.unwrap();
     tracing::info!(%address, "serving order book");
-    let warp_svc = warp::service(filter);
-    let warp_svc = observe::make_service_with_task_local_storage!(warp_svc);
-    let server = hyper::Server::bind(&address)
-        .serve(warp_svc)
-        .with_graceful_shutdown(shutdown_receiver)
-        .map(|_| ());
-    task::spawn(server)
+    let server = axum::serve(listener, router).with_graceful_shutdown(shutdown_receiver);
+    task::spawn(async move { server.await.unwrap() })
 }
 
 /// Check that important constants such as the EIP 712 Domain Separator and

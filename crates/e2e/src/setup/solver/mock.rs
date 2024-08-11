@@ -9,7 +9,7 @@ use {
         solution::{Solution, Solutions},
     },
     std::sync::{Arc, Mutex, MutexGuard},
-    warp::hyper,
+    tokio::net::TcpListener,
 };
 
 /// A solver that does not implement any solving logic itself and instead simply
@@ -39,29 +39,29 @@ impl Mock {
     pub fn get_auctions(&self) -> MutexGuard<'_, Vec<Auction>> {
         self.state.auctions.lock().unwrap()
     }
-}
 
-impl Default for Mock {
-    fn default() -> Self {
+    pub async fn new() -> Self {
         let state = State {
             solution: Arc::new(Mutex::new(None)),
             auctions: Arc::new(Mutex::new(vec![])),
         };
 
-        let app = axum::Router::new()
+        let router: axum::Router<()> = axum::Router::new()
             .route("/solve", axum::routing::post(solve))
             .with_state(state.clone());
 
-        let make_svc = observe::make_service_with_task_local_storage!(app);
+        let router = observe::make_service_with_task_local_storage!(router);
         let listener = TcpListener::bind(&"0.0.0.0:0").await.unwrap();
-        let server = axum::serve(listener, make_svc);
 
         let mock = Mock {
             state,
-            url: format!("http://{}", server.local_addr()).parse().unwrap(),
+            url: format!("http://{}", listener.local_addr().unwrap())
+                .parse()
+                .unwrap(),
         };
+        let server = axum::serve(listener, router).with_graceful_shutdown(shutdown_signal());
 
-        tokio::task::spawn(server.with_graceful_shutdown(shutdown_signal()));
+        tokio::task::spawn(async move { server.await.unwrap() });
 
         mock
     }

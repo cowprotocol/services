@@ -1,30 +1,31 @@
 use {
-    crate::database::Postgres,
+    super::with_status,
+    axum::{http::StatusCode, routing::MethodRouter},
     primitive_types::H160,
     serde_json::json,
-    std::convert::Infallible,
-    warp::{http::StatusCode, reply::with_status, Filter, Rejection},
+    shared::api::{internal_error_reply, ApiReply},
 };
 
-pub fn get(db: Postgres) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    warp::path!("v1" / "users" / H160 / "total_surplus")
-        .and(warp::get())
-        .and_then(move |user| {
-            let db = db.clone();
-            async move {
-                let surplus = db.total_surplus(&user).await;
-                Result::<_, Infallible>::Ok(match surplus {
-                    Ok(surplus) => with_status(
-                        warp::reply::json(&json!({
-                            "totalSurplus": surplus.to_string()
-                        })),
-                        StatusCode::OK,
-                    ),
-                    Err(err) => {
-                        tracing::error!(?err, ?user, "failed to compute total surplus");
-                        shared::api::internal_error_reply()
-                    }
-                })
-            }
-        })
+pub fn route() -> (&'static str, MethodRouter<super::State>) {
+    (ENDPOINT, axum::routing::get(handler))
+}
+
+const ENDPOINT: &str = "/api/v1/users/:user/total_surplus";
+async fn handler(
+    state: axum::extract::State<super::State>,
+    user: axum::extract::Path<H160>,
+) -> ApiReply {
+    let surplus = state.database.total_surplus(&user).await;
+    match surplus {
+        Ok(surplus) => with_status(
+            json!({
+                "totalSurplus": surplus.to_string()
+            }),
+            StatusCode::OK,
+        ),
+        Err(err) => {
+            tracing::error!(?err, ?user, "failed to compute total surplus");
+            internal_error_reply()
+        }
+    }
 }

@@ -1,42 +1,35 @@
 use {
-    crate::database::Postgres,
-    anyhow::Result,
+    super::with_status,
     app_data::{AppDataDocument, AppDataHash},
-    reqwest::StatusCode,
-    std::convert::Infallible,
-    warp::{reply, Filter, Rejection, Reply},
+    axum::{http::StatusCode, routing::MethodRouter},
+    shared::api::ApiReply,
 };
 
-pub fn request() -> impl Filter<Extract = (AppDataHash,), Error = Rejection> + Clone {
-    warp::path!("v1" / "app_data" / AppDataHash).and(warp::get())
+pub fn route() -> (&'static str, MethodRouter<super::State>) {
+    (ENDPOINT, axum::routing::get(handler))
 }
 
-pub fn get(
-    database: Postgres,
-) -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection> + Clone {
-    request().and_then(move |contract_app_data: AppDataHash| {
-        let database = database.clone();
-        async move {
-            let result = database.get_full_app_data(&contract_app_data).await;
-            Result::<_, Infallible>::Ok(match result {
-                Ok(Some(response)) => {
-                    let response = reply::with_status(
-                        reply::json(&AppDataDocument {
-                            full_app_data: response,
-                        }),
-                        StatusCode::OK,
-                    );
-                    Box::new(response) as Box<dyn Reply>
-                }
-                Ok(None) => Box::new(reply::with_status(
-                    "full app data not found",
-                    StatusCode::NOT_FOUND,
-                )),
-                Err(err) => {
-                    tracing::error!(?err, "get_app_data_by_hash");
-                    Box::new(shared::api::internal_error_reply())
-                }
+const ENDPOINT: &str = "/api/v1/app_data/:app_data_hash";
+async fn handler(
+    state: axum::extract::State<super::State>,
+    contract_app_data: axum::extract::Path<AppDataHash>,
+) -> ApiReply {
+    let result = state.database.get_full_app_data(&contract_app_data.0).await;
+    match result {
+        Ok(Some(response)) => with_status(
+            serde_json::to_value(&AppDataDocument {
+                full_app_data: response,
             })
+            .unwrap(),
+            StatusCode::OK,
+        ),
+        Ok(None) => with_status(
+            serde_json::Value::String("full app data not found".into()),
+            StatusCode::NOT_FOUND,
+        ),
+        Err(err) => {
+            tracing::error!(?err, "get_app_data_by_hash");
+            shared::api::internal_error_reply()
         }
-    })
+    }
 }
