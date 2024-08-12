@@ -531,8 +531,6 @@ async fn cow_amm_driver_support(web3: Web3) {
     .await
     .unwrap();
 
-    onchain.mint_block().await;
-
     // all cow amms on mainnet the helper contract is aware of
     tracing::info!("Waiting for all cow amms to be indexed.");
     let expected_cow_amms = [
