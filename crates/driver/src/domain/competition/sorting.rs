@@ -7,70 +7,35 @@ use {
         util,
     },
     chrono::{Duration, Utc},
-    std::{cmp::Ordering, sync::Arc},
+    std::sync::Arc,
 };
 
-pub trait OrderComparator: Send + Sync {
-    fn compare(
-        &self,
-        order_a: &order::Order,
-        order_b: &order::Order,
-        tokens: &Tokens,
-        solver: &eth::H160,
-    ) -> Ordering;
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub enum SortingKeyType {
+    Int(i32),
+    BigRational(num::BigRational),
+    Timestamp(Option<util::Timestamp>),
+    Bool(bool),
 }
 
-impl<F> OrderComparator for F
-where
-    F: Fn(&order::Order, &order::Order, &Tokens, &eth::H160) -> Ordering + Send + Sync,
-{
-    fn compare(
-        &self,
-        order_a: &order::Order,
-        order_b: &order::Order,
-        tokens: &Tokens,
-        solver: &eth::H160,
-    ) -> Ordering {
-        self(order_a, order_b, tokens, solver)
-    }
-}
-
-pub trait OrderingKey: Send + Sync + 'static {
-    type Key: Ord + Send + Sync + 'static;
-
-    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> Self::Key;
-
-    /// Returns a comparator that compares two orders based on the key in
-    /// reverse order.
-    fn into_comparator(self) -> Arc<dyn OrderComparator>
-    where
-        Self: Sized,
-    {
-        Arc::new(
-            move |a: &order::Order, b: &order::Order, tokens: &Tokens, solver: &eth::H160| {
-                self.key(a, tokens, solver)
-                    .cmp(&self.key(b, tokens, solver))
-                    .reverse()
-            },
-        )
-    }
+pub trait SortingKey: Send + Sync {
+    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKeyType;
 }
 
 /// Prioritize orders by their class: market orders -> limit orders ->
 /// liquidity.
+///
+/// Market orders are preferred over limit orders, as the expectation is that
+/// they should be immediately fulfillable. Liquidity orders come last, as they
+/// are the most niche and rarely used.
 pub struct OrderClass;
-impl OrderingKey for OrderClass {
-    type Key = i32;
-
-    // Market orders are preferred over limit orders, as the expectation is that
-    // they should be immediately fulfillable. Liquidity orders come last, as they
-    // are the most niche and rarely used.
-    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
-        match order.kind {
+impl SortingKey for OrderClass {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKeyType {
+        SortingKeyType::Int(match order.kind {
             order::Kind::Market => 2,
             order::Kind::Limit { .. } => 1,
             order::Kind::Liquidity => 0,
-        }
+        })
     }
 }
 
@@ -78,11 +43,9 @@ impl OrderingKey for OrderClass {
 /// likely orders coming first. See more details in the `likelihood` function
 /// docs.
 pub struct ExternalPrice;
-impl OrderingKey for ExternalPrice {
-    type Key = num::BigRational;
-
-    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
-        order.likelihood(tokens)
+impl SortingKey for ExternalPrice {
+    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKeyType {
+        SortingKeyType::BigRational(order.likelihood(tokens))
     }
 }
 
@@ -92,29 +55,25 @@ impl OrderingKey for ExternalPrice {
 pub struct CreationTimestamp {
     pub max_order_age: Option<Duration>,
 }
-impl OrderingKey for CreationTimestamp {
-    type Key = Option<util::Timestamp>;
-
-    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
-        match self.max_order_age {
+impl SortingKey for CreationTimestamp {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKeyType {
+        SortingKeyType::Timestamp(match self.max_order_age {
             Some(max_order_age) => {
                 let earliest_allowed_creation =
                     u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
                 (order.created.0 > earliest_allowed_creation).then_some(order.created)
             }
             None => Some(order.created),
-        }
+        })
     }
 }
 
 /// Prioritize orders based on whether the current solver provided the winning
 /// quote for the order.
 pub struct OwnQuotes;
-impl OrderingKey for OwnQuotes {
-    type Key = bool;
-
-    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> Self::Key {
-        order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver)
+impl SortingKey for OwnQuotes {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> SortingKeyType {
+        SortingKeyType::Bool(order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver))
     }
 }
 
@@ -123,15 +82,14 @@ pub fn sort_orders(
     orders: &mut [order::Order],
     tokens: &Tokens,
     solver: &eth::H160,
-    order_comparators: &[Arc<dyn OrderComparator>],
+    order_comparators: &[Arc<dyn SortingKey>],
 ) {
-    orders.sort_by(|a, b| {
-        for cmp in order_comparators {
-            let ordering = cmp.compare(a, b, tokens, solver);
-            if ordering != Ordering::Equal {
-                return ordering;
-            }
-        }
-        Ordering::Equal
+    orders.sort_by_cached_key(|order| {
+        std::cmp::Reverse(
+            order_comparators
+                .iter()
+                .map(|cmp| cmp.key(order, tokens, solver))
+                .collect::<Vec<_>>(),
+        )
     });
 }

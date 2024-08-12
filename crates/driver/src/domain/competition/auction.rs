@@ -2,11 +2,7 @@ use {
     super::{order, Order},
     crate::{
         domain::{
-            competition::{
-                self,
-                auction,
-                sorting::{self, OrderingKey},
-            },
+            competition::{self, auction, sorting},
             eth::{self},
             liquidity,
             time,
@@ -141,7 +137,7 @@ struct Inner {
     eth: infra::Ethereum,
     /// Comparators should be in the same order as the strategies in the
     /// `OrderPriorityConfig`.
-    order_comparators: Vec<Arc<dyn sorting::OrderComparator>>,
+    order_comparators: Vec<Arc<dyn sorting::SortingKey>>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -452,21 +448,19 @@ impl AuctionProcessor {
         order_priority_strategies: Vec<OrderPriorityStrategy>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
-        let mut order_comparators = Vec::<Arc<dyn sorting::OrderComparator>>::with_capacity(
-            order_priority_strategies.len(),
-        );
+        let mut order_comparators =
+            Vec::<Arc<dyn sorting::SortingKey>>::with_capacity(order_priority_strategies.len());
 
         for strategy in order_priority_strategies {
-            let comparator: Arc<dyn sorting::OrderComparator> = match strategy {
-                OrderPriorityStrategy::OrderClass => sorting::OrderClass.into_comparator(),
-                OrderPriorityStrategy::ExternalPrice => sorting::ExternalPrice.into_comparator(),
+            let comparator: Arc<dyn sorting::SortingKey> = match strategy {
+                OrderPriorityStrategy::OrderClass => Arc::new(sorting::OrderClass),
+                OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
                 OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
-                    sorting::CreationTimestamp {
+                    Arc::new(sorting::CreationTimestamp {
                         max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
-                    }
-                    .into_comparator()
+                    })
                 }
-                OrderPriorityStrategy::OwnQuotes => sorting::OwnQuotes.into_comparator(),
+                OrderPriorityStrategy::OwnQuotes => Arc::new(sorting::OwnQuotes),
             };
             order_comparators.push(comparator);
         }
