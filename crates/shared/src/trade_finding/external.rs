@@ -11,7 +11,6 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
-    std::sync::Arc,
     url::Url,
 };
 
@@ -31,7 +30,7 @@ pub struct ExternalTradeFinder {
     block_stream: CurrentBlockStream,
 
     /// Timeout of the quote request to the driver.
-    timeout: Arc<std::time::Duration>,
+    timeout: std::time::Duration,
 }
 
 impl ExternalTradeFinder {
@@ -49,67 +48,70 @@ impl ExternalTradeFinder {
             ),
             client,
             block_stream,
-            timeout: Arc::new(timeout),
+            timeout,
         }
     }
 
     /// Queries the `/quote` endpoint of the configured driver and deserializes
     /// the result into a Quote or Trade.
     async fn shared_query(&self, query: &Query) -> Result<Trade, TradeError> {
-        let deadline = chrono::Utc::now() + *self.timeout;
-        let order = dto::Order {
-            sell_token: query.sell_token,
-            buy_token: query.buy_token,
-            amount: query.in_amount.get(),
-            kind: query.kind,
-            deadline,
-        };
+        let fut = move |query: &Query| {
+            let order = dto::Order {
+                sell_token: query.sell_token,
+                buy_token: query.buy_token,
+                amount: query.in_amount.get(),
+                kind: query.kind,
+                deadline: chrono::Utc::now() + self.timeout,
+            };
+            let block_dependent = query.block_dependent;
+            let id = observe::request_id::get_task_local_storage();
+            let timeout = self.timeout;
+            let client = self.client.clone();
+            let quote_endpoint = self.quote_endpoint.clone();
+            let block_hash = self.block_stream.borrow().hash;
 
-        let mut request = self
-            .client
-            .get(self.quote_endpoint.clone())
-            .query(&order)
-            .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json");
+            async move {
+                let mut request = client
+                    .get(quote_endpoint)
+                    .query(&order)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::ACCEPT, "application/json");
 
-        if query.block_dependent {
-            request = request.header(
-                "X-Current-Block-Hash",
-                self.block_stream.borrow().hash.to_string(),
-            )
-        }
+                if block_dependent {
+                    request = request.header("X-Current-Block-Hash", block_hash.to_string())
+                }
 
-        if let Some(id) = observe::request_id::get_task_local_storage() {
-            request = request.header("X-REQUEST-ID", id);
-        }
+                if let Some(id) = id {
+                    request = request.header("X-REQUEST-ID", id);
+                }
 
-        let timeout = self.timeout.clone();
-        let future = async move {
-            let response = request
-                .timeout(*timeout)
-                .send()
-                .await
-                .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-            if response.status() == 429 {
-                return Err(PriceEstimationError::RateLimited);
+                let response = request
+                    .timeout(timeout)
+                    .send()
+                    .await
+                    .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
+                if response.status() == 429 {
+                    return Err(PriceEstimationError::RateLimited);
+                }
+                let text = response
+                    .text()
+                    .await
+                    .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
+                serde_json::from_str::<dto::Quote>(&text)
+                    .map(Trade::from)
+                    .map_err(|err| {
+                        if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
+                            PriceEstimationError::from(err)
+                        } else {
+                            PriceEstimationError::EstimatorInternal(anyhow!(err))
+                        }
+                    })
             }
-            let text = response
-                .text()
-                .await
-                .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
-            serde_json::from_str::<dto::Quote>(&text)
-                .map(Trade::from)
-                .map_err(|err| {
-                    if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                        PriceEstimationError::from(err)
-                    } else {
-                        PriceEstimationError::EstimatorInternal(anyhow!(err))
-                    }
-                })
+            .boxed()
         };
 
         self.sharing
-            .shared(query.clone(), future.boxed())
+            .shared_or_else(query.clone(), fut)
             .await
             .map_err(TradeError::from)
     }

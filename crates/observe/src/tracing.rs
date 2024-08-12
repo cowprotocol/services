@@ -70,7 +70,12 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
         }};
     }
 
-    if cfg!(tokio_unstable) {
+    let enable_tokio_console: bool = std::env::var("TOKIO_CONSOLE")
+        .unwrap_or("false".to_string())
+        .parse()
+        .unwrap();
+
+    if cfg!(tokio_unstable) && enable_tokio_console {
         let (env_filter, reload_handle) =
             tracing_subscriber::reload::Layer::new(EnvFilter::new(&initial_filter));
 
@@ -78,6 +83,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
             .with(console_subscriber::spawn())
             .with(fmt_layer!(env_filter, stderr_threshold))
             .init();
+        tracing::info!("started programm with support for tokio-console");
 
         if cfg!(unix) {
             spawn_reload_handler(initial_filter, reload_handle);
@@ -92,6 +98,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
             .with(tracing::level_filters::LevelFilter::TRACE)
             .with(fmt_layer!(env_filter, stderr_threshold))
             .init();
+        tracing::info!("started programm without support for tokio-console");
 
         if cfg!(unix) {
             spawn_reload_handler(initial_filter, reload_handle);

@@ -56,7 +56,7 @@ impl LiquidityProvider {
 [[liquidity.uniswap-v2]]
 router = "{:?}"
 pool-code = "{:?}"
-missing-pool-cache-time = "1h"
+missing-pool-cache-time = "0s"
 "#,
                 contracts.uniswap_v2_router.address(),
                 contracts.default_pool_code()

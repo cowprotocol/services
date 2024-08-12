@@ -252,6 +252,12 @@ impl SolvableOrdersCache {
 
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()
+            .filter(|cow_amm| {
+                cow_amm
+                    .traded_tokens()
+                    .iter()
+                    .all(|token| prices.contains_key(token))
+            })
             .map(|cow_amm| cow_amm.address())
             .cloned()
             .map(eth::Address::from)
@@ -261,17 +267,16 @@ impl SolvableOrdersCache {
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
-                .filter_map(|order| {
-                    if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        Some(self.protocol_fees.apply(order, quote, &surplus_capturing_jit_order_owners))
-                    } else {
-                        tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
-                        None
-                    }
+                .map(|order| {
+                    let quote = db_solvable_orders
+                        .quotes
+                        .get(&order.metadata.uid.into())
+                        .cloned();
+                    self.protocol_fees
+                        .apply(order, quote, &surplus_capturing_jit_order_owners)
                 })
                 .collect(),
-            prices:
-                prices
+            prices: prices
                 .into_iter()
                 .map(|(key, value)| {
                     Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
