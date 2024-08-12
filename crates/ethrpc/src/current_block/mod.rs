@@ -311,6 +311,15 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
     }
 }
 
+/// Returns the next block of the given stream.
+pub async fn next_block(current_block: &CurrentBlockStream) -> Option<BlockInfo> {
+    let mut stream = into_stream(current_block.clone());
+    // the stream always yields the current value right away
+    // so we simply ignore it
+    let _ = stream.next().await;
+    stream.next().await
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -319,6 +328,13 @@ mod tests {
         futures::StreamExt,
         tokio::time::{timeout, Duration},
     };
+
+    fn new_block(number: u64) -> BlockInfo {
+        BlockInfo {
+            number,
+            ..Default::default()
+        }
+    }
 
     #[tokio::test]
     #[ignore]
@@ -374,10 +390,6 @@ mod tests {
     // when we want to assert that no new block is coming.
     #[tokio::test]
     async fn throttled_skips_blocks_test() {
-        let new_block = |number| BlockInfo {
-            number,
-            ..Default::default()
-        };
         let (sender, receiver) = watch::channel(new_block(0));
         const TIMEOUT: Duration = Duration::from_millis(10);
 
@@ -417,5 +429,22 @@ mod tests {
         // fourth update gets forwarded again
         let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
         assert_eq!(block.number, 4);
+    }
+
+    #[tokio::test]
+    async fn test_next_block() {
+        let (sender, receiver) = watch::channel(new_block(0));
+        const TIMEOUT: Duration = Duration::from_millis(10);
+        let result = timeout(TIMEOUT, next_block(&receiver)).await;
+        // although there is already 1 block in the stream it does not get returned
+        assert!(result.is_err());
+
+        tokio::spawn(async move {
+            tokio::time::sleep(TIMEOUT).await;
+            let _ = sender.send(new_block(1));
+        });
+
+        let received_block = timeout(2 * TIMEOUT, next_block(&receiver)).await;
+        assert_eq!(received_block, Ok(Some(new_block(1))));
     }
 }

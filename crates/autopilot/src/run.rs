@@ -515,6 +515,7 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
+        synchronization: args.run_loop_mode,
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -568,12 +569,21 @@ async fn shadow_mode(args: Arguments) -> ! {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
+    let current_block = ethrpc::current_block::current_block_stream(
+        args.shared.node_url,
+        args.shared.current_block.block_stream_poll_interval,
+    )
+    .await
+    .expect("couldn't initialize current block stream");
+
     let shadow = shadow::RunLoop::new(
         orderbook,
         drivers,
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
+        args.run_loop_mode,
+        current_block,
     );
     shadow.run_forever().await;
 

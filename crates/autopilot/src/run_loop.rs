@@ -1,13 +1,11 @@
 use {
     crate::{
+        arguments::RunLoopMode,
         database::competition::Competition,
         domain::{
             self,
             auction::order::Class,
-            competition::{
-                SolutionError,
-                {self},
-            },
+            competition::{self, SolutionError},
             OrderUid,
         },
         infra::{
@@ -52,6 +50,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
+    pub synchronization: RunLoopMode,
 }
 
 impl RunLoop {
@@ -79,6 +78,10 @@ impl RunLoop {
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {
+        if let RunLoopMode::SyncToBlockchain = self.synchronization {
+            let _ = ethrpc::current_block::next_block(self.eth.current_block()).await;
+        }
+
         let auction = match self.solvable_orders_cache.current_auction() {
             Some(auction) => auction,
             None => {
