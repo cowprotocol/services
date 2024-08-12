@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments::RunLoopMode,
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
@@ -82,6 +83,8 @@ pub struct SolvableOrdersCache {
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
+    run_loop_mode: RunLoopMode,
+    current_block: CurrentBlockWatcher,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -107,6 +110,7 @@ impl SolvableOrdersCache {
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
+        run_loop_mode: RunLoopMode,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -125,15 +129,28 @@ impl SolvableOrdersCache {
             limit_order_price_factor,
             protocol_fees,
             cow_amm_registry,
+            current_block: current_block.clone(),
+            run_loop_mode,
         });
-        tokio::task::spawn(
-            update_task(Arc::downgrade(&self_), update_interval, current_block)
-                .instrument(tracing::info_span!("solvable_orders_cache")),
-        );
+        if let RunLoopMode::Unsynchronized = run_loop_mode {
+            tokio::task::spawn(
+                update_task(Arc::downgrade(&self_), update_interval, current_block)
+                    .instrument(tracing::info_span!("solvable_orders_cache")),
+            );
+        }
         self_
     }
 
-    pub fn current_auction(&self) -> Option<domain::Auction> {
+    pub async fn current_auction(&self) -> Option<domain::Auction> {
+        if let RunLoopMode::SyncToBlockchain = self.run_loop_mode {
+            // When the run loop is synchronized to the blockchain the
+            // auction creation happens serially on the hot path instead
+            // of in a background task.
+            let current_block = self.current_block.borrow().number;
+            if let Err(err) = self.update(current_block).await {
+                tracing::error!(?err, "failed to build the current auction");
+            }
+        }
         self.cache.lock().unwrap().auction.clone()
     }
 
