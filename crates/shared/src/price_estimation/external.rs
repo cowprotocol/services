@@ -7,7 +7,7 @@ use {
         Query,
     },
     crate::trade_finding::external::ExternalTradeFinder,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     rate_limit::RateLimiter,
     reqwest::{Client, Url},
     std::sync::Arc,
@@ -20,7 +20,7 @@ impl ExternalPriceEstimator {
         driver: Url,
         client: Client,
         rate_limiter: Arc<RateLimiter>,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
         timeout: std::time::Duration,
     ) -> Self {
         Self(TradeEstimator::new(

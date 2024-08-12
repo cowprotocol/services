@@ -24,7 +24,7 @@ use {
     },
     anyhow::{Context as _, Result},
     ethcontract::H160,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -58,7 +58,7 @@ pub struct Network {
     pub settlement: H160,
     pub authenticator: H160,
     pub base_tokens: Arc<BaseTokens>,
-    pub block_stream: CurrentBlockStream,
+    pub block_stream: CurrentBlockWatcher,
 }
 
 /// The shared components needed for creating price estimators.

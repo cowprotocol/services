@@ -5,7 +5,7 @@ use {
         domain::{self, eth},
     },
     ethcontract::dyns::DynWeb3,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
@@ -75,7 +75,7 @@ impl Rpc {
 pub struct Ethereum {
     web3: DynWeb3,
     chain: ChainId,
-    current_block: CurrentBlockStream,
+    current_block: CurrentBlockWatcher,
     contracts: Contracts,
 }
 
@@ -111,7 +111,7 @@ impl Ethereum {
 
     /// Returns a stream that monitors the block chain to inform about the
     /// current and new blocks.
-    pub fn current_block(&self) -> &CurrentBlockStream {
+    pub fn current_block(&self) -> &CurrentBlockWatcher {
         &self.current_block
     }
 

@@ -4,7 +4,7 @@ use {
         infra::{blockchain, Ethereum},
     },
     anyhow::Result,
-    ethrpc::block_stream::{self, CurrentBlockStream},
+    ethrpc::block_stream::{self, CurrentBlockWatcher},
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     model::order::BUY_ETH_ADDRESS,
@@ -56,7 +56,7 @@ impl Fetcher {
 
 /// Runs a single cache update cycle whenever a new block arrives until the
 /// fetcher is dropped.
-async fn update_task(blocks: CurrentBlockStream, inner: std::sync::Weak<Inner>) {
+async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>) {
     let mut stream = block_stream::into_stream(blocks);
     while stream.next().await.is_some() {
         let inner = match inner.upgrade() {

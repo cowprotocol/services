@@ -19,7 +19,7 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
@@ -37,7 +37,7 @@ pub struct RunLoop {
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
     synchronization: RunLoopMode,
-    current_block: CurrentBlockStream,
+    current_block: CurrentBlockWatcher,
 }
 
 impl RunLoop {
@@ -48,7 +48,7 @@ impl RunLoop {
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
         synchronization: RunLoopMode,
-        current_block: CurrentBlockStream,
+        current_block: CurrentBlockWatcher,
     ) -> Self {
         Self {
             orderbook,

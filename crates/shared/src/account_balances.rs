@@ -1,6 +1,6 @@
 use {
     anyhow::Result,
-    ethrpc::{block_stream::CurrentBlockStream, Web3},
+    ethrpc::{block_stream::CurrentBlockWatcher, Web3},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
@@ -87,7 +87,7 @@ pub fn fetcher(web3: &Web3, contracts: Contracts) -> Arc<dyn BalanceFetching> {
 pub fn cached(
     web3: &Web3,
     contracts: Contracts,
-    blocks: CurrentBlockStream,
+    blocks: CurrentBlockWatcher,
 ) -> Arc<dyn BalanceFetching> {
     let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts)));
     cached.spawn_background_task(blocks);

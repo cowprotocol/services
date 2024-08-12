@@ -29,7 +29,7 @@ use {
     anyhow::{Context, Result},
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     prometheus::IntCounterVec,
@@ -161,7 +161,7 @@ where
     pub fn new(
         config: CacheConfig,
         fetcher: F,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
         metrics_label: &'static str,
     ) -> Result<Self> {
         let block = block_stream.borrow().number;
@@ -195,7 +195,7 @@ where
 
     fn spawn_gc_task(
         inner: std::sync::Weak<Inner<K, V, F>>,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
         label: String,
     ) {
         tokio::task::spawn(

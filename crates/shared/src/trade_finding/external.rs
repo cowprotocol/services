@@ -7,7 +7,7 @@ use {
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::{anyhow, Context},
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
     url::Url,
@@ -26,7 +26,7 @@ pub struct ExternalTradeFinder {
     client: Client,
 
     /// Stream to retrieve latest block information for block-dependent queries.
-    block_stream: CurrentBlockStream,
+    block_stream: CurrentBlockWatcher,
 
     /// Timeout of the quote request to the driver.
     timeout: std::time::Duration,
@@ -36,7 +36,7 @@ impl ExternalTradeFinder {
     pub fn new(
         driver: Url,
         client: Client,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
         timeout: std::time::Duration,
     ) -> Self {
         Self {

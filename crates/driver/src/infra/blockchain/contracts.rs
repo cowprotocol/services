@@ -1,7 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     ethcontract::dyns::DynWeb3,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     thiserror::Error,
 };
 
@@ -29,7 +29,7 @@ impl Contracts {
         web3: &DynWeb3,
         chain: eth::ChainId,
         addresses: Addresses,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
     ) -> Result<Self, Error> {
         let address_for = |contract: &ethcontract::Contract,
                            address: Option<eth::ContractAddress>| {

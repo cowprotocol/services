@@ -9,7 +9,7 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{H160, H256, U256},
-    ethrpc::block_stream::{BlockInfo, CurrentBlockStream},
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},
@@ -227,7 +227,7 @@ pub trait ZeroExApi: Send + Sync {
 pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
-    block_stream: CurrentBlockStream,
+    block_stream: CurrentBlockWatcher,
 }
 
 impl DefaultZeroExApi {
@@ -243,7 +243,7 @@ impl DefaultZeroExApi {
         client_builder: ClientBuilder,
         base_url: impl IntoUrl,
         api_key: Option<String>,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
     ) -> Result<Self> {
         let client_builder = if let Some(api_key) = api_key {
             let mut key = HeaderValue::from_str(&api_key)?;

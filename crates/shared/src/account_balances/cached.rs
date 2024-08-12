@@ -1,7 +1,7 @@
 use {
     crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
     anyhow::Result,
-    ethrpc::block_stream::{into_stream, CurrentBlockStream},
+    ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
     futures::StreamExt,
     itertools::Itertools,
     primitive_types::U256,
@@ -111,7 +111,7 @@ impl Balances {
     }
 
     /// Spawns task that refreshes the cached balances on every new block.
-    pub fn spawn_background_task(&self, block_stream: CurrentBlockStream) {
+    pub fn spawn_background_task(&self, block_stream: CurrentBlockWatcher) {
         let inner = self.inner.clone();
         let cache = self.balance_cache.clone();
         let mut stream = into_stream(block_stream);

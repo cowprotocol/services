@@ -1,6 +1,6 @@
 use {
     crate::domain::eth,
-    ethrpc::block_stream::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     reqwest::ClientBuilder,
     std::time::Duration,
     thiserror::Error,
@@ -14,7 +14,7 @@ const GAS_LIMIT: u64 = 30_000_000;
 pub(super) struct Enso {
     url: reqwest::Url,
     chain_id: eth::ChainId,
-    current_block: CurrentBlockStream,
+    current_block: CurrentBlockWatcher,
     network_block_interval: Option<Duration>,
 }
 
@@ -30,7 +30,7 @@ impl Enso {
     pub(super) fn new(
         config: Config,
         chain_id: eth::ChainId,
-        current_block: CurrentBlockStream,
+        current_block: CurrentBlockWatcher,
     ) -> Self {
         Self {
             url: reqwest::Url::parse(&format!("{}api/v1/simulate", config.url)).unwrap(),
