@@ -107,6 +107,8 @@ where
                                 return value.result;
                             }
                         }
+                        // Receiver lagged behind the result stream but the
+                        // necessary response might still be in the stream.
                         Err(_) => continue,
                     }
                 }
@@ -221,9 +223,7 @@ where
         while chunk.len() < config.max_batch_len {
             futures::select_biased! {
                 item = items.next() => match item {
-                    Some(item) => {
-                        chunk.push(item);
-                    }
+                    Some(item) => chunk.push(item),
                     None => break,
                 },
                 _ = delay => break,
