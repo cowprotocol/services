@@ -598,14 +598,20 @@ pub enum OrderPriorityStrategy {
     /// most recently created orders are given the highest priority.
     #[serde(rename_all = "kebab-case")]
     CreationTimestamp {
-        /// When specified, orders created within this threshold will be
-        /// prioritized.
+        /// When specified, only orders created within this threshold will be
+        /// taken into account for this specific strategy.
         #[serde(with = "humantime_serde")]
         max_order_age: Option<Duration>,
     },
     /// Strategy to prioritize orders based on whether the current solver
     /// provided the winning quote for the order.
-    OwnQuotes,
+    #[serde(rename_all = "kebab-case")]
+    OwnQuotes {
+        /// When specified, only orders created within this threshold will be
+        /// taken into account for this specific strategy.
+        #[serde(with = "humantime_serde")]
+        max_order_age: Option<Duration>,
+    },
 }
 
 /// The default prioritization process first considers
@@ -619,7 +625,11 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
         OrderPriorityStrategy::CreationTimestamp {
             max_order_age: Some(DEFAULT_MAX_ORDER_AGE),
         },
-        OrderPriorityStrategy::OwnQuotes,
+        OrderPriorityStrategy::OwnQuotes {
+            // Since `max_order_age` is already defined in the previous strategy,
+            // additional timestamp filter is redundant.
+            max_order_age: None,
+        },
         OrderPriorityStrategy::ExternalPrice,
     ]
 }

@@ -61,7 +61,7 @@ impl SortingStrategy for CreationTimestamp {
             Some(max_order_age) => {
                 let earliest_allowed_creation =
                     u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
-                (order.created.0 > earliest_allowed_creation).then_some(order.created)
+                (order.created.0 >= earliest_allowed_creation).then_some(order.created)
             }
             None => Some(order.created),
         })
@@ -70,10 +70,19 @@ impl SortingStrategy for CreationTimestamp {
 
 /// Prioritize orders based on whether the current solver provided the winning
 /// quote for the order.
-pub struct OwnQuotes;
+pub struct OwnQuotes {
+    pub max_order_age: Option<Duration>,
+}
 impl SortingStrategy for OwnQuotes {
     fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> SortingKey {
-        SortingKey::Bool(order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver))
+        let is_order_outdated = self.max_order_age.is_some_and(|max_order_age| {
+            let earliest_allowed_creation =
+                u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
+            order.created.0 < earliest_allowed_creation
+        });
+        let is_own_quote = order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver);
+
+        SortingKey::Bool(!is_order_outdated && is_own_quote)
     }
 }
 

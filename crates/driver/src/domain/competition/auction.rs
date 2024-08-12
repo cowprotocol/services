@@ -135,8 +135,8 @@ struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
     eth: infra::Ethereum,
-    /// Order sorting strategies should be in the same order as the strategies
-    /// in the `OrderPriorityConfig`.
+    /// Order sorting strategies should be in the same order as the
+    /// `order_priority_strategies` from the driver's config.
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
 }
 
@@ -193,14 +193,14 @@ impl AuctionProcessor {
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             orders
         })
-        .map(|res| {
-            res.expect(
-                "Either runtime was shut down before spawning the task or no OS threads are \
+            .map(|res| {
+                res.expect(
+                    "Either runtime was shut down before spawning the task or no OS threads are \
          available; no sense in handling those errors",
-            )
-        })
-        .boxed()
-        .shared();
+                )
+            })
+            .boxed()
+            .shared();
 
         tracing::debug!("started new prioritization task");
         lock.auction = new_id;
@@ -459,7 +459,11 @@ impl AuctionProcessor {
                         max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
                     })
                 }
-                OrderPriorityStrategy::OwnQuotes => Arc::new(sorting::OwnQuotes),
+                OrderPriorityStrategy::OwnQuotes { max_order_age } => {
+                    Arc::new(sorting::OwnQuotes {
+                        max_order_age: max_order_age.map(|t| Duration::from_std(t).unwrap()),
+                    })
+                }
             };
             order_sorting_strategies.push(comparator);
         }
