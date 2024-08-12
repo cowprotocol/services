@@ -596,9 +596,11 @@ pub enum OrderPriorityStrategy {
     ExternalPrice,
     /// Strategy to prioritize orders based on their creation timestamp. The
     /// most recently created orders are given the highest priority.
+    #[serde(rename_all = "kebab-case")]
     CreationTimestamp {
         /// When specified, orders created within this threshold will be
         /// prioritized.
+        #[serde(with = "humantime_serde")]
         max_order_age: Option<Duration>,
     },
     /// Strategy to prioritize orders based on whether the current solver
