@@ -514,11 +514,12 @@ impl FromStr for CowAmmConfig {
 }
 
 /// Controls the timing of the run loop.
-#[derive(clap::Parser, clap::ValueEnum, Clone, Debug)]
+#[derive(clap::Parser, clap::ValueEnum, Clone, Debug, Default)]
 pub enum RunLoopMode {
     /// The run loop starts with the next mined block.
     SyncToBlockchain,
     /// The run loop starts whenever the previous loop ends.
+    #[default]
     Unsynchronized,
 }
 
