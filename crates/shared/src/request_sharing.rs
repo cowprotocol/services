@@ -151,8 +151,8 @@ mod tests {
             request_label: Default::default(),
         };
 
-        let shared0 = sharing.shared(0, futures::future::ready(0).boxed());
-        let shared1 = sharing.shared(0, async { panic!() }.boxed());
+        let shared0 = sharing.shared_or_else(0, |_| futures::future::ready(0).boxed());
+        let shared1 = sharing.shared_or_else(0, |_| async { panic!() }.boxed());
 
         assert!(shared0.ptr_eq(&shared1));
         assert_eq!(shared0.strong_count().unwrap(), 2);
