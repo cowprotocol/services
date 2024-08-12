@@ -231,8 +231,8 @@ impl Inner {
                             );
                         } else {
                             let settlement_fee = order_fees[&domain::OrderUid(fee.0 .0)]
-                                .clone()
-                                .map(|fee| fee.total);
+                                .as_ref()
+                                .map(|fee| fee.total());
                             if settlement_fee.unwrap_or_default().0 != fee.1 {
                                 tracing::warn!(
                                     ?auction_id,

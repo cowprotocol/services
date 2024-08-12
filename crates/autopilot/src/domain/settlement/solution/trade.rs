@@ -146,17 +146,14 @@ impl Trade {
         Ok(price.in_eth(fee.amount))
     }
 
-    /// Total fee (protocol fee + network fee). Equal to a surplus difference
-    /// before and after applying the fees.
-    ///
-    /// Denominated in SELL token
-    pub fn fee_in_sell_token(
+    /// Converts given surplus fee into sell token fee.
+    fn fee_into_sell_token(
         &self,
+        fee: eth::TokenAmount,
         prices: &auction::Prices,
     ) -> Result<eth::SellTokenAmount, Error> {
-        let fee = self.fee()?;
         let fee_in_sell_token = match self.side {
-            order::Side::Buy => fee.amount,
+            order::Side::Buy => fee,
             order::Side::Sell => {
                 let buy_price = prices
                     .get(&self.buy.token)
@@ -164,8 +161,7 @@ impl Trade {
                 let sell_price = prices
                     .get(&self.sell.token)
                     .ok_or(Error::MissingPrice(self.sell.token))?;
-                fee.amount
-                    .checked_mul(&buy_price.get().0.into())
+                fee.checked_mul(&buy_price.get().0.into())
                     .ok_or(error::Math::Overflow)?
                     .checked_div(&sell_price.get().0.into())
                     .ok_or(error::Math::DivisionByZero)?
@@ -173,6 +169,18 @@ impl Trade {
         }
         .into();
         Ok(fee_in_sell_token)
+    }
+
+    /// Total fee (protocol fee + network fee). Equal to a surplus difference
+    /// before and after applying the fees.
+    ///
+    /// Denominated in SELL token
+    pub fn total_fee_in_sell_token(
+        &self,
+        prices: &auction::Prices,
+    ) -> Result<eth::SellTokenAmount, Error> {
+        let fee = self.fee()?;
+        self.fee_into_sell_token(fee.amount, prices)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
@@ -193,8 +201,29 @@ impl Trade {
 
     /// Protocol fees are defined by fee policies attached to the order.
     ///
+    /// Denominated in SELL token
+    pub fn protocol_fees_in_sell_token(
+        &self,
+        auction: &settlement::Auction,
+    ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, Error> {
+        self.protocol_fees(auction)?
+            .into_iter()
+            .map(|(fee, policy)| {
+                Ok((
+                    self.fee_into_sell_token(fee.amount, &auction.prices)?,
+                    policy,
+                ))
+            })
+            .collect()
+    }
+
+    /// Protocol fees are defined by fee policies attached to the order.
+    ///
     /// Denominated in SURPLUS token
-    pub fn protocol_fees(&self, auction: &settlement::Auction) -> Result<Vec<eth::Asset>, Error> {
+    fn protocol_fees(
+        &self,
+        auction: &settlement::Auction,
+    ) -> Result<Vec<(eth::Asset, fee::Policy)>, Error> {
         let policies = auction
             .orders
             .get(&self.order_uid)
@@ -207,14 +236,15 @@ impl Trade {
             let fee = current_trade.protocol_fee(protocol_fee)?;
             // Do not need to calculate the last custom prices because in the last iteration
             // the prices are not used anymore to calculate the protocol fee
-            fees.push(fee);
+            fees.push((fee, *protocol_fee));
             total += fee.amount;
             if !i.is_zero() {
                 current_trade.prices.custom = self.calculate_custom_prices(total)?;
             }
         }
         // Reverse the fees to have them in the same order as the policies
-        Ok(fees.into_iter().rev().collect())
+        fees.reverse();
+        Ok(fees)
     }
 
     /// The effective amount that left the user's wallet including all fees.
@@ -463,7 +493,7 @@ impl Trade {
     fn native_protocol_fee(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
         self.protocol_fees(auction)?
             .into_iter()
-            .map(|fee| {
+            .map(|(fee, _)| {
                 let price = auction
                     .prices
                     .get(&fee.token)

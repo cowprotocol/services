@@ -23,7 +23,7 @@ use {
                 },
                 PriceLimits,
             },
-            eth::{self},
+            eth,
         },
         util::conv::u256::U256Ext,
     },
@@ -187,7 +187,8 @@ impl Trade {
             }
         }
         // Reverse the fees to have them in the same order as the policies
-        Ok(fees.into_iter().rev().collect())
+        fees.reverse();
+        Ok(fees)
     }
 
     /// The effective amount that left the user's wallet including all fees.

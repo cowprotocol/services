@@ -13,7 +13,11 @@ use {
 mod tokenized;
 mod trade;
 pub use error::Error;
-use {crate::domain, std::collections::HashMap};
+use {
+    crate::{domain, domain::fee},
+    num::CheckedSub,
+    std::collections::HashMap,
+};
 
 /// A solution that was executed on-chain.
 ///
@@ -86,15 +90,19 @@ impl Solution {
     }
 
     /// Returns fees breakdown for each order in the solution.
-    pub fn fees(&self, auction: &super::Auction) -> HashMap<domain::OrderUid, Option<OrderFee>> {
+    pub fn fees(&self, auction: &super::Auction) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
         self.trades
             .iter()
             .map(|trade| {
                 (*trade.order_uid(), {
-                    let total = trade.fee_in_sell_token(&auction.prices);
-                    let protocol = trade.protocol_fees(auction);
+                    let total = trade.total_fee_in_sell_token(&auction.prices);
+                    let protocol = trade.protocol_fees_in_sell_token(auction);
                     match (total, protocol) {
-                        (Ok(total), Ok(protocol)) => Some(OrderFee { total, protocol }),
+                        (Ok(total), Ok(protocol)) => {
+                            let network =
+                                total.checked_sub(&protocol.iter().map(|(fee, _)| *fee).sum());
+                            network.map(|network| ExecutedFee { protocol, network })
+                        }
                         _ => None,
                     }
                 })
@@ -203,11 +211,18 @@ pub mod error {
 /// Fee per trade in a solution. Contains breakdown of protocol fees and total
 /// fee.
 #[derive(Debug, Clone)]
-pub struct OrderFee {
-    /// Gas fee + protocol fees. Total fee taken for the execution of the order.
-    pub total: eth::SellTokenAmount,
+pub struct ExecutedFee {
+    /// Gas fee spent to bring the order onchain
+    pub network: eth::SellTokenAmount,
     /// Breakdown of protocol fees.
-    pub protocol: Vec<eth::Asset>,
+    pub protocol: Vec<(eth::SellTokenAmount, fee::Policy)>,
+}
+
+impl ExecutedFee {
+    /// Total fee paid for the trade.
+    pub fn total(&self) -> eth::SellTokenAmount {
+        self.network + self.protocol.iter().map(|(fee, _)| *fee).sum()
+    }
 }
 
 #[cfg(test)]
