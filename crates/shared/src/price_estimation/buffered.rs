@@ -237,23 +237,6 @@ where
 }
 
 #[cfg(test)]
-impl NativePriceEstimating for MockNativePriceBatchFetching {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
-            prices
-                .get(&token)
-                .cloned()
-                .ok_or(PriceEstimationError::NoLiquidity)?
-        }
-        .boxed()
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use {
         super::*,
@@ -262,6 +245,22 @@ mod tests {
         num::ToPrimitive,
         tokio::time::sleep,
     };
+
+    impl NativePriceEstimating for MockNativePriceBatchFetching {
+        fn estimate_native_price(
+            &self,
+            token: H160,
+        ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+            async move {
+                let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
+                prices
+                    .get(&token)
+                    .cloned()
+                    .ok_or(PriceEstimationError::NoLiquidity)?
+            }
+            .boxed()
+        }
+    }
 
     fn token(u: u64) -> H160 {
         H160::from_low_u64_be(u)
