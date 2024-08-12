@@ -258,7 +258,7 @@ impl SolvableOrdersCache {
                     .iter()
                     .all(|token| prices.contains_key(token));
                 if !prices_exist {
-                    tracing::warn!(
+                    tracing::debug!(
                         cow_amm = ?cow_amm.address(),
                         "prices missing"
                     );
