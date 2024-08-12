@@ -68,8 +68,8 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
 pub struct BufferedRequest<Inner> {
     config: Configuration,
     inner: Arc<Inner>,
-    calls: mpsc::UnboundedSender<H160>,
-    broadcast_sender: broadcast::Sender<NativePriceResult>,
+    requests: mpsc::UnboundedSender<H160>,
+    results: broadcast::Sender<NativePriceResult>,
 }
 
 /// Object to map the token with its native price estimator result
@@ -91,13 +91,13 @@ where
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             // Sends the token for requesting price
-            self.calls.unbounded_send(token).map_err(|e| {
+            self.requests.unbounded_send(token).map_err(|e| {
                 PriceEstimationError::ProtocolInternal(anyhow!(
                     "failed to append a new token to the queue: {e:?}"
                 ))
             })?;
 
-            let mut rx = self.broadcast_sender.subscribe();
+            let mut rx = self.results.subscribe();
 
             tokio::time::timeout(self.config.result_ready_timeout, async {
                 loop {
@@ -132,21 +132,21 @@ where
     /// Creates a new buffered transport with the specified configuration.
     pub fn with_config(inner: Inner, config: Configuration) -> Self {
         let inner = Arc::new(inner);
-        let (calls, receiver) = mpsc::unbounded();
+        let (requests_sender, requests_receiver) = mpsc::unbounded();
 
-        let (broadcast_sender, _) = broadcast::channel(config.broadcast_channel_capacity);
+        let (results_sender, _) = broadcast::channel(config.broadcast_channel_capacity);
 
         Self::background_worker(
             inner.clone(),
             config.clone(),
-            receiver,
-            broadcast_sender.clone(),
+            requests_receiver,
+            results_sender.clone(),
         );
 
         Self {
             inner,
-            calls,
-            broadcast_sender,
+            requests: requests_sender,
+            results: results_sender,
             config,
         }
     }
@@ -155,12 +155,12 @@ where
     fn background_worker(
         inner: Arc<Inner>,
         config: Configuration,
-        calls: mpsc::UnboundedReceiver<H160>,
-        broadcast_sender: broadcast::Sender<NativePriceResult>,
+        requests: mpsc::UnboundedReceiver<H160>,
+        results_sender: broadcast::Sender<NativePriceResult>,
     ) -> JoinHandle<()> {
-        tokio::task::spawn(batched_for_each(config, calls, move |batch| {
+        tokio::task::spawn(batched_for_each(config, requests, move |batch| {
             let inner = inner.clone();
-            let broadcast_sender = broadcast_sender.clone();
+            let results_sender = results_sender.clone();
             async move {
                 if batch.is_empty() {
                     return;
@@ -186,7 +186,7 @@ where
                     }
                 };
                 for result in results {
-                    let _ = broadcast_sender.send(result);
+                    let _ = results_sender.send(result);
                 }
             }
         }))
