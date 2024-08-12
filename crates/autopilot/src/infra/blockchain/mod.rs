@@ -5,7 +5,7 @@ use {
         domain::{self, eth},
     },
     ethcontract::dyns::DynWeb3,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     primitive_types::U256,
     std::time::Duration,
     thiserror::Error,
@@ -96,7 +96,7 @@ impl Ethereum {
         let contracts = Contracts::new(&web3, &chain, addresses).await;
 
         Self {
-            current_block: ethrpc::current_block::current_block_stream(url, poll_interval)
+            current_block: ethrpc::block_stream::current_block_stream(url, poll_interval)
                 .await
                 .expect("couldn't initialize current block stream"),
             web3,

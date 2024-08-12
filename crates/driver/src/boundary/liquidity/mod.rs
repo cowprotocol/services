@@ -5,7 +5,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     futures::future,
     model::TokenPair,
     shared::{

@@ -4,7 +4,7 @@ use {
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
     anyhow::Result,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
 };

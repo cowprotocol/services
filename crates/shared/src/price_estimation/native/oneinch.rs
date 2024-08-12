@@ -2,7 +2,7 @@ use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::block_stream::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},

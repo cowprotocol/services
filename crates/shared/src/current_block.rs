@@ -4,7 +4,7 @@ use {
     anyhow::Result,
     clap::Parser,
     ethrpc::{
-        current_block::{current_block_stream, BlockRetrieving, CurrentBlockStream},
+        block_stream::{current_block_stream, BlockRetrieving, CurrentBlockStream},
         Web3,
     },
     std::{

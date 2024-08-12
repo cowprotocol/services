@@ -1,6 +1,6 @@
 use {
     anyhow::Result,
-    ethrpc::{current_block::CurrentBlockStream, Web3},
+    ethrpc::{block_stream::CurrentBlockStream, Web3},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},

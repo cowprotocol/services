@@ -2,7 +2,7 @@ use {
     crate::{cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval, Amm},
     contracts::CowAmmLegacyHelper,
     ethcontract::Address,
-    ethrpc::{current_block::CurrentBlockStream, Web3},
+    ethrpc::{block_stream::CurrentBlockStream, Web3},
     shared::{
         event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},

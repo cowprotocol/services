@@ -1,6 +1,6 @@
 use {
     crate::domain::eth,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     reqwest::ClientBuilder,
     std::time::Duration,
     thiserror::Error,

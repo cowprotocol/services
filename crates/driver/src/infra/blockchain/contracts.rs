@@ -1,7 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     ethcontract::dyns::DynWeb3,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     thiserror::Error,
 };
 

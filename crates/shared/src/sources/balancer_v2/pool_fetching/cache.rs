@@ -11,7 +11,7 @@ use {
     },
     anyhow::Result,
     ethcontract::H256,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     std::{collections::HashSet, sync::Arc},
 };
 

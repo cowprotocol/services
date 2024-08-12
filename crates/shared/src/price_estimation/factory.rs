@@ -24,7 +24,7 @@ use {
     },
     anyhow::{Context as _, Result},
     ethcontract::H160,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,

@@ -17,7 +17,7 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         GPv2Settlement,
     },
-    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockStream},
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{

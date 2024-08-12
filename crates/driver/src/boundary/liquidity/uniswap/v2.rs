@@ -9,7 +9,7 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethrpc::{current_block::CurrentBlockStream, Web3},
+    ethrpc::{block_stream::CurrentBlockStream, Web3},
     shared::{
         http_solver::model::TokenAmount,
         sources::uniswap_v2::{

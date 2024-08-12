@@ -7,7 +7,7 @@ use {
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::{anyhow, Context},
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
     url::Url,

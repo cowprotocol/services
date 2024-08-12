@@ -9,7 +9,7 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{H160, H256, U256},
-    ethrpc::current_block::{BlockInfo, CurrentBlockStream},
+    ethrpc::block_stream::{BlockInfo, CurrentBlockStream},
     number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},

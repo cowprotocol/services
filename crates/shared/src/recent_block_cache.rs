@@ -29,7 +29,7 @@ use {
     anyhow::{Context, Result},
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
     prometheus::IntCounterVec,
@@ -200,7 +200,7 @@ where
     ) {
         tokio::task::spawn(
             async move {
-                let mut stream = ethrpc::current_block::into_stream(block_stream);
+                let mut stream = ethrpc::block_stream::into_stream(block_stream);
                 while let Some(block) = stream.next().await {
                     let Some(inner) = inner.upgrade() else {
                         tracing::debug!("cache no longer in use; terminate GC task");
@@ -464,7 +464,7 @@ where
 mod tests {
     use {
         super::*,
-        ethrpc::current_block::{mock_single_block, BlockInfo},
+        ethrpc::block_stream::{mock_single_block, BlockInfo},
         futures::FutureExt,
         std::sync::Arc,
     };

@@ -12,7 +12,7 @@ use {
     anyhow::Result,
     arc_swap::ArcSwap,
     contracts::{GPv2Settlement, IZeroEx},
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::block_stream::{into_stream, CurrentBlockStream},
     futures::StreamExt,
     itertools::Itertools,
     model::{order::OrderKind, TokenPair},

@@ -6,7 +6,7 @@ use {
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     indexmap::IndexSet,
     itertools::Itertools,
     model::{

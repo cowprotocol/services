@@ -1,7 +1,7 @@
 use {
     crate::{database::Postgres, on_settlement_event_updater::OnSettlementEventUpdater},
     anyhow::Result,
-    ethrpc::current_block::RangeInclusive,
+    ethrpc::block_stream::RangeInclusive,
     shared::{event_handling::EventStoring, impl_event_retrieving},
 };
 

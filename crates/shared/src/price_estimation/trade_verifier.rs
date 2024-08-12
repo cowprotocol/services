@@ -16,7 +16,7 @@ use {
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::{current_block::CurrentBlockStream, extensions::StateOverride, Web3},
+    ethrpc::{block_stream::CurrentBlockStream, extensions::StateOverride, Web3},
     maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},

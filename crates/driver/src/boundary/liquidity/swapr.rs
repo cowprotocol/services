@@ -4,7 +4,7 @@ use {
         domain::liquidity::{self, swapr},
         infra::{self, blockchain::Ethereum},
     },
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     shared::sources::{
         swapr::reader::SwaprPoolReader,
         uniswap_v2::pool_fetching::DefaultPoolReader,

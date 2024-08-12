@@ -19,7 +19,7 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockStream,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
@@ -67,7 +67,7 @@ impl RunLoop {
         let mut previous = None;
         loop {
             if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                let _ = ethrpc::current_block::next_block(&self.current_block).await;
+                let _ = ethrpc::block_stream::next_block(&self.current_block).await;
             };
             let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;

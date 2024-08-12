@@ -47,7 +47,7 @@ use {
         BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
-    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockStream},
     model::TokenPair,
     reqwest::{Client, Url},
     std::{

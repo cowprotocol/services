@@ -21,7 +21,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
-    ethrpc::current_block::block_number_to_block_number_hash,
+    ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
@@ -569,7 +569,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
-    let current_block = ethrpc::current_block::current_block_stream(
+    let current_block = ethrpc::block_stream::current_block_stream(
         args.shared.node_url,
         args.shared.current_block.block_stream_poll_interval,
     )
