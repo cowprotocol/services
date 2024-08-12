@@ -7,10 +7,8 @@ use {
         util,
     },
     chrono::{Duration, Utc},
-    std::{cmp::Ordering, collections::HashMap, sync::Arc},
+    std::{cmp::Ordering, sync::Arc},
 };
-
-type LikelihoodCache = HashMap<order::Uid, num::BigRational>;
 
 pub trait OrderComparator: Send + Sync {
     fn compare(
@@ -18,39 +16,29 @@ pub trait OrderComparator: Send + Sync {
         order_a: &order::Order,
         order_b: &order::Order,
         tokens: &Tokens,
-        likelihood_cache: &mut LikelihoodCache,
         solver: &eth::H160,
     ) -> Ordering;
 }
 
 impl<F> OrderComparator for F
 where
-    F: Fn(&order::Order, &order::Order, &Tokens, &mut LikelihoodCache, &eth::H160) -> Ordering
-        + Send
-        + Sync,
+    F: Fn(&order::Order, &order::Order, &Tokens, &eth::H160) -> Ordering + Send + Sync,
 {
     fn compare(
         &self,
         order_a: &order::Order,
         order_b: &order::Order,
         tokens: &Tokens,
-        likelihood_cache: &mut LikelihoodCache,
         solver: &eth::H160,
     ) -> Ordering {
-        self(order_a, order_b, tokens, likelihood_cache, solver)
+        self(order_a, order_b, tokens, solver)
     }
 }
 
 pub trait OrderingKey: Send + Sync + 'static {
     type Key: Ord + Send + Sync + 'static;
 
-    fn key(
-        &self,
-        order: &order::Order,
-        tokens: &Tokens,
-        likelihood_cache: &mut LikelihoodCache,
-        solver: &eth::H160,
-    ) -> Self::Key;
+    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> Self::Key;
 
     /// Returns a comparator that compares two orders based on the key in
     /// reverse order.
@@ -59,13 +47,9 @@ pub trait OrderingKey: Send + Sync + 'static {
         Self: Sized,
     {
         Arc::new(
-            move |a: &order::Order,
-                  b: &order::Order,
-                  tokens: &Tokens,
-                  likelihood_cache: &mut LikelihoodCache,
-                  solver: &eth::H160| {
-                self.key(a, tokens, likelihood_cache, solver)
-                    .cmp(&self.key(b, tokens, likelihood_cache, solver))
+            move |a: &order::Order, b: &order::Order, tokens: &Tokens, solver: &eth::H160| {
+                self.key(a, tokens, solver)
+                    .cmp(&self.key(b, tokens, solver))
                     .reverse()
             },
         )
@@ -81,13 +65,7 @@ impl OrderingKey for OrderClass {
     // Market orders are preferred over limit orders, as the expectation is that
     // they should be immediately fulfillable. Liquidity orders come last, as they
     // are the most niche and rarely used.
-    fn key(
-        &self,
-        order: &order::Order,
-        _tokens: &Tokens,
-        _likelihood_cache: &mut LikelihoodCache,
-        _solver: &eth::H160,
-    ) -> Self::Key {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
         match order.kind {
             order::Kind::Market => 2,
             order::Kind::Limit { .. } => 1,
@@ -103,17 +81,8 @@ pub struct ExternalPrice;
 impl OrderingKey for ExternalPrice {
     type Key = num::BigRational;
 
-    fn key(
-        &self,
-        order: &order::Order,
-        tokens: &Tokens,
-        likelihood_cache: &mut LikelihoodCache,
-        _solver: &eth::H160,
-    ) -> Self::Key {
-        likelihood_cache
-            .entry(order.uid)
-            .or_insert_with(|| order.likelihood(tokens))
-            .clone()
+    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
+        order.likelihood(tokens)
     }
 }
 
@@ -126,13 +95,7 @@ pub struct CreationTimestamp {
 impl OrderingKey for CreationTimestamp {
     type Key = Option<util::Timestamp>;
 
-    fn key(
-        &self,
-        order: &order::Order,
-        _tokens: &Tokens,
-        _likelihood_cache: &mut LikelihoodCache,
-        _solver: &eth::H160,
-    ) -> Self::Key {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> Self::Key {
         match self.max_order_age {
             Some(max_order_age) => {
                 let earliest_allowed_creation =
@@ -150,13 +113,7 @@ pub struct OwnQuotes;
 impl OrderingKey for OwnQuotes {
     type Key = bool;
 
-    fn key(
-        &self,
-        order: &order::Order,
-        _tokens: &Tokens,
-        _likelihood_cache: &mut LikelihoodCache,
-        solver: &eth::H160,
-    ) -> Self::Key {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> Self::Key {
         order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver)
     }
 }
@@ -168,10 +125,9 @@ pub fn sort_orders(
     solver: &eth::H160,
     order_comparators: &[Arc<dyn OrderComparator>],
 ) {
-    let mut likelihood_cache: LikelihoodCache = HashMap::new();
     orders.sort_by(|a, b| {
         for cmp in order_comparators {
-            let ordering = cmp.compare(a, b, tokens, &mut likelihood_cache, solver);
+            let ordering = cmp.compare(a, b, tokens, solver);
             if ordering != Ordering::Equal {
                 return ordering;
             }
