@@ -73,6 +73,15 @@ where
     }
 }
 
+impl<A, B: Future> Drop for RequestSharing<A, B> {
+    fn drop(&mut self) {
+        let cache = self.in_flight.lock().unwrap();
+        Metrics::get()
+            .request_sharing_cached_items
+            .sub(cache.len() as u64);
+    }
+}
+
 /// Returns a shallow copy (without any pending requests)
 impl<Request, Fut: Future> Clone for RequestSharing<Request, Fut> {
     fn clone(&self) -> Self {
