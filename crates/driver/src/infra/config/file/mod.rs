@@ -2,7 +2,7 @@ pub use load::load;
 use {
     crate::{domain::eth, infra, util::serialize},
     reqwest::Url,
-    serde::{Deserialize, Deserializer, Serialize},
+    serde::{Deserialize, Serialize},
     serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, time::Duration},
@@ -581,7 +581,8 @@ pub enum GasEstimatorType {
 }
 
 /// Defines various strategies to prioritize orders.
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum OrderPriorityStrategy {
     /// Strategy to prioritize orders based on their class. Market orders are
     /// preferred over limit orders, as the expectation is that they should
@@ -598,44 +599,11 @@ pub enum OrderPriorityStrategy {
     CreationTimestamp {
         /// When specified, orders created within this threshold will be
         /// prioritized.
-        ///
-        /// Example: creation-timestamp:120s
         max_order_age: Option<Duration>,
     },
     /// Strategy to prioritize orders based on whether the current solver
     /// provided the winning quote for the order.
     OwnQuotes,
-}
-
-impl<'de> Deserialize<'de> for OrderPriorityStrategy {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let parts: Vec<&str> = s.split(':').collect();
-
-        match parts[0] {
-            "order-class" => Ok(OrderPriorityStrategy::OrderClass),
-            "external-price" => Ok(OrderPriorityStrategy::ExternalPrice),
-            "creation-timestamp" => {
-                let max_order_age = (parts.len() == 2).then_some(
-                    humantime::parse_duration(parts[1]).map_err(serde::de::Error::custom)?,
-                );
-                Ok(OrderPriorityStrategy::CreationTimestamp { max_order_age })
-            }
-            "own-quotes" => Ok(OrderPriorityStrategy::OwnQuotes),
-            unsupported => Err(serde::de::Error::unknown_variant(
-                unsupported,
-                &[
-                    "order-class",
-                    "external-price",
-                    "creation-timestamp",
-                    "own-quotes",
-                ],
-            )),
-        }
-    }
 }
 
 /// The default prioritization process first considers

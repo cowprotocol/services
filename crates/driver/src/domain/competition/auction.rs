@@ -3,7 +3,7 @@ use {
     crate::{
         domain::{
             competition::{self, auction, sorting},
-            eth::{self},
+            eth,
             liquidity,
             time,
         },
@@ -135,9 +135,9 @@ struct Inner {
     auction: auction::Id,
     fut: Shared<BoxFuture<'static, Vec<Order>>>,
     eth: infra::Ethereum,
-    /// Comparators should be in the same order as the strategies in the
-    /// `OrderPriorityConfig`.
-    order_comparators: Vec<Arc<dyn sorting::SortingKey>>,
+    /// Order sorting strategies should be in the same order as the strategies
+    /// in the `OrderPriorityConfig`.
+    order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
 }
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
@@ -179,7 +179,7 @@ impl AuctionProcessor {
         let cow_amms = auction.surplus_capturing_jit_order_owners.clone();
         let mut orders = auction.orders.clone();
         let solver = *solver;
-        let order_comparators = lock.order_comparators.clone();
+        let order_comparators = lock.order_sorting_strategies.clone();
 
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
@@ -448,11 +448,10 @@ impl AuctionProcessor {
         order_priority_strategies: Vec<OrderPriorityStrategy>,
     ) -> Self {
         let eth = eth.with_metric_label("auctionPreProcessing".into());
-        let mut order_comparators =
-            Vec::<Arc<dyn sorting::SortingKey>>::with_capacity(order_priority_strategies.len());
+        let mut order_sorting_strategies = vec![];
 
         for strategy in order_priority_strategies {
-            let comparator: Arc<dyn sorting::SortingKey> = match strategy {
+            let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
                 OrderPriorityStrategy::OrderClass => Arc::new(sorting::OrderClass),
                 OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
                 OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
@@ -462,13 +461,13 @@ impl AuctionProcessor {
                 }
                 OrderPriorityStrategy::OwnQuotes => Arc::new(sorting::OwnQuotes),
             };
-            order_comparators.push(comparator);
+            order_sorting_strategies.push(comparator);
         }
         Self(Arc::new(Mutex::new(Inner {
             auction: Id(0),
             fut: futures::future::pending().boxed().shared(),
             eth,
-            order_comparators,
+            order_sorting_strategies,
         })))
     }
 }

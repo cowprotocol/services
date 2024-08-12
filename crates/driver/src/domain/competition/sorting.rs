@@ -11,15 +11,15 @@ use {
 };
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum SortingKeyType {
+pub enum SortingKey {
     Int(i32),
     BigRational(num::BigRational),
     Timestamp(Option<util::Timestamp>),
     Bool(bool),
 }
 
-pub trait SortingKey: Send + Sync {
-    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKeyType;
+pub trait SortingStrategy: Send + Sync {
+    fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKey;
 }
 
 /// Prioritize orders by their class: market orders -> limit orders ->
@@ -29,9 +29,9 @@ pub trait SortingKey: Send + Sync {
 /// they should be immediately fulfillable. Liquidity orders come last, as they
 /// are the most niche and rarely used.
 pub struct OrderClass;
-impl SortingKey for OrderClass {
-    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKeyType {
-        SortingKeyType::Int(match order.kind {
+impl SortingStrategy for OrderClass {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
+        SortingKey::Int(match order.kind {
             order::Kind::Market => 2,
             order::Kind::Limit { .. } => 1,
             order::Kind::Liquidity => 0,
@@ -43,9 +43,9 @@ impl SortingKey for OrderClass {
 /// likely orders coming first. See more details in the `likelihood` function
 /// docs.
 pub struct ExternalPrice;
-impl SortingKey for ExternalPrice {
-    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKeyType {
-        SortingKeyType::BigRational(order.likelihood(tokens))
+impl SortingStrategy for ExternalPrice {
+    fn key(&self, order: &order::Order, tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
+        SortingKey::BigRational(order.likelihood(tokens))
     }
 }
 
@@ -55,9 +55,9 @@ impl SortingKey for ExternalPrice {
 pub struct CreationTimestamp {
     pub max_order_age: Option<Duration>,
 }
-impl SortingKey for CreationTimestamp {
-    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKeyType {
-        SortingKeyType::Timestamp(match self.max_order_age {
+impl SortingStrategy for CreationTimestamp {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
+        SortingKey::Timestamp(match self.max_order_age {
             Some(max_order_age) => {
                 let earliest_allowed_creation =
                     u32::try_from((Utc::now() - max_order_age).timestamp()).unwrap_or(u32::MAX);
@@ -71,9 +71,9 @@ impl SortingKey for CreationTimestamp {
 /// Prioritize orders based on whether the current solver provided the winning
 /// quote for the order.
 pub struct OwnQuotes;
-impl SortingKey for OwnQuotes {
-    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> SortingKeyType {
-        SortingKeyType::Bool(order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver))
+impl SortingStrategy for OwnQuotes {
+    fn key(&self, order: &order::Order, _tokens: &Tokens, solver: &eth::H160) -> SortingKey {
+        SortingKey::Bool(order.quote.as_ref().is_some_and(|q| &q.solver.0 == solver))
     }
 }
 
@@ -82,7 +82,7 @@ pub fn sort_orders(
     orders: &mut [order::Order],
     tokens: &Tokens,
     solver: &eth::H160,
-    order_comparators: &[Arc<dyn SortingKey>],
+    order_comparators: &[Arc<dyn SortingStrategy>],
 ) {
     orders.sort_by_cached_key(|order| {
         std::cmp::Reverse(
