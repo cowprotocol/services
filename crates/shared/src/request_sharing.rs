@@ -89,32 +89,14 @@ where
     Fut: Future,
     Fut::Output: Clone,
 {
-    // Intentionally returns Shared<Fut> instead of an opaque `impl Future` (or
-    // being an async fn) because this has some useful properties to the caller
-    // like being unpin and fused.
-
-    /// Returns an existing in flight future for this request or uses the passed
-    /// in future as a new in flight future.
-    ///
-    /// Note that futures do nothing util polled so merely creating the response
-    /// future is not expensive.
-    pub fn shared(&self, request: Request, future: Fut) -> Shared<Fut> {
-        self.shared_or_else(request, move |_| future)
-    }
-
     /// Returns an existing in flight future or creates and uses a new future
     /// from the specified closure.
-    ///
-    /// This is similar to [`RequestSharing::shared`] but lazily creates the
-    /// future. This can be helpful when creating futures is non trivial
-    /// (such as cloning a large vector).
     pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
     where
         F: FnOnce(&Request) -> Fut,
     {
         let mut in_flight = self.in_flight.lock().unwrap();
 
-        // collect garbage and find copy of existing request
         let existing = in_flight.get(&request).and_then(WeakShared::upgrade);
 
         if let Some(existing) = existing {
