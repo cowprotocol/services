@@ -358,7 +358,7 @@ mod tests {
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
         let order_fees = solution.fees(&auction);
         let order_fee = order_fees.get(&domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff"))).unwrap().clone().unwrap();
-        assert_eq!(order_fee.total.0, eth::U256::from(6752697350740628u128));
+        assert_eq!(order_fee.total().0, eth::U256::from(6752697350740628u128));
     }
 
     // https://etherscan.io/tx/0x688508eb59bd20dc8c0d7c0c0b01200865822c889f0fcef10113e28202783243
