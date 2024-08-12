@@ -61,11 +61,14 @@ impl TradeEstimator {
     }
 
     async fn estimate(&self, query: Arc<Query>) -> Result<Estimate, PriceEstimationError> {
-        let estimate = rate_limited(
-            self.rate_limiter.clone(),
-            self.inner.clone().estimate(query.clone()),
-        );
-        self.sharing.shared(query, estimate.boxed()).await
+        let fut = move |query: &Arc<Query>| {
+            rate_limited(
+                self.rate_limiter.clone(),
+                self.inner.clone().estimate(query.clone()),
+            )
+            .boxed()
+        };
+        self.sharing.shared_or_else(query, fut).await
     }
 }
 
@@ -84,7 +87,7 @@ impl Inner {
             };
 
             return verifier
-                .verify(&price_query, &query.verification, trade.clone())
+                .verify(&price_query, &query.verification, trade)
                 .await
                 .map_err(PriceEstimationError::EstimatorInternal);
         }
