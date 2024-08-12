@@ -160,10 +160,10 @@ where
             let inner = inner.clone();
             let broadcast_sender = broadcast_sender.clone();
             async move {
-                let batch = batch.into_iter().collect::<HashSet<_>>();
                 if batch.is_empty() {
                     return;
                 }
+                let batch = batch.into_iter().collect::<HashSet<_>>();
                 let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
                     Ok(results) => results
                         .into_iter()
