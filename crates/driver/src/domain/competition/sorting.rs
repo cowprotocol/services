@@ -86,7 +86,8 @@ impl SortingStrategy for OwnQuotes {
     }
 }
 
-/// Sort orders based on the provided comparators.
+/// Sort orders based on the provided comparators. Reverse ordering is used to
+/// ensure that the most important element comes first.
 pub fn sort_orders(
     orders: &mut [order::Order],
     tokens: &Tokens,
