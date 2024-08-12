@@ -208,13 +208,14 @@ pub mod error {
     }
 }
 
-/// Fee per trade in a solution. Contains breakdown of protocol fees and total
-/// fee.
+/// Fee per trade in a solution. These fees are taken for the execution of the
+/// trade.
 #[derive(Debug, Clone)]
 pub struct ExecutedFee {
     /// Gas fee spent to bring the order onchain
     pub network: eth::SellTokenAmount,
-    /// Breakdown of protocol fees.
+    /// Breakdown of protocol fees. Executed protocol fees are in the same order
+    /// as policies are defined for an order.
     pub protocol: Vec<(eth::SellTokenAmount, fee::Policy)>,
 }
 
