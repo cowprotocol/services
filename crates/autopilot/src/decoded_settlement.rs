@@ -13,7 +13,7 @@ use {
         signature::{Signature, SigningScheme},
         DomainSeparator,
     },
-    num::BigRational,
+    num::{BigRational, CheckedDiv, CheckedMul},
     number::conversions::{big_rational_to_u256, u256_to_big_rational},
     shared::{conversions::U256Ext, external_prices::ExternalPrices},
     std::collections::HashSet,
@@ -331,8 +331,13 @@ impl DecodedSettlement {
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let (kind, fee, surplus_token) = match trade.fee_amount.is_zero() {
-            false => (FeeKind::User, trade.fee_amount, sell_token),
+        let surplus_token = match (trade.fee_amount.is_zero(), trade.flags.order_kind()) {
+            (false, _) => sell_token, // pre-signed fee is always in the sell token
+            (_, OrderKind::Buy) => sell_token,
+            (_, OrderKind::Sell) => buy_token,
+        };
+        let (kind, fee) = match trade.fee_amount.is_zero() {
+            false => (FeeKind::User, trade.fee_amount),
             true => {
                 // get executed(adjusted) prices
                 let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
@@ -345,8 +350,7 @@ impl DecodedSettlement {
                 let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
-                // returns fee in surplus token
-                let (fee, surplus_token) = match trade.flags.order_kind() {
+                let fee = match trade.flags.order_kind() {
                     OrderKind::Buy => {
                         let required_sell_amount = trade
                             .executed_amount
@@ -356,10 +360,7 @@ impl DecodedSettlement {
                             .executed_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
-                        (
-                            required_sell_amount.checked_sub(required_sell_amount_with_ucp)?,
-                            sell_token,
-                        )
+                        required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
                     }
                     OrderKind::Sell => {
                         let received_buy_amount = trade
@@ -372,13 +373,10 @@ impl DecodedSettlement {
                             .executed_amount
                             .checked_mul(uniform_sell_price)?
                             .checked_div(uniform_buy_price)?;
-                        (
-                            zero_fee_received_buy_amount.checked_sub(received_buy_amount)?,
-                            buy_token,
-                        )
+                        zero_fee_received_buy_amount.checked_sub(received_buy_amount)?
                     }
                 };
-                (FeeKind::Surplus, fee, surplus_token)
+                (FeeKind::Surplus, fee)
             }
         };
 
@@ -394,8 +392,9 @@ impl DecodedSettlement {
             sell: match trade.flags.order_kind() {
                 OrderKind::Buy => fee,
                 OrderKind::Sell => big_rational_to_u256(
-                    &(u256_to_big_rational(&fee) * external_prices.price(buy_token)?
-                        / external_prices.price(sell_token)?),
+                    &(u256_to_big_rational(&fee)
+                        .checked_mul(external_prices.price(buy_token)?)?
+                        .checked_div(external_prices.price(sell_token)?)?),
                 )
                 .ok()?,
             },
