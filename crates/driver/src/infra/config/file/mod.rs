@@ -635,5 +635,5 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
 }
 
 fn default_max_order_age() -> Option<Duration> {
-    Some(Duration::from_secs(120))
+    Some(Duration::from_secs(300))
 }

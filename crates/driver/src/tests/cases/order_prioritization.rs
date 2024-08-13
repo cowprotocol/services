@@ -69,7 +69,7 @@ async fn default_sorting() {
         .order(
             ab_order()
                 .rename("7")
-                .created(now - 130)
+                .created(now - 310)
                 .quote(OrderQuote::default().solver(solver.address()))
                 .valid_to(u32::MAX - 5)
         )
