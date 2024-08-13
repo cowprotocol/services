@@ -471,7 +471,6 @@ pub async fn run(args: Arguments) {
             args.enable_multiple_fees,
         ),
         cow_amm_registry.clone(),
-        args.run_loop_mode,
     );
 
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
