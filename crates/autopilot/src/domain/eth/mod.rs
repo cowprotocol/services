@@ -250,7 +250,7 @@ pub struct Event {
     pub log_index: u64,
 }
 
-/// An on-chain transaction.
+/// Any type of on-chain transaction.
 #[derive(Debug)]
 pub struct Transaction {
     /// The hash of the transaction.

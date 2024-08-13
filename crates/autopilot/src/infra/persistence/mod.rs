@@ -446,7 +446,9 @@ impl Persistence {
                     &ByteArray(order.0),
                     auction,
                     block_number,
-                    &u256_to_big_decimal(&executed_fee.unwrap_or_default().0),
+                    &u256_to_big_decimal(
+                        &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
+                    ),
                 )
                 .await
                 .map_err(error::Settlement::BadCommunication)?;

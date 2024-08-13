@@ -67,11 +67,6 @@ impl Settlement {
         Ok(Self { settled, auction })
     }
 
-    /// The auction for which the solution was picked as a winner.
-    pub fn auction_id(&self) -> domain::auction::Id {
-        self.solution.auction_id()
-    }
-
     /// The gas used by the settlement.
     pub fn gas(&self) -> eth::Gas {
         self.settled.gas
