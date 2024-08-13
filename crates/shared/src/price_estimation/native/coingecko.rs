@@ -1,7 +1,7 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::{buffered::NativePriceBatchFetcher, PriceEstimationError},
-    anyhow::{anyhow, Result},
+    anyhow::{anyhow, Context, Result},
     async_trait::async_trait,
     futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
@@ -94,33 +94,24 @@ impl CoinGecko {
             builder = builder.header(Self::AUTHORIZATION, api_key)
         }
         observe::coingecko_request(&url);
-        let response = builder.send().await.map_err(|e| {
-            PriceEstimationError::EstimatorInternal(anyhow!(
-                "failed to sent CoinGecko price request: {e:?}"
-            ))
-        })?;
+        let response = builder
+            .send()
+            .await
+            .context("failed to sent CoinGecko price request")?;
         if !response.status().is_success() {
             return match response.status() {
                 StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
-                status => Err(PriceEstimationError::EstimatorInternal(anyhow!(
-                    "failed to retrieve prices from CoinGecko: error with status code {status}."
-                ))),
+                status => Err(PriceEstimationError::EstimatorInternal(anyhow!(format!(
+                    "CoinGecko returned non-success status code: {status}"
+                )))),
             };
         }
         let response = response.text().await;
         observe::coingecko_response(&url, response.as_deref());
-        let response = response.map_err(|e| {
-            PriceEstimationError::EstimatorInternal(anyhow!(
-                "failed to fetch native CoinGecko prices: {e:?}"
-            ))
-        })?;
+        let response = response.context("failed to fetch response body")?;
 
         let parsed_response = serde_json::from_str::<Response>(&response)
-            .map_err(|e| {
-                PriceEstimationError::EstimatorInternal(anyhow!(
-                    "failed to parse native CoinGecko prices from {response:?}: {e:?}"
-                ))
-            })?
+            .with_context(|| format!("failed to parse response: {response:?}"))?
             .0
             .into_iter()
             .map(|(token, price)| (token, price.eth))
@@ -144,11 +135,7 @@ impl CoinGecko {
             .cloned()
             .ok_or(PriceEstimationError::NoLiquidity)?
             .try_into()
-            .map_err(|e| {
-                PriceEstimationError::EstimatorInternal(anyhow!(
-                    "failed to parse native price token in ETH to rust decimal: {e:?}"
-                ))
-            })?;
+            .context("failed to convert price to decimal")?;
 
         let prices_in_denominator = tokens
             .into_iter()
@@ -172,25 +159,15 @@ impl CoinGecko {
         let token_price_eth: Decimal = prices
             .get(token)
             .cloned()
-            .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
-                "response did not contain price for {token:?}"
-            )))?
+            .ok_or(PriceEstimationError::NoLiquidity)?
             .try_into()
-            .map_err(|e| {
-                PriceEstimationError::EstimatorInternal(anyhow!(
-                    "failed to parse requested token in ETH to rust decimal: {e:?}"
-                ))
-            })?;
+            .context("failed to convert price to decimal")?;
 
-        token_price_eth
+        Ok(token_price_eth
             .checked_div(denominator_price_eth)
-            .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
-                "division by zero"
-            )))?
+            .context("division by zero")?
             .to_f64()
-            .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
-                "failed to convert price to f64"
-            )))
+            .context("failed to convert price back to f64")?)
     }
 }
 
@@ -204,9 +181,15 @@ impl NativePriceBatchFetcher for CoinGecko {
         match self.quote_token {
             QuoteToken::Eth => {
                 let prices = self.bulk_fetch_denominated_in_eth(&tokens).await?;
-                Ok(prices
+                Ok(tokens
                     .into_iter()
-                    .map(|(token, price)| (token, Ok(price)))
+                    .map(|token| {
+                        let result = prices
+                            .get(token)
+                            .cloned()
+                            .ok_or(PriceEstimationError::NoLiquidity);
+                        (*token, result)
+                    })
                     .collect())
             }
             QuoteToken::Other(native_price_token) => {
@@ -231,6 +214,12 @@ impl NativePriceEstimating for CoinGecko {
                 .clone()
         }
         .boxed()
+    }
+}
+
+impl From<anyhow::Error> for PriceEstimationError {
+    fn from(err: anyhow::Error) -> PriceEstimationError {
+        PriceEstimationError::EstimatorInternal(err)
     }
 }
 
