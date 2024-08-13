@@ -457,10 +457,8 @@ pub async fn run(args: Arguments) {
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        eth.current_block().clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        args.auction_update_interval,
         eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
@@ -517,7 +515,7 @@ pub async fn run(args: Arguments) {
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
     };
-    run.run_forever().await;
+    run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
 }
 

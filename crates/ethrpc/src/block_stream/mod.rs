@@ -315,12 +315,12 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
 }
 
 /// Awaits and returns the next block that will be pushed into the stream.
-pub async fn next_block(current_block: &CurrentBlockWatcher) -> Option<BlockInfo> {
+pub async fn next_block(current_block: &CurrentBlockWatcher) -> BlockInfo {
     let mut stream = into_stream(current_block.clone());
     // the stream always yields the current value right away
     // so we simply ignore it
     let _ = stream.next().await;
-    stream.next().await
+    stream.next().await.expect("block_stream must never end")
 }
 
 #[cfg(test)]
@@ -448,6 +448,6 @@ mod tests {
         });
 
         let received_block = timeout(2 * TIMEOUT, next_block(&receiver)).await;
-        assert_eq!(received_block, Ok(Some(new_block(1))));
+        assert_eq!(received_block, Ok(new_block(1)));
     }
 }
