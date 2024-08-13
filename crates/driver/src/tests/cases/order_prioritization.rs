@@ -9,13 +9,14 @@ use {
     chrono::Utc,
 };
 
-/// Test that orders are sorted correctly before being sent to the solver:
-/// market orders come before limit orders, and orders that are more likely to
-/// fulfill come before orders that are less likely (according to token prices
-/// in ETH).
+/// Test that orders are correctly sorted before being sent to the solver:
+/// - Market orders precede limit orders.
+/// - Own quoted orders within the default order creation timestamp threshold.
+/// - Orders are then sorted by creation timestamp within the default threshold.
+/// - Orders with higher fulfillment likelihood (based on token prices in ETH).
 #[tokio::test]
 #[ignore]
-async fn sorting() {
+async fn default_sorting() {
     let now = Utc::now().timestamp() as u32;
     let solver = test_solver().fee_handler(FeeHandler::Driver);
     let test = setup()
@@ -102,10 +103,10 @@ async fn filtering() {
                 surplus_factor: 1.into(),
                 ..ab_order()
             }
-            .rename("fourth order")
-            .unfunded()
-            .filtered()
-            .limit()
+                .rename("fourth order")
+                .unfunded()
+                .filtered()
+                .limit()
         )
         .solution(ab_solution())
         .done()

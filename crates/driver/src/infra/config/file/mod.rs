@@ -57,7 +57,10 @@ struct Config {
 
     /// Defines order prioritization strategies that will be applied in the
     /// specified order.
-    #[serde(default = "default_order_priority_strategies")]
+    #[serde(
+        rename = "order-priority-strategy",
+        default = "default_order_priority_strategies"
+    )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 }
 
@@ -600,7 +603,7 @@ pub enum OrderPriorityStrategy {
     CreationTimestamp {
         /// When specified, only orders created within this threshold will be
         /// taken into account for this specific strategy.
-        #[serde(with = "humantime_serde")]
+        #[serde(with = "humantime_serde", default = "default_max_order_age")]
         max_order_age: Option<Duration>,
     },
     /// Strategy to prioritize orders based on whether the current solver
@@ -609,7 +612,7 @@ pub enum OrderPriorityStrategy {
     OwnQuotes {
         /// When specified, only orders created within this threshold will be
         /// taken into account for this specific strategy.
-        #[serde(with = "humantime_serde")]
+        #[serde(with = "humantime_serde", default = "default_max_order_age")]
         max_order_age: Option<Duration>,
     },
 }
@@ -619,15 +622,18 @@ pub enum OrderPriorityStrategy {
 /// solver is working with its own quotes, and finally considers the likelihood
 /// of order fulfillment based on external price data.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
-    const DEFAULT_MAX_ORDER_AGE: Duration = Duration::from_secs(120);
     vec![
         OrderPriorityStrategy::OrderClass,
         OrderPriorityStrategy::OwnQuotes {
-            max_order_age: Some(DEFAULT_MAX_ORDER_AGE),
+            max_order_age: default_max_order_age(),
         },
         OrderPriorityStrategy::CreationTimestamp {
-            max_order_age: Some(DEFAULT_MAX_ORDER_AGE),
+            max_order_age: default_max_order_age(),
         },
         OrderPriorityStrategy::ExternalPrice,
     ]
+}
+
+fn default_max_order_age() -> Option<Duration> {
+    Some(Duration::from_secs(120))
 }
