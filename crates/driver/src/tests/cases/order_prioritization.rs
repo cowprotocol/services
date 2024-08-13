@@ -129,31 +129,6 @@ async fn creation_timestamp_sorting() {
     test.solve().await.ok();
 }
 
-/// Market orders get prioritized no matter other factors.
-#[tokio::test]
-#[ignore]
-async fn order_class_sorting() {
-    let now = Utc::now().timestamp() as u32;
-    let solver = test_solver().fee_handler(FeeHandler::Driver);
-    let test = setup()
-        .solvers(vec![solver.clone()])
-        .pool(ab_pool())
-        .order_priority_strategy(OrderPriorityStrategy::OrderClass)
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()))
-        .order(
-            ab_order()
-                .rename("2")
-                .limit()
-                .created(now)
-                .quote(OrderQuote::default().solver(solver.address())),
-        )
-        .solution(ab_solution())
-        .done()
-        .await;
-
-    test.solve().await.ok();
-}
-
 /// Orders with better price get prioritized no matter other factors.
 #[tokio::test]
 #[ignore]
