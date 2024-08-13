@@ -452,7 +452,7 @@ impl RunLoop {
                     Some(best_execution) => best_execution,
                     None => return false,
                 };
-                improvement_in_buy(&best_execution, &winning_execution)
+                improvement_in_buy(best_execution, winning_execution)
                     .and_then(|improvement_in_buy| {
                         warn!(
                             ?uid,
