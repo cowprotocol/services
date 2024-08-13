@@ -175,6 +175,7 @@ impl Inner {
     }
 }
 
+/// Whether OnSettlementEventUpdater loop should retry on the given error.
 fn retryable(err: &settlement::Error) -> bool {
     match err {
         settlement::Error::Infra(_) => true,
