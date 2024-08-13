@@ -314,7 +314,7 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
     }
 }
 
-/// Returns the next block of the given stream.
+/// Awaits and returns the next block that will be pushed into the stream.
 pub async fn next_block(current_block: &CurrentBlockWatcher) -> Option<BlockInfo> {
     let mut stream = into_stream(current_block.clone());
     // the stream always yields the current value right away
