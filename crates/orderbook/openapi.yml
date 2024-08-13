@@ -931,9 +931,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         created:
-          description: Creation time of the order. Encoded as ISO 8601 UTC.
+          description: Creation time of the order. Denominated in epoch seconds.
           type: string
-          example: "2020-12-03T18:35:18.814523Z"
+          example: "123456"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer
