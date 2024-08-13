@@ -48,7 +48,7 @@ async fn order_cancellation(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+        colocation::start_baseline_solver(onchain.contracts().weth.address(), vec![]).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![colocation::SolverEngine {

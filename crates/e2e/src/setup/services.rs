@@ -180,7 +180,7 @@ impl<'a> Services<'a> {
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
         let solver_endpoint =
-            colocation::start_baseline_solver(self.contracts.weth.address()).await;
+            colocation::start_baseline_solver(self.contracts.weth.address(), vec![]).await;
         colocation::start_driver(
             self.contracts,
             vec![SolverEngine {
@@ -235,7 +235,7 @@ impl<'a> Services<'a> {
 
         let (autopilot_args, api_args) = if run_baseline {
             let baseline_solver_endpoint =
-                colocation::start_baseline_solver(self.contracts.weth.address()).await;
+                colocation::start_baseline_solver(self.contracts.weth.address(), vec![]).await;
 
             solvers.push(SolverEngine {
                 name: "baseline_solver".into(),

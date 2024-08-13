@@ -27,7 +27,7 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    num::{CheckedDiv, CheckedMul, CheckedSub},
+    num::{CheckedDiv, CheckedMul, CheckedSub, Zero},
     primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -427,6 +427,7 @@ impl RunLoop {
                         .unwrap_or(U256::max_value().into()),
                 )?
                 .checked_div(&right.sell)
+                .filter(|diff| !diff.is_zero())
         };
 
         // Find best execution per order
@@ -442,7 +443,7 @@ impl RunLoop {
 
         // Check if the winning solution contains an execution that is more than
         // `fairness_threshold` worse than the best execution
-        winner
+        let unfair = winner
             .solution
             .orders()
             .iter()
@@ -471,7 +472,8 @@ impl RunLoop {
                         }
                     })
                     .is_some()
-            })
+            });
+        !unfair
     }
 
     /// Computes a driver's solutions for the solver competition.

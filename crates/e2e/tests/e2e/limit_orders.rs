@@ -317,7 +317,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
     let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+        colocation::start_baseline_solver(onchain.contracts().weth.address(), vec![]).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![colocation::SolverEngine {
@@ -391,7 +391,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
     let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+        colocation::start_baseline_solver(onchain.contracts().weth.address(), vec![]).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![colocation::SolverEngine {

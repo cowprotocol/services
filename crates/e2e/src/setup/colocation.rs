@@ -5,11 +5,16 @@ use {
     tokio::task::JoinHandle,
 };
 
-pub async fn start_baseline_solver(weth: H160) -> Url {
+pub async fn start_baseline_solver(weth: H160, base_tokens: Vec<H160>) -> Url {
+    let base_tokens = base_tokens
+        .iter()
+        .map(|token| format!(r#"{:?}"#, token))
+        .collect::<Vec<_>>()
+        .join(", ");
     let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
-base-tokens = []
+base-tokens = [{base_tokens:?}]
 max-hops = 1
 max-partial-attempts = 5
 native-token-price-estimation-amount = "100000000000000000"
@@ -96,7 +101,7 @@ name = "{name}"
 endpoint = "{endpoint}"
 relative-slippage = "0.1"
 account = "{account}"
-
+merge-solutions = true
 "#
                 )
             },
@@ -139,7 +144,7 @@ weth = "{:?}"
 {solvers}
 
 [liquidity]
-base-tokens = []
+base-tokens = ["0x84ea74d481ee0a5332c457a4d796187f6ba67feb","0xc3e53f4d16ae77db1c982e75a937b9f60fe63690"]
 
 {liquidity}
 

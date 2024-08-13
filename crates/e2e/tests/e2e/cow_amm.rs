@@ -137,8 +137,11 @@ async fn cow_amm_jit(web3: Web3) {
             SolverEngine {
                 name: "test_solver".into(),
                 account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
+                endpoint: colocation::start_baseline_solver(
+                    onchain.contracts().weth.address(),
+                    vec![],
+                )
+                .await,
             },
             SolverEngine {
                 name: "mock_solver".into(),
@@ -453,8 +456,11 @@ async fn cow_amm_driver_support(web3: Web3) {
             SolverEngine {
                 name: "test_solver".into(),
                 account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
+                endpoint: colocation::start_baseline_solver(
+                    onchain.contracts().weth.address(),
+                    vec![],
+                )
+                .await,
             },
             SolverEngine {
                 name: "mock_solver".into(),

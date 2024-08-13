@@ -61,8 +61,11 @@ async fn single_limit_order_test(web3: Web3) {
             SolverEngine {
                 name: "test_solver".into(),
                 account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
+                endpoint: colocation::start_baseline_solver(
+                    onchain.contracts().weth.address(),
+                    vec![],
+                )
+                .await,
             },
             SolverEngine {
                 name: "mock_solver".into(),
