@@ -13,7 +13,11 @@ use {
 mod tokenized;
 mod trade;
 pub use error::Error;
-use {crate::domain, std::collections::HashMap};
+use {
+    crate::{domain, domain::fee},
+    num::CheckedSub,
+    std::collections::HashMap,
+};
 
 /// A solution that was executed on-chain.
 ///
@@ -21,20 +25,12 @@ use {crate::domain, std::collections::HashMap};
 /// this struct.
 ///
 /// Referenced as [`settlement::Solution`] in the codebase.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Solution {
     trades: Vec<Trade>,
-    /// Data that was appended to the regular call data of the `settle()` call
-    /// as a form of on-chain meta data. This is used to associate a
-    /// solution with an auction for which this solution was picked as a winner.
-    auction_id: auction::Id,
 }
 
 impl Solution {
-    pub fn auction_id(&self) -> auction::Id {
-        self.auction_id
-    }
-
     /// CIP38 score calculation
     pub fn score(&self, auction: &super::Auction) -> Result<competition::Score, error::Score> {
         Ok(competition::Score::new(
@@ -85,14 +81,24 @@ impl Solution {
             .sum()
     }
 
-    /// Returns fees denominated in sell token for each order in the solution.
-    pub fn fees(
-        &self,
-        prices: &auction::Prices,
-    ) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
+    /// Returns fees breakdown for each order in the solution.
+    pub fn fees(&self, auction: &super::Auction) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
         self.trades
             .iter()
-            .map(|trade| (*trade.order_uid(), trade.fee_in_sell_token(prices).ok()))
+            .map(|trade| {
+                (*trade.order_uid(), {
+                    let total = trade.total_fee_in_sell_token(&auction.prices);
+                    let protocol = trade.protocol_fees_in_sell_token(auction);
+                    match (total, protocol) {
+                        (Ok(total), Ok(protocol)) => {
+                            let network =
+                                total.checked_sub(&protocol.iter().map(|(fee, _)| *fee).sum());
+                            network.map(|network| ExecutedFee { protocol, network })
+                        }
+                        _ => None,
+                    }
+                })
+            })
             .collect()
     }
 
@@ -105,7 +111,6 @@ impl Solution {
             clearing_prices,
             trades: decoded_trades,
             interactions: _interactions,
-            auction_id,
         } = tokenized::Tokenized::new(calldata)?;
 
         let mut trades = Vec::with_capacity(decoded_trades.len());
@@ -123,7 +128,7 @@ impl Solution {
                 tokens.iter().position(|token| token == &buy_token).unwrap();
             trades.push(trade::Trade::new(
                 tokenized::order_uid(&trade, &tokens, domain_separator)
-                    .map_err(|err| Error::OrderUidRecover(err, auction_id))?,
+                    .map_err(Error::OrderUidRecover)?,
                 eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
@@ -147,7 +152,7 @@ impl Solution {
             ));
         }
 
-        Ok(Self { trades, auction_id })
+        Ok(Self { trades })
     }
 }
 
@@ -158,17 +163,8 @@ pub mod error {
     pub enum Error {
         #[error(transparent)]
         Decoding(#[from] tokenized::error::Decoding),
-        #[error("failed to recover order uid {0} for auction {1}")]
-        OrderUidRecover(tokenized::error::Uid, auction::Id),
-    }
-
-    impl Error {
-        pub fn auction_id(&self) -> Option<auction::Id> {
-            match self {
-                Self::Decoding(err) => err.auction_id(),
-                Self::OrderUidRecover(_, auction_id) => Some(*auction_id),
-            }
-        }
+        #[error("failed to recover order uid {0}")]
+        OrderUidRecover(tokenized::error::Uid),
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -191,6 +187,24 @@ pub mod error {
                 trade::Error::Math(err) => Self::Math(err),
             }
         }
+    }
+}
+
+/// Fee per trade in a solution. These fees are taken for the execution of the
+/// trade.
+#[derive(Debug, Clone)]
+pub struct ExecutedFee {
+    /// Gas fee spent to bring the order onchain
+    pub network: eth::SellTokenAmount,
+    /// Breakdown of protocol fees. Executed protocol fees are in the same order
+    /// as policies are defined for an order.
+    pub protocol: Vec<(eth::SellTokenAmount, fee::Policy)>,
+}
+
+impl ExecutedFee {
+    /// Total fee paid for the trade.
+    pub fn total(&self) -> eth::SellTokenAmount {
+        self.network + self.protocol.iter().map(|(fee, _)| *fee).sum()
     }
 }
 
@@ -325,10 +339,9 @@ mod tests {
             eth::U256::from(6752697350740628u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
-        assert_eq!(
-            solution.fees(&auction.prices),
-            HashMap::from([(domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff")), Some(eth::SellTokenAmount(eth::U256::from(6752697350740628u128))))])
-        );
+        let order_fees = solution.fees(&auction);
+        let order_fee = order_fees.get(&domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff"))).unwrap().clone().unwrap();
+        assert_eq!(order_fee.total().0, eth::U256::from(6752697350740628u128));
     }
 
     // https://etherscan.io/tx/0x688508eb59bd20dc8c0d7c0c0b01200865822c889f0fcef10113e28202783243

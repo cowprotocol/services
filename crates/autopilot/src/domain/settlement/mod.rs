@@ -1,8 +1,10 @@
 //! Solvers propose solutions to an [`crate::domain::Auction`].
 //!
-//! A winning solution becomes a [`Settlement`] once it is executed on-chain.
+//! A winning solution becomes a [`Settlement`] once it is executed on-chain in
+//! a form of settlement transaction.
 
 use {
+    self::solution::ExecutedFee,
     crate::{domain, domain::eth, infra},
     std::collections::HashMap,
 };
@@ -12,74 +14,57 @@ mod solution;
 mod transaction;
 pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
-/// A solution together with the `Auction` for which it was picked as a winner
-/// and executed on-chain.
+/// A settled transaction together with the `Auction`, for which it was executed
+/// on-chain.
 ///
 /// Referenced as a [`Settlement`] in the codebase.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Settlement {
-    solution: Solution,
-    transaction: Transaction,
+    settled: Transaction,
     auction: Auction,
 }
 
 impl Settlement {
     pub async fn new(
-        transaction: Transaction,
-        domain_separator: &eth::DomainSeparator,
+        settled: Transaction,
         persistence: &infra::Persistence,
-    ) -> Result<Self, ErrorWithAuction> {
-        let solution = Solution::new(&transaction.input, domain_separator)?;
-        let auction_id = solution.auction_id();
-
+    ) -> Result<Self, Error> {
         if persistence
-            .auction_has_settlement(auction_id)
-            .await
-            .map_err(with(auction_id))?
+            .auction_has_settlement(settled.auction_id)
+            .await?
         {
             // This settlement has already been processed by another environment.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
-            return Err(Error::WrongEnvironment).map_err(with(auction_id));
+            return Err(Error::WrongEnvironment);
         }
 
-        let auction = persistence
-            .get_auction(auction_id)
-            .await
-            .map_err(with(auction_id))?;
+        let auction = persistence.get_auction(settled.auction_id).await?;
 
         // winning solution - solution promised during solver competition
-        let promised_solution = persistence
-            .get_winning_solution(auction_id)
-            .await
-            .map_err(with(auction_id))?;
+        let promised = persistence.get_winning_solution(settled.auction_id).await?;
 
-        if transaction.solver != promised_solution.solver() {
+        if settled.solver != promised.solver() {
             return Err(Error::SolverMismatch {
-                expected: promised_solution.solver(),
-                got: transaction.solver,
-            })
-            .map_err(with(auction_id));
+                expected: promised.solver(),
+                got: settled.solver,
+            });
         }
 
-        let score = solution.score(&auction).map_err(with(auction_id))?;
+        let settled_score = settled.solution.score(&auction)?;
 
         // temp log
-        if score != promised_solution.score() {
+        if settled_score != promised.score() {
             tracing::debug!(
-                ?auction_id,
-                "score mismatch: expected competition score {}, settlement score {}",
-                promised_solution.score(),
-                score,
+                ?settled.auction_id,
+                "score mismatch: expected promised score {}, settled score {}",
+                promised.score(),
+                settled_score,
             );
         }
 
-        Ok(Self {
-            solution,
-            transaction,
-            auction,
-        })
+        Ok(Self { settled, auction })
     }
 
     /// The auction for which the solution was picked as a winner.
@@ -89,42 +74,27 @@ impl Settlement {
 
     /// The gas used by the settlement.
     pub fn gas(&self) -> eth::Gas {
-        self.transaction.gas
+        self.settled.gas
     }
 
     /// The effective gas price at the time of settlement.
     pub fn gas_price(&self) -> eth::EffectiveGasPrice {
-        self.transaction.effective_gas_price
+        self.settled.effective_gas_price
     }
 
     /// Total surplus expressed in native token.
     pub fn native_surplus(&self) -> eth::Ether {
-        self.solution.native_surplus(&self.auction)
+        self.settled.solution.native_surplus(&self.auction)
     }
 
     /// Total fee expressed in native token.
     pub fn native_fee(&self) -> eth::Ether {
-        self.solution.native_fee(&self.auction.prices)
+        self.settled.solution.native_fee(&self.auction.prices)
     }
 
-    /// Per order fees denominated in sell token. Contains all orders from the
-    /// settlement
-    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
-        self.solution.fees(&self.auction.prices)
-    }
-}
-
-#[derive(Debug)]
-pub struct ErrorWithAuction {
-    #[allow(dead_code)]
-    inner: Error,
-    pub auction_id: Option<domain::auction::Id>,
-}
-
-impl ErrorWithAuction {
-    /// Whether the Settlement construction should be retried.
-    pub fn should_retry(&self) -> bool {
-        matches!(self.inner, Error::Infra(_))
+    /// Per order fees breakdown. Contains all orders from the settlement
+    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
+        self.settled.solution.fees(&self.auction)
     }
 }
 
@@ -209,27 +179,5 @@ impl From<infra::persistence::error::Solution> for Error {
 impl From<infra::persistence::DatabaseError> for Error {
     fn from(err: infra::persistence::DatabaseError) -> Self {
         Self::Infra(err.0)
-    }
-}
-
-impl From<solution::Error> for ErrorWithAuction {
-    fn from(err: solution::Error) -> Self {
-        Self {
-            auction_id: err.auction_id(),
-            inner: Error::BuildingSolution(err),
-        }
-    }
-}
-
-fn with<E>(auction: domain::auction::Id) -> impl FnOnce(E) -> ErrorWithAuction
-where
-    E: Into<Error>,
-{
-    move |err| {
-        let err = err.into();
-        ErrorWithAuction {
-            inner: err,
-            auction_id: Some(auction),
-        }
     }
 }

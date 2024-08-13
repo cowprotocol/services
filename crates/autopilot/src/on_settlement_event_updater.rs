@@ -30,7 +30,7 @@
 use {
     crate::{
         database::Postgres,
-        domain::{self},
+        domain::{eth, settlement},
         infra,
     },
     anyhow::{anyhow, Context, Result},
@@ -119,8 +119,8 @@ impl Inner {
             .context("get_settlement_without_auction")?
         {
             Some(event) => (
-                domain::eth::TxId(H256(event.tx_hash.0)),
-                domain::eth::Event {
+                eth::TxId(H256(event.tx_hash.0)),
+                eth::Event {
                     block: (event.block_number as u64).into(),
                     log_index: event.log_index as u64,
                 },
@@ -130,26 +130,34 @@ impl Inner {
 
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let Ok(transaction) = self.eth.transaction(hash).await else {
-            tracing::warn!(?hash, "no tx found");
-            return Ok(false);
+        let transaction = match self.eth.transaction(hash).await {
+            Ok(transaction) => {
+                let separator = self.eth.contracts().settlement_domain_separator();
+                settlement::Transaction::new(&transaction, separator)
+            }
+            Err(err) => {
+                tracing::warn!(?hash, ?err, "no tx found");
+                return Ok(false);
+            }
         };
-        let domain_separator = self.eth.contracts().settlement_domain_separator();
-        let settlement = domain::settlement::Settlement::new(
-            transaction.clone(),
-            domain_separator,
-            &self.persistence,
-        )
-        .await;
 
-        let auction_id = match &settlement {
-            Ok(settlement) => settlement.auction_id(),
-            Err(error) => {
-                if error.should_retry() {
-                    return Err(anyhow!("{hash:?}, infra error"));
-                } else {
-                    error.auction_id.unwrap_or_default()
-                }
+        let (auction_id, settlement) = match transaction {
+            Ok(tx) => {
+                let auction_id = tx.auction_id;
+                let settlement = match settlement::Settlement::new(tx, &self.persistence).await {
+                    Ok(settlement) => Some(settlement),
+                    Err(err) if retryable(&err) => return Err(err.into()),
+                    Err(err) => {
+                        tracing::warn!(?hash, ?auction_id, ?err, "invalid settlement");
+                        None
+                    }
+                };
+                (auction_id, settlement)
+            }
+            Err(err) => {
+                tracing::warn!(?hash, ?err, "invalid settlement transaction");
+                // default values so we don't get stuck on invalid settlement transactions
+                (0.into(), None)
             }
         };
 
@@ -157,12 +165,26 @@ impl Inner {
 
         if let Err(err) = self
             .persistence
-            .save_settlement(event, auction_id, settlement.as_ref().ok())
+            .save_settlement(event, auction_id, settlement.as_ref())
             .await
         {
-            return Err(anyhow!("{hash:?}, {auction_id}, {err}"));
+            return Err(anyhow!("save settlement: {hash:?}, {auction_id}, {err}"));
         }
 
         Ok(true)
+    }
+}
+
+fn retryable(err: &settlement::Error) -> bool {
+    match err {
+        settlement::Error::Infra(_) => true,
+        settlement::Error::InconsistentData(_) => false,
+        settlement::Error::WrongEnvironment => false,
+        settlement::Error::BuildingSolution(_) => false,
+        settlement::Error::BuildingScore(_) => false,
+        settlement::Error::SolverMismatch {
+            expected: _,
+            got: _,
+        } => false,
     }
 }
