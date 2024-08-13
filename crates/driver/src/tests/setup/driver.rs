@@ -242,13 +242,6 @@ async fn create_config_file(
 
     for strategy in &config.order_priority_strategies {
         match strategy {
-            OrderPriorityStrategy::OrderClass => write!(
-                file,
-                r#"[[order-priority]]
-                strategy = "order-class"
-                "#,
-            )
-            .unwrap(),
             OrderPriorityStrategy::ExternalPrice => write!(
                 file,
                 r#"[[order-priority]]

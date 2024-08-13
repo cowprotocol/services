@@ -12,7 +12,6 @@ use {
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub enum SortingKey {
-    Int(i32),
     BigRational(num::BigRational),
     Timestamp(Option<util::Timestamp>),
     Bool(bool),
@@ -20,23 +19,6 @@ pub enum SortingKey {
 
 pub trait SortingStrategy: Send + Sync {
     fn key(&self, order: &order::Order, tokens: &Tokens, solver: &eth::H160) -> SortingKey;
-}
-
-/// Prioritize orders by their class: market orders -> limit orders ->
-/// liquidity.
-///
-/// Market orders are preferred over limit orders, as the expectation is that
-/// they should be immediately fulfillable. Liquidity orders come last, as they
-/// are the most niche and rarely used.
-pub struct OrderClass;
-impl SortingStrategy for OrderClass {
-    fn key(&self, order: &order::Order, _tokens: &Tokens, _solver: &eth::H160) -> SortingKey {
-        SortingKey::Int(match order.kind {
-            order::Kind::Market => 2,
-            order::Kind::Limit { .. } => 1,
-            order::Kind::Liquidity => 0,
-        })
-    }
 }
 
 /// Orders are sorted by their likelihood of being fulfilled, with the most

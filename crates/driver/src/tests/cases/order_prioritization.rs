@@ -73,15 +73,6 @@ async fn default_sorting() {
                 .quote(OrderQuote::default().solver(solver.address()))
                 .valid_to(u32::MAX - 5)
         )
-        // Limit orders come after market orders.
-        .order(ab_order().rename("8").created(now).limit())
-        .order(
-            ab_order()
-                .rename("9")
-                .created(now)
-                .reduce_amount("1e-3".ether().into_wei())
-                .limit()
-        )
         .solution(ab_solution())
         .done()
         .await;
@@ -198,7 +189,6 @@ async fn own_quotes_sorting() {
 /// - External price
 /// - Creation timestamp with 10s threshold
 /// - Own quotes with 20s threshold
-/// - Order class
 #[tokio::test]
 #[ignore]
 async fn mixed_custom_sorting() {
@@ -214,7 +204,6 @@ async fn mixed_custom_sorting() {
         .order_priority_strategy(OrderPriorityStrategy::OwnQuotes {
             max_order_age: Some(Duration::from_secs(20)),
         })
-        .order_priority_strategy(OrderPriorityStrategy::OrderClass)
         .order(ab_order())
         .order(
             ab_order()
@@ -244,15 +233,6 @@ async fn mixed_custom_sorting() {
                 .created(now - 25)
                 .reduce_amount("1e-1".ether().into_wei())
                 .valid_to(u32::MAX - 4)
-                .quote(OrderQuote::default().solver(solver.address())),
-        )
-        .order(
-            ab_order()
-                .rename("6")
-                .limit()
-                .created(now - 25)
-                .reduce_amount("1e-1".ether().into_wei())
-                .valid_to(u32::MAX - 5)
                 .quote(OrderQuote::default().solver(solver.address())),
         )
         .solution(ab_solution())

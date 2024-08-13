@@ -452,7 +452,6 @@ impl AuctionProcessor {
 
         for strategy in order_priority_strategies {
             let comparator: Arc<dyn sorting::SortingStrategy> = match strategy {
-                OrderPriorityStrategy::OrderClass => Arc::new(sorting::OrderClass),
                 OrderPriorityStrategy::ExternalPrice => Arc::new(sorting::ExternalPrice),
                 OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
                     Arc::new(sorting::CreationTimestamp {

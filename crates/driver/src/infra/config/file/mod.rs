@@ -587,11 +587,6 @@ pub enum GasEstimatorType {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "strategy")]
 pub enum OrderPriorityStrategy {
-    /// Strategy to prioritize orders based on their class. Market orders are
-    /// preferred over limit orders, as the expectation is that they should
-    /// be immediately fulfillable. Liquidity orders come last, as they are
-    /// the most niche and rarely used.
-    OrderClass,
     /// Strategy to prioritize orders based on external price.
     /// This strategy uses the likelihood that an order will be fulfilled,
     /// based on token prices. A larger value means that the order is more
@@ -623,7 +618,6 @@ pub enum OrderPriorityStrategy {
 /// of order fulfillment based on external price data.
 fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     vec![
-        OrderPriorityStrategy::OrderClass,
         OrderPriorityStrategy::OwnQuotes {
             max_order_age: default_max_order_age(),
         },

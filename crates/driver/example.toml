@@ -50,9 +50,6 @@ base-tokens = [
 strategy = "creation-timestamp"
 
 [[order-priority]]
-strategy = "order-class"
-
-[[order-priority]]
 strategy = "external-price"
 
 [[order-priority]]
