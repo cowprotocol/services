@@ -34,7 +34,7 @@ use {
             Postgres,
         },
         decoded_settlement::DecodedSettlement,
-        domain::{self, settlement::Transaction},
+        domain::{self},
         infra,
     },
     anyhow::{Context, Result},
@@ -177,23 +177,58 @@ impl Inner {
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
 
-        {
-            // temporary to debug and compare with current implementation
-            let settlement = domain::settlement::Settlement::new(
-                transaction,
-                domain_separator,
-                &self.persistence,
-            )
-            .await;
+        self.test_new_implementation(
+            &transaction,
+            domain_separator,
+            auction_id,
+            auction_data.as_ref(),
+        )
+        .await;
 
-            // automatic checks vs current implementation
+        Postgres::update_settlement_details(&mut ex, update.clone())
+            .await
+            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
+        ex.commit().await?;
+
+        Ok(true)
+    }
+
+    /// This function is used to test the new implementation of the settlement
+    ///
+    /// The test is done by comparing the new implementation with the old one.
+    /// No action is done based on new implementation, just assertions are made
+    /// that the new implementation returns the same results as the old one.
+    async fn test_new_implementation(
+        &self,
+        transaction: &domain::eth::Transaction,
+        domain_separator: &domain::eth::DomainSeparator,
+        auction_id: i64,
+        auction_data: Option<&AuctionData>,
+    ) {
+        let transaction = domain::settlement::Transaction::new(transaction, domain_separator);
+        if transaction.is_err() {
+            // if the transaction is invalid, we expect the old implementation to fail as
+            // well
+            if auction_id != 0 {
+                tracing::warn!(?auction_id, "automatic check error: auction_id mismatch");
+            }
+            if auction_data.is_some() {
+                tracing::warn!(?auction_id, "automatic check error: auction_data mismatch");
+            }
+        }
+
+        if let Ok(transaction) = transaction {
+            let settlement =
+                domain::settlement::Settlement::new(transaction.clone(), &self.persistence).await;
+
+            // automatic checks vs old implementation
             match (settlement, auction_data) {
                 (Ok(_), None) => {
                     // bug: we should have an auction_data
                     tracing::warn!(?auction_id, "automatic check error: missing auction_data");
                 }
                 (Ok(settlement), Some(auction_data)) => {
-                    // staging settlement properly built
+                    // settlement properly built by both implementations
                     let surplus = settlement.native_surplus();
                     if surplus.0 != auction_data.surplus {
                         tracing::warn!(
@@ -221,7 +256,7 @@ impl Inner {
                             "automatic check error: order_fees mismatch"
                         );
                     }
-                    for fee in auction_data.order_executions {
+                    for fee in &auction_data.order_executions {
                         if !order_fees.contains_key(&domain::OrderUid(fee.0 .0)) {
                             tracing::warn!(
                                 ?auction_id,
@@ -246,7 +281,7 @@ impl Inner {
                 }
                 (Err(err), None) => {
                     // make sure the auction_ids are equal
-                    if err.auction_id.unwrap_or_default() != auction_id {
+                    if transaction.auction_id != auction_id {
                         tracing::warn!(
                             ?auction_id,
                             ?err,
@@ -264,20 +299,13 @@ impl Inner {
                 }
             }
         }
-
-        Postgres::update_settlement_details(&mut ex, update.clone())
-            .await
-            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
-        ex.commit().await?;
-
-        Ok(true)
     }
 
     async fn fetch_auction_data(
         &self,
         settlement: DecodedSettlement,
         auction_id: i64,
-        tx: &Transaction,
+        tx: &domain::eth::Transaction,
         ex: &mut PgConnection,
     ) -> Result<AuctionData> {
         let auction = Postgres::find_competition(auction_id, ex)
@@ -345,10 +373,10 @@ impl Inner {
     /// if retrying the operation makes sense.
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
-        tx: &Transaction,
+        tx: &domain::eth::Transaction,
         domain_separator: &model::DomainSeparator,
     ) -> Result<AuctionIdRecoveryStatus> {
-        let tx_from = tx.solver.0;
+        let tx_from = tx.from.0;
         let settlement = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement,
             Err(err) => {
