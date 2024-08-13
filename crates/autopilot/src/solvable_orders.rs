@@ -253,17 +253,17 @@ impl SolvableOrdersCache {
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()
             .filter(|cow_amm| {
-                let prices_exist = cow_amm
-                    .traded_tokens()
-                    .iter()
-                    .all(|token| prices.contains_key(token));
-                if !prices_exist {
-                    tracing::debug!(
-                        cow_amm = ?cow_amm.address(),
-                        "prices missing"
-                    );
-                }
-                prices_exist
+                cow_amm.traded_tokens().iter().all(|token| {
+                    let price_exist = prices.contains_key(token);
+                    if !price_exist {
+                        tracing::debug!(
+                            cow_amm = ?cow_amm.address(),
+                            ?token,
+                            "omitted from auction due to missing prices"
+                        );
+                    }
+                    price_exist
+                })
             })
             .map(|cow_amm| cow_amm.address())
             .cloned()
