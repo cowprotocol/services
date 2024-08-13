@@ -10,6 +10,7 @@ use {
                 default_http_time_buffer,
                 default_solving_share_of_deadline,
                 FeeHandler,
+                OrderPriorityStrategy,
             },
         },
         tests::{
@@ -494,6 +495,7 @@ pub fn setup() -> Setup {
         name: Default::default(),
         pools: Default::default(),
         orders: Default::default(),
+        order_priority_strategies: Default::default(),
         trusted: Default::default(),
         config_file: Default::default(),
         solutions: Default::default(),
@@ -513,6 +515,7 @@ pub struct Setup {
     name: Option<String>,
     pools: Vec<blockchain::Pool>,
     orders: Vec<Order>,
+    order_priority_strategies: Vec<OrderPriorityStrategy>,
     trusted: HashSet<&'static str>,
     config_file: Option<PathBuf>,
     solutions: Vec<Solution>,
@@ -777,6 +780,11 @@ impl Setup {
         self
     }
 
+    pub fn order_priority_strategy(mut self, strategy: OrderPriorityStrategy) -> Self {
+        self.order_priority_strategies.push(strategy);
+        self
+    }
+
     /// Set up the protocol to consider the specified token as trusted. The
     /// token is identified by its symbol.
     pub fn trust(mut self, token: &'static str) -> Self {
@@ -928,6 +936,7 @@ impl Setup {
                 config_file,
                 enable_simulation: self.enable_simulation,
                 mempools: self.mempools,
+                order_priority_strategies: self.order_priority_strategies,
             },
             &solvers_with_address,
             &blockchain,
