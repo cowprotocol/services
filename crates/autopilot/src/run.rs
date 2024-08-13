@@ -506,7 +506,13 @@ pub async fn run(args: Arguments) {
         drivers: args
             .drivers
             .into_iter()
-            .map(|driver| infra::Driver::new(driver.url, driver.name))
+            .map(|driver| {
+                infra::Driver::new(
+                    driver.url,
+                    driver.name,
+                    driver.fairness_threshold.map(Into::into),
+                )
+            })
             .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
@@ -532,7 +538,13 @@ async fn shadow_mode(args: Arguments) -> ! {
     let drivers = args
         .drivers
         .into_iter()
-        .map(|driver| infra::Driver::new(driver.url, driver.name))
+        .map(|driver| {
+            infra::Driver::new(
+                driver.url,
+                driver.name,
+                driver.fairness_threshold.map(Into::into),
+            )
+        })
         .collect();
 
     let trusted_tokens = {

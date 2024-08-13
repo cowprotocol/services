@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::order::Class,
-            competition::{self, SolutionError},
+            competition::{self, SolutionError, TradedAmounts},
             OrderUid,
         },
         infra::{
@@ -18,6 +18,7 @@ use {
     ::observe::metrics,
     anyhow::Result,
     database::order_events::OrderEventLabel,
+    ethcontract::U256,
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -26,16 +27,17 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
+    num::{CheckedDiv, CheckedMul, CheckedSub},
     primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{BTreeMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
     tokio::sync::Mutex,
-    tracing::Instrument,
+    tracing::{warn, Instrument},
 };
 
 pub struct RunLoop {
@@ -121,7 +123,7 @@ impl RunLoop {
 
         let auction = self.remove_in_flight_orders(auction.clone()).await;
 
-        let solutions = {
+        let mut solutions = {
             let mut solutions = self.competition(auction_id, &auction).await;
             if solutions.is_empty() {
                 tracing::info!("no solutions for auction");
@@ -142,6 +144,14 @@ impl RunLoop {
             .collect();
         self.persistence
             .store_order_events(considered_orders, OrderEventLabel::Considered);
+
+        // Make sure the winning solution is fair.
+        while !Self::check_fairness(solutions.last(), &solutions, &auction) {
+            warn!(
+                invalidated = ?solutions.last().expect("must exist").driver.name, "fairness check invalidated of solution"
+            );
+            solutions.pop();
+        }
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
@@ -387,6 +397,81 @@ impl RunLoop {
         .into_iter()
         .flatten()
         .collect()
+    }
+
+    /// Returns true if winning solution is fair or winner is None
+    fn check_fairness(
+        winner: Option<&Participant>,
+        remaining: &Vec<Participant>,
+        auction: &domain::Auction,
+    ) -> bool {
+        let winner = match winner {
+            Some(winner) => winner,
+            None => return true,
+        };
+        let fairness_threshold = match winner.driver.fairness_threshold {
+            Some(threshold) => threshold,
+            None => return true,
+        };
+
+        // Returns Some(buy token amount) if left is better than right.
+        let improvement_in_buy = |left: &TradedAmounts, right: &TradedAmounts| {
+            right
+                .sell
+                .checked_mul(&left.buy)
+                .unwrap_or(U256::max_value().into())
+                .checked_sub(
+                    &left
+                        .sell
+                        .checked_mul(&right.buy)
+                        .unwrap_or(U256::max_value().into()),
+                )?
+                .checked_div(&right.sell)
+        };
+
+        // Find best execution per order
+        let mut best_executions = HashMap::new();
+        for other in remaining {
+            for (uid, execution) in other.solution.orders() {
+                let best_execution = best_executions.entry(uid).or_insert(execution);
+                if improvement_in_buy(execution, best_execution).is_some() {
+                    *best_execution = execution;
+                }
+            }
+        }
+
+        // Check if the winning solution contains an execution that is more than
+        // `fairness_threshold` worse than the best execution
+        winner
+            .solution
+            .orders()
+            .iter()
+            .any(|(uid, winning_execution)| {
+                let best_execution = match best_executions.get(uid) {
+                    Some(best_execution) => best_execution,
+                    None => return false,
+                };
+                improvement_in_buy(&best_execution, &winning_execution)
+                    .and_then(|improvement_in_buy| {
+                        warn!(
+                            ?uid,
+                            ?improvement_in_buy,
+                            ?best_execution,
+                            ?winning_execution,
+                            "fairness check"
+                        );
+                        // Improvement is denominated in buy token, use buy price to normalize the
+                        // difference into eth
+                        let order = auction.orders.iter().find(|order| order.uid == *uid)?;
+                        let buy_price = auction.prices.get(&order.buy.token)?;
+                        if buy_price.in_eth(improvement_in_buy) > fairness_threshold {
+                            Some(())
+                        } else {
+                            None
+                        }
+                    })
+                    .is_some()
+            })
     }
 
     /// Computes a driver's solutions for the solver competition.
