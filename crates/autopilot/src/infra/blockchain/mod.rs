@@ -1,9 +1,6 @@
 use {
     self::contracts::Contracts,
-    crate::{
-        boundary,
-        domain::{self, eth},
-    },
+    crate::{boundary, domain::eth},
     ethcontract::dyns::DynWeb3,
     ethrpc::block_stream::CurrentBlockWatcher,
     primitive_types::U256,
@@ -119,10 +116,7 @@ impl Ethereum {
         &self.contracts
     }
 
-    pub async fn transaction(
-        &self,
-        hash: eth::TxId,
-    ) -> Result<domain::settlement::Transaction, Error> {
+    pub async fn transaction(&self, hash: eth::TxId) -> Result<eth::Transaction, Error> {
         let (transaction, receipt) = tokio::try_join!(
             self.web3.eth().transaction(hash.0.into()),
             self.web3.eth().transaction_receipt(hash.0)
@@ -136,10 +130,10 @@ impl Ethereum {
 fn into_domain(
     transaction: web3::types::Transaction,
     receipt: web3::types::TransactionReceipt,
-) -> anyhow::Result<domain::settlement::Transaction> {
-    Ok(domain::settlement::Transaction {
+) -> anyhow::Result<eth::Transaction> {
+    Ok(eth::Transaction {
         hash: transaction.hash.into(),
-        solver: transaction
+        from: transaction
             .from
             .ok_or(anyhow::anyhow!("missing from"))?
             .into(),

@@ -229,7 +229,7 @@ pub struct Arguments {
     pub cow_amm_configs: Vec<CowAmmConfig>,
 
     /// Controls start of the run loop.
-    #[clap(long, env)]
+    #[clap(long, env, default_value = "unsynchronized")]
     pub run_loop_mode: RunLoopMode,
 }
 
