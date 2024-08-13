@@ -4,6 +4,7 @@
 //! a form of settlement transaction.
 
 use {
+    self::solution::ExecutedFee,
     crate::{domain, domain::eth, infra},
     std::collections::HashMap,
 };
@@ -86,10 +87,9 @@ impl Settlement {
         self.settled.solution.native_fee(&self.auction.prices)
     }
 
-    /// Per order fees denominated in sell token. Contains all orders from the
-    /// settlement
-    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<eth::SellTokenAmount>> {
-        self.settled.solution.fees(&self.auction.prices)
+    /// Per order fees breakdown. Contains all orders from the settlement
+    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
+        self.settled.solution.fees(&self.auction)
     }
 }
 

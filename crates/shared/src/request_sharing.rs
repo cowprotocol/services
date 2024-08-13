@@ -3,7 +3,10 @@ use {
         future::{BoxFuture, Shared, WeakShared},
         FutureExt,
     },
-    prometheus::IntCounterVec,
+    prometheus::{
+        core::{AtomicU64, GenericGauge},
+        IntCounterVec,
+    },
     std::{
         collections::HashMap,
         future::Future,
@@ -53,7 +56,11 @@ where
 
     fn collect_garbage(cache: &Cache<Request, Fut>) {
         let mut cache = cache.lock().unwrap();
+        let len_before = cache.len() as u64;
         cache.retain(|_request, weak| weak.upgrade().is_some());
+        Metrics::get()
+            .request_sharing_cached_items
+            .sub(len_before - cache.len() as u64);
     }
 
     fn spawn_gc(cache: Cache<Request, Fut>) {
@@ -63,6 +70,15 @@ where
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
         });
+    }
+}
+
+impl<A, B: Future> Drop for RequestSharing<A, B> {
+    fn drop(&mut self) {
+        let cache = self.in_flight.lock().unwrap();
+        Metrics::get()
+            .request_sharing_cached_items
+            .sub(cache.len() as u64);
     }
 }
 
@@ -82,32 +98,14 @@ where
     Fut: Future,
     Fut::Output: Clone,
 {
-    // Intentionally returns Shared<Fut> instead of an opaque `impl Future` (or
-    // being an async fn) because this has some useful properties to the caller
-    // like being unpin and fused.
-
-    /// Returns an existing in flight future for this request or uses the passed
-    /// in future as a new in flight future.
-    ///
-    /// Note that futures do nothing util polled so merely creating the response
-    /// future is not expensive.
-    pub fn shared(&self, request: Request, future: Fut) -> Shared<Fut> {
-        self.shared_or_else(request, move |_| future)
-    }
-
     /// Returns an existing in flight future or creates and uses a new future
     /// from the specified closure.
-    ///
-    /// This is similar to [`RequestSharing::shared`] but lazily creates the
-    /// future. This can be helpful when creating futures is non trivial
-    /// (such as cloning a large vector).
     pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
     where
         F: FnOnce(&Request) -> Fut,
     {
         let mut in_flight = self.in_flight.lock().unwrap();
 
-        // collect garbage and find copy of existing request
         let existing = in_flight.get(&request).and_then(WeakShared::upgrade);
 
         if let Some(existing) = existing {
@@ -127,6 +125,7 @@ where
         // unwrap because downgrade only returns None if the Shared has already
         // completed which cannot be the case because we haven't polled it yet.
         in_flight.insert(request, shared.downgrade().unwrap());
+        Metrics::get().request_sharing_cached_items.inc();
         shared
     }
 }
@@ -136,6 +135,9 @@ struct Metrics {
     /// Request sharing hits & misses
     #[metric(labels("request_label", "result"))]
     request_sharing_access: IntCounterVec,
+
+    /// Number of all currently cached requests
+    request_sharing_cached_items: GenericGauge<AtomicU64>,
 }
 
 impl Metrics {
@@ -158,12 +160,14 @@ mod tests {
             request_label: Default::default(),
         };
 
-        let shared0 = sharing.shared(0, futures::future::ready(0).boxed());
-        let shared1 = sharing.shared(0, async { panic!() }.boxed());
-        // Would use Arc::ptr_eq but Shared doesn't implement it.
+        let shared0 = sharing.shared_or_else(0, |_| futures::future::ready(0).boxed());
+        let shared1 = sharing.shared_or_else(0, |_| async { panic!() }.boxed());
+
+        assert!(shared0.ptr_eq(&shared1));
         assert_eq!(shared0.strong_count().unwrap(), 2);
         assert_eq!(shared1.strong_count().unwrap(), 2);
         assert_eq!(shared0.weak_count().unwrap(), 1);
+
         // complete first shared
         assert_eq!(shared0.now_or_never().unwrap(), 0);
         assert_eq!(shared1.strong_count().unwrap(), 1);
