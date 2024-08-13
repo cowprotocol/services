@@ -257,17 +257,7 @@ mod observe {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        lazy_static::lazy_static,
-        std::{env, str::FromStr},
-    };
-
-    lazy_static! {
-        static ref WXDAI_TOKEN_ADDRESS: H160 = "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d"
-            .parse()
-            .unwrap();
-    }
+    use {super::*, std::env};
 
     impl CoinGecko {
         fn new_for_test(
@@ -276,9 +266,10 @@ mod tests {
             api_key: Option<String>,
             chain_id: u64,
         ) -> Result<Self> {
+            let wxdai = addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d");
             let (chain, quote_token) = match chain_id {
                 1 => ("ethereum".to_string(), QuoteToken::Eth),
-                100 => ("xdai".to_string(), QuoteToken::Other(*WXDAI_TOKEN_ADDRESS)),
+                100 => ("xdai".to_string(), QuoteToken::Other(wxdai)),
                 42161 => ("arbitrum-one".to_string(), QuoteToken::Eth),
                 n => anyhow::bail!("unsupported network {n}"),
             };
@@ -303,7 +294,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn works() {
-        let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
+        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_URL).unwrap(),
@@ -322,7 +313,7 @@ mod tests {
     #[ignore]
     async fn works_xdai() {
         // USDT
-        let native_token = H160::from_str("0x4ECaBa5870353805a9F068101A40E0f32ed605C6").unwrap();
+        let native_token = addr!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
@@ -340,8 +331,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn works_multiple_tokens() {
-        let usdt_token = H160::from_str("0x4ECaBa5870353805a9F068101A40E0f32ed605C6").unwrap();
-        let usdc_token = H160::from_str("0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0").unwrap();
+        let usdt_token = addr!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
+        let usdc_token = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
         let instance = CoinGecko::new_for_test(
             Client::default(),
             Url::parse(BASE_API_PRO_URL).unwrap(),
