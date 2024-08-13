@@ -540,7 +540,8 @@ async fn cow_amm_driver_support(web3: Web3) {
         addr!("301076c36e034948a747bb61bab9cd03f62672e3"),
         addr!("d7cb8cc1b56356bb7b78d02e785ead28e2158660"),
         addr!("9941fd7db2003308e7ee17b04400012278f12ac6"),
-        addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
+        // no native prices for the tokens traded by this AMM (COW token price)
+        // addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
         addr!("c6b13d5e662fa0458f03995bcb824a1934aa895f"),
     ];
 

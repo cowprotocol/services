@@ -303,10 +303,12 @@ impl OnchainComponents {
         solvers
     }
 
-    async fn deploy_tokens<const N: usize>(&self, minter: Account) -> [MintableToken; N] {
+    /// Deploy `N` tokens without any onchain liquidity
+    pub async fn deploy_tokens<const N: usize>(&self, minter: &Account) -> [MintableToken; N] {
         let mut res = Vec::with_capacity(N);
         for _ in 0..N {
             let contract = ERC20Mintable::builder(&self.web3)
+                .from(minter.clone())
                 .deploy()
                 .await
                 .expect("MintableERC20 deployment failed");
@@ -333,9 +335,19 @@ impl OnchainComponents {
                 .expect("getting accounts failed")[0],
             None,
         );
-        let tokens = self.deploy_tokens::<N>(minter).await;
+        let tokens = self.deploy_tokens::<N>(&minter).await;
+        self.seed_weth_uni_v2_pools(tokens.iter(), token_amount, weth_amount)
+            .await;
+        tokens
+    }
 
-        for MintableToken { contract, minter } in &tokens {
+    pub async fn seed_weth_uni_v2_pools(
+        &self,
+        tokens: impl IntoIterator<Item = &MintableToken>,
+        token_amount: U256,
+        weth_amount: U256,
+    ) {
+        for MintableToken { contract, minter } in tokens {
             tx!(minter, contract.mint(minter.address(), token_amount));
             tx_value!(minter, weth_amount, self.contracts.weth.deposit());
 
@@ -369,8 +381,6 @@ impl OnchainComponents {
                 )
             );
         }
-
-        tokens
     }
 
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
