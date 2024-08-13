@@ -142,16 +142,17 @@ impl Inner {
         };
 
         let (auction_id, settlement) = match transaction {
-            Ok(tx) => {
-                let auction_id = tx.auction_id;
-                let settlement = match settlement::Settlement::new(tx, &self.persistence).await {
-                    Ok(settlement) => Some(settlement),
-                    Err(err) if retryable(&err) => return Err(err.into()),
-                    Err(err) => {
-                        tracing::warn!(?hash, ?auction_id, ?err, "invalid settlement");
-                        None
-                    }
-                };
+            Ok(transaction) => {
+                let auction_id = transaction.auction_id;
+                let settlement =
+                    match settlement::Settlement::new(transaction, &self.persistence).await {
+                        Ok(settlement) => Some(settlement),
+                        Err(err) if retryable(&err) => return Err(err.into()),
+                        Err(err) => {
+                            tracing::warn!(?hash, ?auction_id, ?err, "invalid settlement");
+                            None
+                        }
+                    };
                 (auction_id, settlement)
             }
             Err(err) => {
