@@ -6,7 +6,7 @@ use {
     futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
-    rust_decimal::prelude::ToPrimitive,
+    rust_decimal::{prelude::ToPrimitive, Decimal},
     serde::Deserialize,
     std::collections::{HashMap, HashSet},
     url::Url,
@@ -72,10 +72,10 @@ impl CoinGecko {
         })
     }
 
-    pub async fn send_bulk_request_price_in_eth(
+    async fn bulk_fetch_denominated_in_eth(
         &self,
         tokens: &[&Token],
-    ) -> Result<HashMap<Token, NativePriceEstimateResult>, PriceEstimationError> {
+    ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
         url.query_pairs_mut()
             .append_pair(
@@ -100,14 +100,8 @@ impl CoinGecko {
             ))
         })?;
         if !response.status().is_success() {
-            let status = response.status();
-            return match status {
-                StatusCode::TOO_MANY_REQUESTS => {
-                    return Ok(tokens
-                        .iter()
-                        .map(|token| (**token, Err(PriceEstimationError::RateLimited)))
-                        .collect());
-                }
+            return match response.status() {
+                StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
                 status => Err(PriceEstimationError::EstimatorInternal(anyhow!(
                     "failed to retrieve prices from CoinGecko: error with status code {status}."
                 ))),
@@ -120,34 +114,83 @@ impl CoinGecko {
                 "failed to fetch native CoinGecko prices: {e:?}"
             ))
         })?;
-        let prices = serde_json::from_str::<Response>(&response)
+
+        let parsed_response = serde_json::from_str::<Response>(&response)
             .map_err(|e| {
                 PriceEstimationError::EstimatorInternal(anyhow!(
                     "failed to parse native CoinGecko prices from {response:?}: {e:?}"
                 ))
             })?
-            .0;
+            .0
+            .into_iter()
+            .map(|(token, price)| (token, price.eth))
+            .collect();
 
-        Ok(tokens
-            .iter()
-            .map(|token| {
-                (
-                    **token,
-                    prices
-                        .get(token)
-                        .ok_or(PriceEstimationError::NoLiquidity)
-                        .map(|price| price.eth),
-                )
-            })
-            .collect())
+        Ok(parsed_response)
     }
 
-    pub async fn send_request_price_in_eth(&self, token: Token) -> NativePriceEstimateResult {
-        let prices = self.send_bulk_request_price_in_eth(&[&token]).await?;
-        prices
-            .get(&token)
+    /// Fetches the prices of the given tokens denominated in the given token.
+    async fn bulk_fetch_denominated_in_token(
+        &self,
+        mut tokens: Vec<&Token>,
+        denominator: Token,
+    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
+        tokens.push(&denominator);
+        let prices_in_eth = self.bulk_fetch_denominated_in_eth(&tokens).await?;
+
+        // fetch price of token we want to denominate all other prices in
+        let denominator_price: Decimal = prices_in_eth
+            .get(&denominator)
+            .cloned()
             .ok_or(PriceEstimationError::NoLiquidity)?
-            .clone()
+            .try_into()
+            .map_err(|e| {
+                PriceEstimationError::EstimatorInternal(anyhow!(
+                    "failed to parse native price token in ETH to rust decimal: {e:?}"
+                ))
+            })?;
+
+        let prices_in_denominator = tokens
+            .into_iter()
+            .map(|token| {
+                let result = Self::denominate_price(token, denominator_price, &prices_in_eth);
+                (*token, result)
+            })
+            .collect();
+
+        Ok(prices_in_denominator)
+    }
+
+    /// CoinGecko provides all prices denominated in ETH.
+    /// This function converts such a token price to a price denominated
+    /// in a token provided by the caller.
+    fn denominate_price(
+        token: &Token,
+        denominator_price_eth: Decimal,
+        prices: &HashMap<Token, f64>,
+    ) -> NativePriceEstimateResult {
+        let token_price_eth: Decimal = prices
+            .get(token)
+            .cloned()
+            .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
+                "response did not contain price for {token:?}"
+            )))?
+            .try_into()
+            .map_err(|e| {
+                PriceEstimationError::EstimatorInternal(anyhow!(
+                    "failed to parse requested token in ETH to rust decimal: {e:?}"
+                ))
+            })?;
+
+        token_price_eth
+            .checked_div(denominator_price_eth)
+            .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
+                "division by zero"
+            )))?
+            .to_f64()
+            .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
+                "failed to convert price to f64"
+            )))
     }
 }
 
@@ -155,53 +198,24 @@ impl CoinGecko {
 impl NativePriceBatchFetcher for CoinGecko {
     async fn fetch_native_prices(
         &self,
-        tokens: &HashSet<H160>,
-    ) -> std::result::Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
-        let mut requested_tokens = tokens.iter().collect::<Vec<_>>();
+        requested_tokens: &HashSet<H160>,
+    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
+        let mut tokens = requested_tokens.iter().collect::<Vec<_>>();
         match self.quote_token {
-            QuoteToken::Eth => self.send_bulk_request_price_in_eth(&requested_tokens).await,
-            QuoteToken::Other(native_price_token) => {
-                requested_tokens.push(&native_price_token);
-                let prices = self
-                    .send_bulk_request_price_in_eth(&requested_tokens)
-                    .await?;
-                let native_price_token = prices
-                    .get(&native_price_token)
-                    .ok_or(PriceEstimationError::NoLiquidity)?
-                    .clone();
-                let native_price_token_eth = rust_decimal::Decimal::try_from(native_price_token?)
-                    .map_err(|e| {
-                    PriceEstimationError::EstimatorInternal(anyhow!(
-                        "failed to parse native price token in ETH to rust decimal: {e:?}"
-                    ))
-                })?;
-                prices
+            QuoteToken::Eth => {
+                let prices = self.bulk_fetch_denominated_in_eth(&tokens).await?;
+                Ok(prices
                     .into_iter()
-                    .filter(|(token, _)| tokens.contains(token))
-                    .map(|(token, price)| match price.as_ref() {
-                        Ok(price) => {
-                            let token_eth =
-                                rust_decimal::Decimal::try_from(*price).map_err(|e| {
-                                    PriceEstimationError::EstimatorInternal(anyhow!(
-                                        "failed to parse requested token in ETH to rust decimal: \
-                                         {e:?}"
-                                    ))
-                                })?;
-                            let token_in_native_price = token_eth
-                                .checked_div(native_price_token_eth)
-                                .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
-                                    "division by zero"
-                                )))?;
-                            let token_in_native_price_f64 = token_in_native_price.to_f64().ok_or(
-                                PriceEstimationError::EstimatorInternal(anyhow!(
-                                    "failed to parse result to f64"
-                                )),
-                            )?;
-                            Ok((token, Ok(token_in_native_price_f64)))
-                        }
-                        Err(_) => Ok((token, price)),
-                    })
-                    .collect::<Result<_, _>>()
+                    .map(|(token, price)| (token, Ok(price)))
+                    .collect())
+            }
+            QuoteToken::Other(native_price_token) => {
+                if !requested_tokens.contains(&native_price_token) {
+                    tokens.push(&native_price_token);
+                }
+
+                self.bulk_fetch_denominated_in_token(tokens, native_price_token)
+                    .await
             }
         }
     }
@@ -224,12 +238,12 @@ mod observe {
     use url::Url;
 
     /// Observe a request to be sent to CoinGecko
-    pub fn coingecko_request(endpoint: &Url) {
+    pub(super) fn coingecko_request(endpoint: &Url) {
         tracing::trace!(%endpoint, "sending request to CoinGecko");
     }
 
     /// Observe that a response was received from CoinGecko
-    pub fn coingecko_response(endpoint: &Url, res: Result<&str, &reqwest::Error>) {
+    pub(super) fn coingecko_response(endpoint: &Url, res: Result<&str, &reqwest::Error>) {
         match res {
             Ok(res) => {
                 tracing::trace!(%endpoint, ?res, "received response from CoinGecko")
