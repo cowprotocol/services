@@ -2,26 +2,41 @@ use {
     crate::setup::*,
     ethcontract::{common::DeploymentInformation, H160},
     reqwest::Url,
+    std::collections::HashSet,
     tokio::task::JoinHandle,
 };
 
-pub async fn start_baseline_solver(weth: H160, base_tokens: Vec<H160>) -> Url {
-    let base_tokens = base_tokens
-        .iter()
-        .map(|token| format!(r#"{:?}"#, token))
-        .collect::<Vec<_>>()
-        .join(", ");
+pub struct SolverEngine {
+    pub name: String,
+    pub endpoint: Url,
+    pub account: TestAccount,
+    pub base_tokens: Vec<H160>,
+}
+
+pub async fn start_baseline_solver(
+    name: String,
+    account: TestAccount,
+    weth: H160,
+    base_tokens: Vec<H160>,
+) -> SolverEngine {
+    let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
     let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
-base-tokens = [{base_tokens:?}]
+base-tokens = [{encoded_base_tokens}]
 max-hops = 1
 max-partial-attempts = 5
 native-token-price-estimation-amount = "100000000000000000"
         "#,
     ));
 
-    start_solver(config_file, "baseline".to_string()).await
+    let endpoint = start_solver(config_file, "baseline".to_string()).await;
+    SolverEngine {
+        name,
+        endpoint,
+        account,
+        base_tokens,
+    }
 }
 
 async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
@@ -40,12 +55,6 @@ async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
 
     let solver_addr = bind_receiver.await.unwrap();
     format!("http://{solver_addr}").parse().unwrap()
-}
-
-pub struct SolverEngine {
-    pub name: String,
-    pub endpoint: Url,
-    pub account: TestAccount,
 }
 
 pub enum LiquidityProvider {
@@ -85,6 +94,11 @@ pub fn start_driver(
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
 ) -> JoinHandle<()> {
+    let base_tokens: HashSet<_> = solvers
+        .iter()
+        .flat_map(|solver| solver.base_tokens.iter())
+        .cloned()
+        .collect();
     let solvers = solvers
         .iter()
         .map(
@@ -92,6 +106,7 @@ pub fn start_driver(
                  name,
                  account,
                  endpoint,
+                 base_tokens: _,
              }| {
                 let account = hex::encode(account.private_key());
                 format!(
@@ -109,6 +124,8 @@ merge-solutions = true
         .collect::<Vec<String>>()
         .join("\n");
     let liquidity = liquidity.to_string(contracts);
+
+    let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
 
     let cow_amms = contracts
         .cow_amm_helper
@@ -144,7 +161,7 @@ weth = "{:?}"
 {solvers}
 
 [liquidity]
-base-tokens = ["0x84ea74d481ee0a5332c457a4d796187f6ba67feb","0xc3e53f4d16ae77db1c982e75a937b9f60fe63690"]
+base-tokens = [{encoded_base_tokens}]
 
 {liquidity}
 
@@ -167,4 +184,12 @@ mempool = "public"
         let _config_file = config_file;
         driver::run(args.into_iter(), None).await;
     })
+}
+
+fn encode_base_tokens(tokens: impl IntoIterator<Item = H160>) -> String {
+    tokens
+        .into_iter()
+        .map(|token| format!(r#""{:x}""#, token))
+        .collect::<Vec<_>>()
+        .join(",")
 }

@@ -1,8 +1,5 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, *},
-        tx,
-    },
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderKind},
@@ -48,24 +45,20 @@ async fn solver_competition(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(
-                    onchain.contracts().weth.address(),
-                    vec![],
-                )
-                .await,
-            },
-            SolverEngine {
-                name: "solver2".into(),
-                account: solver,
-                endpoint: colocation::start_baseline_solver(
-                    onchain.contracts().weth.address(),
-                    vec![],
-                )
-                .await,
-            },
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+            colocation::start_baseline_solver(
+                "solver2".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
     );
@@ -175,24 +168,20 @@ async fn fairness_check(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(
-                    onchain.contracts().weth.address(),
-                    vec![base_a.address()],
-                )
-                .await,
-            },
-            SolverEngine {
-                name: "solver2".into(),
-                account: solver,
-                endpoint: colocation::start_baseline_solver(
-                    onchain.contracts().weth.address(),
-                    vec![base_b.address()],
-                )
-                .await,
-            },
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![base_a.address()],
+            )
+            .await,
+            colocation::start_baseline_solver(
+                "solver2".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![base_b.address()],
+            )
+            .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
     );
@@ -200,16 +189,16 @@ async fn fairness_check(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(
         None,
-        // fairness threshold of 0.01 ETH
+        // Solver 1 has a fairness threshold of 0.01 ETH, which should be triggered by sub-optimally settling order_b
         vec![
-            "--drivers=test_solver|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
+            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
                 .to_string(),
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
