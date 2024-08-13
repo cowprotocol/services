@@ -230,7 +230,9 @@ impl Inner {
                                 "automatic check error: order_fees missing"
                             );
                         } else {
-                            let settlement_fee = order_fees[&domain::OrderUid(fee.0 .0)];
+                            let settlement_fee = order_fees[&domain::OrderUid(fee.0 .0)]
+                                .as_ref()
+                                .map(|fee| fee.total());
                             if settlement_fee.unwrap_or_default().0 != fee.1 {
                                 tracing::warn!(
                                     ?auction_id,
