@@ -1,31 +1,21 @@
 //! This module is responsible for updating the database, for each settlement
 //! event that is emitted by the settlement contract.
 //
-// When we put settlement transactions on chain there is no reliable way to
-// know the transaction hash because we can create multiple transactions with
-// different gas prices. What we do know is the account and nonce that the
-// transaction will have which is enough to uniquely identify it.
+// Each settlement transaction is expected to contain an auction id to uniquely
+// identify the auction for which it was allowed to be brought onchain.
+// This auction id is used to build the accociation between the settlement event
+// and the auction in the database.
 //
-// We build an association between account-nonce and tx hash by backfilling
-// settlement events with the account and nonce of their tx hash. This happens
-// in an always running background task.
+// Building of this asscociation happens in an always running background task.
 //
 // Alternatively we could change the event insertion code to do this but I (vk)
 // would like to keep that code as fast as possible to not slow down event
 // insertion which also needs to deal with reorgs. It is also nicer from a code
 // organization standpoint.
 
-// 2. Inserting settlement observations
-//
-// see database/sql/V048__create_settlement_rewards.sql
-//
-// Surplus and fees calculation is based on:
-// a) the mined transaction call data
-// b) the auction external prices fetched from orderbook
-// c) the orders fetched from orderbook
-// After a transaction is mined we calculate the surplus and fees for each
-// transaction and insert them into the database (settlement_observations
-// table).
+// Another responsibility of this module is to observe the settlement and save
+// data of interest to the database. This data includes surplus, taken fees, gas
+// used etc.
 
 use {
     crate::{
