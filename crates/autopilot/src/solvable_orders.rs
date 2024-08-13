@@ -16,7 +16,7 @@ use {
     },
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
-    prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    prometheus::{Histogram, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -42,6 +42,9 @@ pub struct Metrics {
     /// Tracks success and failure of the solvable orders cache update task.
     #[metric(labels("result"))]
     auction_update: IntCounterVec,
+
+    /// Time taken to update the solvable orders cache.
+    auction_update_time: Histogram,
 
     /// Auction creations.
     auction_creations: IntCounter,
@@ -144,6 +147,7 @@ impl SolvableOrdersCache {
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
     async fn update(&self, block: u64) -> Result<()> {
+        let _timer = self.metrics.auction_update_time.start_timer();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 

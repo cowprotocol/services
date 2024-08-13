@@ -117,6 +117,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
+        let _timer = Metrics::get().single_run_time.start_timer();
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction.clone()).await;
@@ -145,6 +146,7 @@ impl RunLoop {
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
+            let timer = Metrics::get().solutions_processing_time.start_timer();
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
             let revealed = match self.reveal(driver, auction_id, solution.id()).await {
@@ -305,6 +307,7 @@ impl RunLoop {
                 Metrics::fee_policies_store_error();
                 tracing::warn!(?err, "failed to save fee policies");
             }
+            timer.observe_duration();
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
@@ -352,6 +355,7 @@ impl RunLoop {
         self.persistence
             .store_order_events(order_uids, OrderEventLabel::Ready);
 
+        let _timer = Metrics::get().solvers_response_time.start_timer();
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
             let result = self.solve(driver, request).await;
@@ -650,6 +654,15 @@ struct Metrics {
     /// Tracks the number of database errors.
     #[metric(labels("error_type"))]
     db_metric_error: prometheus::IntCounterVec,
+
+    /// Tracks the time taken for all the solvers to respond.
+    solvers_response_time: prometheus::Histogram,
+
+    /// Tracks the time taken for ranking solutions.
+    solutions_processing_time: prometheus::Histogram,
+
+    /// Total time spent in a single run of the run loop.
+    single_run_time: prometheus::Histogram,
 }
 
 impl Metrics {
