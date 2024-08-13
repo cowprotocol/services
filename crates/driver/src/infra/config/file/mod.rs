@@ -622,13 +622,11 @@ fn default_order_priority_strategies() -> Vec<OrderPriorityStrategy> {
     const DEFAULT_MAX_ORDER_AGE: Duration = Duration::from_secs(120);
     vec![
         OrderPriorityStrategy::OrderClass,
-        OrderPriorityStrategy::CreationTimestamp {
+        OrderPriorityStrategy::OwnQuotes {
             max_order_age: Some(DEFAULT_MAX_ORDER_AGE),
         },
-        OrderPriorityStrategy::OwnQuotes {
-            // Since `max_order_age` is already defined in the previous strategy,
-            // additional timestamp filter is redundant.
-            max_order_age: None,
+        OrderPriorityStrategy::CreationTimestamp {
+            max_order_age: Some(DEFAULT_MAX_ORDER_AGE),
         },
         OrderPriorityStrategy::ExternalPrice,
     ]
