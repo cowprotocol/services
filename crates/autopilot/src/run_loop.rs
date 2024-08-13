@@ -54,9 +54,13 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self, update_interval: Duration) -> ! {
         if let RunLoopMode::Unsynchronized = self.synchronization {
-            SolvableOrdersCache::spawn_background_task(&self.solvable_orders_cache);
+            SolvableOrdersCache::spawn_background_task(
+                &self.solvable_orders_cache,
+                self.eth.current_block().clone(),
+                update_interval,
+            );
         }
 
         let mut last_auction = None;

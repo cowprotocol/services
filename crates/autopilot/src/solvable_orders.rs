@@ -82,8 +82,6 @@ pub struct SolvableOrdersCache {
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
-    current_block: CurrentBlockWatcher,
-    update_interval: Duration,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -101,10 +99,8 @@ impl SolvableOrdersCache {
         banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        current_block: CurrentBlockWatcher,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
-        update_interval: Duration,
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
@@ -127,22 +123,20 @@ impl SolvableOrdersCache {
             limit_order_price_factor,
             protocol_fees,
             cow_amm_registry,
-            current_block: current_block.clone(),
-            update_interval,
         });
         self_
     }
 
     /// Spawns a task that periodically updates the set of open orders
     /// and builds a new auction with them.
-    pub fn spawn_background_task(cache: &Arc<Self>) {
+    pub fn spawn_background_task(
+        cache: &Arc<Self>,
+        block_stream: CurrentBlockWatcher,
+        update_interval: Duration,
+    ) {
         tokio::task::spawn(
-            update_task(
-                Arc::downgrade(cache),
-                cache.update_interval,
-                cache.current_block.clone(),
-            )
-            .instrument(tracing::info_span!("solvable_orders_cache")),
+            update_task(Arc::downgrade(cache), update_interval, block_stream)
+                .instrument(tracing::info_span!("solvable_orders_cache")),
         );
     }
 
