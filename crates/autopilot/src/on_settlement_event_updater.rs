@@ -193,6 +193,11 @@ impl Inner {
         Ok(true)
     }
 
+    /// This function is used to test the new implementation of the settlement
+    ///
+    /// The test is done by comparing the new implementation with the old one.
+    /// No action is done based on new implementation, just assertions are made
+    /// that the new implementation returns the same results as the old one.
     async fn test_new_implementation(
         &self,
         transaction: &domain::eth::Transaction,
@@ -200,10 +205,10 @@ impl Inner {
         auction_id: i64,
         auction_data: Option<&AuctionData>,
     ) {
-        // temporary to debug and compare with current implementation
         let transaction = domain::settlement::Transaction::new(transaction, domain_separator);
         if transaction.is_err() {
-            // make sure the old code handles this case correctly
+            // if the transaction is invalid, we expect the old implementation to fail as
+            // well
             if auction_id != 0 {
                 tracing::warn!(?auction_id, "automatic check error: auction_id mismatch");
             }
@@ -216,14 +221,14 @@ impl Inner {
             let settlement =
                 domain::settlement::Settlement::new(transaction.clone(), &self.persistence).await;
 
-            // automatic checks vs current implementation
+            // automatic checks vs old implementation
             match (settlement, auction_data) {
                 (Ok(_), None) => {
                     // bug: we should have an auction_data
                     tracing::warn!(?auction_id, "automatic check error: missing auction_data");
                 }
                 (Ok(settlement), Some(auction_data)) => {
-                    // staging settlement properly built
+                    // settlement properly built by both implementations
                     let surplus = settlement.native_surplus();
                     if surplus.0 != auction_data.surplus {
                         tracing::warn!(

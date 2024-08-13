@@ -1,6 +1,7 @@
 //! Solvers propose solutions to an [`crate::domain::Auction`].
 //!
-//! A winning solution becomes a [`Settlement`] once it is executed on-chain.
+//! A winning solution becomes a [`Settlement`] once it is executed on-chain in
+//! a form of settlement transaction.
 
 use {
     crate::{domain, domain::eth, infra},
@@ -12,8 +13,8 @@ mod solution;
 mod transaction;
 pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
-/// A solution together with the `Auction` for which it was picked as a winner
-/// and executed on-chain.
+/// A settled transaction together with the `Auction`, for which it was executed
+/// on-chain.
 ///
 /// Referenced as a [`Settlement`] in the codebase.
 #[allow(dead_code)]
@@ -41,24 +42,24 @@ impl Settlement {
         let auction = persistence.get_auction(settled.auction_id).await?;
 
         // winning solution - solution promised during solver competition
-        let promised_solution = persistence.get_winning_solution(settled.auction_id).await?;
+        let promised = persistence.get_winning_solution(settled.auction_id).await?;
 
-        if settled.solver != promised_solution.solver() {
+        if settled.solver != promised.solver() {
             return Err(Error::SolverMismatch {
-                expected: promised_solution.solver(),
+                expected: promised.solver(),
                 got: settled.solver,
             });
         }
 
-        let score = settled.solution.score(&auction)?;
+        let settled_score = settled.solution.score(&auction)?;
 
         // temp log
-        if score != promised_solution.score() {
+        if settled_score != promised.score() {
             tracing::debug!(
                 ?settled.auction_id,
-                "score mismatch: expected competition score {}, settlement score {}",
-                promised_solution.score(),
-                score,
+                "score mismatch: expected promised score {}, settled score {}",
+                promised.score(),
+                settled_score,
             );
         }
 

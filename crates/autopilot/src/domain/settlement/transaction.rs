@@ -1,6 +1,6 @@
 use {
     crate::domain::{self, eth},
-    anyhow::anyhow,
+    anyhow::{anyhow, Context},
 };
 
 /// An on-chain transaction that settled a solution, with calldata in a valid
@@ -39,7 +39,7 @@ impl Transaction {
         let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
             .map(crate::domain::auction::Id::from_be_bytes)
-            .ok_or(anyhow!("missing auction id"))?;
+            .context("invalid metadata")?;
         Ok(Self {
             hash: transaction.hash,
             auction_id,
