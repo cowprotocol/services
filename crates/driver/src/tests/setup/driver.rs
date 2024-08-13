@@ -244,26 +244,27 @@ async fn create_config_file(
         match strategy {
             OrderPriorityStrategy::OrderClass => write!(
                 file,
-                r#"[[order-priority-strategy]]
-                order-class = {{}}
+                r#"[[order-priority]]
+                strategy = "order-class"
                 "#,
             )
             .unwrap(),
             OrderPriorityStrategy::ExternalPrice => write!(
                 file,
-                r#"[[order-priority-strategy]]
-                external-price = {{}}
+                r#"[[order-priority]]
+                strategy = "external-price"
                 "#,
             )
             .unwrap(),
             OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
                 let max_order_age = max_order_age
-                    .map(|age| format!("{{ max-order-age = \"{:?}\" }}", age))
-                    .unwrap_or_else(|| "{}".to_string());
+                    .map(|age| format!("max-order-age = \"{:?}\"", age))
+                    .unwrap_or_else(|| "".to_string());
                 write!(
                     file,
-                    r#"[[order-priority-strategy]]
-                    creation-timestamp = {}
+                    r#"[[order-priority]]
+                    strategy = "creation-timestamp"
+                    {}
                     "#,
                     max_order_age,
                 )
@@ -271,12 +272,13 @@ async fn create_config_file(
             }
             OrderPriorityStrategy::OwnQuotes { max_order_age } => {
                 let max_order_age = max_order_age
-                    .map(|age| format!("{{ max-order-age = \"{:?}\" }}", age))
-                    .unwrap_or_else(|| "{}".to_string());
+                    .map(|age| format!("max-order-age = \"{:?}\"", age))
+                    .unwrap_or_else(|| "".to_string());
                 write!(
                     file,
-                    r#"[[order-priority-strategy]]
-                    own-quotes = {}
+                    r#"[[order-priority]]
+                    strategy = "own-quotes"
+                    {}
                     "#,
                     max_order_age,
                 )

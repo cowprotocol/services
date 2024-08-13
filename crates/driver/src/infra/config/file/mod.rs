@@ -58,7 +58,7 @@ struct Config {
     /// Defines order prioritization strategies that will be applied in the
     /// specified order.
     #[serde(
-        rename = "order-priority-strategy",
+        rename = "order-priority",
         default = "default_order_priority_strategies"
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
@@ -585,7 +585,7 @@ pub enum GasEstimatorType {
 
 /// Defines various strategies to prioritize orders.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", tag = "strategy")]
 pub enum OrderPriorityStrategy {
     /// Strategy to prioritize orders based on their class. Market orders are
     /// preferred over limit orders, as the expectation is that they should

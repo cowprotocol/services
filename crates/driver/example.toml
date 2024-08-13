@@ -46,17 +46,18 @@ base-tokens = [
     "0x6B175474E89094C44Da98b954EedeAC495271d0F",
 ]
 
-[[order-priority-strategy]]
-creation-timestamp = {}
+[[order-priority]]
+strategy = "creation-timestamp"
 
-[[order-priority-strategy]]
-order-class = {}
+[[order-priority]]
+strategy = "order-class"
 
-[[order-priority-strategy]]
-external-price = {}
+[[order-priority]]
+strategy = "external-price"
 
-[[order-priority-strategy]]
-own-quotes = { max-order-age = "1m" }
+[[order-priority]]
+strategy = "own-quotes"
+max-order-age = "1m"
 
 # [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 # preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
