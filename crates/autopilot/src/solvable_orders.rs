@@ -6,7 +6,7 @@ use {
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     indexmap::IndexSet,
     itertools::Itertools,
     model::{
@@ -99,7 +99,7 @@ impl SolvableOrdersCache {
         banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        current_block: CurrentBlockStream,
+        current_block: CurrentBlockWatcher,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
@@ -463,7 +463,7 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
 async fn update_task(
     cache: Weak<SolvableOrdersCache>,
     update_interval: Duration,
-    current_block: CurrentBlockStream,
+    current_block: CurrentBlockWatcher,
 ) {
     loop {
         // We are not updating on block changes because

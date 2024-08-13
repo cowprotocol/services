@@ -17,7 +17,7 @@ use {
         BalancerV2WeightedPoolFactoryV3,
         GPv2Settlement,
     },
-    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     shared::{
         http_solver::model::TokenAmount,
         sources::balancer_v2::{
@@ -76,7 +76,7 @@ fn to_interaction(
 
 pub fn collector(
     eth: &Ethereum,
-    block_stream: CurrentBlockStream,
+    block_stream: CurrentBlockWatcher,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
 ) -> Box<dyn LiquidityCollecting> {
@@ -99,7 +99,7 @@ pub fn collector(
 
 async fn init_liquidity(
     eth: &Ethereum,
-    block_stream: &CurrentBlockStream,
+    block_stream: &CurrentBlockWatcher,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
 ) -> Result<impl LiquidityCollecting> {

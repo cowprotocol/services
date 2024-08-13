@@ -1,13 +1,11 @@
 use {
     crate::{
+        arguments::RunLoopMode,
         database::competition::Competition,
         domain::{
             self,
             auction::order::Class,
-            competition::{
-                SolutionError,
-                {self},
-            },
+            competition::{self, SolutionError},
             OrderUid,
         },
         infra::{
@@ -52,6 +50,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
+    pub synchronization: RunLoopMode,
 }
 
 impl RunLoop {
@@ -59,6 +58,12 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
+            if let RunLoopMode::SyncToBlockchain = self.synchronization {
+                let _ = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+            } else {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
@@ -74,7 +79,6 @@ impl RunLoop {
                         .await;
                 }
             };
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 

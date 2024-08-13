@@ -26,7 +26,7 @@ use {
         Event as BasePoolFactoryEvent,
     },
     ethcontract::{Event, H160, H256},
-    ethrpc::current_block::RangeInclusive,
+    ethrpc::block_stream::RangeInclusive,
     model::TokenPair,
     std::{
         cmp,

@@ -9,6 +9,7 @@
 
 use {
     crate::{
+        arguments::RunLoopMode,
         domain::{self, auction::order::Class},
         infra::{
             self,
@@ -18,6 +19,7 @@ use {
         run_loop::observe,
     },
     ::observe::metrics,
+    ethrpc::block_stream::CurrentBlockWatcher,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
@@ -34,6 +36,8 @@ pub struct RunLoop {
     block: u64,
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
+    synchronization: RunLoopMode,
+    current_block: CurrentBlockWatcher,
 }
 
 impl RunLoop {
@@ -43,6 +47,8 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
+        synchronization: RunLoopMode,
+        current_block: CurrentBlockWatcher,
     ) -> Self {
         Self {
             orderbook,
@@ -52,12 +58,17 @@ impl RunLoop {
             block: 0,
             solve_deadline,
             liveness,
+            synchronization,
+            current_block,
         }
     }
 
     pub async fn run_forever(mut self) -> ! {
         let mut previous = None;
         loop {
+            if let RunLoopMode::SyncToBlockchain = self.synchronization {
+                let _ = ethrpc::block_stream::next_block(&self.current_block).await;
+            };
             let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
