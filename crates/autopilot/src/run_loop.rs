@@ -54,12 +54,23 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self, update_interval: Duration) -> ! {
+        if let RunLoopMode::Unsynchronized = self.synchronization {
+            SolvableOrdersCache::spawn_background_task(
+                &self.solvable_orders_cache,
+                self.eth.current_block().clone(),
+                update_interval,
+            );
+        }
+
         let mut last_auction = None;
         let mut last_block = None;
         loop {
             if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                let _ = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+                let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+                if let Err(err) = self.solvable_orders_cache.update(block.number).await {
+                    tracing::error!(?err, "failed to build a new auction");
+                }
             } else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
