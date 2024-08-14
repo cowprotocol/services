@@ -194,11 +194,7 @@ impl TraceCallDetector {
         // Allow for a small discrepancy (1 wei) in the balance after the transfer which
         // may come from rounding discrepancies in tokens that track balances
         // with "shares" (e.g. eUSD).
-        if balance_after_in
-            < computed_balance_after_in
-                .checked_sub(U256::one())
-                .unwrap_or_default()
-        {
+        if balance_after_in < computed_balance_after_in.saturating_sub(U256::one()) {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into settlement contract was expected to result in a \
                  balance of {computed_balance_after_in} but actually resulted in \
@@ -225,11 +221,7 @@ impl TraceCallDetector {
         // Allow for a small discrepancy (1 wei) in the balance after the transfer
         // which may come from rounding discrepancies in tokens that track
         // balances with "shares" (e.g. eUSD).
-        if computed_balance_recipient_after
-            < balance_recipient_after
-                .checked_sub(U256::one())
-                .unwrap_or_default()
-        {
+        if computed_balance_recipient_after < balance_recipient_after.saturating_sub(U256::one()) {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
                  result in a balance of {computed_balance_recipient_after} but actually resulted \
