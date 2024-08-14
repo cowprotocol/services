@@ -146,11 +146,12 @@ impl RunLoop {
             .store_order_events(considered_orders, OrderEventLabel::Considered);
 
         // Make sure the winning solution is fair.
-        while !Self::check_fairness(solutions.last(), &solutions, &auction) {
+        while !Self::is_solution_fair(solutions.last(), &solutions, &auction) {
+            let unfair_solution = solutions.pop().expect("must exist");
             warn!(
-                invalidated = ?solutions.last().expect("must exist").driver.name, "fairness check invalidated of solution"
+                invalidated = unfair_solution.driver.name,
+                "fairness check invalidated of solution"
             );
-            solutions.pop();
         }
 
         // TODO: Keep going with other solutions until some deadline.
@@ -400,34 +401,46 @@ impl RunLoop {
     }
 
     /// Returns true if winning solution is fair or winner is None
-    fn check_fairness(
+    fn is_solution_fair(
         winner: Option<&Participant>,
         remaining: &Vec<Participant>,
         auction: &domain::Auction,
     ) -> bool {
-        let winner = match winner {
-            Some(winner) => winner,
-            None => return true,
-        };
-        let fairness_threshold = match winner.driver.fairness_threshold {
-            Some(threshold) => threshold,
-            None => return true,
+        let Some(winner) = winner else { return true };
+        let Some(fairness_threshold) = winner.driver.fairness_threshold else {
+            return true;
         };
 
-        // Returns Some(buy token amount) if left is better than right.
+        // Returns the surplus difference in the buy token if `left`
+        // is better for the trader than `right`, or 0 otherwise.
+        // This takes differently partial fills into account.
         let improvement_in_buy = |left: &TradedAmounts, right: &TradedAmounts| {
-            right
-                .sell
-                .checked_mul(&left.buy)
-                .unwrap_or(U256::max_value().into())
-                .checked_sub(
-                    &left
-                        .sell
-                        .checked_mul(&right.buy)
-                        .unwrap_or(U256::max_value().into()),
-                )?
-                .checked_div(&right.sell)
-                .filter(|diff| !diff.is_zero())
+            // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
+            // trader either sells less or gets more. This can be reformulated as
+            // `right.sell * left.buy > left.sell * right.buy`.
+            let Some(right_sell_left_buy) = right.sell.checked_mul(&left.buy) else {
+                tracing::warn!(
+                    ?left,
+                    ?right,
+                    "cannot ensure fairness, overflow multiplying traded amounts"
+                );
+                return U256::zero().into();
+            };
+            let Some(left_sell_right_buy) = left.sell.checked_mul(&right.buy) else {
+                tracing::warn!(
+                    ?left,
+                    ?right,
+                    "cannot ensure fairness, overflow multiplying traded amounts"
+                );
+                return U256::zero().into();
+            };
+            let improvement = right_sell_left_buy
+                .checked_sub(&left_sell_right_buy)
+                .unwrap_or_default();
+
+            // The difference divided by the original sell amount is the improvement in buy
+            // token.
+            improvement.checked_div(&right.sell).unwrap_or_default()
         };
 
         // Find best execution per order
@@ -435,43 +448,47 @@ impl RunLoop {
         for other in remaining {
             for (uid, execution) in other.solution.orders() {
                 let best_execution = best_executions.entry(uid).or_insert(execution);
-                if improvement_in_buy(execution, best_execution).is_some() {
+                if !improvement_in_buy(execution, best_execution).is_zero() {
                     *best_execution = execution;
                 }
             }
         }
 
-        // Check if the winning solution contains an execution that is more than
-        // `fairness_threshold` worse than the best execution
+        // Check if the winning solution contains an order whose execution in the
+        // winning solution is more than `fairness_threshold` worse than the
+        // order's best execution across all solutions
         let unfair = winner
             .solution
             .orders()
             .iter()
             .any(|(uid, winning_execution)| {
-                let best_execution = match best_executions.get(uid) {
-                    Some(best_execution) => best_execution,
-                    None => return false,
+                let best_execution = best_executions.get(uid).expect("by construction above");
+                let improvement = improvement_in_buy(best_execution, winning_execution);
+                if improvement.is_zero() {
+                    return false;
                 };
-                improvement_in_buy(best_execution, winning_execution)
-                    .and_then(|improvement_in_buy| {
-                        warn!(
-                            ?uid,
-                            ?improvement_in_buy,
-                            ?best_execution,
-                            ?winning_execution,
-                            "fairness check"
-                        );
-                        // Improvement is denominated in buy token, use buy price to normalize the
-                        // difference into eth
-                        let order = auction.orders.iter().find(|order| order.uid == *uid)?;
-                        let buy_price = auction.prices.get(&order.buy.token)?;
-                        if buy_price.in_eth(improvement_in_buy) > fairness_threshold {
-                            Some(())
-                        } else {
-                            None
-                        }
-                    })
-                    .is_some()
+                tracing::debug!(
+                    ?uid,
+                    ?improvement,
+                    ?best_execution,
+                    ?winning_execution,
+                    "fairness check"
+                );
+                // Improvement is denominated in buy token, use buy price to normalize the
+                // difference into eth
+                let Some(order) = auction.orders.iter().find(|order| order.uid == *uid) else {
+                    // This can happen for jit orders
+                    tracing::debug!(?uid, "cannot ensure fairness, order not found in auction");
+                    return false;
+                };
+                let Some(buy_price) = auction.prices.get(&order.buy.token) else {
+                    tracing::warn!(
+                        ?order,
+                        "cannot ensure fairness, buy price not found in auction"
+                    );
+                    return false;
+                };
+                buy_price.in_eth(improvement) > fairness_threshold
             });
         !unfair
     }
