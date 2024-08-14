@@ -1,11 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{
-            self,
-            auction::{self, order},
-            eth,
-        },
+        domain::{self, auction::order, eth},
     },
     app_data::AppDataHash,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
@@ -17,14 +13,9 @@ pub(super) struct Tokenized {
     pub clearing_prices: Vec<eth::TokenAmount>,
     pub trades: Vec<Trade>,
     pub interactions: [Vec<Interaction>; 3],
-    pub auction_id: auction::Id,
 }
 
 impl Tokenized {
-    /// Number of bytes that may be appended to the calldata to store an auction
-    /// id.
-    const META_DATA_LEN: usize = 8;
-
     pub fn new(calldata: &eth::Calldata) -> Result<Self, error::Decoding> {
         let function = contracts::GPv2Settlement::raw_contract()
             .interface
@@ -35,25 +26,17 @@ impl Tokenized {
             .0
             .strip_prefix(&function.selector())
             .ok_or(error::Decoding::InvalidSelector)?;
-
-        let (calldata, metadata) = data.split_at(data.len() - Self::META_DATA_LEN);
-        let metadata: Option<[u8; Self::META_DATA_LEN]> = metadata.try_into().ok();
-        let auction_id = metadata
-            .map(auction::Id::from_be_bytes)
-            .ok_or(error::Decoding::MissingAuctionId)?;
-
         let tokenized = function
-            .decode_input(calldata)
-            .map_err(|err| error::Decoding::Ethabi(err, auction_id))?;
+            .decode_input(data)
+            .map_err(error::Decoding::Ethabi)?;
         let (tokens, clearing_prices, trades, interactions) =
             <Solution>::from_token(web3::ethabi::Token::Tuple(tokenized))
-                .map_err(|err| error::Decoding::Tokenizing(err, auction_id))?;
+                .map_err(error::Decoding::Tokenizing)?;
         Ok(Self {
             tokens,
             clearing_prices: clearing_prices.into_iter().map(Into::into).collect(),
             trades,
             interactions,
-            auction_id,
         })
     }
 }
@@ -168,8 +151,6 @@ impl From<U256> for TradeFlags {
 }
 
 pub mod error {
-    use crate::domain::auction;
-
     #[derive(Debug, thiserror::Error)]
     pub enum Uid {
         #[error("bad signature {0}")]
@@ -182,11 +163,9 @@ pub mod error {
     pub enum Decoding {
         #[error("transaction calldata is not a settlement")]
         InvalidSelector,
-        #[error("no auction id found in calldata")]
-        MissingAuctionId,
         #[error("unable to decode settlement calldata: {0}")]
-        Ethabi(web3::ethabi::Error, auction::Id),
+        Ethabi(web3::ethabi::Error),
         #[error("unable to tokenize calldata into expected format: {0}")]
-        Tokenizing(ethcontract::tokens::Error, auction::Id),
+        Tokenizing(ethcontract::tokens::Error),
     }
 }

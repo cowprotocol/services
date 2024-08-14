@@ -665,26 +665,41 @@ impl OrderValidating for OrderValidator {
                 }
             }
             OrderClass::Limit => {
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
-                        .await?;
-                // If the order is not "In-Market", check for the limit orders
-                if is_order_outside_market_price(
-                    &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
-                    },
-                    &Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee_amount,
-                    },
-                    data.kind,
-                ) {
-                    self.check_max_limit_orders(owner).await?;
+                match get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    None,
+                )
+                .await
+                {
+                    Ok(quote) => {
+                        // If the order is not "In-Market", check for the limit orders
+                        if is_order_outside_market_price(
+                            &Amounts {
+                                sell: data.sell_amount,
+                                buy: data.buy_amount,
+                                fee: data.fee_amount,
+                            },
+                            &Amounts {
+                                sell: quote.sell_amount,
+                                buy: quote.buy_amount,
+                                fee: quote.fee_amount,
+                            },
+                            data.kind,
+                        ) {
+                            self.check_max_limit_orders(owner).await?;
+                        }
+                        (class, Some(quote))
+                    }
+                    // If the quote cannot be computed, it's still possible to place this order (as
+                    // an implicit out of market order)
+                    Err(ValidationError::PriceForQuote(err)) => {
+                        tracing::debug!(?err, "placing order without quote");
+                        (class, None)
+                    }
+                    Err(other) => return Err(other),
                 }
-                (class, Some(quote))
             }
             OrderClass::Liquidity => {
                 let quote =

@@ -11,7 +11,7 @@ use {
     anyhow::{Context, Result},
     ethcontract::{Event, H160, U256},
     ethrpc::{
-        current_block::{BlockRetrieving, RangeInclusive},
+        block_stream::{BlockRetrieving, RangeInclusive},
         Web3,
     },
     itertools::{Either, Itertools},

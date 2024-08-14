@@ -19,7 +19,7 @@ use {
     contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory},
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
     ethrpc::{
-        current_block::{BlockNumberHash, BlockRetrieving},
+        block_stream::{BlockNumberHash, BlockRetrieving},
         Web3Transport,
     },
     futures::future,

@@ -1,13 +1,11 @@
 use {
     crate::{
+        arguments::RunLoopMode,
         database::competition::Competition,
         domain::{
             self,
             auction::order::Class,
-            competition::{
-                SolutionError,
-                {self},
-            },
+            competition::{self, SolutionError},
             OrderUid,
         },
         infra::{
@@ -20,6 +18,7 @@ use {
     ::observe::metrics,
     anyhow::Result,
     database::order_events::OrderEventLabel,
+    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -51,13 +50,31 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
+    pub synchronization: RunLoopMode,
 }
 
 impl RunLoop {
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self, update_interval: Duration) -> ! {
+        if let RunLoopMode::Unsynchronized = self.synchronization {
+            SolvableOrdersCache::spawn_background_task(
+                &self.solvable_orders_cache,
+                self.eth.current_block().clone(),
+                update_interval,
+            );
+        }
+
         let mut last_auction = None;
         let mut last_block = None;
         loop {
+            if let RunLoopMode::SyncToBlockchain = self.synchronization {
+                let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+                if let Err(err) = self.solvable_orders_cache.update(block.number).await {
+                    tracing::error!(?err, "failed to build a new auction");
+                }
+            } else {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
@@ -73,7 +90,6 @@ impl RunLoop {
                         .await;
                 }
             };
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -130,6 +146,14 @@ impl RunLoop {
         };
         let competition_simulation_block = self.eth.current_block().borrow().number;
 
+        let considered_orders = solutions
+            .iter()
+            .flat_map(|solution| solution.solution.order_ids().copied())
+            .unique()
+            .collect();
+        self.persistence
+            .store_order_events(considered_orders, OrderEventLabel::Considered);
+
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
@@ -145,10 +169,6 @@ impl RunLoop {
                     return;
                 }
             };
-
-            let order_uids = solution.order_ids().copied().collect();
-            self.persistence
-                .store_order_events(order_uids, OrderEventLabel::Considered);
 
             let winner = solution.solver().into();
             let winning_score = solution.score().get().0;

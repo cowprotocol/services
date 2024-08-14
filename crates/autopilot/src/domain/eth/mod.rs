@@ -65,6 +65,44 @@ impl From<SellTokenAmount> for TokenAmount {
     }
 }
 
+impl std::ops::Add for SellTokenAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for SellTokenAmount {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
+impl std::iter::Sum for SellTokenAmount {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(num::Zero::zero(), std::ops::Add::add)
+    }
+}
+
+impl std::ops::Sub<Self> for SellTokenAmount {
+    type Output = SellTokenAmount;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0.sub(rhs.0).into()
+    }
+}
+
+impl num::CheckedSub for SellTokenAmount {
+    fn checked_sub(&self, other: &Self) -> Option<Self> {
+        self.0.checked_sub(other.0).map(Into::into)
+    }
+}
+
 /// Gas amount in gas units.
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this
@@ -205,3 +243,20 @@ pub struct DomainSeparator(pub [u8; 32]);
 
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
+
+/// An on-chain transaction.
+#[derive(Debug)]
+pub struct Transaction {
+    /// The hash of the transaction.
+    pub hash: TxId,
+    /// The address of the sender of the transaction.
+    pub from: Address,
+    /// The call data of the transaction.
+    pub input: Calldata,
+    /// The block number of the block that contains the transaction.
+    pub block: BlockNo,
+    /// The gas used by the transaction.
+    pub gas: Gas,
+    /// The effective gas price of the transaction.
+    pub effective_gas_price: EffectiveGasPrice,
+}

@@ -5,7 +5,7 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     anyhow::Result,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     futures::future,
     model::TokenPair,
     shared::{
@@ -52,7 +52,7 @@ fn http_client() -> reqwest::Client {
 }
 
 pub struct Fetcher {
-    blocks: CurrentBlockStream,
+    blocks: CurrentBlockWatcher,
     inner: LiquidityCollector,
     swapr_routers: HashSet<eth::ContractAddress>,
 }

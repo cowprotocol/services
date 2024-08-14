@@ -8,7 +8,7 @@ use {
         Event as EthcontractEvent,
         EventMetadata,
     },
-    ethrpc::current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
     std::sync::Arc,
     tokio::sync::Mutex,
@@ -583,8 +583,8 @@ mod tests {
         contracts::{gpv2_settlement, GPv2Settlement},
         ethcontract::{BlockNumber, H256},
         ethrpc::{
+            block_stream::block_number_to_block_number_hash,
             create_env_test_transport,
-            current_block::block_number_to_block_number_hash,
             Web3,
         },
         std::str::FromStr,
