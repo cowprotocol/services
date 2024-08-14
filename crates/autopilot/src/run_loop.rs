@@ -432,14 +432,18 @@ impl RunLoop {
                 .unwrap_or_default()
         };
 
-        // Find best execution per order
+        // Record best execution per order
         let mut best_executions = HashMap::new();
         for other in remaining {
             for (uid, execution) in other.solution.orders() {
-                let best_execution = best_executions.entry(uid).or_insert(execution);
-                if !improvement_in_buy(execution, best_execution).is_zero() {
-                    *best_execution = execution;
-                }
+                best_executions
+                    .entry(uid)
+                    .and_modify(|best_execution| {
+                        if !improvement_in_buy(execution, best_execution).is_zero() {
+                            *best_execution = *execution;
+                        }
+                    })
+                    .or_insert(*execution);
             }
         }
 
