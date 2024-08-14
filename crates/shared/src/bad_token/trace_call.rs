@@ -195,7 +195,7 @@ impl TraceCallDetector {
         // may come from rounding discrepancies in tokens that track balances
         // with "shares" (e.g. eUSD).
         if balance_after_in
-            <= computed_balance_after_in
+            < computed_balance_after_in
                 .checked_sub(U256::one())
                 .unwrap_or_default()
         {
@@ -226,7 +226,7 @@ impl TraceCallDetector {
         // which may come from rounding discrepancies in tokens that track
         // balances with "shares" (e.g. eUSD).
         if computed_balance_recipient_after
-            <= balance_recipient_after
+            < balance_recipient_after
                 .checked_sub(U256::one())
                 .unwrap_or_default()
         {
