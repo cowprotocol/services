@@ -53,17 +53,28 @@ impl Interaction {
                     liquidity::Kind::Swapr(pool) => pool.base.router.into(),
                     liquidity::Kind::ZeroEx(pool) => pool.zeroex.address().into(),
                 };
-                // As a gas optimization, we always approve the max amount possible. This
-                // minimizes the number of approvals necessary, and therefore
-                // minimizes the approval fees over time. This is a
-                // potential security issue, but we assume that the router contract for protocol
-                // indexed liquidity to be safe.
-                vec![eth::Allowance {
-                    token: interaction.input.token,
-                    spender: address,
-                    amount: eth::U256::max_value(),
-                }
-                .into()]
+                vec![
+                    // First unset any existing allowance in case the token (e.g. USDT)
+                    // enforces that behavior to prevent this attack:
+                    // <https://docs.google.com/document/d/1YLPtQxZu1UAvO9cZ1O2RPXBbT0mooh4DYKjA_jp-RLM/edit#heading=h.m9fhqynw2xvt>
+                    eth::Allowance {
+                        token: interaction.input.token,
+                        spender: address,
+                        amount: 0.into(),
+                    }
+                    .into(),
+                    // As a gas optimization, we always approve the max amount possible. This
+                    // minimizes the number of approvals necessary, and therefore
+                    // minimizes the approval fees over time. This is a
+                    // potential security issue, but we assume that the router contract for
+                    // protocol indexed liquidity to be safe.
+                    eth::Allowance {
+                        token: interaction.input.token,
+                        spender: address,
+                        amount: eth::U256::max_value(),
+                    }
+                    .into(),
+                ]
             }
         }
     }
