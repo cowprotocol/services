@@ -157,21 +157,22 @@ impl RunLoop {
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
-            let timer = Metrics::get().solutions_processing_time.start_timer();
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
+            let start = Instant::now();
             let revealed = match self.reveal(driver, auction_id, solution.id()).await {
                 Ok(result) => {
-                    Metrics::reveal_ok(driver);
+                    Metrics::reveal_ok(driver, start.elapsed());
                     result
                 }
                 Err(err) => {
-                    Metrics::reveal_err(driver, &err);
+                    Metrics::reveal_err(driver, start.elapsed(), &err);
                     tracing::warn!(driver = %driver.name, ?err, "failed to reveal winning solution");
                     return;
                 }
             };
 
+            let start = Instant::now();
             let winner = solution.solver().into();
             let winning_score = solution.score().get().0;
             let reference_score = solutions
@@ -291,6 +292,8 @@ impl RunLoop {
                 competition_table,
             };
 
+            Metrics::post_processed(start.elapsed());
+            let start = Instant::now();
             tracing::trace!(?competition, "saving competition");
             if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
@@ -318,7 +321,7 @@ impl RunLoop {
                 Metrics::fee_policies_store_error();
                 tracing::warn!(?err, "failed to save fee policies");
             }
-            timer.observe_duration();
+            Metrics::competition_stored(start.elapsed());
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
@@ -328,7 +331,7 @@ impl RunLoop {
             {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
-                    Metrics::settle_err(driver, &err, submission_start.elapsed());
+                    Metrics::settle_err(driver, submission_start.elapsed(), &err);
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
@@ -366,7 +369,6 @@ impl RunLoop {
         self.persistence
             .store_order_events(order_uids, OrderEventLabel::Ready);
 
-        let _timer = Metrics::get().solvers_response_time.start_timer();
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
             let result = self.solve(driver, request).await;
@@ -651,11 +653,11 @@ struct Metrics {
 
     /// Tracks the result of driver `/reveal` requests.
     #[metric(labels("driver", "result"))]
-    reveal: prometheus::IntCounterVec,
+    reveal: prometheus::HistogramVec,
 
     /// Tracks the times and results of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
-    settle_time: prometheus::IntCounterVec,
+    settle: prometheus::HistogramVec,
 
     /// Tracks the number of orders that were part of some but not the winning
     /// solution together with the winning driver that did't include it.
@@ -666,14 +668,15 @@ struct Metrics {
     #[metric(labels("error_type"))]
     db_metric_error: prometheus::IntCounterVec,
 
-    /// Tracks the time taken for all the solvers to respond.
-    solvers_response_time: prometheus::Histogram,
-
-    /// Tracks the time taken for ranking solutions.
-    solutions_processing_time: prometheus::Histogram,
+    /// Tracks the time spent in post-processing after the auction has been
+    /// solved and before sending a `settle` request.
+    auction_postprocessing_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
     single_run_time: prometheus::Histogram,
+
+    /// Time spent storing the competition in the database.
+    competition_storing_time: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -723,14 +726,14 @@ impl Metrics {
             .inc();
     }
 
-    fn reveal_ok(driver: &infra::Driver) {
+    fn reveal_ok(driver: &infra::Driver, elapsed: Duration) {
         Self::get()
             .reveal
             .with_label_values(&[&driver.name, "success"])
-            .inc();
+            .observe(elapsed.as_secs_f64());
     }
 
-    fn reveal_err(driver: &infra::Driver, err: &RevealError) {
+    fn reveal_err(driver: &infra::Driver, elapsed: Duration, err: &RevealError) {
         let label = match err {
             RevealError::AuctionMismatch => "mismatch",
             RevealError::Failure(_) => "error",
@@ -738,24 +741,24 @@ impl Metrics {
         Self::get()
             .reveal
             .with_label_values(&[&driver.name, label])
-            .inc();
+            .observe(elapsed.as_secs_f64());
     }
 
-    fn settle_ok(driver: &infra::Driver, time: Duration) {
+    fn settle_ok(driver: &infra::Driver, elapsed: Duration) {
         Self::get()
-            .settle_time
+            .settle
             .with_label_values(&[&driver.name, "success"])
-            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
+            .observe(elapsed.as_secs_f64());
     }
 
-    fn settle_err(driver: &infra::Driver, err: &SettleError, time: Duration) {
+    fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
         let label = match err {
             SettleError::Failure(_) => "error",
         };
         Self::get()
-            .settle_time
+            .settle
             .with_label_values(&[&driver.name, label])
-            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
+            .observe(elapsed.as_secs_f64());
     }
 
     fn matched_unsettled(winning: &infra::Driver, unsettled: HashSet<&domain::OrderUid>) {
@@ -773,6 +776,18 @@ impl Metrics {
             .db_metric_error
             .with_label_values(&["fee_policies_store"])
             .inc();
+    }
+
+    fn post_processed(elapsed: Duration) {
+        Self::get()
+            .auction_postprocessing_time
+            .observe(elapsed.as_secs_f64());
+    }
+
+    fn competition_stored(elapsed: Duration) {
+        Self::get()
+            .competition_storing_time
+            .observe(elapsed.as_secs_f64());
     }
 }
 

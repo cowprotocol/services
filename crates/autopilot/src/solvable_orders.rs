@@ -154,7 +154,7 @@ impl SolvableOrdersCache {
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
-        let _timer = self.metrics.auction_update_time.start_timer();
+        let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
@@ -308,6 +308,9 @@ impl SolvableOrdersCache {
         };
 
         tracing::debug!(%block, "updated current auction cache");
+        self.metrics
+            .auction_update_time
+            .observe(start.elapsed().as_secs_f64());
         Ok(())
     }
 
