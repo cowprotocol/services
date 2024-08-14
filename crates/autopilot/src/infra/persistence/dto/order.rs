@@ -39,7 +39,7 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
-    pub quote: Option<OrderQuote>,
+    pub quote: Option<Quote>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -293,22 +293,10 @@ pub struct Quote {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderQuote {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee: U256,
     pub solver: H160,
 }
 
-impl OrderQuote {
+impl Quote {
     pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
         domain::Quote {
             order_uid,
@@ -320,9 +308,9 @@ impl OrderQuote {
     }
 }
 
-impl From<domain::Quote> for OrderQuote {
+impl From<domain::Quote> for Quote {
     fn from(quote: domain::Quote) -> Self {
-        OrderQuote {
+        Quote {
             sell_amount: quote.sell_amount.0,
             buy_amount: quote.buy_amount.0,
             fee: quote.fee.0,
@@ -352,6 +340,7 @@ impl From<domain::fee::Policy> for FeePolicy {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
+                    solver: quote.solver,
                 },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume {
@@ -382,6 +371,7 @@ impl From<FeePolicy> for domain::fee::Policy {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
+                    solver: quote.solver,
                 },
             },
             FeePolicy::Volume { factor } => Self::Volume {
