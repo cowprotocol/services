@@ -123,6 +123,7 @@ impl ProtocolFees {
             sell_amount: order.data.sell_amount.into(),
             buy_amount: U256::zero().into(),
             fee: order.data.fee_amount.into(),
+            solver: H160::zero().into(),
         });
 
         let quote_ = boundary::Amounts {
@@ -132,22 +133,22 @@ impl ProtocolFees {
         };
 
         if self.enable_protocol_fees {
-            self.apply_multiple_policies(order, &quote, order_, quote_, partner_fee)
+            self.apply_multiple_policies(order, quote, order_, quote_, partner_fee)
         } else {
-            self.apply_single_policy(order, &quote, order_, quote_, partner_fee)
+            self.apply_single_policy(order, quote, order_, quote_, partner_fee)
         }
     }
 
     fn apply_single_policy(
         &self,
         order: boundary::Order,
-        quote: &domain::Quote,
+        quote: domain::Quote,
         order_: boundary::Amounts,
         quote_: boundary::Amounts,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
         if let Some(partner_fee) = partner_fees.first() {
-            return boundary::order::to_domain(order, vec![*partner_fee], quote);
+            return boundary::order::to_domain(order, vec![*partner_fee], Some(quote));
         }
         let protocol_fees = self
             .fee_policies
@@ -155,16 +156,16 @@ impl ProtocolFees {
             .find_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
-            .and_then(|policy| Self::variant_fee_apply(&order, quote, policy))
+            .and_then(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .into_iter()
             .collect_vec();
-        boundary::order::to_domain(order, protocol_fees, quote)
+        boundary::order::to_domain(order, protocol_fees, Some(quote))
     }
 
     fn apply_multiple_policies(
         &self,
         order: boundary::Order,
-        quote: &domain::Quote,
+        quote: domain::Quote,
         order_: boundary::Amounts,
         quote_: boundary::Amounts,
         partner_fees: Vec<Policy>,
@@ -175,10 +176,10 @@ impl ProtocolFees {
             .filter_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
-            .flat_map(|policy| Self::variant_fee_apply(&order, quote, policy))
+            .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
-        boundary::order::to_domain(order, protocol_fees, quote)
+        boundary::order::to_domain(order, protocol_fees, Some(quote))
     }
 
     fn variant_fee_apply(
