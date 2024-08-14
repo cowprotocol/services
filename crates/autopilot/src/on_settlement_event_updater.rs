@@ -18,14 +18,9 @@
 // used etc.
 
 use {
-    crate::{
-        database::Postgres,
-        domain::{eth, settlement},
-        infra,
-    },
+    crate::{domain::settlement, infra},
     anyhow::{anyhow, Context, Result},
     database::PgTransaction,
-    primitive_types::H256,
     std::sync::Arc,
     tokio::sync::Notify,
 };
@@ -37,18 +32,16 @@ pub struct OnSettlementEventUpdater {
 struct Inner {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
-    db: Postgres,
     notify: Notify,
 }
 
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
-    pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
+    pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
         let inner = Arc::new(Inner {
             eth,
             persistence,
-            db,
             notify: Notify::new(),
         });
         let inner_clone = inner.clone();
@@ -98,68 +91,61 @@ impl Inner {
     ///
     /// Returns whether an update was performed.
     async fn update(&self) -> Result<bool> {
-        let mut ex = self
-            .db
-            .pool
-            .begin()
-            .await
-            .context("acquire DB connection")?;
-        let (hash, event) = match database::settlements::get_settlement_without_auction(&mut ex)
-            .await
-            .context("get_settlement_without_auction")?
-        {
-            Some(event) => (
-                eth::TxId(H256(event.tx_hash.0)),
-                eth::Event {
-                    block: (event.block_number as u64).into(),
-                    log_index: event.log_index as u64,
-                },
-            ),
+        // Find a settlement event that has not been processed yet.
+        let event = match self.persistence.get_settlement_without_auction().await? {
+            Some(event) => event,
             None => return Ok(false),
         };
 
-        tracing::debug!("updating settlement details for tx {hash:?}");
+        tracing::debug!("updating settlement details for tx {:?}", event.transaction);
 
-        let transaction = match self.eth.transaction(hash).await {
+        // Reconstruct the settlement transaction based on the blockchain transaction
+        // hash
+        let transaction = match self.eth.transaction(event.transaction).await {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
                 settlement::Transaction::new(&transaction, separator)
             }
             Err(err) => {
-                tracing::warn!(?hash, ?err, "no tx found");
+                tracing::warn!(hash = ?event.transaction, ?err, "no tx found");
                 return Ok(false);
             }
         };
 
+        // Build the <auction_id, settlement> association
         let (auction_id, settlement) = match transaction {
             Ok(transaction) => {
                 let auction_id = transaction.auction_id;
-                let settlement =
-                    match settlement::Settlement::new(transaction, &self.persistence).await {
-                        Ok(settlement) => Some(settlement),
-                        Err(err) if retryable(&err) => return Err(err.into()),
-                        Err(err) => {
-                            tracing::warn!(?hash, ?auction_id, ?err, "invalid settlement");
-                            None
-                        }
-                    };
+                let settlement = match settlement::Settlement::new(transaction, &self.persistence)
+                    .await
+                {
+                    Ok(settlement) => Some(settlement),
+                    Err(err) if retryable(&err) => return Err(err.into()),
+                    Err(err) => {
+                        tracing::warn!(hash = ?event.transaction, ?auction_id, ?err, "invalid settlement");
+                        None
+                    }
+                };
                 (auction_id, settlement)
             }
             Err(err) => {
-                tracing::warn!(?hash, ?err, "invalid settlement transaction");
+                tracing::warn!(hash = ?event.transaction, ?err, "invalid settlement transaction");
                 // default values so we don't get stuck on invalid settlement transactions
                 (0.into(), None)
             }
         };
 
-        tracing::debug!(?hash, ?auction_id, "updating settlement details for tx");
+        tracing::debug!(hash = ?event.transaction, ?auction_id, "saving settlement details for tx");
 
         if let Err(err) = self
             .persistence
             .save_settlement(event, auction_id, settlement.as_ref())
             .await
         {
-            return Err(anyhow!("save settlement: {hash:?}, {auction_id}, {err}"));
+            return Err(anyhow!(
+                "save settlement: {:?}, {auction_id}, {err}",
+                event.transaction
+            ));
         }
 
         Ok(true)

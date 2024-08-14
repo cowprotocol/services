@@ -93,6 +93,14 @@ impl Settlement {
     }
 }
 
+/// Event emmited by settlement contract whenever a settlement transaction is
+/// executed.
+#[derive(Debug, Clone, Copy)]
+pub struct Event {
+    pub inner: eth::Event,
+    pub transaction: eth::TxId,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed communication with the database: {0}")]

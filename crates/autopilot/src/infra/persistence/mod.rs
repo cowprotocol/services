@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, competition, eth},
+        domain::{self, competition, eth, settlement},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -376,9 +376,33 @@ impl Persistence {
         Ok(solution)
     }
 
+    /// Returns the oldest settlement event for which the accociated auction is
+    /// not yet populated in the database.
+    pub async fn get_settlement_without_auction(
+        &self,
+    ) -> Result<Option<domain::settlement::Event>, DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_settlement_without_auction"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.begin().await.map_err(DatabaseError)?;
+        let event = database::settlements::get_settlement_without_auction(&mut ex)
+            .await
+            .map_err(DatabaseError)?
+            .map(|event| settlement::Event {
+                inner: eth::Event {
+                    block: (event.block_number as u64).into(),
+                    log_index: event.log_index as u64,
+                },
+                transaction: eth::TxId(H256(event.tx_hash.0)),
+            });
+        Ok(event)
+    }
+
     pub async fn save_settlement(
         &self,
-        event: domain::eth::Event,
+        event: domain::settlement::Event,
         auction: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), error::Settlement> {
@@ -394,8 +418,8 @@ impl Persistence {
             .await
             .map_err(error::Settlement::BadCommunication)?;
 
-        let block_number = event.block.0.try_into().unwrap(); // todo fix
-        let log_index = event.log_index.try_into().unwrap();
+        let block_number = event.inner.block.0.try_into().unwrap(); // todo fix
+        let log_index = event.inner.log_index.try_into().unwrap();
 
         database::settlements::update_settlement_auction(&mut ex, block_number, log_index, auction)
             .await
@@ -410,6 +434,7 @@ impl Persistence {
 
             tracing::debug!(
                 ?auction,
+                hash = ?event.transaction,
                 "settlement update: gas: {}, gas_price: {}, surplus: {}, fee: {}, order_fees: {:?}",
                 gas,
                 gas_price,

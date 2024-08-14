@@ -245,6 +245,7 @@ pub struct DomainSeparator(pub [u8; 32]);
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
 
 /// An event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
 pub struct Event {
     pub block: BlockNo,
     pub log_index: u64,

@@ -352,7 +352,6 @@ pub async fn run(args: Arguments) {
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
             eth.clone(),
-            db.clone(),
             persistence.clone(),
         );
     let event_updater = Arc::new(EventUpdater::new(
