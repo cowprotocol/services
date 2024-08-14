@@ -194,12 +194,12 @@ impl Persistence {
             .pool
             .begin()
             .await
-            .map_err(error::Auction::BadCommunication)?;
+            .map_err(error::Auction::DatabaseError)?;
 
         let surplus_capturing_jit_order_owners =
             database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
                 .await
-                .map_err(error::Auction::BadCommunication)?
+                .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?
                 .into_iter()
                 .map(|owner| eth::H160(owner.0).into())
@@ -207,7 +207,7 @@ impl Persistence {
 
         let prices = database::auction_prices::fetch(&mut ex, auction_id)
             .await
-            .map_err(error::Auction::BadCommunication)?
+            .map_err(error::Auction::DatabaseError)?
             .into_iter()
             .map(|price| {
                 let token = eth::H160(price.token.0).into();
@@ -223,7 +223,7 @@ impl Persistence {
             // get all orders from a competition auction
             let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
                 .await
-                .map_err(error::Auction::BadCommunication)?
+                .map_err(error::Auction::DatabaseError)?
                 .ok_or(error::Auction::NotFound)?
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
@@ -239,7 +239,7 @@ impl Persistence {
                     .as_slice(),
             )
             .await
-            .map_err(error::Auction::BadCommunication)?
+            .map_err(error::Auction::DatabaseError)?
             .into_iter()
             .map(|((_, order), policies)| (domain::OrderUid(order.0), policies))
             .collect::<HashMap<_, _>>();
@@ -259,7 +259,7 @@ impl Persistence {
                         .then_some(order_uid)
                 }))
                 .await
-                .map_err(error::Auction::BadCommunication)?;
+                .map_err(error::Auction::DatabaseError)?;
 
             // compile order data
             let mut orders = HashMap::new();
@@ -309,11 +309,11 @@ impl Persistence {
             .pool
             .begin()
             .await
-            .map_err(error::Solution::BadCommunication)?;
+            .map_err(error::Solution::DatabaseError)?;
 
         let competition = database::settlement_scores::fetch(&mut ex, auction_id)
             .await
-            .map_err(error::Solution::BadCommunication)?
+            .map_err(error::Solution::DatabaseError)?
             .ok_or(error::Solution::NotFound)?;
 
         let winner = H160(competition.winner.0).into();
@@ -330,7 +330,7 @@ impl Persistence {
             // TODO: stabilize the solver competition table to get promised solution.
             let solver_competition = database::solver_competition::load_by_id(&mut ex, auction_id)
                 .await
-                .map_err(error::Solution::BadCommunication)?
+                .map_err(error::Solution::DatabaseError)?
                 .ok_or(error::Solution::NotFound)?;
             let competition: model::solver_competition::SolverCompetitionDB =
                 serde_json::from_value(solver_competition.json)
@@ -380,7 +380,7 @@ impl Persistence {
     /// not yet populated in the database.
     pub async fn get_settlement_without_auction(
         &self,
-    ) -> Result<Option<domain::settlement::Event>, DatabaseError> {
+    ) -> Result<Option<domain::settlement::Event>, error::SettlementEvent> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
@@ -390,20 +390,27 @@ impl Persistence {
         let event = database::settlements::get_settlement_without_auction(&mut ex)
             .await
             .map_err(DatabaseError)?
-            .map(|event| settlement::Event {
-                inner: eth::Event {
-                    block: (event.block_number as u64).into(),
-                    log_index: event.log_index as u64,
-                },
-                transaction: eth::TxId(H256(event.tx_hash.0)),
-            });
+            .map(|event| {
+                let event = settlement::Event {
+                    inner: eth::Event {
+                        block: u64::try_from(event.block_number)
+                            .map_err(|_| error::SettlementEvent::InvalidEvent)?
+                            .into(),
+                        log_index: u64::try_from(event.log_index)
+                            .map_err(|_| error::SettlementEvent::InvalidEvent)?,
+                    },
+                    transaction: eth::TxId(H256(event.tx_hash.0)),
+                };
+                Ok::<_, error::SettlementEvent>(event)
+            })
+            .transpose()?;
         Ok(event)
     }
 
     pub async fn save_settlement(
         &self,
         event: domain::settlement::Event,
-        auction: domain::auction::Id,
+        auction_id: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), error::Settlement> {
         let _timer = Metrics::get()
@@ -411,19 +418,21 @@ impl Persistence {
             .with_label_values(&["save_settlement"])
             .start_timer();
 
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .map_err(error::Settlement::BadCommunication)?;
+        let mut ex = self.postgres.pool.begin().await.map_err(DatabaseError)?;
 
-        let block_number = event.inner.block.0.try_into().unwrap(); // todo fix
-        let log_index = event.inner.log_index.try_into().unwrap();
+        let block_number =
+            i64::try_from(event.inner.block.0).map_err(|_| error::Settlement::InvalidEvent)?;
+        let log_index =
+            i64::try_from(event.inner.log_index).map_err(|_| error::Settlement::InvalidEvent)?;
 
-        database::settlements::update_settlement_auction(&mut ex, block_number, log_index, auction)
-            .await
-            .map_err(error::Settlement::BadCommunication)?;
+        database::settlements::update_settlement_auction(
+            &mut ex,
+            block_number,
+            log_index,
+            auction_id,
+        )
+        .await
+        .map_err(DatabaseError)?;
 
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
@@ -433,7 +442,7 @@ impl Persistence {
             let order_fees = settlement.order_fees();
 
             tracing::debug!(
-                ?auction,
+                ?auction_id,
                 hash = ?event.transaction,
                 "settlement update: gas: {}, gas_price: {}, surplus: {}, fee: {}, order_fees: {:?}",
                 gas,
@@ -455,7 +464,7 @@ impl Persistence {
                 },
             )
             .await
-            .map_err(error::Settlement::BadCommunication)?;
+            .map_err(DatabaseError)?;
 
             store_order_events(
                 &mut ex,
@@ -469,20 +478,18 @@ impl Persistence {
                 database::order_execution::save(
                     &mut ex,
                     &ByteArray(order.0),
-                    auction,
+                    auction_id,
                     block_number,
                     &u256_to_big_decimal(
                         &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
                     ),
                 )
                 .await
-                .map_err(error::Settlement::BadCommunication)?;
+                .map_err(DatabaseError)?;
             }
         }
 
-        ex.commit()
-            .await
-            .map_err(error::Settlement::BadCommunication)
+        Ok(ex.commit().await.map_err(DatabaseError)?)
     }
 }
 
@@ -515,7 +522,7 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Auction {
         #[error("failed communication with the database: {0}")]
-        BadCommunication(#[from] sqlx::Error),
+        DatabaseError(#[from] sqlx::Error),
         #[error("auction not found")]
         NotFound,
         #[error("invalid fee policy fetched from database: {0} for order: {1}")]
@@ -527,7 +534,7 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Solution {
         #[error("failed communication with the database: {0}")]
-        BadCommunication(#[from] sqlx::Error),
+        DatabaseError(#[from] sqlx::Error),
         #[error("solution not found")]
         NotFound,
         #[error("invalid score fetched from database: {0}")]
@@ -541,6 +548,28 @@ pub mod error {
     #[derive(Debug, thiserror::Error)]
     pub enum Settlement {
         #[error("failed communication with the database: {0}")]
-        BadCommunication(#[from] sqlx::Error),
+        DatabaseError(sqlx::Error),
+        #[error("invalid settlement event")]
+        InvalidEvent,
+    }
+
+    impl From<DatabaseError> for Settlement {
+        fn from(err: DatabaseError) -> Self {
+            Self::DatabaseError(err.0)
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum SettlementEvent {
+        #[error("failed communication with the database: {0}")]
+        DatabaseError(sqlx::Error),
+        #[error("failed to convert event into domain")]
+        InvalidEvent,
+    }
+
+    impl From<DatabaseError> for SettlementEvent {
+        fn from(err: DatabaseError) -> Self {
+            Self::DatabaseError(err.0)
+        }
     }
 }

@@ -147,7 +147,7 @@ pub enum InconsistentData {
 impl From<infra::persistence::error::Auction> for Error {
     fn from(err: infra::persistence::error::Auction) -> Self {
         match err {
-            infra::persistence::error::Auction::BadCommunication(err) => Self::Infra(err),
+            infra::persistence::error::Auction::DatabaseError(err) => Self::Infra(err),
             infra::persistence::error::Auction::NotFound => {
                 Self::InconsistentData(InconsistentData::AuctionNotFound)
             }
@@ -164,7 +164,7 @@ impl From<infra::persistence::error::Auction> for Error {
 impl From<infra::persistence::error::Solution> for Error {
     fn from(err: infra::persistence::error::Solution) -> Self {
         match err {
-            infra::persistence::error::Solution::BadCommunication(err) => Self::Infra(err),
+            infra::persistence::error::Solution::DatabaseError(err) => Self::Infra(err),
             infra::persistence::error::Solution::NotFound => {
                 Self::InconsistentData(InconsistentData::SolutionNotFound)
             }
