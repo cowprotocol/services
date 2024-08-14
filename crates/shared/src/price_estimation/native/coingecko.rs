@@ -175,14 +175,11 @@ impl CoinGecko {
 }
 
 impl NativePriceBatchFetching for CoinGecko {
-    fn fetch_native_prices<'a, 'b>(
-        &'a self,
-        requested_tokens: &'b HashSet<H160>,
-    ) -> BoxFuture<'a, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>>
-    where
-        'b: 'a,
-    {
-        async {
+    fn fetch_native_prices(
+        &'_ self,
+        requested_tokens: HashSet<H160>,
+    ) -> BoxFuture<'_, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>> {
+        async move {
             let mut tokens = requested_tokens.iter().collect::<Vec<_>>();
             match self.quote_token {
                 QuoteToken::Eth => {
@@ -228,7 +225,7 @@ impl NativePriceBatchFetching for CoinGecko {
 impl NativePriceEstimating for CoinGecko {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
+            let prices = self.fetch_native_prices(HashSet::from([token])).await?;
             prices
                 .get(&token)
                 .ok_or(PriceEstimationError::NoLiquidity)?
@@ -352,7 +349,7 @@ mod tests {
         .unwrap();
 
         let estimated_price = instance
-            .fetch_native_prices(&HashSet::from([usdt_token, usdc_token]))
+            .fetch_native_prices(HashSet::from([usdt_token, usdc_token]))
             .await
             .unwrap();
         let usdt_price = estimated_price.get(&usdt_token).unwrap().clone();

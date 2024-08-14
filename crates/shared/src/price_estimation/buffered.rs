@@ -50,15 +50,13 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     ///
     /// It returns a HashMap which maps the token with its native price
     /// estimator result
-    fn fetch_native_prices<'a, 'b>(
-        &'a self,
-        tokens: &'b HashSet<H160>,
+    fn fetch_native_prices(
+        &self,
+        tokens: HashSet<H160>,
     ) -> futures::future::BoxFuture<
-        'a,
+        '_,
         Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
-    >
-    where
-        'b: 'a;
+    >;
 
     /// Returns the number of prices that can be fetched in a single batch.
     fn max_batch_size(&self) -> usize;
@@ -172,8 +170,8 @@ where
                     if batch.is_empty() {
                         return;
                     }
-                    let batch = batch.into_iter().collect::<HashSet<_>>();
-                    let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
+                    let batch_map = batch.iter().cloned().collect::<HashSet<_>>();
+                    let results: Vec<_> = match inner.fetch_native_prices(batch_map).await {
                         Ok(results) => results
                             .into_iter()
                             .map(|(token, price)| NativePriceResult {
@@ -261,7 +259,7 @@ mod tests {
             token: H160,
         ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
             async move {
-                let prices = self.fetch_native_prices(&HashSet::from([token])).await?;
+                let prices = self.fetch_native_prices(HashSet::from([token])).await?;
                 prices
                     .get(&token)
                     .cloned()
