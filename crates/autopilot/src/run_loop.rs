@@ -27,7 +27,6 @@ use {
         SolverCompetitionDB,
         SolverSettlement,
     },
-    num::{CheckedDiv, CheckedMul, CheckedSub, Zero},
     primitive_types::H256,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -478,7 +477,7 @@ impl RunLoop {
                     );
                     return false;
                 };
-                buy_price.in_eth(improvement) > fairness_threshold
+                buy_price.in_eth(improvement.into()) > fairness_threshold
             });
         !unfair
     }
