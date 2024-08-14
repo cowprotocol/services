@@ -132,6 +132,7 @@ impl RunLoop {
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction.clone()).await;
+        Metrics::pre_processed(single_run_start.elapsed());
 
         let solutions = {
             let mut solutions = self.competition(auction_id, &auction).await;
@@ -673,6 +674,10 @@ struct Metrics {
     /// solved and before sending a `settle` request.
     auction_postprocessing_time: prometheus::Histogram,
 
+    /// Tracks the time spent in pre-processing before sending a `solve`
+    /// request.
+    auction_preprocessing_time: prometheus::Histogram,
+
     /// Total time spent in a single run of the run loop.
     single_run_time: prometheus::Histogram,
 
@@ -782,6 +787,12 @@ impl Metrics {
     fn post_processed(elapsed: Duration) {
         Self::get()
             .auction_postprocessing_time
+            .observe(elapsed.as_secs_f64());
+    }
+
+    fn pre_processed(elapsed: Duration) {
+        Self::get()
+            .auction_preprocessing_time
             .observe(elapsed.as_secs_f64());
     }
 
