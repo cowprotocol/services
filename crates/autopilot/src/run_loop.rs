@@ -128,7 +128,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
-        let _timer = Metrics::get().single_run_time.start_timer();
+        let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction.clone()).await;
@@ -348,6 +348,7 @@ impl RunLoop {
                 .filter(|uid| auction_uids.contains(uid))
                 .collect();
             Metrics::matched_unsettled(driver, unsettled_orders);
+            Metrics::single_run_completed(single_run_start.elapsed());
         }
     }
 
@@ -788,6 +789,10 @@ impl Metrics {
         Self::get()
             .competition_storing_time
             .observe(elapsed.as_secs_f64());
+    }
+
+    fn single_run_completed(elapsed: Duration) {
+        Self::get().single_run_time.observe(elapsed.as_secs_f64());
     }
 }
 
