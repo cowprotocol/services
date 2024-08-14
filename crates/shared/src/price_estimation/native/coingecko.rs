@@ -16,7 +16,7 @@ struct Response(HashMap<H160, Price>);
 
 #[derive(Debug, Deserialize)]
 struct Price {
-    eth: f64,
+    eth: Option<f64>,
 }
 
 type Token = H160;
@@ -117,7 +117,7 @@ impl CoinGecko {
             .with_context(|| format!("failed to parse response: {response:?}"))?
             .0
             .into_iter()
-            .map(|(token, price)| (token, price.eth))
+            .filter_map(|(token, price)| Some((token, price.eth?)))
             .collect();
 
         Ok(parsed_response)
