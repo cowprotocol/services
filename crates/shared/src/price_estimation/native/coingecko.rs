@@ -1,8 +1,7 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::{buffered::NativePriceBatchFetcher, PriceEstimationError},
+    crate::price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
     anyhow::{anyhow, Context, Result},
-    async_trait::async_trait,
     futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
@@ -171,36 +170,41 @@ impl CoinGecko {
     }
 }
 
-#[async_trait]
-impl NativePriceBatchFetcher for CoinGecko {
-    async fn fetch_native_prices(
-        &self,
-        requested_tokens: &HashSet<H160>,
-    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
-        let mut tokens = requested_tokens.iter().collect::<Vec<_>>();
-        match self.quote_token {
-            QuoteToken::Eth => {
-                let prices = self.bulk_fetch_denominated_in_eth(&tokens).await?;
-                Ok(tokens
-                    .into_iter()
-                    .map(|token| {
-                        let result = prices
-                            .get(token)
-                            .cloned()
-                            .ok_or(PriceEstimationError::NoLiquidity);
-                        (*token, result)
-                    })
-                    .collect())
-            }
-            QuoteToken::Other(native_price_token) => {
-                if !requested_tokens.contains(&native_price_token) {
-                    tokens.push(&native_price_token);
+impl NativePriceBatchFetching for CoinGecko {
+    fn fetch_native_prices<'a, 'b>(
+        &'a self,
+        requested_tokens: &'b HashSet<H160>,
+    ) -> BoxFuture<'a, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>>
+    where
+        'b: 'a,
+    {
+        async {
+            let mut tokens = requested_tokens.iter().collect::<Vec<_>>();
+            match self.quote_token {
+                QuoteToken::Eth => {
+                    let prices = self.bulk_fetch_denominated_in_eth(&tokens).await?;
+                    Ok(tokens
+                        .into_iter()
+                        .map(|token| {
+                            let result = prices
+                                .get(token)
+                                .cloned()
+                                .ok_or(PriceEstimationError::NoLiquidity);
+                            (*token, result)
+                        })
+                        .collect())
                 }
+                QuoteToken::Other(native_price_token) => {
+                    if !requested_tokens.contains(&native_price_token) {
+                        tokens.push(&native_price_token);
+                    }
 
-                self.bulk_fetch_denominated_in_token(tokens, native_price_token)
-                    .await
+                    self.bulk_fetch_denominated_in_token(tokens, native_price_token)
+                        .await
+                }
             }
         }
+        .boxed()
     }
 }
 

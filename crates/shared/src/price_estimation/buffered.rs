@@ -52,13 +52,15 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     ///
     /// It returns a HashMap which maps the token with its native price
     /// estimator result
-    fn fetch_native_prices(
-        &self,
-        tokens: &HashSet<H160>,
+    fn fetch_native_prices<'a, 'b>(
+        &'a self,
+        tokens: &'b HashSet<H160>,
     ) -> futures::future::BoxFuture<
-        '_,
+        'a,
         Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>,
-    >;
+    >
+    where
+        'b: 'a;
 }
 
 /// Buffered implementation that implements automatic batching of
