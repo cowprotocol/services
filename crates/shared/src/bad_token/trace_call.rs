@@ -183,9 +183,6 @@ impl TraceCallDetector {
 
         tracing::debug!(%amount, %balance_before_in, %balance_after_in, %balance_after_out);
 
-        // todo: Maybe do >= checks in case token transfer for whatever reason grants
-        // user more than an amount transferred like an anti fee.
-
         let computed_balance_after_in = match balance_before_in.checked_add(amount) {
             Some(amount) => amount,
             None => {
@@ -194,7 +191,14 @@ impl TraceCallDetector {
                 )))
             }
         };
-        if balance_after_in != computed_balance_after_in {
+        // Allow for a small discrepancy (1 wei) in the balance after the transfer which
+        // may come from rounding discrepancies in tokens that track balances
+        // with "shares" (e.g. eUSD).
+        if balance_after_in
+            <= computed_balance_after_in
+                .checked_sub(U256::one())
+                .unwrap_or_default()
+        {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into settlement contract was expected to result in a \
                  balance of {computed_balance_after_in} but actually resulted in \
@@ -218,7 +222,14 @@ impl TraceCallDetector {
                 )))
             }
         };
-        if computed_balance_recipient_after != balance_recipient_after {
+        // Allow for a small discrepancy (1 wei) in the balance after the transfer
+        // which may come from rounding discrepancies in tokens that track
+        // balances with "shares" (e.g. eUSD).
+        if computed_balance_recipient_after
+            <= balance_recipient_after
+                .checked_sub(U256::one())
+                .unwrap_or_default()
+        {
             return Ok(TokenQuality::bad(format!(
                 "Transferring {amount} into arbitrary recipient {arbitrary:?} was expected to \
                  result in a balance of {computed_balance_recipient_after} but actually resulted \
