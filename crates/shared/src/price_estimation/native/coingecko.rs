@@ -210,6 +210,19 @@ impl NativePriceBatchFetching for CoinGecko {
         }
         .boxed()
     }
+
+    fn max_batch_size(&self) -> usize {
+        /// maximum number of price the coingecko API returns in a single batch
+        const MAX_BATCH_SIZE: usize = 20;
+
+        match self.quote_token {
+            QuoteToken::Eth => MAX_BATCH_SIZE,
+            // when fetching price denominated in a custom token we need to
+            // fetch the price for that token in addition to the requested
+            // tokens so we reserve 1 spot in the batch
+            QuoteToken::Other(_) => MAX_BATCH_SIZE - 1,
+        }
+    }
 }
 
 impl NativePriceEstimating for CoinGecko {

@@ -31,8 +31,6 @@ pub struct Configuration {
     ///
     /// Specifying `None` means no limit on concurrency.
     pub max_concurrent_requests: Option<NonZeroUsize>,
-    /// The maximum batch size.
-    pub max_batch_len: usize,
     /// An additional minimum delay to wait for collecting requests.
     ///
     /// The delay to start counting after receiving the first request.
@@ -61,6 +59,9 @@ pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
     >
     where
         'b: 'a;
+
+    /// Returns the number of prices that can be fetched in a single batch.
+    fn max_batch_size(&self) -> usize;
 }
 
 /// Buffered implementation that implements automatic batching of
@@ -160,38 +161,43 @@ where
         requests: mpsc::UnboundedReceiver<H160>,
         results_sender: broadcast::Sender<NativePriceResult>,
     ) -> JoinHandle<()> {
-        tokio::task::spawn(batched_for_each(config, requests, move |batch| {
-            let inner = inner.clone();
-            let results_sender = results_sender.clone();
-            async move {
-                if batch.is_empty() {
-                    return;
-                }
-                let batch = batch.into_iter().collect::<HashSet<_>>();
-                let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
-                    Ok(results) => results
-                        .into_iter()
-                        .map(|(token, price)| NativePriceResult {
-                            token,
-                            result: price,
-                        })
-                        .collect(),
-                    Err(err) => {
-                        tracing::error!(?err, "failed to send native price batch request");
-                        batch
-                            .into_iter()
-                            .map(|token| NativePriceResult {
-                                token,
-                                result: Err(err.clone()),
-                            })
-                            .collect()
+        tokio::task::spawn(batched_for_each(
+            config,
+            requests,
+            inner.max_batch_size(),
+            move |batch| {
+                let inner = inner.clone();
+                let results_sender = results_sender.clone();
+                async move {
+                    if batch.is_empty() {
+                        return;
                     }
-                };
-                for result in results {
-                    let _ = results_sender.send(result);
+                    let batch = batch.into_iter().collect::<HashSet<_>>();
+                    let results: Vec<_> = match inner.fetch_native_prices(&batch).await {
+                        Ok(results) => results
+                            .into_iter()
+                            .map(|(token, price)| NativePriceResult {
+                                token,
+                                result: price,
+                            })
+                            .collect(),
+                        Err(err) => {
+                            tracing::error!(?err, "failed to send native price batch request");
+                            batch
+                                .into_iter()
+                                .map(|token| NativePriceResult {
+                                    token,
+                                    result: Err(err.clone()),
+                                })
+                                .collect()
+                        }
+                    };
+                    for result in results {
+                        let _ = results_sender.send(result);
+                    }
                 }
-            }
-        }))
+            },
+        ))
     }
 }
 
@@ -204,6 +210,7 @@ where
 fn batched_for_each<T, St, F, Fut>(
     config: Configuration,
     items: St,
+    max_batch_size: usize,
     work: F,
 ) -> impl Future<Output = ()>
 where
@@ -222,7 +229,7 @@ where
         // Append new elements to the bulk until reaching either of the scenarios:
         // - reach maximum number of elements per batch (`max_batch_len)
         // - we reach the `debouncing_time`
-        while chunk.len() < config.max_batch_len {
+        while chunk.len() < max_batch_size {
             futures::select_biased! {
                 item = items.next() => match item {
                     Some(item) => chunk.push(item),
@@ -292,7 +299,6 @@ mod tests {
             });
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -319,7 +325,6 @@ mod tests {
             });
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -345,7 +350,6 @@ mod tests {
 
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -402,7 +406,6 @@ mod tests {
 
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -440,7 +443,6 @@ mod tests {
 
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -490,7 +492,6 @@ mod tests {
 
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -513,7 +514,6 @@ mod tests {
             .never();
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(50),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
@@ -545,7 +545,6 @@ mod tests {
 
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(2),
-            max_batch_len: 20,
             debouncing_time: Duration::from_millis(10),
             result_ready_timeout: Duration::from_millis(500),
             broadcast_channel_capacity: 50,
