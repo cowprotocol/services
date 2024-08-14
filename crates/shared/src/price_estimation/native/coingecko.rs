@@ -29,8 +29,12 @@ pub struct CoinGecko {
     quote_token: QuoteToken,
 }
 
+/// Determines in which token prices will get denominated in.
 enum QuoteToken {
+    /// Prices are denominated in ETH (the default on coingecko).
     Eth,
+    /// Prices are denominated in `Token`. This is useful on chains
+    /// where the native token is not ETH (e.g. xDai on gnosis chain).
     Other(Token),
 }
 
