@@ -16,7 +16,7 @@ use {
         domain::{
             competition::{
                 auction,
-                order::{fees::Quote, FeePolicy},
+                order::FeePolicy,
                 solution::{
                     error,
                     fee::{self, adjust_quote_to_order_limits},
@@ -280,7 +280,7 @@ impl Trade {
         }
     }
 
-    fn price_improvement(&self, quote: &Quote) -> Result<eth::Asset, Error> {
+    fn price_improvement(&self, quote: &order::Quote) -> Result<eth::Asset, Error> {
         let quote = adjust_quote_to_order_limits(
             fee::Order {
                 sell_amount: self.sell.amount.0,

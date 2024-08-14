@@ -259,7 +259,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    quote: Option<OrderQuote>,
+    quote: Option<Quote>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -339,50 +339,11 @@ pub struct Quote {
     pub buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     pub fee: eth::U256,
-}
-
-impl Quote {
-    fn into_domain(
-        self,
-        sell_token: eth::H160,
-        buy_token: eth::H160,
-    ) -> competition::order::fees::Quote {
-        competition::order::fees::Quote {
-            sell: eth::Asset {
-                amount: self.sell_amount.into(),
-                token: sell_token.into(),
-            },
-            buy: eth::Asset {
-                amount: self.buy_amount.into(),
-                token: buy_token.into(),
-            },
-            fee: eth::Asset {
-                amount: self.fee.into(),
-                token: sell_token.into(),
-            },
-        }
-    }
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OrderQuote {
-    #[serde_as(as = "serialize::U256")]
-    pub sell_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub buy_amount: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    pub fee: eth::U256,
     pub solver: eth::H160,
 }
 
-impl OrderQuote {
-    pub fn into_domain(
-        self,
-        sell_token: eth::H160,
-        buy_token: eth::H160,
-    ) -> competition::order::Quote {
+impl Quote {
+    fn into_domain(self, sell_token: eth::H160, buy_token: eth::H160) -> competition::order::Quote {
         competition::order::Quote {
             sell: eth::Asset {
                 amount: self.sell_amount.into(),

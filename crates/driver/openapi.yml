@@ -259,7 +259,7 @@ components:
           description: |
             A winning quote.
           allOf:
-            - $ref: "#/components/schemas/OrderQuote"
+            - $ref: "#/components/schemas/Quote"
       required:
         - uid
         - sellToken
@@ -489,15 +489,6 @@ components:
           type: number
           example: 0.5
     Quote:
-      type: object
-      properties:
-        sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        buyAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        fee:
-          $ref: "#/components/schemas/TokenAmount"
-    OrderQuote:
       type: object
       properties:
         sellAmount:
