@@ -418,29 +418,19 @@ impl RunLoop {
             // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
             // trader either sells less or gets more. This can be reformulated as
             // `right.sell * left.buy > left.sell * right.buy`.
-            let Some(right_sell_left_buy) = right.sell.checked_mul(&left.buy) else {
-                tracing::warn!(
-                    ?left,
-                    ?right,
-                    "cannot ensure fairness, overflow multiplying traded amounts"
-                );
-                return U256::zero().into();
-            };
-            let Some(left_sell_right_buy) = left.sell.checked_mul(&right.buy) else {
-                tracing::warn!(
-                    ?left,
-                    ?right,
-                    "cannot ensure fairness, overflow multiplying traded amounts"
-                );
-                return U256::zero().into();
-            };
+            let right_sell_left_buy = right.sell.0.full_mul(left.buy.0);
+            let left_sell_right_buy = left.sell.0.full_mul(right.buy.0);
             let improvement = right_sell_left_buy
-                .checked_sub(&left_sell_right_buy)
+                .checked_sub(left_sell_right_buy)
                 .unwrap_or_default();
 
             // The difference divided by the original sell amount is the improvement in buy
-            // token.
-            improvement.checked_div(&right.sell).unwrap_or_default()
+            // token. Casting to U256 is safe because the difference is smaller than the
+            // original product, which if re-divided by right.sell must fit in U256.
+            improvement
+                .checked_div(right.sell.0.into())
+                .map(|v| U256::try_from(v).expect("improvement in buy fits in U256"))
+                .unwrap_or_default()
         };
 
         // Find best execution per order
