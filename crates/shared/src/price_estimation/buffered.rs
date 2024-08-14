@@ -283,6 +283,9 @@ mod tests {
 
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
+        native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
@@ -311,6 +314,9 @@ mod tests {
     async fn batching_successful_estimates() {
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
+        native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested just one, because for the second call it fetches the cached one
             .times(1)
@@ -338,6 +344,9 @@ mod tests {
     #[tokio::test]
     async fn batching_unsuccessful_estimates() {
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
+        native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested just one
@@ -391,6 +400,9 @@ mod tests {
         let tokens_requested = 20;
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(move || tokens_requested);
+        native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
             .times(1)
@@ -421,6 +433,9 @@ mod tests {
     async fn batching_many_in_one_batch_with_mixed_results_estimates() {
         let tokens_requested = 2;
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
+        native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
@@ -477,6 +492,9 @@ mod tests {
         let tokens_requested = 21;
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
+        native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly two times because the max batch is 20, so all petitions fit into one batch request
             .times(2)
@@ -507,6 +525,9 @@ mod tests {
     async fn batching_no_calls() {
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
         native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
+        native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We are testing the native prices are never called
             .never();
@@ -529,6 +550,9 @@ mod tests {
     async fn batching_many_in_multiple_times_successful_estimates() {
         let tokens_requested = 20;
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
+        native_price_batch_fetcher
+            .expect_max_batch_size()
+            .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
             // We expect this to be requested exactly two times because there are two batches petitions separated by 250 ms
