@@ -70,7 +70,6 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            self.sleep_until_next_auction().await;
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
@@ -131,6 +130,7 @@ impl RunLoop {
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {
+        self.sleep_until_next_auction().await;
         let auction = match self.solvable_orders_cache.current_auction() {
             Some(auction) => auction,
             None => {
