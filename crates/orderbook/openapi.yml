@@ -930,6 +930,10 @@ components:
           description: see `OrderParameters::buyAmount`
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        created:
+          description: Creation time of the order. Denominated in epoch seconds.
+          type: string
+          example: "123456"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer
@@ -986,12 +990,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        quote:
+          description: |
+            A winning quote.
+          allOf:
+            - $ref: "#/components/schemas/Quote"
       required:
         - uid
         - sellToken
         - buyToken
         - sellAmount
         - buyAmount
+        - created
         - validTo
         - kind
         - receiver

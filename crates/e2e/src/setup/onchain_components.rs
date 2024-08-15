@@ -383,6 +383,48 @@ impl OnchainComponents {
         }
     }
 
+    pub async fn seed_uni_v2_pool(
+        &self,
+        asset_a: (&MintableToken, U256),
+        asset_b: (&MintableToken, U256),
+    ) {
+        let lp = &asset_a.0.minter;
+        asset_a.0.mint(lp.address(), asset_a.1).await;
+        asset_b.0.mint(lp.address(), asset_b.1).await;
+
+        tx!(
+            lp,
+            self.contracts
+                .uniswap_v2_factory
+                .create_pair(asset_a.0.address(), asset_b.0.address())
+        );
+        tx!(
+            lp,
+            asset_a
+                .0
+                .approve(self.contracts.uniswap_v2_router.address(), asset_a.1)
+        );
+        tx!(
+            lp,
+            asset_b
+                .0
+                .approve(self.contracts.uniswap_v2_router.address(), asset_b.1)
+        );
+        tx!(
+            lp,
+            self.contracts.uniswap_v2_router.add_liquidity(
+                asset_a.0.address(),
+                asset_b.0.address(),
+                asset_a.1,
+                asset_b.1,
+                0_u64.into(),
+                0_u64.into(),
+                lp.address(),
+                U256::max_value(),
+            )
+        );
+    }
+
     /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
     ///
     /// This can be used to modify the pool reserves during a test.
