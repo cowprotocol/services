@@ -664,7 +664,10 @@ struct Metrics {
     reveal: prometheus::HistogramVec,
 
     /// Tracks the times and results of driver `/settle` requests.
-    #[metric(labels("driver", "result"))]
+    #[metric(
+        labels("driver", "result"),
+        buckets(1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 20, 25, 30, 40)
+    )]
     settle: prometheus::HistogramVec,
 
     /// Tracks the number of orders that were part of some but not the winning
@@ -685,6 +688,7 @@ struct Metrics {
     auction_preprocessing_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
+    #[metric(buckets(1, 5, 10, 15, 20, 25, 30, 35, 40))]
     single_run_time: prometheus::Histogram,
 
     /// Time difference between the current block and when the single run
