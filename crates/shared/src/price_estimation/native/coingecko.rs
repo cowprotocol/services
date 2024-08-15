@@ -195,8 +195,9 @@ impl CoinGecko {
 
         // When the quoted token and the denominator have different number of decimals
         // the computed price effectively needs to be shifted by the difference.
-        let adjustment =
-            Decimal::new(10, 0).powi(denominator.decimals as i64 - token_decimals as i64);
+        let adjustment = Decimal::new(10, 0)
+            .checked_powi(i64::from(denominator.decimals) - i64::from(token_decimals))
+            .context("price adjustment overflows Decimal")?;
 
         let price_denominated_in_token = token_price_eth
             .checked_div(denominator_price_eth)
