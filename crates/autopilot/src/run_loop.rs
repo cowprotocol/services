@@ -65,17 +65,19 @@ impl RunLoop {
 
         let mut last_auction = None;
         let mut last_block = None;
-        let mut init_block_timestamp = None;
         loop {
-            if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-                init_block_timestamp = Some(block.timestamp);
-                if let Err(err) = self.solvable_orders_cache.update(block.number).await {
-                    tracing::error!(?err, "failed to build a new auction");
+            let init_block_timestamp = {
+                if let RunLoopMode::SyncToBlockchain = self.synchronization {
+                    let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+                    if let Err(err) = self.solvable_orders_cache.update(block.number).await {
+                        tracing::error!(?err, "failed to build a new auction");
+                    }
+                    block.timestamp
+                } else {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    self.eth.current_block().borrow().timestamp
                 }
-            } else {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
+            };
 
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
@@ -133,7 +135,7 @@ impl RunLoop {
         &self,
         auction_id: domain::auction::Id,
         auction: &domain::Auction,
-        init_block_timestamp: Option<u64>,
+        init_block_timestamp: u64,
     ) {
         Metrics::single_run_started(init_block_timestamp);
         let single_run_start = Instant::now();
@@ -811,17 +813,15 @@ impl Metrics {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
     }
 
-    fn single_run_started(init_block_timestamp: Option<u64>) {
-        if let Some(init_block_timestamp) = init_block_timestamp {
-            match SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-            {
-                Ok(now) => Self::get()
-                    .single_run_delay
-                    .observe((now - init_block_timestamp) as f64),
-                Err(err) => tracing::error!(?err, "failed to get current time"),
-            }
+    fn single_run_started(init_block_timestamp: u64) {
+        match SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+        {
+            Ok(now) => Self::get()
+                .single_run_delay
+                .observe((now - init_block_timestamp) as f64),
+            Err(err) => tracing::error!(?err, "failed to get current time"),
         }
     }
 }
