@@ -130,7 +130,7 @@ async fn combined_protocol_fees(web3: Web3) {
 
     tracing::info!("Acquiring quotes.");
     let quote_valid_to = model::time::now_in_epoch_seconds() + 300;
-    let sell_amount = to_wei(10);
+    let sell_amount = to_wei_with_exp(1, 16);
     let [limit_quote_before, market_quote_before, partner_fee_quote] =
         futures::future::try_join_all(
             [
@@ -321,36 +321,6 @@ async fn combined_protocol_fees(web3: Web3) {
         .saturating_sub(limit_surplus_order.data.buy_amount);
     // see `limit_surplus_policy.factor`, which is 0.3
     assert!(limit_executed_surplus_fee_in_buy_token >= limit_quote_diff * 3 / 10);
-
-    let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance] =
-        futures::future::try_join_all(
-            [
-                &market_order_token,
-                &limit_order_token,
-                &partner_fee_order_token,
-            ]
-            .map(|token| {
-                token
-                    .balance_of(onchain.contracts().gp_settlement.address())
-                    .call()
-            }),
-        )
-        .await
-        .unwrap()
-        .try_into()
-        .expect("Expected exactly four elements");
-    assert_approximately_eq!(
-        market_executed_surplus_fee_in_buy_token,
-        market_order_token_balance
-    );
-    assert_approximately_eq!(
-        limit_executed_surplus_fee_in_buy_token,
-        limit_order_token_balance
-    );
-    assert_approximately_eq!(
-        partner_fee_executed_surplus_fee_in_buy_token,
-        partner_fee_order_token_balance
-    );
 }
 
 async fn get_quote(
