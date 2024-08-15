@@ -84,6 +84,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                             json!(fee_policies_json)
                         }
             },
+            "created": quote.order.created,
             "validTo": quote.order.valid_to,
             "kind": match quote.order.side {
                 order::Side::Sell => "sell",

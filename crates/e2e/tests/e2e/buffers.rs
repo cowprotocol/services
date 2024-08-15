@@ -1,8 +1,5 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, *},
-        tx,
-    },
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderKind},
@@ -43,15 +40,17 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     );
 
     // Start system
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::UniswapV2,
     );
     let services = Services::new(onchain.contracts()).await;
