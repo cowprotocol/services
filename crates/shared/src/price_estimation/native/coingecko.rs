@@ -359,4 +359,29 @@ mod tests {
         assert!((0.95..=1.05).contains(&usdt_price.unwrap()));
         assert!((0.95..=1.05).contains(&usdc_price.unwrap()));
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn unknown_token_does_not_ruin_batch() {
+        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let unknown_token = addr!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+        )
+        .unwrap();
+
+        let estimated_price = instance
+            .fetch_native_prices(HashSet::from([usdc, unknown_token]))
+            .await
+            .unwrap();
+        let usdc_price = estimated_price.get(&usdc).unwrap().clone();
+        let nonsense_price = estimated_price.get(&unknown_token).unwrap().clone();
+        // Since the USDC precise price against XDAI is not always exact to
+        // 1.0 (it can vary slightly)
+        assert!((0.95..=1.05).contains(&usdc_price.unwrap()));
+        assert_eq!(nonsense_price, Err(PriceEstimationError::NoLiquidity));
+    }
 }
