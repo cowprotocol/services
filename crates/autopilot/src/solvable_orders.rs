@@ -16,7 +16,7 @@ use {
     },
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
-    prometheus::{Histogram, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -44,7 +44,10 @@ pub struct Metrics {
     auction_update: IntCounterVec,
 
     /// Time taken to update the solvable orders cache.
-    auction_update_time: Histogram,
+    auction_update_total_time: Histogram,
+
+    /// Time spent on auction update individual stage.
+    auction_update_stage_time: HistogramVec,
 
     /// Auction creations.
     auction_creations: IntCounter,
@@ -162,21 +165,54 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = Vec::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
-        let removed = counter.checkpoint("banned_user", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = {
+            let _timer = self
+                .metrics
+                .auction_update_stage_time
+                .with_label_values(&["banned_user_filtering"])
+                .start_timer();
+            let orders =
+                filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
+            let removed = counter.checkpoint("banned_user", &orders);
+            invalid_order_uids.extend(removed);
+            orders
+        };
 
-        let orders =
-            filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
-        let removed = counter.checkpoint("invalid_signature", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = {
+            let _timer = self
+                .metrics
+                .auction_update_stage_time
+                .with_label_values(&["invalid_signature_filtering"])
+                .start_timer();
+            let orders =
+                filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
+            let removed = counter.checkpoint("invalid_signature", &orders);
+            invalid_order_uids.extend(removed);
+            orders
+        };
 
-        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        let removed = counter.checkpoint("unsupported_token", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = {
+            let _timer = self
+                .metrics
+                .auction_update_stage_time
+                .with_label_values(&["unsupported_token_filtering"])
+                .start_timer();
+            let orders =
+                filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+            let removed = counter.checkpoint("unsupported_token", &orders);
+            invalid_order_uids.extend(removed);
+            orders
+        };
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
-        let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
+        let fetched_balances = {
+            let _timer = self
+                .metrics
+                .auction_update_stage_time
+                .with_label_values(&["balance_fetch"])
+                .start_timer();
+            self.balance_fetcher.get_balances(&missing_queries).await
+        };
         let balances = missing_queries
             .into_iter()
             .zip(fetched_balances)
@@ -222,7 +258,14 @@ impl SolvableOrdersCache {
             entry.insert(weth_price);
         }
 
-        let cow_amms = self.cow_amm_registry.amms().await;
+        let cow_amms = {
+            let _timer = self
+                .metrics
+                .auction_update_stage_time
+                .with_label_values(&["cow_amm_registry"])
+                .start_timer();
+            self.cow_amm_registry.amms().await
+        };
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())
@@ -309,7 +352,7 @@ impl SolvableOrdersCache {
 
         tracing::debug!(%block, "updated current auction cache");
         self.metrics
-            .auction_update_time
+            .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
     }
