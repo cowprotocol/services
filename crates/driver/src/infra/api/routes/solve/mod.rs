@@ -31,8 +31,11 @@ async fn route(
                 observe::invalid_dto(err, "auction");
             })?;
         tracing::debug!(elapsed = ?start.elapsed(), "auction task execution time");
-        let auction = state.pre_processor().prioritize(auction).await;
         let competition = state.competition();
+        let auction = state
+            .pre_processor()
+            .prioritize(auction, &competition.solver.account().address())
+            .await;
         let result = competition.solve(&auction).await;
         observe::solved(state.solver().name(), &result);
         Ok(axum::Json(dto::Solved::new(result?, &competition.solver)))

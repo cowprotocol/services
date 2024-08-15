@@ -692,10 +692,10 @@ impl OrderValidating for OrderValidator {
                         }
                         (class, Some(quote))
                     }
-                    // If the quote cannot be computed, it's still possible to place this order (as
+                    // If there is not enough liquidity, it's still possible to place this order (as
                     // an implicit out of market order)
-                    Err(ValidationError::PriceForQuote(err)) => {
-                        tracing::debug!(?err, "placing order without quote");
+                    Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
+                        tracing::debug!("placing order without quote");
                         (class, None)
                     }
                     Err(other) => return Err(other),
