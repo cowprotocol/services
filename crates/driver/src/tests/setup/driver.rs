@@ -2,6 +2,7 @@ use {
     super::{blockchain::Blockchain, Mempool, Partial, Solver, Test},
     crate::{
         domain::competition::order,
+        infra::config::file::OrderPriorityStrategy,
         tests::{hex_address, setup::blockchain::Trade},
     },
     rand::seq::SliceRandom,
@@ -16,6 +17,7 @@ pub struct Config {
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
     pub mempools: Vec<Mempool>,
+    pub order_priority_strategies: Vec<OrderPriorityStrategy>,
 }
 
 pub struct Driver {
@@ -106,6 +108,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
+            "quote": quote.order.quote,
         }));
     }
     for trade in test.trades.iter() {
@@ -233,6 +236,46 @@ async fn create_config_file(
                     url.clone().unwrap_or(blockchain.web3_url.clone()),
                 )
                 .unwrap();
+            }
+        }
+    }
+
+    for strategy in &config.order_priority_strategies {
+        match strategy {
+            OrderPriorityStrategy::ExternalPrice => write!(
+                file,
+                r#"[[order-priority]]
+                strategy = "external-price"
+                "#,
+            )
+            .unwrap(),
+            OrderPriorityStrategy::CreationTimestamp { max_order_age } => {
+                let max_order_age = max_order_age
+                    .map(|age| format!("max-order-age = \"{:?}\"", age))
+                    .unwrap_or_else(|| "".to_string());
+                write!(
+                    file,
+                    r#"[[order-priority]]
+                    strategy = "creation-timestamp"
+                    {}
+                    "#,
+                    max_order_age,
+                )
+                .unwrap()
+            }
+            OrderPriorityStrategy::OwnQuotes { max_order_age } => {
+                let max_order_age = max_order_age
+                    .map(|age| format!("max-order-age = \"{:?}\"", age))
+                    .unwrap_or_else(|| "".to_string());
+                write!(
+                    file,
+                    r#"[[order-priority]]
+                    strategy = "own-quotes"
+                    {}
+                    "#,
+                    max_order_age,
+                )
+                .unwrap()
             }
         }
     }

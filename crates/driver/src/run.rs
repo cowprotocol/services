@@ -70,9 +70,12 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         addr: args.addr,
         addr_sender,
     }
-    .serve(async {
-        let _ = shutdown_receiver.await;
-    });
+    .serve(
+        async {
+            let _ = shutdown_receiver.await;
+        },
+        config.order_priority_strategies,
+    );
 
     futures::pin_mut!(serve);
     tokio::select! {
