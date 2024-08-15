@@ -695,7 +695,7 @@ struct Metrics {
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    single_run_delay: prometheus::Histogram,
+    current_block_delay: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -819,7 +819,7 @@ impl Metrics {
             .map(|d| d.as_secs())
         {
             Ok(now) => Self::get()
-                .single_run_delay
+                .current_block_delay
                 .observe((now - init_block_timestamp) as f64),
             Err(err) => tracing::error!(?err, "failed to get current time"),
         }
