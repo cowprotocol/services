@@ -52,10 +52,11 @@ pub struct Metrics {
     auction_update: IntCounterVec,
 
     /// Time taken to update the solvable orders cache.
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
     auction_update_total_time: Histogram,
 
     /// Time spent on auction update individual stage.
-    #[metric(labels("stage"))]
+    #[metric(labels("stage"), buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
     auction_update_stage_time: HistogramVec,
 
     /// Auction creations.
