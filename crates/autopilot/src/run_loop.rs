@@ -239,7 +239,7 @@ impl RunLoop {
         revealed: reveal::Response,
         block_deadline: u64,
     ) -> Result<()> {
-        let post_processing_start = Instant::now();
+        let start = Instant::now();
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
@@ -381,7 +381,7 @@ impl RunLoop {
             Metrics::fee_policies_store_error();
             tracing::warn!(?err, "failed to save fee policies");
         }
-        Metrics::post_processed(post_processing_start.elapsed());
+        Metrics::post_processed(start.elapsed());
         Ok(())
     }
 
