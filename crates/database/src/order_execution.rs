@@ -91,7 +91,7 @@ mod tests {
     use {super::*, sqlx::Connection};
 
     #[tokio::test]
-    //#[ignore]
+    #[ignore]
     async fn postgres_save() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
