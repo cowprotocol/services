@@ -7,7 +7,7 @@ use {
         domain::{competition::solution::Settlement, eth::TxStatus, BlockNo},
         infra::{self, observe, solver::Solver, Ethereum},
     },
-    ethrpc::current_block::into_stream,
+    ethrpc::block_stream::into_stream,
     futures::{future::select_ok, FutureExt, StreamExt},
     thiserror::Error,
     tracing::Instrument,

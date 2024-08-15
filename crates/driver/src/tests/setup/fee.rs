@@ -19,6 +19,7 @@ pub struct Quote {
     /// additional sell amount.
     #[serde_as(as = "HexOrDecimalU256")]
     pub network_fee: eth::U256,
+    pub solver: eth::H160,
 }
 
 #[serde_as]
@@ -61,6 +62,7 @@ impl Policy {
                         "sellAmount": quote.sell.to_string(),
                         "buyAmount": quote.buy.to_string(),
                         "fee": quote.network_fee.to_string(),
+                        "solver": quote.solver,
                     }
                 }
             }),

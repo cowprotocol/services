@@ -8,7 +8,7 @@ use {
     database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
-    ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
+    ethrpc::{block_stream::timestamp_of_current_block_in_seconds, Web3},
     hex_literal::hex,
     model::{
         order::{

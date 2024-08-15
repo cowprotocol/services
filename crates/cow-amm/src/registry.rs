@@ -2,7 +2,7 @@ use {
     crate::{cache::Storage, factory::Factory, maintainers::EmptyPoolRemoval, Amm},
     contracts::CowAmmLegacyHelper,
     ethcontract::Address,
-    ethrpc::{current_block::CurrentBlockStream, Web3},
+    ethrpc::{block_stream::CurrentBlockWatcher, Web3},
     shared::{
         event_handling::EventHandler,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -15,12 +15,12 @@ use {
 #[derive(Clone, Debug)]
 pub struct Registry {
     web3: Web3,
-    current_block_stream: CurrentBlockStream,
+    current_block_stream: CurrentBlockWatcher,
     storage: Arc<RwLock<Vec<Storage>>>,
 }
 
 impl Registry {
-    pub fn new(web3: Web3, current_block_stream: CurrentBlockStream) -> Self {
+    pub fn new(web3: Web3, current_block_stream: CurrentBlockWatcher) -> Self {
         Self {
             storage: Default::default(),
             web3,

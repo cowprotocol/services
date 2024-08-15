@@ -15,7 +15,7 @@ use {
         H160,
         H256,
     },
-    ethrpc::{current_block::RangeInclusive, Web3},
+    ethrpc::{block_stream::RangeInclusive, Web3},
     hex_literal::hex,
     std::collections::BTreeMap,
 };

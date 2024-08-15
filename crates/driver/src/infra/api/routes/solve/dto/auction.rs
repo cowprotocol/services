@@ -34,6 +34,7 @@ impl Auction {
                 .map(|order| competition::Order {
                     uid: order.uid.into(),
                     receiver: order.receiver.map(Into::into),
+                    created: order.created.unwrap_or(u32::MIN).into(),
                     valid_to: order.valid_to.into(),
                     buy: eth::Asset {
                         amount: order.buy_amount.into(),
@@ -137,6 +138,9 @@ impl Auction {
                             }
                         })
                         .collect(),
+                    quote: order
+                        .quote
+                        .map(|q| q.into_domain(order.sell_token, order.buy_token)),
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -234,6 +238,7 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     protocol_fees: Vec<FeePolicy>,
+    created: Option<u32>,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,
@@ -254,6 +259,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    quote: Option<Quote>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -333,15 +339,12 @@ pub struct Quote {
     pub buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     pub fee: eth::U256,
+    pub solver: Option<eth::H160>,
 }
 
 impl Quote {
-    fn into_domain(
-        self,
-        sell_token: eth::H160,
-        buy_token: eth::H160,
-    ) -> competition::order::fees::Quote {
-        competition::order::fees::Quote {
+    fn into_domain(self, sell_token: eth::H160, buy_token: eth::H160) -> competition::order::Quote {
+        competition::order::Quote {
             sell: eth::Asset {
                 amount: self.sell_amount.into(),
                 token: sell_token.into(),
@@ -354,6 +357,7 @@ impl Quote {
                 amount: self.fee.into(),
                 token: sell_token.into(),
             },
+            solver: self.solver.unwrap_or_default().into(),
         }
     }
 }

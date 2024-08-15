@@ -2,7 +2,7 @@ use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
     ethcontract::dyns::DynWeb3,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     std::{fmt, sync::Arc},
     thiserror::Error,
     url::Url,
@@ -60,7 +60,7 @@ struct Inner {
     chain: eth::ChainId,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
-    current_block: CurrentBlockStream,
+    current_block: CurrentBlockWatcher,
 }
 
 impl Ethereum {
@@ -78,7 +78,7 @@ impl Ethereum {
         let Rpc { web3, chain, url } = rpc;
 
         let current_block_stream =
-            ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(500))
+            ethrpc::block_stream::current_block_stream(url, std::time::Duration::from_millis(500))
                 .await
                 .expect("couldn't initialize current block stream");
 
@@ -128,7 +128,7 @@ impl Ethereum {
 
     /// Returns a type that monitors the block chain to inform about the current
     /// block.
-    pub fn current_block(&self) -> &CurrentBlockStream {
+    pub fn current_block(&self) -> &CurrentBlockWatcher {
         &self.inner.current_block
     }
 

@@ -1,5 +1,8 @@
 use {
-    crate::domain::{eth, fee},
+    crate::{
+        domain,
+        domain::{eth, fee},
+    },
     primitive_types::{H160, H256, U256},
     std::fmt::{self, Display},
 };
@@ -12,6 +15,7 @@ pub struct Order {
     pub protocol_fees: Vec<fee::Policy>,
     pub side: Side,
     pub class: Class,
+    pub created: Option<u32>,
     pub valid_to: u32,
     pub receiver: Option<eth::Address>,
     pub owner: eth::Address,
@@ -25,6 +29,7 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub app_data: AppDataHash,
     pub signature: Signature,
+    pub quote: Option<domain::Quote>,
 }
 
 impl Order {
