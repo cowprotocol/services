@@ -250,6 +250,7 @@ async fn surplus_and_price_improvement_protocol_fee_sell_order_not_capped() {
             sell: 50.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 5.ether().into_wei(), // 50 sell for 45 buy
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -303,6 +304,7 @@ async fn surplus_and_price_improvement_fee_buy_in_market_order_not_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -872,6 +874,7 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -910,6 +913,7 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
             sell: 50.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 4.ether().into_wei(), // 50 sell for 46 buy
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -948,6 +952,7 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
             sell: 59.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -986,6 +991,7 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1024,6 +1030,7 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1062,6 +1069,7 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
             sell: 49.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1100,6 +1108,7 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
             sell: 59.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1138,6 +1147,7 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1176,6 +1186,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
             sell: 39.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1214,6 +1225,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
             sell: 50.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 5.ether().into_wei(), // 50 sell for 45 buy
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1254,6 +1266,7 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_not_capped() {
             sell: 59.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1292,6 +1305,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1330,6 +1344,7 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
             sell: 49.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1368,6 +1383,7 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
             sell: 49.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1406,6 +1422,7 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_capped() {
             sell: 59.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1444,6 +1461,7 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
             sell: 49.ether().into_wei(),
             buy: 40.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {
@@ -1482,6 +1500,7 @@ async fn price_improvement_fee_sell_no_improvement() {
             sell: 49.ether().into_wei(),
             buy: 50.ether().into_wei(),
             network_fee: 1.ether().into_wei(),
+            solver: test_solver().address(),
         },
     };
     let test_case = TestCase {

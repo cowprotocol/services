@@ -10,6 +10,7 @@ use {
                 default_http_time_buffer,
                 default_solving_share_of_deadline,
                 FeeHandler,
+                OrderPriorityStrategy,
             },
         },
         tests::{
@@ -35,8 +36,10 @@ use {
     futures::future::join_all,
     hyper::StatusCode,
     model::order::{BuyTokenDestination, SellTokenSource},
+    number::serialization::HexOrDecimalU256,
     primitive_types::H160,
     secp256k1::SecretKey,
+    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -104,6 +107,7 @@ pub struct Order {
     pub internalize: bool,
     pub side: order::Side,
     pub partial: Partial,
+    pub created: u32,
     pub valid_to: u32,
     pub kind: order::Kind,
 
@@ -133,6 +137,7 @@ pub struct Order {
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
     pub app_data: AppDataHash,
+    pub quote: Option<OrderQuote>,
 }
 
 impl Order {
@@ -253,6 +258,21 @@ impl Order {
         Self { executed, ..self }
     }
 
+    pub fn created(self, created: u32) -> Self {
+        Self { created, ..self }
+    }
+
+    pub fn valid_to(self, valid_to: u32) -> Self {
+        Self { valid_to, ..self }
+    }
+
+    pub fn quote(self, quote: OrderQuote) -> Self {
+        Self {
+            quote: Some(quote),
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -275,6 +295,7 @@ impl Default for Order {
             internalize: Default::default(),
             side: order::Side::Sell,
             partial: Default::default(),
+            created: u32::MIN,
             valid_to: u32::MAX,
             kind: order::Kind::Market,
             solver_fee: Default::default(),
@@ -294,6 +315,7 @@ impl Default for Order {
             sell_token_source: Default::default(),
             buy_token_destination: Default::default(),
             app_data: Default::default(),
+            quote: Default::default(),
         }
     }
 }
@@ -473,6 +495,7 @@ pub fn setup() -> Setup {
         name: Default::default(),
         pools: Default::default(),
         orders: Default::default(),
+        order_priority_strategies: Default::default(),
         trusted: Default::default(),
         config_file: Default::default(),
         solutions: Default::default(),
@@ -492,6 +515,7 @@ pub struct Setup {
     name: Option<String>,
     pools: Vec<blockchain::Pool>,
     orders: Vec<Order>,
+    order_priority_strategies: Vec<OrderPriorityStrategy>,
     trusted: HashSet<&'static str>,
     config_file: Option<PathBuf>,
     solutions: Vec<Solution>,
@@ -756,6 +780,11 @@ impl Setup {
         self
     }
 
+    pub fn order_priority_strategy(mut self, strategy: OrderPriorityStrategy) -> Self {
+        self.order_priority_strategies.push(strategy);
+        self
+    }
+
     /// Set up the protocol to consider the specified token as trusted. The
     /// token is identified by its symbol.
     pub fn trust(mut self, token: &'static str) -> Self {
@@ -907,6 +936,7 @@ impl Setup {
                 config_file,
                 enable_simulation: self.enable_simulation,
                 mempools: self.mempools,
+                order_priority_strategies: self.order_priority_strategies,
             },
             &solvers_with_address,
             &blockchain,
@@ -1335,6 +1365,25 @@ impl QuoteOk<'_> {
             assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
         }
         self
+    }
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderQuote {
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub sell_amount: eth::U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub buy_amount: eth::U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub fee: eth::U256,
+    pub solver: eth::H160,
+}
+
+impl OrderQuote {
+    pub fn solver(self, solver: eth::H160) -> Self {
+        Self { solver, ..self }
     }
 }
 
