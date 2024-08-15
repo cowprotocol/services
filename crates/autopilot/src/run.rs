@@ -21,7 +21,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
-    ethrpc::current_block::block_number_to_block_number_hash,
+    ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
@@ -457,10 +457,8 @@ pub async fn run(args: Arguments) {
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        eth.current_block().clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        args.auction_update_interval,
         eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
@@ -515,8 +513,9 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
+        synchronization: args.run_loop_mode,
     };
-    run.run_forever().await;
+    run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
 }
 
@@ -568,12 +567,21 @@ async fn shadow_mode(args: Arguments) -> ! {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
+    let current_block = ethrpc::block_stream::current_block_stream(
+        args.shared.node_url,
+        args.shared.current_block.block_stream_poll_interval,
+    )
+    .await
+    .expect("couldn't initialize current block stream");
+
     let shadow = shadow::RunLoop::new(
         orderbook,
         drivers,
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
+        args.run_loop_mode,
+        current_block,
     );
     shadow.run_forever().await;
 

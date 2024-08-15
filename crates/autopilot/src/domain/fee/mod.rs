@@ -20,6 +20,7 @@ use {
     std::{collections::HashSet, str::FromStr},
 };
 
+#[derive(Debug)]
 enum OrderClass {
     Market,
     Limit,
@@ -81,7 +82,7 @@ impl ProtocolFees {
     pub fn apply(
         &self,
         order: boundary::Order,
-        quote: &domain::Quote,
+        quote: Option<domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
     ) -> domain::Order {
         let partner_fee = order
@@ -106,7 +107,7 @@ impl ProtocolFees {
             .collect::<Vec<_>>();
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner.into()) {
-            return boundary::order::to_domain(order, partner_fee);
+            return boundary::order::to_domain(order, partner_fee, quote);
         }
 
         let order_ = boundary::Amounts {
@@ -114,6 +115,17 @@ impl ProtocolFees {
             buy: order.data.buy_amount,
             fee: order.data.fee_amount,
         };
+
+        // In case there is no quote, we assume 0 buy amount so that the order ends up
+        // being considered out of market price.
+        let quote = quote.unwrap_or(domain::Quote {
+            order_uid: order.metadata.uid.into(),
+            sell_amount: order.data.sell_amount.into(),
+            buy_amount: U256::zero().into(),
+            fee: order.data.fee_amount.into(),
+            solver: H160::zero().into(),
+        });
+
         let quote_ = boundary::Amounts {
             sell: quote.sell_amount.into(),
             buy: quote.buy_amount.into(),
@@ -130,13 +142,13 @@ impl ProtocolFees {
     fn apply_single_policy(
         &self,
         order: boundary::Order,
-        quote: &domain::Quote,
+        quote: domain::Quote,
         order_: boundary::Amounts,
         quote_: boundary::Amounts,
         partner_fees: Vec<Policy>,
     ) -> domain::Order {
         if let Some(partner_fee) = partner_fees.first() {
-            return boundary::order::to_domain(order, vec![*partner_fee]);
+            return boundary::order::to_domain(order, vec![*partner_fee], Some(quote));
         }
         let protocol_fees = self
             .fee_policies
@@ -144,16 +156,16 @@ impl ProtocolFees {
             .find_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
-            .and_then(|policy| Self::variant_fee_apply(&order, quote, policy))
+            .and_then(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .into_iter()
             .collect_vec();
-        boundary::order::to_domain(order, protocol_fees)
+        boundary::order::to_domain(order, protocol_fees, Some(quote))
     }
 
     fn apply_multiple_policies(
         &self,
         order: boundary::Order,
-        quote: &domain::Quote,
+        quote: domain::Quote,
         order_: boundary::Amounts,
         quote_: boundary::Amounts,
         partner_fees: Vec<Policy>,
@@ -164,10 +176,10 @@ impl ProtocolFees {
             .filter_map(|fee_policy| {
                 Self::protocol_fee_into_policy(&order, &order_, &quote_, fee_policy)
             })
-            .flat_map(|policy| Self::variant_fee_apply(&order, quote, policy))
+            .flat_map(|policy| Self::variant_fee_apply(&order, &quote, policy))
             .chain(partner_fees)
             .collect::<Vec<_>>();
-        boundary::order::to_domain(order, protocol_fees)
+        boundary::order::to_domain(order, protocol_fees, Some(quote))
     }
 
     fn variant_fee_apply(
@@ -273,6 +285,7 @@ pub struct Quote {
     pub buy_amount: U256,
     /// The amount that needs to be paid, denominated in the sell token.
     pub fee: U256,
+    pub solver: H160,
 }
 
 impl From<domain::Quote> for Quote {
@@ -281,6 +294,7 @@ impl From<domain::Quote> for Quote {
             sell_amount: value.sell_amount.into(),
             buy_amount: value.buy_amount.into(),
             fee: value.fee.into(),
+            solver: value.solver.into(),
         }
     }
 }

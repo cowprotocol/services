@@ -23,7 +23,7 @@ use {
         infra::solver,
         util::http,
     },
-    ethrpc::current_block::BlockInfo,
+    ethrpc::block_stream::BlockInfo,
     std::collections::{HashMap, HashSet},
     url::Url,
 };

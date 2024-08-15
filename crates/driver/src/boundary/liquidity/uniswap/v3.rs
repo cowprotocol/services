@@ -12,7 +12,7 @@ use {
     },
     anyhow::Context,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
-    ethrpc::current_block::BlockRetrieving,
+    ethrpc::block_stream::BlockRetrieving,
     shared::{
         http_solver::model::TokenAmount,
         interaction::Interaction,

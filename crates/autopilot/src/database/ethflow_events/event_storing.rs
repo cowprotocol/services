@@ -4,7 +4,7 @@ use {
     crate::database::{events::bytes_to_order_uid, Postgres},
     anyhow::Result,
     database::ethflow_orders::Refund,
-    ethrpc::current_block::RangeInclusive,
+    ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
 };
 

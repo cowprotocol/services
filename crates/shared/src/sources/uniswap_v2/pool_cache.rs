@@ -4,7 +4,7 @@ use {
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
     anyhow::Result,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
 };
@@ -33,7 +33,7 @@ impl PoolCache {
     pub fn new(
         config: CacheConfig,
         fetcher: Arc<dyn PoolFetching>,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
     ) -> Result<Self> {
         Ok(Self(RecentBlockCache::new(
             config,

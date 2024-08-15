@@ -2,7 +2,7 @@ use {
     crate::Amm,
     contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper},
     ethcontract::Address,
-    ethrpc::current_block::RangeInclusive,
+    ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
     std::{collections::BTreeMap, sync::Arc},
     tokio::sync::RwLock,
