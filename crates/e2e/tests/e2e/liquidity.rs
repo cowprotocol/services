@@ -7,7 +7,7 @@ use {
         assert_approximately_eq,
         nodes::forked_node::ForkedNodeApi,
         setup::{
-            colocation::{self, SolverEngine},
+            colocation,
             run_forked_test_with_block_number,
             to_wei,
             to_wei_with_exp,
@@ -133,15 +133,17 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver.clone(),
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::ZeroEx {
             api_port: zeroex_api_port,
         },
