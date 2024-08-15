@@ -1,6 +1,6 @@
 use {
     driver::domain::eth::NonZeroU256,
-    e2e::{setup::*, tx, tx_value},
+    e2e::{setup::{fee::*, *}, tx, tx_value},
     ethcontract::{prelude::U256, Address},
     model::{
         order::{Order, OrderCreation, OrderCreationAppData, OrderKind},
