@@ -58,7 +58,7 @@ pub async fn executed_protocol_fees(
 
     let mut fees = HashMap::new();
     for (auction_id, order_uid) in keys_filter {
-        let protocol_fees = protocol_fees(ex, order_uid, *auction_id).await?;
+        let protocol_fees = get_protocol_fees(ex, order_uid, *auction_id).await?;
         fees.insert((*auction_id, *order_uid), protocol_fees.unwrap_or_default());
     }
 
@@ -66,7 +66,7 @@ pub async fn executed_protocol_fees(
 }
 
 // executed procotol fee for a single <order, auction> pair
-async fn protocol_fees(
+async fn get_protocol_fees(
     ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
@@ -117,10 +117,16 @@ mod tests {
         .await
         .unwrap();
 
-        let protocol_fees = protocol_fees(&mut db, &Default::default(), 1)
+        let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 1)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(protocol_fees.len(), 2);
+
+        // non-existing order
+        let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 2)
+            .await
+            .unwrap();
+        assert!(protocol_fees.is_none());
     }
 }
