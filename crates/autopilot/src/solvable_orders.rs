@@ -99,10 +99,8 @@ impl SolvableOrdersCache {
         banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        current_block: CurrentBlockWatcher,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
-        update_interval: Duration,
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
@@ -126,11 +124,20 @@ impl SolvableOrdersCache {
             protocol_fees,
             cow_amm_registry,
         });
+        self_
+    }
+
+    /// Spawns a task that periodically updates the set of open orders
+    /// and builds a new auction with them.
+    pub fn spawn_background_task(
+        cache: &Arc<Self>,
+        block_stream: CurrentBlockWatcher,
+        update_interval: Duration,
+    ) {
         tokio::task::spawn(
-            update_task(Arc::downgrade(&self_), update_interval, current_block)
+            update_task(Arc::downgrade(cache), update_interval, block_stream)
                 .instrument(tracing::info_span!("solvable_orders_cache")),
         );
-        self_
     }
 
     pub fn current_auction(&self) -> Option<domain::Auction> {
@@ -143,7 +150,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    async fn update(&self, block: u64) -> Result<()> {
+    pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
