@@ -47,6 +47,7 @@ pub struct Metrics {
     auction_update_total_time: Histogram,
 
     /// Time spent on auction update individual stage.
+    #[metric( labels("stage"))]
     auction_update_stage_time: HistogramVec,
 
     /// Auction creations.
