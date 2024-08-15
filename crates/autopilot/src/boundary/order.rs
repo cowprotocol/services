@@ -22,7 +22,7 @@ pub fn to_domain(
             amount: order.data.buy_amount.into(),
         },
         protocol_fees,
-        created: Some(u32::try_from(order.metadata.creation_date.timestamp()).unwrap_or(u32::MIN)),
+        created: u32::try_from(order.metadata.creation_date.timestamp()).unwrap_or(u32::MIN),
         valid_to: order.data.valid_to,
         side: order.data.kind.into(),
         receiver: order.data.receiver.map(Into::into),
