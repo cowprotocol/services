@@ -1,47 +1,38 @@
 //! Solvers propose solutions to an [`crate::domain::Auction`].
 //!
-//! A winning solution becomes a [`Settlement`] once it is executed on-chain.
+//! A winning solution becomes a [`Settlement`] once it is executed on-chain in
+//! a form of settlement transaction.
 
 use {
-    super::competition,
+    self::solution::ExecutedFee,
     crate::{domain, domain::eth, infra},
+    std::collections::HashMap,
 };
 
 mod auction;
-mod observation;
 mod solution;
 mod transaction;
-pub use {
-    auction::Auction,
-    observation::Observation,
-    solution::Solution,
-    transaction::Transaction,
-};
+pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
-/// A solution together with the `Auction` for which it was picked as a winner
-/// and executed on-chain.
+/// A settled transaction together with the `Auction`, for which it was executed
+/// on-chain.
 ///
 /// Referenced as a [`Settlement`] in the codebase.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Settlement {
-    solution: Solution,
-    transaction: Transaction,
+    settled: Transaction,
     auction: Auction,
 }
 
 impl Settlement {
     pub async fn new(
-        transaction: Transaction,
-        domain_separator: &eth::DomainSeparator,
+        settled: Transaction,
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
-        let solution = Solution::new(&transaction.input, domain_separator)?;
-
         if persistence
-            .auction_has_settlement(solution.auction_id())
-            .await
-            .map_err(Error::from)?
+            .auction_has_settlement(settled.auction_id)
+            .await?
         {
             // This settlement has already been processed by another environment.
             //
@@ -49,58 +40,56 @@ impl Settlement {
             return Err(Error::WrongEnvironment);
         }
 
-        let auction = persistence
-            .get_auction(solution.auction_id())
-            .await
-            .map_err(Error::from)?;
+        let auction = persistence.get_auction(settled.auction_id).await?;
 
         // winning solution - solution promised during solver competition
-        let promised_solution = persistence
-            .get_winning_solution(solution.auction_id())
-            .await
-            .map_err(Error::from)?;
+        let promised = persistence.get_winning_solution(settled.auction_id).await?;
 
-        if transaction.solver != promised_solution.solver() {
+        if settled.solver != promised.solver() {
             return Err(Error::SolverMismatch {
-                expected: promised_solution.solver(),
-                got: transaction.solver,
+                expected: promised.solver(),
+                got: settled.solver,
             });
         }
 
-        let score = solution.score(&auction)?;
+        let settled_score = settled.solution.score(&auction)?;
 
         // temp log
-        if score != promised_solution.score() {
+        if settled_score != promised.score() {
             tracing::debug!(
-                auction_id = ?solution.auction_id(),
-                "score mismatch: expected competition score {}, settlement score {}",
-                promised_solution.score(),
-                score,
+                ?settled.auction_id,
+                "score mismatch: expected promised score {}, settled score {}",
+                promised.score(),
+                settled_score,
             );
         }
-        if score < promised_solution.score() {
-            return Err(Error::ScoreMismatch {
-                expected: promised_solution.score(),
-                got: score,
-            });
-        }
 
-        Ok(Self {
-            solution,
-            transaction,
-            auction,
-        })
+        Ok(Self { settled, auction })
     }
 
-    /// Returns the observation of the settlement.
-    pub fn observation(&self) -> Observation {
-        Observation {
-            gas: self.transaction.gas,
-            gas_price: self.transaction.effective_gas_price,
-            surplus: self.solution.native_surplus(&self.auction),
-            fee: self.solution.native_fee(&self.auction.prices),
-            order_fees: self.solution.fees(),
-        }
+    /// The gas used by the settlement.
+    pub fn gas(&self) -> eth::Gas {
+        self.settled.gas
+    }
+
+    /// The effective gas price at the time of settlement.
+    pub fn gas_price(&self) -> eth::EffectiveGasPrice {
+        self.settled.effective_gas_price
+    }
+
+    /// Total surplus expressed in native token.
+    pub fn native_surplus(&self) -> eth::Ether {
+        self.settled.solution.native_surplus(&self.auction)
+    }
+
+    /// Total fee expressed in native token.
+    pub fn native_fee(&self) -> eth::Ether {
+        self.settled.solution.native_fee(&self.auction.prices)
+    }
+
+    /// Per order fees breakdown. Contains all orders from the settlement
+    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
+        self.settled.solution.fees(&self.auction)
     }
 }
 
@@ -120,11 +109,6 @@ pub enum Error {
     SolverMismatch {
         expected: eth::Address,
         got: eth::Address,
-    },
-    #[error("score mismatch: expected competition score {expected}, settlement score {got}")]
-    ScoreMismatch {
-        expected: competition::Score,
-        got: competition::Score,
     },
 }
 

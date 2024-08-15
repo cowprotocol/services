@@ -7,7 +7,7 @@ use {
         infra::{self, Ethereum},
     },
     anyhow::anyhow,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     shared::{
         http_client::HttpClientFactory,
         price_estimation::gas::GAS_PER_ZEROEX_ORDER,
@@ -79,7 +79,7 @@ pub fn to_domain(
 
 pub async fn collector(
     eth: &Ethereum,
-    blocks: CurrentBlockStream,
+    blocks: CurrentBlockWatcher,
     config: &infra::liquidity::config::ZeroEx,
 ) -> anyhow::Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("zeroex".into());

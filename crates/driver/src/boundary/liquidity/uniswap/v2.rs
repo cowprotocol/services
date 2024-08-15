@@ -9,7 +9,7 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethrpc::{current_block::CurrentBlockStream, Web3},
+    ethrpc::{block_stream::CurrentBlockWatcher, Web3},
     shared::{
         http_solver::model::TokenAmount,
         sources::uniswap_v2::{
@@ -112,7 +112,7 @@ pub fn to_interaction(
 
 pub async fn collector(
     eth: &Ethereum,
-    blocks: &CurrentBlockStream,
+    blocks: &CurrentBlockWatcher,
     config: &infra::liquidity::config::UniswapV2,
 ) -> Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("uniswapV2".into());
@@ -121,7 +121,7 @@ pub async fn collector(
 
 pub(in crate::boundary::liquidity) async fn collector_with_reader<R, F>(
     eth: &Ethereum,
-    blocks: &CurrentBlockStream,
+    blocks: &CurrentBlockWatcher,
     config: &infra::liquidity::config::UniswapV2,
     reader: F,
 ) -> Result<Box<dyn LiquidityCollecting>>

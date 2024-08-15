@@ -89,7 +89,7 @@ impl Solution {
                         signature: jit.order().signature.clone(),
                         receiver: Some(jit.order().receiver),
                         created: u32::try_from(Utc::now().timestamp())
-                            .unwrap_or(u32::MAX)
+                            .unwrap_or(u32::MIN)
                             .into(),
                         valid_to: jit.order().valid_to,
                         app_data: jit.order().app_data,

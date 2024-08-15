@@ -79,6 +79,8 @@ impl Trade {
     }
 
     /// The effective amount the user received after all fees.
+    ///
+    /// Settlement contract uses `ceil` division for buy amount calculation.
     fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.side() {
             order::Side::Buy => self.executed().0,
@@ -215,6 +217,8 @@ impl Fulfillment {
     }
 
     /// The effective amount the user received after all fees.
+    ///
+    /// Settlement contract uses `ceil` division for buy amount calculation.
     pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
@@ -287,16 +291,21 @@ impl Fulfillment {
             }
             Side::Sell => {
                 // Scale to support partially fillable orders
+
+                // `checked_ceil_div`` to be consistent with how settlement contract calculates
+                // traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract is
+                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
                 let limit_buy_amount = limit_buy
                     .checked_mul(executed_sell_amount_with_fee)
                     .ok_or(Math::Overflow)?
-                    .checked_div(limit_sell)
+                    .checked_ceil_div(&limit_sell)
                     .ok_or(Math::DivisionByZero)?;
                 // How much `buy_token` we get for `executed` amount of `sell_token`
                 let executed_buy_amount = executed
                     .checked_mul(prices.sell)
                     .ok_or(Math::Overflow)?
-                    .checked_div(prices.buy)
+                    .checked_ceil_div(&prices.buy)
                     .ok_or(Math::DivisionByZero)?;
                 // Remaining surplus after fees
                 // Do not return error if `checked_sub` fails because violated limit prices will

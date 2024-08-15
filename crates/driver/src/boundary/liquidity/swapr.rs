@@ -4,7 +4,7 @@ use {
         domain::liquidity::{self, swapr},
         infra::{self, blockchain::Ethereum},
     },
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     shared::sources::{
         swapr::reader::SwaprPoolReader,
         uniswap_v2::pool_fetching::DefaultPoolReader,
@@ -40,7 +40,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
 
 pub async fn collector(
     eth: &Ethereum,
-    blocks: &CurrentBlockStream,
+    blocks: &CurrentBlockWatcher,
     config: &infra::liquidity::config::Swapr,
 ) -> Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("swapr".into());

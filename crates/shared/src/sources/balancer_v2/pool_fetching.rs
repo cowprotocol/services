@@ -47,7 +47,7 @@ use {
         BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
-    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
+    ethrpc::block_stream::{BlockRetrieving, CurrentBlockWatcher},
     model::TokenPair,
     reqwest::{Client, Url},
     std::{
@@ -290,7 +290,7 @@ impl BalancerPoolFetcher {
         block_retriever: Arc<dyn BlockRetrieving>,
         token_infos: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
         client: Client,
         web3: Web3,
         contracts: &BalancerContracts,

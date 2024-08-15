@@ -23,7 +23,7 @@ use {
     },
     ethcontract::{Event as EthContractEvent, H160},
     ethrpc::{
-        current_block::{timestamp_of_block_in_seconds, RangeInclusive},
+        block_stream::{timestamp_of_block_in_seconds, RangeInclusive},
         Web3,
     },
     futures::{stream, StreamExt},

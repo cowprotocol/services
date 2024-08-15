@@ -1,5 +1,5 @@
+pub mod block_stream;
 pub mod buffered;
-pub mod current_block;
 pub mod dummy;
 pub mod extensions;
 pub mod http;

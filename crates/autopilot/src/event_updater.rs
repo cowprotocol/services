@@ -1,6 +1,6 @@
 use {
     anyhow::Result,
-    ethrpc::current_block::{BlockNumberHash, BlockRetrieving},
+    ethrpc::block_stream::{BlockNumberHash, BlockRetrieving},
     shared::{
         event_handling::{EventHandler, EventRetrieving, EventStoring},
         maintenance::Maintaining,

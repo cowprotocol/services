@@ -195,9 +195,9 @@ components:
           description: Amount to be bought
           $ref: "#/components/schemas/TokenAmount"
         created:
-          description: Creation time of the order. Encoded as ISO 8601 UTC.
+          description: Creation time of the order. Denominated in epoch seconds.
           type: string
-          example: "2020-12-03T18:35:18.814523Z"
+          example: "123456"
         validTo:
           description: The time until which the order is valid.
           type: integer
@@ -259,7 +259,7 @@ components:
           description: |
             A winning quote.
           allOf:
-            - $ref: "#/components/schemas/OrderQuote"
+            - $ref: "#/components/schemas/Quote"
       required:
         - uid
         - sellToken
@@ -489,15 +489,6 @@ components:
           type: number
           example: 0.5
     Quote:
-      type: object
-      properties:
-        sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        buyAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        fee:
-          $ref: "#/components/schemas/TokenAmount"
-    OrderQuote:
       type: object
       properties:
         sellAmount:

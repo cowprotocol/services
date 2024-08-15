@@ -12,7 +12,7 @@ use {
     anyhow::Result,
     arc_swap::ArcSwap,
     contracts::{GPv2Settlement, IZeroEx},
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
     futures::StreamExt,
     itertools::Itertools,
     model::{order::OrderKind, TokenPair},
@@ -44,7 +44,7 @@ impl ZeroExLiquidity {
         api: Arc<dyn ZeroExApi>,
         zeroex: IZeroEx,
         gpv2: GPv2Settlement,
-        blocks_stream: CurrentBlockStream,
+        blocks_stream: CurrentBlockWatcher,
     ) -> Self {
         let gpv2_address = gpv2.address();
         let allowance_manager = AllowanceManager::new(web3, gpv2_address);
@@ -96,7 +96,7 @@ impl ZeroExLiquidity {
 
     async fn run_orderbook_fetching(
         api: Arc<dyn ZeroExApi>,
-        blocks_stream: CurrentBlockStream,
+        blocks_stream: CurrentBlockWatcher,
         orderbook_cache: Arc<OrderbookCache>,
         gpv2_address: H160,
     ) {
