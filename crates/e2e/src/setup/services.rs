@@ -179,15 +179,17 @@ impl<'a> Services<'a> {
     }
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
-        let solver_endpoint =
-            colocation::start_baseline_solver(self.contracts.weth.address()).await;
         colocation::start_driver(
             self.contracts,
-            vec![SolverEngine {
-                name: "test_solver".into(),
-                account: solver,
-                endpoint: solver_endpoint,
-            }],
+            vec![
+                colocation::start_baseline_solver(
+                    "test_solver".into(),
+                    solver,
+                    self.contracts.weth.address(),
+                    vec![],
+                )
+                .await,
+            ],
             colocation::LiquidityProvider::UniswapV2,
         );
         self.start_autopilot(
@@ -231,17 +233,19 @@ impl<'a> Services<'a> {
             name: "test_solver".into(),
             account: solver.clone(),
             endpoint: external_solver_endpoint,
+            base_tokens: vec![],
         }];
 
         let (autopilot_args, api_args) = if run_baseline {
-            let baseline_solver_endpoint =
-                colocation::start_baseline_solver(self.contracts.weth.address()).await;
-
-            solvers.push(SolverEngine {
-                name: "baseline_solver".into(),
-                account: solver,
-                endpoint: baseline_solver_endpoint,
-            });
+            solvers.push(
+                colocation::start_baseline_solver(
+                    "baseline_solver".into(),
+                    solver,
+                    self.contracts.weth.address(),
+                    vec![],
+                )
+                .await,
+            );
 
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
