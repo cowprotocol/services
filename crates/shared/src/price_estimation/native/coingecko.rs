@@ -77,7 +77,7 @@ impl CoinGecko {
 
     async fn bulk_fetch_denominated_in_eth(
         &self,
-        tokens: &[&Token],
+        tokens: &HashSet<Token>,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
         url.query_pairs_mut()
@@ -126,10 +126,10 @@ impl CoinGecko {
     /// Fetches the prices of the given tokens denominated in the given token.
     async fn bulk_fetch_denominated_in_token(
         &self,
-        mut tokens: Vec<&Token>,
+        mut tokens: HashSet<Token>,
         denominator: Token,
     ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
-        tokens.push(&denominator);
+        tokens.insert(denominator);
         let prices_in_eth = self.bulk_fetch_denominated_in_eth(&tokens).await?;
 
         // fetch price of token we want to denominate all other prices in
@@ -143,8 +143,8 @@ impl CoinGecko {
         let prices_in_denominator = tokens
             .into_iter()
             .map(|token| {
-                let result = Self::denominate_price(token, denominator_price, &prices_in_eth);
-                (*token, result)
+                let result = Self::denominate_price(&token, denominator_price, &prices_in_eth);
+                (token, result)
             })
             .collect();
 
@@ -177,15 +177,14 @@ impl CoinGecko {
 impl NativePriceBatchFetching for CoinGecko {
     fn fetch_native_prices(
         &'_ self,
-        requested_tokens: HashSet<H160>,
+        tokens: HashSet<Token>,
     ) -> BoxFuture<'_, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>> {
         async move {
-            let mut tokens = requested_tokens.iter().collect::<Vec<_>>();
             match self.quote_token {
                 QuoteToken::Eth => {
                     let prices = self.bulk_fetch_denominated_in_eth(&tokens).await?;
                     Ok(tokens
-                        .into_iter()
+                        .iter()
                         .map(|token| {
                             let result = prices
                                 .get(token)
@@ -196,10 +195,6 @@ impl NativePriceBatchFetching for CoinGecko {
                         .collect())
                 }
                 QuoteToken::Other(native_price_token) => {
-                    if !requested_tokens.contains(&native_price_token) {
-                        tokens.push(&native_price_token);
-                    }
-
                     self.bulk_fetch_denominated_in_token(tokens, native_price_token)
                         .await
                 }
