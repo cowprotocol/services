@@ -442,7 +442,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn prices_adjusted_for_token_decimals() {
+    async fn prices_adjusted_for_token_with_fewer_decimals() {
         let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
         let wxdai = addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
         let mut mock = MockTokenInfoFetching::new();
@@ -476,9 +476,56 @@ mod tests {
         dbg!(usdc_price, wxdai_price);
 
         // The `USDC` token only has 6 decimals whereas `wxDai` has 18. To make
-        // the prices comparable we therefor have to shift `usdc_price` 12 decimals
+        // the prices comparable we therefore have to shift `usdc_price` 12 decimals
         // to the right.
         let usdc_price_adjusted = usdc_price / 10f64.powi(12);
+
+        // Since Dai and USDC both track the US dollar they should at least be
+        // within 5% of each other after adjusting for their respective decimals.
+        assert!((wxdai_price * 0.95..=wxdai_price * 1.05).contains(&usdc_price_adjusted));
+        assert!((0.95..=1.05).contains(&wxdai_price))
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn prices_adjusted_for_token_with_more_decimals() {
+        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let wxdai = addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+        let mut mock = MockTokenInfoFetching::new();
+        mock.expect_get_token_infos().returning(move |tokens| {
+            tokens
+                .iter()
+                .map(|t| {
+                    // Let's pretend USDC has 21 decimals to check if the price adjustment
+                    // also works when the requested token has more decimals.
+                    let decimals = if *t == usdc { Some(21) } else { Some(18) };
+                    let info = TokenInfo {
+                        decimals,
+                        symbol: None,
+                    };
+                    (*t, info)
+                })
+                .collect()
+        });
+
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+            Arc::new(mock),
+        )
+        .unwrap();
+
+        // usdc_price should be: ~0.001
+        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        // wxdai_price should be: ~1.0
+        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        dbg!(usdc_price, wxdai_price);
+
+        // We pretended that `USDC` has 21 decimals now so we need to move it's price
+        // 3 decimals to the left to make it comparable.
+        let usdc_price_adjusted = usdc_price * 10f64.powi(3);
 
         // Since Dai and USDC both track the US dollar they should at least be
         // within 5% of each other after adjusting for their respective decimals.
