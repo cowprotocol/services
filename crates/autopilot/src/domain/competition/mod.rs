@@ -98,7 +98,7 @@ impl Solution {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct TradedAmounts {
     /// The effective amount that left the user's wallet including all fees.
     pub sell: eth::TokenAmount,
