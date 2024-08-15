@@ -520,6 +520,7 @@ pub async fn run(args: Arguments) {
         persistence: persistence.clone(),
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
+        run_loop_start_notifier: Default::default(),
     };
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");

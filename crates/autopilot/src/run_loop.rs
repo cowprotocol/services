@@ -19,6 +19,7 @@ use {
     anyhow::Result,
     database::order_events::OrderEventLabel,
     ethcontract::U256,
+    futures::pin_mut,
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -35,7 +36,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::Mutex,
+    tokio::sync::{Mutex, Notify},
     tracing::{warn, Instrument},
 };
 
@@ -52,6 +53,8 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub synchronization: RunLoopMode,
+    /// Mechanism to inform the runloop to start right away.
+    pub run_loop_start_notifier: Notify,
 }
 
 impl RunLoop {
@@ -67,15 +70,7 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-                if let Err(err) = self.solvable_orders_cache.update(block.number).await {
-                    tracing::error!(?err, "failed to build a new auction");
-                }
-            } else {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-
+            self.sleep_until_next_auction().await;
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
@@ -91,6 +86,47 @@ impl RunLoop {
                         .await;
                 }
             };
+        }
+    }
+
+    /// Waits until it's the correct time to start the next auction.
+    async fn sleep_until_next_auction(&self) {
+        if let RunLoopMode::SyncToBlockchain = self.synchronization {
+            // The time on the blockchain is discrete because things only happen inside
+            // blocks which get published in set time intervals.
+            // Therefore any critical work should ideally start right after a new block
+            // was seen in order to improve the chances that your work is done **before**
+            // the next block gets published so you can submit a transaction in time.
+            //
+            // Intuitively that means just waiting for the next block and then starting to
+            // work. However, in our context it's important to know whether the transaction
+            // we tried to submit actually made it on-chain (i.e. into the next block).
+            //
+            // This would effectively mean that we'd always have almost 1 full block of
+            // downtime between iterations:
+            // 1. wait for new block
+            // 2. do work
+            // 3. submit tx
+            // 4. wait for new block to see if our tx made it in
+            // 5. jump to 1 (which now does nothing for an entire block interval)
+            //
+            // To avoid this we have another condition we await. It's a signal from the
+            // transaction submission logic that tells us to start right away and **not**
+            // wait for the next block.
+            let await_new_block = ethrpc::block_stream::next_block(self.eth.current_block());
+            pin_mut!(await_new_block);
+            let await_notify = self.run_loop_start_notifier.notified();
+            pin_mut!(await_notify);
+            futures::future::select(await_notify, await_new_block).await;
+
+            let block_number = self.eth.current_block().borrow().number;
+            if let Err(err) = self.solvable_orders_cache.update(block_number).await {
+                tracing::error!(?err, "failed to build a new auction");
+            }
+        } else {
+            // In the unsychronized case we effectively don't want to wait for anything.
+            // But to avoid busy loops under some circumstances we wait here to be safe.
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -632,14 +668,14 @@ impl RunLoop {
         auction_id: i64,
         max_blocks_wait: u64,
     ) -> Result<H256, SettleError> {
-        let current = self.eth.current_block().borrow().number;
+        let block_stream = self.eth.current_block();
+        let current = block_stream.borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
         loop {
-            if self.eth.current_block().borrow().number > deadline {
-                break;
-            }
-
+            // It's impossible for the tx to make it into the current block
+            // so we start out by waiting for the next block to appear.
+            let block = ethrpc::block_stream::next_block(block_stream).await;
             match self
                 .persistence
                 .find_tx_hash_by_auction_id(auction_id)
@@ -651,7 +687,13 @@ impl RunLoop {
                 }
                 Ok(None) => {}
             }
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            if block.number == deadline {
+                // The last allowed block did not contain the desired transaction.
+                // Stop waiting for the tx and signal to the run loop to **NOT** wait for the
+                // next block since that would mean 1 entire block interval of waiting.
+                self.run_loop_start_notifier.notify_one();
+                break;
+            }
         }
         Err(SettleError::Failure(anyhow::anyhow!(
             "settlement transaction await reached deadline"
