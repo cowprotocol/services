@@ -134,16 +134,18 @@ async fn cow_amm_jit(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
-            },
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
             SolverEngine {
                 name: "mock_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
+                base_tokens: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -450,16 +452,18 @@ async fn cow_amm_driver_support(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
-            },
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
             SolverEngine {
                 name: "mock_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
+                base_tokens: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

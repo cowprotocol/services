@@ -139,33 +139,22 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let fee = self.fee()?;
+        let total_fee = self.total_fee_in_sell_token()?;
         let price = prices
-            .get(&fee.token)
-            .ok_or(Error::MissingPrice(fee.token))?;
-        Ok(price.in_eth(fee.amount))
+            .get(&self.sell.token)
+            .ok_or(Error::MissingPrice(self.sell.token))?;
+        Ok(price.in_eth(total_fee.into()))
     }
 
     /// Converts given surplus fee into sell token fee.
-    fn fee_into_sell_token(
-        &self,
-        fee: eth::TokenAmount,
-        prices: &auction::Prices,
-    ) -> Result<eth::SellTokenAmount, Error> {
+    fn fee_into_sell_token(&self, fee: eth::TokenAmount) -> Result<eth::SellTokenAmount, Error> {
         let fee_in_sell_token = match self.side {
             order::Side::Buy => fee,
-            order::Side::Sell => {
-                let buy_price = prices
-                    .get(&self.buy.token)
-                    .ok_or(Error::MissingPrice(self.buy.token))?;
-                let sell_price = prices
-                    .get(&self.sell.token)
-                    .ok_or(Error::MissingPrice(self.sell.token))?;
-                fee.checked_mul(&buy_price.get().0.into())
-                    .ok_or(error::Math::Overflow)?
-                    .checked_div(&sell_price.get().0.into())
-                    .ok_or(error::Math::DivisionByZero)?
-            }
+            order::Side::Sell => fee
+                .checked_mul(&self.prices.uniform.buy.into())
+                .ok_or(error::Math::Overflow)?
+                .checked_div(&self.prices.uniform.sell.into())
+                .ok_or(error::Math::DivisionByZero)?,
         }
         .into();
         Ok(fee_in_sell_token)
@@ -175,12 +164,9 @@ impl Trade {
     /// before and after applying the fees.
     ///
     /// Denominated in SELL token
-    pub fn total_fee_in_sell_token(
-        &self,
-        prices: &auction::Prices,
-    ) -> Result<eth::SellTokenAmount, Error> {
+    pub fn total_fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
         let fee = self.fee()?;
-        self.fee_into_sell_token(fee.amount, prices)
+        self.fee_into_sell_token(fee.amount)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
@@ -208,12 +194,7 @@ impl Trade {
     ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, Error> {
         self.protocol_fees(auction)?
             .into_iter()
-            .map(|(fee, policy)| {
-                Ok((
-                    self.fee_into_sell_token(fee.amount, &auction.prices)?,
-                    policy,
-                ))
-            })
+            .map(|(fee, policy)| Ok((self.fee_into_sell_token(fee.amount)?, policy)))
             .collect()
     }
 
