@@ -15,7 +15,7 @@ pub struct Order {
     pub protocol_fees: Vec<fee::Policy>,
     pub side: Side,
     pub class: Class,
-    pub created: u32,
+    pub created: Option<u32>,
     pub valid_to: u32,
     pub receiver: Option<eth::Address>,
     pub owner: eth::Address,
