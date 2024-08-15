@@ -5,7 +5,7 @@ use {
         FromPrimitive,
     },
     database::{auction::AuctionId, OrderUid},
-    model::fee_policy::{FeePolicy, Quote},
+    model::fee_policy::{ExecutedFee, FeePolicy, Quote},
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256},
     std::collections::HashMap,
@@ -15,7 +15,7 @@ impl super::Postgres {
     pub async fn fee_policies(
         &self,
         keys_filter: &[(AuctionId, OrderUid)],
-    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>> {
+    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<(FeePolicy, Option<ExecutedFee>)>>> {
         let mut ex = self.pool.acquire().await?;
 
         let timer = super::Metrics::get()
@@ -23,6 +23,14 @@ impl super::Postgres {
             .with_label_values(&["fee_policies"])
             .start_timer();
         let fee_policies = database::fee_policies::fetch_all(&mut ex, keys_filter).await?;
+        timer.stop_and_record();
+
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["executed_protocol_fees"])
+            .start_timer();
+        let executed_protocol_fees =
+            database::order_execution::executed_protocol_fees(&mut ex, keys_filter).await?;
         timer.stop_and_record();
 
         let quote_order_uids = fee_policies
@@ -54,11 +62,34 @@ impl super::Postgres {
         fee_policies
             .into_iter()
             .map(|((auction_id, order_uid), policies)| {
+                let executed_fees: Vec<ExecutedFee> = executed_protocol_fees
+                    .get(&(auction_id, order_uid))
+                    .map(|fees| {
+                        fees.iter()
+                            .map(|fee| {
+                                Ok::<ExecutedFee, anyhow::Error>(ExecutedFee {
+                                    amount: big_decimal_to_u256(&fee.amount)
+                                        .context("executed fee amount")?,
+                                    token: primitive_types::H160(fee.token.0),
+                                })
+                            })
+                            .collect()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
                 policies
                     .into_iter()
                     .map(|policy| fee_policy_from(policy, quotes.get(&order_uid), order_uid))
                     .collect::<anyhow::Result<Vec<_>>>()
-                    .map(|policies| ((auction_id, order_uid), policies))
+                    .map(|policies| {
+                        ((auction_id, order_uid), {
+                            policies
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, policy)| (policy, executed_fees.get(i).cloned()))
+                                .collect()
+                        })
+                    })
             })
             .collect::<anyhow::Result<HashMap<_, _>>>()
     }

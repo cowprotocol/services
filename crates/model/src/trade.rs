@@ -2,7 +2,10 @@
 //! as described by the openapi documentation.
 
 use {
-    crate::{fee_policy::FeePolicy, order::OrderUid},
+    crate::{
+        fee_policy::{ExecutedFee, FeePolicy},
+        order::OrderUid,
+    },
     num::BigUint,
     primitive_types::{H160, H256},
     serde::Serialize,
@@ -30,7 +33,7 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<H256>,
     // Fee Policy Data
-    pub fee_policies: Vec<FeePolicy>,
+    pub fee_policies: Vec<(FeePolicy, Option<ExecutedFee>)>,
 }
 
 #[cfg(test)]

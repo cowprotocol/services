@@ -4,7 +4,11 @@ use {
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     ethcontract::H160,
     futures::stream::TryStreamExt,
-    model::{fee_policy::FeePolicy, order::OrderUid, trade::Trade},
+    model::{
+        fee_policy::{ExecutedFee, FeePolicy},
+        order::OrderUid,
+        trade::Trade,
+    },
     number::conversions::big_decimal_to_big_uint,
     primitive_types::H256,
     std::convert::TryInto,
@@ -65,7 +69,10 @@ impl TradeRetrieving for Postgres {
     }
 }
 
-fn trade_from(row: TradesQueryRow, fee_policies: Vec<FeePolicy>) -> Result<Trade> {
+fn trade_from(
+    row: TradesQueryRow,
+    fee_policies: Vec<(FeePolicy, Option<ExecutedFee>)>,
+) -> Result<Trade> {
     let block_number = row
         .block_number
         .try_into()

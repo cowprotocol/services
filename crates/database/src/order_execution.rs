@@ -5,6 +5,7 @@ use {
         postgres::{PgHasArrayType, PgTypeInfo},
         PgConnection,
     },
+    std::collections::HashMap,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
@@ -46,29 +47,48 @@ DO UPDATE SET reward = $3, surplus_fee = $4, block_number = $5, protocol_fees = 
     Ok(())
 }
 
+// fetch protocol fees for all keys in the filter
+pub async fn executed_protocol_fees(
+    ex: &mut PgConnection,
+    keys_filter: &[(AuctionId, OrderUid)],
+) -> Result<HashMap<(AuctionId, OrderUid), Vec<FeeAsset>>, sqlx::Error> {
+    if keys_filter.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut fees = HashMap::new();
+    for (auction_id, order_uid) in keys_filter {
+        let protocol_fees = protocol_fees(ex, order_uid, *auction_id).await?;
+        fees.insert((*auction_id, *order_uid), protocol_fees.unwrap_or_default());
+    }
+
+    Ok(fees)
+}
+
+// executed procotol fee for a single <order, auction> pair
+async fn protocol_fees(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+    auction: AuctionId,
+) -> Result<Option<Vec<FeeAsset>>, sqlx::Error> {
+    const QUERY: &str = r#"
+        SELECT protocol_fees
+        FROM order_execution
+        WHERE order_uid = $1 AND auction_id = $2
+    "#;
+
+    let row = sqlx::query_scalar(QUERY)
+        .bind(order)
+        .bind(auction)
+        .fetch_optional(ex)
+        .await?;
+
+    Ok(row)
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, sqlx::Connection};
-
-    pub async fn fetch_protocol_fees(
-        ex: &mut PgConnection,
-        order: &OrderUid,
-        auction: AuctionId,
-    ) -> Result<Option<Vec<FeeAsset>>, sqlx::Error> {
-        const QUERY: &str = r#"
-            SELECT protocol_fees
-            FROM order_execution
-            WHERE order_uid = $1 AND auction_id = $2
-        "#;
-
-        let row = sqlx::query_scalar(QUERY)
-            .bind(order)
-            .bind(auction)
-            .fetch_optional(ex)
-            .await?;
-
-        Ok(row)
-    }
 
     #[tokio::test]
     //#[ignore]
@@ -97,7 +117,7 @@ mod tests {
         .await
         .unwrap();
 
-        let protocol_fees = fetch_protocol_fees(&mut db, &Default::default(), 1)
+        let protocol_fees = protocol_fees(&mut db, &Default::default(), 1)
             .await
             .unwrap()
             .unwrap();
