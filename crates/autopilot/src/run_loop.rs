@@ -32,7 +32,7 @@ use {
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime},
     },
     tokio::sync::Mutex,
     tracing::Instrument,
@@ -65,9 +65,11 @@ impl RunLoop {
 
         let mut last_auction = None;
         let mut last_block = None;
+        let mut init_block_timestamp = None;
         loop {
             if let RunLoopMode::SyncToBlockchain = self.synchronization {
                 let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+                init_block_timestamp = Some(block.timestamp);
                 if let Err(err) = self.solvable_orders_cache.update(block.number).await {
                     tracing::error!(?err, "failed to build a new auction");
                 }
@@ -85,7 +87,7 @@ impl RunLoop {
                     observe::log_auction_delta(id, &previous, &auction);
                     self.liveness.auction();
 
-                    self.single_run(id, &auction)
+                    self.single_run(id, &auction, init_block_timestamp)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
@@ -127,7 +129,13 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
+    async fn single_run(
+        &self,
+        auction_id: domain::auction::Id,
+        auction: &domain::Auction,
+        init_block_timestamp: Option<u64>,
+    ) {
+        Metrics::single_run_started(init_block_timestamp);
         let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
@@ -160,20 +168,20 @@ impl RunLoop {
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
-            let start = Instant::now();
+            let reveal_start = Instant::now();
             let revealed = match self.reveal(driver, auction_id, solution.id()).await {
                 Ok(result) => {
-                    Metrics::reveal_ok(driver, start.elapsed());
+                    Metrics::reveal_ok(driver, reveal_start.elapsed());
                     result
                 }
                 Err(err) => {
-                    Metrics::reveal_err(driver, start.elapsed(), &err);
+                    Metrics::reveal_err(driver, reveal_start.elapsed(), &err);
                     tracing::warn!(driver = %driver.name, ?err, "failed to reveal winning solution");
                     return;
                 }
             };
 
-            let start = Instant::now();
+            let post_processing_start = Instant::now();
             let winner = solution.solver().into();
             let winning_score = solution.score().get().0;
             let reference_score = solutions
@@ -293,8 +301,6 @@ impl RunLoop {
                 competition_table,
             };
 
-            Metrics::post_processed(start.elapsed());
-            let start = Instant::now();
             tracing::trace!(?competition, "saving competition");
             if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
@@ -322,7 +328,7 @@ impl RunLoop {
                 Metrics::fee_policies_store_error();
                 tracing::warn!(?err, "failed to save fee policies");
             }
-            Metrics::competition_stored(start.elapsed());
+            Metrics::post_processed(post_processing_start.elapsed());
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
@@ -681,8 +687,9 @@ struct Metrics {
     /// Total time spent in a single run of the run loop.
     single_run_time: prometheus::Histogram,
 
-    /// Time spent storing the competition in the database.
-    competition_storing_time: prometheus::Histogram,
+    /// Time difference between the current block and when the single run
+    /// function is started.
+    single_run_delay: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -796,14 +803,22 @@ impl Metrics {
             .observe(elapsed.as_secs_f64());
     }
 
-    fn competition_stored(elapsed: Duration) {
-        Self::get()
-            .competition_storing_time
-            .observe(elapsed.as_secs_f64());
-    }
-
     fn single_run_completed(elapsed: Duration) {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
+    }
+
+    fn single_run_started(init_block_timestamp: Option<u64>) {
+        if let Some(init_block_timestamp) = init_block_timestamp {
+            match SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+            {
+                Ok(now) => Self::get()
+                    .single_run_delay
+                    .observe((now - init_block_timestamp) as f64),
+                Err(err) => tracing::error!(?err, "failed to get current time"),
+            }
+        }
     }
 }
 
