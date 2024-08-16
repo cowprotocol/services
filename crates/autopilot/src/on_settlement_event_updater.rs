@@ -34,7 +34,7 @@ use {
             Postgres,
         },
         decoded_settlement::DecodedSettlement,
-        domain::{self},
+        domain,
         infra,
     },
     anyhow::{Context, Result},
@@ -43,9 +43,10 @@ use {
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
     std::{collections::HashSet, sync::Arc},
-    tokio::sync::Notify,
+    tokio::sync::{watch, Notify},
 };
 
+#[derive(Clone)]
 pub struct OnSettlementEventUpdater {
     inner: Arc<Inner>,
 }
@@ -55,6 +56,10 @@ struct Inner {
     persistence: infra::Persistence,
     db: Postgres,
     notify: Notify,
+    /// Can be monitored to get notified about processed events.
+    updates_receiver: watch::Receiver<()>,
+    /// Can be used to notify about new processed events.
+    updates_sender: watch::Sender<()>,
 }
 
 enum AuctionIdRecoveryStatus {
@@ -70,11 +75,14 @@ impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
     pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
+        let (sender, receiver) = watch::channel(());
         let inner = Arc::new(Inner {
             eth,
             persistence,
             db,
             notify: Notify::new(),
+            updates_receiver: receiver,
+            updates_sender: sender,
         });
         let inner_clone = inner.clone();
         tokio::spawn(async move { Inner::listen_for_updates(inner_clone).await });
@@ -96,6 +104,10 @@ impl OnSettlementEventUpdater {
     /// Schedules an update loop on a background thread
     pub fn schedule_update(&self) {
         self.inner.notify.notify_one();
+    }
+
+    pub fn subscribe_to_updates(&self) -> watch::Receiver<()> {
+        self.inner.updates_receiver.clone()
     }
 }
 
@@ -189,6 +201,10 @@ impl Inner {
             .await
             .with_context(|| format!("insert_settlement_details: {update:?}"))?;
         ex.commit().await?;
+
+        self.updates_sender
+            .send(())
+            .expect("can't fail because self owns a receiver");
 
         Ok(true)
     }

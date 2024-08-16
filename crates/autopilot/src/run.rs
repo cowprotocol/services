@@ -359,7 +359,7 @@ pub async fn run(args: Arguments) {
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
-        boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater),
+        boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater.clone()),
         block_retriever.clone(),
         skip_event_sync_start,
     ));
@@ -521,6 +521,7 @@ pub async fn run(args: Arguments) {
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
         run_loop_start_notifier: Default::default(),
+        settlement_processed_receiver: on_settlement_event_updater.subscribe_to_updates(),
     };
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");

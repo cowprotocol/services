@@ -36,7 +36,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::{Mutex, Notify},
+    tokio::sync::{watch, Mutex, Notify},
     tracing::{warn, Instrument},
 };
 
@@ -55,6 +55,7 @@ pub struct RunLoop {
     pub synchronization: RunLoopMode,
     /// Mechanism to inform the runloop to start right away.
     pub run_loop_start_notifier: Notify,
+    pub settlement_processed_receiver: watch::Receiver<()>,
 }
 
 impl RunLoop {
@@ -673,9 +674,21 @@ impl RunLoop {
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
         loop {
-            // It's impossible for the tx to make it into the current block
-            // so we start out by waiting for the next block to appear.
-            let block = ethrpc::block_stream::next_block(block_stream).await;
+            // Settlements need to be processed before we can detect the settlement
+            // transaction here. That's why we either wait for a processed settlement
+            // to detect the successful submission.
+            // Or we wait for the next block to detect the timeout condition.
+            // Unforunately that means settlements submitted on the deadline block will
+            // likely be detected as a timeout because getting notified about a new block
+            // is way faster than processing a settlement. :/
+            let mut settlement_processor = self.settlement_processed_receiver.clone();
+            let await_new_block = ethrpc::block_stream::next_block(self.eth.current_block());
+            pin_mut!(await_new_block);
+            let await_processed_settlement = settlement_processor.changed();
+            pin_mut!(await_processed_settlement);
+            futures::future::select(await_processed_settlement, await_new_block).await;
+            let block_number = block_stream.borrow().number;
+
             match self
                 .persistence
                 .find_tx_hash_by_auction_id(auction_id)
@@ -687,7 +700,13 @@ impl RunLoop {
                 }
                 Ok(None) => {}
             }
-            if block.number == deadline {
+            // TODO: fix bug in driver to make this `>=` instead of `>`
+            // Technically this should be `>=` to stop exactly on the deadline block.
+            // However, the current driver implementation has a bug where it does not try
+            // to cancel a transaction when the `autopilot` already terminated the
+            // connection to the driver since the cancellation does not get
+            // handled in a background task.
+            if block_number > deadline {
                 // The last allowed block did not contain the desired transaction.
                 // Stop waiting for the tx and signal to the run loop to **NOT** wait for the
                 // next block since that would mean 1 entire block interval of waiting.
