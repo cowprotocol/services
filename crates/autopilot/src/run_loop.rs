@@ -700,13 +700,7 @@ impl RunLoop {
                 }
                 Ok(None) => {}
             }
-            // TODO: fix bug in driver to make this `>=` instead of `>`
-            // Technically this should be `>=` to stop exactly on the deadline block.
-            // However, the current driver implementation has a bug where it does not try
-            // to cancel a transaction when the `autopilot` already terminated the
-            // connection to the driver since the cancellation does not get
-            // handled in a background task.
-            if block_number > deadline {
+            if block_number == deadline {
                 // The last allowed block did not contain the desired transaction.
                 // Stop waiting for the tx and signal to the run loop to **NOT** wait for the
                 // next block since that would mean 1 entire block interval of waiting.
