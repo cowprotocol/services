@@ -57,7 +57,7 @@ impl Notification {
                         transaction: hash.0,
                     },
                     notify::Settlement::SimulationRevert => Kind::Cancelled,
-                    notify::Settlement::Fail => Kind::Fail,
+                    notify::Settlement::Fail | notify::Settlement::Expired => Kind::Fail,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
             },

@@ -66,7 +66,7 @@ pub enum Settlement {
     Revert(TransactionHash),
     /// Transaction started reverting during the submission.
     SimulationRevert,
-    /// Settlement was not confirmed in time
+    /// Transaction was not confirmed in time
     Expired,
     /// Winning solver failed to settle the transaction onchain for other
     /// reasons.
