@@ -1,9 +1,12 @@
 mod dto;
 
 use {
-    crate::infra::{
-        api::{Error, State},
-        observe,
+    crate::{
+        domain::competition,
+        infra::{
+            api::{Error, State},
+            observe,
+        },
     },
     tracing::Instrument,
 };
@@ -16,18 +19,28 @@ async fn route(
     state: axum::extract::State<State>,
     solution: axum::Json<dto::Solution>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
-    let competition = state.competition();
-    let auction_id = competition.auction_id().map(|id| id.0);
-    let handle_request = async {
+    let state = state.clone();
+    let auction_id = state.competition().auction_id().map(|id| id.0);
+    let solver = state.solver().name();
+    let span = tracing::info_span!("/settle", %solver, auction_id);
+
+    let handle_request = async move {
         observe::settling();
-        let result = competition
+        let result = state
+            .competition()
             .settle(solution.submission_deadline_latest_block)
             .await;
         observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)
-    };
+    }
+    .instrument(span);
 
-    handle_request
-        .instrument(tracing::info_span!("/settle", solver = %state.solver().name(), auction_id))
+    // Handle `/settle` call in a background task to ensure that we correctly
+    // submit the settlement (or cancellation) on-chain even if the server
+    // aborts the endpoint handler code.
+    // This can happen due do connection issues or when the autopilot aborts
+    // the `/settle` call when we reach the submission deadline.
+    Ok(tokio::task::spawn(handle_request)
         .await
+        .unwrap_or_else(|_| Err(competition::Error::SubmissionError))?)
 }

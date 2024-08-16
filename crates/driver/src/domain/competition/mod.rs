@@ -5,7 +5,7 @@ use {
         Mempools,
     },
     crate::{
-        domain::{competition::solution::Settlement, eth, mempools},
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             blockchain::Ethereum,
@@ -281,24 +281,10 @@ impl Competition {
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
 
-        // Submit the transaction in a background task to bring the transaction
-        // (or cancellation) correctly on-chain even when the autopilot aborts
-        // the `/settle` request due to connection issues or reaching the
-        // submission deadline.
-        let mempools_cloned = self.mempools.clone();
-        let solver_cloned = self.solver.clone();
-        let settlement_cloned = settlement.clone();
-        let executed = tokio::task::spawn(async move {
-            mempools_cloned
-                .execute(&solver_cloned, &settlement_cloned, submission_deadline)
-                .await
-        })
-        .await
-        .unwrap_or_else(|err| {
-            Err(mempools::Error::Other(anyhow::anyhow!(
-                "failed to executed submission task: {err:?}"
-            )))
-        });
+        let executed = self
+            .mempools
+            .execute(&self.solver, &settlement, submission_deadline)
+            .await;
 
         notify::executed(
             &self.solver,
