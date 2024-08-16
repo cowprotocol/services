@@ -196,6 +196,8 @@ impl RunLoop {
             let block_deadline = competition_simulation_block + self.submission_deadline;
             let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
+            // Post-processing should not be executed asynchronously since it includes steps
+            // of storing all the competition/auction-related data to the DB.
             if let Err(err) = self
                 .post_processing(
                     auction_id,
