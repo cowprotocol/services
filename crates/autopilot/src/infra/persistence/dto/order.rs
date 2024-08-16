@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self},
-        domain::{self, eth, fee::FeeFactor},
+        domain::{self, eth, fee::FeeFactor, OrderUid},
     },
     app_data::AppDataHash,
     number::serialization::HexOrDecimalU256,
@@ -22,6 +22,7 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub protocol_fees: Vec<FeePolicy>,
+    pub created: Option<u32>,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,
@@ -38,6 +39,7 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
+    pub quote: Option<Quote>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -48,6 +50,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         sell_amount: order.sell.amount.into(),
         buy_amount: order.buy.amount.into(),
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
+        created: Some(order.created),
         valid_to: order.valid_to,
         kind: order.side.into(),
         receiver: order.receiver.map(Into::into),
@@ -65,6 +68,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
+        quote: order.quote.map(Into::into),
     }
 }
 
@@ -80,6 +84,7 @@ pub fn to_domain(order: Order) -> domain::Order {
             amount: order.buy_amount.into(),
         },
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
+        created: order.created.unwrap_or(u32::MIN),
         valid_to: order.valid_to,
         side: order.kind.into(),
         receiver: order.receiver.map(Into::into),
@@ -97,6 +102,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
+        quote: order.quote.map(|q| q.to_domain(order.uid.into())),
     }
 }
 
@@ -287,6 +293,30 @@ pub struct Quote {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
+    pub solver: Option<H160>,
+}
+
+impl Quote {
+    pub fn to_domain(&self, order_uid: OrderUid) -> domain::Quote {
+        domain::Quote {
+            order_uid,
+            sell_amount: self.sell_amount.into(),
+            buy_amount: self.buy_amount.into(),
+            fee: self.fee.into(),
+            solver: self.solver.unwrap_or_default().into(),
+        }
+    }
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(quote: domain::Quote) -> Self {
+        Quote {
+            sell_amount: quote.sell_amount.0,
+            buy_amount: quote.buy_amount.0,
+            fee: quote.fee.0,
+            solver: Some(quote.solver.0),
+        }
+    }
 }
 
 impl From<domain::fee::Policy> for FeePolicy {
@@ -310,6 +340,7 @@ impl From<domain::fee::Policy> for FeePolicy {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
+                    solver: Some(quote.solver),
                 },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume {
@@ -340,6 +371,7 @@ impl From<FeePolicy> for domain::fee::Policy {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
+                    solver: quote.solver.unwrap_or_default(),
                 },
             },
             FeePolicy::Volume { factor } => Self::Volume {

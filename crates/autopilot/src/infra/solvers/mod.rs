@@ -1,6 +1,6 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::util,
+    crate::{domain::eth, util},
     anyhow::{anyhow, Context, Result},
     reqwest::{Client, StatusCode},
     std::time::Duration,
@@ -15,14 +15,19 @@ const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 pub struct Driver {
     pub name: String,
     pub url: Url,
+    // An optional threshold used to check "fairness" of provided solutions. If specified, a
+    // winning solution should be discarded if it contains at least one order, which
+    // another driver solved with surplus exceeding this driver's surplus by `threshold`
+    pub fairness_threshold: Option<eth::Ether>,
     client: Client,
 }
 
 impl Driver {
-    pub fn new(url: Url, name: String) -> Self {
+    pub fn new(url: Url, name: String, fairness_threshold: Option<eth::Ether>) -> Self {
         Self {
             name,
             url,
+            fairness_threshold,
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()

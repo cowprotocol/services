@@ -316,15 +316,17 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![colocation::SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::UniswapV2,
     );
     services
@@ -390,15 +392,17 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![colocation::SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::UniswapV2,
     );
     services
@@ -708,7 +712,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(10_000)).await;
     let [trader_a] = onchain.make_accounts(to_wei(1)).await;
-    let [token_a] = onchain.deploy_tokens(solver.account()).await;
+    let [token_a, unsupported] = onchain.deploy_tokens(solver.account()).await;
 
     // Fund trader accounts
     token_a.mint(trader_a.address(), to_wei(10)).await;
@@ -745,6 +749,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
                 autopilot: vec![
                     protocol_fees_config,
                     "--enable-multiple-fees=true".to_string(),
+                    format!("--unsupported-tokens={:#x}", unsupported.address()),
                 ],
                 ..Default::default()
             },
@@ -753,7 +758,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await;
 
     // Place order
-    let order = OrderCreation {
+    let mut order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
         buy_token: onchain.contracts().weth.address(),
@@ -770,6 +775,17 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Cannot place orders with unsupported tokens
+    order.sell_token = unsupported.address();
+    services
+        .create_order(&order.sign(
+            EcdsaSigningScheme::Eip712,
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        ))
+        .await
+        .unwrap_err();
 
     // Create liquidity
     onchain

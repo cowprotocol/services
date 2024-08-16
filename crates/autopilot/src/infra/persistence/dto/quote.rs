@@ -1,5 +1,8 @@
 use {
-    crate::{boundary, domain},
+    crate::{
+        boundary,
+        domain::{self, eth},
+    },
     bigdecimal::{
         num_traits::{CheckedDiv, CheckedMul},
         FromPrimitive,
@@ -30,6 +33,7 @@ pub fn into_domain(quote: boundary::database::orders::Quote) -> Result<domain::Q
             .ok_or(QuoteError::U256Overflow)?
             .into(),
         fee: fee.into(),
+        solver: eth::H160::from(quote.solver.0).into(),
     })
 }
 
