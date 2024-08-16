@@ -16,7 +16,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::Result,
+    anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     itertools::Itertools,
@@ -193,154 +193,26 @@ impl RunLoop {
                 }
             };
 
-            let post_processing_start = Instant::now();
-            let winner = solution.solver().into();
-            let winning_score = solution.score().get().0;
-            let reference_score = solutions
-                .iter()
-                .nth_back(1)
-                .map(|participant| participant.solution.score().get().0)
-                .unwrap_or_default();
-            let participants = solutions
-                .iter()
-                .map(|participant| participant.solution.solver().into())
-                .collect::<HashSet<_>>();
-
-            let mut prices = BTreeMap::new();
-            let mut fee_policies = Vec::new();
             let block_deadline = competition_simulation_block + self.submission_deadline;
-            let call_data = revealed.calldata.internalized.clone();
-            let uninternalized_call_data = revealed.calldata.uninternalized.clone();
+            let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
-            for order_id in solution.order_ids() {
-                let auction_order = auction
-                    .orders
-                    .iter()
-                    .find(|auction_order| &auction_order.uid == order_id);
-                match auction_order {
-                    Some(auction_order) => {
-                        fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
-                        if let Some(price) = auction.prices.get(&auction_order.sell.token) {
-                            prices.insert(auction_order.sell.token, *price);
-                        } else {
-                            tracing::error!(
-                                sell_token = ?auction_order.sell.token,
-                                "sell token price is missing in auction"
-                            );
-                        }
-                        if let Some(price) = auction.prices.get(&auction_order.buy.token) {
-                            prices.insert(auction_order.buy.token, *price);
-                        } else {
-                            tracing::error!(
-                                buy_token = ?auction_order.buy.token,
-                                "buy token price is missing in auction"
-                            );
-                        }
-                    }
-                    None => {
-                        tracing::debug!(?order_id, "order not found in auction");
-                    }
-                }
-            }
-
-            let competition_table = SolverCompetitionDB {
-                auction_start_block: auction.block,
-                competition_simulation_block,
-                auction: CompetitionAuction {
-                    orders: auction
-                        .orders
-                        .iter()
-                        .map(|order| order.uid.into())
-                        .collect(),
-                    prices: auction
-                        .prices
-                        .into_iter()
-                        .map(|(key, value)| (key.into(), value.get().into()))
-                        .collect(),
-                },
-                solutions: solutions
-                    .iter()
-                    .enumerate()
-                    .map(|(index, participant)| {
-                        let is_winner = solutions.len() - index == 1;
-                        let mut settlement = SolverSettlement {
-                            solver: participant.driver.name.clone(),
-                            solver_address: participant.solution.solver().0,
-                            score: Some(Score::Solver(participant.solution.score().get().0)),
-                            ranking: solutions.len() - index,
-                            orders: participant
-                                .solution
-                                .orders()
-                                .iter()
-                                .map(|(id, order)| Order::Colocated {
-                                    id: (*id).into(),
-                                    sell_amount: order.sell.into(),
-                                    buy_amount: order.buy.into(),
-                                })
-                                .collect(),
-                            clearing_prices: participant
-                                .solution
-                                .prices()
-                                .iter()
-                                .map(|(token, price)| (token.0, price.get().into()))
-                                .collect(),
-                            call_data: None,
-                            uninternalized_call_data: None,
-                        };
-                        if is_winner {
-                            settlement.call_data = Some(revealed.calldata.internalized.clone());
-                            settlement.uninternalized_call_data =
-                                Some(revealed.calldata.uninternalized.clone());
-                        }
-                        settlement
-                    })
-                    .collect(),
-            };
-            let competition = Competition {
-                auction_id,
-                winner,
-                winning_score,
-                reference_score,
-                participants,
-                prices: prices
-                    .into_iter()
-                    .map(|(key, value)| (key.into(), value.get().into()))
-                    .collect(),
-                block_deadline,
-                competition_simulation_block,
-                call_data,
-                uninternalized_call_data,
-                competition_table,
-            };
-
-            tracing::trace!(?competition, "saving competition");
-            if let Err(err) = self.persistence.save_competition(&competition).await {
-                tracing::error!(?err, "failed to save competition");
-                return;
-            }
-
+            // Post-processing should not be executed asynchronously since it includes steps
+            // of storing all the competition/auction-related data to the DB.
             if let Err(err) = self
-                .persistence
-                .save_surplus_capturing_jit_orders_orders(
+                .post_processing(
                     auction_id,
-                    &auction.surplus_capturing_jit_order_owners,
+                    auction,
+                    competition_simulation_block,
+                    solution,
+                    &solutions,
+                    revealed,
+                    block_deadline,
                 )
                 .await
             {
-                tracing::error!(?err, "failed to save surplus capturing jit order owners");
+                tracing::error!(?err, "failed to post-process competition");
                 return;
             }
-
-            tracing::info!("saving fee policies");
-            if let Err(err) = self
-                .persistence
-                .store_fee_policies(auction_id, fee_policies)
-                .await
-            {
-                Metrics::fee_policies_store_error();
-                tracing::warn!(?err, "failed to save fee policies");
-            }
-            Metrics::post_processed(post_processing_start.elapsed());
 
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
@@ -355,7 +227,6 @@ impl RunLoop {
                 }
             }
             let solution_uids = solution.order_ids().copied().collect::<HashSet<_>>();
-            let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
             let unsettled_orders: HashSet<_> = solutions
                 .iter()
@@ -369,6 +240,163 @@ impl RunLoop {
             Metrics::matched_unsettled(driver, unsettled_orders);
             Metrics::single_run_completed(single_run_start.elapsed());
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn post_processing(
+        &self,
+        auction_id: domain::auction::Id,
+        auction: domain::Auction,
+        competition_simulation_block: u64,
+        winning_solution: &competition::SolutionWithId,
+        solutions: &[Participant<'_>],
+        revealed: reveal::Response,
+        block_deadline: u64,
+    ) -> Result<()> {
+        let start = Instant::now();
+        let winner = winning_solution.solver().into();
+        let winning_score = winning_solution.score().get().0;
+        let reference_score = solutions
+            .iter()
+            .nth_back(1)
+            .map(|participant| participant.solution.score().get().0)
+            .unwrap_or_default();
+        let participants = solutions
+            .iter()
+            .map(|participant| participant.solution.solver().into())
+            .collect::<HashSet<_>>();
+
+        let mut prices = BTreeMap::new();
+        let mut fee_policies = Vec::new();
+        let call_data = revealed.calldata.internalized.clone();
+        let uninternalized_call_data = revealed.calldata.uninternalized.clone();
+
+        for order_id in winning_solution.order_ids() {
+            let auction_order = auction
+                .orders
+                .iter()
+                .find(|auction_order| &auction_order.uid == order_id);
+            match auction_order {
+                Some(auction_order) => {
+                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+                    if let Some(price) = auction.prices.get(&auction_order.sell.token) {
+                        prices.insert(auction_order.sell.token, *price);
+                    } else {
+                        tracing::error!(
+                            sell_token = ?auction_order.sell.token,
+                            "sell token price is missing in auction"
+                        );
+                    }
+                    if let Some(price) = auction.prices.get(&auction_order.buy.token) {
+                        prices.insert(auction_order.buy.token, *price);
+                    } else {
+                        tracing::error!(
+                            buy_token = ?auction_order.buy.token,
+                            "buy token price is missing in auction"
+                        );
+                    }
+                }
+                None => {
+                    tracing::debug!(?order_id, "order not found in auction");
+                }
+            }
+        }
+
+        let competition_table = SolverCompetitionDB {
+            auction_start_block: auction.block,
+            competition_simulation_block,
+            auction: CompetitionAuction {
+                orders: auction
+                    .orders
+                    .iter()
+                    .map(|order| order.uid.into())
+                    .collect(),
+                prices: auction
+                    .prices
+                    .into_iter()
+                    .map(|(key, value)| (key.into(), value.get().into()))
+                    .collect(),
+            },
+            solutions: solutions
+                .iter()
+                .enumerate()
+                .map(|(index, participant)| {
+                    let is_winner = solutions.len() - index == 1;
+                    let mut settlement = SolverSettlement {
+                        solver: participant.driver.name.clone(),
+                        solver_address: participant.solution.solver().0,
+                        score: Some(Score::Solver(participant.solution.score().get().0)),
+                        ranking: solutions.len() - index,
+                        orders: participant
+                            .solution
+                            .orders()
+                            .iter()
+                            .map(|(id, order)| Order::Colocated {
+                                id: (*id).into(),
+                                sell_amount: order.sell.into(),
+                                buy_amount: order.buy.into(),
+                            })
+                            .collect(),
+                        clearing_prices: participant
+                            .solution
+                            .prices()
+                            .iter()
+                            .map(|(token, price)| (token.0, price.get().into()))
+                            .collect(),
+                        call_data: None,
+                        uninternalized_call_data: None,
+                    };
+                    if is_winner {
+                        settlement.call_data = Some(revealed.calldata.internalized.clone());
+                        settlement.uninternalized_call_data =
+                            Some(revealed.calldata.uninternalized.clone());
+                    }
+                    settlement
+                })
+                .collect(),
+        };
+        let competition = Competition {
+            auction_id,
+            winner,
+            winning_score,
+            reference_score,
+            participants,
+            prices: prices
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.get().into()))
+                .collect(),
+            block_deadline,
+            competition_simulation_block,
+            call_data,
+            uninternalized_call_data,
+            competition_table,
+        };
+
+        tracing::trace!(?competition, "saving competition");
+        self.persistence
+            .save_competition(&competition)
+            .await
+            .context("failed to save competition")?;
+
+        self.persistence
+            .save_surplus_capturing_jit_orders_orders(
+                auction_id,
+                &auction.surplus_capturing_jit_order_owners,
+            )
+            .await
+            .context("failed to save surplus capturing jit order owners")?;
+
+        tracing::info!("saving fee policies");
+        if let Err(err) = self
+            .persistence
+            .store_fee_policies(auction_id, fee_policies)
+            .await
+        {
+            Metrics::fee_policies_store_error();
+            tracing::warn!(?err, "failed to save fee policies");
+        }
+        Metrics::post_processed(start.elapsed());
+        Ok(())
     }
 
     /// Runs the solver competition, making all configured drivers participate.
