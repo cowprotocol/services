@@ -16,7 +16,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::Result,
+    anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     futures::pin_mut,
@@ -34,7 +34,7 @@ use {
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime},
     },
     tokio::sync::{watch, Mutex, Notify},
     tracing::{warn, Instrument},
@@ -71,6 +71,8 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
+            self.sleep_until_next_auction().await;
+            let init_block_timestamp = self.eth.current_block().borrow().timestamp;
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
@@ -81,7 +83,7 @@ impl RunLoop {
                     observe::log_auction_delta(id, &previous, &auction);
                     self.liveness.auction();
 
-                    self.single_run(id, &auction)
+                    self.single_run(id, &auction, init_block_timestamp)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
@@ -131,7 +133,6 @@ impl RunLoop {
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {
-        self.sleep_until_next_auction().await;
         let auction = match self.solvable_orders_cache.current_auction() {
             Some(auction) => auction,
             None => {
@@ -165,10 +166,18 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
+    async fn single_run(
+        &self,
+        auction_id: domain::auction::Id,
+        auction: &domain::Auction,
+        init_block_timestamp: u64,
+    ) {
+        Metrics::single_run_started(init_block_timestamp);
+        let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction.clone()).await;
+        Metrics::pre_processed(single_run_start.elapsed());
 
         let mut solutions = {
             let mut solutions = self.competition(auction_id, &auction).await;
@@ -205,163 +214,38 @@ impl RunLoop {
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
+            let reveal_start = Instant::now();
             let revealed = match self.reveal(driver, auction_id, solution.id()).await {
                 Ok(result) => {
-                    Metrics::reveal_ok(driver);
+                    Metrics::reveal_ok(driver, reveal_start.elapsed());
                     result
                 }
                 Err(err) => {
-                    Metrics::reveal_err(driver, &err);
+                    Metrics::reveal_err(driver, reveal_start.elapsed(), &err);
                     tracing::warn!(driver = %driver.name, ?err, "failed to reveal winning solution");
                     return;
                 }
             };
 
-            let winner = solution.solver().into();
-            let winning_score = solution.score().get().0;
-            let reference_score = solutions
-                .iter()
-                .nth_back(1)
-                .map(|participant| participant.solution.score().get().0)
-                .unwrap_or_default();
-            let participants = solutions
-                .iter()
-                .map(|participant| participant.solution.solver().into())
-                .collect::<HashSet<_>>();
-
-            let mut prices = BTreeMap::new();
-            let mut fee_policies = Vec::new();
             let block_deadline = competition_simulation_block + self.submission_deadline;
-            let call_data = revealed.calldata.internalized.clone();
-            let uninternalized_call_data = revealed.calldata.uninternalized.clone();
+            let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
-            for order_id in solution.order_ids() {
-                let auction_order = auction
-                    .orders
-                    .iter()
-                    .find(|auction_order| &auction_order.uid == order_id);
-                match auction_order {
-                    Some(auction_order) => {
-                        fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
-                        if let Some(price) = auction.prices.get(&auction_order.sell.token) {
-                            prices.insert(auction_order.sell.token, *price);
-                        } else {
-                            tracing::error!(
-                                sell_token = ?auction_order.sell.token,
-                                "sell token price is missing in auction"
-                            );
-                        }
-                        if let Some(price) = auction.prices.get(&auction_order.buy.token) {
-                            prices.insert(auction_order.buy.token, *price);
-                        } else {
-                            tracing::error!(
-                                buy_token = ?auction_order.buy.token,
-                                "buy token price is missing in auction"
-                            );
-                        }
-                    }
-                    None => {
-                        tracing::debug!(?order_id, "order not found in auction");
-                    }
-                }
-            }
-
-            let competition_table = SolverCompetitionDB {
-                auction_start_block: auction.block,
-                competition_simulation_block,
-                auction: CompetitionAuction {
-                    orders: auction
-                        .orders
-                        .iter()
-                        .map(|order| order.uid.into())
-                        .collect(),
-                    prices: auction
-                        .prices
-                        .into_iter()
-                        .map(|(key, value)| (key.into(), value.get().into()))
-                        .collect(),
-                },
-                solutions: solutions
-                    .iter()
-                    .enumerate()
-                    .map(|(index, participant)| {
-                        let is_winner = solutions.len() - index == 1;
-                        let mut settlement = SolverSettlement {
-                            solver: participant.driver.name.clone(),
-                            solver_address: participant.solution.solver().0,
-                            score: Some(Score::Solver(participant.solution.score().get().0)),
-                            ranking: solutions.len() - index,
-                            orders: participant
-                                .solution
-                                .orders()
-                                .iter()
-                                .map(|(id, order)| Order::Colocated {
-                                    id: (*id).into(),
-                                    sell_amount: order.sell.into(),
-                                    buy_amount: order.buy.into(),
-                                })
-                                .collect(),
-                            clearing_prices: participant
-                                .solution
-                                .prices()
-                                .iter()
-                                .map(|(token, price)| (token.0, price.get().into()))
-                                .collect(),
-                            call_data: None,
-                            uninternalized_call_data: None,
-                        };
-                        if is_winner {
-                            settlement.call_data = Some(revealed.calldata.internalized.clone());
-                            settlement.uninternalized_call_data =
-                                Some(revealed.calldata.uninternalized.clone());
-                        }
-                        settlement
-                    })
-                    .collect(),
-            };
-            let competition = Competition {
-                auction_id,
-                winner,
-                winning_score,
-                reference_score,
-                participants,
-                prices: prices
-                    .into_iter()
-                    .map(|(key, value)| (key.into(), value.get().into()))
-                    .collect(),
-                block_deadline,
-                competition_simulation_block,
-                call_data,
-                uninternalized_call_data,
-                competition_table,
-            };
-
-            tracing::trace!(?competition, "saving competition");
-            if let Err(err) = self.persistence.save_competition(&competition).await {
-                tracing::error!(?err, "failed to save competition");
-                return;
-            }
-
+            // Post-processing should not be executed asynchronously since it includes steps
+            // of storing all the competition/auction-related data to the DB.
             if let Err(err) = self
-                .persistence
-                .save_surplus_capturing_jit_orders_orders(
+                .post_processing(
                     auction_id,
-                    &auction.surplus_capturing_jit_order_owners,
+                    auction,
+                    competition_simulation_block,
+                    solution,
+                    &solutions,
+                    revealed,
+                    block_deadline,
                 )
                 .await
             {
-                tracing::error!(?err, "failed to save surplus capturing jit order owners");
+                tracing::error!(?err, "failed to post-process competition");
                 return;
-            }
-
-            tracing::info!("saving fee policies");
-            if let Err(err) = self
-                .persistence
-                .store_fee_policies(auction_id, fee_policies)
-                .await
-            {
-                Metrics::fee_policies_store_error();
-                tracing::warn!(?err, "failed to save fee policies");
             }
 
             tracing::info!(driver = %driver.name, "settling");
@@ -372,12 +256,11 @@ impl RunLoop {
             {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
-                    Metrics::settle_err(driver, &err, submission_start.elapsed());
+                    Metrics::settle_err(driver, submission_start.elapsed(), &err);
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
             let solution_uids = solution.order_ids().copied().collect::<HashSet<_>>();
-            let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
             let unsettled_orders: HashSet<_> = solutions
                 .iter()
@@ -389,7 +272,165 @@ impl RunLoop {
                 .filter(|uid| auction_uids.contains(uid))
                 .collect();
             Metrics::matched_unsettled(driver, unsettled_orders);
+            Metrics::single_run_completed(single_run_start.elapsed());
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn post_processing(
+        &self,
+        auction_id: domain::auction::Id,
+        auction: domain::Auction,
+        competition_simulation_block: u64,
+        winning_solution: &competition::SolutionWithId,
+        solutions: &[Participant<'_>],
+        revealed: reveal::Response,
+        block_deadline: u64,
+    ) -> Result<()> {
+        let start = Instant::now();
+        let winner = winning_solution.solver().into();
+        let winning_score = winning_solution.score().get().0;
+        let reference_score = solutions
+            .iter()
+            .nth_back(1)
+            .map(|participant| participant.solution.score().get().0)
+            .unwrap_or_default();
+        let participants = solutions
+            .iter()
+            .map(|participant| participant.solution.solver().into())
+            .collect::<HashSet<_>>();
+
+        let mut prices = BTreeMap::new();
+        let mut fee_policies = Vec::new();
+        let call_data = revealed.calldata.internalized.clone();
+        let uninternalized_call_data = revealed.calldata.uninternalized.clone();
+
+        for order_id in winning_solution.order_ids() {
+            let auction_order = auction
+                .orders
+                .iter()
+                .find(|auction_order| &auction_order.uid == order_id);
+            match auction_order {
+                Some(auction_order) => {
+                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+                    if let Some(price) = auction.prices.get(&auction_order.sell.token) {
+                        prices.insert(auction_order.sell.token, *price);
+                    } else {
+                        tracing::error!(
+                            sell_token = ?auction_order.sell.token,
+                            "sell token price is missing in auction"
+                        );
+                    }
+                    if let Some(price) = auction.prices.get(&auction_order.buy.token) {
+                        prices.insert(auction_order.buy.token, *price);
+                    } else {
+                        tracing::error!(
+                            buy_token = ?auction_order.buy.token,
+                            "buy token price is missing in auction"
+                        );
+                    }
+                }
+                None => {
+                    tracing::debug!(?order_id, "order not found in auction");
+                }
+            }
+        }
+
+        let competition_table = SolverCompetitionDB {
+            auction_start_block: auction.block,
+            competition_simulation_block,
+            auction: CompetitionAuction {
+                orders: auction
+                    .orders
+                    .iter()
+                    .map(|order| order.uid.into())
+                    .collect(),
+                prices: auction
+                    .prices
+                    .into_iter()
+                    .map(|(key, value)| (key.into(), value.get().into()))
+                    .collect(),
+            },
+            solutions: solutions
+                .iter()
+                .enumerate()
+                .map(|(index, participant)| {
+                    let is_winner = solutions.len() - index == 1;
+                    let mut settlement = SolverSettlement {
+                        solver: participant.driver.name.clone(),
+                        solver_address: participant.solution.solver().0,
+                        score: Some(Score::Solver(participant.solution.score().get().0)),
+                        ranking: solutions.len() - index,
+                        orders: participant
+                            .solution
+                            .orders()
+                            .iter()
+                            .map(|(id, order)| Order::Colocated {
+                                id: (*id).into(),
+                                sell_amount: order.sell.into(),
+                                buy_amount: order.buy.into(),
+                            })
+                            .collect(),
+                        clearing_prices: participant
+                            .solution
+                            .prices()
+                            .iter()
+                            .map(|(token, price)| (token.0, price.get().into()))
+                            .collect(),
+                        call_data: None,
+                        uninternalized_call_data: None,
+                    };
+                    if is_winner {
+                        settlement.call_data = Some(revealed.calldata.internalized.clone());
+                        settlement.uninternalized_call_data =
+                            Some(revealed.calldata.uninternalized.clone());
+                    }
+                    settlement
+                })
+                .collect(),
+        };
+        let competition = Competition {
+            auction_id,
+            winner,
+            winning_score,
+            reference_score,
+            participants,
+            prices: prices
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.get().into()))
+                .collect(),
+            block_deadline,
+            competition_simulation_block,
+            call_data,
+            uninternalized_call_data,
+            competition_table,
+        };
+
+        tracing::trace!(?competition, "saving competition");
+        self.persistence
+            .save_competition(&competition)
+            .await
+            .context("failed to save competition")?;
+
+        self.persistence
+            .save_surplus_capturing_jit_orders_orders(
+                auction_id,
+                &auction.surplus_capturing_jit_order_owners,
+            )
+            .await
+            .context("failed to save surplus capturing jit order owners")?;
+
+        tracing::info!("saving fee policies");
+        if let Err(err) = self
+            .persistence
+            .store_fee_policies(auction_id, fee_policies)
+            .await
+        {
+            Metrics::fee_policies_store_error();
+            tracing::warn!(?err, "failed to save fee policies");
+        }
+        Metrics::post_processed(start.elapsed());
+        Ok(())
     }
 
     /// Runs the solver competition, making all configured drivers participate.
@@ -799,11 +840,14 @@ struct Metrics {
 
     /// Tracks the result of driver `/reveal` requests.
     #[metric(labels("driver", "result"))]
-    reveal: prometheus::IntCounterVec,
+    reveal: prometheus::HistogramVec,
 
     /// Tracks the times and results of driver `/settle` requests.
-    #[metric(labels("driver", "result"))]
-    settle_time: prometheus::IntCounterVec,
+    #[metric(
+        labels("driver", "result"),
+        buckets(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 40)
+    )]
+    settle: prometheus::HistogramVec,
 
     /// Tracks the number of orders that were part of some but not the winning
     /// solution together with the winning driver that did't include it.
@@ -813,6 +857,25 @@ struct Metrics {
     /// Tracks the number of database errors.
     #[metric(labels("error_type"))]
     db_metric_error: prometheus::IntCounterVec,
+
+    /// Tracks the time spent in post-processing after the auction has been
+    /// solved and before sending a `settle` request.
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    auction_postprocessing_time: prometheus::Histogram,
+
+    /// Tracks the time spent in pre-processing before sending a `solve`
+    /// request.
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    auction_preprocessing_time: prometheus::Histogram,
+
+    /// Total time spent in a single run of the run loop.
+    #[metric(buckets(0, 1, 5, 10, 15, 20, 25, 30, 35, 40))]
+    single_run_time: prometheus::Histogram,
+
+    /// Time difference between the current block and when the single run
+    /// function is started.
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    current_block_delay: prometheus::Histogram,
 }
 
 impl Metrics {
@@ -862,14 +925,14 @@ impl Metrics {
             .inc();
     }
 
-    fn reveal_ok(driver: &infra::Driver) {
+    fn reveal_ok(driver: &infra::Driver, elapsed: Duration) {
         Self::get()
             .reveal
             .with_label_values(&[&driver.name, "success"])
-            .inc();
+            .observe(elapsed.as_secs_f64());
     }
 
-    fn reveal_err(driver: &infra::Driver, err: &RevealError) {
+    fn reveal_err(driver: &infra::Driver, elapsed: Duration, err: &RevealError) {
         let label = match err {
             RevealError::AuctionMismatch => "mismatch",
             RevealError::Failure(_) => "error",
@@ -877,24 +940,24 @@ impl Metrics {
         Self::get()
             .reveal
             .with_label_values(&[&driver.name, label])
-            .inc();
+            .observe(elapsed.as_secs_f64());
     }
 
-    fn settle_ok(driver: &infra::Driver, time: Duration) {
+    fn settle_ok(driver: &infra::Driver, elapsed: Duration) {
         Self::get()
-            .settle_time
+            .settle
             .with_label_values(&[&driver.name, "success"])
-            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
+            .observe(elapsed.as_secs_f64());
     }
 
-    fn settle_err(driver: &infra::Driver, err: &SettleError, time: Duration) {
+    fn settle_err(driver: &infra::Driver, elapsed: Duration, err: &SettleError) {
         let label = match err {
             SettleError::Failure(_) => "error",
         };
         Self::get()
-            .settle_time
+            .settle
             .with_label_values(&[&driver.name, label])
-            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
+            .observe(elapsed.as_secs_f64());
     }
 
     fn matched_unsettled(winning: &infra::Driver, unsettled: HashSet<&domain::OrderUid>) {
@@ -912,6 +975,34 @@ impl Metrics {
             .db_metric_error
             .with_label_values(&["fee_policies_store"])
             .inc();
+    }
+
+    fn post_processed(elapsed: Duration) {
+        Self::get()
+            .auction_postprocessing_time
+            .observe(elapsed.as_secs_f64());
+    }
+
+    fn pre_processed(elapsed: Duration) {
+        Self::get()
+            .auction_preprocessing_time
+            .observe(elapsed.as_secs_f64());
+    }
+
+    fn single_run_completed(elapsed: Duration) {
+        Self::get().single_run_time.observe(elapsed.as_secs_f64());
+    }
+
+    fn single_run_started(init_block_timestamp: u64) {
+        match SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+        {
+            Ok(now) => Self::get()
+                .current_block_delay
+                .observe((now - init_block_timestamp) as f64),
+            Err(err) => tracing::error!(?err, "failed to get current time"),
+        }
     }
 }
 
