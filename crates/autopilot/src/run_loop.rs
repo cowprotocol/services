@@ -52,6 +52,10 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub synchronization: RunLoopMode,
+    /// Only await the next block before starting the next runloop if
+    /// we already wasted more than this amount of time of the current
+    /// block's time.
+    pub max_runloop_delay: Duration,
 }
 
 impl RunLoop {
@@ -67,17 +71,25 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            let init_block_timestamp = {
-                if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                    let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-                    if let Err(err) = self.solvable_orders_cache.update(block.number).await {
-                        tracing::error!(?err, "failed to build a new auction");
-                    }
-                    block.timestamp
+            let block = if let RunLoopMode::SyncToBlockchain = self.synchronization {
+                let current_block = *self.eth.current_block().borrow();
+                let auction_block = if current_block.observed_at.elapsed() > self.max_runloop_delay
+                {
+                    ethrpc::block_stream::next_block(self.eth.current_block()).await
                 } else {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    self.eth.current_block().borrow().timestamp
+                    current_block
+                };
+
+                if let Err(err) = self
+                    .solvable_orders_cache
+                    .update(auction_block.number)
+                    .await
+                {
+                    tracing::error!(?err, "failed to build a new auction");
                 }
+                auction_block
+            } else {
+                *self.eth.current_block().borrow()
             };
 
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
@@ -90,7 +102,7 @@ impl RunLoop {
                     observe::log_auction_delta(id, &previous, &auction);
                     self.liveness.auction();
 
-                    self.single_run(id, &auction, init_block_timestamp)
+                    self.single_run(id, &auction, block.timestamp)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
