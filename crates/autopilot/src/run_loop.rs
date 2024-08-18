@@ -29,7 +29,10 @@ use {
     },
     primitive_types::H256,
     rand::seq::SliceRandom,
-    shared::token_list::AutoUpdatingTokenList,
+    shared::{
+        maintenance::{Maintaining, ServiceMaintenance},
+        token_list::AutoUpdatingTokenList,
+    },
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
@@ -56,6 +59,9 @@ pub struct RunLoop {
     /// we already wasted more than this amount of time of the current
     /// block's time.
     pub max_runloop_delay: Duration,
+    /// Components that should be updated before every runloop to have
+    /// the most recent data available.
+    pub maintainers: Vec<Arc<dyn Maintaining>>,
 }
 
 impl RunLoop {
@@ -66,6 +72,8 @@ impl RunLoop {
                 self.eth.current_block().clone(),
                 update_interval,
             );
+            ServiceMaintenance::new(self.maintainers.clone())
+                .spawn_background_task(self.eth.current_block().clone())
         }
 
         let mut last_auction = None;
@@ -79,6 +87,8 @@ impl RunLoop {
                 } else {
                     current_block
                 };
+
+                self.run_maintenance().await;
 
                 if let Err(err) = self
                     .solvable_orders_cache
@@ -108,6 +118,17 @@ impl RunLoop {
                 }
             };
         }
+    }
+
+    /// Runs maintenance on all components to ensure the system uses
+    /// the latest available state.
+    async fn run_maintenance(&self) {
+        futures::future::join_all(self.maintainers.iter().cloned().map(|item| async move {
+            if let Err(err) = item.run_maintenance().await {
+                tracing::warn!(?err, "failed to run maintenance");
+            }
+        }))
+        .await;
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {
@@ -692,9 +713,10 @@ impl RunLoop {
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
         loop {
-            if self.eth.current_block().borrow().number > deadline {
-                break;
-            }
+            let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+            // Run maintenance to ensure the system processed the last available block so
+            // it's possible to find the tx in the DB in the next line.
+            self.run_maintenance().await;
 
             match self
                 .persistence
@@ -707,7 +729,9 @@ impl RunLoop {
                 }
                 Ok(None) => {}
             }
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            if block.number >= deadline {
+                break;
+            }
         }
         Err(SettleError::Failure(anyhow::anyhow!(
             "settlement transaction await reached deadline"

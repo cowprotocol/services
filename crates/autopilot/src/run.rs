@@ -35,7 +35,7 @@ use {
         },
         baseline_solver::BaseTokens,
         http_client::HttpClientFactory,
-        maintenance::{Maintaining, ServiceMaintenance},
+        maintenance::Maintaining,
         metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
@@ -443,11 +443,6 @@ pub async fn run(args: Arguments) {
         maintainers.push(broadcaster_event_updater);
     }
 
-    let service_maintainer = ServiceMaintenance::new(maintainers);
-    tokio::task::spawn(
-        service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
-    );
-
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         persistence.clone(),
@@ -521,6 +516,7 @@ pub async fn run(args: Arguments) {
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
         max_runloop_delay: args.max_runloop_delay,
+        maintainers,
     };
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
