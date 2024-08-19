@@ -56,7 +56,7 @@ pub struct Metrics {
     auction_update_total_time: Histogram,
 
     /// Time spent on auction update individual stage.
-    #[metric(labels("stage"), buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    #[metric(labels("stage"))]
     auction_update_stage_time: HistogramVec,
 
     /// Auction creations.
@@ -241,6 +241,7 @@ impl SolvableOrdersCache {
         );
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
+            let _timer = self.stage_timer("weth_price_fetch");
             let weth_price = self
                 .native_price_estimator
                 .estimate_native_price(self.weth)

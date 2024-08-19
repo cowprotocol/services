@@ -808,12 +808,10 @@ struct Metrics {
 
     /// Tracks the time spent in post-processing after the auction has been
     /// solved and before sending a `settle` request.
-    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
     auction_postprocessing_time: prometheus::Histogram,
 
     /// Tracks the time spent in pre-processing before sending a `solve`
     /// request.
-    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
     auction_preprocessing_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
@@ -822,7 +820,7 @@ struct Metrics {
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    #[metric(buckets(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 40))]
     current_block_delay: prometheus::Histogram,
 }
 
