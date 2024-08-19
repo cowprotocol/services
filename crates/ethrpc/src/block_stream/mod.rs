@@ -237,13 +237,13 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 #[async_trait::async_trait]
 impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<BlockInfo> {
-        get_block_info_at_id(self, BlockNumber::Latest.into())
+        get_block_at_id(self, BlockNumber::Latest.into())
             .await?
             .try_into()
     }
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
-        let block = get_block_info_at_id(self, U64::from(number).into()).await?;
+        let block = get_block_at_id(self, U64::from(number).into()).await?;
         Ok((
             block.number.context("missing block_number")?.as_u64(),
             block.hash.context("missing block_hash")?,
@@ -288,7 +288,7 @@ impl BlockRetrieving for Web3 {
     }
 }
 
-async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<Block<H256>> {
+async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<Block<H256>> {
     web3.eth()
         .block(id)
         .await
