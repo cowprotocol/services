@@ -249,6 +249,7 @@ pub type Calldata = crate::util::Bytes<Vec<u8>>;
 pub struct Event {
     pub block: BlockNo,
     pub log_index: u64,
+    pub transaction: TxId,
 }
 
 /// Any type of on-chain transaction.

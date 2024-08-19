@@ -93,18 +93,10 @@ impl Settlement {
     }
 }
 
-/// Event emmited by settlement contract whenever a settlement transaction is
-/// executed.
-#[derive(Debug, Clone, Copy)]
-pub struct Event {
-    pub inner: eth::Event,
-    pub transaction: eth::TxId,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed communication with the database: {0}")]
-    Infra(sqlx::Error),
+    Infra(anyhow::Error),
     #[error("failed to prepare the data fetched from database for domain: {0}")]
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
@@ -147,7 +139,7 @@ pub enum InconsistentData {
 impl From<infra::persistence::error::Auction> for Error {
     fn from(err: infra::persistence::error::Auction) -> Self {
         match err {
-            infra::persistence::error::Auction::DatabaseError(err) => Self::Infra(err),
+            infra::persistence::error::Auction::DatabaseError(err) => Self::Infra(err.into()),
             infra::persistence::error::Auction::NotFound => {
                 Self::InconsistentData(InconsistentData::AuctionNotFound)
             }
@@ -164,7 +156,7 @@ impl From<infra::persistence::error::Auction> for Error {
 impl From<infra::persistence::error::Solution> for Error {
     fn from(err: infra::persistence::error::Solution) -> Self {
         match err {
-            infra::persistence::error::Solution::DatabaseError(err) => Self::Infra(err),
+            infra::persistence::error::Solution::DatabaseError(err) => Self::Infra(err.into()),
             infra::persistence::error::Solution::NotFound => {
                 Self::InconsistentData(InconsistentData::SolutionNotFound)
             }

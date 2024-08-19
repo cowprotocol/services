@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, competition, eth, settlement},
+        domain::{self, competition, eth},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -46,26 +46,26 @@ impl Persistence {
     pub async fn replace_current_auction(
         &self,
         auction: &domain::Auction,
-    ) -> Result<domain::auction::Id, Error> {
+    ) -> Result<domain::auction::Id, DatabaseError> {
         let auction = dto::auction::from_domain(auction.clone());
-        self.postgres
+        Ok(self
+            .postgres
             .replace_current_auction(&auction)
             .await
             .map(|auction_id| {
                 self.archive_auction(auction_id, auction);
                 auction_id
-            })
-            .map_err(Error::DbError)
+            })?)
     }
 
     pub async fn solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, Error> {
+    ) -> Result<boundary::SolvableOrders, DatabaseError> {
         self.postgres
             .solvable_orders(min_valid_to)
             .await
-            .map_err(Error::DbError)
+            .map_err(DatabaseError)
     }
 
     /// Saves the given auction to storage for debugging purposes.
@@ -91,11 +91,14 @@ impl Persistence {
     }
 
     /// Saves the competition data to the DB
-    pub async fn save_competition(&self, competition: &boundary::Competition) -> Result<(), Error> {
+    pub async fn save_competition(
+        &self,
+        competition: &boundary::Competition,
+    ) -> Result<(), DatabaseError> {
         self.postgres
             .save_competition(competition)
             .await
-            .map_err(Error::DbError)
+            .map_err(DatabaseError)
     }
 
     /// Saves the surplus capturing jit order owners to the DB
@@ -103,7 +106,7 @@ impl Persistence {
         &self,
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[domain::eth::Address],
-    ) -> Result<(), Error> {
+    ) -> Result<(), DatabaseError> {
         self.postgres
             .save_surplus_capturing_jit_orders_orders(
                 auction_id,
@@ -113,7 +116,7 @@ impl Persistence {
                     .collect::<Vec<_>>(),
             )
             .await
-            .map_err(Error::DbError)
+            .map_err(DatabaseError)
     }
 
     /// Inserts an order event for each order uid in the given set.
@@ -154,11 +157,14 @@ impl Persistence {
 
     /// Retrieves the transaction hash for the settlement with the given
     /// auction_id.
-    pub async fn find_tx_hash_by_auction_id(&self, auction_id: i64) -> Result<Option<H256>, Error> {
+    pub async fn find_tx_hash_by_auction_id(
+        &self,
+        auction_id: i64,
+    ) -> Result<Option<H256>, DatabaseError> {
         self.postgres
             .find_tx_hash_by_auction_id(auction_id)
             .await
-            .map_err(Error::DbError)
+            .map_err(DatabaseError)
     }
 
     /// Checks if an auction already has an accociated settlement.
@@ -380,28 +386,25 @@ impl Persistence {
     /// not yet populated in the database.
     pub async fn get_settlement_without_auction(
         &self,
-    ) -> Result<Option<domain::settlement::Event>, error::SettlementEvent> {
+    ) -> Result<Option<domain::eth::Event>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await.map_err(DatabaseError)?;
+        let mut ex = self.postgres.pool.begin().await?;
         let event = database::settlements::get_settlement_without_auction(&mut ex)
-            .await
-            .map_err(DatabaseError)?
+            .await?
             .map(|event| {
-                let event = settlement::Event {
-                    inner: eth::Event {
-                        block: u64::try_from(event.block_number)
-                            .map_err(|_| error::SettlementEvent::InvalidEvent)?
-                            .into(),
-                        log_index: u64::try_from(event.log_index)
-                            .map_err(|_| error::SettlementEvent::InvalidEvent)?,
-                    },
+                let event = domain::eth::Event {
+                    block: u64::try_from(event.block_number)
+                        .map_err(|_| anyhow::anyhow!("negative block"))?
+                        .into(),
+                    log_index: u64::try_from(event.log_index)
+                        .map_err(|_| anyhow::anyhow!("negative log index"))?,
                     transaction: eth::TxId(H256(event.tx_hash.0)),
                 };
-                Ok::<_, error::SettlementEvent>(event)
+                Ok::<_, DatabaseError>(event)
             })
             .transpose()?;
         Ok(event)
@@ -409,21 +412,21 @@ impl Persistence {
 
     pub async fn save_settlement(
         &self,
-        event: domain::settlement::Event,
+        event: domain::eth::Event,
         auction_id: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
-    ) -> Result<(), error::Settlement> {
+    ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["save_settlement"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await.map_err(DatabaseError)?;
+        let mut ex = self.postgres.pool.begin().await?;
 
         let block_number =
-            i64::try_from(event.inner.block.0).map_err(|_| error::Settlement::InvalidEvent)?;
+            i64::try_from(event.block.0).map_err(|_| anyhow::anyhow!("block overflow"))?;
         let log_index =
-            i64::try_from(event.inner.log_index).map_err(|_| error::Settlement::InvalidEvent)?;
+            i64::try_from(event.log_index).map_err(|_| anyhow::anyhow!("log index overflow"))?;
 
         database::settlements::update_settlement_auction(
             &mut ex,
@@ -431,8 +434,7 @@ impl Persistence {
             log_index,
             auction_id,
         )
-        .await
-        .map_err(DatabaseError)?;
+        .await?;
 
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
@@ -444,12 +446,12 @@ impl Persistence {
             tracing::debug!(
                 ?auction_id,
                 hash = ?event.transaction,
-                "settlement update: gas: {}, gas_price: {}, surplus: {}, fee: {}, order_fees: {:?}",
-                gas,
-                gas_price,
-                surplus,
-                fee,
-                order_fees
+                ?gas,
+                ?gas_price,
+                ?surplus,
+                ?fee,
+                ?order_fees,
+                "settlement update",
             );
 
             database::settlement_observations::upsert(
@@ -463,8 +465,7 @@ impl Persistence {
                     fee: u256_to_big_decimal(&fee.0),
                 },
             )
-            .await
-            .map_err(DatabaseError)?;
+            .await?;
 
             store_order_events(
                 &mut ex,
@@ -484,12 +485,12 @@ impl Persistence {
                         &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
                     ),
                 )
-                .await
-                .map_err(DatabaseError)?;
+                .await?;
             }
         }
 
-        Ok(ex.commit().await.map_err(DatabaseError)?)
+        ex.commit().await?;
+        Ok(())
     }
 }
 
@@ -507,14 +508,14 @@ impl Metrics {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("failed communication with the database")]
-    DbError(#[from] anyhow::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
 #[error("failed communication with the database")]
-pub struct DatabaseError(#[from] pub sqlx::Error);
+pub struct DatabaseError(#[from] pub anyhow::Error);
+
+impl From<sqlx::Error> for DatabaseError {
+    fn from(err: sqlx::Error) -> Self {
+        Self(err.into())
+    }
+}
 
 pub mod error {
     use super::*;
@@ -543,33 +544,5 @@ pub mod error {
         InvalidPrice(eth::TokenAddress),
         #[error("invalid solver competition data fetched from database: {0}")]
         InvalidSolverCompetition(anyhow::Error),
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Settlement {
-        #[error("failed communication with the database: {0}")]
-        DatabaseError(sqlx::Error),
-        #[error("invalid settlement event")]
-        InvalidEvent,
-    }
-
-    impl From<DatabaseError> for Settlement {
-        fn from(err: DatabaseError) -> Self {
-            Self::DatabaseError(err.0)
-        }
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum SettlementEvent {
-        #[error("failed communication with the database: {0}")]
-        DatabaseError(sqlx::Error),
-        #[error("failed to convert event into domain")]
-        InvalidEvent,
-    }
-
-    impl From<DatabaseError> for SettlementEvent {
-        fn from(err: DatabaseError) -> Self {
-            Self::DatabaseError(err.0)
-        }
     }
 }
