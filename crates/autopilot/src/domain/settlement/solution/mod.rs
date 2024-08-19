@@ -15,7 +15,7 @@ mod trade;
 pub use error::Error;
 use {
     crate::{domain, domain::fee},
-    num::CheckedSub,
+    num::Saturating,
     std::collections::HashMap,
 };
 
@@ -92,8 +92,8 @@ impl Solution {
                     match (total, protocol) {
                         (Ok(total), Ok(protocol)) => {
                             let network =
-                                total.checked_sub(&protocol.iter().map(|(fee, _)| *fee).sum());
-                            network.map(|network| ExecutedFee { protocol, network })
+                                total.saturating_sub(protocol.iter().map(|(fee, _)| *fee).sum());
+                            Some(ExecutedFee { protocol, network })
                         }
                         _ => None,
                     }
