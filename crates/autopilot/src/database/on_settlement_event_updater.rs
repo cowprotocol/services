@@ -83,7 +83,7 @@ impl super::Postgres {
                     settlement_update.auction_id,
                     settlement_update.block_number,
                     &u256_to_big_decimal(&executed_fee),
-                    &[],
+                    None,
                 )
                 .await
                 .context("save_order_executions")?;
