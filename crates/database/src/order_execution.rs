@@ -27,7 +27,7 @@ pub async fn save(
     auction: AuctionId,
     block_number: i64,
     executed_fee: &BigDecimal,
-    executed_protocol_fees: Option<&[FeeAsset]>,
+    executed_protocol_fees: &[FeeAsset],
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, block_number, protocol_fees)
@@ -103,7 +103,7 @@ mod tests {
             1,
             0,
             &Default::default(),
-            Some(&[
+            &[
                 FeeAsset {
                     amount: Default::default(),
                     token: Default::default(),
@@ -112,22 +112,15 @@ mod tests {
                     amount: Default::default(),
                     token: Default::default(),
                 },
-            ]),
+            ],
         )
         .await
         .unwrap();
 
         // save entry but without protocol fees (we are still not calculating them)
-        save(
-            &mut db,
-            &Default::default(),
-            2,
-            0,
-            &Default::default(),
-            None,
-        )
-        .await
-        .unwrap();
+        save(&mut db, &Default::default(), 2, 0, &Default::default(), &[])
+            .await
+            .unwrap();
 
         let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 1)
             .await
@@ -138,8 +131,9 @@ mod tests {
         // existing order but without protocol fees
         let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 2)
             .await
+            .unwrap()
             .unwrap();
-        assert!(protocol_fees.is_none());
+        assert_eq!(protocol_fees.len(), 0);
 
         // non-existing order
         let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 3)
