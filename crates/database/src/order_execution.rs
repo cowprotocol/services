@@ -14,7 +14,7 @@ pub struct FeeAsset {
     pub token: Address,
 }
 
-// explains how to store array of FeeAsset in Postgres and how to fetch it
+// explains that the equivalent Postgres type is already defined in the database
 impl PgHasArrayType for FeeAsset {
     fn array_type_info() -> PgTypeInfo {
         PgTypeInfo::with_name("_feeasset")
