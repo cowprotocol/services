@@ -37,14 +37,11 @@ use {
     primitive_types::{H160, H256},
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    std::{collections::HashSet, sync::Arc},
+    std::collections::HashSet,
 };
 
+#[derive(Clone)]
 pub struct OnSettlementEventUpdater {
-    inner: Arc<Inner>,
-}
-
-struct Inner {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     db: Postgres,
@@ -63,12 +60,11 @@ impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
     pub fn new(eth: infra::Ethereum, db: Postgres, persistence: infra::Persistence) -> Self {
-        let inner = Arc::new(Inner {
+        Self {
             eth,
             persistence,
             db,
-        });
-        Self { inner }
+        }
     }
 
     /// Deletes settlement_observations and order executions for the given range
@@ -88,7 +84,7 @@ impl OnSettlementEventUpdater {
     /// since this code needs that data to already be present in the DB.
     pub async fn update(&self) {
         loop {
-            match self.inner.single_update().await {
+            match self.single_update().await {
                 Ok(true) => {
                     tracing::debug!("on settlement event updater ran and processed event");
                     // There might be more pending updates, continue immediately.
@@ -105,9 +101,7 @@ impl OnSettlementEventUpdater {
             }
         }
     }
-}
 
-impl Inner {
     /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
