@@ -809,9 +809,12 @@ async fn no_liquidity_limit_order(web3: Web3) {
     let trades = services.get_trades(&order_id).await.unwrap();
     assert_eq!(
         trades.first().unwrap().fee_policies,
-        vec![model::fee_policy::FeePolicy::Surplus {
-            factor: 0.5,
-            max_volume_factor: 0.01
-        }],
+        vec![(
+            model::fee_policy::FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.01
+            },
+            None
+        )],
     );
 }
