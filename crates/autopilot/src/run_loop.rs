@@ -19,10 +19,13 @@ use {
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
-    ethrpc::block_stream::BlockInfo,
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
+        CompetitionAuction,
+        Order,
+        Score,
+        SolverCompetitionDB,
+        SolverSettlement,
     },
     primitive_types::H256,
     rand::seq::SliceRandom,
@@ -77,18 +80,18 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            let block = self.sleep_until_next_auction().await;
+            self.sleep_until_next_auction().await;
             if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
-                let current_block = self.eth.current_block().borrow().hash;
+                let current_block = *self.eth.current_block().borrow();
                 // Only run the solvers if the auction or block has changed.
                 let previous = last_auction.replace(auction.clone());
                 if previous.as_ref() != Some(&auction)
-                    || last_block.replace(current_block) != Some(current_block)
+                    || last_block.replace(current_block.hash) != Some(current_block.hash)
                 {
                     observe::log_auction_delta(id, &previous, &auction);
                     self.liveness.auction();
 
-                    self.single_run(id, &auction, block.timestamp)
+                    self.single_run(id, &auction, current_block.timestamp)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
@@ -98,17 +101,20 @@ impl RunLoop {
 
     /// Sleeps until the next auction is supposed to start and returns the most
     /// recent block for that auction.
-    async fn sleep_until_next_auction(&self) -> BlockInfo {
+    async fn sleep_until_next_auction(&self) {
         match self.synchronization {
             RunLoopMode::Unsynchronized => {
                 // Sleep a bit to avoid busy loops.
                 tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
-                *self.eth.current_block().borrow()
             }
             RunLoopMode::SyncToBlockchain => {
                 let current_block = *self.eth.current_block().borrow();
-                let auction_block = if current_block.observed_at.elapsed() > self.max_runloop_delay
-                {
+                let time_since_last_block = current_block.observed_at.elapsed();
+                let auction_block = if time_since_last_block > self.max_runloop_delay {
+                    tracing::warn!(
+                        missed_by = ?time_since_last_block - self.max_runloop_delay,
+                        "missed optimal auction start, wait for new block"
+                    );
                     ethrpc::block_stream::next_block(self.eth.current_block()).await
                 } else {
                     current_block
@@ -123,7 +129,6 @@ impl RunLoop {
                 {
                     tracing::error!(?err, "failed to build a new auction");
                 }
-                auction_block
             }
         }
     }
