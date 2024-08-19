@@ -183,17 +183,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "https://api.1inch.dev/")]
     pub one_inch_url: Url,
 
-    /// The API key for the CoinGecko API.
-    #[clap(long, env)]
-    pub coin_gecko_api_key: Option<String>,
-
-    /// The base URL for the CoinGecko API.
-    #[clap(
-        long,
-        env,
-        default_value = "https://api.coingecko.com/api/v3/simple/token_price"
-    )]
-    pub coin_gecko_url: Url,
+    /// The CoinGecko native price configuration
+    #[clap(flatten)]
+    pub coin_gecko: CoinGecko,
 
     /// How inaccurate a quote must be before it gets discarded provided as a
     /// factor.
@@ -220,6 +212,52 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub quote_timeout: Duration,
+}
+
+#[derive(clap::Parser)]
+pub struct CoinGecko {
+    /// The API key for the CoinGecko API.
+    #[clap(long, env)]
+    pub coin_gecko_api_key: Option<String>,
+
+    /// The base URL for the CoinGecko API.
+    #[clap(
+        long,
+        env,
+        default_value = "https://api.coingecko.com/api/v3/simple/token_price"
+    )]
+    pub coin_gecko_url: Url,
+
+    /// An additional minimum delay to wait for collecting CoinGecko requests.
+    ///
+    /// The delay to start counting after receiving the first request.
+    ///
+    /// Default: 300 ms (x5 rate limit period: 60 ms)
+    #[clap(
+        long,
+        env,
+        default_value = "300ms",
+        value_parser = humantime::parse_duration,
+    )]
+    pub coin_gecko_debouncing_time: Duration,
+
+    /// The timeout to wait for the result to be ready
+    ///
+    /// Default: 600 ms (x2 default `debouncing_time`)
+    #[clap(
+        long,
+        env,
+        default_value = "600ms",
+        value_parser = humantime::parse_duration,
+    )]
+    pub coin_gecko_result_ready_timeout: Duration,
+
+    /// Maximum capacity of the broadcast channel to store the CoinGecko native
+    /// prices results
+    ///
+    /// Default: 60 (3 times the CoinGecko max bulk request size: 20)
+    #[clap(long, env, default_value = "60")]
+    pub coin_gecko_broadcast_channel_capacity: usize,
 }
 
 /// Controls which level of quote verification gets applied.
@@ -249,8 +287,7 @@ impl Display for Arguments {
             balancer_sor_url,
             one_inch_api_key,
             one_inch_url,
-            coin_gecko_api_key,
-            coin_gecko_url,
+            coin_gecko,
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
@@ -294,8 +331,28 @@ impl Display for Arguments {
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
         display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
-        display_secret_option(f, "coin_gecko_api_key: {:?}", coin_gecko_api_key)?;
-        writeln!(f, "coin_gecko_api_url: {}", coin_gecko_url)?;
+        display_secret_option(
+            f,
+            "coin_gecko_api_key: {:?}",
+            &coin_gecko.coin_gecko_api_key,
+        )?;
+        writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
+        writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
+        writeln!(
+            f,
+            "coin_gecko_result_ready_timeout: {:?}",
+            coin_gecko.coin_gecko_result_ready_timeout
+        )?;
+        writeln!(
+            f,
+            "coin_gecko_debouncing_time: {:?}",
+            coin_gecko.coin_gecko_debouncing_time
+        )?;
+        writeln!(
+            f,
+            "coin_gecko_broadcast_channel_capacity: {}",
+            coin_gecko.coin_gecko_broadcast_channel_capacity
+        )?;
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
