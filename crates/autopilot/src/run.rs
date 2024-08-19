@@ -515,7 +515,7 @@ pub async fn run(args: Arguments) {
         persistence: persistence.clone(),
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
-        max_runloop_delay: args.max_runloop_delay,
+        max_run_loop_delay: args.max_run_loop_delay,
         maintenance: ServiceMaintenance::new(maintainers),
     };
     run.run_forever(args.auction_update_interval).await;

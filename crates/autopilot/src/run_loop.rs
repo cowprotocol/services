@@ -55,10 +55,10 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub synchronization: RunLoopMode,
-    /// Only await the next block before starting the next runloop if
-    /// we already wasted more than this amount of time of the current
-    /// block's time.
-    pub max_runloop_delay: Duration,
+    /// How much time past observing the current block the runloop is
+    /// allowed to start before it has to re-synchronize to the blockchain
+    /// by waiting for the next block to appear.
+    pub max_run_loop_delay: Duration,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     pub maintenance: ServiceMaintenance,
@@ -110,9 +110,9 @@ impl RunLoop {
             RunLoopMode::SyncToBlockchain => {
                 let current_block = *self.eth.current_block().borrow();
                 let time_since_last_block = current_block.observed_at.elapsed();
-                let auction_block = if time_since_last_block > self.max_runloop_delay {
+                let auction_block = if time_since_last_block > self.max_run_loop_delay {
                     tracing::warn!(
-                        missed_by = ?time_since_last_block - self.max_runloop_delay,
+                        missed_by = ?time_since_last_block - self.max_run_loop_delay,
                         "missed optimal auction start, wait for new block"
                     );
                     ethrpc::block_stream::next_block(self.eth.current_block()).await
