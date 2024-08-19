@@ -77,11 +77,11 @@ impl Default for BlockInfo {
 impl PartialEq<Self> for BlockInfo {
     fn eq(&self, other: &Self) -> bool {
         self.number == other.number
-        && self.hash == other.hash
-        && self.parent_hash == other.parent_hash
-        && self.timestamp == other.timestamp
-        && self.gas_limit == other.gas_limit
-        && self.gas_price == other.gas_price
+            && self.hash == other.hash
+            && self.parent_hash == other.parent_hash
+            && self.timestamp == other.timestamp
+            && self.gas_limit == other.gas_limit
+            && self.gas_price == other.gas_price
     }
 }
 
