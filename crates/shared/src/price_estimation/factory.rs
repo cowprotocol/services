@@ -221,24 +221,31 @@ impl<'a> PriceEstimatorFactory<'a> {
                 )
                 .await?;
 
-                let configuration = buffered::Configuration {
-                    max_concurrent_requests: Some(
-                        coin_gecko
-                            .max_batch_size()
-                            .try_into()
-                            .context("invalid CoinGecko max batch size")?,
-                    ),
-                    debouncing_time: self.args.coin_gecko.coin_gecko_debouncing_time,
-                    result_ready_timeout: self.args.coin_gecko.coin_gecko_result_ready_timeout,
-                    broadcast_channel_capacity: self
-                        .args
-                        .coin_gecko
-                        .coin_gecko_broadcast_channel_capacity,
-                };
+                let coin_gecko: Arc<dyn NativePriceEstimating> =
+                    if let Some(coin_gecko_buffered_configuration) =
+                        &self.args.coin_gecko.coin_gecko_buffered
+                    {
+                        let configuration = buffered::Configuration {
+                            max_concurrent_requests: Some(
+                                coin_gecko
+                                    .max_batch_size()
+                                    .try_into()
+                                    .context("invalid CoinGecko max batch size")?,
+                            ),
+                            debouncing_time: coin_gecko_buffered_configuration
+                                .coin_gecko_debouncing_time,
+                            result_ready_timeout: coin_gecko_buffered_configuration
+                                .coin_gecko_result_ready_timeout,
+                            broadcast_channel_capacity: coin_gecko_buffered_configuration
+                                .coin_gecko_broadcast_channel_capacity,
+                        };
 
-                let buffered_coin_gecko = BufferedRequest::with_config(coin_gecko, configuration);
+                        Arc::new(BufferedRequest::with_config(coin_gecko, configuration))
+                    } else {
+                        Arc::new(coin_gecko)
+                    };
 
-                Ok(("CoinGecko".into(), Arc::new(buffered_coin_gecko)))
+                Ok(("CoinGecko".into(), coin_gecko))
             }
         }
     }

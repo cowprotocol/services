@@ -228,6 +228,12 @@ pub struct CoinGecko {
     )]
     pub coin_gecko_url: Url,
 
+    #[clap(flatten)]
+    pub coin_gecko_buffered: Option<CoinGeckoBuffered>,
+}
+
+#[derive(clap::Parser)]
+pub struct CoinGeckoBuffered {
     /// An additional minimum delay to wait for collecting CoinGecko requests.
     ///
     /// The delay to start counting after receiving the first request.
@@ -341,17 +347,25 @@ impl Display for Arguments {
         writeln!(
             f,
             "coin_gecko_result_ready_timeout: {:?}",
-            coin_gecko.coin_gecko_result_ready_timeout
+            coin_gecko
+                .coin_gecko_buffered
+                .as_ref()
+                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_result_ready_timeout),
         )?;
         writeln!(
             f,
             "coin_gecko_debouncing_time: {:?}",
-            coin_gecko.coin_gecko_debouncing_time
+            coin_gecko
+                .coin_gecko_buffered
+                .as_ref()
+                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_debouncing_time),
         )?;
         writeln!(
             f,
-            "coin_gecko_broadcast_channel_capacity: {}",
-            coin_gecko.coin_gecko_broadcast_channel_capacity
+            "coin_gecko_broadcast_channel_capacity: {:?}",
+            coin_gecko.coin_gecko_buffered.as_ref().map(
+                |coin_gecko_buffered| coin_gecko_buffered.coin_gecko_broadcast_channel_capacity
+            ),
         )?;
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
