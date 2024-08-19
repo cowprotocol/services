@@ -22,11 +22,7 @@ use {
     ethrpc::block_stream::BlockInfo,
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     primitive_types::H256,
     rand::seq::SliceRandom,
@@ -135,9 +131,11 @@ impl RunLoop {
     /// Runs maintenance on all components to ensure the system uses
     /// the latest available state.
     async fn run_maintenance(&self) {
+        let start = Instant::now();
         if let Err(err) = self.maintenance.run_maintenance().await {
             tracing::warn!(?err, "error while running maintenance");
         }
+        Metrics::ran_maintenance(start.elapsed());
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {
@@ -859,6 +857,11 @@ struct Metrics {
     /// request.
     auction_preprocessing_time: prometheus::Histogram,
 
+    /// Tracks the time spent running maintenance. This mostly consists of
+    /// indexing new events.
+    #[metric(buckets(0, 0.01, 0.05, 0.1, 0.2, 0.5, 1., 2., 5.))]
+    service_maintenance_time: prometheus::Histogram,
+
     /// Total time spent in a single run of the run loop.
     #[metric(buckets(0, 1, 5, 10, 15, 20, 25, 30, 35, 40))]
     single_run_time: prometheus::Histogram,
@@ -977,6 +980,12 @@ impl Metrics {
     fn pre_processed(elapsed: Duration) {
         Self::get()
             .auction_preprocessing_time
+            .observe(elapsed.as_secs_f64());
+    }
+
+    fn ran_maintenance(elapsed: Duration) {
+        Self::get()
+            .service_maintenance_time
             .observe(elapsed.as_secs_f64());
     }
 
