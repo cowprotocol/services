@@ -1194,10 +1194,10 @@ components:
           nullable: true
         feePolicies:
           description: | 
-           The fee policies that were used to compute the fees for this trade. Listed in the order they got applied.
+           The fee policies that were used to compute the fees for this trade, together with the executed amount of protocol fee. Listed in the order they got applied.
           type: array
           items:
-            $ref: "#/components/schemas/FeePolicy"
+            $ref: "#/components/schemas/FeePolicyWithExecutedFee"
       required:
         - blockNumber
         - logIndex
@@ -1667,3 +1667,23 @@ components:
         - $ref: "#/components/schemas/Surplus"
         - $ref: "#/components/schemas/Volume"
         - $ref: "#/components/schemas/PriceImprovement"
+    ExecutedFee:
+      type: object
+      properties:
+        amount:
+          description: "Fee amount taken"
+          $ref: "#/components/schemas/TokenAmount"
+        token:
+          description: "The token in which the fee is taken"
+          $ref: "#/components/schemas/Address"
+      required:
+        - amount
+        - token
+    FeePolicyWithExecutedFee:
+      type: object
+      properties:
+        fee_policy:
+          $ref: '#/components/schemas/FeePolicy'
+        executed_fee:
+          $ref: '#/components/schemas/ExecutedFee'
+          nullable: true
