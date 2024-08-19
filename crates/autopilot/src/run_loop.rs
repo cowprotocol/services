@@ -59,9 +59,9 @@ pub struct RunLoop {
     /// we already wasted more than this amount of time of the current
     /// block's time.
     pub max_runloop_delay: Duration,
-    /// Components that should be updated before every runloop to have
+    /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
-    pub maintainers: Vec<Arc<dyn Maintaining>>,
+    pub maintenance: ServiceMaintenance,
 }
 
 impl RunLoop {
@@ -72,8 +72,9 @@ impl RunLoop {
                 self.eth.current_block().clone(),
                 update_interval,
             );
-            ServiceMaintenance::new(self.maintainers.clone())
-                .spawn_background_task(self.eth.current_block().clone())
+            self.maintenance
+                .clone()
+                .spawn_background_task(self.eth.current_block().clone());
         }
 
         let mut last_auction = None;
@@ -123,12 +124,9 @@ impl RunLoop {
     /// Runs maintenance on all components to ensure the system uses
     /// the latest available state.
     async fn run_maintenance(&self) {
-        futures::future::join_all(self.maintainers.iter().cloned().map(|item| async move {
-            if let Err(err) = item.run_maintenance().await {
-                tracing::warn!(?err, "failed to run maintenance");
-            }
-        }))
-        .await;
+        if let Err(err) = self.maintenance.run_maintenance().await {
+            tracing::warn!(?err, "error while running maintenance");
+        }
     }
 
     async fn next_auction(&self) -> Option<domain::AuctionWithId> {

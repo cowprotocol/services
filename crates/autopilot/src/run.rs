@@ -35,7 +35,7 @@ use {
         },
         baseline_solver::BaseTokens,
         http_client::HttpClientFactory,
-        maintenance::Maintaining,
+        maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
@@ -516,7 +516,7 @@ pub async fn run(args: Arguments) {
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
         max_runloop_delay: args.max_runloop_delay,
-        maintainers,
+        maintenance: ServiceMaintenance::new(maintainers),
     };
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
