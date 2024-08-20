@@ -91,14 +91,18 @@ where
         token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
+            // We must subscribe before we send the request, so we get the `rx` pointing to
+            // the current memory point, this way we avoid losing the result for
+            // the corner case in which the request is sent between the `unbounded_send()`
+            // and the `subscribe()`
+            let mut rx = self.results.subscribe();
+
             // Sends the token for requesting price
             self.requests.unbounded_send(token).map_err(|e| {
                 PriceEstimationError::ProtocolInternal(anyhow!(
                     "failed to append a new token to the queue: {e:?}"
                 ))
             })?;
-
-            let mut rx = self.results.subscribe();
 
             tokio::time::timeout(self.config.result_ready_timeout, async {
                 loop {
