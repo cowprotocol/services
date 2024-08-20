@@ -234,7 +234,7 @@ pub struct CoinGecko {
 
 #[derive(clap::Parser)]
 #[clap(group(
-    clap::ArgGroup::new("buffered")
+    clap::ArgGroup::new("coin_gecko_buffered")
     .requires_all(&[
         "coin_gecko_debouncing_time",
         "coin_gecko_result_ready_timeout",
@@ -247,16 +247,16 @@ pub struct CoinGeckoBuffered {
     /// An additional minimum delay to wait for collecting CoinGecko requests.
     ///
     /// The delay to start counting after receiving the first request.
-    #[clap(long, env, value_parser = humantime::parse_duration, group = "buffered")]
+    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
     pub coin_gecko_debouncing_time: Option<Duration>,
 
     /// The timeout to wait for the result to be ready
-    #[clap(long, env, value_parser = humantime::parse_duration, group = "buffered")]
+    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
     pub coin_gecko_result_ready_timeout: Option<Duration>,
 
     /// Maximum capacity of the broadcast channel to store the CoinGecko native
     /// prices results
-    #[clap(long, env, group = "buffered")]
+    #[clap(long, env, group = "coin_gecko_buffered")]
     pub coin_gecko_broadcast_channel_capacity: Option<usize>,
 }
 
