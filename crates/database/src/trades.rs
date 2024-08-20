@@ -20,6 +20,15 @@ pub struct TradesQueryRow {
     pub auction_id: Option<AuctionId>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct TradedAmounts {
+    pub block_number: i64,
+    pub order_uid: OrderUid,
+    pub buy_amount: BigDecimal,
+    pub sell_amount: BigDecimal,
+    pub fee_amount: BigDecimal,
+}
+
 pub fn trades<'a>(
     ex: &'a mut PgConnection,
     owner_filter: Option<&'a Address>,
@@ -64,6 +73,25 @@ ON o.uid = t.order_uid"#;
         .bind(owner_filter)
         .bind(order_uid_filter)
         .fetch(ex)
+}
+
+pub async fn trades_after(
+    ex: &mut PgConnection,
+    after_block: i64,
+) -> Result<Vec<TradedAmounts>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT
+    MAX(t.block_number),
+    t.order_uid,
+    SUM(t.buy_amount) as buy_amount,
+    SUM(t.sell_amount) as sell_amount,
+    SUM(t.fee_amount) as fee_amount
+FROM trades t
+WHERE t.block_number > $1
+GROUP BY t.order_uid
+"#;
+
+    sqlx::query_as(QUERY).bind(after_block).fetch_all(ex).await
 }
 
 #[cfg(test)]

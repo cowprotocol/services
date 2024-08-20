@@ -7,7 +7,7 @@ use {
     },
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
-    chrono::Utc,
+    chrono::{DateTime, Utc},
     number::conversions::big_decimal_to_u256,
     primitive_types::{H160, H256},
     std::{
@@ -375,14 +375,22 @@ impl Persistence {
         Ok(solution)
     }
 
-    // pub async fn orders_after(&self, timestamp: DateTime<Utc>) {
-    //     database::orders::extended_orders_after(&mut ex, timestamp)
-    //         .await
-    //         .map_err(error::Solution::BadCommunication)?
-    //         .into_iter()
-    //         .map(|order| domain::OrderUid(order.0))
-    //         .collect::<HashSet<_>>();
-    // }
+    pub async fn orders_after(
+        &self,
+        after_timestamp: DateTime<Utc>,
+        min_valid_to: i64,
+    ) -> anyhow::Result<Vec<database::orders::ExtendedOrder>> {
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        Ok(database::orders::extended_orders_after(&mut ex, after_timestamp, min_valid_to).await?)
+    }
+
+    pub async fn trades_after(
+        &self,
+        after_block: i64,
+    ) -> anyhow::Result<Vec<database::trades::TradedAmounts>> {
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        Ok(database::trades::trades_after(&mut ex, after_block).await?)
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
