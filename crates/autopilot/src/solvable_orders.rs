@@ -1,10 +1,12 @@
 use {
     crate::{
+        boundary,
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
     anyhow::Result,
     bigdecimal::BigDecimal,
+    chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::CurrentBlockWatcher,
     indexmap::IndexSet,
@@ -90,7 +92,7 @@ pub struct SolvableOrdersCache {
     banned_users: banned::Users,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    cache: Mutex<Inner>,
+    cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
@@ -102,9 +104,11 @@ pub struct SolvableOrdersCache {
 
 type Balances = HashMap<Query, U256>;
 
+#[allow(dead_code)]
 struct Inner {
-    auction: Option<domain::Auction>,
-    update_time: Instant,
+    auction: domain::Auction,
+    solvable_orders: boundary::SolvableOrders,
+    last_order_creation_timestamp: DateTime<Utc>,
 }
 
 impl SolvableOrdersCache {
@@ -128,10 +132,7 @@ impl SolvableOrdersCache {
             banned_users,
             balance_fetcher,
             bad_token_detector,
-            cache: Mutex::new(Inner {
-                auction: None,
-                update_time: Instant::now(),
-            }),
+            cache: Mutex::new(None),
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
@@ -157,7 +158,11 @@ impl SolvableOrdersCache {
     }
 
     pub fn current_auction(&self) -> Option<domain::Auction> {
-        self.cache.lock().unwrap().auction.clone()
+        self.cache
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|inner| inner.auction.clone())
     }
 
     /// Manually update solvable orders. Usually called by the background
@@ -170,15 +175,25 @@ impl SolvableOrdersCache {
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
+        let latest_creation_timestamp = db_solvable_orders
+            .orders
+            .values()
+            .map(|order| order.metadata.creation_date)
+            .max()
+            .unwrap_or_default();
+        let orders = db_solvable_orders
+            .orders
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
 
-        let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
+        let mut counter = OrderFilterCounter::new(self.metrics, &orders);
         let mut invalid_order_uids = Vec::new();
         let mut filtered_order_events = Vec::new();
 
         let orders = {
             let _timer = self.stage_timer("banned_user_filtering");
-            let orders =
-                filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
+            let orders = filter_banned_user_orders(orders, &self.banned_users).await;
             let removed = counter.checkpoint("banned_user", &orders);
             invalid_order_uids.extend(removed);
             orders
@@ -336,20 +351,17 @@ impl SolvableOrdersCache {
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
-        *self.cache.lock().unwrap() = Inner {
-            auction: Some(auction),
-            update_time: Instant::now(),
-        };
+        *self.cache.lock().unwrap() = Some(Inner {
+            auction,
+            solvable_orders: db_solvable_orders,
+            last_order_creation_timestamp: latest_creation_timestamp,
+        });
 
         tracing::debug!(%block, "updated current auction cache");
         self.metrics
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
-    }
-
-    pub fn last_update_time(&self) -> Instant {
-        self.cache.lock().unwrap().update_time
     }
 
     pub fn track_auction_update(&self, result: &str) {

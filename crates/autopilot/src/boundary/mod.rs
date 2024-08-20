@@ -42,7 +42,7 @@ pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {
 }
 
 pub struct SolvableOrders {
-    pub orders: Vec<model::order::Order>,
+    pub orders: HashMap<domain::OrderUid, model::order::Order>,
     pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
 }

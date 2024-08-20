@@ -10,7 +10,7 @@ use {
         event_storing_helpers::{create_db_search_parameters, create_quote_row},
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
-    std::ops::DerefMut,
+    std::{collections::HashMap, ops::DerefMut},
 };
 
 #[async_trait::async_trait]
@@ -73,24 +73,18 @@ impl Postgres {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
-        let orders: Vec<Order> = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
-            .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect()
-            .await?;
+        let orders: HashMap<domain::OrderUid, Order> =
+            database::orders::solvable_orders(&mut ex, min_valid_to as i64)
+                .map(|result| match result {
+                    Ok(order) => full_order_into_model_order(order)
+                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    Err(err) => Err(anyhow::Error::from(err)),
+                })
+                .try_collect()
+                .await?;
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
-        let quotes = self
-            .read_quotes(
-                orders
-                    .iter()
-                    .map(|order| domain::OrderUid(order.metadata.uid.0))
-                    .collect::<Vec<_>>()
-                    .iter(),
-            )
-            .await?;
+        let quotes = self.read_quotes(orders.keys()).await?;
         Ok(boundary::SolvableOrders {
             orders,
             quotes,
