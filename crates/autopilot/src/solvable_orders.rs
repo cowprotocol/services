@@ -6,7 +6,7 @@ use {
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     indexmap::IndexSet,
     itertools::Itertools,
     model::{
@@ -16,7 +16,15 @@ use {
     },
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
-    prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
+    prometheus::{
+        Histogram,
+        HistogramTimer,
+        HistogramVec,
+        IntCounter,
+        IntCounterVec,
+        IntGauge,
+        IntGaugeVec,
+    },
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -42,6 +50,14 @@ pub struct Metrics {
     /// Tracks success and failure of the solvable orders cache update task.
     #[metric(labels("result"))]
     auction_update: IntCounterVec,
+
+    /// Time taken to update the solvable orders cache.
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    auction_update_total_time: Histogram,
+
+    /// Time spent on auction update individual stage.
+    #[metric(labels("stage"))]
+    auction_update_stage_time: HistogramVec,
 
     /// Auction creations.
     auction_creations: IntCounter,
@@ -99,10 +115,8 @@ impl SolvableOrdersCache {
         banned_users: banned::Users,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        current_block: CurrentBlockStream,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
-        update_interval: Duration,
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
@@ -126,11 +140,20 @@ impl SolvableOrdersCache {
             protocol_fees,
             cow_amm_registry,
         });
+        self_
+    }
+
+    /// Spawns a task that periodically updates the set of open orders
+    /// and builds a new auction with them.
+    pub fn spawn_background_task(
+        cache: &Arc<Self>,
+        block_stream: CurrentBlockWatcher,
+        update_interval: Duration,
+    ) {
         tokio::task::spawn(
-            update_task(Arc::downgrade(&self_), update_interval, current_block)
+            update_task(Arc::downgrade(cache), update_interval, block_stream)
                 .instrument(tracing::info_span!("solvable_orders_cache")),
         );
-        self_
     }
 
     pub fn current_auction(&self) -> Option<domain::Auction> {
@@ -143,7 +166,8 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    async fn update(&self, block: u64) -> Result<()> {
+    pub async fn update(&self, block: u64) -> Result<()> {
+        let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
@@ -151,21 +175,38 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = Vec::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
-        let removed = counter.checkpoint("banned_user", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = {
+            let _timer = self.stage_timer("banned_user_filtering");
+            let orders =
+                filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
+            let removed = counter.checkpoint("banned_user", &orders);
+            invalid_order_uids.extend(removed);
+            orders
+        };
 
-        let orders =
-            filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
-        let removed = counter.checkpoint("invalid_signature", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = {
+            let _timer = self.stage_timer("invalid_signature_filtering");
+            let orders =
+                filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
+            let removed = counter.checkpoint("invalid_signature", &orders);
+            invalid_order_uids.extend(removed);
+            orders
+        };
 
-        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        let removed = counter.checkpoint("unsupported_token", &orders);
-        invalid_order_uids.extend(removed);
+        let orders = {
+            let _timer = self.stage_timer("unsupported_token_filtering");
+            let orders =
+                filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+            let removed = counter.checkpoint("unsupported_token", &orders);
+            invalid_order_uids.extend(removed);
+            orders
+        };
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
-        let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
+        let fetched_balances = {
+            let _timer = self.stage_timer("balance_fetch");
+            self.balance_fetcher.get_balances(&missing_queries).await
+        };
         let balances = missing_queries
             .into_iter()
             .zip(fetched_balances)
@@ -200,6 +241,7 @@ impl SolvableOrdersCache {
         );
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
+            let _timer = self.stage_timer("weth_price_fetch");
             let weth_price = self
                 .native_price_estimator
                 .estimate_native_price(self.weth)
@@ -211,7 +253,10 @@ impl SolvableOrdersCache {
             entry.insert(weth_price);
         }
 
-        let cow_amms = self.cow_amm_registry.amms().await;
+        let cow_amms = {
+            let _timer = self.stage_timer("cow_amm_registry");
+            self.cow_amm_registry.amms().await
+        };
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())
@@ -252,6 +297,19 @@ impl SolvableOrdersCache {
 
         let surplus_capturing_jit_order_owners = cow_amms
             .iter()
+            .filter(|cow_amm| {
+                cow_amm.traded_tokens().iter().all(|token| {
+                    let price_exist = prices.contains_key(token);
+                    if !price_exist {
+                        tracing::debug!(
+                            cow_amm = ?cow_amm.address(),
+                            ?token,
+                            "omitted from auction due to missing prices"
+                        );
+                    }
+                    price_exist
+                })
+            })
             .map(|cow_amm| cow_amm.address())
             .cloned()
             .map(eth::Address::from)
@@ -261,17 +319,16 @@ impl SolvableOrdersCache {
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
-                .filter_map(|order| {
-                    if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        Some(self.protocol_fees.apply(order, quote, &surplus_capturing_jit_order_owners))
-                    } else {
-                        tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
-                        None
-                    }
+                .map(|order| {
+                    let quote = db_solvable_orders
+                        .quotes
+                        .get(&order.metadata.uid.into())
+                        .cloned();
+                    self.protocol_fees
+                        .apply(order, quote, &surplus_capturing_jit_order_owners)
                 })
                 .collect(),
-            prices:
-                prices
+            prices: prices
                 .into_iter()
                 .map(|(key, value)| {
                     Price::new(value.into()).map(|price| (eth::TokenAddress(key), price))
@@ -285,6 +342,9 @@ impl SolvableOrdersCache {
         };
 
         tracing::debug!(%block, "updated current auction cache");
+        self.metrics
+            .auction_update_total_time
+            .observe(start.elapsed().as_secs_f64());
         Ok(())
     }
 
@@ -297,6 +357,13 @@ impl SolvableOrdersCache {
             .auction_update
             .with_label_values(&[result])
             .inc();
+    }
+
+    fn stage_timer(&self, stage: &str) -> HistogramTimer {
+        self.metrics
+            .auction_update_stage_time
+            .with_label_values(&[stage])
+            .start_timer()
     }
 }
 
@@ -451,7 +518,7 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
 async fn update_task(
     cache: Weak<SolvableOrdersCache>,
     update_interval: Duration,
-    current_block: CurrentBlockStream,
+    current_block: CurrentBlockWatcher,
 ) {
     loop {
         // We are not updating on block changes because

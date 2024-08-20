@@ -3,6 +3,7 @@ use {
     driver::domain::eth::NonZeroU256,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
     ethcontract::{prelude::U256, H160},
+    fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
@@ -35,6 +36,12 @@ async fn local_node_too_many_limit_orders() {
 #[ignore]
 async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
     run_test(limit_does_not_apply_to_in_market_orders_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_no_liquidity_limit_order() {
+    run_test(no_liquidity_limit_order).await;
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -309,15 +316,17 @@ async fn too_many_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![colocation::SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::UniswapV2,
     );
     services
@@ -383,15 +392,17 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![colocation::SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::UniswapV2,
     );
     services
@@ -694,4 +705,125 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     assert!(sell_token_balance_before > sell_token_balance_after);
     assert!(buy_token_balance_after >= buy_token_balance_before + to_wei(500));
+}
+
+async fn no_liquidity_limit_order(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(10_000)).await;
+    let [trader_a] = onchain.make_accounts(to_wei(1)).await;
+    let [token_a, unsupported] = onchain.deploy_tokens(solver.account()).await;
+
+    // Fund trader accounts
+    token_a.mint(trader_a.address(), to_wei(10)).await;
+
+    // Approve GPv2 for trading
+    tx!(
+        trader_a.account(),
+        token_a.approve(onchain.contracts().allowance, to_wei(10))
+    );
+
+    // Setup services
+    let protocol_fees_config = ProtocolFeesConfig(vec![
+        ProtocolFee {
+            policy: fee::FeePolicyKind::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.01,
+            },
+            policy_order_class: FeePolicyOrderClass::Limit,
+        },
+        ProtocolFee {
+            policy: fee::FeePolicyKind::PriceImprovement {
+                factor: 0.5,
+                max_volume_factor: 0.01,
+            },
+            policy_order_class: FeePolicyOrderClass::Market,
+        },
+    ])
+    .to_string();
+
+    let services = Services::new(onchain.contracts()).await;
+    services
+        .start_protocol_with_args(
+            ExtraServiceArgs {
+                autopilot: vec![
+                    protocol_fees_config,
+                    "--enable-multiple-fees=true".to_string(),
+                    format!("--unsupported-tokens={:#x}", unsupported.address()),
+                ],
+                ..Default::default()
+            },
+            solver,
+        )
+        .await;
+
+    // Place order
+    let mut order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(10),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(1),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Cannot place orders with unsupported tokens
+    order.sell_token = unsupported.address();
+    services
+        .create_order(&order.sign(
+            EcdsaSigningScheme::Eip712,
+            &onchain.contracts().domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        ))
+        .await
+        .unwrap_err();
+
+    // Create liquidity
+    onchain
+        .seed_weth_uni_v2_pools([&token_a].iter().copied(), to_wei(1000), to_wei(1000))
+        .await;
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+    let balance_before = onchain
+        .contracts()
+        .weth
+        .balance_of(trader_a.address())
+        .call()
+        .await
+        .unwrap();
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    let balance_after = onchain
+        .contracts()
+        .weth
+        .balance_of(trader_a.address())
+        .call()
+        .await
+        .unwrap();
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+
+    let trades = services.get_trades(&order_id).await.unwrap();
+    assert_eq!(
+        trades.first().unwrap().fee_policies,
+        vec![model::fee_policy::FeePolicy::Surplus {
+            factor: 0.5,
+            max_volume_factor: 0.01
+        }],
+    );
 }

@@ -20,7 +20,7 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
-delay_map = "0.3"
+ttl_cache = "0.5"
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethrpc = { path = "../ethrpc" }
@@ -45,6 +45,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rate-limit = { path = "../rate-limit" }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
+rust_decimal = { version = "1.35.0", features = ["maths"] }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

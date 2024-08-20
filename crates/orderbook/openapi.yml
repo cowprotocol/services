@@ -138,6 +138,22 @@ paths:
           description: Invalid signature.
         404:
           description: Order was not found.
+  /api/v1/orders/{UID}/status:
+    get:
+      summary: Get the status of an order.
+      parameters:
+        - in: path
+          name: UID
+          schema:
+              $ref: "#/components/schemas/UID"
+          required: true
+      responses:
+        200:
+          description: The order status with a list of solvers that proposed solutions (if applicable).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitionOrderStatus"
   /api/v1/transactions/{txHash}/orders:
     get:
       summary: Get orders by settlement transaction hash.
@@ -914,6 +930,10 @@ components:
           description: see `OrderParameters::buyAmount`
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        created:
+          description: Creation time of the order. Denominated in epoch seconds.
+          type: string
+          example: "123456"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer
@@ -970,12 +990,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        quote:
+          description: |
+            A winning quote.
+          allOf:
+            - $ref: "#/components/schemas/Quote"
       required:
         - uid
         - sellToken
         - buyToken
         - sellAmount
         - buyAmount
+        - created
         - validTo
         - kind
         - receiver
@@ -1038,6 +1064,46 @@ components:
             The UIDs of the orders included in the auction.
         prices:
           $ref: "#/components/schemas/AuctionPrices"
+    ExecutedAmounts:
+      type: object
+      properties:
+        sell:
+          $ref: "#/components/schemas/BigUint"
+        buy:
+          $ref: "#/components/schemas/BigUint"
+      required:
+        - sell
+        - buy
+    CompetitionOrderStatus:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - open
+            - scheduled
+            - active
+            - solved
+            - executing
+            - traded
+            - cancelled
+        value:
+          description: |
+            A list of solvers who participated in the latest competition, sorted by score in ascending order, where the last element is the winner.
+            The presence of executed amounts defines whether the solver provided a solution for the desired order.
+          type: array
+          items:
+            type: object
+            properties:
+              solver:
+                type: string
+                description: Name of the solver.
+              executedAmounts:
+                $ref: "#/components/schemas/ExecutedAmounts"
+            required:
+              - solver
+      required:
+        - type
     AuctionPrices:
       description: |
         The reference prices for all traded tokens in the auction as a mapping from token
@@ -1528,6 +1594,23 @@ components:
           items:
             $ref: "#/components/schemas/CallData"
           description: The call data to be used for the interaction.
+    Quote:
+      description: |
+        A calculated order quote.
+      type: object
+      properties:
+        sellAmount:
+          description: The amount of the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: The amount of the buy token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        fee:
+          description: The amount that needs to be paid, denominated in the sell token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
     Surplus:
       description: The protocol fee is taken as a percent of the surplus.
       type: object
@@ -1570,9 +1653,14 @@ components:
           minimum: 0.0
           maximum: 1.0
           exclusiveMaximum: true
+        quote:
+          description: The best quote received.
+          allOf:
+            - $ref: "#/components/schemas/Quote"
       required:
         - factor
         - maxVolumeFactor
+        - quote
     FeePolicy:
       description: Defines the ways to calculate the protocol fee.
       oneOf:

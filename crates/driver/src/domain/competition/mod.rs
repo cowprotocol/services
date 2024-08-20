@@ -30,6 +30,7 @@ use {
 pub mod auction;
 pub mod order;
 pub mod solution;
+mod sorting;
 
 pub use {
     auction::{Auction, AuctionProcessor},
@@ -225,7 +226,7 @@ impl Competition {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
-                    ethrpc::current_block::into_stream(self.eth.current_block().clone());
+                    ethrpc::block_stream::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
                     if let Err(infra::simulator::Error::Revert(err)) =
                         self.simulate_settlement(&settlement).await

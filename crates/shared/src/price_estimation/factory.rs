@@ -24,7 +24,7 @@ use {
     },
     anyhow::{Context as _, Result},
     ethcontract::H160,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     rate_limit::RateLimiter,
@@ -58,7 +58,7 @@ pub struct Network {
     pub settlement: H160,
     pub authenticator: H160,
     pub base_tokens: Arc<BaseTokens>,
-    pub block_stream: CurrentBlockStream,
+    pub block_stream: CurrentBlockWatcher,
 }
 
 /// The shared components needed for creating price estimators.
@@ -66,6 +66,7 @@ pub struct Components {
     pub http_factory: HttpClientFactory,
     pub bad_token_detector: Arc<dyn BadTokenDetecting>,
     pub tokens: Arc<dyn TokenInfoFetching>,
+    pub code_fetcher: Arc<CachedCodeFetcher>,
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
@@ -107,14 +108,10 @@ impl<'a> PriceEstimatorFactory<'a> {
             None => Arc::new(web3.clone()),
         };
 
-        let code_fetcher =
-            ethrpc::instrumented::instrument_with_label(&network.web3, "codeFetching".into());
-        let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
-
         Some(Arc::new(TradeVerifier::new(
             web3,
             simulator,
-            code_fetcher,
+            components.code_fetcher.clone(),
             network.block_stream.clone(),
             network.settlement,
             network.native_token,
@@ -176,9 +173,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn create_native_estimator(
+    async fn create_native_estimator(
         &mut self,
         source: &NativePriceEstimatorSource,
+        weth: &contracts::WETH9,
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
             NativePriceEstimatorSource::Driver(driver) => {
@@ -207,12 +205,17 @@ impl<'a> PriceEstimatorFactory<'a> {
             )),
             NativePriceEstimatorSource::CoinGecko => Ok((
                 "CoinGecko".into(),
-                Arc::new(native::CoinGecko::new(
-                    self.components.http_factory.create(),
-                    self.args.coin_gecko_url.clone(),
-                    self.args.coin_gecko_api_key.clone(),
-                    self.network.chain_id,
-                )?),
+                Arc::new(
+                    native::CoinGecko::new(
+                        self.components.http_factory.create(),
+                        self.args.coin_gecko_url.clone(),
+                        self.args.coin_gecko_api_key.clone(),
+                        self.network.chain_id,
+                        weth.address(),
+                        self.components.tokens.clone(),
+                    )
+                    .await?,
+                ),
             )),
         }
     }
@@ -289,25 +292,25 @@ impl<'a> PriceEstimatorFactory<'a> {
         ))
     }
 
-    pub fn native_price_estimator(
+    pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
+        weth: contracts::WETH9,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
-        let estimators = native
-            .iter()
-            .map(|stage| {
-                stage
-                    .iter()
-                    .map(|source| self.create_native_estimator(source))
-                    .collect::<Result<Vec<_>>>()
-            })
-            .collect::<Result<Vec<Vec<_>>>>()?;
+        let mut estimators = Vec::with_capacity(native.len());
+        for stage in native.iter() {
+            let mut stages = Vec::with_capacity(stage.len());
+            for source in stage {
+                stages.push(self.create_native_estimator(source, &weth).await?);
+            }
+            estimators.push(stages);
+        }
 
         let competition_estimator =
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)

@@ -6,7 +6,7 @@ use {
         Contract,
     },
     ethrpc::{
-        current_block::{block_number_to_block_number_hash, BlockNumberHash},
+        block_stream::{block_number_to_block_number_hash, BlockNumberHash},
         Web3,
     },
     web3::types::U64,

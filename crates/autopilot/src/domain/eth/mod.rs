@@ -2,7 +2,9 @@ use derive_more::{Display, From, Into};
 pub use primitive_types::{H160, H256, U256};
 
 /// An address. Can be an EOA or a smart contract address.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,
+)]
 pub struct Address(pub H160);
 
 /// Block number.
@@ -63,6 +65,54 @@ impl From<SellTokenAmount> for TokenAmount {
     }
 }
 
+impl std::ops::Add for SellTokenAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for SellTokenAmount {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
+impl std::iter::Sum for SellTokenAmount {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(num::Zero::zero(), std::ops::Add::add)
+    }
+}
+
+impl std::ops::Sub<Self> for SellTokenAmount {
+    type Output = SellTokenAmount;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.0.sub(rhs.0).into()
+    }
+}
+
+impl num::CheckedSub for SellTokenAmount {
+    fn checked_sub(&self, other: &Self) -> Option<Self> {
+        self.0.checked_sub(other.0).map(Into::into)
+    }
+}
+
+impl num::Saturating for SellTokenAmount {
+    fn saturating_add(self, v: Self) -> Self {
+        self.0.saturating_add(v.0).into()
+    }
+
+    fn saturating_sub(self, v: Self) -> Self {
+        self.0.saturating_sub(v.0).into()
+    }
+}
+
 /// Gas amount in gas units.
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this
@@ -73,7 +123,7 @@ pub struct Gas(pub U256);
 /// The `effective_gas_price` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Display)]
 pub struct EffectiveGasPrice(pub Ether);
 
 impl From<U256> for EffectiveGasPrice {
@@ -168,7 +218,7 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into, Display)]
 pub struct Ether(pub U256);
 
 impl std::ops::Add for Ether {
@@ -203,3 +253,28 @@ pub struct DomainSeparator(pub [u8; 32]);
 
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
+
+/// An event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
+pub struct Event {
+    pub block: BlockNo,
+    pub log_index: u64,
+    pub transaction: TxId,
+}
+
+/// Any type of on-chain transaction.
+#[derive(Debug)]
+pub struct Transaction {
+    /// The hash of the transaction.
+    pub hash: TxId,
+    /// The address of the sender of the transaction.
+    pub from: Address,
+    /// The call data of the transaction.
+    pub input: Calldata,
+    /// The block number of the block that contains the transaction.
+    pub block: BlockNo,
+    /// The gas used by the transaction.
+    pub gas: Gas,
+    /// The effective gas price of the transaction.
+    pub effective_gas_price: EffectiveGasPrice,
+}

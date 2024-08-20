@@ -11,7 +11,7 @@ use {
     },
     anyhow::Result,
     ethcontract::H256,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::block_stream::CurrentBlockWatcher,
     std::{collections::HashSet, sync::Arc},
 };
 
@@ -35,7 +35,7 @@ where
     pub fn new(
         inner: Inner,
         config: CacheConfig,
-        block_stream: CurrentBlockStream,
+        block_stream: CurrentBlockWatcher,
     ) -> Result<Self> {
         let inner = Arc::new(inner);
         let fetcher = CacheFetcher(inner.clone());

@@ -21,7 +21,7 @@ use {
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{dyns::DynWeb3, errors::DeployError, BlockNumber},
-    ethrpc::current_block::block_number_to_block_number_hash,
+    ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
@@ -34,6 +34,7 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -297,6 +298,8 @@ pub async fn run(args: Arguments) {
     })));
     let block_retriever = args.shared.current_block.retriever(web3.clone());
 
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -321,6 +324,7 @@ pub async fn run(args: Arguments) {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
             tokens: token_info_fetcher.clone(),
+            code_fetcher: code_fetcher.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -329,7 +333,9 @@ pub async fn run(args: Arguments) {
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.native_price_estimation_results_required,
+            eth.contracts().weth().clone(),
         )
+        .await
         .unwrap();
     let price_estimator = price_estimator_factory
         .price_estimator(
@@ -350,7 +356,6 @@ pub async fn run(args: Arguments) {
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
             eth.clone(),
-            db.clone(),
             persistence.clone(),
         );
     let event_updater = Arc::new(EventUpdater::new(
@@ -455,10 +460,8 @@ pub async fn run(args: Arguments) {
         ),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        eth.current_block().clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
-        args.auction_update_interval,
         eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
@@ -504,7 +507,13 @@ pub async fn run(args: Arguments) {
         drivers: args
             .drivers
             .into_iter()
-            .map(|driver| infra::Driver::new(driver.url, driver.name))
+            .map(|driver| {
+                infra::Driver::new(
+                    driver.url,
+                    driver.name,
+                    driver.fairness_threshold.map(Into::into),
+                )
+            })
             .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
@@ -513,8 +522,9 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
+        synchronization: args.run_loop_mode,
     };
-    run.run_forever().await;
+    run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
 }
 
@@ -529,7 +539,13 @@ async fn shadow_mode(args: Arguments) -> ! {
     let drivers = args
         .drivers
         .into_iter()
-        .map(|driver| infra::Driver::new(driver.url, driver.name))
+        .map(|driver| {
+            infra::Driver::new(
+                driver.url,
+                driver.name,
+                driver.fairness_threshold.map(Into::into),
+            )
+        })
         .collect();
 
     let trusted_tokens = {
@@ -566,12 +582,21 @@ async fn shadow_mode(args: Arguments) -> ! {
     let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
+    let current_block = ethrpc::block_stream::current_block_stream(
+        args.shared.node_url,
+        args.shared.current_block.block_stream_poll_interval,
+    )
+    .await
+    .expect("couldn't initialize current block stream");
+
     let shadow = shadow::RunLoop::new(
         orderbook,
         drivers,
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
+        args.run_loop_mode,
+        current_block,
     );
     shadow.run_forever().await;
 

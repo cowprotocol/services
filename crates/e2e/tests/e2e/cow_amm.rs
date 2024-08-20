@@ -134,16 +134,18 @@ async fn cow_amm_jit(web3: Web3) {
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
-            },
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
             SolverEngine {
                 name: "mock_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
+                base_tokens: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -422,21 +424,46 @@ async fn cow_amm_driver_support(web3: Web3) {
         usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
     );
 
+    // Empty liquidity of one of the AMMs to test EmptyPoolRemoval maintenance job.
+    let zero_balance_amm = addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc");
+    let zero_balance_amm_account = forked_node_api
+        .impersonate(&zero_balance_amm)
+        .await
+        .unwrap();
+    let pendle_token = ERC20::at(&web3, addr!("808507121b80c02388fad14726482e061b8da827"));
+    let balance = pendle_token
+        .balance_of(zero_balance_amm)
+        .call()
+        .await
+        .unwrap();
+    tx!(
+        zero_balance_amm_account,
+        pendle_token.transfer(addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"), balance)
+    );
+    assert!(pendle_token
+        .balance_of(zero_balance_amm)
+        .call()
+        .await
+        .unwrap()
+        .is_zero());
+
     // spawn a mock solver so we can later assert things about the received auction
     let mock_solver = Mock::default();
     colocation::start_driver(
         onchain.contracts(),
         vec![
-            SolverEngine {
-                name: "test_solver".into(),
-                account: solver.clone(),
-                endpoint: colocation::start_baseline_solver(onchain.contracts().weth.address())
-                    .await,
-            },
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
             SolverEngine {
                 name: "mock_solver".into(),
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
+                base_tokens: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -512,11 +539,13 @@ async fn cow_amm_driver_support(web3: Web3) {
     tracing::info!("Waiting for all cow amms to be indexed.");
     let expected_cow_amms = [
         addr!("027e1cbf2c299cba5eb8a2584910d04f1a8aa403"),
-        addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc"),
+        // This AMM should be removed by the EmptyPoolRemoval due to empty liquidity pool.
+        // addr!("b3bf81714f704720dcb0351ff0d42eca61b069fc"),
         addr!("301076c36e034948a747bb61bab9cd03f62672e3"),
         addr!("d7cb8cc1b56356bb7b78d02e785ead28e2158660"),
         addr!("9941fd7db2003308e7ee17b04400012278f12ac6"),
-        addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
+        // no native prices for the tokens traded by this AMM (COW token price)
+        // addr!("beef5afe88ef73337e5070ab2855d37dbf5493a4"),
         addr!("c6b13d5e662fa0458f03995bcb824a1934aa895f"),
     ];
 
@@ -532,7 +561,7 @@ async fn cow_amm_driver_support(web3: Web3) {
     .unwrap();
 
     // all tokens traded by the cow amms
-    tracing::error!("Waiting for all relevant native prices to be indexed.");
+    tracing::info!("Waiting for all relevant native prices to be indexed.");
     let expected_prices = [
         // missing due to insufficient liquidity in e2e test (we only index univ2)
         // addr!("808507121B80c02388fAd14726482e061B8da827"), // PENDLE

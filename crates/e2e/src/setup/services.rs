@@ -31,6 +31,10 @@ pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
+pub fn order_status_endpoint(uid: &OrderUid) -> String {
+    format!("/api/v1/orders/{uid}/status")
+}
+
 pub struct ServicesBuilder {
     timeout: Duration,
 }
@@ -175,15 +179,17 @@ impl<'a> Services<'a> {
     }
 
     pub async fn start_protocol_with_args(&self, args: ExtraServiceArgs, solver: TestAccount) {
-        let solver_endpoint =
-            colocation::start_baseline_solver(self.contracts.weth.address()).await;
         colocation::start_driver(
             self.contracts,
-            vec![SolverEngine {
-                name: "test_solver".into(),
-                account: solver,
-                endpoint: solver_endpoint,
-            }],
+            vec![
+                colocation::start_baseline_solver(
+                    "test_solver".into(),
+                    solver,
+                    self.contracts.weth.address(),
+                    vec![],
+                )
+                .await,
+            ],
             colocation::LiquidityProvider::UniswapV2,
         );
         self.start_autopilot(
@@ -227,17 +233,19 @@ impl<'a> Services<'a> {
             name: "test_solver".into(),
             account: solver.clone(),
             endpoint: external_solver_endpoint,
+            base_tokens: vec![],
         }];
 
         let (autopilot_args, api_args) = if run_baseline {
-            let baseline_solver_endpoint =
-                colocation::start_baseline_solver(self.contracts.weth.address()).await;
-
-            solvers.push(SolverEngine {
-                name: "baseline_solver".into(),
-                account: solver,
-                endpoint: baseline_solver_endpoint,
-            });
+            solvers.push(
+                colocation::start_baseline_solver(
+                    "baseline_solver".into(),
+                    solver,
+                    self.contracts.weth.address(),
+                    vec![],
+                )
+                .await,
+            );
 
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
@@ -442,6 +450,28 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_order_status(
+        &self,
+        uid: &OrderUid,
+    ) -> Result<orderbook::dto::order::Status, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{}", order_status_endpoint(uid)))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => {
+                Ok(serde_json::from_str::<orderbook::dto::order::Status>(&body).unwrap())
+            }
             code => Err((code, body)),
         }
     }

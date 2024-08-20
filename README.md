@@ -117,6 +117,27 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
   --timestamp 1577836800
 ```
 
+### Profiling
+
+All binaries are compiled with support for [tokio-console](https://github.com/tokio-rs/console) by default to allow you to look inside the tokio runtime.
+However, this feature is not enabled at runtime by default because it comes with a pretty significant memory overhead. To enable it you just have to set the environment variable `TOKIO_CONSOLE=true` and run the binary you want to instrument.
+
+You can install and run `tokio-console` with:
+```bash
+cargo install --locked tokio-console
+tokio-console
+```
+
+
+### Changing Log Filters
+
+It's possible to change the tracing log filter while the process is running. This can be useful to debug an error that requires more verbose logs but which might no longer appear after restarting the system.
+
+Each process opens a UNIX socket at `/tmp/log_filter_override_<program_name>_<pid>.sock`. To change the log filter connect to it with `nc -U <path>` and enter a new log filter.
+You can also reset the log filter to the filter the program was initially started with by entering `reset`.
+
+See [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives) for documentation on the supported log filter format.
+
 ## Running the Services Locally
 
 ### Prerequisites

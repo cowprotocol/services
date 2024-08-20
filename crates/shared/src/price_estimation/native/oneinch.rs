@@ -2,7 +2,7 @@ use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
     crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
     anyhow::{anyhow, Context, Result},
-    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     num::ToPrimitive,
     number::{conversions::u256_to_big_rational, serialization::HexOrDecimalU256},
@@ -33,7 +33,7 @@ impl OneInch {
         base_url: Url,
         api_key: Option<String>,
         chain_id: u64,
-        current_block: CurrentBlockStream,
+        current_block: CurrentBlockWatcher,
         token_info: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         let instance = Self {
@@ -56,7 +56,7 @@ impl OneInch {
         base_url: Url,
         api_key: Option<String>,
         chain_id: u64,
-        current_block: CurrentBlockStream,
+        current_block: CurrentBlockWatcher,
         token_info: Arc<dyn TokenInfoFetching>,
     ) {
         let prices = self.prices.clone();

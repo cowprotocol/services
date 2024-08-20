@@ -1,40 +1,80 @@
 use {
-    super::{auction, eth},
-    crate::domain,
+    crate::{
+        domain,
+        domain::{auction, eth},
+    },
+    derive_more::Display,
     std::collections::HashMap,
 };
 
 type SolutionId = u64;
 
 #[derive(Debug)]
-pub struct Solution {
+pub struct SolutionWithId {
     id: SolutionId,
-    solver: eth::Address,
-    score: Score,
-    orders: HashMap<domain::OrderUid, TradedAmounts>,
-    // uniform prices for all tokens
-    prices: HashMap<eth::TokenAddress, auction::Price>,
+    solution: Solution,
 }
 
-impl Solution {
+impl SolutionWithId {
     pub fn new(
         id: SolutionId,
         solver: eth::Address,
         score: Score,
         orders: HashMap<domain::OrderUid, TradedAmounts>,
-        prices: HashMap<eth::TokenAddress, auction::Price>,
+        prices: auction::Prices,
     ) -> Self {
         Self {
             id,
-            solver,
-            score,
-            orders,
-            prices,
+            solution: Solution::new(solver, score, orders, prices),
         }
     }
 
     pub fn id(&self) -> SolutionId {
         self.id
+    }
+
+    pub fn solver(&self) -> eth::Address {
+        self.solution.solver()
+    }
+
+    pub fn score(&self) -> Score {
+        self.solution.score()
+    }
+
+    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> {
+        self.solution.order_ids()
+    }
+
+    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedAmounts> {
+        self.solution.orders()
+    }
+
+    pub fn prices(&self) -> &HashMap<eth::TokenAddress, auction::Price> {
+        self.solution.prices()
+    }
+}
+
+#[derive(Debug)]
+pub struct Solution {
+    solver: eth::Address,
+    score: Score,
+    orders: HashMap<domain::OrderUid, TradedAmounts>,
+    prices: auction::Prices,
+}
+
+impl Solution {
+    pub fn new(
+        solver: eth::Address,
+        score: Score,
+        orders: HashMap<domain::OrderUid, TradedAmounts>,
+        prices: auction::Prices,
+    ) -> Self {
+        Self {
+            solver,
+            score,
+            orders,
+            prices,
+        }
     }
 
     pub fn solver(&self) -> eth::Address {
@@ -58,7 +98,7 @@ impl Solution {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct TradedAmounts {
     /// The effective amount that left the user's wallet including all fees.
     pub sell: eth::TokenAmount,
@@ -66,7 +106,7 @@ pub struct TradedAmounts {
     pub buy: eth::TokenAmount,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Display)]
 pub struct Score(eth::Ether);
 
 impl Score {

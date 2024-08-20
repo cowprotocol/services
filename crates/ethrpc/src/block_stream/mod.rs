@@ -3,7 +3,11 @@ use {
     anyhow::{anyhow, ensure, Context as _, Result},
     futures::StreamExt,
     primitive_types::{H256, U256},
-    std::{fmt::Debug, num::NonZeroU64, time::Duration},
+    std::{
+        fmt::Debug,
+        num::NonZeroU64,
+        time::{Duration, Instant},
+    },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
@@ -44,7 +48,7 @@ impl<T: Ord> RangeInclusive<T> {
 }
 
 /// Block information.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct BlockInfo {
     pub number: u64,
     pub hash: H256,
@@ -52,6 +56,33 @@ pub struct BlockInfo {
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
+    /// When the system noticed the new block.
+    pub observed_at: Instant,
+}
+
+impl Default for BlockInfo {
+    fn default() -> Self {
+        Self {
+            number: Default::default(),
+            hash: Default::default(),
+            parent_hash: Default::default(),
+            timestamp: Default::default(),
+            gas_limit: Default::default(),
+            gas_price: Default::default(),
+            observed_at: Instant::now(),
+        }
+    }
+}
+
+impl PartialEq<Self> for BlockInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.number == other.number
+            && self.hash == other.hash
+            && self.parent_hash == other.parent_hash
+            && self.timestamp == other.timestamp
+            && self.gas_limit == other.gas_limit
+            && self.gas_price == other.gas_price
+    }
 }
 
 impl TryFrom<Block<H256>> for BlockInfo {
@@ -65,6 +96,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
             timestamp: value.timestamp.as_u64(),
             gas_limit: value.gas_limit,
             gas_price: value.base_fee_per_gas.context("no gas price")?,
+            observed_at: Instant::now(),
         })
     }
 }
@@ -82,7 +114,10 @@ impl TryFrom<Block<H256>> for BlockInfo {
 /// being able to share the result with several consumers. Calling this function
 /// again would create a new poller so it is preferable to clone an existing
 /// stream instead.
-pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<CurrentBlockStream> {
+pub async fn current_block_stream(
+    url: Url,
+    poll_interval: Duration,
+) -> Result<CurrentBlockWatcher> {
     // Build new Web3 specifically for the current block stream to avoid batching
     // requests together on chains with a very high block frequency.
     let web3 = Web3::new(Web3Transport::new(HttpTransport::new(
@@ -137,7 +172,7 @@ pub async fn current_block_stream(url: Url, poll_interval: Duration) -> Result<C
 
 /// Returns a stream that is synchronized to the passed in stream by only yields
 /// every nth update of the original stream.
-pub fn throttle(blocks: CurrentBlockStream, updates_to_skip: NonZeroU64) -> CurrentBlockStream {
+pub fn throttle(blocks: CurrentBlockWatcher, updates_to_skip: NonZeroU64) -> CurrentBlockWatcher {
     let first_block = *blocks.borrow();
 
     // `receiver` yields `first_block` immediately.
@@ -177,16 +212,16 @@ pub fn throttle(blocks: CurrentBlockStream, updates_to_skip: NonZeroU64) -> Curr
 /// A method for creating a block stream with an initial value that never
 /// observes any new blocks. This is useful for testing and creating "mock"
 /// components.
-pub fn mock_single_block(block: BlockInfo) -> CurrentBlockStream {
+pub fn mock_single_block(block: BlockInfo) -> CurrentBlockWatcher {
     let (sender, receiver) = watch::channel(block);
     // Make sure the `sender` never drops so the `receiver` stays open.
     std::mem::forget(sender);
     receiver
 }
 
-pub type CurrentBlockStream = watch::Receiver<BlockInfo>;
+pub type CurrentBlockWatcher = watch::Receiver<BlockInfo>;
 
-pub fn into_stream(receiver: CurrentBlockStream) -> WatchStream<BlockInfo> {
+pub fn into_stream(receiver: CurrentBlockWatcher) -> WatchStream<BlockInfo> {
     WatchStream::new(receiver)
 }
 
@@ -202,12 +237,17 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 #[async_trait::async_trait]
 impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<BlockInfo> {
-        get_block_info_at_id(self, BlockNumber::Latest.into()).await
+        get_block_at_id(self, BlockNumber::Latest.into())
+            .await?
+            .try_into()
     }
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
-        let block = get_block_info_at_id(self, U64::from(number).into()).await?;
-        Ok((block.number, block.hash))
+        let block = get_block_at_id(self, U64::from(number).into()).await?;
+        Ok((
+            block.number.context("missing block_number")?.as_u64(),
+            block.hash.context("missing block_hash")?,
+        ))
     }
 
     /// get blocks defined by the range (inclusive)
@@ -248,13 +288,12 @@ impl BlockRetrieving for Web3 {
     }
 }
 
-async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
+async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<Block<H256>> {
     web3.eth()
         .block(id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
-        .with_context(|| format!("no block for {id:?}"))?
-        .try_into()
+        .with_context(|| format!("no block for {id:?}"))
 }
 
 pub async fn timestamp_of_block_in_seconds(web3: &Web3, block_number: BlockNumber) -> Result<u32> {
@@ -311,6 +350,15 @@ fn update_block_metrics(current_block: u64, new_block: u64) {
     }
 }
 
+/// Awaits and returns the next block that will be pushed into the stream.
+pub async fn next_block(current_block: &CurrentBlockWatcher) -> BlockInfo {
+    let mut stream = into_stream(current_block.clone());
+    // the stream always yields the current value right away
+    // so we simply ignore it
+    let _ = stream.next().await;
+    stream.next().await.expect("block_stream must never end")
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -319,6 +367,13 @@ mod tests {
         futures::StreamExt,
         tokio::time::{timeout, Duration},
     };
+
+    fn new_block(number: u64) -> BlockInfo {
+        BlockInfo {
+            number,
+            ..Default::default()
+        }
+    }
 
     #[tokio::test]
     #[ignore]
@@ -374,10 +429,6 @@ mod tests {
     // when we want to assert that no new block is coming.
     #[tokio::test]
     async fn throttled_skips_blocks_test() {
-        let new_block = |number| BlockInfo {
-            number,
-            ..Default::default()
-        };
         let (sender, receiver) = watch::channel(new_block(0));
         const TIMEOUT: Duration = Duration::from_millis(10);
 
@@ -417,5 +468,22 @@ mod tests {
         // fourth update gets forwarded again
         let block = timeout(TIMEOUT, stream.next()).await.unwrap().unwrap();
         assert_eq!(block.number, 4);
+    }
+
+    #[tokio::test]
+    async fn test_next_block() {
+        let (sender, receiver) = watch::channel(new_block(0));
+        const TIMEOUT: Duration = Duration::from_millis(10);
+        let result = timeout(TIMEOUT, next_block(&receiver)).await;
+        // although there is already 1 block in the stream it does not get returned
+        assert!(result.is_err());
+
+        tokio::spawn(async move {
+            tokio::time::sleep(TIMEOUT).await;
+            let _ = sender.send(new_block(1));
+        });
+
+        let received_block = timeout(2 * TIMEOUT, next_block(&receiver)).await;
+        assert_eq!(received_block, Ok(new_block(1)));
     }
 }

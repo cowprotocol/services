@@ -47,15 +47,17 @@ async fn order_cancellation(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
-        vec![colocation::SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver,
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+        ],
         colocation::LiquidityProvider::UniswapV2,
     );
     services
@@ -188,6 +190,13 @@ async fn order_cancellation(web3: Web3) {
         let events = crate::database::events_of_order(services.db(), uid).await;
         assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
     }
+    for uid in &order_uids {
+        let order_status = services.get_order_status(uid).await.unwrap();
+        assert!(matches!(
+            order_status,
+            orderbook::dto::order::Status::Active
+        ));
+    }
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
@@ -204,6 +213,10 @@ async fn order_cancellation(web3: Web3) {
             .metadata
             .status,
         OrderStatus::Cancelled,
+    );
+    assert_eq!(
+        services.get_order_status(&order_uids[0]).await.unwrap(),
+        orderbook::dto::order::Status::Cancelled,
     );
 
     // Cancel the other two.
@@ -230,6 +243,19 @@ async fn order_cancellation(web3: Web3) {
             .metadata
             .status,
         OrderStatus::Cancelled,
+    );
+    assert_eq!(
+        services
+            .get_order(&order_uids[2])
+            .await
+            .unwrap()
+            .metadata
+            .status,
+        OrderStatus::Cancelled,
+    );
+    assert_eq!(
+        services.get_order_status(&order_uids[2]).await.unwrap(),
+        orderbook::dto::order::Status::Cancelled,
     );
 
     for uid in &order_uids {

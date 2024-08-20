@@ -16,7 +16,7 @@ use {
     },
     ethcontract::Event as EthContractEvent,
     ethrpc::{
-        current_block::{block_number_to_block_number_hash, BlockNumberHash},
+        block_stream::{block_number_to_block_number_hash, BlockNumberHash},
         Web3,
     },
     hex_literal::hex,

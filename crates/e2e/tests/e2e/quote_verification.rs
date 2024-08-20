@@ -49,7 +49,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         .parse()
         .unwrap();
     let block_stream =
-        ethrpc::current_block::current_block_stream(url, std::time::Duration::from_millis(1_000))
+        ethrpc::block_stream::current_block_stream(url, std::time::Duration::from_millis(1_000))
             .await
             .unwrap();
     let onchain = OnchainComponents::deployed(web3.clone()).await;
