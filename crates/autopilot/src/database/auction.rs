@@ -107,7 +107,13 @@ impl Postgres {
         let data = serde_json::to_value(auction)?;
         let mut ex = self.pool.begin().await?;
         database::auction::delete_all_auctions(&mut ex).await?;
-        let id = database::auction::save(&mut ex, &data).await?;
+        let mut id = database::auction::save(&mut ex, &data).await?;
+        if id < i64::MAX / 2 {
+            // update the auction id in the `auctions` table
+            database::auction::update_current_auction_id(&mut ex, i64::MAX / 2).await?;
+            // return the updated value
+            id = i64::MAX / 2;
+        }
         ex.commit().await?;
         Ok(id)
     }

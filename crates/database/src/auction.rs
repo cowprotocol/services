@@ -12,6 +12,17 @@ RETURNING id
     Ok(id)
 }
 
+pub async fn update_current_auction_id(
+    ex: &mut PgConnection,
+    id: AuctionId,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+UPDATE auctions
+SET id = $1
+    ;"#;
+    sqlx::query(QUERY).bind(id).execute(ex).await.map(|_| ())
+}
+
 pub async fn load_most_recent(
     ex: &mut PgConnection,
 ) -> Result<Option<(AuctionId, JsonValue)>, sqlx::Error> {
@@ -64,5 +75,10 @@ mod tests {
         let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
         assert_eq!(value, value_);
         assert_eq!(id_, id);
+
+        // update works
+        update_current_auction_id(&mut db, 100).await.unwrap();
+        let (id, _) = load_most_recent(&mut db).await.unwrap().unwrap();
+        assert_eq!(100, id);
     }
 }
