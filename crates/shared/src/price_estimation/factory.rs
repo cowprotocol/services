@@ -70,6 +70,7 @@ pub struct Components {
     pub http_factory: HttpClientFactory,
     pub bad_token_detector: Arc<dyn BadTokenDetecting>,
     pub tokens: Arc<dyn TokenInfoFetching>,
+    pub code_fetcher: Arc<CachedCodeFetcher>,
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
@@ -111,14 +112,10 @@ impl<'a> PriceEstimatorFactory<'a> {
             None => Arc::new(web3.clone()),
         };
 
-        let code_fetcher =
-            ethrpc::instrumented::instrument_with_label(&network.web3, "codeFetching".into());
-        let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(code_fetcher)));
-
         Some(Arc::new(TradeVerifier::new(
             web3,
             simulator,
-            code_fetcher,
+            components.code_fetcher.clone(),
             network.block_stream.clone(),
             network.settlement,
             network.native_token,
