@@ -48,14 +48,14 @@ impl Persistence {
         auction: &domain::Auction,
     ) -> Result<domain::auction::Id, DatabaseError> {
         let auction = dto::auction::from_domain(auction.clone());
-        Ok(self
-            .postgres
+        self.postgres
             .replace_current_auction(&auction)
             .await
             .map(|auction_id| {
                 self.archive_auction(auction_id, auction);
                 auction_id
-            })?)
+            })
+            .map_err(DatabaseError)
     }
 
     pub async fn solvable_orders(
@@ -392,16 +392,15 @@ impl Persistence {
             .with_label_values(&["get_settlement_without_auction"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.begin().await?;
+        let mut ex = self.postgres.pool.acquire().await?;
         let event = database::settlements::get_settlement_without_auction(&mut ex)
             .await?
             .map(|event| {
                 let event = domain::eth::Event {
                     block: u64::try_from(event.block_number)
-                        .map_err(|_| anyhow::anyhow!("negative block"))?
+                        .context("negative block")?
                         .into(),
-                    log_index: u64::try_from(event.log_index)
-                        .map_err(|_| anyhow::anyhow!("negative log index"))?,
+                    log_index: u64::try_from(event.log_index).context("negative log index")?,
                     transaction: eth::TxId(H256(event.tx_hash.0)),
                 };
                 Ok::<_, DatabaseError>(event)
@@ -423,10 +422,8 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
 
-        let block_number =
-            i64::try_from(event.block.0).map_err(|_| anyhow::anyhow!("block overflow"))?;
-        let log_index =
-            i64::try_from(event.log_index).map_err(|_| anyhow::anyhow!("log index overflow"))?;
+        let block_number = i64::try_from(event.block.0).context("block overflow")?;
+        let log_index = i64::try_from(event.log_index).context("log index overflow")?;
 
         database::settlements::update_settlement_auction(
             &mut ex,
