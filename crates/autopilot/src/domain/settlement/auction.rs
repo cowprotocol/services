@@ -30,16 +30,6 @@ impl Auction {
         }
     }
 
-    /// Is order a JIT order.
-    pub fn is_jit(&self, order: &domain::OrderUid, order_in_database: bool) -> bool {
-        match self.classify(order, order_in_database) {
-            super::order::Type::User => false,
-            super::order::Type::UserOutOfAuction => false,
-            super::order::Type::SurplusCapturingJit => true,
-            super::order::Type::Jit => true,
-        }
-    }
-
     /// Classify an order based on the auction data and existence of the order
     /// in the database.
     fn classify(&self, order: &domain::OrderUid, order_in_database: bool) -> super::order::Type {

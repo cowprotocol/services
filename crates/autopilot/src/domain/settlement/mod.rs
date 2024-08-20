@@ -94,10 +94,11 @@ impl Settlement {
             .trades()
             .iter()
             .filter_map(|order| {
-                let exists_in_database = self.database_orders.contains(order.uid());
-                self.auction
-                    .is_jit(order.uid(), exists_in_database)
-                    .then(|| order.clone().into())
+                if self.database_orders.contains(order.uid()) {
+                    return None;
+                } else {
+                    return Some(order.clone().into());
+                }
             })
             .collect()
     }
