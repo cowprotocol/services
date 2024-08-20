@@ -374,6 +374,15 @@ impl Persistence {
 
         Ok(solution)
     }
+
+    // pub async fn orders_after(&self, timestamp: DateTime<Utc>) {
+    //     database::orders::extended_orders_after(&mut ex, timestamp)
+    //         .await
+    //         .map_err(error::Solution::BadCommunication)?
+    //         .into_iter()
+    //         .map(|order| domain::OrderUid(order.0))
+    //         .collect::<HashSet<_>>();
+    // }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

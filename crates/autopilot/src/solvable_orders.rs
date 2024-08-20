@@ -174,7 +174,13 @@ impl SolvableOrdersCache {
     pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
+        // let lock = self.cache.lock().unwrap();
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
+        // let db_solvable_orders = if let Some(cache) = lock {
+        //     self.persistence.
+        // } else {
+        //     self.persistence.solvable_orders(min_valid_to).await?
+        // };
         let latest_creation_timestamp = db_solvable_orders
             .orders
             .values()
