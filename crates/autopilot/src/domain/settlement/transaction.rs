@@ -3,8 +3,7 @@ use {
     anyhow::{anyhow, Context},
 };
 
-/// An on-chain transaction that settled a solution, with calldata in a valid
-/// format.
+/// An on-chain transaction that settled a solution.
 #[derive(Debug, Clone)]
 pub struct Transaction {
     /// The hash of the transaction.
