@@ -92,9 +92,9 @@ impl Settlement {
             .iter()
             .filter_map(|order| {
                 if self.database_orders.contains(order.uid()) {
-                    return None;
+                    None
                 } else {
-                    return Some(order.clone().into());
+                    Some(order.clone().into())
                 }
             })
             .collect()
