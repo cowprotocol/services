@@ -294,13 +294,11 @@ impl Persistence {
         })
     }
 
-    /// Checks if the given order is JIT order
-    ///
-    /// Order is considered JIT if it is not present in the database
-    pub async fn is_jit_order(&self, order_uid: &domain::OrderUid) -> Result<bool, DatabaseError> {
+    /// Checks if the given order exists in the database.
+    pub async fn order_exists(&self, order_uid: &domain::OrderUid) -> Result<bool, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["is_jit_order"])
+            .with_label_values(&["order_exists"])
             .start_timer();
         let mut ex = self.postgres.pool.begin().await?;
         database::orders::read_order(&mut ex, &ByteArray(order_uid.0))

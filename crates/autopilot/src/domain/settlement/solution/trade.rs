@@ -12,6 +12,7 @@ use {
     },
     bigdecimal::Zero,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
+    std::collections::HashSet,
 };
 
 /// A single trade executed on-chain, as part of the [`settlement::Solution`].
@@ -19,7 +20,7 @@ use {
 /// Referenced as [`settlement::solution::Trade`] in the codebase.
 #[derive(Debug, Clone)]
 pub struct Trade {
-    order_uid: domain::OrderUid,
+    uid: domain::OrderUid,
     sell: eth::Asset,
     buy: eth::Asset,
     side: order::Side,
@@ -36,7 +37,7 @@ pub struct Trade {
 impl Trade {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        order_uid: domain::OrderUid,
+        uid: domain::OrderUid,
         sell: eth::Asset,
         buy: eth::Asset,
         side: order::Side,
@@ -50,7 +51,7 @@ impl Trade {
         prices: Prices,
     ) -> Self {
         Self {
-            order_uid,
+            uid,
             sell,
             buy,
             side,
@@ -65,15 +66,19 @@ impl Trade {
         }
     }
 
-    pub fn order_uid(&self) -> &domain::OrderUid {
-        &self.order_uid
+    pub fn uid(&self) -> &domain::OrderUid {
+        &self.uid
     }
 
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        Ok(self.native_surplus(auction)? + self.native_protocol_fee(auction)?)
+    pub fn score(
+        &self,
+        auction: &settlement::Auction,
+        database_orders: &HashSet<domain::OrderUid>,
+    ) -> Result<eth::Ether, Error> {
+        Ok(self.native_surplus(auction, database_orders)? + self.native_protocol_fee(auction)?)
     }
 
     /// A general surplus function.
@@ -139,8 +144,12 @@ impl Trade {
     /// fees have been applied.
     ///
     /// Denominated in NATIVE token
-    pub fn native_surplus(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        if !auction.is_surplus_capturing(&self.order_uid) {
+    pub fn native_surplus(
+        &self,
+        auction: &settlement::Auction,
+        database_orders: &HashSet<domain::OrderUid>,
+    ) -> Result<eth::Ether, Error> {
+        if !auction.is_surplus_capturing(&self.uid, database_orders.contains(&self.uid)) {
             return Ok(Zero::zero());
         }
 
@@ -226,7 +235,7 @@ impl Trade {
     ) -> Result<Vec<(eth::Asset, fee::Policy)>, Error> {
         let policies = auction
             .orders
-            .get(&self.order_uid)
+            .get(&self.uid)
             .map(|value| value.as_slice())
             .unwrap_or_default();
         let mut current_trade = self.clone();
@@ -498,16 +507,16 @@ impl Trade {
     }
 }
 
-impl From<Trade> for settlement::JitOrder {
+impl From<Trade> for settlement::order::Jit {
     fn from(trade: Trade) -> Self {
-        settlement::JitOrder {
-            uid: trade.order_uid,
+        settlement::order::Jit {
+            uid: trade.uid,
             sell: trade.sell,
             buy: trade.buy,
             side: trade.side,
             valid_to: trade.valid_to,
             receiver: trade.receiver,
-            owner: trade.order_uid.owner(),
+            owner: trade.uid.owner(),
             sell_token_balance: trade.sell_token_balance,
             buy_token_balance: trade.buy_token_balance,
             app_data: trade.app_data,

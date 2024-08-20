@@ -14,14 +14,12 @@ mod tokenized;
 mod trade;
 pub use error::Error;
 use {
-    super::JitOrder,
     crate::{
         boundary,
         domain::{self, fee},
-        infra,
     },
     num::Saturating,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
 };
 
 /// A solution that was executed on-chain.
@@ -36,12 +34,25 @@ pub struct Solution {
 }
 
 impl Solution {
+    /// Orders in the solution.
+    pub fn order_uids(&self) -> Vec<&domain::OrderUid> {
+        self.trades.iter().map(|trade| trade.uid()).collect()
+    }
+
+    pub fn trades(&self) -> &[Trade] {
+        &self.trades
+    }
+
     /// CIP38 score calculation
-    pub fn score(&self, auction: &super::Auction) -> Result<competition::Score, error::Score> {
+    pub fn score(
+        &self,
+        auction: &super::Auction,
+        database_orders: &HashSet<domain::OrderUid>,
+    ) -> Result<competition::Score, error::Score> {
         Ok(competition::Score::new(
             self.trades
                 .iter()
-                .map(|trade| trade.score(auction))
+                .map(|trade| trade.score(auction, database_orders))
                 .sum::<Result<eth::Ether, trade::Error>>()?,
         )?)
     }
@@ -50,18 +61,24 @@ impl Solution {
     ///
     /// Always returns a value, even if some trades have incomplete surplus
     /// calculation.
-    pub fn native_surplus(&self, auction: &super::Auction) -> eth::Ether {
+    pub fn native_surplus(
+        &self,
+        auction: &super::Auction,
+        database_orders: &HashSet<domain::OrderUid>,
+    ) -> eth::Ether {
         self.trades
             .iter()
             .map(|trade| {
-                trade.native_surplus(auction).unwrap_or_else(|err| {
-                    tracing::warn!(
-                        ?err,
-                        "possible incomplete surplus calculation for trade {}",
-                        trade.order_uid()
-                    );
-                    num::zero()
-                })
+                trade
+                    .native_surplus(auction, database_orders)
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            ?err,
+                            "possible incomplete surplus calculation for trade {}",
+                            trade.uid()
+                        );
+                        num::zero()
+                    })
             })
             .sum()
     }
@@ -78,7 +95,7 @@ impl Solution {
                     tracing::warn!(
                         ?err,
                         "possible incomplete fee calculation for trade {}",
-                        trade.order_uid()
+                        trade.uid()
                     );
                     num::zero()
                 })
@@ -91,7 +108,7 @@ impl Solution {
         self.trades
             .iter()
             .map(|trade| {
-                (*trade.order_uid(), {
+                (*trade.uid(), {
                     let total = trade.total_fee_in_sell_token();
                     let protocol = trade.protocol_fees_in_sell_token(auction);
                     match (total, protocol) {
@@ -105,23 +122,6 @@ impl Solution {
                 })
             })
             .collect()
-    }
-
-    /// Returns all JIT trades from the solution.
-    pub async fn jit_orders(&self, persistence: &infra::Persistence) -> Vec<JitOrder> {
-        let mut jit_orders = Vec::new();
-        for trade in &self.trades {
-            match persistence.is_jit_order(trade.order_uid()).await {
-                Ok(true) => jit_orders.push(trade.clone().into()),
-                Ok(false) => continue,
-                Err(err) => tracing::warn!(
-                    ?err,
-                    "failed to check if trade is JIT, order {}",
-                    trade.order_uid()
-                ),
-            }
-        }
-        jit_orders
     }
 
     pub fn new(

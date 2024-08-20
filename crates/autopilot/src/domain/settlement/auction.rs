@@ -21,18 +21,39 @@ pub struct Auction {
 impl Auction {
     /// Protocol defines rules whether an order is eligible to contribute to the
     /// surplus of a settlement.
-    pub fn is_surplus_capturing(&self, order: &domain::OrderUid) -> bool {
-        // All orders in the auction contribute to surplus
-        if self.orders.contains_key(order) {
-            return true;
+    pub fn is_surplus_capturing(&self, order: &domain::OrderUid, order_in_database: bool) -> bool {
+        match self.classify(order, order_in_database) {
+            super::order::Type::User => true,
+            super::order::Type::UserOutOfAuction => false,
+            super::order::Type::SurplusCapturingJit => true,
+            super::order::Type::Jit => false,
         }
-        // Some JIT orders contribute to surplus, for example COW AMM orders
+    }
+
+    /// Classify an order based on the auction data and existence of the order
+    /// in the database.
+    pub fn classify(
+        &self,
+        order: &domain::OrderUid,
+        order_in_database: bool,
+    ) -> super::order::Type {
+        // All orders from the auction follow the regular user orders flow
+        if self.orders.contains_key(order) {
+            return super::order::Type::User;
+        }
+        // If not in auction, then check if it's a surplus capturing JIT order
         if self
             .surplus_capturing_jit_order_owners
             .contains(&order.owner())
         {
-            return true;
+            return super::order::Type::SurplusCapturingJit;
         }
-        false
+        // If not in auction and not a surplus capturing JIT order, then it's a JIT
+        // order but it must not be in the database
+        if !order_in_database {
+            return super::order::Type::Jit;
+        }
+        // A regular user order but settled outside of the auction
+        super::order::Type::UserOutOfAuction
     }
 }

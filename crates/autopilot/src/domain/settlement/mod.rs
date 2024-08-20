@@ -6,14 +6,14 @@
 use {
     self::solution::ExecutedFee,
     crate::{domain, domain::eth, infra},
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
 };
 
 mod auction;
-mod jit_order;
+mod order;
 mod solution;
 mod transaction;
-pub use {auction::Auction, jit_order::JitOrder, solution::Solution, transaction::Transaction};
+pub use {auction::Auction, solution::Solution, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
@@ -24,6 +24,9 @@ pub use {auction::Auction, jit_order::JitOrder, solution::Solution, transaction:
 pub struct Settlement {
     settled: Transaction,
     auction: Auction,
+
+    /// Orders from the settlement that exist in the database.
+    database_orders: HashSet<domain::OrderUid>,
 }
 
 impl Settlement {
@@ -53,7 +56,14 @@ impl Settlement {
             });
         }
 
-        let settled_score = settled.solution.score(&auction)?;
+        let mut database_orders = HashSet::new();
+        for order in settled.solution.order_uids() {
+            if persistence.order_exists(order).await? {
+                database_orders.insert(*order);
+            }
+        }
+
+        let settled_score = settled.solution.score(&auction, &database_orders)?;
 
         // temp log
         if settled_score != promised.score() {
@@ -65,7 +75,11 @@ impl Settlement {
             );
         }
 
-        Ok(Self { settled, auction })
+        Ok(Self {
+            settled,
+            auction,
+            database_orders,
+        })
     }
 
     /// The gas used by the settlement.
@@ -80,7 +94,9 @@ impl Settlement {
 
     /// Total surplus expressed in native token.
     pub fn native_surplus(&self) -> eth::Ether {
-        self.settled.solution.native_surplus(&self.auction)
+        self.settled
+            .solution
+            .native_surplus(&self.auction, &self.database_orders)
     }
 
     /// Total fee expressed in native token.
@@ -91,6 +107,25 @@ impl Settlement {
     /// Per order fees breakdown. Contains all orders from the settlement
     pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
         self.settled.solution.fees(&self.auction)
+    }
+
+    pub fn jit_orders(&self) -> Vec<order::Jit> {
+        self.settled
+            .solution
+            .trades()
+            .iter()
+            .filter_map(|order| {
+                match self
+                    .auction
+                    .classify(order.uid(), self.database_orders.contains(order.uid()))
+                {
+                    order::Type::User => None,
+                    order::Type::UserOutOfAuction => None,
+                    order::Type::SurplusCapturingJit => Some(order.clone().into()),
+                    order::Type::Jit => Some(order.clone().into()),
+                }
+            })
+            .collect()
     }
 }
 
