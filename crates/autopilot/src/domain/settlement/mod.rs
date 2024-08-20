@@ -46,33 +46,11 @@ impl Settlement {
 
         let auction = persistence.get_auction(settled.auction_id).await?;
 
-        // winning solution - solution promised during solver competition
-        let promised = persistence.get_winning_solution(settled.auction_id).await?;
-
-        if settled.solver != promised.solver() {
-            return Err(Error::SolverMismatch {
-                expected: promised.solver(),
-                got: settled.solver,
-            });
-        }
-
         let mut database_orders = HashSet::new();
         for order in settled.solution.order_uids() {
             if persistence.order_exists(order).await? {
                 database_orders.insert(*order);
             }
-        }
-
-        let settled_score = settled.solution.score(&auction, &database_orders)?;
-
-        // temp log
-        if settled_score != promised.score() {
-            tracing::debug!(
-                ?settled.auction_id,
-                "score mismatch: expected promised score {}, settled score {}",
-                promised.score(),
-                settled_score,
-            );
         }
 
         Ok(Self {
@@ -116,7 +94,7 @@ impl Settlement {
             .trades()
             .iter()
             .filter_map(|order| {
-                let exists_in_database = self.database_orders.contains(&order.uid());
+                let exists_in_database = self.database_orders.contains(order.uid());
                 self.auction
                     .is_jit(order.uid(), exists_in_database)
                     .then(|| order.clone().into())
@@ -135,13 +113,6 @@ pub enum Error {
     WrongEnvironment,
     #[error(transparent)]
     BuildingSolution(#[from] solution::Error),
-    #[error(transparent)]
-    BuildingScore(#[from] solution::error::Score),
-    #[error("solver mismatch: expected competition solver {expected}, settlement solver {got}")]
-    SolverMismatch {
-        expected: eth::Address,
-        got: eth::Address,
-    },
 }
 
 /// Errors that can occur when fetching data from the persistence layer.
