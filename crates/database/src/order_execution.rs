@@ -4,9 +4,17 @@ use {
     sqlx::{
         postgres::{PgHasArrayType, PgTypeInfo},
         PgConnection,
+        QueryBuilder,
     },
     std::collections::HashMap,
 };
+
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
+pub struct ProtocolFees {
+    pub order_uid: OrderUid,
+    pub auction_id: AuctionId,
+    pub protocol_fees: Vec<FeeAsset>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
 pub struct FeeAsset {
@@ -57,9 +65,8 @@ pub async fn executed_protocol_fees(
     }
 
     let mut fees = HashMap::new();
-    for (auction_id, order_uid) in keys_filter {
-        let protocol_fees = get_protocol_fees(ex, order_uid, *auction_id).await?;
-        fees.insert((*auction_id, *order_uid), protocol_fees.unwrap_or_default());
+    for fee in get_protocol_fees(ex, keys_filter).await? {
+        fees.insert((fee.auction_id, fee.order_uid), fee.protocol_fees);
     }
 
     Ok(fees)
@@ -68,22 +75,32 @@ pub async fn executed_protocol_fees(
 // executed procotol fee for a single <order, auction> pair
 async fn get_protocol_fees(
     ex: &mut PgConnection,
-    order: &OrderUid,
-    auction: AuctionId,
-) -> Result<Option<Vec<FeeAsset>>, sqlx::Error> {
-    const QUERY: &str = r#"
-        SELECT protocol_fees
-        FROM order_execution
-        WHERE order_uid = $1 AND auction_id = $2
-    "#;
+    keys: &[(AuctionId, OrderUid)],
+) -> Result<Vec<ProtocolFees>, sqlx::Error> {
+    if keys.is_empty() {
+        return Ok(vec![]);
+    }
 
-    let row = sqlx::query_scalar(QUERY)
-        .bind(order)
-        .bind(auction)
-        .fetch_optional(ex)
-        .await?;
+    let mut query_builder = QueryBuilder::new(
+        "SELECT order_uid, auction_id, protocol_fees FROM order_execution WHERE ",
+    );
 
-    Ok(row)
+    for (i, (auction_id, order_uid)) in keys.iter().enumerate() {
+        if i > 0 {
+            query_builder.push(" OR ");
+        }
+        query_builder
+            .push("(order_uid = ")
+            .push_bind(order_uid)
+            .push(" AND auction_id = ")
+            .push_bind(auction_id)
+            .push(")");
+    }
+
+    let query = query_builder.build_query_as::<ProtocolFees>();
+    let rows = query.fetch_all(ex).await?;
+
+    Ok(rows)
 }
 
 #[cfg(test)]
@@ -122,23 +139,13 @@ mod tests {
             .await
             .unwrap();
 
-        let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 1)
-            .await
-            .unwrap()
-            .unwrap();
+        let keys: Vec<(AuctionId, OrderUid)> = vec![
+            (1, Default::default()),
+            (2, Default::default()),
+            (3, Default::default()),
+        ];
+
+        let protocol_fees = get_protocol_fees(&mut db, &keys).await.unwrap();
         assert_eq!(protocol_fees.len(), 2);
-
-        // existing order but without protocol fees
-        let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 2)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(protocol_fees.len(), 0);
-
-        // non-existing order
-        let protocol_fees = get_protocol_fees(&mut db, &Default::default(), 3)
-            .await
-            .unwrap();
-        assert!(protocol_fees.is_none());
     }
 }
