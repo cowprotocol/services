@@ -294,17 +294,23 @@ impl Persistence {
         })
     }
 
-    /// Checks if the given order exists in the database.
-    pub async fn order_exists(&self, order_uid: &domain::OrderUid) -> Result<bool, DatabaseError> {
+    /// Given a list of orders, returns the ones that exist in database.
+    pub async fn orders_that_exist(
+        &self,
+        orders: &[&domain::OrderUid],
+    ) -> Result<HashSet<domain::OrderUid>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["order_exists"])
             .start_timer();
         let mut ex = self.postgres.pool.begin().await?;
-        database::orders::read_order(&mut ex, &ByteArray(order_uid.0))
-            .await
-            .map(|order| order.is_some())
-            .map_err(Into::into)
+        database::orders::orders_that_exist(
+            &mut ex,
+            &orders.iter().map(|o| ByteArray(o.0)).collect::<Vec<_>>(),
+        )
+        .await
+        .map(|orders| orders.into_iter().map(|o| domain::OrderUid(o.0)).collect())
+        .map_err(Into::into)
     }
 
     /// Returns the proposed solver solution that won the competition for a

@@ -46,12 +46,9 @@ impl Settlement {
 
         let auction = persistence.get_auction(settled.auction_id).await?;
 
-        let mut database_orders = HashSet::new();
-        for order in settled.solution.order_uids() {
-            if persistence.order_exists(order).await? {
-                database_orders.insert(*order);
-            }
-        }
+        let database_orders = persistence
+            .orders_that_exist(&settled.solution.order_uids())
+            .await?;
 
         Ok(Self {
             settled,
