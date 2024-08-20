@@ -3,7 +3,11 @@ use {
     anyhow::{anyhow, ensure, Context as _, Result},
     futures::StreamExt,
     primitive_types::{H256, U256},
-    std::{fmt::Debug, num::NonZeroU64, time::Duration},
+    std::{
+        fmt::Debug,
+        num::NonZeroU64,
+        time::{Duration, Instant},
+    },
     tokio::sync::watch,
     tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
@@ -44,7 +48,7 @@ impl<T: Ord> RangeInclusive<T> {
 }
 
 /// Block information.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct BlockInfo {
     pub number: u64,
     pub hash: H256,
@@ -52,6 +56,33 @@ pub struct BlockInfo {
     pub timestamp: u64,
     pub gas_limit: U256,
     pub gas_price: U256,
+    /// When the system noticed the new block.
+    pub observed_at: Instant,
+}
+
+impl Default for BlockInfo {
+    fn default() -> Self {
+        Self {
+            number: Default::default(),
+            hash: Default::default(),
+            parent_hash: Default::default(),
+            timestamp: Default::default(),
+            gas_limit: Default::default(),
+            gas_price: Default::default(),
+            observed_at: Instant::now(),
+        }
+    }
+}
+
+impl PartialEq<Self> for BlockInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.number == other.number
+            && self.hash == other.hash
+            && self.parent_hash == other.parent_hash
+            && self.timestamp == other.timestamp
+            && self.gas_limit == other.gas_limit
+            && self.gas_price == other.gas_price
+    }
 }
 
 impl TryFrom<Block<H256>> for BlockInfo {
@@ -65,6 +96,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
             timestamp: value.timestamp.as_u64(),
             gas_limit: value.gas_limit,
             gas_price: value.base_fee_per_gas.context("no gas price")?,
+            observed_at: Instant::now(),
         })
     }
 }
@@ -205,12 +237,17 @@ pub trait BlockRetrieving: Debug + Send + Sync + 'static {
 #[async_trait::async_trait]
 impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<BlockInfo> {
-        get_block_info_at_id(self, BlockNumber::Latest.into()).await
+        get_block_at_id(self, BlockNumber::Latest.into())
+            .await?
+            .try_into()
     }
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
-        let block = get_block_info_at_id(self, U64::from(number).into()).await?;
-        Ok((block.number, block.hash))
+        let block = get_block_at_id(self, U64::from(number).into()).await?;
+        Ok((
+            block.number.context("missing block_number")?.as_u64(),
+            block.hash.context("missing block_hash")?,
+        ))
     }
 
     /// get blocks defined by the range (inclusive)
@@ -251,13 +288,12 @@ impl BlockRetrieving for Web3 {
     }
 }
 
-async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
+async fn get_block_at_id(web3: &Web3, id: BlockId) -> Result<Block<H256>> {
     web3.eth()
         .block(id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
-        .with_context(|| format!("no block for {id:?}"))?
-        .try_into()
+        .with_context(|| format!("no block for {id:?}"))
 }
 
 pub async fn timestamp_of_block_in_seconds(web3: &Web3, block_number: BlockNumber) -> Result<u32> {

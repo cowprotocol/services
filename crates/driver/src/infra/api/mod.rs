@@ -3,6 +3,7 @@ use {
         domain::{self, Mempools},
         infra::{
             self,
+            config::file::OrderPriorityStrategy,
             liquidity,
             solver::{Solver, Timeouts},
             tokens,
@@ -37,6 +38,7 @@ impl Api {
     pub async fn serve(
         self,
         shutdown: impl Future<Output = ()> + Send + 'static,
+        order_priority_strategies: Vec<OrderPriorityStrategy>,
     ) -> Result<(), hyper::Error> {
         // Add middleware.
         let mut app = axum::Router::new().layer(
@@ -48,7 +50,8 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
-        let pre_processor = domain::competition::AuctionProcessor::new(&self.eth);
+        let pre_processor =
+            domain::competition::AuctionProcessor::new(&self.eth, order_priority_strategies);
 
         // Add the metrics and healthz endpoints.
         app = routes::metrics(app);

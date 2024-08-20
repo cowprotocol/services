@@ -285,7 +285,7 @@ pub struct Quote {
     pub buy_amount: U256,
     /// The amount that needs to be paid, denominated in the sell token.
     pub fee: U256,
-    pub solver: Option<H160>,
+    pub solver: H160,
 }
 
 impl From<domain::Quote> for Quote {
@@ -294,7 +294,7 @@ impl From<domain::Quote> for Quote {
             sell_amount: value.sell_amount.into(),
             buy_amount: value.buy_amount.into(),
             fee: value.fee.into(),
-            solver: Some(value.solver.into()),
+            solver: value.solver.into(),
         }
     }
 }

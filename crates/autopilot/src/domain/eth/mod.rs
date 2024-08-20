@@ -103,6 +103,16 @@ impl num::CheckedSub for SellTokenAmount {
     }
 }
 
+impl num::Saturating for SellTokenAmount {
+    fn saturating_add(self, v: Self) -> Self {
+        self.0.saturating_add(v.0).into()
+    }
+
+    fn saturating_sub(self, v: Self) -> Self {
+        self.0.saturating_sub(v.0).into()
+    }
+}
+
 /// Gas amount in gas units.
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this
