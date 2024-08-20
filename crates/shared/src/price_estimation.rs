@@ -233,37 +233,31 @@ pub struct CoinGecko {
 }
 
 #[derive(clap::Parser)]
+#[clap(group(
+    clap::ArgGroup::new("buffered")
+    .requires_all(&[
+        "coin_gecko_debouncing_time",
+        "coin_gecko_result_ready_timeout",
+        "coin_gecko_broadcast_channel_capacity"
+    ])
+    .multiple(true)
+    .required(false),
+))]
 pub struct CoinGeckoBuffered {
     /// An additional minimum delay to wait for collecting CoinGecko requests.
     ///
     /// The delay to start counting after receiving the first request.
-    ///
-    /// Default: 300 ms (x5 rate limit period: 60 ms)
-    #[clap(
-        long,
-        env,
-        default_value = "300ms",
-        value_parser = humantime::parse_duration,
-    )]
-    pub coin_gecko_debouncing_time: Duration,
+    #[clap(long, env, value_parser = humantime::parse_duration, group = "buffered")]
+    pub coin_gecko_debouncing_time: Option<Duration>,
 
     /// The timeout to wait for the result to be ready
-    ///
-    /// Default: 600 ms (x2 default `debouncing_time`)
-    #[clap(
-        long,
-        env,
-        default_value = "600ms",
-        value_parser = humantime::parse_duration,
-    )]
-    pub coin_gecko_result_ready_timeout: Duration,
+    #[clap(long, env, value_parser = humantime::parse_duration, group = "buffered")]
+    pub coin_gecko_result_ready_timeout: Option<Duration>,
 
     /// Maximum capacity of the broadcast channel to store the CoinGecko native
     /// prices results
-    ///
-    /// Default: 60 (3 times the CoinGecko max bulk request size: 20)
-    #[clap(long, env, default_value = "60")]
-    pub coin_gecko_broadcast_channel_capacity: usize,
+    #[clap(long, env, group = "buffered")]
+    pub coin_gecko_broadcast_channel_capacity: Option<usize>,
 }
 
 /// Controls which level of quote verification gets applied.
@@ -572,7 +566,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, clap::Parser};
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {
@@ -596,5 +590,69 @@ mod tests {
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
+    }
+
+    #[test]
+    fn enable_coin_gecko_buffered() {
+        let args = vec![
+            "test", // Program name
+            "--coin-gecko-api-key",
+            "someapikey",
+            "--coin-gecko-url",
+            "https://api.coingecko.com/api/v3/simple/token_price",
+            "--coin-gecko-debouncing-time",
+            "300ms",
+            "--coin-gecko-result-ready-timeout",
+            "600ms",
+            "--coin-gecko-broadcast-channel-capacity",
+            "50",
+        ];
+
+        let coin_gecko = CoinGecko::parse_from(args);
+
+        assert!(coin_gecko.coin_gecko_buffered.is_some());
+
+        let buffered = coin_gecko.coin_gecko_buffered.unwrap();
+        assert_eq!(
+            buffered.coin_gecko_debouncing_time.unwrap(),
+            Duration::from_millis(300)
+        );
+        assert_eq!(
+            buffered.coin_gecko_result_ready_timeout.unwrap(),
+            Duration::from_millis(600)
+        );
+        assert_eq!(buffered.coin_gecko_broadcast_channel_capacity.unwrap(), 50);
+    }
+
+    #[test]
+    fn test_without_buffered_present() {
+        let args = vec![
+            "test", // Program name
+            "--coin-gecko-api-key",
+            "someapikey",
+            "--coin-gecko-url",
+            "https://api.coingecko.com/api/v3/simple/token_price",
+        ];
+
+        let coin_gecko = CoinGecko::parse_from(args);
+
+        assert!(coin_gecko.coin_gecko_buffered.is_none());
+    }
+
+    #[test]
+    fn test_invalid_partial_buffered_present() {
+        let args = vec![
+            "test", // Program name
+            "--coin-gecko-api-key",
+            "someapikey",
+            "--coin-gecko-url",
+            "https://api.coingecko.com/api/v3/simple/token_price",
+            "--coin-gecko-debouncing-time",
+            "300ms",
+        ];
+
+        let result = CoinGecko::try_parse_from(args);
+
+        assert!(result.is_err());
     }
 }

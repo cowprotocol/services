@@ -233,11 +233,14 @@ impl<'a> PriceEstimatorFactory<'a> {
                                     .context("invalid CoinGecko max batch size")?,
                             ),
                             debouncing_time: coin_gecko_buffered_configuration
-                                .coin_gecko_debouncing_time,
+                                .coin_gecko_debouncing_time
+                                .unwrap(),
                             result_ready_timeout: coin_gecko_buffered_configuration
-                                .coin_gecko_result_ready_timeout,
+                                .coin_gecko_result_ready_timeout
+                                .unwrap(),
                             broadcast_channel_capacity: coin_gecko_buffered_configuration
-                                .coin_gecko_broadcast_channel_capacity,
+                                .coin_gecko_broadcast_channel_capacity
+                                .unwrap(),
                         };
 
                         Arc::new(BufferedRequest::with_config(coin_gecko, configuration))
