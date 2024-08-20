@@ -1,6 +1,3 @@
-//! Coordinates all the updates that need to run a new block
-//! to ensure a consistent view of the system.
-
 use {
     crate::{
         boundary::events::settlement::{GPv2SettlementContract, Indexer},
@@ -16,12 +13,15 @@ use {
         event_updater::EventUpdater,
         solvable_orders::SolvableOrdersCache,
     },
+    anyhow::Result,
     ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
     futures::StreamExt,
     shared::maintenance::Maintaining,
     std::sync::{Arc, Mutex},
 };
 
+/// Coordinates all the updates that need to run a new block
+/// to ensure a consistent view of the system.
 pub struct Maintenance {
     /// Set of orders that make up the current auction.
     orders_cache: Arc<SolvableOrdersCache>,
@@ -71,29 +71,45 @@ impl Maintenance {
             }
         }
 
-        // All these can run independently of each other.
-        let _ = tokio::join!(
-            self.settlement_indexer.run_maintenance(),
-            self.index_refunds(),
-            self.index_ethflow_orders(),
+        let start = std::time::Instant::now();
+        if let Err(err) = self.update_inner(new_block).await {
+            tracing::warn!(?err, block = new_block.number, "failed to run maintenance");
+            return;
+        }
+        tracing::info!(
+            block = new_block.number,
+            time = ?start.elapsed(),
+            "successfully ran maintenance task"
         );
 
-        // Only update solvable orders after all other
-        // events got processed.
-        let _ = self.orders_cache.update(new_block.number).await;
         *self.last_processed.lock().unwrap() = *new_block;
     }
 
-    async fn index_refunds(&self) {
-        if let Some(indexer) = &self.refund_indexer {
-            let _ = indexer.run_maintenance().await;
-        }
+    async fn update_inner(&self, block: &BlockInfo) -> Result<()> {
+        // All these can run independently of each other.
+        tokio::try_join!(
+            self.settlement_indexer.run_maintenance(),
+            self.index_refunds(),
+            self.index_ethflow_orders(),
+        )?;
+
+        // Only update solvable orders after all other
+        // events got processed.
+        self.orders_cache.update(block.number).await
     }
 
-    async fn index_ethflow_orders(&self) {
-        if let Some(indexer) = &self.ethflow_indexer {
-            let _ = indexer.run_maintenance().await;
+    async fn index_refunds(&self) -> Result<()> {
+        if let Some(indexer) = &self.refund_indexer {
+            return indexer.run_maintenance().await;
         }
+        Ok(())
+    }
+
+    async fn index_ethflow_orders(&self) -> Result<()> {
+        if let Some(indexer) = &self.ethflow_indexer {
+            return indexer.run_maintenance().await;
+        }
+        Ok(())
     }
 
     /// Spawns a background task that runs updates when new blocks are seen.
