@@ -12,6 +12,7 @@ use {
             self,
             solvers::dto::{reveal, settle, solve},
         },
+        maintenance::Maintenance,
         run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
@@ -19,6 +20,7 @@ use {
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
+    ethrpc::block_stream::BlockInfo,
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -29,10 +31,7 @@ use {
     },
     primitive_types::H256,
     rand::seq::SliceRandom,
-    shared::{
-        maintenance::{Maintaining, ServiceMaintenance},
-        token_list::AutoUpdatingTokenList,
-    },
+    shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
@@ -61,20 +60,16 @@ pub struct RunLoop {
     pub max_run_loop_delay: Duration,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
-    pub maintenance: ServiceMaintenance,
+    pub maintenance: Arc<Maintenance>,
 }
 
 impl RunLoop {
-    pub async fn run_forever(self, update_interval: Duration) -> ! {
+    pub async fn run_forever(self) -> ! {
         if let RunLoopMode::Unsynchronized = self.synchronization {
-            SolvableOrdersCache::spawn_background_task(
-                &self.solvable_orders_cache,
+            Maintenance::spawn_background_task(
+                self.maintenance.clone(),
                 self.eth.current_block().clone(),
-                update_interval,
             );
-            self.maintenance
-                .clone()
-                .spawn_background_task(self.eth.current_block().clone());
         }
 
         let mut last_auction = None;
@@ -120,26 +115,16 @@ impl RunLoop {
                     current_block
                 };
 
-                self.run_maintenance().await;
-
-                if let Err(err) = self
-                    .solvable_orders_cache
-                    .update(auction_block.number)
-                    .await
-                {
-                    tracing::error!(?err, "failed to build a new auction");
-                }
+                self.run_maintenance(&auction_block).await;
             }
         }
     }
 
     /// Runs maintenance on all components to ensure the system uses
     /// the latest available state.
-    async fn run_maintenance(&self) {
+    async fn run_maintenance(&self, block: &BlockInfo) {
         let start = Instant::now();
-        if let Err(err) = self.maintenance.run_maintenance().await {
-            tracing::warn!(?err, "error while running maintenance");
-        }
+        self.maintenance.update(block).await;
         Metrics::ran_maintenance(start.elapsed());
     }
 
@@ -728,7 +713,7 @@ impl RunLoop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
             // it's possible to find the tx in the DB in the next line.
-            self.run_maintenance().await;
+            self.run_maintenance(&block).await;
 
             match self
                 .persistence
