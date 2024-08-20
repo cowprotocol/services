@@ -109,21 +109,17 @@ impl Settlement {
         self.settled.solution.fees(&self.auction)
     }
 
+    /// All jit orders from a settlement.
     pub fn jit_orders(&self) -> Vec<order::Jit> {
         self.settled
             .solution
             .trades()
             .iter()
             .filter_map(|order| {
-                match self
-                    .auction
-                    .classify(order.uid(), self.database_orders.contains(order.uid()))
-                {
-                    order::Type::User => None,
-                    order::Type::UserOutOfAuction => None,
-                    order::Type::SurplusCapturingJit => Some(order.clone().into()),
-                    order::Type::Jit => Some(order.clone().into()),
-                }
+                let exists_in_database = self.database_orders.contains(&order.uid());
+                self.auction
+                    .is_jit(order.uid(), exists_in_database)
+                    .then(|| order.clone().into())
             })
             .collect()
     }

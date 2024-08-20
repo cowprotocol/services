@@ -248,7 +248,7 @@ mod tests {
             domain::{auction, eth},
         },
         hex_literal::hex,
-        std::collections::HashMap,
+        std::collections::{HashMap, HashSet},
     };
 
     // https://etherscan.io/tx/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
@@ -361,7 +361,7 @@ mod tests {
 
         // surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
-            solution.native_surplus(&auction).0,
+            solution.native_surplus(&auction, &HashSet::from([domain::OrderUid(hex!("10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff"))])).0,
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
@@ -488,12 +488,12 @@ mod tests {
         };
 
         assert_eq!(
-            solution.native_surplus(&auction).0,
+            solution.native_surplus(&auction, &HashSet::from([domain::OrderUid(hex!("c6a81144bc822569a0752c7a537fa9cbbf6344cb187ce0ff15a534b571e277eaf87da2093abee9b13a6f89671e4c3a3f80b427676799c219"))])).0,
             eth::U256::from(384509480572312u128)
         );
 
         assert_eq!(
-            solution.score(&auction).unwrap().get().0,
+            solution.score(&auction, &HashSet::from([domain::OrderUid(hex!("c6a81144bc822569a0752c7a537fa9cbbf6344cb187ce0ff15a534b571e277eaf87da2093abee9b13a6f89671e4c3a3f80b427676799c219"))])).unwrap().get().0,
             eth::U256::from(769018961144624u128) // 2 x surplus
         );
     }
