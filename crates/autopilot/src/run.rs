@@ -34,6 +34,7 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -297,6 +298,8 @@ pub async fn run(args: Arguments) {
     })));
     let block_retriever = args.shared.current_block.retriever(web3.clone());
 
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -321,6 +324,7 @@ pub async fn run(args: Arguments) {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
             tokens: token_info_fetcher.clone(),
+            code_fetcher: code_fetcher.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
