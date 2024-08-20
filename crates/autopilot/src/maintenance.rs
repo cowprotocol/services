@@ -49,17 +49,6 @@ impl Maintenance {
         }
     }
 
-    /// Registers all maintenance tasks that are necessary to correctly support
-    /// ethflow orders.
-    pub fn with_ethflow(
-        &mut self,
-        ethflow_indexer: EthflowIndexer,
-        refund_indexer: EventUpdater<Postgres, EthFlowRefundRetriever>,
-    ) {
-        self.ethflow_indexer = Some(ethflow_indexer);
-        self.refund_indexer = Some(refund_indexer);
-    }
-
     /// Runs all update tasks in a coordinated manner to ensure the system
     /// has a consistent state.
     pub async fn update(&self, new_block: &BlockInfo) {
@@ -97,6 +86,18 @@ impl Maintenance {
         // events got processed.
         self.orders_cache.update(block.number).await
     }
+
+    /// Registers all maintenance tasks that are necessary to correctly support
+    /// ethflow orders.
+    pub fn with_ethflow(
+        &mut self,
+        ethflow_indexer: EthflowIndexer,
+        refund_indexer: EventUpdater<Postgres, EthFlowRefundRetriever>,
+    ) {
+        self.ethflow_indexer = Some(ethflow_indexer);
+        self.refund_indexer = Some(refund_indexer);
+    }
+
 
     async fn index_refunds(&self) -> Result<()> {
         if let Some(indexer) = &self.refund_indexer {
