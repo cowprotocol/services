@@ -824,6 +824,7 @@ impl OrderFilterCounter {
         filtered_orders.into_keys().collect()
     }
 
+    /// Creates a new checkpoint based on the found invalid orders.
     fn checkpoint_by_invalid_orders(&mut self, reason: Reason, invalid_orders: &[OrderUid]) {
         *self.counts.entry(reason).or_default() += invalid_orders.len();
         for order_uid in invalid_orders {
