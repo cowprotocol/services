@@ -187,7 +187,7 @@ impl SolvableOrdersCache {
                 self.cow_amm_registry.amms().await
             };
             tokio::join!(
-                self.get_balances(queries),
+                self.fetch_balances(queries),
                 self.filter_invalid_orders(
                     db_solvable_orders.orders,
                     &mut counter,
@@ -313,7 +313,7 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    async fn get_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
+    async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = {
             let _timer = self.stage_timer("balance_fetch");
             self.balance_fetcher.get_balances(&queries).await
