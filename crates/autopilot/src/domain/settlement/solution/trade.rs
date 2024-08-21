@@ -493,6 +493,22 @@ pub struct ClearingPrices {
     pub buy: eth::U256,
 }
 
+/// Trade type when evaluated in a context of an Auction.
+#[derive(Clone, Debug)]
+pub enum Type {
+    /// A regular user order. These orders are part of the `Auction`.
+    User,
+    /// A regular user order that was not part of the `Auction`.
+    UserOutOfAuction,
+    /// A JIT order that captures surplus. These orders are usually not part of
+    /// the `Auction`.
+    SurplusCapturingJit,
+    /// A JIT order that does not capture surplus, doesn't apply for protocol
+    /// fees and is filled at it's limit prices. These orders are never part of
+    /// the `Auction`.
+    Jit,
+}
+
 /// This function adjusts quote amounts to directly compare them with the
 /// order's limits, ensuring a meaningful comparison for potential price
 /// improvements. It scales quote amounts when necessary, accounting for quote

@@ -10,7 +10,6 @@ use {
 };
 
 mod auction;
-mod order;
 mod solution;
 mod transaction;
 pub use {auction::Auction, solution::Solution, transaction::Transaction};

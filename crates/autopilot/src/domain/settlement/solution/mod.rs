@@ -8,7 +8,7 @@ use crate::domain::{
 };
 
 mod tokenized;
-mod trade;
+pub mod trade;
 use {
     crate::{
         boundary,
