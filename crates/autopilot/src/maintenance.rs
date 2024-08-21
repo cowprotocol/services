@@ -98,7 +98,6 @@ impl Maintenance {
         self.refund_indexer = Some(refund_indexer);
     }
 
-
     async fn index_refunds(&self) -> Result<()> {
         if let Some(indexer) = &self.refund_indexer {
             return indexer.run_maintenance().await;
