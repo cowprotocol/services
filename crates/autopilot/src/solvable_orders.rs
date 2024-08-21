@@ -7,7 +7,6 @@ use {
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::future::try_join_all,
     indexmap::IndexSet,
     itertools::Itertools,
     model::{
@@ -196,7 +195,8 @@ impl SolvableOrdersCache {
 
         let orders = {
             let _timer = self.stage_timer("unsupported_token_filtering");
-            let orders = filter_unsupported_tokens(orders, self.bad_token_detector.clone()).await?;
+            let orders =
+                filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
             let removed = counter.checkpoint("unsupported_token", &orders);
             invalid_order_uids.extend(removed);
             orders
@@ -657,22 +657,22 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 }
 
 async fn filter_unsupported_tokens(
-    orders: Vec<Order>,
-    bad_token: Arc<dyn BadTokenDetecting>,
+    mut orders: Vec<Order>,
+    bad_token: &dyn BadTokenDetecting,
 ) -> Result<Vec<Order>> {
-    try_join_all(orders.into_iter().map(|order| {
-        let bad_token = bad_token.clone();
-        async move {
-            for token in order.data.token_pair().unwrap() {
-                if !bad_token.detect(token).await?.is_good() {
-                    return Ok(None) as Result<Option<Order>>;
-                }
+    // Can't use normal `retain` or `filter` because the bad token detection is
+    // async. So either this manual iteration or conversion to stream.
+    let mut index = 0;
+    'outer: while index < orders.len() {
+        for token in orders[index].data.token_pair().unwrap() {
+            if !bad_token.detect(token).await?.is_good() {
+                orders.swap_remove(index);
+                continue 'outer;
             }
-            Ok(Some(order)) as Result<Option<Order>>
         }
-    }))
-    .await
-    .map(|orders| orders.into_iter().flatten().collect())
+        index += 1;
+    }
+    Ok(orders)
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
@@ -1098,7 +1098,7 @@ mod tests {
         let token0 = H160::from_low_u64_le(0);
         let token1 = H160::from_low_u64_le(1);
         let token2 = H160::from_low_u64_le(2);
-        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0]));
+        let bad_token = ListBasedDetector::deny_list(vec![token0]);
         let orders = vec![
             OrderBuilder::default()
                 .with_sell_token(token0)
@@ -1113,7 +1113,7 @@ mod tests {
                 .with_buy_token(token2)
                 .build(),
         ];
-        let result = filter_unsupported_tokens(orders.clone(), bad_token)
+        let result = filter_unsupported_tokens(orders.clone(), &bad_token)
             .now_or_never()
             .unwrap()
             .unwrap();
