@@ -7,6 +7,7 @@ use {
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::CurrentBlockWatcher,
+    futures::future::join_all,
     indexmap::IndexSet,
     itertools::Itertools,
     model::{
@@ -195,8 +196,7 @@ impl SolvableOrdersCache {
 
         let orders = {
             let _timer = self.stage_timer("unsupported_token_filtering");
-            let orders =
-                filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+            let orders = filter_unsupported_tokens(orders, self.bad_token_detector.clone()).await;
             let removed = counter.checkpoint("unsupported_token", &orders);
             invalid_order_uids.extend(removed);
             orders
@@ -658,21 +658,40 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 
 async fn filter_unsupported_tokens(
     mut orders: Vec<Order>,
-    bad_token: &dyn BadTokenDetecting,
-) -> Result<Vec<Order>> {
-    // Can't use normal `retain` or `filter` because the bad token detection is
-    // async. So either this manual iteration or conversion to stream.
-    let mut index = 0;
-    'outer: while index < orders.len() {
-        for token in orders[index].data.token_pair().unwrap() {
-            if !bad_token.detect(token).await?.is_good() {
-                orders.swap_remove(index);
-                continue 'outer;
-            }
-        }
-        index += 1;
-    }
-    Ok(orders)
+    bad_token: Arc<dyn BadTokenDetecting>,
+) -> Vec<Order> {
+    let bad_tokens = join_all(
+        orders
+            .iter()
+            .flat_map(|o| o.data.token_pair().unwrap_or_default())
+            .unique()
+            .map(|token| {
+                let bad_token = bad_token.clone();
+                async move {
+                    match bad_token.detect(token).await {
+                        Ok(quality) => (!quality.is_good()).then_some(token),
+                        Err(err) => {
+                            tracing::warn!(?token, ?err, "unable to determine token quality");
+                            Some(token)
+                        }
+                    }
+                }
+            }),
+    )
+    .await
+    .into_iter()
+    .flatten()
+    .collect::<HashSet<_>>();
+
+    orders.retain(|order| {
+        order
+            .data
+            .token_pair()
+            .into_iter()
+            .flatten()
+            .all(|token| !bad_tokens.contains(&token))
+    });
+    orders
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
@@ -1098,7 +1117,7 @@ mod tests {
         let token0 = H160::from_low_u64_le(0);
         let token1 = H160::from_low_u64_le(1);
         let token2 = H160::from_low_u64_le(2);
-        let bad_token = ListBasedDetector::deny_list(vec![token0]);
+        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token0]));
         let orders = vec![
             OrderBuilder::default()
                 .with_sell_token(token0)
@@ -1113,9 +1132,8 @@ mod tests {
                 .with_buy_token(token2)
                 .build(),
         ];
-        let result = filter_unsupported_tokens(orders.clone(), &bad_token)
+        let result = filter_unsupported_tokens(orders.clone(), bad_token)
             .now_or_never()
-            .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
     }
