@@ -17,7 +17,11 @@ use {
     ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
     futures::StreamExt,
     shared::maintenance::Maintaining,
-    std::sync::{Arc, Mutex},
+    std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    },
+    tokio::time::timeout,
 };
 
 /// Coordinates all the updates that need to run a new block
@@ -34,6 +38,8 @@ pub struct Maintenance {
     /// Used for periodic cleanup tasks to not have the DB overflow with old
     /// data.
     db_cleanup: Postgres,
+    /// All indexing tasks to keep cow amms up to date.
+    cow_amm_indexer: Vec<Arc<dyn Maintaining>>,
     /// On which block we last ran an update successfully.
     last_processed: Mutex<BlockInfo>,
 }
@@ -48,6 +54,7 @@ impl Maintenance {
             orders_cache,
             settlement_indexer,
             db_cleanup,
+            cow_amm_indexer: Default::default(),
             refund_indexer: None,
             ethflow_indexer: None,
             last_processed: Default::default(),
@@ -80,12 +87,19 @@ impl Maintenance {
     }
 
     async fn update_inner(&self, block: &BlockInfo) -> Result<()> {
+        tracing::error!(block = block.number, "run update task");
         // All these can run independently of each other.
         tokio::try_join!(
             self.settlement_indexer.run_maintenance(),
             self.db_cleanup.run_maintenance(),
             self.index_refunds(),
             self.index_ethflow_orders(),
+            futures::future::try_join_all(self.cow_amm_indexer.iter().cloned().map(
+                |indexer| async move {
+                    tracing::error!("running cow amm task");
+                    indexer.run_maintenance().await
+                }
+            ))
         )?;
 
         // Only update solvable orders after all other
@@ -102,6 +116,11 @@ impl Maintenance {
     ) {
         self.ethflow_indexer = Some(ethflow_indexer);
         self.refund_indexer = Some(refund_indexer);
+    }
+
+    pub fn with_cow_amms(&mut self, registry: &cow_amm::Registry) {
+        self.cow_amm_indexer = registry.maintenance_tasks().clone();
+        tracing::error!(len = self.cow_amm_indexer.len(), "added cow amm tasks");
     }
 
     async fn index_refunds(&self) -> Result<()> {

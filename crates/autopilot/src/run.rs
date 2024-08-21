@@ -367,7 +367,7 @@ pub async fn run(args: Arguments) {
         skip_event_sync_start,
     );
 
-    let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
+    let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(config.index_start, config.factory, config.helper)
@@ -454,6 +454,7 @@ pub async fn run(args: Arguments) {
         settlement_event_indexer,
         db.clone(),
     );
+    maintenance.with_cow_amms(&cow_amm_registry);
 
     if let Some(ethflow_contract) = args.ethflow_contract {
         let start_block = determine_ethflow_indexing_start(

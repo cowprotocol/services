@@ -12,27 +12,28 @@ use {
 };
 
 /// CoW AMM indexer which stores events in-memory.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Registry {
     web3: Web3,
-    current_block_stream: CurrentBlockWatcher,
     storage: Arc<RwLock<Vec<Storage>>>,
+    maintenance_tasks: Vec<Arc<dyn Maintaining>>,
 }
 
 impl Registry {
-    pub fn new(web3: Web3, current_block_stream: CurrentBlockWatcher) -> Self {
+    pub fn new(web3: Web3) -> Self {
         Self {
             storage: Default::default(),
             web3,
-            current_block_stream,
+            maintenance_tasks: vec![],
         }
     }
 
-    /// Starts indexing CoW AMMs deployed by the provided `factory` address.
+    /// Registers a new listener to detect CoW AMMs deployed by `factory`.
     /// Interfacing with the CoW AMM happens via the
     /// [`contracts::CowAmmLegacyHelper`] deployed at `helper_contract`.
+    /// To actually start indexing these pools call `spawn_maintenance_tasks()`.
     pub async fn add_listener(
-        &self,
+        &mut self,
         deployment_block: u64,
         factory: Address,
         helper_contract: Address,
@@ -50,14 +51,11 @@ impl Registry {
         let event_handler = EventHandler::new(Arc::new(self.web3.clone()), indexer, storage, None);
         let token_balance_maintainer =
             EmptyPoolRemoval::new(self.storage.clone(), self.web3.clone());
-        let maintainers: Vec<Arc<dyn Maintaining>> = vec![
-            Arc::new(Mutex::new(event_handler)),
-            Arc::new(token_balance_maintainer),
-        ];
-        let service_maintainer = ServiceMaintenance::new(maintainers);
-        tokio::task::spawn(
-            service_maintainer.run_maintenance_on_new_block(self.current_block_stream.clone()),
-        );
+
+        self.maintenance_tasks
+            .push(Arc::new(Mutex::new(event_handler)));
+        self.maintenance_tasks
+            .push(Arc::new(token_balance_maintainer));
     }
 
     /// Returns all the deployed CoW AMMs
@@ -68,5 +66,23 @@ impl Registry {
             result.extend(cache.cow_amms().await);
         }
         result
+    }
+
+    pub fn spawn_maintenance_task(&self, block_stream: CurrentBlockWatcher) {
+        let maintenance = ServiceMaintenance::new(self.maintenance_tasks.clone());
+        tokio::task::spawn(maintenance.run_maintenance_on_new_block(block_stream));
+    }
+
+    pub fn maintenance_tasks(&self) -> &Vec<Arc<dyn Maintaining>> {
+        &self.maintenance_tasks
+    }
+}
+
+impl std::fmt::Debug for Registry {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Registry")
+            .field("web3", &self.web3)
+            .field("storage", &self.storage)
+            .finish()
     }
 }
