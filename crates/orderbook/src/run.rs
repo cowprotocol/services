@@ -246,6 +246,8 @@ pub async fn run(args: Arguments) {
         web3: web3.clone(),
     })));
 
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
+
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -268,6 +270,7 @@ pub async fn run(args: Arguments) {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
             tokens: token_info_fetcher.clone(),
+            code_fetcher: code_fetcher.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -351,7 +354,7 @@ pub async fn run(args: Arguments) {
         signature_validator,
         Arc::new(postgres.clone()),
         args.max_limit_orders_per_user,
-        Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
+        code_fetcher,
         app_data_validator.clone(),
         args.max_gas_per_order,
     ));

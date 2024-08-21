@@ -103,6 +103,16 @@ impl num::CheckedSub for SellTokenAmount {
     }
 }
 
+impl num::Saturating for SellTokenAmount {
+    fn saturating_add(self, v: Self) -> Self {
+        self.0.saturating_add(v.0).into()
+    }
+
+    fn saturating_sub(self, v: Self) -> Self {
+        self.0.saturating_sub(v.0).into()
+    }
+}
+
 /// Gas amount in gas units.
 ///
 /// The amount of Ether that is paid in transaction fees is proportional to this
@@ -113,7 +123,7 @@ pub struct Gas(pub U256);
 /// The `effective_gas_price` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Display)]
 pub struct EffectiveGasPrice(pub Ether);
 
 impl From<U256> for EffectiveGasPrice {
@@ -244,7 +254,15 @@ pub struct DomainSeparator(pub [u8; 32]);
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
 
-/// An on-chain transaction.
+/// An event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
+pub struct Event {
+    pub block: BlockNo,
+    pub log_index: u64,
+    pub transaction: TxId,
+}
+
+/// Any type of on-chain transaction.
 #[derive(Debug)]
 pub struct Transaction {
     /// The hash of the transaction.

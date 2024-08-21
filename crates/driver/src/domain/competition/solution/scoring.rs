@@ -382,23 +382,10 @@ impl Trade {
         // Finally:
         // case Sell: fee = traded_buy_amount' * factor / (1 - factor)
         // case Buy: fee = traded_sell_amount' * factor / (1 + factor)
-        let executed_in_surplus_token: eth::TokenAmount = match self.side {
-            Side::Sell => self
-                .executed
-                .0
-                .checked_mul(self.custom_price.sell)
-                .ok_or(Math::Overflow)?
-                .checked_div(self.custom_price.buy)
-                .ok_or(Math::DivisionByZero)?,
-            Side::Buy => self
-                .executed
-                .0
-                .checked_mul(self.custom_price.buy)
-                .ok_or(Math::Overflow)?
-                .checked_div(self.custom_price.sell)
-                .ok_or(Math::DivisionByZero)?,
-        }
-        .into();
+        let executed_in_surplus_token = match self.side {
+            order::Side::Buy => self.sell_amount()?,
+            order::Side::Sell => self.buy_amount()?,
+        };
         let factor = match self.side {
             Side::Sell => factor / (1.0 - factor),
             Side::Buy => factor / (1.0 + factor),

@@ -58,6 +58,7 @@ impl Notification {
                     },
                     notify::Settlement::SimulationRevert => Kind::Cancelled,
                     notify::Settlement::Fail => Kind::Fail,
+                    notify::Settlement::Expired => Kind::Expired,
                 },
                 notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
             },
@@ -140,6 +141,7 @@ pub enum Kind {
         reason: String,
     },
     Cancelled,
+    Expired,
     Fail,
     PostprocessingTimedOut,
 }
