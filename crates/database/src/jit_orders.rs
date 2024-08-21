@@ -74,6 +74,7 @@ SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = 
         .bind(jit_order.buy_amount)
         .bind(jit_order.valid_to)
         .bind(jit_order.app_data)
+        .bind(jit_order.fee_amount)
         .bind(jit_order.kind)
         .bind(jit_order.signature)
         .bind(jit_order.receiver)
