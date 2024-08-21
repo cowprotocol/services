@@ -15,7 +15,7 @@ pub struct Transaction {
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
     /// The timestamp of the block that contains the transaction.
-    pub timestamp: eth::U256,
+    pub timestamp: u32,
     /// The gas used by the transaction.
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.

@@ -164,7 +164,7 @@ fn into_domain(
             .effective_gas_price
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into(),
-        timestamp,
+        timestamp: timestamp.as_u32(),
     })
 }
 

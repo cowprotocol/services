@@ -84,17 +84,17 @@ impl Settlement {
         self.settled.solution.fees(&self.auction)
     }
 
-    /// All jit orders from a settlement.
-    pub fn jit_orders(&self) -> Vec<order::Jit> {
+    /// All jit orders from a settlement together with their timestamps.
+    pub fn jit_orders(&self) -> Vec<(solution::Trade, u32)> {
         self.settled
             .solution
             .trades()
             .iter()
             .filter_map(|order| {
-                if self.database_orders.contains(order.uid()) {
+                if self.database_orders.contains(&order.uid) {
                     None
                 } else {
-                    Some(solution::as_jit_order(order.clone(), self.settled.timestamp))
+                    Some((order.clone(), self.settled.timestamp))
                 }
             })
             .collect()

@@ -506,19 +506,16 @@ impl Persistence {
                 .await?;
             }
 
-            for jit_order in jit_orders {
+            for (jit_order, created) in jit_orders {
                 database::jit_orders::upsert_order(
                     &mut ex,
                     database::jit_orders::JitOrder {
                         block_number,
                         log_index,
                         uid: ByteArray(jit_order.uid.0),
-                        owner: ByteArray(jit_order.owner.0 .0),
-                        creation_timestamp: chrono::DateTime::from_timestamp(
-                            jit_order.created as i64,
-                            0,
-                        )
-                        .unwrap_or_default(),
+                        owner: ByteArray(jit_order.uid.owner().0 .0),
+                        creation_timestamp: chrono::DateTime::from_timestamp(created as i64, 0)
+                            .unwrap_or_default(),
                         sell_token: ByteArray(jit_order.sell.token.0 .0),
                         buy_token: ByteArray(jit_order.buy.token.0 .0),
                         sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),

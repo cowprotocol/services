@@ -20,59 +20,22 @@ use {
 /// Referenced as [`settlement::solution::Trade`] in the codebase.
 #[derive(Debug, Clone)]
 pub struct Trade {
-    uid: domain::OrderUid,
-    sell: eth::Asset,
-    buy: eth::Asset,
-    side: order::Side,
-    receiver: eth::Address,
-    valid_to: u32,
-    app_data: order::AppDataHash,
-    fee_amount: eth::TokenAmount,
-    sell_token_balance: order::SellTokenSource,
-    buy_token_balance: order::BuyTokenDestination,
-    signature: order::Signature,
-    executed: order::TargetAmount,
-    prices: Prices,
+    pub uid: domain::OrderUid,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub side: order::Side,
+    pub receiver: eth::Address,
+    pub valid_to: u32,
+    pub app_data: order::AppDataHash,
+    pub fee_amount: eth::TokenAmount,
+    pub sell_token_balance: order::SellTokenSource,
+    pub buy_token_balance: order::BuyTokenDestination,
+    pub signature: order::Signature,
+    pub executed: order::TargetAmount,
+    pub prices: Prices,
 }
 
 impl Trade {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        uid: domain::OrderUid,
-        sell: eth::Asset,
-        buy: eth::Asset,
-        side: order::Side,
-        receiver: eth::Address,
-        valid_to: u32,
-        app_data: order::AppDataHash,
-        fee_amount: eth::TokenAmount,
-        sell_token_balance: order::SellTokenSource,
-        buy_token_balance: order::BuyTokenDestination,
-        signature: order::Signature,
-        executed: order::TargetAmount,
-        prices: Prices,
-    ) -> Self {
-        Self {
-            uid,
-            sell,
-            buy,
-            side,
-            receiver,
-            valid_to,
-            app_data,
-            fee_amount,
-            sell_token_balance,
-            buy_token_balance,
-            signature,
-            executed,
-            prices,
-        }
-    }
-
-    pub fn uid(&self) -> &domain::OrderUid {
-        &self.uid
-    }
-
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
@@ -507,24 +470,6 @@ impl Trade {
             order::Side::Buy => self.sell.token,
             order::Side::Sell => self.buy.token,
         }
-    }
-}
-
-pub fn as_jit_order(trade: Trade, created: u32) -> settlement::order::Jit {
-    settlement::order::Jit {
-        uid: trade.uid,
-        sell: trade.sell,
-        buy: trade.buy,
-        side: trade.side,
-        valid_to: trade.valid_to,
-        fee_amount: trade.fee_amount,
-        receiver: trade.receiver,
-        owner: trade.uid.owner(),
-        sell_token_balance: trade.sell_token_balance,
-        buy_token_balance: trade.buy_token_balance,
-        app_data: trade.app_data,
-        signature: trade.signature,
-        created,
     }
 }
 

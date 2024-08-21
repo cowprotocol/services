@@ -1,18 +1,14 @@
 //! This module defines Solution as originated from a mined transaction
 //! calldata.
 
-use {
-    self::trade::Trade,
-    crate::domain::{
-        auction::{self},
-        competition,
-        eth,
-    },
+use crate::domain::{
+    auction::{self},
+    competition,
+    eth,
 };
 
 mod tokenized;
 mod trade;
-pub use error::Error;
 use {
     crate::{
         boundary,
@@ -21,6 +17,7 @@ use {
     num::Saturating,
     std::collections::{HashMap, HashSet},
 };
+pub use {error::Error, trade::Trade};
 
 /// A solution that was executed on-chain.
 ///
@@ -36,7 +33,7 @@ pub struct Solution {
 impl Solution {
     /// Orders in the solution.
     pub fn order_uids(&self) -> Vec<&domain::OrderUid> {
-        self.trades.iter().map(|trade| trade.uid()).collect()
+        self.trades.iter().map(|trade| &trade.uid).collect()
     }
 
     pub fn trades(&self) -> &[Trade] {
@@ -75,7 +72,7 @@ impl Solution {
                         tracing::warn!(
                             ?err,
                             "possible incomplete surplus calculation for trade {}",
-                            trade.uid()
+                            trade.uid
                         );
                         num::zero()
                     })
@@ -95,7 +92,7 @@ impl Solution {
                     tracing::warn!(
                         ?err,
                         "possible incomplete fee calculation for trade {}",
-                        trade.uid()
+                        trade.uid
                     );
                     num::zero()
                 })
@@ -108,7 +105,7 @@ impl Solution {
         self.trades
             .iter()
             .map(|trade| {
-                (*trade.uid(), {
+                (trade.uid, {
                     let total = trade.total_fee_in_sell_token();
                     let protocol = trade.protocol_fees_in_sell_token(auction);
                     match (total, protocol) {
@@ -148,29 +145,29 @@ impl Solution {
                 .unwrap();
             let uniform_buy_token_index =
                 tokens.iter().position(|token| token == &buy_token).unwrap();
-            trades.push(trade::Trade::new(
-                tokenized::order_uid(&trade, &tokens, domain_separator)
+            trades.push(trade::Trade {
+                uid: tokenized::order_uid(&trade, &tokens, domain_separator)
                     .map_err(Error::OrderUidRecover)?,
-                eth::Asset {
+                sell: eth::Asset {
                     token: sell_token.into(),
                     amount: trade.3.into(),
                 },
-                eth::Asset {
+                buy: eth::Asset {
                     token: buy_token.into(),
                     amount: trade.4.into(),
                 },
-                flags.side(),
-                trade.2.into(),
-                trade.5,
-                domain::auction::order::AppDataHash(trade.6 .0),
-                trade.7.into(),
-                flags.sell_token_balance().into(),
-                flags.buy_token_balance().into(),
-                (boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
+                side: flags.side(),
+                receiver: trade.2.into(),
+                valid_to: trade.5,
+                app_data: domain::auction::order::AppDataHash(trade.6 .0),
+                fee_amount: trade.7.into(),
+                sell_token_balance: flags.sell_token_balance().into(),
+                buy_token_balance: flags.buy_token_balance().into(),
+                signature: (boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
                     .map_err(Error::SignatureRecover)?)
                 .into(),
-                trade.9.into(),
-                trade::Prices {
+                executed: trade.9.into(),
+                prices: trade::Prices {
                     uniform: trade::ClearingPrices {
                         sell: clearing_prices[uniform_sell_token_index].into(),
                         buy: clearing_prices[uniform_buy_token_index].into(),
@@ -180,7 +177,7 @@ impl Solution {
                         buy: clearing_prices[buy_token_index].into(),
                     },
                 },
-            ));
+            })
         }
 
         Ok(Self { trades })
