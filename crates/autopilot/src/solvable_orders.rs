@@ -362,12 +362,12 @@ impl SolvableOrdersCache {
             unsupported_token_orders_fut,
         );
 
-        let removed = counter.checkpoint_by_uids("banned_user", banned_user_orders);
-        invalid_order_uids.extend(removed);
-        let removed = counter.checkpoint_by_uids("invalid_signature", invalid_signature_orders);
-        invalid_order_uids.extend(removed);
-        let removed = counter.checkpoint_by_uids("unsupported_token", unsupported_token_orders);
-        invalid_order_uids.extend(removed);
+        counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
+        counter.checkpoint_by_invalid_orders("invalid_signature", &invalid_signature_orders);
+        counter.checkpoint_by_invalid_orders("unsupported_token", &unsupported_token_orders);
+        invalid_order_uids.extend(banned_user_orders);
+        invalid_order_uids.extend(invalid_signature_orders);
+        invalid_order_uids.extend(unsupported_token_orders);
 
         orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
         orders
@@ -802,18 +802,13 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint from the current remaining orders.
-    fn checkpoint_by_uids(
-        &mut self,
-        reason: Reason,
-        orders: impl IntoIterator<Item = OrderUid>,
-    ) -> Vec<OrderUid> {
-        let filtered_orders =
-            orders
-                .into_iter()
-                .fold(self.orders.clone(), |mut order_uids, order| {
-                    order_uids.remove(&order);
-                    order_uids
-                });
+    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
+        let filtered_orders = orders
+            .iter()
+            .fold(self.orders.clone(), |mut order_uids, order| {
+                order_uids.remove(&order.metadata.uid);
+                order_uids
+            });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
         for order_uid in filtered_orders.keys() {
@@ -829,8 +824,18 @@ impl OrderFilterCounter {
         filtered_orders.into_keys().collect()
     }
 
-    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
-        self.checkpoint_by_uids(reason, orders.iter().map(|o| o.metadata.uid))
+    fn checkpoint_by_invalid_orders(&mut self, reason: Reason, invalid_orders: &[OrderUid]) {
+        *self.counts.entry(reason).or_default() += invalid_orders.len();
+        for order_uid in invalid_orders {
+            self.orders.remove(order_uid).unwrap();
+        }
+        if !invalid_orders.is_empty() {
+            tracing::debug!(
+                %reason,
+                count = invalid_orders.len(),
+                orders = ?invalid_orders, "filtered orders"
+            );
+        }
     }
 
     /// Records the filter counter to metrics.
