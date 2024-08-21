@@ -173,34 +173,16 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut invalid_order_uids = Vec::new();
+        let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = {
-            let _timer = self.stage_timer("banned_user_filtering");
-            let orders =
-                filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users).await;
-            let removed = counter.checkpoint("banned_user", &orders);
-            invalid_order_uids.extend(removed);
-            orders
-        };
-
-        let orders = {
-            let _timer = self.stage_timer("invalid_signature_filtering");
-            let orders =
-                filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
-            let removed = counter.checkpoint("invalid_signature", &orders);
-            invalid_order_uids.extend(removed);
-            orders
-        };
-
-        let orders = {
-            let _timer = self.stage_timer("unsupported_token_filtering");
-            let orders = filter_unsupported_tokens(orders, self.bad_token_detector.clone()).await;
-            let removed = counter.checkpoint("unsupported_token", &orders);
-            invalid_order_uids.extend(removed);
-            orders
-        };
+        let orders = self
+            .filter_invalid_orders(
+                db_solvable_orders.orders,
+                &mut counter,
+                &mut invalid_order_uids,
+            )
+            .await;
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
         let fetched_balances = {
@@ -348,6 +330,42 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
+    /// Executed effectful orders filtering in parallel.
+    async fn filter_invalid_orders(
+        &self,
+        mut orders: Vec<Order>,
+        counter: &mut OrderFilterCounter,
+        invalid_order_uids: &mut HashSet<OrderUid>,
+    ) -> Vec<Order> {
+        let banned_user_orders_fut = async {
+            let _timer = self.stage_timer("banned_user_filtering");
+            find_banned_user_orders(&orders, &self.banned_users).await
+        };
+        let invalid_signature_orders_fut = async {
+            let _timer = self.stage_timer("invalid_signature_filtering");
+            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
+        };
+        let unsupported_token_orders_fut = async {
+            let _timer = self.stage_timer("unsupported_token_filtering");
+            find_unsupported_tokens(&orders, self.bad_token_detector.clone()).await
+        };
+        let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
+            banned_user_orders_fut,
+            invalid_signature_orders_fut,
+            unsupported_token_orders_fut,
+        );
+
+        let removed = counter.checkpoint_by_uids("banned_user", banned_user_orders);
+        invalid_order_uids.extend(removed);
+        let removed = counter.checkpoint_by_uids("invalid_signature", invalid_signature_orders);
+        invalid_order_uids.extend(removed);
+        let removed = counter.checkpoint_by_uids("unsupported_token", unsupported_token_orders);
+        invalid_order_uids.extend(removed);
+
+        orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
+        orders
+    }
+
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().update_time
     }
@@ -367,12 +385,9 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Filters all orders whose owners or receivers are in the set of "banned"
+/// Finds all orders whose owners or receivers are in the set of "banned"
 /// users.
-async fn filter_banned_user_orders(
-    mut orders: Vec<Order>,
-    banned_users: &banned::Users,
-) -> Vec<Order> {
+async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(orders.iter().flat_map(|order| {
             [
@@ -381,11 +396,14 @@ async fn filter_banned_user_orders(
             ]
         }))
         .await;
-    orders.retain(|order| {
-        !banned.contains(&order.metadata.owner)
-            && !banned.contains(&order.data.receiver.unwrap_or_default())
-    });
     orders
+        .iter()
+        .filter_map(|order| {
+            (banned.contains(&order.metadata.owner)
+                || banned.contains(&order.data.receiver.unwrap_or_default()))
+            .then_some(order.metadata.uid)
+        })
+        .collect()
 }
 
 fn get_native_prices(
@@ -402,18 +420,22 @@ fn get_native_prices(
         .collect()
 }
 
-/// Filters unsigned PreSign and EIP-1271 orders whose signatures are no longer
+/// Finds unsigned PreSign and EIP-1271 orders whose signatures are no longer
 /// validating.
-async fn filter_invalid_signature_orders(
-    mut orders: Vec<Order>,
+async fn find_invalid_signature_orders(
+    orders: &[Order],
     signature_validator: &dyn SignatureValidating,
-) -> Vec<Order> {
-    orders.retain(|order| {
-        !matches!(
+) -> Vec<OrderUid> {
+    let (invalid_orders, orders): (Vec<_>, Vec<_>) = orders.iter().partition(|order| {
+        matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
         )
     });
+    let mut invalid_orders = invalid_orders
+        .into_iter()
+        .map(|o| o.metadata.uid)
+        .collect::<Vec<_>>();
 
     let checks = orders
         .iter()
@@ -432,29 +454,26 @@ async fn filter_invalid_signature_orders(
         .collect::<Vec<_>>();
 
     if checks.is_empty() {
-        return orders;
+        return invalid_orders;
     }
 
     let mut validations = signature_validator
         .validate_signatures(checks)
         .await
         .into_iter();
-    orders
-        .into_iter()
-        .filter(|order| {
-            if let Signature::Eip1271(_) = &order.signature {
-                if let Err(err) = validations.next().unwrap() {
-                    tracing::warn!(
-                        order =% order.metadata.uid, ?err,
-                        "invalid EIP-1271 signature"
-                    );
-                    return false;
-                }
+    for order in orders {
+        if let Signature::Eip1271(_) = &order.signature {
+            if let Err(err) = validations.next().unwrap() {
+                tracing::warn!(
+                    order =% order.metadata.uid, ?err,
+                    "invalid EIP-1271 signature"
+                );
+                invalid_orders.push(order.metadata.uid)
             }
+        }
+    }
 
-            true
-        })
-        .collect()
+    invalid_orders
 }
 
 /// Removes orders that can't possibly be settled because there isn't enough
@@ -656,10 +675,10 @@ fn to_normalized_price(price: f64) -> Option<U256> {
     }
 }
 
-async fn filter_unsupported_tokens(
-    mut orders: Vec<Order>,
+async fn find_unsupported_tokens(
+    orders: &[Order],
     bad_token: Arc<dyn BadTokenDetecting>,
-) -> Vec<Order> {
+) -> Vec<OrderUid> {
     let bad_tokens = join_all(
         orders
             .iter()
@@ -683,15 +702,18 @@ async fn filter_unsupported_tokens(
     .flatten()
     .collect::<HashSet<_>>();
 
-    orders.retain(|order| {
-        order
-            .data
-            .token_pair()
-            .into_iter()
-            .flatten()
-            .all(|token| !bad_tokens.contains(&token))
-    });
     orders
+        .iter()
+        .filter_map(|order| {
+            order
+                .data
+                .token_pair()
+                .into_iter()
+                .flatten()
+                .any(|token| bad_tokens.contains(&token))
+                .then_some(order.metadata.uid)
+        })
+        .collect()
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
@@ -773,13 +795,18 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint from the current remaining orders.
-    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
-        let filtered_orders = orders
-            .iter()
-            .fold(self.orders.clone(), |mut order_uids, order| {
-                order_uids.remove(&order.metadata.uid);
-                order_uids
-            });
+    fn checkpoint_by_uids(
+        &mut self,
+        reason: Reason,
+        orders: impl IntoIterator<Item = OrderUid>,
+    ) -> Vec<OrderUid> {
+        let filtered_orders =
+            orders
+                .into_iter()
+                .fold(self.orders.clone(), |mut order_uids, order| {
+                    order_uids.remove(&order);
+                    order_uids
+                });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
         for order_uid in filtered_orders.keys() {
@@ -793,6 +820,10 @@ impl OrderFilterCounter {
             );
         }
         filtered_orders.into_keys().collect()
+    }
+
+    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
+        self.checkpoint_by_uids(reason, orders.iter().map(|o| o.metadata.uid))
     }
 
     /// Records the filter counter to metrics.
@@ -970,9 +1001,11 @@ mod tests {
             H160([3; 20]),
         ]
         .into_iter()
-        .map(|owner| Order {
+        .enumerate()
+        .map(|(i, owner)| Order {
             metadata: OrderMetadata {
                 owner,
+                uid: OrderUid([i as u8; 56]),
                 ..Default::default()
             },
             data: OrderData {
@@ -982,20 +1015,16 @@ mod tests {
             },
             ..Default::default()
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-        let filtered_orders = filter_banned_user_orders(
-            orders,
+        let banned_user_orders = find_banned_user_orders(
+            &orders,
             &order_validation::banned::Users::from_set(banned_users),
         )
         .await;
-        let filtered_owners = filtered_orders
-            .iter()
-            .map(|order| order.metadata.owner)
-            .collect::<Vec<_>>();
         assert_eq!(
-            filtered_owners,
-            [H160([1; 20]), H160([1; 20]), H160([2; 20]), H160([3; 20])],
+            banned_user_orders,
+            [OrderUid([2; 56]), OrderUid([4; 56]), OrderUid([5; 56])],
         );
     }
 
@@ -1095,20 +1124,11 @@ mod tests {
             ]))
             .returning(|_| vec![Ok(()), Err(SignatureValidationError::Invalid), Ok(())]);
 
-        let filtered = filter_invalid_signature_orders(orders, &signature_validator).await;
-        let remaining_uids = filtered
-            .iter()
-            .map(|order| order.metadata.uid)
-            .collect::<Vec<_>>();
-
+        let invalid_signature_orders =
+            find_invalid_signature_orders(&orders, &signature_validator).await;
         assert_eq!(
-            remaining_uids,
-            vec![
-                OrderUid::from_parts(H256([1; 32]), H160([11; 20]), 1),
-                OrderUid::from_parts(H256([2; 32]), H160([22; 20]), 2),
-                OrderUid::from_parts(H256([3; 32]), H160([33; 20]), 3),
-                OrderUid::from_parts(H256([5; 32]), H160([55; 20]), 5),
-            ]
+            invalid_signature_orders,
+            vec![OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4)]
         );
     }
 
@@ -1132,10 +1152,13 @@ mod tests {
                 .with_buy_token(token2)
                 .build(),
         ];
-        let result = filter_unsupported_tokens(orders.clone(), bad_token)
+        let unsupported_tokens_orders = find_unsupported_tokens(&orders, bad_token)
             .now_or_never()
             .unwrap();
-        assert_eq!(result, &orders[1..2]);
+        assert_eq!(
+            unsupported_tokens_orders,
+            [orders[0].metadata.uid, orders[2].metadata.uid]
+        );
     }
 
     #[test]
