@@ -31,6 +31,9 @@ pub struct Maintenance {
     ethflow_indexer: Option<EthflowIndexer>,
     /// Indexes refunds issued for unsettled ethflow orders.
     refund_indexer: Option<EventUpdater<Postgres, EthFlowRefundRetriever>>,
+    /// Used for periodic cleanup tasks to not have the DB overflow with old
+    /// data.
+    db_cleanup: Postgres,
     /// On which block we last ran an update successfully.
     last_processed: Mutex<BlockInfo>,
 }
@@ -39,10 +42,12 @@ impl Maintenance {
     pub fn new(
         orders_cache: Arc<SolvableOrdersCache>,
         settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
+        db_cleanup: Postgres,
     ) -> Self {
         Self {
             orders_cache,
             settlement_indexer,
+            db_cleanup,
             refund_indexer: None,
             ethflow_indexer: None,
             last_processed: Default::default(),
@@ -78,6 +83,7 @@ impl Maintenance {
         // All these can run independently of each other.
         tokio::try_join!(
             self.settlement_indexer.run_maintenance(),
+            self.db_cleanup.run_maintenance(),
             self.index_refunds(),
             self.index_ethflow_orders(),
         )?;

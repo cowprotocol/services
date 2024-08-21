@@ -446,7 +446,11 @@ pub async fn run(args: Arguments) {
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(solvable_orders_cache.clone(), settlement_event_indexer);
+    let mut maintenance = Maintenance::new(
+        solvable_orders_cache.clone(),
+        settlement_event_indexer,
+        db.clone(),
+    );
 
     if let Some(ethflow_contract) = args.ethflow_contract {
         let start_block = determine_ethflow_indexing_start(
