@@ -13,7 +13,6 @@ use {
         order::{
             Order,
             OrderCancellation,
-            OrderClass,
             OrderCreation,
             OrderCreationAppData,
             OrderStatus,
@@ -28,9 +27,15 @@ use {
     shared::{
         metrics::LivenessChecking,
         order_quoting::Quote,
-        order_validation::{OrderValidating, ValidationError},
+        order_validation::{
+            is_order_outside_market_price,
+            Amounts,
+            OrderValidating,
+            ValidationError,
+        },
     },
     std::{borrow::Cow, sync::Arc},
+    strum_macros::Display,
     thiserror::Error,
 };
 
@@ -42,24 +47,18 @@ struct Metrics {
     orders: prometheus::IntCounterVec,
 }
 
+#[derive(Display)]
+#[strum(serialize_all = "snake_case")]
 enum OrderOperation {
     Created,
     Cancelled,
 }
 
-fn operation_label(op: &OrderOperation) -> &'static str {
-    match op {
-        OrderOperation::Created => "created",
-        OrderOperation::Cancelled => "cancelled",
-    }
-}
-
-fn order_class_label(class: &OrderClass) -> &'static str {
-    match class {
-        OrderClass::Market => "user",
-        OrderClass::Liquidity => "liquidity",
-        OrderClass::Limit => "limit",
-    }
+#[derive(Display)]
+#[strum(serialize_all = "snake_case")]
+enum OrderClass {
+    User,
+    Limit,
 }
 
 impl Metrics {
@@ -68,20 +67,42 @@ impl Metrics {
             .expect("unexpected error getting metrics instance")
     }
 
-    fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let class = order_class_label(&order.metadata.class);
-        let op = operation_label(&operation);
-        Self::get().orders.with_label_values(&[class, op]).inc();
+    fn on_order_operation(order: &Order, operation: OrderOperation, quote: Option<&Quote>) {
+        let class = match quote {
+            Some(quote) if
+            // Check if the order at the submission time was billable (`user` order)
+                is_order_outside_market_price(
+                    &Amounts {
+                        sell: order.data.sell_amount,
+                        buy: order.data.buy_amount,
+                        fee: order.data.fee_amount,
+                    },
+                    &Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee_amount,
+                    },
+                    order.data.kind) =>
+            {
+                OrderClass::User
+            }
+            _ => OrderClass::Limit,
+        };
+        Self::get()
+            .orders
+            .with_label_values(&[&class.to_string(), &operation.to_string()])
+            .inc();
     }
 
     // Resets all the counters to 0 so we can always use them in Grafana queries.
     fn initialize() {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
-            let op = operation_label(op);
-            for class in &[OrderClass::Market, OrderClass::Liquidity, OrderClass::Limit] {
-                let class = order_class_label(class);
-                metrics.orders.with_label_values(&[class, op]).reset();
+            for class in &[OrderClass::User, OrderClass::Limit] {
+                metrics
+                    .orders
+                    .with_label_values(&[&class.to_string(), &op.to_string()])
+                    .reset();
             }
         }
     }
@@ -220,10 +241,10 @@ impl Orderbook {
             let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
             self.database
-                .insert_order(&order, quote)
+                .insert_order(&order, quote.clone())
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
-            Metrics::on_order_operation(&order, OrderOperation::Created);
+            Metrics::on_order_operation(&order, OrderOperation::Created, quote.as_ref());
 
             Ok((order.metadata.uid, quote_id))
         }
@@ -281,7 +302,7 @@ impl Orderbook {
 
         for order in &orders {
             tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
-            Metrics::on_order_operation(order, OrderOperation::Cancelled);
+            Metrics::on_order_operation(order, OrderOperation::Cancelled, None);
         }
 
         Ok(())
@@ -310,7 +331,7 @@ impl Orderbook {
             .await?;
 
         tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
-        Metrics::on_order_operation(&order, OrderOperation::Cancelled);
+        Metrics::on_order_operation(&order, OrderOperation::Cancelled, None);
 
         Ok(())
     }
@@ -367,11 +388,15 @@ impl Orderbook {
         let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
         self.database
-            .replace_order(&old_order.metadata.uid, &validated_new_order, quote)
+            .replace_order(&old_order.metadata.uid, &validated_new_order, quote.clone())
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
-        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
-        Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
+        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled, quote.as_ref());
+        Metrics::on_order_operation(
+            &validated_new_order,
+            OrderOperation::Created,
+            quote.as_ref(),
+        );
 
         Ok((validated_new_order.metadata.uid, quote_id))
     }
