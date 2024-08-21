@@ -665,10 +665,10 @@ async fn filter_unsupported_tokens(
         async move {
             for token in order.data.token_pair().unwrap() {
                 if !bad_token.detect(token).await?.is_good() {
-                    return Ok(None);
+                    return Ok(None) as Result<Option<Order>>;
                 }
             }
-            Ok(Some(order))
+            Ok(Some(order)) as Result<Option<Order>>
         }
     }))
     .await
