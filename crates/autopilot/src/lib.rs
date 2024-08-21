@@ -1,7 +1,6 @@
 pub mod arguments;
 pub mod boundary;
 pub mod database;
-pub mod decoded_settlement;
 pub mod domain;
 pub mod event_updater;
 pub mod infra;

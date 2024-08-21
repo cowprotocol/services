@@ -33,7 +33,7 @@ use {
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -302,35 +302,18 @@ impl RunLoop {
             .map(|participant| participant.solution.solver().into())
             .collect::<HashSet<_>>();
 
-        let mut prices = BTreeMap::new();
         let mut fee_policies = Vec::new();
         let call_data = revealed.calldata.internalized.clone();
         let uninternalized_call_data = revealed.calldata.uninternalized.clone();
 
         for order_id in winning_solution.order_ids() {
-            let auction_order = auction
+            match auction
                 .orders
                 .iter()
-                .find(|auction_order| &auction_order.uid == order_id);
-            match auction_order {
+                .find(|auction_order| &auction_order.uid == order_id)
+            {
                 Some(auction_order) => {
                     fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
-                    if let Some(price) = auction.prices.get(&auction_order.sell.token) {
-                        prices.insert(auction_order.sell.token, *price);
-                    } else {
-                        tracing::error!(
-                            sell_token = ?auction_order.sell.token,
-                            "sell token price is missing in auction"
-                        );
-                    }
-                    if let Some(price) = auction.prices.get(&auction_order.buy.token) {
-                        prices.insert(auction_order.buy.token, *price);
-                    } else {
-                        tracing::error!(
-                            buy_token = ?auction_order.buy.token,
-                            "buy token price is missing in auction"
-                        );
-                    }
                 }
                 None => {
                     tracing::debug!(?order_id, "order not found in auction");
@@ -349,8 +332,8 @@ impl RunLoop {
                     .collect(),
                 prices: auction
                     .prices
-                    .into_iter()
-                    .map(|(key, value)| (key.into(), value.get().into()))
+                    .iter()
+                    .map(|(key, value)| ((*key).into(), value.get().into()))
                     .collect(),
             },
             solutions: solutions
@@ -397,7 +380,8 @@ impl RunLoop {
             winning_score,
             reference_score,
             participants,
-            prices: prices
+            prices: auction
+                .prices
                 .into_iter()
                 .map(|(key, value)| (key.into(), value.get().into()))
                 .collect(),
