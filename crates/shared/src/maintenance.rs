@@ -8,7 +8,6 @@ use {
 };
 
 /// Collects all service components requiring maintenance on each new block
-#[derive(Clone)]
 pub struct ServiceMaintenance {
     maintainers: Vec<Arc<dyn Maintaining>>,
     retry_delay: Duration,
