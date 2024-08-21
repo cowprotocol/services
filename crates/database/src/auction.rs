@@ -16,11 +16,8 @@ pub async fn update_current_auction_id(
     ex: &mut PgConnection,
     id: AuctionId,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-UPDATE auctions
-SET id = $1
-    ;"#;
-    sqlx::query(QUERY).bind(id).execute(ex).await.map(|_| ())
+    let query = format!("ALTER SEQUENCE auctions_id_seq RESTART WITH {};", id);
+    sqlx::query(&query).execute(ex).await.map(|_| ())
 }
 
 pub async fn load_most_recent(
@@ -78,7 +75,11 @@ mod tests {
 
         // update works
         update_current_auction_id(&mut db, 100).await.unwrap();
-        let (id, _) = load_most_recent(&mut db).await.unwrap().unwrap();
-        assert_eq!(100, id);
+
+        let id_ = save(&mut db, &value).await.unwrap();
+        assert_eq!(100, id_);
+
+        let id_ = save(&mut db, &value).await.unwrap();
+        assert_eq!(101, id_);
     }
 }
