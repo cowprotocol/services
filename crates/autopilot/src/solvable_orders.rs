@@ -176,19 +176,26 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let queries = db_solvable_orders
-            .orders
-            .iter()
-            .map(Query::from_order)
-            .collect::<Vec<_>>();
-        let (balances, orders) = tokio::join!(
-            self.get_balances(queries),
-            self.filter_invalid_orders(
-                db_solvable_orders.orders,
-                &mut counter,
-                &mut invalid_order_uids,
+        let (balances, orders, cow_amms) = {
+            let queries = db_solvable_orders
+                .orders
+                .iter()
+                .map(Query::from_order)
+                .collect::<Vec<_>>();
+            let cow_amms_fut = async {
+                let _timer = self.stage_timer("cow_amm_registry");
+                self.cow_amm_registry.amms().await
+            };
+            tokio::join!(
+                self.get_balances(queries),
+                self.filter_invalid_orders(
+                    db_solvable_orders.orders,
+                    &mut counter,
+                    &mut invalid_order_uids,
+                ),
+                cow_amms_fut
             )
-        );
+        };
 
         let orders = orders_with_balance(orders, &balances);
         let removed = counter.checkpoint("insufficient_balance", &orders);
@@ -215,10 +222,6 @@ impl SolvableOrdersCache {
             entry.insert(weth_price);
         }
 
-        let cow_amms = {
-            let _timer = self.stage_timer("cow_amm_registry");
-            self.cow_amm_registry.amms().await
-        };
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())
