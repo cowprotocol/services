@@ -176,36 +176,19 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let orders = self
-            .filter_invalid_orders(
+        let queries = db_solvable_orders
+            .orders
+            .iter()
+            .map(Query::from_order)
+            .collect::<Vec<_>>();
+        let (balances, orders) = tokio::join!(
+            self.get_balances(queries),
+            self.filter_invalid_orders(
                 db_solvable_orders.orders,
                 &mut counter,
                 &mut invalid_order_uids,
             )
-            .await;
-
-        let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
-        let fetched_balances = {
-            let _timer = self.stage_timer("balance_fetch");
-            self.balance_fetcher.get_balances(&missing_queries).await
-        };
-        let balances = missing_queries
-            .into_iter()
-            .zip(fetched_balances)
-            .filter_map(|(query, balance)| match balance {
-                Ok(balance) => Some((query, balance)),
-                Err(err) => {
-                    tracing::warn!(
-                        owner = ?query.owner,
-                        token = ?query.token,
-                        source = ?query.source,
-                        error = ?err,
-                        "failed to get balance"
-                    );
-                    None
-                }
-            })
-            .collect::<HashMap<_, _>>();
+        );
 
         let orders = orders_with_balance(orders, &balances);
         let removed = counter.checkpoint("insufficient_balance", &orders);
@@ -216,11 +199,8 @@ impl SolvableOrdersCache {
         filtered_order_events.extend(removed);
 
         // create auction
-        let (orders, mut prices) = get_orders_with_native_prices(
-            orders.clone(),
-            &self.native_price_estimator,
-            self.metrics,
-        );
+        let (orders, mut prices) =
+            get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics);
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let _timer = self.stage_timer("weth_price_fetch");
@@ -328,6 +308,30 @@ impl SolvableOrdersCache {
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
+    }
+
+    async fn get_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
+        let fetched_balances = {
+            let _timer = self.stage_timer("balance_fetch");
+            self.balance_fetcher.get_balances(&queries).await
+        };
+        queries
+            .into_iter()
+            .zip(fetched_balances)
+            .filter_map(|(query, balance)| match balance {
+                Ok(balance) => Some((query, balance)),
+                Err(err) => {
+                    tracing::warn!(
+                        owner = ?query.owner,
+                        token = ?query.token,
+                        source = ?query.source,
+                        error = ?err,
+                        "failed to get balance"
+                    );
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Executed effectful orders filtering in parallel.
