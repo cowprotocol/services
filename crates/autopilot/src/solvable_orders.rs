@@ -196,7 +196,7 @@ impl SolvableOrdersCache {
 
         let orders = {
             let _timer = self.stage_timer("unsupported_token_filtering");
-            let orders = filter_unsupported_tokens(orders, self.bad_token_detector.clone()).await?;
+            let orders = filter_unsupported_tokens(orders, self.bad_token_detector.clone()).await;
             let removed = counter.checkpoint("unsupported_token", &orders);
             invalid_order_uids.extend(removed);
             orders
@@ -659,7 +659,7 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 async fn filter_unsupported_tokens(
     mut orders: Vec<Order>,
     bad_token: Arc<dyn BadTokenDetecting>,
-) -> Result<Vec<Order>> {
+) -> Vec<Order> {
     let bad_tokens = join_all(
         orders
             .iter()
@@ -683,17 +683,15 @@ async fn filter_unsupported_tokens(
     .flatten()
     .collect::<HashSet<_>>();
 
-    let mut index = 0;
-    'outer: while index < orders.len() {
-        for token in orders[index].data.token_pair().unwrap() {
-            if bad_tokens.contains(&token) {
-                orders.swap_remove(index);
-                continue 'outer;
-            }
-        }
-        index += 1;
-    }
-    Ok(orders)
+    orders.retain(|order| {
+        !order
+            .data
+            .token_pair()
+            .unwrap_or_default()
+            .into_iter()
+            .any(|token| bad_tokens.contains(&token))
+    });
+    orders
 }
 
 /// Filter out limit orders which are far enough outside the estimated native
@@ -1136,7 +1134,6 @@ mod tests {
         ];
         let result = filter_unsupported_tokens(orders.clone(), bad_token)
             .now_or_never()
-            .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
     }
