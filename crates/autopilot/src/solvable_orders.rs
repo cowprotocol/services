@@ -684,12 +684,12 @@ async fn filter_unsupported_tokens(
     .collect::<HashSet<_>>();
 
     orders.retain(|order| {
-        !order
+        order
             .data
             .token_pair()
-            .unwrap_or_default()
             .into_iter()
-            .any(|token| bad_tokens.contains(&token))
+            .flatten()
+            .all(|token| !bad_tokens.contains(&token))
     });
     orders
 }
