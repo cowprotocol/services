@@ -11,18 +11,13 @@ CREATE TABLE jit_orders (
     buy_amount numeric(78,0) NOT NULL,
     valid_to bigint NOT NULL,
     app_data bytea NOT NULL,
-    --fee_amount numeric(78,0) NOT NULL,
+    fee_amount numeric(78,0) NOT NULL,
     kind OrderKind NOT NULL,
-    --partially_fillable boolean NOT NULL,
     signature bytea NOT NULL, -- r + s + v
-    --cancellation_timestamp timestamptz
     receiver bytea,
     signing_scheme SigningScheme NOT NULL,
-    --settlement_contract bytea NOT NULL
     sell_token_balance SellTokenSource NOT NULL,
     buy_token_balance BuyTokenDestination NOT NULL,
-    --full_fee_amount numeric(78,0) NOT NULL
-    --class OrderClass NOT NULL
     UNIQUE (block_number, log_index)
 );
 

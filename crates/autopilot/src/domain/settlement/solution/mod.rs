@@ -163,6 +163,7 @@ impl Solution {
                 trade.2.into(),
                 trade.5,
                 domain::auction::order::AppDataHash(trade.6 .0),
+                trade.7.into(),
                 flags.sell_token_balance().into(),
                 flags.buy_token_balance().into(),
                 (boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)

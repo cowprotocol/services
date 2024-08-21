@@ -27,6 +27,7 @@ pub struct JitOrder {
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
     pub app_data: AppId,
+    pub fee_amount: BigDecimal,
     pub kind: OrderKind,
     pub signature: Vec<u8>,
     pub receiver: Address,
@@ -49,6 +50,7 @@ pub async fn upsert_order(ex: &mut PgConnection, jit_order: JitOrder) -> Result<
         buy_amount,
         valid_to,
         app_data,
+        fee_amount,
         kind,
         signature,
         receiver,
@@ -56,9 +58,9 @@ pub async fn upsert_order(ex: &mut PgConnection, jit_order: JitOrder) -> Result<
         sell_token_balance,
         buy_token_balance
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
     ON CONFLICT (block_number, log_index) DO UPDATE 
-SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = $7, sell_amount = $8, buy_amount = $9, valid_to = $10, app_data = $11, kind = $12, signature = $13, receiver = $14, signing_scheme = $15, sell_token_balance = $16, buy_token_balance = $17
+SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = $7, sell_amount = $8, buy_amount = $9, valid_to = $10, app_data = $11, fee_amount = $12, kind = $13, signature = $14, receiver = $15, signing_scheme = $16, sell_token_balance = $17, buy_token_balance = $18
     ;"#;
     sqlx::query(QUERY)
         .bind(jit_order.block_number)

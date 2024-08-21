@@ -26,6 +26,7 @@ pub struct Jit {
     pub buy: eth::Asset,
     pub side: Side,
     pub valid_to: u32,
+    pub fee_amount: eth::TokenAmount,
     pub receiver: eth::Address,
     pub owner: eth::Address,
     pub sell_token_balance: SellTokenSource,
