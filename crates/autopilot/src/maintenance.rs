@@ -137,14 +137,18 @@ impl Maintenance {
         Ok(())
     }
 
-    /// Spawns a background task that runs every `interval` or when a new block
-    /// is seen.
-    pub fn spawn_background_task(self_: Arc<Self>, current_block: CurrentBlockWatcher) {
+    /// Spawns a background task that runs on every new block but also
+    /// at least after every `update_interval`.
+    pub fn spawn_background_task(
+        self_: Arc<Self>,
+        current_block: CurrentBlockWatcher,
+        update_interval: Duration,
+    ) {
         tokio::task::spawn(async move {
             let mut latest_block = *current_block.borrow();
             let mut stream = into_stream(current_block);
             loop {
-                let next_update = timeout(Duration::from_millis(1_000), stream.next());
+                let next_update = timeout(update_interval, stream.next());
                 let current_block = match next_update.await {
                     Ok(Some(block)) => block,
                     Ok(None) => break,

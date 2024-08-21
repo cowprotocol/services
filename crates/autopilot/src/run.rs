@@ -527,7 +527,7 @@ pub async fn run(args: Arguments) {
         max_run_loop_delay: args.max_run_loop_delay,
         maintenance: Arc::new(maintenance),
     };
-    run.run_forever().await;
+    run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
 }
 
