@@ -94,7 +94,7 @@ impl Settlement {
                 if self.database_orders.contains(order.uid()) {
                     None
                 } else {
-                    Some(order.clone().into())
+                    Some(solution::as_jit_order(order.clone(), self.settled.timestamp))
                 }
             })
             .collect()

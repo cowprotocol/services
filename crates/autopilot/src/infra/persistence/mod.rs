@@ -506,36 +506,69 @@ impl Persistence {
                 .await?;
             }
 
-            // for jit_order in jit_orders {
-            //     database::jit_orders::upsert_order(
-            //         &mut ex,
-            //         database::jit_orders::JitOrder {
-            //             block_number,
-            //             log_index,
-            //             uid: ByteArray(jit_order.uid.0),
-            //             owner: ByteArray(jit_order.owner.0 .0),
-            //             creation_timestamp: jit_order.creation_timestamp,
-            //             sell_token: ByteArray(jit_order.sell.token.0 .0),
-            //             buy_token: ByteArray(jit_order.buy.token.0 .0),
-            //             sell_amount:
-            // u256_to_big_decimal(&jit_order.sell.amount.0),
-            //             buy_amount:
-            // u256_to_big_decimal(&jit_order.buy.amount.0),
-            //             valid_to: jit_order.valid_to,
-            //             app_data: ByteArray(jit_order.app_data.0),
-            //             fee_amount:
-            // u256_to_big_decimal(&jit_order.fee_amount.0),
-            //             kind: jit_order.kind,
-            //             signature: ByteArray(jit_order.signature.0),
-            //             receiver: ByteArray(jit_order.receiver.0),
-            //             signing_scheme: jit_order.signing_scheme,
-            //             sell_token_balance:
-            // jit_order.sell_token_balance.into(),
-            // buy_token_balance: jit_order.buy_token_balance.into(),
-            //         },
-            //     )
-            //     .await?;
-            // }
+            for jit_order in jit_orders {
+                database::jit_orders::upsert_order(
+                    &mut ex,
+                    database::jit_orders::JitOrder {
+                        block_number,
+                        log_index,
+                        uid: ByteArray(jit_order.uid.0),
+                        owner: ByteArray(jit_order.owner.0 .0),
+                        creation_timestamp: chrono::DateTime::from_timestamp(
+                            jit_order.created as i64,
+                            0,
+                        )
+                        .unwrap_or_default(),
+                        sell_token: ByteArray(jit_order.sell.token.0 .0),
+                        buy_token: ByteArray(jit_order.buy.token.0 .0),
+                        sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
+                        buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
+                        valid_to: jit_order.valid_to as i64,
+                        app_data: ByteArray(jit_order.app_data.0),
+                        fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
+                        kind: match jit_order.side {
+                            domain::auction::order::Side::Buy => database::orders::OrderKind::Buy,
+                            domain::auction::order::Side::Sell => database::orders::OrderKind::Sell,
+                        },
+                        signature: jit_order.signature.to_bytes(),
+                        receiver: ByteArray(jit_order.receiver.0 .0),
+                        signing_scheme: match jit_order.signature.scheme() {
+                            domain::auction::order::SigningScheme::Eip712 => {
+                                database::orders::SigningScheme::Eip712
+                            }
+                            domain::auction::order::SigningScheme::EthSign => {
+                                database::orders::SigningScheme::EthSign
+                            }
+                            domain::auction::order::SigningScheme::Eip1271 => {
+                                database::orders::SigningScheme::Eip1271
+                            }
+                            domain::auction::order::SigningScheme::PreSign => {
+                                database::orders::SigningScheme::PreSign
+                            }
+                        },
+                        sell_token_balance: match jit_order.sell_token_balance {
+                            domain::auction::order::SellTokenSource::Erc20 => {
+                                database::orders::SellTokenSource::Erc20
+                            }
+                            domain::auction::order::SellTokenSource::External => {
+                                database::orders::SellTokenSource::External
+                            }
+                            domain::auction::order::SellTokenSource::Internal => {
+                                database::orders::SellTokenSource::Internal
+                            }
+                        },
+                        buy_token_balance: match jit_order.buy_token_balance {
+                            domain::auction::order::BuyTokenDestination::Erc20 => {
+                                database::orders::BuyTokenDestination::Erc20
+                            }
+                            domain::auction::order::BuyTokenDestination::Internal => {
+                                database::orders::BuyTokenDestination::Internal
+                            }
+                        },
+                    },
+                )
+                .await?;
+            }
         }
 
         ex.commit().await?;

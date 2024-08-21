@@ -33,4 +33,5 @@ pub struct Jit {
     pub buy_token_balance: BuyTokenDestination,
     pub app_data: AppDataHash,
     pub signature: Signature,
+    pub created: u32,
 }

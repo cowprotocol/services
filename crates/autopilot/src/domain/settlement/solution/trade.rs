@@ -510,22 +510,21 @@ impl Trade {
     }
 }
 
-impl From<Trade> for settlement::order::Jit {
-    fn from(trade: Trade) -> Self {
-        settlement::order::Jit {
-            uid: trade.uid,
-            sell: trade.sell,
-            buy: trade.buy,
-            side: trade.side,
-            valid_to: trade.valid_to,
-            fee_amount: trade.fee_amount,
-            receiver: trade.receiver,
-            owner: trade.uid.owner(),
-            sell_token_balance: trade.sell_token_balance,
-            buy_token_balance: trade.buy_token_balance,
-            app_data: trade.app_data,
-            signature: trade.signature,
-        }
+pub fn as_jit_order(trade: Trade, created: u32) -> settlement::order::Jit {
+    settlement::order::Jit {
+        uid: trade.uid,
+        sell: trade.sell,
+        buy: trade.buy,
+        side: trade.side,
+        valid_to: trade.valid_to,
+        fee_amount: trade.fee_amount,
+        receiver: trade.receiver,
+        owner: trade.uid.owner(),
+        sell_token_balance: trade.sell_token_balance,
+        buy_token_balance: trade.buy_token_balance,
+        app_data: trade.app_data,
+        signature: trade.signature,
+        created,
     }
 }
 
