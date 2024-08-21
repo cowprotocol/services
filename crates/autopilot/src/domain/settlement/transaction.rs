@@ -14,6 +14,8 @@ pub struct Transaction {
     pub solver: eth::Address,
     /// The block number of the block that contains the transaction.
     pub block: eth::BlockNo,
+    /// The timestamp of the block that contains the transaction.
+    pub timestamp: eth::U256,
     /// The gas used by the transaction.
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
@@ -44,6 +46,7 @@ impl Transaction {
             auction_id,
             solver: transaction.from,
             block: transaction.block,
+            timestamp: transaction.timestamp,
             gas: transaction.gas,
             effective_gas_price: transaction.effective_gas_price,
             solution: domain::settlement::Solution::new(

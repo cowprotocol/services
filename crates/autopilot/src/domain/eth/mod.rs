@@ -277,4 +277,6 @@ pub struct Transaction {
     pub gas: Gas,
     /// The effective gas price of the transaction.
     pub effective_gas_price: EffectiveGasPrice,
+    /// The timestamp of the block that contains the transaction.
+    pub timestamp: U256,
 }
