@@ -8,11 +8,11 @@ pub use primitive_types::{H160, H256, U256};
 pub struct Address(pub H160);
 
 /// Block number.
-#[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd)]
+#[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]
 pub struct BlockNo(pub u64);
 
 /// A transaction ID, AKA transaction hash.
-#[derive(Debug, Copy, Clone, From)]
+#[derive(Debug, Copy, Clone, From, Default)]
 pub struct TxId(pub H256);
 
 /// An ERC20 token address.
@@ -123,7 +123,7 @@ pub struct Gas(pub U256);
 /// The `effective_gas_price` as defined by EIP-1559.
 ///
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
-#[derive(Debug, Clone, Copy, Display)]
+#[derive(Debug, Clone, Copy, Display, Default)]
 pub struct EffectiveGasPrice(pub Ether);
 
 impl From<U256> for EffectiveGasPrice {
@@ -218,7 +218,7 @@ pub struct Asset {
 }
 
 /// An amount of native Ether tokens denominated in wei.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into, Display)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, From, Into, Display, Default)]
 pub struct Ether(pub U256);
 
 impl std::ops::Add for Ether {
@@ -263,7 +263,7 @@ pub struct Event {
 }
 
 /// Any type of on-chain transaction.
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Transaction {
     /// The hash of the transaction.
     pub hash: TxId,

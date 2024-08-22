@@ -1,5 +1,5 @@
 use {
-    super::transaction::Prices,
+    super::{transaction, transaction::Prices},
     crate::domain::{
         self,
         auction::{self, order},
@@ -7,6 +7,7 @@ use {
         fee,
     },
     bigdecimal::Zero,
+    std::collections::HashSet,
 };
 
 mod math;
@@ -48,6 +49,11 @@ impl Trade {
         }
     }
 
+    /// CIP38 score defined as surplus + protocol fee
+    pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
+        self.as_math().score(auction)
+    }
+
     /// Surplus of a trade.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
@@ -85,6 +91,78 @@ impl Trade {
             Trade::UserOutOfAuction(trade) => trade.as_math(),
             Trade::SurplusCapturingJit(trade) => trade.as_math(),
             Trade::Jit(trade) => trade.as_math(),
+        }
+    }
+
+    pub fn new(
+        trade: transaction::EncodedTrade,
+        auction: &super::Auction,
+        database_orders: &HashSet<domain::OrderUid>,
+        created: u32,
+    ) -> Self {
+        // All orders from the auction follow the regular user orders flow
+        if auction.orders.contains_key(&trade.uid) {
+            Trade::User(User {
+                uid: trade.uid,
+                sell: trade.sell,
+                buy: trade.buy,
+                side: trade.side,
+                executed: trade.executed,
+                prices: trade.prices,
+            })
+        }
+        // If not in auction, then check if it's a surplus capturing JIT order
+        else if auction
+            .surplus_capturing_jit_order_owners
+            .contains(&trade.uid.owner())
+        {
+            Trade::SurplusCapturingJit(Jit {
+                uid: trade.uid,
+                sell: trade.sell,
+                buy: trade.buy,
+                side: trade.side,
+                receiver: trade.receiver,
+                valid_to: trade.valid_to,
+                app_data: trade.app_data,
+                fee_amount: trade.fee_amount,
+                sell_token_balance: trade.sell_token_balance,
+                buy_token_balance: trade.buy_token_balance,
+                signature: trade.signature,
+                executed: trade.executed,
+                prices: trade.prices,
+                created,
+            })
+        }
+        // If not in auction and not a surplus capturing JIT order, then it's a JIT
+        // order but it must not be in the database
+        else if !database_orders.contains(&trade.uid) {
+            Trade::Jit(Jit {
+                uid: trade.uid,
+                sell: trade.sell,
+                buy: trade.buy,
+                side: trade.side,
+                receiver: trade.receiver,
+                valid_to: trade.valid_to,
+                app_data: trade.app_data,
+                fee_amount: trade.fee_amount,
+                sell_token_balance: trade.sell_token_balance,
+                buy_token_balance: trade.buy_token_balance,
+                signature: trade.signature,
+                executed: trade.executed,
+                prices: trade.prices,
+                created,
+            })
+        }
+        // A regular user order but settled outside of the auction
+        else {
+            Trade::UserOutOfAuction(User {
+                uid: trade.uid,
+                sell: trade.sell,
+                buy: trade.buy,
+                side: trade.side,
+                executed: trade.executed,
+                prices: trade.prices,
+            })
         }
     }
 }
