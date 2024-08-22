@@ -73,7 +73,7 @@ impl Maintenance {
         }
 
         let start = std::time::Instant::now();
-        if let Err(err) = self.update_inner(new_block).await {
+        if let Err(err) = self.update_inner().await {
             tracing::warn!(?err, block = new_block.number, "failed to run maintenance");
             return;
         }
@@ -86,7 +86,7 @@ impl Maintenance {
         *self.last_processed.lock().unwrap() = *new_block;
     }
 
-    async fn update_inner(&self, block: &BlockInfo) -> Result<()> {
+    async fn update_inner(&self) -> Result<()> {
         // All these can run independently of each other.
         tokio::try_join!(
             self.settlement_indexer.run_maintenance(),
@@ -150,7 +150,7 @@ impl Maintenance {
                     Ok(None) => break,
                     Err(_timeout) => latest_block,
                 };
-                if let Err(err) = self_.update_inner(&current_block).await {
+                if let Err(err) = self_.update_inner().await {
                     tracing::warn!(?err, "failed to run background task successfully");
                 }
                 if let Err(err) = self_.orders_cache.update(current_block.number).await {
