@@ -268,7 +268,7 @@ pub async fn run(args: Arguments) {
     .expect("failed to initialize token owner finders");
 
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        Box::new(CachingDetector::new(
+        CachingDetector::new(
             Box::new(TraceCallDetector {
                 web3: shared::ethrpc::web3(
                     &args.shared.ethrpc,
@@ -280,7 +280,7 @@ pub async fn run(args: Arguments) {
                 settlement_contract: eth.contracts().settlement().address(),
             }),
             args.token_quality_cache_expiry,
-        ))
+        )
     });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
