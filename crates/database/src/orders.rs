@@ -1553,12 +1553,21 @@ mod tests {
             sell_amount: 1.into(),
             buy_amount: 1.into(),
             signing_scheme: SigningScheme::PreSign,
+            creation_timestamp: Utc::now(),
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
 
-        async fn get_order(ex: &mut PgConnection) -> Option<FullOrder> {
+        async fn get_full_order(ex: &mut PgConnection) -> Option<FullOrder> {
             solvable_full_orders(ex, 0)
+                .next()
+                .await
+                .transpose()
+                .unwrap()
+        }
+
+        async fn get_order(ex: &mut PgConnection) -> Option<ExtendedOrder> {
+            solvable_orders(ex, Default::default(), 0)
                 .next()
                 .await
                 .transpose()
@@ -1587,19 +1596,35 @@ mod tests {
         }
 
         // not solvable because there is no presignature event.
-        assert!(get_order(&mut db).await.unwrap().presignature_pending());
+        assert!(get_full_order(&mut db)
+            .await
+            .unwrap()
+            .presignature_pending());
+        assert!(get_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable because once presignature event is observed.
         pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
-        assert!(!get_order(&mut db).await.unwrap().presignature_pending());
+        assert!(!get_full_order(&mut db)
+            .await
+            .unwrap()
+            .presignature_pending());
+        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
 
         // not solvable because "unsigned" presignature event.
         pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
-        assert!(get_order(&mut db).await.unwrap().presignature_pending());
+        assert!(get_full_order(&mut db)
+            .await
+            .unwrap()
+            .presignature_pending());
+        assert!(get_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
-        assert!(!get_order(&mut db).await.unwrap().presignature_pending());
+        assert!(!get_full_order(&mut db)
+            .await
+            .unwrap()
+            .presignature_pending());
+        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
     }
 
     #[tokio::test]
@@ -1647,11 +1672,12 @@ mod tests {
             buy_amount: 100.into(),
             valid_to: 3,
             partially_fillable: true,
+            creation_timestamp: Utc::now(),
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
 
-        async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
+        async fn get_full_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
             solvable_full_orders(ex, min_valid_to)
                 .next()
                 .await
@@ -1659,7 +1685,16 @@ mod tests {
                 .unwrap()
         }
 
+        async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<ExtendedOrder> {
+            solvable_orders(ex, Default::default(), min_valid_to)
+                .next()
+                .await
+                .transpose()
+                .unwrap()
+        }
+
         // not solvable because valid to
+        assert!(get_full_order(&mut db, 4).await.is_none());
         assert!(get_order(&mut db, 4).await.is_none());
 
         // not solvable because fully executed
@@ -1679,7 +1714,9 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(get_order(&mut db, 0).await.is_none());
+        assert!(get_full_order(&mut db, 0).await.is_none());
+        // This query doesn't count traded amounts.
+        assert!(!get_order(&mut db, 0).await.unwrap().invalidated);
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // not solvable because invalidated
@@ -1697,10 +1734,12 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(get_order(&mut db, 0).await.is_none());
+        assert!(get_full_order(&mut db, 0).await.is_none());
+        assert!(get_order(&mut db, 0).await.unwrap().invalidated);
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // solvable
+        assert!(get_full_order(&mut db, 3).await.is_some());
         assert!(get_order(&mut db, 3).await.is_some());
 
         // still solvable because only partially filled
@@ -1720,6 +1759,7 @@ mod tests {
         )
         .await
         .unwrap();
+        assert!(get_full_order(&mut db, 3).await.is_some());
         assert!(get_order(&mut db, 3).await.is_some());
 
         //no longer solvable, if it is a ethflow-order
@@ -1732,7 +1772,9 @@ mod tests {
             .await
             .unwrap();
 
+        assert!(get_full_order(&mut db, 3).await.is_none());
         assert!(get_order(&mut db, 3).await.is_none());
+        assert!(get_full_order(&mut db, 2).await.is_some());
         assert!(get_order(&mut db, 2).await.is_some());
 
         // no longer solvable, if there was also a onchain order
@@ -1749,7 +1791,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(get_order(&mut db, 2).await.is_none());
+        assert!(get_full_order(&mut db, 2).await.is_none());
+        assert!(get_order(&mut db, 2).await.unwrap().onchain_placement_error.is_some());
     }
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
