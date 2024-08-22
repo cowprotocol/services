@@ -46,13 +46,13 @@ impl Settlement {
         self.effective_gas_price
     }
 
-    /// Total surplus expressed in native token.
-    pub fn native_surplus(&self) -> eth::Ether {
+    /// Total surplus for all trades in the settlement.
+    pub fn surplus_in_ether(&self) -> eth::Ether {
         self.trades
             .iter()
             .map(|trade| {
                 trade
-                    .native_surplus(&self.auction.prices)
+                    .surplus_in_ether(&self.auction.prices)
                     .unwrap_or_else(|err| {
                         tracing::warn!(
                             ?err,
@@ -65,13 +65,13 @@ impl Settlement {
             .sum()
     }
 
-    /// Total fee expressed in native token.
-    pub fn native_fee(&self) -> eth::Ether {
+    /// Total fee taken for all the trades in the settlement.
+    pub fn fee_in_ether(&self) -> eth::Ether {
         self.trades
             .iter()
             .map(|trade| {
                 trade
-                    .native_fee(&self.auction.prices)
+                    .fee_in_ether(&self.auction.prices)
                     .unwrap_or_else(|err| {
                         tracing::warn!(
                             ?err,
@@ -89,8 +89,8 @@ impl Settlement {
         self.trades
             .iter()
             .map(|trade| {
-                (trade.uid(), {
-                    let total = trade.total_fee_in_sell_token();
+                (*trade.uid(), {
+                    let total = trade.fee_in_sell_token();
                     let protocol = trade.protocol_fees_in_sell_token(&self.auction);
                     match (total, protocol) {
                         (Ok(total), Ok(protocol)) => {

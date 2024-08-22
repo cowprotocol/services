@@ -34,7 +34,7 @@ impl Trade {
     ///
     /// Denominated in NATIVE token
     pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        Ok(self.native_surplus(&auction.prices)? + self.native_protocol_fee(auction)?)
+        Ok(self.surplus_in_ether(&auction.prices)? + self.protocol_fee_in_ether(auction)?)
     }
 
     /// A general surplus function.
@@ -98,9 +98,7 @@ impl Trade {
 
     /// Surplus based on custom clearing prices returns the surplus after all
     /// fees have been applied.
-    ///
-    /// Denominated in NATIVE token
-    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+    pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let surplus = self.surplus_over_limit_price()?;
         let price = prices
             .get(&surplus.token)
@@ -111,10 +109,8 @@ impl Trade {
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    ///
-    /// Denominated in NATIVE token
-    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let total_fee = self.total_fee_in_sell_token()?;
+    pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+        let total_fee = self.fee_in_sell_token()?;
         let price = prices
             .get(&self.sell.token)
             .ok_or(Error::MissingPrice(self.sell.token))?;
@@ -137,9 +133,7 @@ impl Trade {
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    ///
-    /// Denominated in SELL token
-    pub fn total_fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
+    pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
         let fee = self.fee()?;
         self.fee_into_sell_token(fee.amount)
     }
@@ -161,8 +155,6 @@ impl Trade {
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
-    ///
-    /// Denominated in SELL token
     pub fn protocol_fees_in_sell_token(
         &self,
         auction: &settlement::Auction,
@@ -431,9 +423,7 @@ impl Trade {
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
-    ///
-    /// Denominated in NATIVE token
-    fn native_protocol_fee(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
+    fn protocol_fee_in_ether(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
         self.protocol_fees(auction)?
             .into_iter()
             .map(|(fee, _)| {

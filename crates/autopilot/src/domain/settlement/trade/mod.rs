@@ -29,16 +29,16 @@ pub enum Trade {
 
 impl Trade {
     /// Order UID that was settled in this trade.
-    pub fn uid(&self) -> domain::OrderUid {
+    pub fn uid(&self) -> &domain::OrderUid {
         match self {
-            Self::User(trade) => trade.uid,
-            Self::UserOutOfAuction(trade) => trade.uid,
-            Self::SurplusCapturingJit(trade) => trade.uid,
-            Self::Jit(trade) => trade.uid,
+            Self::User(trade) => &trade.uid,
+            Self::UserOutOfAuction(trade) => &trade.uid,
+            Self::SurplusCapturingJit(trade) => &trade.uid,
+            Self::Jit(trade) => &trade.uid,
         }
     }
 
-    /// Return Jit order if a trade is a JIT order.
+    /// Return JIT order if it's a JIT order.
     pub fn as_jit(&self) -> Option<&Jit> {
         match self {
             Self::User(_) => None,
@@ -48,38 +48,28 @@ impl Trade {
         }
     }
 
-    /// Surplus based on custom clearing prices returns the surplus after all
-    /// fees have been applied.
-    ///
-    /// Denominated in NATIVE token
-    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
+    /// Surplus of a trade.
+    pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
-            Self::User(trade) => trade.as_math().native_surplus(prices),
+            Self::User(trade) => trade.as_math().surplus_in_ether(prices),
             Self::UserOutOfAuction(_) => Ok(eth::Ether::zero()),
-            Self::SurplusCapturingJit(trade) => trade.as_math().native_surplus(prices),
+            Self::SurplusCapturingJit(trade) => trade.as_math().surplus_in_ether(prices),
             Self::Jit(_) => Ok(eth::Ether::zero()),
         }
     }
 
-    /// Total fee (protocol fee + network fee). Equal to a surplus difference
-    /// before and after applying the fees.
-    ///
-    /// Denominated in NATIVE token
-    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
-        self.as_math().native_fee(prices)
+    /// Total fee taken for the trade.
+    pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
+        self.as_math().fee_in_ether(prices)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    ///
-    /// Denominated in SELL token
-    pub fn total_fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, math::Error> {
-        self.as_math().total_fee_in_sell_token()
+    pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, math::Error> {
+        self.as_math().fee_in_sell_token()
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
-    ///
-    /// Denominated in SELL token
     pub fn protocol_fees_in_sell_token(
         &self,
         auction: &super::Auction,

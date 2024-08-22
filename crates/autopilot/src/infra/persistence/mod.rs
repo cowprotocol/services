@@ -455,8 +455,8 @@ impl Persistence {
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
             let gas_price = settlement.gas_price();
-            let surplus = settlement.native_surplus();
-            let fee = settlement.native_fee();
+            let surplus = settlement.surplus_in_ether();
+            let fee = settlement.fee_in_ether();
             let order_fees = settlement.order_fees();
             let jit_orders = settlement.jit_orders();
 
