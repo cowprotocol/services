@@ -48,10 +48,10 @@ impl Trade {
         }
     }
 
-    /// Total surplus for all trades in the solution.
+    /// Surplus based on custom clearing prices returns the surplus after all
+    /// fees have been applied.
     ///
-    /// Always returns a value, even if some trades have incomplete surplus
-    /// calculation.
+    /// Denominated in NATIVE token
     pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
             Self::User(trade) => trade.as_math().native_surplus(prices),
@@ -61,12 +61,11 @@ impl Trade {
         }
     }
 
-    /// Total fee for all trades in the solution.
+    /// Total fee (protocol fee + network fee). Equal to a surplus difference
+    /// before and after applying the fees.
     ///
-    /// Always returns a value, even if some trades have incomplete fee
-    /// calculation.
+    /// Denominated in NATIVE token
     pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
-        // todo return error on UserOutOfAuction
         self.as_math().native_fee(prices)
     }
 
@@ -78,6 +77,9 @@ impl Trade {
         self.as_math().total_fee_in_sell_token()
     }
 
+    /// Protocol fees are defined by fee policies attached to the order.
+    ///
+    /// Denominated in SELL token
     pub fn protocol_fees_in_sell_token(
         &self,
         auction: &super::Auction,
@@ -97,6 +99,7 @@ impl Trade {
     }
 }
 
+/// Trade representing an user trade. User trades are part of the orderbook.
 #[derive(Debug, Clone)]
 pub struct User {
     pub uid: domain::OrderUid,
@@ -122,6 +125,8 @@ impl User {
     }
 }
 
+/// Trade representing a JIT trade. JIT trades are not part of the orderbook and
+/// are created by solvers at the time of settlement.
 #[derive(Debug, Clone)]
 pub struct Jit {
     pub uid: domain::OrderUid,
