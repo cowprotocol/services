@@ -68,6 +68,7 @@ pub const TABLES: &[&str] = &[
     "auction_prices",
     "auction_participants",
     "app_data",
+    "jit_orders"
 ];
 
 /// The names of potentially big volume tables we use in the db.
