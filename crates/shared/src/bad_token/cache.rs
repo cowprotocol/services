@@ -1,10 +1,12 @@
 use {
     super::{BadTokenDetecting, TokenQuality},
     anyhow::Result,
+    futures::future::join_all,
     primitive_types::H160,
     std::{
         collections::HashMap,
-        sync::Mutex,
+        ops::Div,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
 };
@@ -30,12 +32,14 @@ impl BadTokenDetecting for CachingDetector {
 }
 
 impl CachingDetector {
-    pub fn new(inner: Box<dyn BadTokenDetecting>, cache_expiry: Duration) -> Self {
-        Self {
+    pub fn new(inner: Box<dyn BadTokenDetecting>, cache_expiry: Duration) -> Arc<Self> {
+        let detector = Arc::new(Self {
             inner,
             cache: Default::default(),
             cache_expiry,
-        }
+        });
+        detector.clone().spawn_maintenance_task();
+        detector
     }
 
     fn get_from_cache(&self, token: &H160, now: Instant) -> Option<TokenQuality> {
@@ -55,14 +59,74 @@ impl CachingDetector {
             .unwrap()
             .insert(token, (Instant::now(), quality));
     }
+
+    fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
+        let mut cache = self.cache.lock().unwrap();
+        let now = Instant::now();
+        for (token, quality) in tokens {
+            cache.insert(token, (now, quality));
+        }
+    }
+
+    fn spawn_maintenance_task(self: Arc<Self>) {
+        let cache_expiry = self.cache_expiry;
+        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(60));
+        let detector = Arc::clone(&self);
+
+        tokio::task::spawn(async move {
+            loop {
+                let start = Instant::now();
+
+                let expired_tokens: Vec<H160> = {
+                    let cache = detector.cache.lock().unwrap();
+                    let now = Instant::now();
+                    cache
+                        .iter()
+                        .filter_map(|(token, (instant, _))| {
+                            (now.checked_duration_since(*instant).unwrap_or_default()
+                                >= cache_expiry)
+                                .then_some(*token)
+                        })
+                        .collect()
+                };
+
+                let results = join_all(expired_tokens.into_iter().map(|token| {
+                    let detector = detector.clone();
+                    async move {
+                        match detector.inner.detect(token).await {
+                            Ok(result) => Some((token, result)),
+                            Err(err) => {
+                                tracing::warn!(
+                                    ?token,
+                                    ?err,
+                                    "unable to determine token quality in the background task"
+                                );
+                                None
+                            }
+                        }
+                    }
+                }))
+                .await
+                .into_iter()
+                .flatten();
+
+                detector.insert_many_into_cache(results);
+
+                let remaining_sleep = maintenance_timeout
+                    .checked_sub(start.elapsed())
+                    .unwrap_or_default();
+                tokio::time::sleep(remaining_sleep).await;
+            }
+        });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use {super::*, crate::bad_token::MockBadTokenDetecting, futures::FutureExt};
 
-    #[test]
-    fn goes_to_cache() {
+    #[tokio::test]
+    async fn goes_to_cache() {
         // Would panic if called twice.
         let mut inner = MockBadTokenDetecting::new();
         inner
@@ -81,8 +145,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cache_expires() {
+    #[tokio::test]
+    async fn cache_expires() {
         let inner = MockBadTokenDetecting::new();
         let token = H160::from_low_u64_le(0);
         let detector = CachingDetector::new(Box::new(inner), Duration::from_secs(2));
