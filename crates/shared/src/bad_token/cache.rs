@@ -70,7 +70,7 @@ impl CachingDetector {
 
     fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = self.cache_expiry;
-        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(30));
+        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(60));
         let detector = Arc::clone(&self);
 
         tokio::task::spawn(async move {
