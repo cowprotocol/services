@@ -80,15 +80,6 @@ pub struct Arguments {
     )]
     pub token_quality_cache_expiry: Duration,
 
-    /// How often to run background bad token detection maintenance task.
-    #[clap(
-        long,
-        env,
-        default_value = "1m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub token_quality_maintenance_timeout: Duration,
-
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
@@ -172,7 +163,6 @@ impl std::fmt::Display for Arguments {
             max_order_validity_period,
             max_limit_order_validity_period,
             token_quality_cache_expiry,
-            token_quality_maintenance_timeout,
             unsupported_tokens,
             banned_users,
             allowed_tokens,
@@ -218,11 +208,6 @@ impl std::fmt::Display for Arguments {
             f,
             "token_quality_cache_expiry: {:?}",
             token_quality_cache_expiry
-        )?;
-        writeln!(
-            f,
-            "token_quality_maintenance_timeout: {:?}",
-            token_quality_maintenance_timeout
         )?;
         writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
         writeln!(f, "banned_users: {:?}", banned_users)?;

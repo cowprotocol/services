@@ -5,6 +5,7 @@ use {
     primitive_types::H160,
     std::{
         collections::HashMap,
+        ops::Div,
         sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
@@ -31,19 +32,13 @@ impl BadTokenDetecting for CachingDetector {
 }
 
 impl CachingDetector {
-    pub fn new(
-        inner: Box<dyn BadTokenDetecting>,
-        cache_expiry: Duration,
-        maintenance_task_timeout: Duration,
-    ) -> Arc<Self> {
+    pub fn new(inner: Box<dyn BadTokenDetecting>, cache_expiry: Duration) -> Arc<Self> {
         let detector = Arc::new(Self {
             inner,
             cache: Default::default(),
             cache_expiry,
         });
-        detector
-            .clone()
-            .spawn_maintenance_task(maintenance_task_timeout);
+        detector.clone().spawn_maintenance_task();
         detector
     }
 
@@ -67,13 +62,15 @@ impl CachingDetector {
 
     fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
         let mut cache = self.cache.lock().unwrap();
+        let now = Instant::now();
         for (token, quality) in tokens {
-            cache.insert(token, (Instant::now(), quality));
+            cache.insert(token, (now, quality));
         }
     }
 
-    fn spawn_maintenance_task(self: Arc<Self>, maintenance_timeout: Duration) {
+    fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = self.cache_expiry;
+        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(30));
         let detector = Arc::clone(&self);
 
         tokio::task::spawn(async move {
@@ -137,11 +134,7 @@ mod tests {
             .times(1)
             .returning(|_| Ok(TokenQuality::Good));
 
-        let detector = CachingDetector::new(
-            Box::new(inner),
-            Duration::from_secs(1),
-            Duration::from_secs(10),
-        );
+        let detector = CachingDetector::new(Box::new(inner), Duration::from_secs(1));
 
         for _ in 0..2 {
             let result = detector
@@ -156,11 +149,7 @@ mod tests {
     async fn cache_expires() {
         let inner = MockBadTokenDetecting::new();
         let token = H160::from_low_u64_le(0);
-        let detector = CachingDetector::new(
-            Box::new(inner),
-            Duration::from_secs(2),
-            Duration::from_secs(10),
-        );
+        let detector = CachingDetector::new(Box::new(inner), Duration::from_secs(2));
         let now = Instant::now();
         detector
             .cache

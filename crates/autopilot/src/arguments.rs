@@ -82,15 +82,6 @@ pub struct Arguments {
     )]
     pub token_quality_cache_expiry: Duration,
 
-    /// How often to run background bad token detection maintenance task.
-    #[clap(
-        long,
-        env,
-        default_value = "1m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub token_quality_maintenance_timeout: Duration,
-
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: NonZeroUsize,
@@ -258,7 +249,6 @@ impl std::fmt::Display for Arguments {
             allowed_tokens,
             unsupported_tokens,
             token_quality_cache_expiry,
-            token_quality_maintenance_timeout,
             pool_cache_lru_size,
             native_price_estimators,
             min_order_validity_period,
@@ -305,11 +295,6 @@ impl std::fmt::Display for Arguments {
             f,
             "token_quality_cache_expiry: {:?}",
             token_quality_cache_expiry
-        )?;
-        writeln!(
-            f,
-            "token_quality_maintenance_timeout: {:?}",
-            token_quality_maintenance_timeout
         )?;
         writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
         writeln!(f, "native_price_estimators: {}", native_price_estimators)?;

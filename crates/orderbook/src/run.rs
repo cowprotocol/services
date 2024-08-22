@@ -222,7 +222,6 @@ pub async fn run(args: Arguments) {
                 settlement_contract: settlement_contract.address(),
             }),
             args.token_quality_cache_expiry,
-            args.token_quality_cache_expiry,
         )
     });
     let bad_token_detector = Arc::new(
