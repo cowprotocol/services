@@ -65,10 +65,10 @@ impl CachingDetector {
             .insert(token, (Instant::now(), quality));
     }
 
-    fn insert_many_into_cache(&self, tokens: &[(H160, TokenQuality)]) {
+    fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
         let mut cache = self.cache.lock().unwrap();
         for (token, quality) in tokens {
-            cache.insert(*token, (Instant::now(), quality.clone()));
+            cache.insert(token, (Instant::now(), quality));
         }
     }
 
@@ -111,10 +111,9 @@ impl CachingDetector {
                 }))
                 .await
                 .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
+                .flatten();
 
-                detector.insert_many_into_cache(&results);
+                detector.insert_many_into_cache(results);
 
                 let remaining_sleep = maintenance_timeout
                     .checked_sub(start.elapsed())
