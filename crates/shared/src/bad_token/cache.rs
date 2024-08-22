@@ -66,9 +66,9 @@ impl CachingDetector {
     }
 
     fn insert_many_into_cache(&self, tokens: &[(H160, TokenQuality)]) {
-        let mut lock = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap();
         for (token, quality) in tokens {
-            lock.insert(*token, (Instant::now(), quality.clone()));
+            cache.insert(*token, (Instant::now(), quality.clone()));
         }
     }
 
@@ -85,10 +85,11 @@ impl CachingDetector {
                     let now = Instant::now();
                     cache
                         .iter()
-                        .filter(|(_, (instant, _))| {
-                            now.checked_duration_since(*instant).unwrap_or_default() >= cache_expiry
+                        .filter_map(|(token, (instant, _))| {
+                            (now.checked_duration_since(*instant).unwrap_or_default()
+                                >= cache_expiry)
+                                .then_some(*token)
                         })
-                        .map(|(token, _)| *token)
                         .collect()
                 };
 
