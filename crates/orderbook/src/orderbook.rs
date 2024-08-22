@@ -70,7 +70,7 @@ impl Metrics {
     fn on_order_operation(order: &Order, operation: OrderOperation, quote: Option<&Quote>) {
         let class = match quote {
             Some(quote) if
-            // Check if the order at the submission time was billable (`user` order)
+            // Check if the order at the submission time was "in market" (`user` order)
                 is_order_outside_market_price(
                     &Amounts {
                         sell: order.data.sell_amount,
