@@ -8,7 +8,7 @@ use {
 };
 
 // Original type for input of `GPv2Settlement.settle` function.
-pub(super) struct Tokenized {
+pub struct Tokenized {
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<eth::TokenAmount>,
     pub trades: Vec<Trade>,

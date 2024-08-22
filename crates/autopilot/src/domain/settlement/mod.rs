@@ -4,15 +4,15 @@
 //! a form of settlement transaction.
 
 use {
-    self::solution::ExecutedFee,
     crate::{domain, domain::eth, infra},
-    std::collections::{HashMap, HashSet},
+    num::Saturating,
+    std::collections::HashMap,
 };
 
 mod auction;
-mod solution;
+mod trade;
 mod transaction;
-pub use {auction::Auction, solution::Solution, transaction::Transaction};
+pub use {auction::Auction, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
@@ -21,14 +21,98 @@ pub use {auction::Auction, solution::Solution, transaction::Transaction};
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Settlement {
-    settled: Transaction,
+    /// The gas used by the settlement transaction.
+    gas: eth::Gas,
+    /// The effective gas price of the settlement transaction.
+    effective_gas_price: eth::EffectiveGasPrice,
+    /// The address of the solver that submitted the settlement transaction.
+    solver: eth::Address,
+    /// The block number of the block that contains the settlement transaction.
+    block: eth::BlockNo,
+    /// The associated auction.
     auction: Auction,
-
-    /// Orders from the settlement that exist in the database.
-    database_orders: HashSet<domain::OrderUid>,
+    /// Trades that were settled by the transaction.
+    trades: Vec<Trade>,
 }
 
 impl Settlement {
+    /// The gas used by the settlement.
+    pub fn gas(&self) -> eth::Gas {
+        self.gas
+    }
+
+    /// The effective gas price at the time of settlement.
+    pub fn gas_price(&self) -> eth::EffectiveGasPrice {
+        self.effective_gas_price
+    }
+
+    /// Total surplus expressed in native token.
+    pub fn native_surplus(&self) -> eth::Ether {
+        self.trades
+            .iter()
+            .map(|trade| {
+                trade
+                    .native_surplus(&self.auction.prices)
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            ?err,
+                            "possible incomplete surplus calculation for trade {}",
+                            trade.uid()
+                        );
+                        num::zero()
+                    })
+            })
+            .sum()
+    }
+
+    /// Total fee expressed in native token.
+    pub fn native_fee(&self) -> eth::Ether {
+        self.trades
+            .iter()
+            .map(|trade| {
+                trade
+                    .native_fee(&self.auction.prices)
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            ?err,
+                            "possible incomplete fee calculation for trade {}",
+                            trade.uid()
+                        );
+                        num::zero()
+                    })
+            })
+            .sum()
+    }
+
+    /// Per order fees breakdown. Contains all orders from the settlement
+    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<trade::ExecutedFee>> {
+        self.trades
+            .iter()
+            .map(|trade| {
+                (trade.uid(), {
+                    let total = trade.total_fee_in_sell_token();
+                    let protocol = trade.protocol_fees_in_sell_token(&self.auction);
+                    match (total, protocol) {
+                        (Ok(total), Ok(protocol)) => {
+                            let network =
+                                total.saturating_sub(protocol.iter().map(|(fee, _)| *fee).sum());
+                            Some(trade::ExecutedFee { protocol, network })
+                        }
+                        _ => None,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    /// Return all trades that are classified as Just-In-Time (JIT) orders.
+    pub fn jit_orders(&self) -> Vec<&trade::Jit> {
+        self.trades
+            .iter()
+            .filter_map(|trade| trade.as_jit())
+            .collect()
+    }
+
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
@@ -44,59 +128,87 @@ impl Settlement {
         }
 
         let auction = persistence.get_auction(settled.auction_id).await?;
+        let database_orders = persistence.orders_that_exist(&settled.order_uids()).await?;
 
-        let database_orders = persistence
-            .orders_that_exist(&settled.solution.order_uids())
-            .await?;
-
-        Ok(Self {
-            settled,
-            auction,
-            database_orders,
-        })
-    }
-
-    /// The gas used by the settlement.
-    pub fn gas(&self) -> eth::Gas {
-        self.settled.gas
-    }
-
-    /// The effective gas price at the time of settlement.
-    pub fn gas_price(&self) -> eth::EffectiveGasPrice {
-        self.settled.effective_gas_price
-    }
-
-    /// Total surplus expressed in native token.
-    pub fn native_surplus(&self) -> eth::Ether {
-        self.settled
-            .solution
-            .native_surplus(&self.auction, &self.database_orders)
-    }
-
-    /// Total fee expressed in native token.
-    pub fn native_fee(&self) -> eth::Ether {
-        self.settled.solution.native_fee(&self.auction.prices)
-    }
-
-    /// Per order fees breakdown. Contains all orders from the settlement
-    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<ExecutedFee>> {
-        self.settled.solution.fees(&self.auction)
-    }
-
-    /// All jit orders from a settlement together with their timestamps.
-    pub fn jit_orders(&self) -> Vec<(solution::Trade, u32)> {
-        self.settled
-            .solution
-            .trades()
-            .iter()
-            .filter_map(|order| {
-                if self.database_orders.contains(&order.uid) {
-                    None
-                } else {
-                    Some((order.clone(), self.settled.timestamp))
+        let trades = settled
+            .trades
+            .into_iter()
+            .map(|trade| {
+                // All orders from the auction follow the regular user orders flow
+                if auction.orders.contains_key(&trade.uid) {
+                    Trade::User(trade::User {
+                        uid: trade.uid,
+                        sell: trade.sell,
+                        buy: trade.buy,
+                        side: trade.side,
+                        executed: trade.executed,
+                        prices: trade.prices,
+                    })
+                }
+                // If not in auction, then check if it's a surplus capturing JIT order
+                else if auction
+                    .surplus_capturing_jit_order_owners
+                    .contains(&trade.uid.owner())
+                {
+                    Trade::SurplusCapturingJit(trade::Jit {
+                        uid: trade.uid,
+                        sell: trade.sell,
+                        buy: trade.buy,
+                        side: trade.side,
+                        receiver: trade.receiver,
+                        valid_to: trade.valid_to,
+                        app_data: trade.app_data,
+                        fee_amount: trade.fee_amount,
+                        sell_token_balance: trade.sell_token_balance,
+                        buy_token_balance: trade.buy_token_balance,
+                        signature: trade.signature,
+                        executed: trade.executed,
+                        prices: trade.prices,
+                        created: settled.timestamp,
+                    })
+                }
+                // If not in auction and not a surplus capturing JIT order, then it's a JIT
+                // order but it must not be in the database
+                else if !database_orders.contains(&trade.uid) {
+                    Trade::Jit(trade::Jit {
+                        uid: trade.uid,
+                        sell: trade.sell,
+                        buy: trade.buy,
+                        side: trade.side,
+                        receiver: trade.receiver,
+                        valid_to: trade.valid_to,
+                        app_data: trade.app_data,
+                        fee_amount: trade.fee_amount,
+                        sell_token_balance: trade.sell_token_balance,
+                        buy_token_balance: trade.buy_token_balance,
+                        signature: trade.signature,
+                        executed: trade.executed,
+                        prices: trade.prices,
+                        created: settled.timestamp,
+                    })
+                }
+                // A regular user order but settled outside of the auction
+                else {
+                    Trade::UserOutOfAuction(trade::User {
+                        uid: trade.uid,
+                        sell: trade.sell,
+                        buy: trade.buy,
+                        side: trade.side,
+                        executed: trade.executed,
+                        prices: trade.prices,
+                    })
                 }
             })
-            .collect()
+            .collect();
+
+        Ok(Self {
+            solver: settled.solver,
+            block: settled.block,
+            gas: settled.gas,
+            effective_gas_price: settled.effective_gas_price,
+            trades,
+            auction,
+        })
     }
 }
 
@@ -108,8 +220,6 @@ pub enum Error {
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
-    #[error(transparent)]
-    BuildingSolution(#[from] solution::Error),
 }
 
 /// Errors that can occur when fetching data from the persistence layer.

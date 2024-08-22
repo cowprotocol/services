@@ -6,13 +6,15 @@ use {
             auction::{self, order},
             eth,
             fee,
-            settlement::{self},
+            settlement::{
+                transaction::{ClearingPrices, Prices},
+                {self},
+            },
         },
         util::conv::U256Ext,
     },
     bigdecimal::Zero,
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
-    std::collections::HashSet,
 };
 
 /// A single trade executed on-chain, as part of the [`settlement::Solution`].
@@ -24,13 +26,6 @@ pub struct Trade {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: order::Side,
-    pub receiver: eth::Address,
-    pub valid_to: u32,
-    pub app_data: order::AppDataHash,
-    pub fee_amount: eth::TokenAmount,
-    pub sell_token_balance: order::SellTokenSource,
-    pub buy_token_balance: order::BuyTokenDestination,
-    pub signature: order::Signature,
     pub executed: order::TargetAmount,
     pub prices: Prices,
 }
@@ -39,12 +34,8 @@ impl Trade {
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
-    pub fn score(
-        &self,
-        auction: &settlement::Auction,
-        database_orders: &HashSet<domain::OrderUid>,
-    ) -> Result<eth::Ether, Error> {
-        Ok(self.native_surplus(auction, database_orders)? + self.native_protocol_fee(auction)?)
+    pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
+        Ok(self.native_surplus(&auction.prices)? + self.native_protocol_fee(auction)?)
     }
 
     /// A general surplus function.
@@ -110,18 +101,9 @@ impl Trade {
     /// fees have been applied.
     ///
     /// Denominated in NATIVE token
-    pub fn native_surplus(
-        &self,
-        auction: &settlement::Auction,
-        database_orders: &HashSet<domain::OrderUid>,
-    ) -> Result<eth::Ether, Error> {
-        if !auction.is_surplus_capturing(&self.uid, database_orders.contains(&self.uid)) {
-            return Ok(Zero::zero());
-        }
-
+    pub fn native_surplus(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let surplus = self.surplus_over_limit_price()?;
-        let price = auction
-            .prices
+        let price = prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
 
@@ -473,40 +455,10 @@ impl Trade {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Prices {
-    pub uniform: ClearingPrices,
-    /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
-    pub custom: ClearingPrices,
-}
-
 #[derive(Clone, Debug)]
 pub struct PriceLimits {
     pub sell: eth::TokenAmount,
     pub buy: eth::TokenAmount,
-}
-
-/// Uniform clearing prices at which the trade was executed.
-#[derive(Debug, Clone, Copy)]
-pub struct ClearingPrices {
-    pub sell: eth::U256,
-    pub buy: eth::U256,
-}
-
-/// Trade type when evaluated in a context of an Auction.
-#[derive(Clone, Debug)]
-pub enum Type {
-    /// A regular user order. These orders are part of the `Auction`.
-    User,
-    /// A regular user order that was not part of the `Auction`.
-    UserOutOfAuction,
-    /// A JIT order that captures surplus. These orders are usually not part of
-    /// the `Auction`.
-    SurplusCapturingJit,
-    /// A JIT order that does not capture surplus, doesn't apply for protocol
-    /// fees and is filled at it's limit prices. These orders are never part of
-    /// the `Auction`.
-    Jit,
 }
 
 /// This function adjusts quote amounts to directly compare them with the
