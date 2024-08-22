@@ -1,9 +1,6 @@
-use {
-    crate::{
-        boundary,
-        domain::{self, auction::order, eth},
-    },
-    anyhow::Context,
+use crate::{
+    boundary,
+    domain::{self, auction::order, eth},
 };
 
 mod tokenized;
@@ -34,7 +31,7 @@ impl Transaction {
     pub fn new(
         transaction: &eth::Transaction,
         domain_separator: &eth::DomainSeparator,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, Error> {
         /// Number of bytes that may be appended to the calldata to store an
         /// auction id.
         const META_DATA_LEN: usize = 8;
@@ -46,7 +43,7 @@ impl Transaction {
         let metadata: Option<[u8; META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
             .map(crate::domain::auction::Id::from_be_bytes)
-            .context("invalid metadata")?;
+            .ok_or(Error::MissingAuctionId)?;
         Ok(Self {
             hash: transaction.hash,
             auction_id,
@@ -156,6 +153,8 @@ pub struct ClearingPrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("missing auction id")]
+    MissingAuctionId,
     #[error(transparent)]
     Decoding(#[from] tokenized::error::Decoding),
     #[error("failed to recover order uid {0}")]
