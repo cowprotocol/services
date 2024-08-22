@@ -87,7 +87,6 @@ impl Maintenance {
     }
 
     async fn update_inner(&self, block: &BlockInfo) -> Result<()> {
-        tracing::error!(block = block.number, "run update task");
         // All these can run independently of each other.
         tokio::try_join!(
             self.settlement_indexer.run_maintenance(),
@@ -96,15 +95,12 @@ impl Maintenance {
             self.index_ethflow_orders(),
             futures::future::try_join_all(self.cow_amm_indexer.iter().cloned().map(
                 |indexer| async move {
-                    tracing::error!("running cow amm task");
                     indexer.run_maintenance().await
                 }
             ))
         )?;
 
-        // Only update solvable orders after all other
-        // events got processed.
-        self.orders_cache.update(block.number).await
+        Ok(())
     }
 
     /// Registers all maintenance tasks that are necessary to correctly support
@@ -120,7 +116,6 @@ impl Maintenance {
 
     pub fn with_cow_amms(&mut self, registry: &cow_amm::Registry) {
         self.cow_amm_indexer = registry.maintenance_tasks().clone();
-        tracing::error!(len = self.cow_amm_indexer.len(), "added cow amm tasks");
     }
 
     async fn index_refunds(&self) -> Result<()> {
@@ -156,6 +151,9 @@ impl Maintenance {
                 };
                 if let Err(err) = self_.update_inner(&current_block).await {
                     tracing::warn!(?err, "failed to run background task successfully");
+                }
+                if let Err(err) = self_.orders_cache.update(current_block.number).await {
+                    tracing::warn!(?err, "failed to update auction successfully");
                 }
                 latest_block = current_block;
             }
