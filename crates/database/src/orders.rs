@@ -858,11 +858,11 @@ pub fn solvable_full_orders(
 /// valid_to, creation_timestamp and cancellation_timestamp.
 ///
 /// The query is similar to OPEN_ORDERS but excludes traded amounts.
-pub async fn solvable_orders(
+pub fn solvable_orders(
     ex: &mut PgConnection,
     after_timestamp: DateTime<Utc>,
     min_valid_to: i64,
-) -> Result<Vec<ExtendedOrder>, sqlx::Error> {
+) -> BoxStream<'_, Result<ExtendedOrder, sqlx::Error>> {
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
@@ -897,8 +897,7 @@ WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1)
     sqlx::query_as(QUERY)
         .bind(after_timestamp)
         .bind(min_valid_to)
-        .fetch_all(ex)
-        .await
+        .fetch(ex)
 }
 
 pub async fn latest_settlement_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {

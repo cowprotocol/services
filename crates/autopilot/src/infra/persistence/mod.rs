@@ -8,6 +8,7 @@ use {
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
+    futures::TryStreamExt,
     number::conversions::big_decimal_to_u256,
     primitive_types::{H160, H256},
     std::{
@@ -392,7 +393,11 @@ impl Persistence {
             .with_label_values(&["orders_after"])
             .start_timer();
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
-        Ok(database::orders::solvable_orders(&mut ex, after_timestamp, min_valid_to).await?)
+        Ok(
+            database::orders::solvable_orders(&mut ex, after_timestamp, min_valid_to)
+                .try_collect()
+                .await?,
+        )
     }
 
     pub async fn trades_after(
@@ -405,10 +410,9 @@ impl Persistence {
             .start_timer();
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
         Ok(database::trades::trades_after(&mut ex, after_block)
-            .await?
-            .into_iter()
-            .map(|trade| (domain::OrderUid(trade.order_uid.0), trade))
-            .collect::<HashMap<_, _>>())
+            .map_ok(|trade| (domain::OrderUid(trade.order_uid.0), trade))
+            .try_collect()
+            .await?)
     }
 }
 

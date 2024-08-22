@@ -75,10 +75,10 @@ ON o.uid = t.order_uid"#;
         .fetch(ex)
 }
 
-pub async fn trades_after(
+pub fn trades_after(
     ex: &mut PgConnection,
     after_block: i64,
-) -> Result<Vec<TradedAmounts>, sqlx::Error> {
+) -> BoxStream<'_, Result<TradedAmounts, sqlx::Error>> {
     const QUERY: &str = r#"
 SELECT
     MAX(t.block_number),
@@ -91,7 +91,7 @@ WHERE t.block_number > $1
 GROUP BY t.order_uid
 "#;
 
-    sqlx::query_as(QUERY).bind(after_block).fetch_all(ex).await
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
 #[cfg(test)]
