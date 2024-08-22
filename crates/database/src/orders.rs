@@ -622,7 +622,7 @@ impl FullOrder {
     }
 }
 
-/// Order with extra information from other tables excluding trades data.
+/// Order with extra information from other tables excluding traded data.
 #[derive(Debug, sqlx::FromRow)]
 pub struct ExtendedOrder {
     pub uid: OrderUid,
@@ -847,14 +847,18 @@ WHERE
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
 /// cleanup: fok limit orders should be allowed to not have surplus fee
-pub fn solvable_orders(
+pub fn solvable_full_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
-pub async fn extended_orders_after(
+/// The solvable orders query used in specialized queries. Parametrized by
+/// valid_to, creation_timestamp and cancellation_timestamp.
+///
+/// The query is similar to OPEN_ORDERS but excludes traded amounts.
+pub async fn solvable_orders(
     ex: &mut PgConnection,
     after_timestamp: DateTime<Utc>,
     min_valid_to: i64,
@@ -1555,7 +1559,11 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_order(ex: &mut PgConnection) -> Option<FullOrder> {
-            solvable_orders(ex, 0).next().await.transpose().unwrap()
+            solvable_full_orders(ex, 0)
+                .next()
+                .await
+                .transpose()
+                .unwrap()
         }
 
         async fn pre_signature_event(
@@ -1645,7 +1653,7 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
-            solvable_orders(ex, min_valid_to)
+            solvable_full_orders(ex, min_valid_to)
                 .next()
                 .await
                 .transpose()

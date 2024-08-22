@@ -392,7 +392,7 @@ impl Persistence {
             .with_label_values(&["orders_after"])
             .start_timer();
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
-        Ok(database::orders::extended_orders_after(&mut ex, after_timestamp, min_valid_to).await?)
+        Ok(database::orders::solvable_orders(&mut ex, after_timestamp, min_valid_to).await?)
     }
 
     pub async fn trades_after(
