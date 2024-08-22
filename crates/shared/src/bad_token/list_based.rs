@@ -2,13 +2,14 @@ use {
     super::{BadTokenDetecting, TokenQuality},
     anyhow::Result,
     primitive_types::H160,
+    std::sync::Arc,
 };
 
 /// If a token is neither in the allow nor the deny list treat it this way.
 pub enum UnknownTokenStrategy {
     Allow,
     Deny,
-    Forward(Box<dyn BadTokenDetecting>),
+    Forward(Arc<dyn BadTokenDetecting>),
 }
 
 /// Classify tokens with explicit allow and deny lists.
@@ -79,7 +80,7 @@ mod tests {
         let detector = ListBasedDetector {
             allow_list: vec![H160::from_low_u64_le(0)],
             deny_list: vec![H160::from_low_u64_le(1)],
-            strategy: UnknownTokenStrategy::Forward(Box::new(inner)),
+            strategy: UnknownTokenStrategy::Forward(Arc::new(inner)),
         };
 
         let result = detector
@@ -131,7 +132,7 @@ mod tests {
         let detector = ListBasedDetector {
             allow_list: Vec::new(),
             deny_list: Vec::new(),
-            strategy: UnknownTokenStrategy::Forward(Box::new(inner)),
+            strategy: UnknownTokenStrategy::Forward(Arc::new(inner)),
         };
 
         let result = detector
