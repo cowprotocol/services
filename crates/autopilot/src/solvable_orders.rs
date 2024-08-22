@@ -469,14 +469,15 @@ async fn find_invalid_signature_orders(
         .await
         .into_iter();
     for order in orders {
-        if let Signature::Eip1271(_) = &order.signature {
-            if let Err(err) = validations.next().unwrap() {
-                tracing::warn!(
-                    order =% order.metadata.uid, ?err,
-                    "invalid EIP-1271 signature"
-                );
-                invalid_orders.push(order.metadata.uid)
-            }
+        if !matches!(&order.signature, Signature::Eip1271(_)) {
+            continue;
+        }
+        if let Err(err) = validations.next().unwrap() {
+            tracing::warn!(
+                order =% order.metadata.uid, ?err,
+                "invalid EIP-1271 signature"
+            );
+            invalid_orders.push(order.metadata.uid)
         }
     }
 
@@ -689,7 +690,7 @@ async fn find_unsupported_tokens(
     let bad_tokens = join_all(
         orders
             .iter()
-            .flat_map(|o| o.data.token_pair().unwrap_or_default())
+            .flat_map(|o| o.data.token_pair().into_iter().flatten())
             .unique()
             .map(|token| {
                 let bad_token = bad_token.clone();
@@ -826,6 +827,10 @@ impl OrderFilterCounter {
 
     /// Creates a new checkpoint based on the found invalid orders.
     fn checkpoint_by_invalid_orders(&mut self, reason: Reason, invalid_orders: &[OrderUid]) {
+        if invalid_orders.is_empty() {
+            return;
+        }
+
         let mut counter = 0;
         for order_uid in invalid_orders {
             if self.orders.remove(order_uid).is_some() {
