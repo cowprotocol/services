@@ -337,7 +337,7 @@ impl SolvableOrdersCache {
             .collect()
     }
 
-    /// Executed effectful orders filtering in parallel.
+    /// Executed orders filtering in parallel.
     async fn filter_invalid_orders(
         &self,
         mut orders: Vec<Order>,
@@ -826,11 +826,14 @@ impl OrderFilterCounter {
 
     /// Creates a new checkpoint based on the found invalid orders.
     fn checkpoint_by_invalid_orders(&mut self, reason: Reason, invalid_orders: &[OrderUid]) {
-        *self.counts.entry(reason).or_default() += invalid_orders.len();
+        let mut counter = 0;
         for order_uid in invalid_orders {
-            self.orders.remove(order_uid).unwrap();
+            if self.orders.remove(order_uid).is_some() {
+                counter += 1;
+            }
         }
-        if !invalid_orders.is_empty() {
+        *self.counts.entry(reason).or_default() += counter;
+        if counter > 0 {
             tracing::debug!(
                 %reason,
                 count = invalid_orders.len(),
