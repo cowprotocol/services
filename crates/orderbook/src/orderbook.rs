@@ -71,7 +71,7 @@ impl Metrics {
         let class = match quote {
             Some(quote) if
             // Check if the order at the submission time was "in market" (`user` order)
-                is_order_outside_market_price(
+                !is_order_outside_market_price(
                     &Amounts {
                         sell: order.data.sell_amount,
                         buy: order.data.buy_amount,
