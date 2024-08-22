@@ -258,17 +258,14 @@ impl SolvableOrdersCache {
         let db_solvable_orders = {
             let lock = self.cache.lock().await;
             if let Some(cache) = &*lock {
-                let new_orders = self
+                let new_orders_fut = self
                     .persistence
-                    .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64)
-                    .await?;
-                let new_trades = self
-                    .persistence
-                    .trades_after(
-                        i64::try_from(cache.solvable_orders.latest_settlement_block)
-                            .context("block number value exceeds i64")?,
-                    )
-                    .await?;
+                    .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64);
+                let new_trades_fut = self.persistence.trades_after(
+                    i64::try_from(cache.solvable_orders.latest_settlement_block)
+                        .context("block number value exceeds i64")?,
+                );
+                let (new_orders, new_trades) = tokio::try_join!(new_orders_fut, new_trades_fut)?;
                 let order_uids = new_orders
                     .iter()
                     .map(|order| domain::OrderUid(order.uid.0))
