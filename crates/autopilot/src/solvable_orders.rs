@@ -9,7 +9,7 @@ use {
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::future::join_all,
     indexmap::IndexSet,
-    itertools::Itertools,
+    itertools::{Either, Itertools},
     model::{
         order::{Order, OrderClass, OrderUid},
         signature::Signature,
@@ -433,16 +433,16 @@ async fn find_invalid_signature_orders(
     orders: &[Order],
     signature_validator: &dyn SignatureValidating,
 ) -> Vec<OrderUid> {
-    let (invalid_orders, orders): (Vec<_>, Vec<_>) = orders.iter().partition(|order| {
-        matches!(
+    let (mut invalid_orders, orders): (Vec<_>, Vec<_>) = orders.iter().partition_map(|order| {
+        if matches!(
             order.metadata.status,
             model::order::OrderStatus::PresignaturePending
-        )
+        ) {
+            Either::Left(order.metadata.uid)
+        } else {
+            Either::Right(order)
+        }
     });
-    let mut invalid_orders = invalid_orders
-        .into_iter()
-        .map(|o| o.metadata.uid)
-        .collect::<Vec<_>>();
 
     let checks = orders
         .iter()
