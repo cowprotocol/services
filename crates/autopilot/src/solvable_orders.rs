@@ -4,7 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
@@ -16,7 +16,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::u256_to_big_decimal,
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -30,6 +30,7 @@ use {
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
+        db_order_conversions::full_order_into_model_order,
         price_estimation::{
             native::NativePriceEstimating,
             native_price_cache::CachingNativePriceEstimator,
@@ -39,11 +40,11 @@ use {
     },
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
-        sync::{Arc, Mutex, Weak},
+        sync::{Arc, Weak},
         time::Duration,
     },
     strum::VariantNames,
-    tokio::time::Instant,
+    tokio::{sync::Mutex, time::Instant},
     tracing::Instrument,
 };
 
@@ -157,12 +158,92 @@ impl SolvableOrdersCache {
         );
     }
 
-    pub fn current_auction(&self) -> Option<domain::Auction> {
+    pub async fn current_auction(&self) -> Option<domain::Auction> {
         self.cache
             .lock()
-            .unwrap()
+            .await
             .as_ref()
             .map(|inner| inner.auction.clone())
+    }
+
+    fn update_solvable_orders(
+        current_orders: &boundary::SolvableOrders,
+        new_orders: Vec<database::orders::ExtendedOrder>,
+        mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
+        new_quotes: HashMap<domain::OrderUid, domain::Quote>,
+    ) -> Result<boundary::SolvableOrders> {
+        let mut orders = current_orders.orders.clone();
+        let mut quotes = current_orders.quotes.clone();
+        let mut latest_trade_block = current_orders.latest_settlement_block;
+
+        for new_order in new_orders {
+            let uid = domain::OrderUid(new_order.uid.0);
+
+            if new_order.onchain_placement_error.is_some() || new_order.invalidated {
+                orders.remove(&uid);
+                quotes.remove(&uid);
+                continue;
+            }
+
+            // Drop already visited trades to slightly reduce time complexity.
+            if let Some(trade_amounts) = new_trades.remove(&uid) {
+                let sum_sell = trade_amounts.sell_amount.clone();
+                let sum_buy = trade_amounts.buy_amount.clone();
+
+                let fulfilled = match new_order.kind {
+                    database::orders::OrderKind::Sell => sum_sell >= new_order.sell_amount,
+                    database::orders::OrderKind::Buy => sum_buy >= new_order.buy_amount,
+                };
+
+                if !fulfilled {
+                    let full_order = database::orders::FullOrder::new(
+                        new_order,
+                        sum_sell,
+                        sum_buy,
+                        trade_amounts.fee_amount,
+                    );
+                    let order =
+                        full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
+                    orders.insert(uid, order);
+
+                    if let Some(new_quote) = new_quotes.get(&uid) {
+                        quotes.insert(uid, new_quote.clone());
+                    }
+                } else {
+                    orders.remove(&uid);
+                    quotes.remove(&uid);
+                }
+                latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
+            }
+        }
+
+        // Iterate through remaining trades to drop orders that are already fulfilled.
+        for (uid, trade_amounts) in new_trades {
+            if let Some(order) = orders.get(&uid) {
+                let fulfilled = match order.data.kind {
+                    model::order::OrderKind::Sell => {
+                        big_decimal_to_u256(&trade_amounts.sell_amount).context("U256 overflow")?
+                            >= order.data.sell_amount
+                    }
+                    model::order::OrderKind::Buy => {
+                        big_decimal_to_u256(&trade_amounts.buy_amount).context("U256 overflow")?
+                            >= order.data.buy_amount
+                    }
+                };
+
+                if fulfilled {
+                    orders.remove(&uid);
+                    quotes.remove(&uid);
+                }
+            }
+            latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
+        }
+
+        Ok(boundary::SolvableOrders {
+            orders,
+            quotes,
+            latest_settlement_block: latest_trade_block,
+        })
     }
 
     /// Manually update solvable orders. Usually called by the background
@@ -174,13 +255,35 @@ impl SolvableOrdersCache {
     pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        // let lock = self.cache.lock().unwrap();
-        let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
-        // let db_solvable_orders = if let Some(cache) = lock {
-        //     self.persistence.
-        // } else {
-        //     self.persistence.solvable_orders(min_valid_to).await?
-        // };
+        let db_solvable_orders = {
+            let lock = self.cache.lock().await;
+            if let Some(cache) = &*lock {
+                let new_orders = self
+                    .persistence
+                    .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64)
+                    .await?;
+                let new_trades = self
+                    .persistence
+                    .trades_after(
+                        i64::try_from(cache.solvable_orders.latest_settlement_block)
+                            .context("block number value exceeds i64")?,
+                    )
+                    .await?;
+                let order_uids = new_orders
+                    .iter()
+                    .map(|order| domain::OrderUid(order.uid.0))
+                    .collect::<Vec<_>>();
+                let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
+                Self::update_solvable_orders(
+                    &cache.solvable_orders,
+                    new_orders,
+                    new_trades,
+                    quotes,
+                )?
+            } else {
+                self.persistence.solvable_orders(min_valid_to).await?
+            }
+        };
         let latest_creation_timestamp = db_solvable_orders
             .orders
             .values()
@@ -357,7 +460,7 @@ impl SolvableOrdersCache {
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
-        *self.cache.lock().unwrap() = Some(Inner {
+        *self.cache.lock().await = Some(Inner {
             auction,
             solvable_orders: db_solvable_orders,
             last_order_creation_timestamp: latest_creation_timestamp,

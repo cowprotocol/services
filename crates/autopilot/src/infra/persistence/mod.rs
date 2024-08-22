@@ -67,6 +67,13 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
+    pub async fn read_quotes(
+        &self,
+        orders: impl Iterator<Item = &domain::OrderUid>,
+    ) -> anyhow::Result<HashMap<domain::OrderUid, domain::Quote>> {
+        Ok(self.postgres.read_quotes(orders).await?)
+    }
+
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
@@ -380,6 +387,10 @@ impl Persistence {
         after_timestamp: DateTime<Utc>,
         min_valid_to: i64,
     ) -> anyhow::Result<Vec<database::orders::ExtendedOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["orders_after"])
+            .start_timer();
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
         Ok(database::orders::extended_orders_after(&mut ex, after_timestamp, min_valid_to).await?)
     }
@@ -387,9 +398,17 @@ impl Persistence {
     pub async fn trades_after(
         &self,
         after_block: i64,
-    ) -> anyhow::Result<Vec<database::trades::TradedAmounts>> {
+    ) -> anyhow::Result<HashMap<domain::OrderUid, database::trades::TradedAmounts>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["trades_after"])
+            .start_timer();
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
-        Ok(database::trades::trades_after(&mut ex, after_block).await?)
+        Ok(database::trades::trades_after(&mut ex, after_block)
+            .await?
+            .into_iter()
+            .map(|trade| (domain::OrderUid(trade.order_uid.0), trade))
+            .collect::<HashMap<_, _>>())
     }
 }
 

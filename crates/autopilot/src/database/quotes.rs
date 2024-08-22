@@ -30,6 +30,11 @@ impl Postgres {
         &self,
         orders: impl Iterator<Item = &domain::OrderUid>,
     ) -> Result<HashMap<domain::OrderUid, domain::Quote>, sqlx::Error> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["read_quotes"])
+            .start_timer();
+
         let mut ex = self.pool.acquire().await?;
         let order_uids: Vec<_> = orders.map(|uid| ByteArray(uid.0)).collect();
         let quotes: HashMap<_, _> = database::orders::read_quotes(&mut ex, &order_uids)
