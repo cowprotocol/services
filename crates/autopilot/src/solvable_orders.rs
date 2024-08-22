@@ -166,7 +166,7 @@ impl SolvableOrdersCache {
             .map(|inner| inner.auction.clone())
     }
 
-    fn update_solvable_orders(
+    fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
         new_orders: Vec<database::orders::ExtendedOrder>,
         mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
@@ -258,29 +258,15 @@ impl SolvableOrdersCache {
         let db_solvable_orders = {
             let lock = self.cache.lock().await;
             if let Some(cache) = &*lock {
-                let new_orders_fut = self
-                    .persistence
-                    .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64);
-                let new_trades_fut = self.persistence.trades_after(
-                    i64::try_from(cache.solvable_orders.latest_settlement_block)
-                        .context("block number value exceeds i64")?,
-                );
-                let (new_orders, new_trades) = tokio::try_join!(new_orders_fut, new_trades_fut)?;
-                let order_uids = new_orders
-                    .iter()
-                    .map(|order| domain::OrderUid(order.uid.0))
-                    .collect::<Vec<_>>();
-                let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
-                Self::update_solvable_orders(
-                    &cache.solvable_orders,
-                    new_orders,
-                    new_trades,
-                    quotes,
-                )?
+                self.next_solvable_orders(min_valid_to, cache).await?
             } else {
                 self.persistence.solvable_orders(min_valid_to).await?
             }
         };
+        if db_solvable_orders.orders.is_empty() {
+            tracing::debug!("no solvable orders found");
+            return Ok(());
+        }
         let latest_creation_timestamp = db_solvable_orders
             .orders
             .values()
@@ -468,6 +454,28 @@ impl SolvableOrdersCache {
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
+    }
+
+    async fn next_solvable_orders(
+        &self,
+        min_valid_to: u32,
+        cache: &Inner,
+    ) -> Result<boundary::SolvableOrders> {
+        let new_orders_fut = self
+            .persistence
+            .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64);
+        let new_trades_fut = self.persistence.trades_after(
+            i64::try_from(cache.solvable_orders.latest_settlement_block)
+                .context("block number value exceeds i64")?,
+        );
+        let (new_orders, new_trades) = tokio::try_join!(new_orders_fut, new_trades_fut)?;
+        let order_uids = new_orders
+            .iter()
+            .map(|order| domain::OrderUid(order.uid.0))
+            .collect::<Vec<_>>();
+        let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
+
+        Self::build_solvable_orders(&cache.solvable_orders, new_orders, new_trades, quotes)
     }
 
     pub fn track_auction_update(&self, result: &str) {
