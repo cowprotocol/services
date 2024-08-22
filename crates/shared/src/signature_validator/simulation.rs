@@ -11,6 +11,7 @@ use {
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
+    std::sync::LazyLock,
 };
 
 pub struct Validator {
@@ -33,13 +34,17 @@ impl Validator {
         &self,
         check: &SignatureCheck,
     ) -> Result<Simulation, SignatureValidationError> {
+        // memoize byte code to not hex-decode it on every call
+        static BYTECODE: LazyLock<web3::types::Bytes> =
+            LazyLock::new(|| contracts::bytecode!(contracts::support::Signatures));
+
         // We simulate the signature verification from the Settlement contract's
         // context. This allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
         let gas_used = contracts::storage_accessible::simulate(
-            contracts::bytecode!(contracts::support::Signatures),
+            BYTECODE.clone(),
             self.signatures.methods().validate(
                 (self.settlement, self.vault_relayer),
                 check.signer,

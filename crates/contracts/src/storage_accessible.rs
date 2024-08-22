@@ -13,6 +13,7 @@ use {
         },
         H160,
     },
+    std::sync::LazyLock,
 };
 
 /// Encode a call to a `StorageAccessible` `target` to execute `call` with the
@@ -27,20 +28,12 @@ pub fn call(target: H160, code: Bytes, call: Bytes) -> CallRequest {
         ethcontract::Bytes(call.0).into_token(),
     ]);
 
+    // memoize value to skip hex-decodeing on every call
+    static BYTECODE: LazyLock<Vec<u8>> =
+        LazyLock::new(|| SimulateCode::raw_contract().bytecode.to_bytes().unwrap().0);
+
     CallRequest {
-        data: Some(
-            [
-                SimulateCode::raw_contract()
-                    .bytecode
-                    .to_bytes()
-                    .unwrap()
-                    .0
-                    .as_slice(),
-                &args,
-            ]
-            .concat()
-            .into(),
-        ),
+        data: Some([BYTECODE.as_slice(), &args].concat().into()),
         ..Default::default()
     }
 }
