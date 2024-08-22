@@ -93,11 +93,12 @@ impl Maintenance {
             self.db_cleanup.run_maintenance(),
             self.index_refunds(),
             self.index_ethflow_orders(),
-            futures::future::try_join_all(self.cow_amm_indexer.iter().cloned().map(
-                |indexer| async move {
-                    indexer.run_maintenance().await
-                }
-            ))
+            futures::future::try_join_all(
+                self.cow_amm_indexer
+                    .iter()
+                    .cloned()
+                    .map(|indexer| async move { indexer.run_maintenance().await })
+            )
         )?;
 
         Ok(())
