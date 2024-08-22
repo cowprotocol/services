@@ -273,10 +273,10 @@ pub struct Transaction {
     pub input: Calldata,
     /// The block number of the block that contains the transaction.
     pub block: BlockNo,
+    /// The timestamp of the block that contains the transaction.
+    pub timestamp: u32,
     /// The gas used by the transaction.
     pub gas: Gas,
     /// The effective gas price of the transaction.
     pub effective_gas_price: EffectiveGasPrice,
-    /// The timestamp of the block that contains the transaction.
-    pub timestamp: u32,
 }

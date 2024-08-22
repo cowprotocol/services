@@ -4,7 +4,6 @@ use crate::{
 };
 
 mod tokenized;
-use tokenized::Tokenized;
 
 /// An on-chain transaction that settled a solution.
 #[derive(Debug, Clone)]
@@ -53,12 +52,12 @@ impl Transaction {
             gas: transaction.gas,
             effective_gas_price: transaction.effective_gas_price,
             trades: {
-                let Tokenized {
+                let tokenized::Tokenized {
                     tokens,
                     clearing_prices,
                     trades: decoded_trades,
                     interactions: _interactions,
-                } = Tokenized::new(&crate::util::Bytes(data.to_vec()))?;
+                } = tokenized::Tokenized::new(&crate::util::Bytes(data.to_vec()))?;
 
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
