@@ -16,6 +16,11 @@ use {
     anyhow::Result,
     ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
     futures::StreamExt,
+    prometheus::{
+        core::{AtomicU64, GenericGauge},
+        Histogram,
+        IntCounterVec,
+    },
     shared::maintenance::Maintaining,
     std::{sync::Arc, time::Duration},
     tokio::{sync::Mutex, time::timeout},
@@ -61,6 +66,7 @@ impl Maintenance {
     /// Runs all update tasks in a coordinated manner to ensure the system
     /// has a consistent state.
     pub async fn update(&self, new_block: &BlockInfo) {
+        metrics().last_seen_block.set(new_block.number);
         let mut last_block = self.last_processed.lock().await;
         if last_block.number > new_block.number || last_block.hash == new_block.hash {
             // `new_block` is neither newer than `last_block` nor a reorg
@@ -70,6 +76,7 @@ impl Maintenance {
         let start = std::time::Instant::now();
         if let Err(err) = self.update_inner().await {
             tracing::warn!(?err, block = new_block.number, "failed to run maintenance");
+            metrics().updates.with_label_values(&["error"]).inc();
             return;
         }
         tracing::info!(
@@ -78,6 +85,11 @@ impl Maintenance {
             "successfully ran maintenance task"
         );
 
+        metrics()
+            .update_duration
+            .observe(start.elapsed().as_secs_f64());
+        metrics().updates.with_label_values(&["success"]).inc();
+        metrics().last_updated_block.set(new_block.number);
         *last_block = *new_block;
     }
 
@@ -160,3 +172,25 @@ impl Maintenance {
 
 type EthflowIndexer =
     EventUpdater<OnchainOrderParser<EthFlowData, EthFlowDataForDb>, CoWSwapOnchainOrdersContract>;
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "autopilot_maintenance")]
+struct Metrics {
+    /// Autopilot maintenance last seen block.
+    last_seen_block: GenericGauge<AtomicU64>,
+
+    /// Autopilot maintenance last successfully updated block.
+    last_updated_block: GenericGauge<AtomicU64>,
+
+    /// Autopilot maintenance error counter
+    #[metric(labels("result"))]
+    updates: IntCounterVec,
+
+    /// Execution time for updates
+    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
+    update_duration: Histogram,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
