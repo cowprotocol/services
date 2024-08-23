@@ -986,7 +986,7 @@ mod tests {
             PgTransaction,
         },
         bigdecimal::num_bigint::{BigInt, ToBigInt},
-        chrono::{TimeZone, Utc},
+        chrono::{Duration, TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
         sqlx::Connection,
     };
@@ -1735,12 +1735,7 @@ mod tests {
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
         // This query doesn't count traded amounts.
-        assert!(
-            !get_order_without_trades(&mut db, 0)
-                .await
-                .unwrap()
-                .invalidated
-        );
+        assert!(get_order_without_trades(&mut db, 0).await.is_some());
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // not solvable because invalidated
@@ -1826,6 +1821,88 @@ mod tests {
             .unwrap()
             .onchain_placement_error
             .is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_orders_without_trades_after() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn get_orders_without_trades(
+            ex: &mut PgConnection,
+            min_timestamp: DateTime<Utc>,
+        ) -> Result<Vec<OrderWithoutTrades>, sqlx::Error> {
+            orders_without_trades_after(ex, min_timestamp, 0)
+                .try_collect()
+                .await
+        }
+
+        let now = Utc::now();
+        let order_a = Order {
+            uid: ByteArray([1u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            partially_fillable: true,
+            creation_timestamp: now,
+            ..Default::default()
+        };
+        insert_order(&mut db, &order_a).await.unwrap();
+        let order_b = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            partially_fillable: true,
+            creation_timestamp: now + Duration::seconds(10),
+            ..Default::default()
+        };
+        insert_order(&mut db, &order_b).await.unwrap();
+        let order_c = Order {
+            uid: ByteArray([3u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            partially_fillable: true,
+            creation_timestamp: now,
+            cancellation_timestamp: Some(now + Duration::seconds(20)),
+            ..Default::default()
+        };
+        insert_order(&mut db, &order_c).await.unwrap();
+
+        assert_eq!(
+            get_orders_without_trades(&mut db, now - Duration::seconds(1))
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|o| o.uid)
+                .collect::<Vec<_>>(),
+            vec![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+            ],
+        );
+        assert_eq!(
+            get_orders_without_trades(&mut db, now)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|o| o.uid)
+                .collect::<Vec<_>>(),
+            vec![ByteArray([2u8; 56]), ByteArray([3u8; 56]),],
+        );
+        assert_eq!(
+            get_orders_without_trades(&mut db, now + Duration::seconds(10))
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|o| o.uid)
+                .collect::<Vec<_>>(),
+            vec![ByteArray([3u8; 56]),],
+        );
     }
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
