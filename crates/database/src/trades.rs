@@ -48,7 +48,7 @@ LEFT OUTER JOIN LATERAL (
 ) AS settlement ON true
 LEFT JOIN orders o ON o.uid = t.order_uid
 LEFT JOIN jit_orders jit_o ON jit_o.uid = t.order_uid"#;
-    
+
     const QUERY: &str = const_format::concatcp!(
         COMMON_QUERY,
         " WHERE ($1 IS NULL OR COALESCE(o.owner, jit_o.owner) = $1)",
