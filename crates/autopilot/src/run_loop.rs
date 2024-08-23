@@ -21,7 +21,6 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -203,14 +202,6 @@ impl RunLoop {
         };
         let competition_simulation_block = self.eth.current_block().borrow().number;
 
-        let considered_orders = solutions
-            .iter()
-            .flat_map(|solution| solution.solution.order_ids().copied())
-            .unique()
-            .collect();
-        self.persistence
-            .store_order_events(considered_orders, OrderEventLabel::Considered);
-
         // Make sure the winning solution is fair.
         while !Self::is_solution_fair(solutions.last(), &solutions, &auction) {
             let unfair_solution = solutions.pop().expect("must exist");
@@ -219,6 +210,22 @@ impl RunLoop {
                 "fairness check invalidated of solution"
             );
         }
+
+        let considered_orders: HashSet<_> = solutions
+            .iter()
+            .flat_map(|solution| solution.solution.order_ids().copied())
+            .collect();
+        let winning_orders: HashSet<_> = solutions
+            .last()
+            .into_iter()
+            .flat_map(|solution| solution.solution.order_ids().copied())
+            .collect();
+        let considered_orders: Vec<_> = considered_orders
+            .difference(&winning_orders)
+            .cloned()
+            .collect();
+        self.persistence
+            .store_order_events(considered_orders, OrderEventLabel::Considered);
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
