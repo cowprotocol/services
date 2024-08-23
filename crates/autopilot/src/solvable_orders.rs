@@ -4,7 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
-    anyhow::{Context, Result},
+    anyhow::Result,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
@@ -175,28 +175,31 @@ impl SolvableOrdersCache {
     pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = {
+
+        let (db_solvable_orders, previous_creation_timestamp) = {
             let lock = self.cache.lock().await;
-            if let Some(cache) = &*lock {
-                let new_orders = self
-                    .persistence
-                    .orders_after(cache.last_order_creation_timestamp, min_valid_to)
-                    .await?;
-                cache.solvable_orders.combine_with(new_orders)
-            } else {
-                self.persistence.solvable_orders(min_valid_to).await?
+            match &*lock {
+                Some(cache) if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC => {
+                    let new_orders = self
+                        .persistence
+                        .orders_after(cache.last_order_creation_timestamp, min_valid_to)
+                        .await?;
+                    (
+                        cache.solvable_orders.combine_with(new_orders),
+                        Some(cache.last_order_creation_timestamp),
+                    )
+                }
+                _ => (self.persistence.solvable_orders(min_valid_to).await?, None),
             }
         };
-        if db_solvable_orders.orders.is_empty() {
-            tracing::debug!("no solvable orders found");
-            return Ok(());
-        }
+
         let latest_creation_timestamp = db_solvable_orders
             .orders
             .values()
             .map(|order| order.metadata.creation_date)
             .max()
-            .context("latest_creation_timestamp")?;
+            .or(previous_creation_timestamp)
+            .unwrap_or(DateTime::<Utc>::MIN_UTC);
         let orders = db_solvable_orders
             .orders
             .values()
