@@ -337,6 +337,24 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
+    // async fn updated_solvable_orders(
+    //     &self,
+    //     min_valid_to: u32,
+    //     cache: &Inner,
+    // ) -> Result<boundary::SolvableOrders> {
+    //     let new_orders_fut = self
+    //         .persistence
+    //         .orders_after(cache.last_order_creation_timestamp, min_valid_to as
+    // i64);     let (new_orders, new_trades) = tokio::try_join!(new_orders_fut,
+    // new_trades_fut)?;     let order_uids = new_orders
+    //         .iter()
+    //         .map(|order| domain::OrderUid(order.uid.0))
+    //         .collect::<Vec<_>>();
+    //     let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
+    //
+    //     Self::build_solvable_orders(&cache.solvable_orders, new_orders,
+    // new_trades, quotes) }
+
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = {
             let _timer = self.stage_timer("balance_fetch");
