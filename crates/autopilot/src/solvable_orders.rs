@@ -190,35 +190,35 @@ impl SolvableOrdersCache {
             }
 
             // Drop already visited trades to slightly reduce time complexity.
-            if let Some(trade_amounts) = new_trades.remove(&uid) {
-                let sum_sell = trade_amounts.sell_amount.clone();
-                let sum_buy = trade_amounts.buy_amount.clone();
+            let Some(trade_amounts) = new_trades.remove(&uid) else {
+                continue;
+            };
+            let sum_sell = trade_amounts.sell_amount.clone();
+            let sum_buy = trade_amounts.buy_amount.clone();
 
-                let fulfilled = match new_order.kind {
-                    database::orders::OrderKind::Sell => sum_sell >= new_order.sell_amount,
-                    database::orders::OrderKind::Buy => sum_buy >= new_order.buy_amount,
-                };
+            let fulfilled = match new_order.kind {
+                database::orders::OrderKind::Sell => sum_sell >= new_order.sell_amount,
+                database::orders::OrderKind::Buy => sum_buy >= new_order.buy_amount,
+            };
 
-                if !fulfilled {
-                    let full_order = database::orders::FullOrder::new(
-                        new_order,
-                        sum_sell,
-                        sum_buy,
-                        trade_amounts.fee_amount,
-                    );
-                    let order =
-                        full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
-                    orders.insert(uid, order);
+            if !fulfilled {
+                let full_order = database::orders::FullOrder::new(
+                    new_order,
+                    sum_sell,
+                    sum_buy,
+                    trade_amounts.fee_amount,
+                );
+                let order = full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
+                orders.insert(uid, order);
 
-                    if let Some(new_quote) = new_quotes.get(&uid) {
-                        quotes.insert(uid, new_quote.clone());
-                    }
-                } else {
-                    orders.remove(&uid);
-                    quotes.remove(&uid);
+                if let Some(new_quote) = new_quotes.get(&uid) {
+                    quotes.insert(uid, new_quote.clone());
                 }
-                latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
+            } else {
+                orders.remove(&uid);
+                quotes.remove(&uid);
             }
+            latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
         }
 
         // Iterate over remaining trades to drop orders that are already fulfilled.
