@@ -7,7 +7,7 @@ use {
     database::{
         byte_array::ByteArray,
         order_events::{insert_order_event, OrderEvent, OrderEventLabel},
-        orders::{FullOrder, OrderKind as DbOrderKind},
+        orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
@@ -24,7 +24,6 @@ use {
             OrderUid,
         },
         signature::Signature,
-        time::now_in_epoch_seconds,
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
@@ -49,7 +48,7 @@ use {
         order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
-    std::convert::TryInto,
+    std::{convert::TryInto, ops::Deref},
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -76,11 +75,42 @@ pub trait OrderStoring: Send + Sync {
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
+    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>>;
 }
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
+}
+
+pub struct OrderWithQuote {
+    pub order: Order,
+    pub quote: Option<orders::Quote>,
+}
+
+impl OrderWithQuote {
+    pub fn new(order: Order, quote: Option<Quote>) -> Self {
+        Self {
+            quote: quote.map(|quote| orders::Quote {
+                order_uid: ByteArray(order.metadata.uid.0),
+                gas_amount: quote.data.fee_parameters.gas_amount,
+                gas_price: quote.data.fee_parameters.gas_price,
+                sell_token_price: quote.data.fee_parameters.sell_token_price,
+                sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                solver: ByteArray(quote.data.solver.0),
+            }),
+            order,
+        }
+    }
+}
+
+impl Deref for OrderWithQuote {
+    type Target = Order;
+
+    fn deref(&self) -> &Self::Target {
+        &self.order
+    }
 }
 
 #[derive(Debug)]
@@ -316,6 +346,51 @@ impl OrderStoring for Postgres {
         order.map(full_order_into_model_order).transpose()
     }
 
+    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["single_order_with_quote"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
+        order
+            .map(|order_with_quote| {
+                let quote = order_with_quote
+                    .quote_buy_amount
+                    .zip(order_with_quote.quote_sell_amount)
+                    .zip(order_with_quote.quote_gas_amount)
+                    .zip(order_with_quote.quote_gas_price)
+                    .zip(order_with_quote.quote_sell_token_price)
+                    .zip(order_with_quote.solver)
+                    .map(
+                        |(
+                            (
+                                (((buy_amount, sell_amount), gas_amount), gas_price),
+                                sell_token_price,
+                            ),
+                            solver,
+                        )| {
+                            orders::Quote {
+                                order_uid: order_with_quote.full_order.uid,
+                                gas_amount,
+                                gas_price,
+                                sell_token_price,
+                                sell_amount,
+                                buy_amount,
+                                solver,
+                            }
+                        },
+                    );
+
+                Ok(OrderWithQuote {
+                    order: full_order_into_model_order(order_with_quote.full_order)?,
+                    quote,
+                })
+            })
+            .transpose()
+    }
+
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -380,39 +455,37 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(database::orders::user_orders_with_quote(
-            &mut ex,
-            now_in_epoch_seconds().into(),
-            &ByteArray(owner.0),
+        Ok(
+            database::orders::user_orders_with_quote(&mut ex, &ByteArray(owner.0))
+                .await?
+                .into_iter()
+                .filter(|order_with_quote| {
+                    is_order_outside_market_price(
+                        &Amounts {
+                            sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
+                            buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
+                            fee: 0.into(),
+                        },
+                        &Amounts {
+                            sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
+                            buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
+                            fee: FeeParameters {
+                                gas_amount: order_with_quote.quote_gas_amount,
+                                gas_price: order_with_quote.quote_gas_price,
+                                sell_token_price: order_with_quote.quote_sell_token_price,
+                            }
+                            .fee(),
+                        },
+                        match order_with_quote.order_kind {
+                            DbOrderKind::Buy => model::order::OrderKind::Buy,
+                            DbOrderKind::Sell => model::order::OrderKind::Sell,
+                        },
+                    )
+                })
+                .count()
+                .try_into()
+                .unwrap(),
         )
-        .await?
-        .into_iter()
-        .filter(|order_with_quote| {
-            is_order_outside_market_price(
-                &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
-                    fee: 0.into(),
-                },
-                &Amounts {
-                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
-                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
-                    fee: FeeParameters {
-                        gas_amount: order_with_quote.quote_gas_amount,
-                        gas_price: order_with_quote.quote_gas_price,
-                        sell_token_price: order_with_quote.quote_sell_token_price,
-                    }
-                    .fee(),
-                },
-                match order_with_quote.order_kind {
-                    DbOrderKind::Buy => model::order::OrderKind::Buy,
-                    DbOrderKind::Sell => model::order::OrderKind::Sell,
-                },
-            )
-        })
-        .count()
-        .try_into()
-        .unwrap())
     }
 }
 

@@ -1,6 +1,6 @@
 use {
     crate::{
-        database::orders::{InsertionError, OrderStoring},
+        database::orders::{InsertionError, OrderStoring, OrderWithQuote},
         dto,
         solver_competition::{LoadSolverCompetitionError, SolverCompetitionStoring},
     },
@@ -23,8 +23,10 @@ use {
         solver_competition,
         DomainSeparator,
     },
+    number::conversions::big_decimal_to_u256,
     primitive_types::H160,
     shared::{
+        fee::FeeParameters,
         metrics::LivenessChecking,
         order_quoting::Quote,
         order_validation::{
@@ -57,7 +59,7 @@ enum OrderOperation {
 #[derive(Display)]
 #[strum(serialize_all = "snake_case")]
 enum OrderClass {
-    User,
+    Market,
     Limit,
 }
 
@@ -67,26 +69,31 @@ impl Metrics {
             .expect("unexpected error getting metrics instance")
     }
 
-    fn on_order_operation(order: &Order, operation: OrderOperation, quote: Option<&Quote>) {
-        let class = match quote {
-            Some(quote) if
-            // Check if the order at the submission time was "in market" (`user` order)
-                !is_order_outside_market_price(
-                    &Amounts {
-                        sell: order.data.sell_amount,
-                        buy: order.data.buy_amount,
-                        fee: order.data.fee_amount,
-                    },
-                    &Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee_amount,
-                    },
-                    order.data.kind) =>
-            {
-                OrderClass::User
-            }
-            _ => OrderClass::Limit,
+    fn on_order_operation(order: &OrderWithQuote, operation: OrderOperation) {
+        let class = if order.quote.as_ref().is_some_and(|quote| {
+            // Check if the order at the submission time was "in market"
+            !is_order_outside_market_price(
+                &Amounts {
+                    sell: order.data.sell_amount,
+                    buy: order.data.buy_amount,
+                    fee: order.data.fee_amount,
+                },
+                &Amounts {
+                    sell: big_decimal_to_u256(&quote.sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&quote.buy_amount).unwrap(),
+                    fee: FeeParameters {
+                        gas_amount: quote.gas_amount,
+                        gas_price: quote.gas_price,
+                        sell_token_price: quote.sell_token_price,
+                    }
+                    .fee(),
+                },
+                order.data.kind,
+            )
+        }) {
+            OrderClass::Market
+        } else {
+            OrderClass::Limit
         };
         Self::get()
             .orders
@@ -98,7 +105,7 @@ impl Metrics {
     fn initialize() {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
-            for class in &[OrderClass::User, OrderClass::Limit] {
+            for class in &[OrderClass::Market, OrderClass::Limit] {
                 metrics
                     .orders
                     .with_label_values(&[&class.to_string(), &op.to_string()])
@@ -244,7 +251,10 @@ impl Orderbook {
                 .insert_order(&order, quote.clone())
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
-            Metrics::on_order_operation(&order, OrderOperation::Created, quote.as_ref());
+            Metrics::on_order_operation(
+                &OrderWithQuote::new(order.clone(), quote),
+                OrderOperation::Created,
+            );
 
             Ok((order.metadata.uid, quote_id))
         }
@@ -256,10 +266,10 @@ impl Orderbook {
     async fn find_order_for_cancellation(
         &self,
         order_uid: &OrderUid,
-    ) -> Result<Order, OrderCancellationError> {
+    ) -> Result<OrderWithQuote, OrderCancellationError> {
         let order = self
             .database
-            .single_order(order_uid)
+            .single_order_with_quote(order_uid)
             .await?
             .ok_or(OrderCancellationError::OrderNotFound)?;
 
@@ -302,7 +312,7 @@ impl Orderbook {
 
         for order in &orders {
             tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
-            Metrics::on_order_operation(order, OrderOperation::Cancelled, None);
+            Metrics::on_order_operation(order, OrderOperation::Cancelled);
         }
 
         Ok(())
@@ -331,7 +341,7 @@ impl Orderbook {
             .await?;
 
         tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
-        Metrics::on_order_operation(&order, OrderOperation::Cancelled, None);
+        Metrics::on_order_operation(&order, OrderOperation::Cancelled);
 
         Ok(())
     }
@@ -340,7 +350,7 @@ impl Orderbook {
         &self,
         new_order: &OrderCreation,
         app_data_override: Option<&str>,
-    ) -> Result<Option<Order>, AddOrderError> {
+    ) -> Result<Option<OrderWithQuote>, AddOrderError> {
         let full_app_data = match &new_order.app_data {
             OrderCreationAppData::Hash { .. } => app_data_override,
             OrderCreationAppData::Both { full, .. } | OrderCreationAppData::Full { full } => {
@@ -367,7 +377,7 @@ impl Orderbook {
     pub async fn replace_order(
         &self,
         validated_new_order: Order,
-        old_order: Order,
+        old_order: OrderWithQuote,
         quote: Option<Quote>,
     ) -> Result<(OrderUid, Option<i64>), AddOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
@@ -391,11 +401,10 @@ impl Orderbook {
             .replace_order(&old_order.metadata.uid, &validated_new_order, quote.clone())
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
-        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled, quote.as_ref());
+        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(
-            &validated_new_order,
+            &OrderWithQuote::new(validated_new_order.clone(), quote),
             OrderOperation::Created,
-            quote.as_ref(),
         );
 
         Ok((validated_new_order.metadata.uid, quote_id))

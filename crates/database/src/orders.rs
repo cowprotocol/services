@@ -489,6 +489,18 @@ pub struct FullOrder {
     pub full_app_data: Option<Vec<u8>>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct FullOrderWithQuote {
+    #[sqlx(flatten)]
+    pub full_order: FullOrder,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_gas_amount: Option<f64>,
+    pub quote_gas_price: Option<f64>,
+    pub quote_sell_token_price: Option<f64>,
+    pub solver: Option<Address>,
+}
+
 impl FullOrder {
     pub fn valid_to(&self) -> i64 {
         if let Some((_, valid_to)) = self.ethflow_data {
@@ -563,6 +575,26 @@ pub async fn single_full_order(
 "SELECT ", ORDERS_SELECT,
 " FROM ", ORDERS_FROM,
 " WHERE o.uid = $1 ",
+        );
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
+pub async fn single_full_order_with_quote(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+) -> Result<Option<FullOrderWithQuote>, sqlx::Error> {
+    #[rustfmt::skip]
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT ", ORDERS_SELECT,
+        ", o_quotes.sell_amount as quote_sell_amount",
+        ", o_quotes.buy_amount as quote_buy_amount",
+        ", o_quotes.gas_amount as quote_gas_amount",
+        ", o_quotes.gas_price as quote_gas_price",
+        ", o_quotes.sell_token_price as quote_sell_token_price",
+        ", o_quotes.solver as solver",
+        " FROM ", ORDERS_FROM,
+        " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
+        " WHERE o.uid = $1",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
@@ -730,7 +762,6 @@ pub struct OrderWithQuote {
 
 pub async fn user_orders_with_quote(
     ex: &mut PgConnection,
-    min_valid_to: i64,
     owner: &Address,
 ) -> Result<Vec<OrderWithQuote>, sqlx::Error> {
     #[rustfmt::skip]
@@ -749,7 +780,6 @@ pub async fn user_orders_with_quote(
         " INNER JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid"
     );
     sqlx::query_as::<_, OrderWithQuote>(QUERY)
-        .bind(min_valid_to)
         .bind(owner)
         .fetch_all(ex)
         .await
