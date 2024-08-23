@@ -195,13 +195,10 @@ impl SolvableOrdersCache {
                         .await?;
                     (
                         cache.solvable_orders.combine_with(new_orders),
-                        cache.last_order_creation_timestamp,
+                        Some(cache.last_order_creation_timestamp),
                     )
                 }
-                _ => (
-                    self.persistence.solvable_orders(min_valid_to).await?,
-                    DateTime::<Utc>::MIN_UTC,
-                ),
+                _ => (self.persistence.solvable_orders(min_valid_to).await?, None),
             }
         };
 
@@ -210,7 +207,8 @@ impl SolvableOrdersCache {
             .values()
             .map(|order| order.metadata.creation_date)
             .max()
-            .unwrap_or(previous_creation_timestamp);
+            .or(previous_creation_timestamp)
+            .unwrap_or(DateTime::<Utc>::MIN_UTC);
         let orders = db_solvable_orders
             .orders
             .values()
