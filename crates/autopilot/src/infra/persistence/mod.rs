@@ -9,6 +9,7 @@ use {
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
     database::{order_events::OrderEventLabel, settlement_observations::Observation},
+    futures::TryStreamExt,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, H256},
     std::{
@@ -64,17 +65,6 @@ impl Persistence {
     ) -> Result<boundary::SolvableOrders, DatabaseError> {
         self.postgres
             .all_solvable_orders(min_valid_to)
-            .await
-            .map_err(DatabaseError)
-    }
-
-    pub async fn orders_after(
-        &self,
-        after_timestamp: DateTime<Utc>,
-        min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, DatabaseError> {
-        self.postgres
-            .orders_after(after_timestamp, min_valid_to)
             .await
             .map_err(DatabaseError)
     }
@@ -398,6 +388,38 @@ impl Persistence {
         };
 
         Ok(solution)
+    }
+
+    pub async fn orders_after(
+        &self,
+        after_timestamp: DateTime<Utc>,
+        min_valid_to: i64,
+    ) -> anyhow::Result<Vec<database::orders::FullOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["orders_after"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
+        Ok(
+            database::orders::full_orders_after(&mut ex, after_timestamp, min_valid_to)
+                .try_collect()
+                .await?,
+        )
+    }
+
+    pub async fn trades_after(
+        &self,
+        after_block: i64,
+    ) -> anyhow::Result<HashMap<domain::OrderUid, database::trades::TradedAmounts>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["trades_after"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
+        Ok(database::trades::trades_after(&mut ex, after_block)
+            .map_ok(|trade| (domain::OrderUid(trade.order_uid.0), trade))
+            .try_collect()
+            .await?)
     }
 
     /// Returns the oldest settlement event for which the accociated auction is

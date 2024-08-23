@@ -701,7 +701,7 @@ pub fn full_orders_after(
         " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
         " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1)",
         " AND o.valid_to >= $2",
-        " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $2 END",
+        " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
     );
     sqlx::query_as(QUERY)
         .bind(after_timestamp)
@@ -1619,7 +1619,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_orders_after() {
+    async fn postgres_orders_without_trades_after() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
