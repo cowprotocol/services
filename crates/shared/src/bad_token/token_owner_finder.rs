@@ -75,21 +75,13 @@ pub struct Arguments {
     #[clap(long, env, default_value = "static", value_enum)]
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
-    /// Override the default blockscout API url for this network
-    #[clap(long, env)]
-    pub blockscout_api_url: Option<Url>,
+    /// The blockscout configuration.
+    #[clap(flatten)]
+    pub blockscout: Blockscout,
 
-    /// The blockscout API key.
-    #[clap(long, env)]
-    pub blockscout_api_key: Option<String>,
-
-    /// Override the default ethplorer API url
-    #[clap(long, env)]
-    pub ethplorer_api_url: Option<Url>,
-
-    /// The Ethplorer token holder API key.
-    #[clap(long, env)]
-    pub ethplorer_api_key: Option<String>,
+    /// The ethplorer configuration.
+    #[clap(flatten)]
+    pub ethplorer: Ethplorer,
 
     /// Token owner finding rate limiting strategy. See
     /// --price-estimation-rate-limiter documentation for format details.
@@ -115,6 +107,46 @@ pub struct Arguments {
     /// `solver_token_owners_urls`
     #[clap(long, env, use_value_delimiter = true, value_parser = humantime::parse_duration)]
     pub solver_token_owners_cache_update_intervals: Vec<Duration>,
+}
+
+#[derive(clap::Parser)]
+#[clap(group(
+    clap::ArgGroup::new("blockscout")
+    .requires_all(&[
+    "blockscout_api_url",
+    "blockscout_api_key",
+    ])
+    .multiple(true)
+    .required(false),
+))]
+pub struct Blockscout {
+    /// Override the default blockscout API url for this network
+    #[clap(long, env, group = "blockscout")]
+    pub blockscout_api_url: Option<Url>,
+
+    /// The blockscout API key.
+    #[clap(long, env, group = "blockscout")]
+    pub blockscout_api_key: Option<String>,
+}
+
+#[derive(clap::Parser)]
+#[clap(group(
+    clap::ArgGroup::new("ethplorer")
+    .requires_all(&[
+    "ethplorer_api_url",
+    "ethplorer_api_key",
+    ])
+    .multiple(true)
+    .required(false),
+))]
+pub struct Ethplorer {
+    /// Override the default ethplorer API url
+    #[clap(long, env, group = "ethplorer")]
+    pub ethplorer_api_url: Option<Url>,
+
+    /// The Ethplorer token holder API key.
+    #[clap(long, env, group = "ethplorer")]
+    pub ethplorer_api_key: Option<String>,
 }
 
 fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
@@ -172,10 +204,8 @@ impl Display for Arguments {
         let Self {
             token_owner_finders,
             token_owner_finder_uniswap_v3_fee_values,
-            blockscout_api_url,
-            blockscout_api_key,
-            ethplorer_api_url,
-            ethplorer_api_key,
+            blockscout,
+            ethplorer,
             token_owner_finder_rate_limiter,
             whitelisted_owners,
             solver_token_owners_urls,
@@ -188,10 +218,10 @@ impl Display for Arguments {
             "token_owner_finder_uniswap_v3_fee_values: {:?}",
             token_owner_finder_uniswap_v3_fee_values
         )?;
-        display_option(f, "blockscout_api_url", blockscout_api_url)?;
-        display_secret_option(f, "blockscout_api_key", blockscout_api_key)?;
-        display_option(f, "ethplorer_api_url", ethplorer_api_url)?;
-        display_secret_option(f, "ethplorer_api_key", ethplorer_api_key)?;
+        display_option(f, "blockscout_api_url", &blockscout.blockscout_api_url)?;
+        display_secret_option(f, "blockscout_api_key", &blockscout.blockscout_api_key)?;
+        display_option(f, "ethplorer_api_url", &ethplorer.ethplorer_api_url)?;
+        display_secret_option(f, "ethplorer_api_key", &ethplorer.ethplorer_api_key)?;
         display_option(
             f,
             "token_owner_finder_rate_limiter",
@@ -259,10 +289,10 @@ pub async fn init(
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
         let mut blockscout =
             BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), chain_id)?;
-        if let Some(base_url) = args.blockscout_api_url.clone() {
+        if let Some(base_url) = args.blockscout.blockscout_api_url.clone() {
             blockscout.with_base_url(base_url);
         }
-        if let Some(api_key) = args.blockscout_api_key.clone() {
+        if let Some(api_key) = args.blockscout.blockscout_api_key.clone() {
             blockscout.with_api_key(api_key);
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
@@ -274,10 +304,10 @@ pub async fn init(
     if finders.contains(&TokenOwnerFindingStrategy::Ethplorer) {
         let mut ethplorer = EthplorerTokenOwnerFinder::try_with_network(
             http_factory.create(),
-            args.ethplorer_api_key.clone(),
+            args.ethplorer.ethplorer_api_key.clone(),
             chain_id,
         )?;
-        if let Some(base_url) = args.ethplorer_api_url.clone() {
+        if let Some(base_url) = args.ethplorer.ethplorer_api_url.clone() {
             ethplorer.with_base_url(base_url);
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
@@ -390,7 +420,7 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use {super::*, clap::Parser};
 
     const TOKEN1: H160 = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
     const TOKEN2: H160 = addr!("7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9");
@@ -453,5 +483,63 @@ mod test {
         assert!(parse_owners("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2:").is_err());
         assert!(parse_owners("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").is_err());
         assert!(parse_owners(":0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").is_err());
+    }
+
+    #[test]
+    fn blockscout_correctly_configured() {
+        let args = vec![
+            "test", // Program name
+            "--blockscout-api-key",
+            "someapikey",
+            "--blockscout-api-url",
+            "https://swap.cow.fi",
+        ];
+
+        let blockscout = Blockscout::parse_from(args);
+
+        assert!(blockscout.blockscout_api_url.is_some());
+        assert!(blockscout.blockscout_api_key.is_some());
+    }
+
+    #[test]
+    fn blockscout_wrongly_configured() {
+        let args = vec![
+            "test", // Program name
+            "--blockscout-api-key",
+            "someapikey",
+        ];
+
+        let result = Blockscout::try_parse_from(args);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn ethplorer_correctly_configured() {
+        let args = vec![
+            "test", // Program name
+            "--ethplorer-api-key",
+            "someapikey",
+            "--ethplorer-api-url",
+            "https://swap.cow.fi",
+        ];
+
+        let ethplorer = Ethplorer::parse_from(args);
+
+        assert!(ethplorer.ethplorer_api_key.is_some());
+        assert!(ethplorer.ethplorer_api_url.is_some());
+    }
+
+    #[test]
+    fn ethplorer_wrongly_configured() {
+        let args = vec![
+            "test", // Program name
+            "--ethplorer-api-key",
+            "someapikey",
+        ];
+
+        let result = Ethplorer::try_parse_from(args);
+
+        assert!(result.is_err());
     }
 }
