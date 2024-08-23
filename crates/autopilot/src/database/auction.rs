@@ -3,8 +3,6 @@ use {
     crate::{boundary, domain, infra::persistence::dto},
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
-    database::orders::FullOrder,
-    ethcontract::jsonrpc::futures_util::stream::BoxStream,
     futures::{StreamExt, TryStreamExt},
     model::{order::Order, quote::QuoteId},
     shared::{
@@ -12,7 +10,6 @@ use {
         event_storing_helpers::{create_db_search_parameters, create_quote_row},
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
-    sqlx::PgConnection,
     std::{collections::HashMap, ops::DerefMut},
 };
 
@@ -69,8 +66,30 @@ impl Postgres {
             .with_label_values(&["solvable_orders"])
             .start_timer();
 
-        self.fetch_orders_data(|ex| database::orders::solvable_orders(ex, min_valid_to as i64))
-            .await
+        let mut ex = self.pool.begin().await?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so the both SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(ex.deref_mut())
+            .await?;
+        let orders: HashMap<domain::OrderUid, Order> =
+            database::orders::solvable_orders(&mut ex, min_valid_to as i64)
+                .map(|result| match result {
+                    Ok(order) => full_order_into_model_order(order)
+                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    Err(err) => Err(anyhow::Error::from(err)),
+                })
+                .try_collect()
+                .await?;
+        let latest_settlement_block =
+            database::orders::latest_settlement_block(&mut ex).await? as u64;
+        let quotes = self.read_quotes(orders.keys()).await?;
+        Ok(boundary::SolvableOrders {
+            orders,
+            quotes,
+            latest_settlement_block,
+        })
     }
 
     pub async fn orders_after(
@@ -80,13 +99,34 @@ impl Postgres {
     ) -> Result<boundary::SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["orders_after"])
+            .with_label_values(&["solvable_orders_after"])
             .start_timer();
 
-        self.fetch_orders_data(|ex| {
-            database::orders::full_orders_after(ex, after_timestamp, min_valid_to as i64)
+        let mut ex = self.pool.begin().await?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so the both SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(ex.deref_mut())
+            .await?;
+
+        let orders: HashMap<domain::OrderUid, Order> =
+            database::orders::full_orders_after(&mut ex, after_timestamp, min_valid_to as i64)
+                .map(|result| match result {
+                    Ok(order) => full_order_into_model_order(order)
+                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    Err(err) => Err(anyhow::Error::from(err)),
+                })
+                .try_collect()
+                .await?;
+        let latest_settlement_block =
+            database::orders::latest_settlement_block(&mut ex).await? as u64;
+        let quotes = self.read_quotes(orders.keys()).await?;
+        Ok(boundary::SolvableOrders {
+            orders,
+            quotes,
+            latest_settlement_block,
         })
-        .await
     }
 
     pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
@@ -101,35 +141,5 @@ impl Postgres {
         let id = database::auction::save(&mut ex, &data).await?;
         ex.commit().await?;
         Ok(id)
-    }
-
-    async fn fetch_orders_data<F>(&self, orders_fn: F) -> Result<boundary::SolvableOrders>
-    where
-        F: FnOnce(&mut PgConnection) -> BoxStream<'_, std::result::Result<FullOrder, sqlx::Error>>,
-    {
-        let mut ex = self.pool.begin().await?;
-        // Set the transaction isolation level to REPEATABLE READ
-        // so the both SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            .execute(ex.deref_mut())
-            .await?;
-
-        let orders: HashMap<domain::OrderUid, Order> = orders_fn(&mut ex)
-            .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order)
-                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect()
-            .await?;
-        let latest_settlement_block =
-            database::orders::latest_settlement_block(&mut ex).await? as u64;
-        let quotes = self.read_quotes(orders.keys()).await?;
-        Ok(boundary::SolvableOrders {
-            orders,
-            quotes,
-            latest_settlement_block,
-        })
     }
 }
