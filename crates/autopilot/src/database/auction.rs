@@ -63,7 +63,7 @@ impl QuoteStoring for Postgres {
 }
 
 impl Postgres {
-    pub async fn all_solvable_orders(&self, min_valid_to: u32) -> Result<boundary::SolvableOrders> {
+    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<boundary::SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["solvable_orders"])
