@@ -74,7 +74,7 @@ impl Postgres {
             .execute(ex.deref_mut())
             .await?;
         let orders: HashMap<domain::OrderUid, Order> =
-            database::orders::solvable_full_orders(&mut ex, min_valid_to as i64)
+            database::orders::solvable_orders(&mut ex, min_valid_to as i64)
                 .map(|result| match result {
                     Ok(order) => full_order_into_model_order(order)
                         .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),

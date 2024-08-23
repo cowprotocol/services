@@ -456,7 +456,7 @@ type RawInteraction = (Address, BigDecimal, Vec<u8>);
 #[derive(Debug, sqlx::FromRow)]
 pub struct FullOrder {
     #[sqlx(flatten)]
-    base: ExtendedOrder,
+    base: OrderWithoutTrades,
     pub sum_sell: BigDecimal,
     pub sum_buy: BigDecimal,
     pub sum_fee: BigDecimal,
@@ -464,7 +464,7 @@ pub struct FullOrder {
 
 impl FullOrder {
     pub fn new(
-        base: ExtendedOrder,
+        base: OrderWithoutTrades,
         sum_sell: BigDecimal,
         sum_buy: BigDecimal,
         sum_fee: BigDecimal,
@@ -607,7 +607,7 @@ impl FullOrder {
 
     pub fn update_base<F>(&mut self, update_fn: F) -> &mut Self
     where
-        F: FnOnce(&mut ExtendedOrder),
+        F: FnOnce(&mut OrderWithoutTrades),
     {
         update_fn(&mut self.base);
         self
@@ -624,7 +624,7 @@ impl FullOrder {
 
 /// Order with extra information from other tables excluding traded data.
 #[derive(Debug, sqlx::FromRow)]
-pub struct ExtendedOrder {
+pub struct OrderWithoutTrades {
     pub uid: OrderUid,
     pub owner: Address,
     pub creation_timestamp: DateTime<Utc>,
@@ -656,7 +656,7 @@ pub struct ExtendedOrder {
     pub full_app_data: Option<Vec<u8>>,
 }
 
-impl ExtendedOrder {
+impl OrderWithoutTrades {
     pub fn valid_to(&self) -> i64 {
         if let Some((_, valid_to)) = self.ethflow_data {
             // For ethflow orders, we always return the user valid_to,
@@ -847,22 +847,22 @@ WHERE
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
 /// cleanup: fok limit orders should be allowed to not have surplus fee
-pub fn solvable_full_orders(
+pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
-/// The solvable orders query used in specialized queries. Parametrized by
-/// valid_to, creation_timestamp and cancellation_timestamp.
+/// Orders created or cancelled after the specified timestamp bounded by min
+/// validity period with additional data from other tables.
 ///
 /// The query is similar to OPEN_ORDERS but excludes traded amounts.
-pub fn solvable_orders(
+pub fn orders_without_trades_after(
     ex: &mut PgConnection,
     after_timestamp: DateTime<Utc>,
     min_valid_to: i64,
-) -> BoxStream<'_, Result<ExtendedOrder, sqlx::Error>> {
+) -> BoxStream<'_, Result<OrderWithoutTrades, sqlx::Error>> {
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
@@ -1559,15 +1559,11 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_full_order(ex: &mut PgConnection) -> Option<FullOrder> {
-            solvable_full_orders(ex, 0)
-                .next()
-                .await
-                .transpose()
-                .unwrap()
+            solvable_orders(ex, 0).next().await.transpose().unwrap()
         }
 
-        async fn get_order(ex: &mut PgConnection) -> Option<ExtendedOrder> {
-            solvable_orders(ex, Default::default(), 0)
+        async fn get_order_without_trades(ex: &mut PgConnection) -> Option<OrderWithoutTrades> {
+            orders_without_trades_after(ex, Default::default(), 0)
                 .next()
                 .await
                 .transpose()
@@ -1600,7 +1596,12 @@ mod tests {
             .await
             .unwrap()
             .presignature_pending());
-        assert!(get_order(&mut db).await.unwrap().presignature_pending);
+        assert!(
+            get_order_without_trades(&mut db)
+                .await
+                .unwrap()
+                .presignature_pending
+        );
 
         // solvable because once presignature event is observed.
         pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
@@ -1608,7 +1609,12 @@ mod tests {
             .await
             .unwrap()
             .presignature_pending());
-        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
+        assert!(
+            !get_order_without_trades(&mut db)
+                .await
+                .unwrap()
+                .presignature_pending
+        );
 
         // not solvable because "unsigned" presignature event.
         pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
@@ -1616,7 +1622,12 @@ mod tests {
             .await
             .unwrap()
             .presignature_pending());
-        assert!(get_order(&mut db).await.unwrap().presignature_pending);
+        assert!(
+            get_order_without_trades(&mut db)
+                .await
+                .unwrap()
+                .presignature_pending
+        );
 
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
@@ -1624,7 +1635,12 @@ mod tests {
             .await
             .unwrap()
             .presignature_pending());
-        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
+        assert!(
+            !get_order_without_trades(&mut db)
+                .await
+                .unwrap()
+                .presignature_pending
+        );
     }
 
     #[tokio::test]
@@ -1678,15 +1694,18 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_full_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
-            solvable_full_orders(ex, min_valid_to)
+            solvable_orders(ex, min_valid_to)
                 .next()
                 .await
                 .transpose()
                 .unwrap()
         }
 
-        async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<ExtendedOrder> {
-            solvable_orders(ex, Default::default(), min_valid_to)
+        async fn get_order_without_trades(
+            ex: &mut PgConnection,
+            min_valid_to: i64,
+        ) -> Option<OrderWithoutTrades> {
+            orders_without_trades_after(ex, Default::default(), min_valid_to)
                 .next()
                 .await
                 .transpose()
@@ -1695,7 +1714,7 @@ mod tests {
 
         // not solvable because valid to
         assert!(get_full_order(&mut db, 4).await.is_none());
-        assert!(get_order(&mut db, 4).await.is_none());
+        assert!(get_order_without_trades(&mut db, 4).await.is_none());
 
         // not solvable because fully executed
         crate::events::append(
@@ -1716,7 +1735,12 @@ mod tests {
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
         // This query doesn't count traded amounts.
-        assert!(!get_order(&mut db, 0).await.unwrap().invalidated);
+        assert!(
+            !get_order_without_trades(&mut db, 0)
+                .await
+                .unwrap()
+                .invalidated
+        );
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // not solvable because invalidated
@@ -1735,12 +1759,17 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
-        assert!(get_order(&mut db, 0).await.unwrap().invalidated);
+        assert!(
+            get_order_without_trades(&mut db, 0)
+                .await
+                .unwrap()
+                .invalidated
+        );
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // solvable
         assert!(get_full_order(&mut db, 3).await.is_some());
-        assert!(get_order(&mut db, 3).await.is_some());
+        assert!(get_order_without_trades(&mut db, 3).await.is_some());
 
         // still solvable because only partially filled
         crate::events::append(
@@ -1760,7 +1789,7 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 3).await.is_some());
-        assert!(get_order(&mut db, 3).await.is_some());
+        assert!(get_order_without_trades(&mut db, 3).await.is_some());
 
         //no longer solvable, if it is a ethflow-order
         //with shorter user_valid_to from the ethflow
@@ -1773,9 +1802,9 @@ mod tests {
             .unwrap();
 
         assert!(get_full_order(&mut db, 3).await.is_none());
-        assert!(get_order(&mut db, 3).await.is_none());
+        assert!(get_order_without_trades(&mut db, 3).await.is_none());
         assert!(get_full_order(&mut db, 2).await.is_some());
-        assert!(get_order(&mut db, 2).await.is_some());
+        assert!(get_order_without_trades(&mut db, 2).await.is_some());
 
         // no longer solvable, if there was also a onchain order
         // placement error
@@ -1792,7 +1821,11 @@ mod tests {
             .unwrap();
 
         assert!(get_full_order(&mut db, 2).await.is_none());
-        assert!(get_order(&mut db, 2).await.unwrap().onchain_placement_error.is_some());
+        assert!(get_order_without_trades(&mut db, 2)
+            .await
+            .unwrap()
+            .onchain_placement_error
+            .is_some());
     }
 
     type Data = ([u8; 56], Address, DateTime<Utc>);

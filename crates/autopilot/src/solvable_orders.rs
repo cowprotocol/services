@@ -168,7 +168,7 @@ impl SolvableOrdersCache {
 
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
-        new_orders: Vec<database::orders::ExtendedOrder>,
+        new_orders: Vec<database::orders::OrderWithoutTrades>,
         mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
         new_quotes: HashMap<domain::OrderUid, domain::Quote>,
     ) -> Result<boundary::SolvableOrders> {
