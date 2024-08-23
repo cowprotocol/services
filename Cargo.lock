@@ -1659,6 +1659,7 @@ dependencies = [
  "futures",
  "hex",
  "hex-literal",
+ "maplit",
  "sqlx",
  "strum",
  "tokio",

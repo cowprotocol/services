@@ -988,7 +988,9 @@ mod tests {
         bigdecimal::num_bigint::{BigInt, ToBigInt},
         chrono::{Duration, TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
+        maplit::hashset,
         sqlx::Connection,
+        std::collections::HashSet,
     };
 
     async fn read_order_interactions(
@@ -1878,8 +1880,8 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .map(|o| o.uid)
-                .collect::<Vec<_>>(),
-            vec![
+                .collect::<HashSet<_>>(),
+            hashset![
                 ByteArray([1u8; 56]),
                 ByteArray([2u8; 56]),
                 ByteArray([3u8; 56]),
@@ -1891,8 +1893,8 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .map(|o| o.uid)
-                .collect::<Vec<_>>(),
-            vec![ByteArray([2u8; 56]), ByteArray([3u8; 56]),],
+                .collect::<HashSet<_>>(),
+            hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),],
         );
         assert_eq!(
             get_orders_without_trades(&mut db, now + Duration::seconds(10))
@@ -1900,8 +1902,8 @@ mod tests {
                 .unwrap()
                 .into_iter()
                 .map(|o| o.uid)
-                .collect::<Vec<_>>(),
-            vec![ByteArray([3u8; 56]),],
+                .collect::<HashSet<_>>(),
+            hashset![ByteArray([3u8; 56]),],
         );
     }
 
