@@ -172,7 +172,10 @@ impl SolvableOrdersCache {
         mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
         new_quotes: HashMap<domain::OrderUid, domain::Quote>,
     ) -> Result<boundary::SolvableOrders> {
+        let now = now_in_epoch_seconds();
         let mut orders = current_orders.orders.clone();
+        // Remove expired orders.
+        orders.retain(|_uid, order| order.data.valid_to >= now);
         let mut quotes = current_orders.quotes.clone();
         let mut latest_trade_block = current_orders.latest_settlement_block;
 
