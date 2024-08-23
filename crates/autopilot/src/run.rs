@@ -465,7 +465,6 @@ pub async fn run(args: Arguments) {
         )
         .await;
 
-        // return this
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow
             // events are already indexed by the OnchainOrderParser.
@@ -487,7 +486,6 @@ pub async fn run(args: Arguments) {
             eth.contracts().settlement().address(),
         );
 
-        // return this
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
