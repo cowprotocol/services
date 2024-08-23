@@ -20,7 +20,7 @@ pub struct TradesQueryRow {
     pub auction_id: Option<AuctionId>,
 }
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct TradedAmounts {
     pub block_number: i64,
     pub order_uid: OrderUid,
@@ -81,7 +81,7 @@ pub fn trades_after(
 ) -> BoxStream<'_, Result<TradedAmounts, sqlx::Error>> {
     const QUERY: &str = r#"
 SELECT
-    MAX(t.block_number),
+    MAX(t.block_number) as block_number,
     t.order_uid,
     SUM(t.buy_amount) as buy_amount,
     SUM(t.sell_amount) as sell_amount,
@@ -100,7 +100,7 @@ mod tests {
         super::*,
         crate::{
             byte_array::ByteArray,
-            events::{Event, EventIndex, Settlement, Trade},
+            events::{self, Event, EventIndex, Settlement, Trade},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
             orders::Order,
             PgTransaction,
@@ -349,6 +349,98 @@ mod tests {
         // Trade exists in DB but no matching order
         assert_trades(&mut db, None, Some(&order_ids[0]), &[]).await;
         assert_trades(&mut db, Some(&owners[0]), None, &[]).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trade_after() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn get_trades_after(
+            ex: &mut PgConnection,
+            min_block: i64,
+        ) -> Result<Vec<TradedAmounts>, sqlx::Error> {
+            trades_after(ex, min_block).try_collect().await
+        }
+
+        let (index_a, event_a) = {
+            (
+                EventIndex {
+                    block_number: 1,
+                    ..Default::default()
+                },
+                Trade {
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(10),
+                    buy_amount: BigDecimal::from(100),
+                    fee_amount: BigDecimal::from(1),
+                },
+            )
+        };
+        let (index_b, event_b) = {
+            (
+                EventIndex {
+                    block_number: 2,
+                    ..Default::default()
+                },
+                Trade {
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(20),
+                    buy_amount: BigDecimal::from(200),
+                    fee_amount: BigDecimal::from(2),
+                },
+            )
+        };
+        let (index_c, event_c) = {
+            (
+                EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+                Trade {
+                    order_uid: ByteArray([2u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(40),
+                    buy_amount: BigDecimal::from(400),
+                    fee_amount: BigDecimal::from(4),
+                },
+            )
+        };
+
+        events::insert_trade(&mut db, &index_a, &event_a)
+            .await
+            .unwrap();
+        events::insert_trade(&mut db, &index_b, &event_b)
+            .await
+            .unwrap();
+        events::insert_trade(&mut db, &index_c, &event_c)
+            .await
+            .unwrap();
+
+        assert!(get_trades_after(&mut db, 2).await.unwrap().is_empty());
+
+        let mut result = get_trades_after(&mut db, 0).await.unwrap();
+        result.sort_by_key(|t| t.block_number);
+        assert_eq!(
+            result,
+            vec![
+                TradedAmounts {
+                    block_number: 1,
+                    order_uid: ByteArray([2u8; 56]),
+                    sell_amount: BigDecimal::from(40),
+                    buy_amount: BigDecimal::from(400),
+                    fee_amount: BigDecimal::from(4),
+                },
+                TradedAmounts {
+                    block_number: 2,
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount: BigDecimal::from(30),
+                    buy_amount: BigDecimal::from(300),
+                    fee_amount: BigDecimal::from(3),
+                },
+            ]
+        );
     }
 
     // Testing Trades with settlements
