@@ -312,7 +312,15 @@ impl OrderStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let order = database::orders::single_full_order(&mut ex, &ByteArray(uid.0)).await?;
+        let order = match database::orders::single_full_order(&mut ex, &ByteArray(uid.0)).await? {
+            Some(order) => Some(order),
+            None => {
+                // try to find the order in the JIT orders table
+                database::jit_orders::single_full_jit_order(&mut ex, &ByteArray(uid.0))
+                    .await?
+                    .map(Into::into)
+            }
+        };
         order.map(full_order_into_model_order).transpose()
     }
 

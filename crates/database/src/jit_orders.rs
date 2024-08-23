@@ -1,5 +1,6 @@
 use {
     crate::{
+        orders,
         orders::{BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
         Address,
         AppId,
@@ -13,6 +14,53 @@ use {
         PgConnection,
     },
 };
+
+const JIT_ORDERS_SELECT: &str = r#"
+o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
+o.valid_to, o.app_data, o.fee_amount, o.kind, o.signature,
+o.receiver, o.signing_scheme, o.sell_token_balance, o.buy_token_balance,
+(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
+(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
+(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
+COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee
+"#;
+
+pub async fn single_full_jit_order(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+) -> Result<Option<FullJitOrder>, sqlx::Error> {
+    #[rustfmt::skip]
+        const QUERY: &str = const_format::concatcp!(
+"SELECT ", JIT_ORDERS_SELECT,
+" FROM jit_orders o",
+" WHERE o.uid = $1 ",
+        );
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
+#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
+pub struct FullJitOrder {
+    pub uid: OrderUid,
+    pub owner: Address,
+    pub creation_timestamp: DateTime<Utc>,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub valid_to: i64,
+    pub app_data: AppId,
+    pub fee_amount: BigDecimal,
+    pub kind: OrderKind,
+    pub signature: Vec<u8>,
+    pub sum_sell: BigDecimal,
+    pub sum_buy: BigDecimal,
+    pub sum_fee: BigDecimal,
+    pub receiver: Address,
+    pub signing_scheme: SigningScheme,
+    pub sell_token_balance: SellTokenSource,
+    pub buy_token_balance: BuyTokenDestination,
+    pub executed_surplus_fee: BigDecimal,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct JitOrder {
@@ -96,6 +144,45 @@ FROM jit_orders
 WHERE uid = $1
     ;"#;
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
+impl From<FullJitOrder> for orders::FullOrder {
+    fn from(jit_order: FullJitOrder) -> Self {
+        orders::FullOrder {
+            uid: jit_order.uid,
+            owner: jit_order.owner,
+            creation_timestamp: jit_order.creation_timestamp,
+            sell_token: jit_order.sell_token,
+            buy_token: jit_order.buy_token,
+            sell_amount: jit_order.sell_amount,
+            buy_amount: jit_order.buy_amount,
+            valid_to: jit_order.valid_to,
+            app_data: jit_order.app_data,
+            fee_amount: jit_order.fee_amount.clone(),
+            full_fee_amount: jit_order.fee_amount,
+            kind: jit_order.kind,
+            class: orders::OrderClass::Limit, // irrelevant
+            partially_fillable: false,
+            signature: jit_order.signature,
+            sum_sell: jit_order.sum_sell,
+            sum_buy: jit_order.sum_buy,
+            sum_fee: jit_order.sum_fee,
+            invalidated: false,
+            receiver: Some(jit_order.receiver),
+            signing_scheme: jit_order.signing_scheme,
+            settlement_contract: Address::default(),
+            sell_token_balance: jit_order.sell_token_balance,
+            buy_token_balance: jit_order.buy_token_balance,
+            presignature_pending: false,
+            pre_interactions: Vec::new(),
+            post_interactions: Vec::new(),
+            ethflow_data: None,
+            onchain_user: None,
+            onchain_placement_error: None,
+            executed_surplus_fee: jit_order.executed_surplus_fee,
+            full_app_data: None,
+        }
+    }
 }
 
 #[cfg(test)]
