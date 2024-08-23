@@ -17,7 +17,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -31,7 +31,6 @@ use {
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
-        db_order_conversions::full_order_into_model_order,
         price_estimation::{
             native::NativePriceEstimating,
             native_price_cache::CachingNativePriceEstimator,
@@ -167,92 +166,6 @@ impl SolvableOrdersCache {
             .map(|inner| inner.auction.clone())
     }
 
-    fn build_solvable_orders(
-        current_orders: &boundary::SolvableOrders,
-        new_orders: Vec<database::orders::FullOrder>,
-        mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
-        new_quotes: HashMap<domain::OrderUid, domain::Quote>,
-    ) -> Result<boundary::SolvableOrders> {
-        let now = now_in_epoch_seconds();
-        let mut orders = current_orders.orders.clone();
-        // Remove expired orders.
-        orders.retain(|_uid, order| {
-            order.data.valid_to >= now
-                && !order
-                    .metadata
-                    .ethflow_data
-                    .as_ref()
-                    .is_some_and(|data| data.user_valid_to < now as i64)
-        });
-        let mut quotes = current_orders.quotes.clone();
-        let mut latest_trade_block = current_orders.latest_settlement_block;
-
-        for new_order in new_orders {
-            let uid = domain::OrderUid(new_order.uid.0);
-
-            if new_order.onchain_placement_error.is_some() || new_order.invalidated {
-                orders.remove(&uid);
-                quotes.remove(&uid);
-                continue;
-            }
-
-            // Drop already visited trades to slightly reduce time complexity.
-            let Some(trade_amounts) = new_trades.remove(&uid) else {
-                continue;
-            };
-
-            let fulfilled = match new_order.kind {
-                database::orders::OrderKind::Sell => {
-                    trade_amounts.sell_amount >= new_order.sell_amount
-                }
-                database::orders::OrderKind::Buy => {
-                    trade_amounts.buy_amount >= new_order.buy_amount
-                }
-            };
-
-            if !fulfilled {
-                let order = full_order_into_model_order(new_order).map_err(anyhow::Error::from)?;
-                orders.insert(uid, order);
-
-                if let Some(new_quote) = new_quotes.get(&uid) {
-                    quotes.insert(uid, new_quote.clone());
-                }
-            } else {
-                orders.remove(&uid);
-                quotes.remove(&uid);
-            }
-            latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
-        }
-
-        // Iterate over remaining trades to drop orders that are already fulfilled.
-        for (uid, trade_amounts) in new_trades {
-            if let Some(order) = orders.get(&uid) {
-                let fulfilled = match order.data.kind {
-                    model::order::OrderKind::Sell => {
-                        big_decimal_to_u256(&trade_amounts.sell_amount).context("U256 overflow")?
-                            >= order.data.sell_amount
-                    }
-                    model::order::OrderKind::Buy => {
-                        big_decimal_to_u256(&trade_amounts.buy_amount).context("U256 overflow")?
-                            >= order.data.buy_amount
-                    }
-                };
-
-                if fulfilled {
-                    orders.remove(&uid);
-                    quotes.remove(&uid);
-                }
-            }
-            latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
-        }
-
-        Ok(boundary::SolvableOrders {
-            orders,
-            quotes,
-            latest_settlement_block: latest_trade_block,
-        })
-    }
-
     /// Manually update solvable orders. Usually called by the background
     /// updating task.
     ///
@@ -265,7 +178,11 @@ impl SolvableOrdersCache {
         let db_solvable_orders = {
             let lock = self.cache.lock().await;
             if let Some(cache) = &*lock {
-                self.updated_solvable_orders(min_valid_to, cache).await?
+                let new_orders = self
+                    .persistence
+                    .orders_after(cache.last_order_creation_timestamp, min_valid_to)
+                    .await?;
+                cache.solvable_orders.combine_with(new_orders)
             } else {
                 self.persistence.all_solvable_orders(min_valid_to).await?
             }
@@ -420,27 +337,23 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    async fn updated_solvable_orders(
-        &self,
-        min_valid_to: u32,
-        cache: &Inner,
-    ) -> Result<boundary::SolvableOrders> {
-        let new_orders_fut = self
-            .persistence
-            .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64);
-        let new_trades_fut = self.persistence.trades_after(
-            i64::try_from(cache.solvable_orders.latest_settlement_block)
-                .context("block number value exceeds i64")?,
-        );
-        let (new_orders, new_trades) = tokio::try_join!(new_orders_fut, new_trades_fut)?;
-        let order_uids = new_orders
-            .iter()
-            .map(|order| domain::OrderUid(order.uid.0))
-            .collect::<Vec<_>>();
-        let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
-
-        Self::build_solvable_orders(&cache.solvable_orders, new_orders, new_trades, quotes)
-    }
+    // async fn updated_solvable_orders(
+    //     &self,
+    //     min_valid_to: u32,
+    //     cache: &Inner,
+    // ) -> Result<boundary::SolvableOrders> {
+    //     let new_orders_fut = self
+    //         .persistence
+    //         .orders_after(cache.last_order_creation_timestamp, min_valid_to as
+    // i64);     let (new_orders, new_trades) = tokio::try_join!(new_orders_fut,
+    // new_trades_fut)?;     let order_uids = new_orders
+    //         .iter()
+    //         .map(|order| domain::OrderUid(order.uid.0))
+    //         .collect::<Vec<_>>();
+    //     let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
+    //
+    //     Self::build_solvable_orders(&cache.solvable_orders, new_orders,
+    // new_trades, quotes) }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
         let fetched_balances = {

@@ -92,6 +92,43 @@ impl Postgres {
         })
     }
 
+    pub async fn orders_after(
+        &self,
+        after_timestamp: DateTime<Utc>,
+        min_valid_to: u32,
+    ) -> Result<boundary::SolvableOrders> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["solvable_orders_after"])
+            .start_timer();
+
+        let mut ex = self.pool.begin().await?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so the both SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(ex.deref_mut())
+            .await?;
+
+        let orders: HashMap<domain::OrderUid, Order> =
+            database::orders::full_orders_after(&mut ex, after_timestamp, min_valid_to as i64)
+                .map(|result| match result {
+                    Ok(order) => full_order_into_model_order(order)
+                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    Err(err) => Err(anyhow::Error::from(err)),
+                })
+                .try_collect()
+                .await?;
+        let latest_settlement_block =
+            database::orders::latest_settlement_block(&mut ex).await? as u64;
+        let quotes = self.read_quotes(orders.keys()).await?;
+        Ok(boundary::SolvableOrders {
+            orders,
+            quotes,
+            latest_settlement_block,
+        })
+    }
+
     pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
