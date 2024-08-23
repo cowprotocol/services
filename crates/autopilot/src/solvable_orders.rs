@@ -176,7 +176,14 @@ impl SolvableOrdersCache {
         let now = now_in_epoch_seconds();
         let mut orders = current_orders.orders.clone();
         // Remove expired orders.
-        orders.retain(|_uid, order| order.data.valid_to >= now);
+        orders.retain(|_uid, order| {
+            order.data.valid_to >= now
+                && !order
+                    .metadata
+                    .ethflow_data
+                    .as_ref()
+                    .is_some_and(|data| data.user_valid_to < now as i64)
+        });
         let mut quotes = current_orders.quotes.clone();
         let mut latest_trade_block = current_orders.latest_settlement_block;
 
