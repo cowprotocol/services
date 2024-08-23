@@ -33,9 +33,9 @@ SELECT
     t.buy_amount,
     t.sell_amount,
     t.sell_amount - t.fee_amount as sell_amount_before_fees,
-    COALESCE(o.owner, jit_o.owner) as owner,
-    COALESCE(o.buy_token, jit_o.buy_token) as buy_token,
-    COALESCE(o.sell_token, jit_o.sell_token) as sell_token,
+    o.owner,
+    o.buy_token,
+    o.sell_token,
     settlement.tx_hash,
     settlement.auction_id
 FROM trades t
@@ -45,19 +45,24 @@ LEFT OUTER JOIN LATERAL (
     AND   s.log_index > t.log_index
     ORDER BY s.log_index ASC
     LIMIT 1
-) AS settlement ON true
-LEFT JOIN orders o ON o.uid = t.order_uid
-LEFT JOIN jit_orders jit_o ON jit_o.uid = t.order_uid"#;
+) AS settlement ON true"#;
 
     const QUERY: &str = const_format::concatcp!(
         COMMON_QUERY,
-        " WHERE ($1 IS NULL OR COALESCE(o.owner, jit_o.owner) = $1)",
+        " JOIN orders o ON o.uid = t.order_uid",
+        " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR t.order_uid = $2)",
-        "UNION",
+        " UNION ",
         COMMON_QUERY,
-        " LEFT OUTER JOIN onchain_placed_orders onchain_o",
+        " JOIN orders o ON o.uid = t.order_uid",
+        " LEFT JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
         " WHERE onchain_o.sender = $1",
+        " AND ($2 IS NULL OR t.order_uid = $2)",
+        " UNION ",
+        COMMON_QUERY,
+        " JOIN jit_orders o ON o.uid = t.order_uid",
+        " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR t.order_uid = $2)",
     );
 
