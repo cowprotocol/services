@@ -94,7 +94,6 @@ async fn test(web3: Web3) {
             &[
                 OrderEventLabel::Created,
                 OrderEventLabel::Ready,
-                OrderEventLabel::Considered,
                 OrderEventLabel::Executing,
                 OrderEventLabel::Traded,
             ],
