@@ -276,34 +276,26 @@ impl SolvableOrdersCache {
             .values()
             .map(|order| order.metadata.creation_date)
             .max()
-            .unwrap_or_default();
+            .context("latest_creation_timestamp")?;
         let orders = db_solvable_orders
             .orders
             .values()
             .cloned()
             .collect::<Vec<_>>();
 
-        let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
+        let mut counter = OrderFilterCounter::new(self.metrics, &orders);
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
         let (balances, orders, cow_amms) = {
-            let queries = db_solvable_orders
-                .orders
-                .iter()
-                .map(Query::from_order)
-                .collect::<Vec<_>>();
+            let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
             let cow_amms_fut = async {
                 let _timer = self.stage_timer("cow_amm_registry");
                 self.cow_amm_registry.amms().await
             };
             tokio::join!(
                 self.fetch_balances(queries),
-                self.filter_invalid_orders(
-                    db_solvable_orders.orders,
-                    &mut counter,
-                    &mut invalid_order_uids,
-                ),
+                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
                 cow_amms_fut
             )
         };
@@ -505,10 +497,6 @@ impl SolvableOrdersCache {
 
         orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
         orders
-    }
-
-    pub fn last_update_time(&self) -> Instant {
-        self.cache.lock().unwrap().update_time
     }
 
     pub fn track_auction_update(&self, result: &str) {
