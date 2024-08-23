@@ -17,11 +17,8 @@ use {
     ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
     futures::StreamExt,
     shared::maintenance::Maintaining,
-    std::{
-        sync::{Arc, Mutex},
-        time::Duration,
-    },
-    tokio::time::timeout,
+    std::{sync::Arc, time::Duration},
+    tokio::{sync::Mutex, time::timeout},
 };
 
 /// Coordinates all the updates that need to run a new block
@@ -64,12 +61,10 @@ impl Maintenance {
     /// Runs all update tasks in a coordinated manner to ensure the system
     /// has a consistent state.
     pub async fn update(&self, new_block: &BlockInfo) {
-        {
-            let last_block = self.last_processed.lock().unwrap();
-            if last_block.number > new_block.number || last_block.hash == new_block.hash {
-                // `new_block` is neither newer than `last_block` nor a reorg
-                return;
-            }
+        let mut last_block = self.last_processed.lock().await;
+        if last_block.number > new_block.number || last_block.hash == new_block.hash {
+            // `new_block` is neither newer than `last_block` nor a reorg
+            return;
         }
 
         let start = std::time::Instant::now();
@@ -83,7 +78,7 @@ impl Maintenance {
             "successfully ran maintenance task"
         );
 
-        *self.last_processed.lock().unwrap() = *new_block;
+        *last_block = *new_block;
     }
 
     async fn update_inner(&self) -> Result<()> {
