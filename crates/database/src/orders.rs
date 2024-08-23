@@ -762,6 +762,7 @@ pub struct OrderWithQuote {
 
 pub async fn user_orders_with_quote(
     ex: &mut PgConnection,
+    min_valid_to: i64,
     owner: &Address,
 ) -> Result<Vec<OrderWithQuote>, sqlx::Error> {
     #[rustfmt::skip]
@@ -780,6 +781,7 @@ pub async fn user_orders_with_quote(
         " INNER JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid"
     );
     sqlx::query_as::<_, OrderWithQuote>(QUERY)
+        .bind(min_valid_to)
         .bind(owner)
         .fetch_all(ex)
         .await

@@ -24,6 +24,7 @@ use {
             OrderUid,
         },
         signature::Signature,
+        time::now_in_epoch_seconds,
     },
     num::Zero,
     number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
@@ -455,37 +456,39 @@ impl LimitOrderCounting for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        Ok(
-            database::orders::user_orders_with_quote(&mut ex, &ByteArray(owner.0))
-                .await?
-                .into_iter()
-                .filter(|order_with_quote| {
-                    is_order_outside_market_price(
-                        &Amounts {
-                            sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
-                            buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
-                            fee: 0.into(),
-                        },
-                        &Amounts {
-                            sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
-                            buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
-                            fee: FeeParameters {
-                                gas_amount: order_with_quote.quote_gas_amount,
-                                gas_price: order_with_quote.quote_gas_price,
-                                sell_token_price: order_with_quote.quote_sell_token_price,
-                            }
-                            .fee(),
-                        },
-                        match order_with_quote.order_kind {
-                            DbOrderKind::Buy => model::order::OrderKind::Buy,
-                            DbOrderKind::Sell => model::order::OrderKind::Sell,
-                        },
-                    )
-                })
-                .count()
-                .try_into()
-                .unwrap(),
+        Ok(database::orders::user_orders_with_quote(
+            &mut ex,
+            now_in_epoch_seconds().into(),
+            &ByteArray(owner.0),
         )
+        .await?
+        .into_iter()
+        .filter(|order_with_quote| {
+            is_order_outside_market_price(
+                &Amounts {
+                    sell: big_decimal_to_u256(&order_with_quote.order_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.order_buy_amount).unwrap(),
+                    fee: 0.into(),
+                },
+                &Amounts {
+                    sell: big_decimal_to_u256(&order_with_quote.quote_sell_amount).unwrap(),
+                    buy: big_decimal_to_u256(&order_with_quote.quote_buy_amount).unwrap(),
+                    fee: FeeParameters {
+                        gas_amount: order_with_quote.quote_gas_amount,
+                        gas_price: order_with_quote.quote_gas_price,
+                        sell_token_price: order_with_quote.quote_sell_token_price,
+                    }
+                    .fee(),
+                },
+                match order_with_quote.order_kind {
+                    DbOrderKind::Buy => model::order::OrderKind::Buy,
+                    DbOrderKind::Sell => model::order::OrderKind::Sell,
+                },
+            )
+        })
+        .count()
+        .try_into()
+        .unwrap())
     }
 }
 
