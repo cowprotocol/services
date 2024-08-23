@@ -34,6 +34,7 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
+        code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -267,7 +268,7 @@ pub async fn run(args: Arguments) {
     .expect("failed to initialize token owner finders");
 
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
-        Box::new(CachingDetector::new(
+        CachingDetector::new(
             Box::new(TraceCallDetector {
                 web3: shared::ethrpc::web3(
                     &args.shared.ethrpc,
@@ -279,7 +280,7 @@ pub async fn run(args: Arguments) {
                 settlement_contract: eth.contracts().settlement().address(),
             }),
             args.token_quality_cache_expiry,
-        ))
+        )
     });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
@@ -296,6 +297,8 @@ pub async fn run(args: Arguments) {
         web3: web3.clone(),
     })));
     let block_retriever = args.shared.current_block.retriever(web3.clone());
+
+    let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
@@ -321,6 +324,7 @@ pub async fn run(args: Arguments) {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
             tokens: token_info_fetcher.clone(),
+            code_fetcher: code_fetcher.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -352,7 +356,6 @@ pub async fn run(args: Arguments) {
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
             eth.clone(),
-            db.clone(),
             persistence.clone(),
         );
     let event_updater = Arc::new(EventUpdater::new(

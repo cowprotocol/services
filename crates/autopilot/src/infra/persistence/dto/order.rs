@@ -22,7 +22,7 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub protocol_fees: Vec<FeePolicy>,
-    pub created: Option<u32>,
+    pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,
@@ -50,7 +50,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         sell_amount: order.sell.amount.into(),
         buy_amount: order.buy.amount.into(),
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
-        created: Some(order.created),
+        created: order.created,
         valid_to: order.valid_to,
         kind: order.side.into(),
         receiver: order.receiver.map(Into::into),
@@ -84,7 +84,7 @@ pub fn to_domain(order: Order) -> domain::Order {
             amount: order.buy_amount.into(),
         },
         protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
-        created: order.created.unwrap_or(u32::MIN),
+        created: order.created,
         valid_to: order.valid_to,
         side: order.kind.into(),
         receiver: order.receiver.map(Into::into),
@@ -293,7 +293,7 @@ pub struct Quote {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub fee: U256,
-    pub solver: Option<H160>,
+    pub solver: H160,
 }
 
 impl Quote {
@@ -303,7 +303,7 @@ impl Quote {
             sell_amount: self.sell_amount.into(),
             buy_amount: self.buy_amount.into(),
             fee: self.fee.into(),
-            solver: self.solver.unwrap_or_default().into(),
+            solver: self.solver.into(),
         }
     }
 }
@@ -314,7 +314,7 @@ impl From<domain::Quote> for Quote {
             sell_amount: quote.sell_amount.0,
             buy_amount: quote.buy_amount.0,
             fee: quote.fee.0,
-            solver: Some(quote.solver.0),
+            solver: quote.solver.0,
         }
     }
 }
@@ -340,7 +340,7 @@ impl From<domain::fee::Policy> for FeePolicy {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
-                    solver: Some(quote.solver),
+                    solver: quote.solver,
                 },
             },
             domain::fee::Policy::Volume { factor } => Self::Volume {
@@ -371,7 +371,7 @@ impl From<FeePolicy> for domain::fee::Policy {
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
                     fee: quote.fee,
-                    solver: quote.solver.unwrap_or_default(),
+                    solver: quote.solver,
                 },
             },
             FeePolicy::Volume { factor } => Self::Volume {
