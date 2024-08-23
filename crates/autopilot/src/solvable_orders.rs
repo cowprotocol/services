@@ -273,24 +273,38 @@ impl SolvableOrdersCache {
     pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = {
+
+        // A new auction should be created regardless of whether new solvable orders are
+        // found. The incremental solvable orders cache updater should only be
+        // enabled after the initial full SQL query
+        // (`persistence::solvable_orders`) returned some orders. Until then, `MIN_UTC`
+        // is used to indicate that no orders have been found yet by
+        // (`persistence::solvable_orders`). This prevents situations where
+        // starting the service with a large existing DB would cause
+        // the incremental query to load all unfiltered orders into memory, potentially
+        // leading to OOM issues.
+        let (db_solvable_orders, previous_creation_timestamp) = {
             let lock = self.cache.lock().await;
-            if let Some(cache) = &*lock {
-                self.updated_solvable_orders(min_valid_to, cache).await?
-            } else {
-                self.persistence.all_solvable_orders(min_valid_to).await?
+            match &*lock {
+                Some(cache) if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC => {
+                    (
+                        self.updated_solvable_orders(min_valid_to, cache).await?,
+                        cache.last_order_creation_timestamp,
+                    )
+                }
+                _ => (
+                    self.persistence.all_solvable_orders(min_valid_to).await?,
+                    DateTime::<Utc>::MIN_UTC,
+                ),
             }
         };
-        if db_solvable_orders.orders.is_empty() {
-            tracing::debug!("no solvable orders found");
-            return Ok(());
-        }
+
         let latest_creation_timestamp = db_solvable_orders
             .orders
             .values()
             .map(|order| order.metadata.creation_date)
             .max()
-            .context("latest_creation_timestamp")?;
+            .unwrap_or(previous_creation_timestamp);
         let orders = db_solvable_orders
             .orders
             .values()
