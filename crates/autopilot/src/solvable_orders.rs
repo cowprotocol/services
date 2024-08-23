@@ -17,7 +17,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{big_decimal_to_u256, big_uint_to_big_decimal, u256_to_big_decimal},
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -200,8 +200,18 @@ impl SolvableOrdersCache {
             let Some(trade_amounts) = new_trades.remove(&uid) else {
                 continue;
             };
-            let sum_sell = trade_amounts.sell_amount.clone();
-            let sum_buy = trade_amounts.buy_amount.clone();
+            let (executed_sell_amount, executed_buy_amount, executed_fee_amount) = orders
+                .get(&domain::OrderUid(new_order.uid.0))
+                .map(|o| {
+                    (
+                        big_uint_to_big_decimal(&o.metadata.executed_sell_amount),
+                        big_uint_to_big_decimal(&o.metadata.executed_buy_amount),
+                        u256_to_big_decimal(&o.metadata.executed_fee_amount),
+                    )
+                })
+                .unwrap_or_default();
+            let sum_sell = trade_amounts.sell_amount + executed_sell_amount;
+            let sum_buy = trade_amounts.buy_amount + executed_buy_amount;
 
             let fulfilled = match new_order.kind {
                 database::orders::OrderKind::Sell => sum_sell >= new_order.sell_amount,
@@ -209,12 +219,9 @@ impl SolvableOrdersCache {
             };
 
             if !fulfilled {
-                let full_order = database::orders::FullOrder::new(
-                    new_order,
-                    sum_sell,
-                    sum_buy,
-                    trade_amounts.fee_amount,
-                );
+                let sum_fee = trade_amounts.fee_amount + executed_fee_amount;
+                let full_order =
+                    database::orders::FullOrder::new(new_order, sum_sell, sum_buy, sum_fee);
                 let order = full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
                 orders.insert(uid, order);
 
