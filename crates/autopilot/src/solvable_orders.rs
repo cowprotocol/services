@@ -184,7 +184,7 @@ impl SolvableOrdersCache {
                     .await?;
                 cache.solvable_orders.combine_with(new_orders)
             } else {
-                self.persistence.solvable_orders(min_valid_to).await?
+                self.persistence.all_solvable_orders(min_valid_to).await?
             }
         };
         if db_solvable_orders.orders.is_empty() {

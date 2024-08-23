@@ -55,27 +55,6 @@ pub struct SolvableOrders {
 }
 
 impl SolvableOrders {
-    /// This function creates a new instance of `SolvableOrders` by merging the
-    /// orders and quotes from the current instance (`self`) with those from
-    /// the provided `other` instance. If an order or quote from `other`
-    /// shares the same UID as one in `self`, the one from `other` will replace
-    /// it.
-    ///
-    /// During this process, some orders may be filtered out based on the
-    /// following criteria:
-    /// - Orders that have expired.
-    /// - Orders with on-chain placement errors.
-    /// - Orders that have been fulfilled based on their kind (Sell/Buy).
-    /// - Orders that have been explicitly invalidated.
-    ///
-    /// Quotes associated with filtered-out orders will also be removed.
-    ///
-    /// The `latest_settlement_block` is updated to the maximum value from
-    /// either `self` or `other`.
-    ///
-    /// # Parameters
-    /// - `self`: The current `SolvableOrders` instance.
-    /// - `other`: Another(newer) `SolvableOrders` instance to combine with.
     pub fn combine_with(&self, other: Self) -> Self {
         let mut orders = self.orders.clone();
         let mut quotes = self.quotes.clone();

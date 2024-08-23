@@ -58,21 +58,16 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    /// Returns all the solvable orders found in the DB based on the validity
-    /// period.
-    pub async fn solvable_orders(
+    pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
     ) -> Result<boundary::SolvableOrders, DatabaseError> {
         self.postgres
-            .solvable_orders(min_valid_to)
+            .all_solvable_orders(min_valid_to)
             .await
             .map_err(DatabaseError)
     }
 
-    /// Returns orders created or cancelled after the specified timestamp and
-    /// bounded by the validity period that might contain already fulfilled,
-    /// invalidated or expired ones.
     pub async fn orders_after(
         &self,
         after_timestamp: DateTime<Utc>,
