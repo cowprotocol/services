@@ -15,10 +15,8 @@ mod math;
 /// Trade type when evaluated in a context of an Auction.
 #[derive(Clone, Debug)]
 pub enum Trade {
-    /// A regular user order that was pare part of the `Auction`.
+    /// A regular user order that exist in the orderbook.
     Fulfillment(Fulfillment),
-    /// A regular user order that was not part of the `Auction`.
-    FulfillmentOutOfAuction(Fulfillment),
     // JIT trades are not part of the orderbook and are created by solvers at the time of
     // settlement.
     Jit(Jit),
@@ -29,7 +27,6 @@ impl Trade {
     pub fn uid(&self) -> &domain::OrderUid {
         match self {
             Self::Fulfillment(trade) => &trade.uid,
-            Self::FulfillmentOutOfAuction(trade) => &trade.uid,
             Self::Jit(trade) => &trade.uid,
         }
     }
@@ -38,7 +35,6 @@ impl Trade {
     pub fn as_jit(&self) -> Option<&Jit> {
         match self {
             Self::Fulfillment(_) => None,
-            Self::FulfillmentOutOfAuction(_) => None,
             Self::Jit(trade) => Some(trade),
         }
     }
@@ -51,8 +47,13 @@ impl Trade {
     /// Surplus of a trade.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
-            Self::Fulfillment(trade) => trade.as_math().surplus_in_ether(prices),
-            Self::FulfillmentOutOfAuction(_) => Ok(eth::Ether::zero()),
+            Self::Fulfillment(trade) => {
+                if trade.in_auction {
+                    trade.as_math().surplus_in_ether(prices)
+                } else {
+                    Ok(eth::Ether::zero())
+                }
+            }
             Self::Jit(trade) => {
                 if trade.surplus_capturing {
                     trade.as_math().surplus_in_ether(prices)
@@ -87,7 +88,6 @@ impl Trade {
     fn as_math(&self) -> math::Trade {
         match self {
             Trade::Fulfillment(trade) => trade.as_math(),
-            Trade::FulfillmentOutOfAuction(trade) => trade.as_math(),
             Trade::Jit(trade) => trade.as_math(),
         }
     }
@@ -119,30 +119,18 @@ impl Trade {
                     .surplus_capturing_jit_order_owners
                     .contains(&trade.uid.owner()),
             })
-        } else {
-            // Otherwise it's a user order from orderbook, it's just a question whether it's
-            // in the auction or not
-            if auction.orders.contains_key(&trade.uid) {
-                Trade::Fulfillment(Fulfillment {
-                    uid: trade.uid,
-                    sell: trade.sell,
-                    buy: trade.buy,
-                    side: trade.side,
-                    executed: trade.executed,
-                    prices: trade.prices,
-                })
-            }
-            // User order that was settled outside of the auction
-            else {
-                Trade::FulfillmentOutOfAuction(Fulfillment {
-                    uid: trade.uid,
-                    sell: trade.sell,
-                    buy: trade.buy,
-                    side: trade.side,
-                    executed: trade.executed,
-                    prices: trade.prices,
-                })
-            }
+        }
+        // If it's in a database, then it's a normal fulfillment of an user order
+        else {
+            Trade::Fulfillment(Fulfillment {
+                uid: trade.uid,
+                sell: trade.sell,
+                buy: trade.buy,
+                side: trade.side,
+                executed: trade.executed,
+                prices: trade.prices,
+                in_auction: auction.orders.contains_key(&trade.uid),
+            })
         }
     }
 }
@@ -156,6 +144,8 @@ pub struct Fulfillment {
     pub side: order::Side,
     pub executed: order::TargetAmount,
     pub prices: Prices,
+    // Whether the trade was part of an auction
+    pub in_auction: bool,
 }
 
 impl Fulfillment {
