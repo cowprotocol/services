@@ -58,12 +58,12 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    pub async fn solvable_orders(
+    pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
     ) -> Result<boundary::SolvableOrders, Error> {
         self.postgres
-            .solvable_orders(min_valid_to)
+            .all_solvable_orders(min_valid_to)
             .await
             .map_err(Error::DbError)
     }

@@ -217,7 +217,7 @@ impl SolvableOrdersCache {
             }
         }
 
-        // Iterate through remaining trades to drop orders that are already fulfilled.
+        // Iterate over remaining trades to drop orders that are already fulfilled.
         for (uid, trade_amounts) in new_trades {
             if let Some(order) = orders.get(&uid) {
                 let fulfilled = match order.data.kind {
@@ -258,9 +258,9 @@ impl SolvableOrdersCache {
         let db_solvable_orders = {
             let lock = self.cache.lock().await;
             if let Some(cache) = &*lock {
-                self.next_solvable_orders(min_valid_to, cache).await?
+                self.updated_solvable_orders(min_valid_to, cache).await?
             } else {
-                self.persistence.solvable_orders(min_valid_to).await?
+                self.persistence.all_solvable_orders(min_valid_to).await?
             }
         };
         if db_solvable_orders.orders.is_empty() {
@@ -456,7 +456,7 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    async fn next_solvable_orders(
+    async fn updated_solvable_orders(
         &self,
         min_valid_to: u32,
         cache: &Inner,
