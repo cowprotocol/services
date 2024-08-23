@@ -399,7 +399,7 @@ impl Persistence {
             .database_queries
             .with_label_values(&["orders_after"])
             .start_timer();
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
         Ok(
             database::orders::orders_without_trades_after(&mut ex, after_timestamp, min_valid_to)
                 .try_collect()
@@ -415,7 +415,7 @@ impl Persistence {
             .database_queries
             .with_label_values(&["trades_after"])
             .start_timer();
-        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
         Ok(database::trades::trades_after(&mut ex, after_block)
             .map_ok(|trade| (domain::OrderUid(trade.order_uid.0), trade))
             .try_collect()
