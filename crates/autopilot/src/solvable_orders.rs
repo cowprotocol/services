@@ -17,7 +17,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{big_decimal_to_u256, big_uint_to_big_decimal, u256_to_big_decimal},
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -169,7 +169,7 @@ impl SolvableOrdersCache {
 
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
-        new_orders: Vec<database::orders::FullOrder>,
+        new_orders: Vec<database::orders::OrderWithoutTrades>,
         mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
         new_quotes: HashMap<domain::OrderUid, domain::Quote>,
     ) -> Result<boundary::SolvableOrders> {
@@ -200,18 +200,29 @@ impl SolvableOrdersCache {
             let Some(trade_amounts) = new_trades.remove(&uid) else {
                 continue;
             };
+            let (executed_sell_amount, executed_buy_amount, executed_fee_amount) = orders
+                .get(&domain::OrderUid(new_order.uid.0))
+                .map(|o| {
+                    (
+                        big_uint_to_big_decimal(&o.metadata.executed_sell_amount),
+                        big_uint_to_big_decimal(&o.metadata.executed_buy_amount),
+                        u256_to_big_decimal(&o.metadata.executed_fee_amount),
+                    )
+                })
+                .unwrap_or_default();
+            let sum_sell = trade_amounts.sell_amount + executed_sell_amount;
+            let sum_buy = trade_amounts.buy_amount + executed_buy_amount;
 
             let fulfilled = match new_order.kind {
-                database::orders::OrderKind::Sell => {
-                    trade_amounts.sell_amount >= new_order.sell_amount
-                }
-                database::orders::OrderKind::Buy => {
-                    trade_amounts.buy_amount >= new_order.buy_amount
-                }
+                database::orders::OrderKind::Sell => sum_sell >= new_order.sell_amount,
+                database::orders::OrderKind::Buy => sum_buy >= new_order.buy_amount,
             };
 
             if !fulfilled {
-                let order = full_order_into_model_order(new_order).map_err(anyhow::Error::from)?;
+                let sum_fee = trade_amounts.fee_amount + executed_fee_amount;
+                let full_order =
+                    database::orders::FullOrder::new(new_order, sum_sell, sum_buy, sum_fee);
+                let order = full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
                 orders.insert(uid, order);
 
                 if let Some(new_quote) = new_quotes.get(&uid) {
