@@ -55,7 +55,7 @@ LEFT OUTER JOIN LATERAL (
         " UNION ",
         COMMON_QUERY,
         " JOIN orders o ON o.uid = t.order_uid",
-        " LEFT JOIN onchain_placed_orders onchain_o",
+        " LEFT OUTER JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
         " WHERE onchain_o.sender = $1",
         " AND ($2 IS NULL OR t.order_uid = $2)",
