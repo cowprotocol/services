@@ -426,7 +426,7 @@ Indexes:
 
 ### jit\_orders
 
-Contains all JIT orders that solvers settled onchain.
+JIT orders are orders created by solvers and settled onchain. This means that protocol is not aware of them before they appear onchain.
 
 Column                    | Type                         | Nullable | Details
 --------------------------|------------------------------|----------|--------

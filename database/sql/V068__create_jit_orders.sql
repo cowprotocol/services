@@ -1,4 +1,6 @@
--- JIT orders are stored in a separate table which contains data related only to JIT orders.
+-- JIT orders are not stored in `orders` table but in a separate table. Two reasons for this:
+-- 1. Some fields from `orders` table are not needed for JIT orders, such as `partially_fillable`, `settlement_contract` etc.
+-- 2. JIT orders are observed from blockchain which means this table needs to be reorg safe, so it contains block_number and log_index.
 CREATE TABLE jit_orders (
     block_number bigint NOT NULL,
     log_index bigint NOT NULL,
