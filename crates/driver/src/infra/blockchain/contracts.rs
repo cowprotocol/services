@@ -64,12 +64,13 @@ impl Contracts {
                 .0,
         );
 
-        let cow_amm_registry = cow_amm::Registry::new(web3.clone(), block_stream);
+        let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
         for config in addresses.cow_amms {
             cow_amm_registry
                 .add_listener(config.index_start, config.factory, config.helper)
                 .await;
         }
+        cow_amm_registry.spawn_maintenance_task(block_stream);
 
         Ok(Self {
             settlement,
