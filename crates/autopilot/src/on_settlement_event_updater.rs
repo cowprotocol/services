@@ -6,10 +6,6 @@
 // This auction id is used to build the accociation between the settlement event
 // and the auction in the database.
 //
-// We build an association between account-nonce and tx hash by backfilling
-// settlement events with the account and nonce of their tx hash. This happens
-// whenever we index a new settlement event.
-
 // Another responsibility of this module is to observe the settlement and save
 // data of interest to the database. This data includes surplus, taken fees, gas
 // used etc.

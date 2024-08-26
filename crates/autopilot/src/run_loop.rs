@@ -128,7 +128,7 @@ impl RunLoop {
         // Only run the solvers if the auction or block has changed.
         let previous = prev_auction.replace(auction.auction.clone());
         if previous.as_ref() == Some(&auction.auction)
-            || prev_block.replace(start_block.hash) == Some(start_block.hash)
+            && prev_block.replace(start_block.hash) == Some(start_block.hash)
         {
             return None;
         }

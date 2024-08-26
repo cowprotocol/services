@@ -233,7 +233,7 @@ pub struct Arguments {
     pub run_loop_mode: RunLoopMode,
 
     /// If a new run loop would start more than this amount of time after the
-    /// system noticed the latest block wait for the next block to appear
+    /// system noticed the latest block, wait for the next block to appear
     /// before continuing the run loop.
     #[clap(long, env, default_value = "2s", value_parser = humantime::parse_duration)]
     pub max_run_loop_delay: Duration,
