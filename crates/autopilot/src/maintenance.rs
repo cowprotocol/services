@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments::RunLoopMode,
         boundary::events::settlement::{GPv2SettlementContract, Indexer},
         database::{
             ethflow_events::event_retriever::EthFlowRefundRetriever,
@@ -143,51 +144,54 @@ impl Maintenance {
     /// at least after every `update_interval`.
     pub fn spawn_background_task(
         self_: Arc<Self>,
+        run_loop_mode: RunLoopMode,
         current_block: CurrentBlockWatcher,
         update_interval: Duration,
     ) {
-        tokio::task::spawn(async move {
-            let mut latest_block = *current_block.borrow();
-            let mut stream = into_stream(current_block);
-            loop {
-                let next_update = timeout(update_interval, stream.next());
-                let current_block = match next_update.await {
-                    Ok(Some(block)) => {
-                        metrics().last_seen_block.set(block.number);
-                        block
+        match run_loop_mode {
+            RunLoopMode::SyncToBlockchain => {
+                // Update last seen block metric only since everything else will be updated
+                // inside the runloop.
+                tokio::task::spawn(async move {
+                    let mut stream = into_stream(current_block);
+                    loop {
+                        let next_update = timeout(update_interval, stream.next());
+                        match next_update.await {
+                            Ok(Some(block)) => {
+                                metrics().last_seen_block.set(block.number);
+                            }
+                            Ok(None) => break,
+                            Err(_timeout) => {}
+                        };
                     }
-                    Ok(None) => break,
-                    Err(_timeout) => latest_block,
-                };
-                if let Err(err) = self_.update_inner().await {
-                    tracing::warn!(?err, "failed to run background task successfully");
-                }
-                if let Err(err) = self_.orders_cache.update(current_block.number).await {
-                    tracing::warn!(?err, "failed to update auction successfully");
-                }
-                latest_block = current_block;
+                });
             }
-            panic!("block stream terminated unexpectedly");
-        });
-    }
-
-    pub fn spawn_last_seen_block_watcher(
-        current_block: CurrentBlockWatcher,
-        update_interval: Duration,
-    ) {
-        tokio::task::spawn(async move {
-            let mut stream = into_stream(current_block);
-            loop {
-                let next_update = timeout(update_interval, stream.next());
-                match next_update.await {
-                    Ok(Some(block)) => {
-                        metrics().last_seen_block.set(block.number);
+            RunLoopMode::Unsynchronized => {
+                tokio::task::spawn(async move {
+                    let mut latest_block = *current_block.borrow();
+                    let mut stream = into_stream(current_block);
+                    loop {
+                        let next_update = timeout(update_interval, stream.next());
+                        let current_block = match next_update.await {
+                            Ok(Some(block)) => {
+                                metrics().last_seen_block.set(block.number);
+                                block
+                            }
+                            Ok(None) => break,
+                            Err(_timeout) => latest_block,
+                        };
+                        if let Err(err) = self_.update_inner().await {
+                            tracing::warn!(?err, "failed to run background task successfully");
+                        }
+                        if let Err(err) = self_.orders_cache.update(current_block.number).await {
+                            tracing::warn!(?err, "failed to update auction successfully");
+                        }
+                        latest_block = current_block;
                     }
-                    Ok(None) => break,
-                    Err(_timeout) => {}
-                };
+                    panic!("block stream terminated unexpectedly");
+                });
             }
-        });
+        }
     }
 }
 
