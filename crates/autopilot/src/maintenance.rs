@@ -160,7 +160,7 @@ impl Maintenance {
                 if let Err(err) = self_.update_inner().await {
                     tracing::warn!(?err, "failed to run background task successfully");
                 }
-                if let Err(err) = self_.orders_cache.update(&current_block).await {
+                if let Err(err) = self_.orders_cache.update(current_block.number).await {
                     tracing::warn!(?err, "failed to update auction successfully");
                 }
                 latest_block = current_block;

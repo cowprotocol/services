@@ -8,8 +8,7 @@ pub mod order;
 /// Replicates [`crate::model::Auction`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct Auction {
-    pub block_number: u64,
-    pub block_hash: eth::H256,
+    pub block: u64,
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
     pub prices: Prices,

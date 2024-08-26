@@ -96,14 +96,7 @@ impl RunLoop {
             RunLoopMode::Unsynchronized => {
                 // Sleep a bit to avoid busy loops.
                 tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
-                let current_block = *self.eth.current_block().borrow();
-                if prev_block
-                    .as_ref()
-                    .is_some_and(|prev_block| prev_block != &current_block.hash)
-                {
-                    self.run_maintenance(&current_block).await;
-                }
-                current_block
+                *self.eth.current_block().borrow()
             }
             RunLoopMode::SyncToBlockchain => {
                 let current_block = *self.eth.current_block().borrow();
@@ -118,13 +111,12 @@ impl RunLoop {
                     current_block
                 };
 
-                if prev_block
-                    .as_ref()
-                    .is_some_and(|prev_block| prev_block != &auction_block.hash)
+                self.run_maintenance(&auction_block).await;
+                if let Err(err) = self
+                    .solvable_orders_cache
+                    .update(auction_block.number)
+                    .await
                 {
-                    self.run_maintenance(&auction_block).await;
-                }
-                if let Err(err) = self.solvable_orders_cache.update(&auction_block).await {
                     tracing::warn!(?err, "failed to update auction");
                 }
                 current_block
@@ -254,7 +246,6 @@ impl RunLoop {
 
             let block_deadline = competition_simulation_block + self.submission_deadline;
             let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
-            let auction_block = auction.block_hash;
 
             // Post-processing should not be executed asynchronously since it includes steps
             // of storing all the competition/auction-related data to the DB.
@@ -277,7 +268,7 @@ impl RunLoop {
             tracing::info!(driver = %driver.name, "settling");
             let submission_start = Instant::now();
             match self
-                .settle(driver, solution, auction_id, &auction_block, block_deadline)
+                .settle(driver, solution, auction_id, block_deadline)
                 .await
             {
                 Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
@@ -346,7 +337,7 @@ impl RunLoop {
         }
 
         let competition_table = SolverCompetitionDB {
-            auction_start_block: auction.block_number,
+            auction_start_block: auction.block,
             competition_simulation_block,
             auction: CompetitionAuction {
                 orders: auction
@@ -664,7 +655,6 @@ impl RunLoop {
         driver: &infra::Driver,
         solved: &competition::SolutionWithId,
         auction_id: i64,
-        auction_block: &H256,
         submission_deadline_latest_block: u64,
     ) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
@@ -676,7 +666,7 @@ impl RunLoop {
             submission_deadline_latest_block,
         };
         let tx_hash = self
-            .wait_for_settlement(driver, auction_id, auction_block, request)
+            .wait_for_settlement(driver, auction_id, request)
             .await?;
         *self.in_flight_orders.lock().await = Some(InFlightOrders {
             tx_hash,
@@ -693,15 +683,10 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         auction_id: i64,
-        auction_block: &H256,
         request: settle::Request,
     ) -> Result<H256, SettleError> {
         match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(
-                auction_id,
-                auction_block,
-                self.submission_deadline,
-            )),
+            Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
             Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
         )
         .await
@@ -724,7 +709,6 @@ impl RunLoop {
     async fn wait_for_settlement_transaction(
         &self,
         auction_id: i64,
-        auction_block: &H256,
         max_blocks_wait: u64,
     ) -> Result<H256, SettleError> {
         let current = self.eth.current_block().borrow().number;
@@ -734,9 +718,7 @@ impl RunLoop {
             let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
             // Run maintenance to ensure the system processed the last available block so
             // it's possible to find the tx in the DB in the next line.
-            if auction_block != &block.hash {
-                self.run_maintenance(&block).await;
-            }
+            self.run_maintenance(&block).await;
 
             match self
                 .persistence

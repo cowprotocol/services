@@ -6,7 +6,7 @@ use {
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
+    ethrpc::block_stream::CurrentBlockWatcher,
     futures::future::join_all,
     indexmap::IndexSet,
     itertools::{Either, Itertools},
@@ -167,7 +167,7 @@ impl SolvableOrdersCache {
     /// Usually this method is called from update_task. If it isn't, which is
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
-    pub async fn update(&self, block: &BlockInfo) -> Result<()> {
+    pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
@@ -280,8 +280,7 @@ impl SolvableOrdersCache {
             .map(eth::Address::from)
             .collect::<Vec<_>>();
         let auction = domain::Auction {
-            block_number: block.number,
-            block_hash: block.hash,
+            block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders
                 .into_iter()
@@ -307,7 +306,7 @@ impl SolvableOrdersCache {
             update_time: Instant::now(),
         };
 
-        tracing::debug!(block = %block.number, "updated current auction cache");
+        tracing::debug!(%block, "updated current auction cache");
         self.metrics
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
@@ -562,12 +561,12 @@ async fn update_task(
                 break;
             }
         };
-        let block = *current_block.borrow();
-        match cache.update(&block).await {
+        let block = current_block.borrow().number;
+        match cache.update(block).await {
             Ok(()) => {
                 cache.track_auction_update("success");
                 tracing::debug!(
-                    block = %block.number,
+                    %block,
                     "updated solvable orders in {}s",
                     start.elapsed().as_secs_f32()
                 )
@@ -576,7 +575,7 @@ async fn update_task(
                 cache.track_auction_update("failure");
                 tracing::warn!(
                     ?err,
-                    block = %block.number,
+                    %block,
                     "failed to update solvable orders in {}s",
                     start.elapsed().as_secs_f32()
                 )

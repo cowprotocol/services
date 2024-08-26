@@ -97,7 +97,7 @@ impl RunLoop {
             tracing::trace!("skipping already seen auction");
             return None;
         }
-        if self.block == auction.auction.block_number {
+        if self.block == auction.auction.block {
             tracing::trace!("skipping already seen block");
             return None;
         }
@@ -117,7 +117,7 @@ impl RunLoop {
         }
 
         self.auction = auction.id;
-        self.block = auction.auction.block_number;
+        self.block = auction.auction.block;
         Some(auction)
     }
 
