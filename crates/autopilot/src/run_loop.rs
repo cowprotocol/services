@@ -99,7 +99,7 @@ impl RunLoop {
                 let current_block = *self.eth.current_block().borrow();
                 if prev_block
                     .as_ref()
-                    .is_some_and(|prev_block| prev_block != &current_block.hash)
+                    .map_or(true, |prev_block| prev_block != &current_block.hash)
                 {
                     self.run_maintenance(&current_block).await;
                 }
@@ -120,7 +120,7 @@ impl RunLoop {
 
                 if prev_block
                     .as_ref()
-                    .is_some_and(|prev_block| prev_block != &auction_block.hash)
+                    .map_or(true, |prev_block| prev_block != &auction_block.hash)
                 {
                     self.run_maintenance(&auction_block).await;
                 }
