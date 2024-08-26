@@ -17,7 +17,12 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    number::conversions::{big_decimal_to_u256, big_uint_to_big_decimal, u256_to_big_decimal},
+    number::conversions::{
+        big_decimal_to_big_uint,
+        big_decimal_to_u256,
+        big_uint_to_big_decimal,
+        u256_to_big_decimal,
+    },
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -237,14 +242,21 @@ impl SolvableOrdersCache {
 
         // Iterate over remaining trades to drop orders that are already fulfilled.
         for (uid, trade_amounts) in new_trades {
-            if let Some(order) = orders.get(&uid) {
+            if let Some(order) = orders.get_mut(&uid) {
+                let (executed_sell_amount, executed_buy_amount, executed_fee_amount) = (
+                    big_uint_to_big_decimal(&order.metadata.executed_sell_amount),
+                    big_uint_to_big_decimal(&order.metadata.executed_buy_amount),
+                    u256_to_big_decimal(&order.metadata.executed_fee_amount),
+                );
+                let sum_sell = trade_amounts.sell_amount + executed_sell_amount;
+                let sum_buy = trade_amounts.buy_amount + executed_buy_amount;
                 let fulfilled = match order.data.kind {
                     model::order::OrderKind::Sell => {
-                        big_decimal_to_u256(&trade_amounts.sell_amount).context("U256 overflow")?
+                        big_decimal_to_u256(&sum_sell).context("U256 overflow")?
                             >= order.data.sell_amount
                     }
                     model::order::OrderKind::Buy => {
-                        big_decimal_to_u256(&trade_amounts.buy_amount).context("U256 overflow")?
+                        big_decimal_to_u256(&sum_buy).context("U256 overflow")?
                             >= order.data.buy_amount
                     }
                 };
@@ -252,6 +264,21 @@ impl SolvableOrdersCache {
                 if fulfilled {
                     orders.remove(&uid);
                     quotes.remove(&uid);
+                } else {
+                    let sum_fee = trade_amounts.fee_amount + executed_fee_amount;
+                    order.metadata.executed_sell_amount = big_decimal_to_big_uint(&sum_sell)
+                        .context("sell_amount is not an unsigned integer")?;
+                    order.metadata.executed_buy_amount = big_decimal_to_big_uint(&sum_buy)
+                        .context("buy_amount is not an unsigned integer")?;
+                    order.metadata.executed_fee_amount = big_decimal_to_u256(&sum_fee)
+                        .context("buy_amount is not an unsigned integer")?;
+                    order.metadata.executed_sell_amount_before_fees =
+                        big_decimal_to_u256(&(&sum_sell - &sum_fee))
+                            .context("executed sell amount before fees does not fit in a u256")?;
+                    // todo: executed surplus
+                    if let Some(new_quote) = new_quotes.get(&uid) {
+                        quotes.insert(uid, new_quote.clone());
+                    }
                 }
             }
             latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
@@ -286,12 +313,10 @@ impl SolvableOrdersCache {
         let (db_solvable_orders, previous_creation_timestamp) = {
             let lock = self.cache.lock().await;
             match &*lock {
-                Some(cache) if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC => {
-                    (
-                        self.updated_solvable_orders(min_valid_to, cache).await?,
-                        cache.last_order_creation_timestamp,
-                    )
-                }
+                Some(cache) if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC => (
+                    self.updated_solvable_orders(min_valid_to, cache).await?,
+                    cache.last_order_creation_timestamp,
+                ),
                 _ => (
                     self.persistence.all_solvable_orders(min_valid_to).await?,
                     DateTime::<Utc>::MIN_UTC,
