@@ -13,7 +13,7 @@ use {
 
 pub fn from_domain(auction: domain::Auction) -> Auction {
     Auction {
-        block: auction.block,
+        block: auction.block_number,
         latest_settlement_block: auction.latest_settlement_block,
         orders: auction
             .orders
@@ -35,7 +35,9 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
 
 pub fn try_to_domain(auction: Auction) -> anyhow::Result<domain::Auction> {
     Ok(domain::Auction {
-        block: auction.block,
+        block_number: auction.block,
+        // This is used in shadow competition only, so we can ignore the block hash.
+        block_hash: Default::default(),
         latest_settlement_block: auction.latest_settlement_block,
         orders: auction
             .orders
