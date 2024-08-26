@@ -148,11 +148,11 @@ impl Maintenance {
         current_block: CurrentBlockWatcher,
         update_interval: Duration,
     ) {
-        match run_loop_mode {
-            RunLoopMode::SyncToBlockchain => {
-                // Update last seen block metric only since everything else will be updated
-                // inside the runloop.
-                tokio::task::spawn(async move {
+        tokio::task::spawn(async move {
+            match run_loop_mode {
+                RunLoopMode::SyncToBlockchain => {
+                    // Update last seen block metric only since everything else will be updated
+                    // inside the runloop.
                     let mut stream = into_stream(current_block);
                     loop {
                         let next_update = timeout(update_interval, stream.next());
@@ -164,10 +164,8 @@ impl Maintenance {
                             Err(_timeout) => {}
                         };
                     }
-                });
-            }
-            RunLoopMode::Unsynchronized => {
-                tokio::task::spawn(async move {
+                }
+                RunLoopMode::Unsynchronized => {
                     let mut latest_block = *current_block.borrow();
                     let mut stream = into_stream(current_block);
                     loop {
@@ -189,9 +187,9 @@ impl Maintenance {
                         latest_block = current_block;
                     }
                     panic!("block stream terminated unexpectedly");
-                });
+                }
             }
-        }
+        });
     }
 }
 
