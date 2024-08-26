@@ -66,7 +66,6 @@ impl Maintenance {
     /// Runs all update tasks in a coordinated manner to ensure the system
     /// has a consistent state.
     pub async fn update(&self, new_block: &BlockInfo) {
-        metrics().last_seen_block.set(new_block.number);
         let mut last_block = self.last_processed.lock().await;
         if last_block.number > new_block.number || last_block.hash == new_block.hash {
             // `new_block` is neither newer than `last_block` nor a reorg
@@ -153,7 +152,10 @@ impl Maintenance {
             loop {
                 let next_update = timeout(update_interval, stream.next());
                 let current_block = match next_update.await {
-                    Ok(Some(block)) => block,
+                    Ok(Some(block)) => {
+                        metrics().last_seen_block.set(block.number);
+                        block
+                    }
                     Ok(None) => break,
                     Err(_timeout) => latest_block,
                 };
@@ -166,6 +168,25 @@ impl Maintenance {
                 latest_block = current_block;
             }
             panic!("block stream terminated unexpectedly");
+        });
+    }
+
+    pub fn spawn_last_seen_block_watcher(
+        current_block: CurrentBlockWatcher,
+        update_interval: Duration,
+    ) {
+        tokio::task::spawn(async move {
+            let mut stream = into_stream(current_block);
+            loop {
+                let next_update = timeout(update_interval, stream.next());
+                match next_update.await {
+                    Ok(Some(block)) => {
+                        metrics().last_seen_block.set(block.number);
+                    }
+                    Ok(None) => break,
+                    Err(_timeout) => {}
+                };
+            }
         });
     }
 }
