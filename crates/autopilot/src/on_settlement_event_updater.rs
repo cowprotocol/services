@@ -6,13 +6,6 @@
 // This auction id is used to build the accociation between the settlement event
 // and the auction in the database.
 //
-// Building of this asscociation happens in an always running background task.
-//
-// Alternatively we could change the event insertion code to do this but I (vk)
-// would like to keep that code as fast as possible to not slow down event
-// insertion which also needs to deal with reorgs. It is also nicer from a code
-// organization standpoint.
-
 // Another responsibility of this module is to observe the settlement and save
 // data of interest to the database. This data includes surplus, taken fees, gas
 // used etc.
@@ -21,32 +14,19 @@ use {
     crate::{domain::settlement, infra},
     anyhow::{anyhow, Context, Result},
     database::PgTransaction,
-    std::sync::Arc,
-    tokio::sync::Notify,
 };
 
+#[derive(Clone)]
 pub struct OnSettlementEventUpdater {
-    inner: Arc<Inner>,
-}
-
-struct Inner {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
-    notify: Notify,
 }
 
 impl OnSettlementEventUpdater {
     /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
     /// first update run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
-        let inner = Arc::new(Inner {
-            eth,
-            persistence,
-            notify: Notify::new(),
-        });
-        let inner_clone = inner.clone();
-        tokio::spawn(async move { Inner::listen_for_updates(inner_clone).await });
-        Self { inner }
+        Self { eth, persistence }
     }
 
     /// Deletes settlement_observations and order executions for the given range
@@ -61,16 +41,12 @@ impl OnSettlementEventUpdater {
         Ok(())
     }
 
-    /// Schedules an update loop on a background thread
-    pub fn schedule_update(&self) {
-        self.inner.notify.notify_one();
-    }
-}
-
-impl Inner {
-    async fn listen_for_updates(self: Arc<Inner>) -> ! {
+    /// Fetches all the available missing data needed for bookkeeping.
+    /// This needs to get called after indexing a new settlement event
+    /// since this code needs that data to already be present in the DB.
+    pub async fn update(&self) {
         loop {
-            match self.update().await {
+            match self.single_update().await {
                 Ok(true) => {
                     tracing::debug!("on settlement event updater ran and processed event");
                     // There might be more pending updates, continue immediately.
@@ -78,26 +54,26 @@ impl Inner {
                 }
                 Ok(false) => {
                     tracing::debug!("on settlement event updater ran without update");
+                    break;
                 }
                 Err(err) => {
                     tracing::error!(?err, "on settlement event update task failed");
+                    break;
                 }
             }
-            self.notify.notified().await;
         }
     }
 
     /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
-    async fn update(&self) -> Result<bool> {
+    async fn single_update(&self) -> Result<bool> {
         // Find a settlement event that has not been processed yet.
-        let event = match self.persistence.get_settlement_without_auction().await? {
-            Some(event) => event,
-            None => return Ok(false),
+        let Some(event) = self.persistence.get_settlement_without_auction().await? else {
+            return Ok(false);
         };
 
-        tracing::debug!("updating settlement details for tx {:?}", event.transaction);
+        tracing::debug!(tx = ?event.transaction, "updating settlement details");
 
         // Reconstruct the settlement transaction based on the blockchain transaction
         // hash
