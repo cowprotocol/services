@@ -464,10 +464,12 @@ pub struct FullOrder {
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
     pub executed_surplus_fee: BigDecimal,
+    pub presignature_pending: bool,
 }
 
 impl From<OrderWithoutTrades> for FullOrder {
     fn from(base: OrderWithoutTrades) -> Self {
+        let presignature_pending = matches!(&base.signing_scheme, SigningScheme::PreSign);
         Self {
             base,
             sum_sell: Default::default(),
@@ -477,6 +479,7 @@ impl From<OrderWithoutTrades> for FullOrder {
             onchain_user: Default::default(),
             onchain_placement_error: Default::default(),
             executed_surplus_fee: Default::default(),
+            presignature_pending,
         }
     }
 }
@@ -571,10 +574,6 @@ impl FullOrder {
         &self.base.buy_token_balance
     }
 
-    pub fn presignature_pending(&self) -> bool {
-        self.base.presignature_pending
-    }
-
     pub fn pre_interactions(&self) -> &Vec<RawInteraction> {
         &self.base.pre_interactions
     }
@@ -640,7 +639,6 @@ pub struct OrderWithoutTrades {
     pub settlement_contract: Address,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
-    pub presignature_pending: bool,
     pub pre_interactions: Vec<RawInteraction>,
     pub post_interactions: Vec<RawInteraction>,
     pub full_app_data: Option<Vec<u8>>,
@@ -848,13 +846,6 @@ o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fil
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.class,
 (o.cancellation_timestamp IS NOT NULL) AS invalidated,
-(o.signing_scheme = 'presign' AND COALESCE((
-    SELECT (NOT p.signed) as unsigned
-    FROM presignature_events p
-    WHERE o.uid = p.order_uid
-    ORDER BY p.block_number DESC, p.log_index DESC
-    LIMIT 1
-), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'pre' order by p.index) as pre_interactions,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'post' order by p.index) as post_interactions,
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
@@ -1617,14 +1608,6 @@ mod tests {
             solvable_orders(ex, 0).next().await.transpose().unwrap()
         }
 
-        async fn get_order_without_trades(ex: &mut PgConnection) -> Option<OrderWithoutTrades> {
-            orders_without_trades_after(ex, Default::default(), 0)
-                .next()
-                .await
-                .transpose()
-                .unwrap()
-        }
-
         async fn pre_signature_event(
             ex: &mut PgTransaction<'_>,
             block_number: i64,
@@ -1647,55 +1630,19 @@ mod tests {
         }
 
         // not solvable because there is no presignature event.
-        assert!(get_full_order(&mut db)
-            .await
-            .unwrap()
-            .presignature_pending());
-        assert!(
-            get_order_without_trades(&mut db)
-                .await
-                .unwrap()
-                .presignature_pending
-        );
+        assert!(get_full_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable because once presignature event is observed.
         pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
-        assert!(!get_full_order(&mut db)
-            .await
-            .unwrap()
-            .presignature_pending());
-        assert!(
-            !get_order_without_trades(&mut db)
-                .await
-                .unwrap()
-                .presignature_pending
-        );
+        assert!(!get_full_order(&mut db).await.unwrap().presignature_pending);
 
         // not solvable because "unsigned" presignature event.
         pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
-        assert!(get_full_order(&mut db)
-            .await
-            .unwrap()
-            .presignature_pending());
-        assert!(
-            get_order_without_trades(&mut db)
-                .await
-                .unwrap()
-                .presignature_pending
-        );
+        assert!(get_full_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
-        assert!(!get_full_order(&mut db)
-            .await
-            .unwrap()
-            .presignature_pending());
-        assert!(
-            !get_order_without_trades(&mut db)
-                .await
-                .unwrap()
-                .presignature_pending
-        );
+        assert!(!get_full_order(&mut db).await.unwrap().presignature_pending);
     }
 
     #[tokio::test]

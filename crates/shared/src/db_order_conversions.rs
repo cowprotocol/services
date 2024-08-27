@@ -37,7 +37,7 @@ use {
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
-    let status = if order.presignature_pending() {
+    let status = if order.presignature_pending {
         OrderStatus::PresignaturePending
     } else {
         OrderStatus::Open

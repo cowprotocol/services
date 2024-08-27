@@ -435,7 +435,7 @@ fn calculate_status(order: &FullOrder) -> OrderStatus {
     if order.valid_to() < Utc::now().timestamp() {
         return OrderStatus::Expired;
     }
-    if order.presignature_pending() {
+    if order.presignature_pending {
         return OrderStatus::PresignaturePending;
     }
     OrderStatus::Open
@@ -594,7 +594,6 @@ mod tests {
                 settlement_contract: ByteArray([0; 20]),
                 sell_token_balance: DbSellTokenSource::External,
                 buy_token_balance: DbBuyTokenDestination::Internal,
-                presignature_pending: false,
                 pre_interactions: Vec::new(),
                 post_interactions: Vec::new(),
                 full_app_data: Default::default(),
@@ -622,19 +621,29 @@ mod tests {
 
         // Open - with presignature
         assert_eq!(
-            calculate_status(order_row().update_base(|base| {
-                base.signing_scheme = DbSigningScheme::PreSign;
-                base.presignature_pending = false;
-            })),
+            calculate_status(
+                order_row()
+                    .update_base(|base| {
+                        base.signing_scheme = DbSigningScheme::PreSign;
+                    })
+                    .update_self(|order| {
+                        order.presignature_pending = false;
+                    })
+            ),
             OrderStatus::Open
         );
 
         // PresignaturePending - without presignature
         assert_eq!(
-            calculate_status(order_row().update_base(|base| {
-                base.signing_scheme = DbSigningScheme::Eip712;
-                base.presignature_pending = true;
-            })),
+            calculate_status(
+                order_row()
+                    .update_base(|base| {
+                        base.signing_scheme = DbSigningScheme::Eip712;
+                    })
+                    .update_self(|order| {
+                        order.presignature_pending = true;
+                    })
+            ),
             OrderStatus::PresignaturePending
         );
 
@@ -786,12 +795,17 @@ mod tests {
 
         // Expired - with pending presignature
         assert_eq!(
-            calculate_status(order_row().update_base(|base| {
-                base.signing_scheme = DbSigningScheme::PreSign;
-                base.presignature_pending = true;
-                base.invalidated = false;
-                base.valid_to = valid_to_yesterday.timestamp();
-            })),
+            calculate_status(
+                order_row()
+                    .update_base(|base| {
+                        base.signing_scheme = DbSigningScheme::PreSign;
+                        base.invalidated = false;
+                        base.valid_to = valid_to_yesterday.timestamp();
+                    })
+                    .update_self(|order| {
+                        order.presignature_pending = true;
+                    })
+            ),
             OrderStatus::Expired
         );
 
