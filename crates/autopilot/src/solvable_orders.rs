@@ -4,7 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
-    anyhow::{Context, Result},
+    anyhow::Result,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
@@ -17,13 +17,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    num::CheckedAdd,
-    number::conversions::{
-        big_decimal_to_big_uint,
-        big_decimal_to_u256,
-        u256_to_big_decimal,
-        u256_to_big_uint,
-    },
+    number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -37,7 +31,6 @@ use {
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
-        db_order_conversions::{full_order_into_model_order, onchain_order_placement_error_from},
         price_estimation::{
             native::NativePriceEstimating,
             native_price_cache::CachingNativePriceEstimator,
@@ -173,144 +166,6 @@ impl SolvableOrdersCache {
             .map(|inner| inner.auction.clone())
     }
 
-    fn build_solvable_orders(
-        current_orders: &boundary::SolvableOrders,
-        new_orders: Vec<database::orders::OrderWithoutTrades>,
-        mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
-        order_updates: HashMap<domain::OrderUid, database::orders::OrderUpdate>,
-        onchain_orders: HashMap<
-            domain::OrderUid,
-            database::onchain_broadcasted_orders::OnchainOrderPlacementRow,
-        >,
-        ethflow_data: HashMap<domain::OrderUid, model::order::EthflowData>,
-        presignature_events: HashMap<domain::OrderUid, database::events::PreSignature>,
-    ) -> Result<boundary::SolvableOrders> {
-        let mut latest_trade_block = current_orders.latest_settlement_block;
-        let mut orders = current_orders.orders.clone();
-        let mut quotes = current_orders.quotes.clone();
-
-        // Blindly insert all new orders and quotes into the cache.
-        for new_order in new_orders {
-            let order =
-                full_order_into_model_order(new_order.into()).map_err(anyhow::Error::from)?;
-            let uid = domain::OrderUid(order.metadata.uid.0);
-            orders.insert(uid, order);
-            if let Some(quote) = new_quotes.remove(&uid) {
-                quotes.insert(uid, quote);
-            }
-        }
-
-        // Update all the existing orders with the new orders' data.
-        for (uid, order_update) in order_updates {
-            latest_trade_block = latest_trade_block.max(order_update.max_block_number as u64);
-            if let Some(order) = orders.get_mut(&uid) {
-                let sum_sell = big_decimal_to_big_uint(&order_update.sum_sell_amount)
-                    .and_then(|sell| sell.checked_add(&order.metadata.executed_sell_amount))
-                    .context("sum_sell_amount is not an unsigned integer")?;
-                let sum_buy = big_decimal_to_big_uint(&order_update.sum_buy_amount)
-                    .and_then(|buy| buy.checked_add(&order.metadata.executed_buy_amount))
-                    .context("sum_buy_amount is not an unsigned integer")?;
-                let sum_fee = big_decimal_to_u256(&order_update.sum_fee_amount)
-                    .and_then(|fee| fee.checked_add(order.metadata.executed_fee_amount))
-                    .context("sum_fee_amount does not fit in a u256")?;
-                let sum_surplus_fee = big_decimal_to_u256(&order_update.sum_surplus_fee)
-                    .and_then(|surplus_fee| {
-                        surplus_fee.checked_add(order.metadata.executed_surplus_fee)
-                    })
-                    .context("sum_surplus_fee does not fit in a u256")?;
-                let executed_sell_amount_before_fees = big_decimal_to_u256(
-                    &(order_update.sum_sell_amount - order_update.sum_fee_amount),
-                )
-                .and_then(|sell| sell.checked_add(order.metadata.executed_sell_amount_before_fees))
-                .context("executed_sell_amount_before_fees does not fit in a u256")?;
-
-                order.metadata.executed_sell_amount = sum_sell;
-                order.metadata.executed_buy_amount = sum_buy;
-                order.metadata.executed_fee_amount = sum_fee;
-                order.metadata.executed_sell_amount_before_fees = executed_sell_amount_before_fees;
-                order.metadata.executed_surplus_fee = sum_surplus_fee;
-                order.metadata.invalidated = order_update.invalidated;
-            } else {
-                tracing::warn!(?uid, "order is missing in the cache");
-            }
-        }
-
-        // Update onchain orders data.
-        for (uid, onchain_order) in onchain_orders {
-            if let Some(order) = orders.get_mut(&uid) {
-                order.metadata.onchain_order_data = Some(model::order::OnchainOrderData {
-                    sender: H160(onchain_order.sender.0),
-                    placement_error: onchain_order
-                        .placement_error
-                        .as_ref()
-                        .map(onchain_order_placement_error_from),
-                })
-            }
-        }
-
-        // Update ethflow data.
-        for (uid, ethflow_data) in ethflow_data {
-            if let Some(order) = orders.get_mut(&uid) {
-                order.metadata.ethflow_data = Some(ethflow_data);
-            }
-        }
-
-        // Update presignature events.
-        for (uid, presignature) in presignature_events {
-            if let Some(order) = orders.get_mut(&uid) {
-                if order.signature == Signature::PreSign {
-                    let status = if presignature.signed {
-                        model::order::OrderStatus::Open
-                    } else {
-                        model::order::OrderStatus::PresignaturePending
-                    };
-                    order.metadata.status = status;
-                }
-            }
-        }
-
-        // Finally, filter out all the invalid orders.
-        let now = now_in_epoch_seconds();
-        orders.retain(|_uid, order| {
-            let expired = order.data.valid_to >= now
-                && !order
-                    .metadata
-                    .ethflow_data
-                    .as_ref()
-                    .is_some_and(|data| data.user_valid_to < now as i64);
-
-            let invalidated = order.metadata.invalidated;
-            let onchain_error = order
-                .metadata
-                .onchain_order_data
-                .as_ref()
-                .is_some_and(|data| data.placement_error.is_some());
-            let fulfilled = {
-                match order.data.kind {
-                    model::order::OrderKind::Sell => {
-                        order.metadata.executed_sell_amount
-                            >= u256_to_big_uint(&order.data.sell_amount)
-                    }
-                    model::order::OrderKind::Buy => {
-                        order.metadata.executed_buy_amount
-                            >= u256_to_big_uint(&order.data.buy_amount)
-                    }
-                }
-            };
-
-            !expired && !invalidated && !onchain_error && !fulfilled
-        });
-
-        // Keep only relevant quotes.
-        quotes.retain(|uid, _quote| orders.contains_key(uid));
-
-        Ok(boundary::SolvableOrders {
-            orders,
-            quotes,
-            latest_settlement_block: latest_trade_block,
-        })
-    }
-
     /// Manually update solvable orders. Usually called by the background
     /// updating task.
     ///
@@ -334,7 +189,14 @@ impl SolvableOrdersCache {
             let lock = self.cache.lock().await;
             match &*lock {
                 Some(cache) if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC => (
-                    self.updated_solvable_orders(min_valid_to, cache).await?,
+                    self.persistence
+                        .solvable_order_after(
+                            &cache.solvable_orders,
+                            cache.last_order_creation_timestamp,
+                            cache.solvable_orders.latest_settlement_block,
+                            min_valid_to as i64,
+                        )
+                        .await?,
                     cache.last_order_creation_timestamp,
                 ),
                 _ => (
@@ -488,48 +350,6 @@ impl SolvableOrdersCache {
             .auction_update_total_time
             .observe(start.elapsed().as_secs_f64());
         Ok(())
-    }
-
-    async fn updated_solvable_orders(
-        &self,
-        min_valid_to: u32,
-        cache: &Inner,
-    ) -> Result<boundary::SolvableOrders> {
-        let new_orders_fut = self
-            .persistence
-            .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64);
-        let last_block_number = i64::try_from(cache.solvable_orders.latest_settlement_block)
-            .context("block number value exceeds i64")?;
-        let order_updates_fut = self.persistence.order_updates_after(last_block_number);
-        let new_onchain_placed_orders_fut = self
-            .persistence
-            .onchain_placed_orders_after(last_block_number);
-        let new_ethflow_data_fut = self.persistence.ethflow_data_after(last_block_number);
-        let new_presignature_events_fut = self
-            .persistence
-            .presignature_events_after(last_block_number);
-        let (new_orders, order_updates, onchain_orders, ethflow_data, presignature_events) = tokio::try_join!(
-            new_orders_fut,
-            order_updates_fut,
-            new_onchain_placed_orders_fut,
-            new_ethflow_data_fut,
-            new_presignature_events_fut,
-        )?;
-        let new_order_uids = new_orders
-            .iter()
-            .map(|order| domain::OrderUid(order.uid.0))
-            .collect::<Vec<_>>();
-        let quotes = self.persistence.read_quotes(new_order_uids.iter()).await?;
-
-        Self::build_solvable_orders(
-            &cache.solvable_orders,
-            new_orders,
-            quotes,
-            order_updates,
-            onchain_orders,
-            ethflow_data,
-            presignature_events,
-        )
     }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {

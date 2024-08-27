@@ -175,12 +175,12 @@ async fn insert_presignature(
 
 pub fn events_after(
     ex: &mut PgConnection,
-    block_after: i64,
+    after_block: i64,
 ) -> BoxStream<'_, Result<PreSignature, sqlx::Error>> {
     const QUERY: &str = "\
         SELECT owner, order_uid, signed FROM presignature_events WHERE block_number > $1 ORDER BY \
                          block_number DESC, log_index DESC LIMIT 1";
-    sqlx::query_as(QUERY).bind(block_after).fetch(ex)
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
 #[cfg(test)]

@@ -6,12 +6,23 @@ use {
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
+    bigdecimal::num_traits::CheckedAdd,
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
     database::{order_events::OrderEventLabel, settlement_observations::Observation},
     futures::TryStreamExt,
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
+    model::{signature::Signature, time::now_in_epoch_seconds},
+    number::conversions::{
+        big_decimal_to_big_uint,
+        big_decimal_to_u256,
+        u256_to_big_decimal,
+        u256_to_big_uint,
+    },
     primitive_types::{H160, H256},
+    shared::db_order_conversions::{
+        full_order_into_model_order,
+        onchain_order_placement_error_from,
+    },
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -67,13 +78,6 @@ impl Persistence {
             .all_solvable_orders(min_valid_to)
             .await
             .map_err(DatabaseError)
-    }
-
-    pub async fn read_quotes(
-        &self,
-        orders: impl Iterator<Item = &domain::OrderUid>,
-    ) -> anyhow::Result<HashMap<domain::OrderUid, domain::Quote>> {
-        Ok(self.postgres.read_quotes(orders).await?)
     }
 
     /// Saves the given auction to storage for debugging purposes.
@@ -390,68 +394,56 @@ impl Persistence {
         Ok(solution)
     }
 
-    pub async fn orders_after(
+    pub async fn solvable_order_after(
         &self,
+        current_orders: &boundary::SolvableOrders,
         after_timestamp: DateTime<Utc>,
+        after_block: u64,
         min_valid_to: i64,
-    ) -> anyhow::Result<Vec<database::orders::OrderWithoutTrades>> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["orders_after"])
-            .start_timer();
-        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
-        Ok(
-            database::orders::orders_without_trades_after(&mut ex, after_timestamp, min_valid_to)
+    ) -> anyhow::Result<boundary::SolvableOrders> {
+        let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        let new_orders: Vec<database::orders::OrderWithoutTrades> = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["orders_after"])
+                .start_timer();
+            database::orders::orders_without_trades_after(&mut tx, after_timestamp, min_valid_to)
                 .try_collect()
-                .await?,
-        )
-    }
+                .await?
+        };
 
-    pub async fn order_updates_after(
-        &self,
-        after_block: i64,
-    ) -> anyhow::Result<HashMap<domain::OrderUid, database::orders::OrderUpdate>> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["order_updates_after"])
-            .start_timer();
-        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
-        Ok(database::orders::updates_after(&mut ex, after_block)
-            .map_ok(|trade| (domain::OrderUid(trade.order_uid.0), trade))
-            .try_collect()
-            .await?)
-    }
+        let order_updates: HashMap<domain::OrderUid, database::orders::OrderUpdate> = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["order_updates_after"])
+                .start_timer();
+            database::orders::updates_after(&mut tx, after_block)
+                .map_ok(|trade| (domain::OrderUid(trade.order_uid.0), trade))
+                .try_collect()
+                .await?
+        };
 
-    pub async fn onchain_placed_orders_after(
-        &self,
-        after_block: i64,
-    ) -> anyhow::Result<
-        HashMap<domain::OrderUid, database::onchain_broadcasted_orders::OnchainOrderPlacementRow>,
-    > {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["onchain_placed_orders_after"])
-            .start_timer();
-        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
-        Ok(
-            database::onchain_broadcasted_orders::read_orders_after(&mut ex, after_block)
+        let onchain_orders: HashMap<
+            domain::OrderUid,
+            database::onchain_broadcasted_orders::OnchainOrderPlacementRow,
+        > = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["onchain_placed_orders_after"])
+                .start_timer();
+            database::onchain_broadcasted_orders::read_orders_after(&mut tx, after_block)
                 .map_ok(|order| (domain::OrderUid(order.uid.0), order))
                 .try_collect()
-                .await?,
-        )
-    }
+                .await?
+        };
 
-    pub async fn ethflow_data_after(
-        &self,
-        after_block: i64,
-    ) -> anyhow::Result<HashMap<domain::OrderUid, model::order::EthflowData>> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["ethflow_data_after"])
-            .start_timer();
-        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
-        Ok(
-            database::ethflow_orders::read_orders_after(&mut ex, after_block)
+        let ethflow_data: HashMap<domain::OrderUid, model::order::EthflowData> = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["ethflow_data_after"])
+                .start_timer();
+            database::ethflow_orders::read_orders_after(&mut tx, after_block)
                 .map_ok(|eth_order_data| {
                     (
                         domain::OrderUid(eth_order_data.uid.0),
@@ -459,23 +451,173 @@ impl Persistence {
                     )
                 })
                 .try_collect()
-                .await?,
+                .await?
+        };
+
+        let presignature_events: HashMap<domain::OrderUid, database::events::PreSignature> = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["presignature_events_after"])
+                .start_timer();
+            database::events::events_after(&mut tx, after_block)
+                .map_ok(|presignature| (domain::OrderUid(presignature.order_uid.0), presignature))
+                .try_collect()
+                .await?
+        };
+
+        let new_order_uids = new_orders
+            .iter()
+            .map(|order| domain::OrderUid(order.uid.0))
+            .collect::<Vec<_>>();
+        let new_quotes = self.postgres.read_quotes(new_order_uids.iter()).await?;
+
+        Self::build_solvable_orders(
+            current_orders,
+            new_orders,
+            new_quotes,
+            order_updates,
+            onchain_orders,
+            ethflow_data,
+            presignature_events,
         )
     }
 
-    pub async fn presignature_events_after(
-        &self,
-        after_block: i64,
-    ) -> anyhow::Result<HashMap<domain::OrderUid, database::events::PreSignature>> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["presignature_events_after"])
-            .start_timer();
-        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
-        Ok(database::events::events_after(&mut ex, after_block)
-            .map_ok(|presignature| (domain::OrderUid(presignature.order_uid.0), presignature))
-            .try_collect()
-            .await?)
+    fn build_solvable_orders(
+        current_orders: &boundary::SolvableOrders,
+        new_orders: Vec<database::orders::OrderWithoutTrades>,
+        mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        order_updates: HashMap<domain::OrderUid, database::orders::OrderUpdate>,
+        onchain_orders: HashMap<
+            domain::OrderUid,
+            database::onchain_broadcasted_orders::OnchainOrderPlacementRow,
+        >,
+        ethflow_data: HashMap<domain::OrderUid, model::order::EthflowData>,
+        presignature_events: HashMap<domain::OrderUid, database::events::PreSignature>,
+    ) -> anyhow::Result<boundary::SolvableOrders> {
+        let mut latest_trade_block = current_orders.latest_settlement_block;
+        let mut orders = current_orders.orders.clone();
+        let mut quotes = current_orders.quotes.clone();
+
+        // Blindly insert all new orders and quotes into the cache.
+        for new_order in new_orders {
+            let order =
+                full_order_into_model_order(new_order.into()).map_err(anyhow::Error::from)?;
+            let uid = domain::OrderUid(order.metadata.uid.0);
+            orders.insert(uid, order);
+            if let Some(quote) = new_quotes.remove(&uid) {
+                quotes.insert(uid, quote);
+            }
+        }
+
+        // Update all the existing orders with the new orders' data.
+        for (uid, order_update) in order_updates {
+            latest_trade_block = latest_trade_block.max(order_update.max_block_number as u64);
+            if let Some(order) = orders.get_mut(&uid) {
+                let sum_sell = big_decimal_to_big_uint(&order_update.sum_sell_amount)
+                    .and_then(|sell| sell.checked_add(&order.metadata.executed_sell_amount))
+                    .context("sum_sell_amount is not an unsigned integer")?;
+                let sum_buy = big_decimal_to_big_uint(&order_update.sum_buy_amount)
+                    .and_then(|buy| buy.checked_add(&order.metadata.executed_buy_amount))
+                    .context("sum_buy_amount is not an unsigned integer")?;
+                let sum_fee = big_decimal_to_u256(&order_update.sum_fee_amount)
+                    .and_then(|fee| fee.checked_add(order.metadata.executed_fee_amount))
+                    .context("sum_fee_amount does not fit in a u256")?;
+                let sum_surplus_fee = big_decimal_to_u256(&order_update.sum_surplus_fee)
+                    .and_then(|surplus_fee| {
+                        surplus_fee.checked_add(order.metadata.executed_surplus_fee)
+                    })
+                    .context("sum_surplus_fee does not fit in a u256")?;
+                let executed_sell_amount_before_fees = big_decimal_to_u256(
+                    &(order_update.sum_sell_amount - order_update.sum_fee_amount),
+                )
+                .and_then(|sell| sell.checked_add(order.metadata.executed_sell_amount_before_fees))
+                .context("executed_sell_amount_before_fees does not fit in a u256")?;
+
+                order.metadata.executed_sell_amount = sum_sell;
+                order.metadata.executed_buy_amount = sum_buy;
+                order.metadata.executed_fee_amount = sum_fee;
+                order.metadata.executed_sell_amount_before_fees = executed_sell_amount_before_fees;
+                order.metadata.executed_surplus_fee = sum_surplus_fee;
+                order.metadata.invalidated = order_update.invalidated;
+            } else {
+                tracing::warn!(?uid, "order is missing in the cache");
+            }
+        }
+
+        // Update onchain orders data.
+        for (uid, onchain_order) in onchain_orders {
+            if let Some(order) = orders.get_mut(&uid) {
+                order.metadata.onchain_order_data = Some(model::order::OnchainOrderData {
+                    sender: H160(onchain_order.sender.0),
+                    placement_error: onchain_order
+                        .placement_error
+                        .as_ref()
+                        .map(onchain_order_placement_error_from),
+                })
+            }
+        }
+
+        // Update ethflow data.
+        for (uid, ethflow_data) in ethflow_data {
+            if let Some(order) = orders.get_mut(&uid) {
+                order.metadata.ethflow_data = Some(ethflow_data);
+            }
+        }
+
+        // Update presignature events.
+        for (uid, presignature) in presignature_events {
+            if let Some(order) = orders.get_mut(&uid) {
+                if order.signature == Signature::PreSign {
+                    let status = if presignature.signed {
+                        model::order::OrderStatus::Open
+                    } else {
+                        model::order::OrderStatus::PresignaturePending
+                    };
+                    order.metadata.status = status;
+                }
+            }
+        }
+
+        // Finally, filter out all the invalid orders.
+        let now = now_in_epoch_seconds();
+        orders.retain(|_uid, order| {
+            let expired = order.data.valid_to >= now
+                && !order
+                    .metadata
+                    .ethflow_data
+                    .as_ref()
+                    .is_some_and(|data| data.user_valid_to < now as i64);
+
+            let invalidated = order.metadata.invalidated;
+            let onchain_error = order
+                .metadata
+                .onchain_order_data
+                .as_ref()
+                .is_some_and(|data| data.placement_error.is_some());
+            let fulfilled = {
+                match order.data.kind {
+                    model::order::OrderKind::Sell => {
+                        order.metadata.executed_sell_amount
+                            >= u256_to_big_uint(&order.data.sell_amount)
+                    }
+                    model::order::OrderKind::Buy => {
+                        order.metadata.executed_buy_amount
+                            >= u256_to_big_uint(&order.data.buy_amount)
+                    }
+                }
+            };
+
+            !expired && !invalidated && !onchain_error && !fulfilled
+        });
+
+        // Keep only relevant quotes.
+        quotes.retain(|uid, _quote| orders.contains_key(uid));
+
+        Ok(boundary::SolvableOrders {
+            orders,
+            quotes,
+            latest_settlement_block: latest_trade_block,
+        })
     }
 
     /// Returns the oldest settlement event for which the accociated auction is
