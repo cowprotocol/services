@@ -1,7 +1,7 @@
 use {
     crate::{auction::AuctionId, Address, PgTransaction},
     bigdecimal::BigDecimal,
-    sqlx::PgConnection,
+    sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
 };
 
@@ -17,16 +17,22 @@ pub async fn insert(
     ex: &mut PgTransaction<'_>,
     prices: &[AuctionPrice],
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str =
-        r#"INSERT INTO auction_prices (auction_id, token, price) VALUES ($1, $2, $3);"#;
-    for price in prices {
-        sqlx::query(QUERY)
-            .bind(price.auction_id)
-            .bind(price.token)
-            .bind(price.price.clone())
-            .execute(ex.deref_mut())
-            .await?;
+    const BATCH_SIZE: usize = 5000;
+
+    for chunk in prices.chunks(BATCH_SIZE) {
+        let mut query_builder =
+            QueryBuilder::new("INSERT INTO auction_prices (auction_id, token, price) ");
+
+        query_builder.push_values(chunk, |mut builder, price| {
+            builder
+                .push_bind(price.auction_id)
+                .push_bind(price.token)
+                .push_bind(price.price.clone());
+        });
+
+        query_builder.build().execute(ex.deref_mut()).await?;
     }
+
     Ok(())
 }
 
