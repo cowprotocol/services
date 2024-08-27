@@ -552,9 +552,9 @@ mod tests {
             byte_array::ByteArray,
             orders::{
                 BuyTokenDestination as DbBuyTokenDestination,
+                OrderBaseData,
                 OrderClass as DbOrderClass,
                 OrderKind as DbOrderKind,
-                OrderWithoutTrades,
                 SellTokenSource as DbSellTokenSource,
                 SigningScheme as DbSigningScheme,
             },
@@ -572,7 +572,7 @@ mod tests {
         let valid_to_timestamp = Utc::now() + Duration::days(1);
 
         let order_row = || {
-            let base = OrderWithoutTrades {
+            let base = OrderBaseData {
                 uid: ByteArray([0; 56]),
                 owner: ByteArray([0; 20]),
                 creation_timestamp: Utc::now(),

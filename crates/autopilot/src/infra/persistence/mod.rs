@@ -403,7 +403,7 @@ impl Persistence {
     ) -> anyhow::Result<boundary::SolvableOrders> {
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
-        let new_orders: Vec<database::orders::OrderWithoutTrades> = {
+        let new_orders: Vec<database::orders::OrderBaseData> = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["orders_after"])
@@ -484,7 +484,7 @@ impl Persistence {
 
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
-        new_orders: Vec<database::orders::OrderWithoutTrades>,
+        new_orders: Vec<database::orders::OrderBaseData>,
         mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
         order_updates: HashMap<domain::OrderUid, database::orders::OrderUpdate>,
         onchain_orders: HashMap<

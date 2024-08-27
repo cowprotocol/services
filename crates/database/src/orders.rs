@@ -456,7 +456,7 @@ type RawInteraction = (Address, BigDecimal, Vec<u8>);
 #[derive(Debug, sqlx::FromRow)]
 pub struct FullOrder {
     #[sqlx(flatten)]
-    base: OrderWithoutTrades,
+    base: OrderBaseData,
     pub sum_sell: BigDecimal,
     pub sum_buy: BigDecimal,
     pub sum_fee: BigDecimal,
@@ -467,8 +467,8 @@ pub struct FullOrder {
     pub presignature_pending: bool,
 }
 
-impl From<OrderWithoutTrades> for FullOrder {
-    fn from(base: OrderWithoutTrades) -> Self {
+impl From<OrderBaseData> for FullOrder {
+    fn from(base: OrderBaseData) -> Self {
         let presignature_pending = matches!(&base.signing_scheme, SigningScheme::PreSign);
         Self {
             base,
@@ -600,7 +600,7 @@ impl FullOrder {
 
     pub fn update_base<F>(&mut self, update_fn: F) -> &mut Self
     where
-        F: FnOnce(&mut OrderWithoutTrades),
+        F: FnOnce(&mut OrderBaseData),
     {
         update_fn(&mut self.base);
         self
@@ -617,7 +617,7 @@ impl FullOrder {
 
 /// Order with extra information from other tables excluding traded data.
 #[derive(Debug, sqlx::FromRow)]
-pub struct OrderWithoutTrades {
+pub struct OrderBaseData {
     pub uid: OrderUid,
     pub owner: Address,
     pub creation_timestamp: DateTime<Utc>,
@@ -839,7 +839,7 @@ pub fn orders_without_trades_after(
     ex: &mut PgConnection,
     after_timestamp: DateTime<Utc>,
     min_valid_to: i64,
-) -> BoxStream<'_, Result<OrderWithoutTrades, sqlx::Error>> {
+) -> BoxStream<'_, Result<OrderBaseData, sqlx::Error>> {
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
@@ -1706,7 +1706,7 @@ mod tests {
         async fn get_order_without_trades(
             ex: &mut PgConnection,
             min_valid_to: i64,
-        ) -> Option<OrderWithoutTrades> {
+        ) -> Option<OrderBaseData> {
             orders_without_trades_after(ex, Default::default(), min_valid_to)
                 .next()
                 .await
@@ -1830,7 +1830,7 @@ mod tests {
         async fn get_orders_without_trades(
             ex: &mut PgConnection,
             min_timestamp: DateTime<Utc>,
-        ) -> Result<Vec<OrderWithoutTrades>, sqlx::Error> {
+        ) -> Result<Vec<OrderBaseData>, sqlx::Error> {
             orders_without_trades_after(ex, min_timestamp, 0)
                 .try_collect()
                 .await
