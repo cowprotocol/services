@@ -183,6 +183,7 @@ impl SolvableOrdersCache {
             database::onchain_broadcasted_orders::OnchainOrderPlacementRow,
         >,
         ethflow_data: HashMap<domain::OrderUid, model::order::EthflowData>,
+        presignature_events: HashMap<domain::OrderUid, database::events::PreSignature>,
     ) -> Result<boundary::SolvableOrders> {
         let mut latest_trade_block = current_orders.latest_settlement_block;
         let mut orders = current_orders.orders.clone();
@@ -251,6 +252,20 @@ impl SolvableOrdersCache {
         for (uid, ethflow_data) in ethflow_data {
             if let Some(order) = orders.get_mut(&uid) {
                 order.metadata.ethflow_data = Some(ethflow_data);
+            }
+        }
+
+        // Update presignature events.
+        for (uid, presignature) in presignature_events {
+            if let Some(order) = orders.get_mut(&uid) {
+                if order.signature == Signature::PreSign {
+                    let status = if presignature.signed {
+                        model::order::OrderStatus::Open
+                    } else {
+                        model::order::OrderStatus::PresignaturePending
+                    };
+                    order.metadata.status = status;
+                }
             }
         }
 
@@ -490,11 +505,15 @@ impl SolvableOrdersCache {
             .persistence
             .onchain_placed_orders_after(last_block_number);
         let new_ethflow_data_fut = self.persistence.ethflow_data_after(last_block_number);
-        let (new_orders, order_updates, onchain_orders, ethflow_data) = tokio::try_join!(
+        let new_presignature_events_fut = self
+            .persistence
+            .presignature_events_after(last_block_number);
+        let (new_orders, order_updates, onchain_orders, ethflow_data, presignature_events) = tokio::try_join!(
             new_orders_fut,
             order_updates_fut,
             new_onchain_placed_orders_fut,
             new_ethflow_data_fut,
+            new_presignature_events_fut,
         )?;
         let new_order_uids = new_orders
             .iter()
@@ -509,6 +528,7 @@ impl SolvableOrdersCache {
             order_updates,
             onchain_orders,
             ethflow_data,
+            presignature_events,
         )
     }
 

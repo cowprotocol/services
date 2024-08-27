@@ -463,6 +463,21 @@ impl Persistence {
         )
     }
 
+    pub async fn presignature_events_after(
+        &self,
+        after_block: i64,
+    ) -> anyhow::Result<HashMap<domain::OrderUid, database::events::PreSignature>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["presignature_events_after"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
+        Ok(database::events::events_after(&mut ex, after_block)
+            .map_ok(|presignature| (domain::OrderUid(presignature.order_uid.0), presignature))
+            .try_collect()
+            .await?)
+    }
+
     /// Returns the oldest settlement event for which the accociated auction is
     /// not yet populated in the database.
     pub async fn get_settlement_without_auction(
