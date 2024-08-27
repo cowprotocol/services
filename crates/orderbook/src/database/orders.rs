@@ -445,20 +445,19 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
     let status = calculate_status(&order);
     let pre_interactions = extract_interactions(&order, database::orders::ExecutionTime::Pre)?;
     let post_interactions = extract_interactions(&order, database::orders::ExecutionTime::Post)?;
-    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data() {
+    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
-            user_valid_to: *user_valid_to,
+            user_valid_to,
             refund_tx_hash: refund_tx.map(|hash| H256(hash.0)),
         })
     } else {
         None
     };
-    let onchain_user = order
-        .onchain_user()
-        .map(|onchain_user| H160(onchain_user.0));
+    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
     let onchain_placement_error = order
-        .onchain_placement_error()
+        .onchain_placement_error
+        .as_ref()
         .map(onchain_order_placement_error_from);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
@@ -480,7 +479,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context("executed sell amount before fees does not fit in a u256")?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
-        executed_surplus_fee: big_decimal_to_u256(order.executed_surplus_fee())
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
             .context("executed surplus fee is not a valid u256")?,
         invalidated: order.invalidated(),
         status,
@@ -553,7 +552,6 @@ mod tests {
             byte_array::ByteArray,
             orders::{
                 BuyTokenDestination as DbBuyTokenDestination,
-                FullOrder,
                 OrderClass as DbOrderClass,
                 OrderKind as DbOrderKind,
                 OrderWithoutTrades,
@@ -599,18 +597,9 @@ mod tests {
                 presignature_pending: false,
                 pre_interactions: Vec::new(),
                 post_interactions: Vec::new(),
-                ethflow_data: None,
-                onchain_user: None,
-                onchain_placement_error: None,
-                executed_surplus_fee: Default::default(),
                 full_app_data: Default::default(),
             };
-            FullOrder::new(
-                base,
-                BigDecimal::default(),
-                BigDecimal::default(),
-                BigDecimal::default(),
-            )
+            base.into()
         };
 
         // Open - sell (filled - 0%)
@@ -808,11 +797,16 @@ mod tests {
 
         // Expired - for ethflow orders
         assert_eq!(
-            calculate_status(order_row().update_base(|base| {
-                base.invalidated = false;
-                base.valid_to = valid_to_yesterday.timestamp();
-                base.ethflow_data = Some((None, valid_to_yesterday.timestamp()));
-            })),
+            calculate_status(
+                order_row()
+                    .update_base(|base| {
+                        base.invalidated = false;
+                        base.valid_to = valid_to_yesterday.timestamp();
+                    })
+                    .update_self(|order| {
+                        order.ethflow_data = Some((None, valid_to_yesterday.timestamp()));
+                    })
+            ),
             OrderStatus::Expired
         );
     }

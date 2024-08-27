@@ -190,9 +190,8 @@ impl SolvableOrdersCache {
 
         // Blindly insert all new orders and quotes into the cache.
         for new_order in new_orders {
-            let full_order =
-                database::orders::FullOrder::new(new_order, 0.into(), 0.into(), 0.into());
-            let order = full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
+            let order =
+                full_order_into_model_order(new_order.into()).map_err(anyhow::Error::from)?;
             let uid = domain::OrderUid(order.metadata.uid.0);
             orders.insert(uid, order);
             if let Some(quote) = new_quotes.remove(&uid) {

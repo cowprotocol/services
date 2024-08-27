@@ -460,23 +460,28 @@ pub struct FullOrder {
     pub sum_sell: BigDecimal,
     pub sum_buy: BigDecimal,
     pub sum_fee: BigDecimal,
+    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
+    pub onchain_user: Option<Address>,
+    pub onchain_placement_error: Option<OnchainOrderPlacementError>,
+    pub executed_surplus_fee: BigDecimal,
+}
+
+impl From<OrderWithoutTrades> for FullOrder {
+    fn from(base: OrderWithoutTrades) -> Self {
+        Self {
+            base,
+            sum_sell: Default::default(),
+            sum_buy: Default::default(),
+            sum_fee: Default::default(),
+            ethflow_data: Default::default(),
+            onchain_user: Default::default(),
+            onchain_placement_error: Default::default(),
+            executed_surplus_fee: Default::default(),
+        }
+    }
 }
 
 impl FullOrder {
-    pub fn new(
-        base: OrderWithoutTrades,
-        sum_sell: BigDecimal,
-        sum_buy: BigDecimal,
-        sum_fee: BigDecimal,
-    ) -> Self {
-        Self {
-            base,
-            sum_sell,
-            sum_buy,
-            sum_fee,
-        }
-    }
-
     pub fn uid(&self) -> &OrderUid {
         &self.base.uid
     }
@@ -506,7 +511,12 @@ impl FullOrder {
     }
 
     pub fn valid_to(&self) -> i64 {
-        self.base.valid_to()
+        if let Some((_, valid_to)) = self.ethflow_data {
+            // For ethflow orders, we always return the user valid_to,
+            // as the Eip1271 valid to is u32::max
+            return valid_to;
+        }
+        self.base.valid_to
     }
 
     pub fn app_data(&self) -> &AppId {
@@ -573,22 +583,6 @@ impl FullOrder {
         &self.base.post_interactions
     }
 
-    pub fn ethflow_data(&self) -> Option<&(Option<TransactionHash>, i64)> {
-        self.base.ethflow_data.as_ref()
-    }
-
-    pub fn onchain_user(&self) -> Option<&Address> {
-        self.base.onchain_user.as_ref()
-    }
-
-    pub fn onchain_placement_error(&self) -> Option<&OnchainOrderPlacementError> {
-        self.base.onchain_placement_error.as_ref()
-    }
-
-    pub fn executed_surplus_fee(&self) -> &BigDecimal {
-        &self.base.executed_surplus_fee
-    }
-
     pub fn full_app_data(&self) -> Option<&Vec<u8>> {
         self.base.full_app_data.as_ref()
     }
@@ -649,22 +643,7 @@ pub struct OrderWithoutTrades {
     pub presignature_pending: bool,
     pub pre_interactions: Vec<RawInteraction>,
     pub post_interactions: Vec<RawInteraction>,
-    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
-    pub onchain_user: Option<Address>,
-    pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
-}
-
-impl OrderWithoutTrades {
-    pub fn valid_to(&self) -> i64 {
-        if let Some((_, valid_to)) = self.ethflow_data {
-            // For ethflow orders, we always return the user valid_to,
-            // as the Eip1271 valid to is u32::max
-            return valid_to;
-        }
-        self.valid_to
-    }
 }
 
 // When querying orders we have several specialized use cases working with their
@@ -868,10 +847,7 @@ SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_a
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.class,
-(o.cancellation_timestamp IS NOT NULL OR
-    (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 OR
-    (SELECT COUNT(*) FROM onchain_order_invalidations onchain_c where onchain_c.uid = o.uid limit 1) > 0
-) AS invalidated,
+(o.cancellation_timestamp IS NOT NULL) AS invalidated,
 (o.signing_scheme = 'presign' AND COALESCE((
     SELECT (NOT p.signed) as unsigned
     FROM presignature_events p
@@ -881,12 +857,6 @@ o.class,
 ), true)) AS presignature_pending,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'pre' order by p.index) as pre_interactions,
 array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'post' order by p.index) as post_interactions,
-(SELECT (tx_hash, eth_o.valid_to) from ethflow_orders eth_o
-    left join ethflow_refunds on ethflow_refunds.order_uid=eth_o.uid
-    where eth_o.uid = o.uid limit 1) as ethflow_data,
-(SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
-(SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 FROM orders o
 LEFT OUTER JOIN ethflow_orders eth_o ON eth_o.uid = o.uid
@@ -1175,7 +1145,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(Some(sender).as_ref(), order_.onchain_user());
+        assert_eq!(Some(sender), order_.onchain_user);
     }
 
     #[tokio::test]
@@ -1211,8 +1181,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            Some((Some(Default::default()), user_valid_to)).as_ref(),
-            order_.ethflow_data()
+            Some((Some(Default::default()), user_valid_to)),
+            order_.ethflow_data
         );
     }
 
@@ -1901,11 +1871,6 @@ mod tests {
             .unwrap();
 
         assert!(get_full_order(&mut db, 2).await.is_none());
-        assert!(get_order_without_trades(&mut db, 2)
-            .await
-            .unwrap()
-            .onchain_placement_error
-            .is_some());
     }
 
     #[tokio::test]
@@ -2307,7 +2272,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee(), &fee);
+        assert_eq!(order.executed_surplus_fee, fee);
 
         let fee: BigDecimal = 1.into();
         crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee)
@@ -2318,7 +2283,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee(), &fee);
+        assert_eq!(order.executed_surplus_fee, fee);
     }
 
     #[tokio::test]

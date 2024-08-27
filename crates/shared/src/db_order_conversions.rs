@@ -44,20 +44,19 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     };
     let pre_interactions = extract_interactions(&order, ExecutionTime::Pre)?;
     let post_interactions = extract_interactions(&order, ExecutionTime::Post)?;
-    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data() {
+    let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {
         Some(EthflowData {
-            user_valid_to: *user_valid_to,
+            user_valid_to,
             refund_tx_hash: refund_tx.map(|hash| H256::from(hash.0)),
         })
     } else {
         None
     };
-    let onchain_user = order
-        .onchain_user()
-        .map(|onchain_user| H160(onchain_user.0));
+    let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
     let onchain_placement_error = order
-        .onchain_placement_error()
+        .onchain_placement_error
+        .as_ref()
         .map(onchain_order_placement_error_from);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
@@ -92,7 +91,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context("executed sell amount before fees does not fit in a u256")?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
-        executed_surplus_fee: big_decimal_to_u256(order.executed_surplus_fee())
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
             .context("executed surplus fee is not a valid u256")?,
         invalidated: order.invalidated(),
         status,
