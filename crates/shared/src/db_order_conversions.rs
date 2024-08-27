@@ -56,7 +56,9 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         .onchain_user()
         .map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
-    let onchain_placement_error = onchain_order_placement_error_from(&order);
+    let onchain_placement_error = order
+        .onchain_placement_error()
+        .map(onchain_order_placement_error_from);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
         placement_error: onchain_placement_error,
@@ -179,35 +181,28 @@ pub fn order_class_into(class: &OrderClass) -> DbOrderClass {
 }
 
 pub fn onchain_order_placement_error_from(
-    order: &FullOrderDb,
-) -> Option<OnchainOrderPlacementError> {
-    match order.onchain_placement_error() {
-        Some(DbOnchainOrderPlacementError::InvalidOrderData) => {
-            Some(OnchainOrderPlacementError::InvalidOrderData)
+    error: &DbOnchainOrderPlacementError,
+) -> OnchainOrderPlacementError {
+    match error {
+        DbOnchainOrderPlacementError::InvalidOrderData => {
+            OnchainOrderPlacementError::InvalidOrderData
         }
-        Some(DbOnchainOrderPlacementError::QuoteNotFound) => {
-            Some(OnchainOrderPlacementError::QuoteNotFound)
+        DbOnchainOrderPlacementError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
+        DbOnchainOrderPlacementError::PreValidationError => {
+            OnchainOrderPlacementError::PreValidationError
         }
-        Some(DbOnchainOrderPlacementError::PreValidationError) => {
-            Some(OnchainOrderPlacementError::PreValidationError)
+        DbOnchainOrderPlacementError::DisabledOrderClass => {
+            OnchainOrderPlacementError::DisabledOrderClass
         }
-        Some(DbOnchainOrderPlacementError::DisabledOrderClass) => {
-            Some(OnchainOrderPlacementError::DisabledOrderClass)
+        DbOnchainOrderPlacementError::ValidToTooFarInFuture => {
+            OnchainOrderPlacementError::ValidToTooFarInTheFuture
         }
-        Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
-            Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
+        DbOnchainOrderPlacementError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
+        DbOnchainOrderPlacementError::InsufficientFee => {
+            OnchainOrderPlacementError::InsufficientFee
         }
-        Some(DbOnchainOrderPlacementError::InvalidQuote) => {
-            Some(OnchainOrderPlacementError::InvalidQuote)
-        }
-        Some(DbOnchainOrderPlacementError::InsufficientFee) => {
-            Some(OnchainOrderPlacementError::InsufficientFee)
-        }
-        Some(DbOnchainOrderPlacementError::NonZeroFee) => {
-            Some(OnchainOrderPlacementError::NonZeroFee)
-        }
-        Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
-        None => None,
+        DbOnchainOrderPlacementError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
+        DbOnchainOrderPlacementError::Other => OnchainOrderPlacementError::Other,
     }
 }
 

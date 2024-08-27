@@ -968,6 +968,89 @@ pub async fn user_orders_with_quote(
         .await
 }
 
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
+pub struct OrderUpdate {
+    pub order_uid: OrderUid,
+    pub max_block_number: i64,
+    pub sum_sell_amount: BigDecimal,
+    pub sum_buy_amount: BigDecimal,
+    pub sum_fee_amount: BigDecimal,
+    pub sum_surplus_fee: BigDecimal,
+    pub invalidated: bool,
+}
+
+pub fn updates_after(
+    ex: &mut PgConnection,
+    after_block: i64,
+) -> BoxStream<'_, Result<OrderUpdate, sqlx::Error>> {
+    const QUERY: &str = r#"
+WITH combined_data AS (
+    SELECT
+        order_uid,
+        block_number,
+        buy_amount,
+        sell_amount,
+        fee_amount,
+        0 as surplus_fee,
+        0 AS invalidated
+    FROM trades
+    WHERE block_number > $1
+
+    UNION ALL
+
+    SELECT
+        order_uid,
+        block_number,
+        NULL as buy_amount,
+        NULL as sell_amount,
+        NULL as fee_amount,
+        surplus_fee,
+        0 AS invalidated
+    FROM order_execution
+    WHERE block_number > $1
+
+    UNION ALL
+
+    SELECT
+        order_uid,
+        block_number,
+        NULL as buy_amount,
+        NULL as sell_amount,
+        NULL as fee_amount,
+        0 as surplus_fee,
+        1 AS invalidated
+    FROM invalidations
+    WHERE block_number > $1
+
+    UNION ALL
+
+    SELECT
+        uid as order_uid,
+        block_number,
+        NULL as buy_amount,
+        NULL as sell_amount,
+        NULL as fee_amount,
+        0 as surplus_fee,
+        1 AS invalidated
+    FROM onchain_order_invalidations
+    WHERE block_number > $1
+)
+
+SELECT
+    order_uid,
+    MAX(block_number) as max_block_number,
+    COALESCE(SUM(buy_amount), 0) as sum_buy_amount,
+    COALESCE(SUM(sell_amount), 0) as sum_sell_amount,
+    COALESCE(SUM(fee_amount), 0) as sum_fee_amount,
+    COALESCE(SUM(surplus_fee), 0) as sum_surplus_fee,
+    MAX(invalidated) > 0 AS invalidated
+FROM combined_data
+GROUP BY order_uid
+"#;
+
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -980,7 +1063,7 @@ mod tests {
                 EthOrderPlacement,
                 Refund,
             },
-            events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+            events::{self, Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
             onchain_invalidations::insert_onchain_invalidation,
             PgTransaction,
@@ -2263,5 +2346,101 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(full_order.full_app_data(), Some(full_app_data).as_ref());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_updates_after() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn get_trades_after(
+            ex: &mut PgConnection,
+            min_block: i64,
+        ) -> Result<Vec<OrderUpdate>, sqlx::Error> {
+            updates_after(ex, min_block).try_collect().await
+        }
+
+        let (index_a, event_a) = {
+            (
+                EventIndex {
+                    block_number: 1,
+                    ..Default::default()
+                },
+                Trade {
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(10),
+                    buy_amount: BigDecimal::from(100),
+                    fee_amount: BigDecimal::from(1),
+                },
+            )
+        };
+        let (index_b, event_b) = {
+            (
+                EventIndex {
+                    block_number: 2,
+                    ..Default::default()
+                },
+                Trade {
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(20),
+                    buy_amount: BigDecimal::from(200),
+                    fee_amount: BigDecimal::from(2),
+                },
+            )
+        };
+        let (index_c, event_c) = {
+            (
+                EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+                Trade {
+                    order_uid: ByteArray([2u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(40),
+                    buy_amount: BigDecimal::from(400),
+                    fee_amount: BigDecimal::from(4),
+                },
+            )
+        };
+
+        events::insert_trade(&mut db, &index_a, &event_a)
+            .await
+            .unwrap();
+        events::insert_trade(&mut db, &index_b, &event_b)
+            .await
+            .unwrap();
+        events::insert_trade(&mut db, &index_c, &event_c)
+            .await
+            .unwrap();
+
+        assert!(get_trades_after(&mut db, 2).await.unwrap().is_empty());
+
+        let mut result = get_trades_after(&mut db, 0).await.unwrap();
+        result.sort_by_key(|t| t.max_block_number);
+        assert_eq!(
+            result,
+            vec![
+                OrderUpdate {
+                    order_uid: ByteArray([2u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: BigDecimal::from(40),
+                    sum_buy_amount: BigDecimal::from(400),
+                    sum_fee_amount: BigDecimal::from(4),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: false,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([1u8; 56]),
+                    max_block_number: 2,
+                    sum_sell_amount: BigDecimal::from(30),
+                    sum_buy_amount: BigDecimal::from(300),
+                    sum_fee_amount: BigDecimal::from(3),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: false,
+                },
+            ]
+        );
     }
 }

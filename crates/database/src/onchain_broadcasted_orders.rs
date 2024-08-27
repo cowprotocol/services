@@ -1,6 +1,7 @@
 use {
     super::events::EventIndex,
     crate::{Address, OrderUid, PgTransaction},
+    futures::stream::BoxStream,
     sqlx::{Executor, PgConnection},
 };
 
@@ -112,6 +113,41 @@ pub async fn read_order(
         WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
+pub fn read_orders_after(
+    ex: &mut PgConnection,
+    after_block: i64,
+) -> BoxStream<'_, Result<OnchainOrderPlacementRow, sqlx::Error>> {
+    const QUERY: &str = r#"
+WITH ranked_orders AS (
+    SELECT
+        uid,
+        sender,
+        is_reorged,
+        block_number,
+        log_index,
+        placement_error,
+        ROW_NUMBER() OVER (
+            PARTITION BY uid
+            ORDER BY block_number DESC, log_index DESC
+        ) as rn
+    FROM onchain_placed_orders
+    WHERE block_number > $1
+)
+
+SELECT
+    uid,
+    sender,
+    is_reorged,
+    block_number,
+    log_index,
+    placement_error
+FROM ranked_orders
+WHERE rn = 1;
+    "#;
+
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
 #[cfg(test)]

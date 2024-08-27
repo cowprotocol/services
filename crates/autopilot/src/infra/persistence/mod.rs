@@ -407,19 +407,38 @@ impl Persistence {
         )
     }
 
-    pub async fn trades_after(
+    pub async fn order_updates_after(
         &self,
         after_block: i64,
-    ) -> anyhow::Result<HashMap<domain::OrderUid, database::trades::TradedAmounts>> {
+    ) -> anyhow::Result<HashMap<domain::OrderUid, database::orders::OrderUpdate>> {
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["trades_after"])
+            .with_label_values(&["order_updates_after"])
             .start_timer();
         let mut ex = self.postgres.pool.acquire().await.context("begin")?;
-        Ok(database::trades::trades_after(&mut ex, after_block)
+        Ok(database::orders::updates_after(&mut ex, after_block)
             .map_ok(|trade| (domain::OrderUid(trade.order_uid.0), trade))
             .try_collect()
             .await?)
+    }
+
+    pub async fn onchain_placed_orders_after(
+        &self,
+        after_block: i64,
+    ) -> anyhow::Result<
+        HashMap<domain::OrderUid, database::onchain_broadcasted_orders::OnchainOrderPlacementRow>,
+    > {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["onchain_placed_orders_after"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
+        Ok(
+            database::onchain_broadcasted_orders::read_orders_after(&mut ex, after_block)
+                .map_ok(|order| (domain::OrderUid(order.uid.0), order))
+                .try_collect()
+                .await?,
+        )
     }
 
     /// Returns the oldest settlement event for which the accociated auction is

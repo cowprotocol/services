@@ -457,7 +457,9 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         .onchain_user()
         .map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
-    let onchain_placement_error = onchain_order_placement_error_from(&order);
+    let onchain_placement_error = order
+        .onchain_placement_error()
+        .map(onchain_order_placement_error_from);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
         placement_error: onchain_placement_error,

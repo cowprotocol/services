@@ -17,11 +17,12 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
+    num::CheckedAdd,
     number::conversions::{
         big_decimal_to_big_uint,
         big_decimal_to_u256,
-        big_uint_to_big_decimal,
         u256_to_big_decimal,
+        u256_to_big_uint,
     },
     primitive_types::{H160, H256, U256},
     prometheus::{
@@ -36,7 +37,7 @@ use {
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
-        db_order_conversions::full_order_into_model_order,
+        db_order_conversions::{full_order_into_model_order, onchain_order_placement_error_from},
         price_estimation::{
             native::NativePriceEstimating,
             native_price_cache::CachingNativePriceEstimator,
@@ -175,114 +176,107 @@ impl SolvableOrdersCache {
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
         new_orders: Vec<database::orders::OrderWithoutTrades>,
-        mut new_trades: HashMap<domain::OrderUid, database::trades::TradedAmounts>,
-        new_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        order_updates: HashMap<domain::OrderUid, database::orders::OrderUpdate>,
+        onchain_orders: HashMap<
+            domain::OrderUid,
+            database::onchain_broadcasted_orders::OnchainOrderPlacementRow,
+        >,
     ) -> Result<boundary::SolvableOrders> {
-        let now = now_in_epoch_seconds();
+        let mut latest_trade_block = current_orders.latest_settlement_block;
         let mut orders = current_orders.orders.clone();
-        // Remove expired orders.
+        let mut quotes = current_orders.quotes.clone();
+
+        for new_order in new_orders {
+            let full_order =
+                database::orders::FullOrder::new(new_order, 0.into(), 0.into(), 0.into());
+            let order = full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
+            let uid = domain::OrderUid(order.metadata.uid.0);
+            orders.insert(uid, order);
+            if let Some(quote) = new_quotes.remove(&uid) {
+                quotes.insert(uid, quote);
+            }
+        }
+
+        for (uid, order_update) in order_updates {
+            latest_trade_block = latest_trade_block.max(order_update.max_block_number as u64);
+            if let Some(order) = orders.get_mut(&uid) {
+                let sum_sell = big_decimal_to_big_uint(&order_update.sum_sell_amount)
+                    .and_then(|sell| sell.checked_add(&order.metadata.executed_sell_amount))
+                    .context("sum_sell_amount is not an unsigned integer")?;
+                let sum_buy = big_decimal_to_big_uint(&order_update.sum_buy_amount)
+                    .and_then(|buy| buy.checked_add(&order.metadata.executed_buy_amount))
+                    .context("sum_buy_amount is not an unsigned integer")?;
+                let sum_fee = big_decimal_to_u256(&order_update.sum_fee_amount)
+                    .and_then(|fee| fee.checked_add(order.metadata.executed_fee_amount))
+                    .context("sum_fee_amount does not fit in a u256")?;
+                let sum_surplus_fee = big_decimal_to_u256(&order_update.sum_surplus_fee)
+                    .and_then(|surplus_fee| {
+                        surplus_fee.checked_add(order.metadata.executed_surplus_fee)
+                    })
+                    .context("sum_surplus_fee does not fit in a u256")?;
+                let executed_sell_amount_before_fees = big_decimal_to_u256(
+                    &(order_update.sum_sell_amount - order_update.sum_fee_amount),
+                )
+                .and_then(|sell| sell.checked_add(order.metadata.executed_sell_amount_before_fees))
+                .context("executed_sell_amount_before_fees does not fit in a u256")?;
+
+                order.metadata.executed_sell_amount = sum_sell;
+                order.metadata.executed_buy_amount = sum_buy;
+                order.metadata.executed_fee_amount = sum_fee;
+                order.metadata.executed_sell_amount_before_fees = executed_sell_amount_before_fees;
+                order.metadata.executed_surplus_fee = sum_surplus_fee;
+
+                order.metadata.invalidated = order_update.invalidated;
+            } else {
+                tracing::warn!(?uid, "order is missing in the cache");
+            }
+        }
+
+        for (uid, onchain_order) in onchain_orders {
+            if let Some(order) = orders.get_mut(&uid) {
+                order.metadata.onchain_order_data = Some(model::order::OnchainOrderData {
+                    sender: H160(onchain_order.sender.0),
+                    placement_error: onchain_order
+                        .placement_error
+                        .as_ref()
+                        .map(onchain_order_placement_error_from),
+                })
+            }
+        }
+
+        let now = now_in_epoch_seconds();
         orders.retain(|_uid, order| {
-            order.data.valid_to >= now
+            let expired = order.data.valid_to >= now
                 && !order
                     .metadata
                     .ethflow_data
                     .as_ref()
-                    .is_some_and(|data| data.user_valid_to < now as i64)
-        });
-        let mut quotes = current_orders.quotes.clone();
-        let mut latest_trade_block = current_orders.latest_settlement_block;
+                    .is_some_and(|data| data.user_valid_to < now as i64);
 
-        for new_order in new_orders {
-            let uid = domain::OrderUid(new_order.uid.0);
-
-            if new_order.onchain_placement_error.is_some() || new_order.invalidated {
-                orders.remove(&uid);
-                quotes.remove(&uid);
-                continue;
-            }
-
-            // Drop already visited trades to slightly reduce time complexity.
-            let Some(trade_amounts) = new_trades.remove(&uid) else {
-                continue;
-            };
-            let (executed_sell_amount, executed_buy_amount, executed_fee_amount) = orders
-                .get(&domain::OrderUid(new_order.uid.0))
-                .map(|o| {
-                    (
-                        big_uint_to_big_decimal(&o.metadata.executed_sell_amount),
-                        big_uint_to_big_decimal(&o.metadata.executed_buy_amount),
-                        u256_to_big_decimal(&o.metadata.executed_fee_amount),
-                    )
-                })
-                .unwrap_or_default();
-            let sum_sell = trade_amounts.sell_amount + executed_sell_amount;
-            let sum_buy = trade_amounts.buy_amount + executed_buy_amount;
-
-            let fulfilled = match new_order.kind {
-                database::orders::OrderKind::Sell => sum_sell >= new_order.sell_amount,
-                database::orders::OrderKind::Buy => sum_buy >= new_order.buy_amount,
-            };
-
-            if !fulfilled {
-                let sum_fee = trade_amounts.fee_amount + executed_fee_amount;
-                let full_order =
-                    database::orders::FullOrder::new(new_order, sum_sell, sum_buy, sum_fee);
-                let order = full_order_into_model_order(full_order).map_err(anyhow::Error::from)?;
-                orders.insert(uid, order);
-
-                if let Some(new_quote) = new_quotes.get(&uid) {
-                    quotes.insert(uid, new_quote.clone());
-                }
-            } else {
-                orders.remove(&uid);
-                quotes.remove(&uid);
-            }
-            latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
-        }
-
-        // Iterate over remaining trades to drop orders that are already fulfilled.
-        for (uid, trade_amounts) in new_trades {
-            if let Some(order) = orders.get_mut(&uid) {
-                let (executed_sell_amount, executed_buy_amount, executed_fee_amount) = (
-                    big_uint_to_big_decimal(&order.metadata.executed_sell_amount),
-                    big_uint_to_big_decimal(&order.metadata.executed_buy_amount),
-                    u256_to_big_decimal(&order.metadata.executed_fee_amount),
-                );
-                let sum_sell = trade_amounts.sell_amount + executed_sell_amount;
-                let sum_buy = trade_amounts.buy_amount + executed_buy_amount;
-                let fulfilled = match order.data.kind {
+            let invalidated = order.metadata.invalidated;
+            let onchain_error = order
+                .metadata
+                .onchain_order_data
+                .as_ref()
+                .is_some_and(|data| data.placement_error.is_some());
+            let fulfilled = {
+                match order.data.kind {
                     model::order::OrderKind::Sell => {
-                        big_decimal_to_u256(&sum_sell).context("U256 overflow")?
-                            >= order.data.sell_amount
+                        order.metadata.executed_sell_amount
+                            >= u256_to_big_uint(&order.data.sell_amount)
                     }
                     model::order::OrderKind::Buy => {
-                        big_decimal_to_u256(&sum_buy).context("U256 overflow")?
-                            >= order.data.buy_amount
-                    }
-                };
-
-                if fulfilled {
-                    orders.remove(&uid);
-                    quotes.remove(&uid);
-                } else {
-                    let sum_fee = trade_amounts.fee_amount + executed_fee_amount;
-                    order.metadata.executed_sell_amount = big_decimal_to_big_uint(&sum_sell)
-                        .context("sell_amount is not an unsigned integer")?;
-                    order.metadata.executed_buy_amount = big_decimal_to_big_uint(&sum_buy)
-                        .context("buy_amount is not an unsigned integer")?;
-                    order.metadata.executed_fee_amount = big_decimal_to_u256(&sum_fee)
-                        .context("buy_amount is not an unsigned integer")?;
-                    order.metadata.executed_sell_amount_before_fees =
-                        big_decimal_to_u256(&(&sum_sell - &sum_fee))
-                            .context("executed sell amount before fees does not fit in a u256")?;
-                    // todo: executed surplus
-                    if let Some(new_quote) = new_quotes.get(&uid) {
-                        quotes.insert(uid, new_quote.clone());
+                        order.metadata.executed_buy_amount
+                            >= u256_to_big_uint(&order.data.buy_amount)
                     }
                 }
-            }
-            latest_trade_block = latest_trade_block.max(trade_amounts.block_number as u64);
-        }
+            };
+
+            !expired && !invalidated && !onchain_error && !fulfilled
+        });
+
+        quotes.retain(|uid, _quote| orders.contains_key(uid));
 
         Ok(boundary::SolvableOrders {
             orders,
@@ -478,18 +472,31 @@ impl SolvableOrdersCache {
         let new_orders_fut = self
             .persistence
             .orders_after(cache.last_order_creation_timestamp, min_valid_to as i64);
-        let new_trades_fut = self.persistence.trades_after(
-            i64::try_from(cache.solvable_orders.latest_settlement_block)
-                .context("block number value exceeds i64")?,
-        );
-        let (new_orders, new_trades) = tokio::try_join!(new_orders_fut, new_trades_fut)?;
-        let order_uids = new_orders
+        let last_block_number = i64::try_from(cache.solvable_orders.latest_settlement_block)
+            .context("block number value exceeds i64")?;
+        let order_updates_fut = self.persistence.order_updates_after(last_block_number);
+        let new_onchain_placed_orders_fut = self
+            .persistence
+            .onchain_placed_orders_after(last_block_number);
+        // todo: ethflow_refunds
+        let (new_orders, order_updates, onchain_orders) = tokio::try_join!(
+            new_orders_fut,
+            order_updates_fut,
+            new_onchain_placed_orders_fut
+        )?;
+        let new_order_uids = new_orders
             .iter()
             .map(|order| domain::OrderUid(order.uid.0))
             .collect::<Vec<_>>();
-        let quotes = self.persistence.read_quotes(order_uids.iter()).await?;
+        let quotes = self.persistence.read_quotes(new_order_uids.iter()).await?;
 
-        Self::build_solvable_orders(&cache.solvable_orders, new_orders, new_trades, quotes)
+        Self::build_solvable_orders(
+            &cache.solvable_orders,
+            new_orders,
+            quotes,
+            order_updates,
+            onchain_orders,
+        )
     }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
