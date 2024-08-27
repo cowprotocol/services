@@ -455,7 +455,7 @@ impl Persistence {
                 .map_ok(|eth_order_data| {
                     (
                         domain::OrderUid(eth_order_data.uid.0),
-                        eth_order_data_into(eth_order_data),
+                        eth_order_data_into_model(eth_order_data),
                     )
                 })
                 .try_collect()
@@ -587,7 +587,7 @@ impl Persistence {
     }
 }
 
-fn eth_order_data_into(
+fn eth_order_data_into_model(
     eth_order_data: database::ethflow_orders::EthOrderData,
 ) -> model::order::EthflowData {
     model::order::EthflowData {
