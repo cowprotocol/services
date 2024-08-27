@@ -182,11 +182,13 @@ impl SolvableOrdersCache {
             domain::OrderUid,
             database::onchain_broadcasted_orders::OnchainOrderPlacementRow,
         >,
+        ethflow_data: HashMap<domain::OrderUid, model::order::EthflowData>,
     ) -> Result<boundary::SolvableOrders> {
         let mut latest_trade_block = current_orders.latest_settlement_block;
         let mut orders = current_orders.orders.clone();
         let mut quotes = current_orders.quotes.clone();
 
+        // Blindly insert all new orders and quotes into the cache.
         for new_order in new_orders {
             let full_order =
                 database::orders::FullOrder::new(new_order, 0.into(), 0.into(), 0.into());
@@ -198,6 +200,7 @@ impl SolvableOrdersCache {
             }
         }
 
+        // Update all the existing orders with the new orders' data.
         for (uid, order_update) in order_updates {
             latest_trade_block = latest_trade_block.max(order_update.max_block_number as u64);
             if let Some(order) = orders.get_mut(&uid) {
@@ -226,13 +229,13 @@ impl SolvableOrdersCache {
                 order.metadata.executed_fee_amount = sum_fee;
                 order.metadata.executed_sell_amount_before_fees = executed_sell_amount_before_fees;
                 order.metadata.executed_surplus_fee = sum_surplus_fee;
-
                 order.metadata.invalidated = order_update.invalidated;
             } else {
                 tracing::warn!(?uid, "order is missing in the cache");
             }
         }
 
+        // Update onchain orders data.
         for (uid, onchain_order) in onchain_orders {
             if let Some(order) = orders.get_mut(&uid) {
                 order.metadata.onchain_order_data = Some(model::order::OnchainOrderData {
@@ -245,6 +248,14 @@ impl SolvableOrdersCache {
             }
         }
 
+        // Update ethflow data.
+        for (uid, ethflow_data) in ethflow_data {
+            if let Some(order) = orders.get_mut(&uid) {
+                order.metadata.ethflow_data = Some(ethflow_data);
+            }
+        }
+
+        // Finally, filter out all the invalid orders.
         let now = now_in_epoch_seconds();
         orders.retain(|_uid, order| {
             let expired = order.data.valid_to >= now
@@ -276,6 +287,7 @@ impl SolvableOrdersCache {
             !expired && !invalidated && !onchain_error && !fulfilled
         });
 
+        // Keep only relevant quotes.
         quotes.retain(|uid, _quote| orders.contains_key(uid));
 
         Ok(boundary::SolvableOrders {
@@ -478,11 +490,12 @@ impl SolvableOrdersCache {
         let new_onchain_placed_orders_fut = self
             .persistence
             .onchain_placed_orders_after(last_block_number);
-        // todo: ethflow_refunds
-        let (new_orders, order_updates, onchain_orders) = tokio::try_join!(
+        let new_ethflow_data_fut = self.persistence.ethflow_data_after(last_block_number);
+        let (new_orders, order_updates, onchain_orders, ethflow_data) = tokio::try_join!(
             new_orders_fut,
             order_updates_fut,
-            new_onchain_placed_orders_fut
+            new_onchain_placed_orders_fut,
+            new_ethflow_data_fut,
         )?;
         let new_order_uids = new_orders
             .iter()
@@ -496,6 +509,7 @@ impl SolvableOrdersCache {
             quotes,
             order_updates,
             onchain_orders,
+            ethflow_data,
         )
     }
 

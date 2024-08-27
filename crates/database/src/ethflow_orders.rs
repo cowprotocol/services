@@ -1,5 +1,6 @@
 use {
     crate::{OrderUid, PgTransaction, TransactionHash},
+    futures::stream::BoxStream,
     sqlx::{Executor, PgConnection},
 };
 
@@ -51,6 +52,18 @@ pub async fn read_order(
         WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
+pub fn read_orders_after(
+    ex: &mut PgConnection,
+    after_block: i64,
+) -> BoxStream<'_, Result<EthOrderData, sqlx::Error>> {
+    const QUERY: &str = r#"
+        SELECT eo.uid, eo.valid_to, er.tx_hash as refund_tx FROM ethflow_refunds er
+        LEFT JOIN ethflow_orders eo ON er.order_uid = eo.uid
+        WHERE er.block_number > $1
+    "#;
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
 #[derive(Debug, Clone, Default)]

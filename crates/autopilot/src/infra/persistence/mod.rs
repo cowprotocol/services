@@ -441,6 +441,28 @@ impl Persistence {
         )
     }
 
+    pub async fn ethflow_data_after(
+        &self,
+        after_block: i64,
+    ) -> anyhow::Result<HashMap<domain::OrderUid, model::order::EthflowData>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["ethflow_data_after"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("begin")?;
+        Ok(
+            database::ethflow_orders::read_orders_after(&mut ex, after_block)
+                .map_ok(|eth_order_data| {
+                    (
+                        domain::OrderUid(eth_order_data.uid.0),
+                        eth_order_data_into(eth_order_data),
+                    )
+                })
+                .try_collect()
+                .await?,
+        )
+    }
+
     /// Returns the oldest settlement event for which the accociated auction is
     /// not yet populated in the database.
     pub async fn get_settlement_without_auction(
@@ -547,6 +569,15 @@ impl Persistence {
 
         ex.commit().await?;
         Ok(())
+    }
+}
+
+fn eth_order_data_into(
+    eth_order_data: database::ethflow_orders::EthOrderData,
+) -> model::order::EthflowData {
+    model::order::EthflowData {
+        user_valid_to: eth_order_data.valid_to,
+        refund_tx_hash: eth_order_data.refund_tx.map(|tx_hash| H256(tx_hash.0)),
     }
 }
 
