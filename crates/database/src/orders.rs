@@ -833,8 +833,6 @@ pub fn solvable_orders(
 
 /// Orders created or cancelled after the specified timestamp bounded by min
 /// validity period with additional data from other tables.
-///
-/// The query is similar to OPEN_ORDERS but excludes traded amounts.
 pub fn orders_base_data_after(
     ex: &mut PgConnection,
     after_timestamp: DateTime<Utc>,
