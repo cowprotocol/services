@@ -588,7 +588,7 @@ impl Persistence {
         // Finally, filter out all the invalid orders.
         let now = now_in_epoch_seconds();
         orders.retain(|_uid, order| {
-            let expired = order.data.valid_to >= now
+            let expired = order.data.valid_to < now
                 && !order
                     .metadata
                     .ethflow_data
