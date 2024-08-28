@@ -59,8 +59,8 @@ pub fn read_orders_after(
     after_block: i64,
 ) -> BoxStream<'_, Result<EthOrderData, sqlx::Error>> {
     const QUERY: &str = r#"
-        SELECT eo.uid, eo.valid_to, er.tx_hash as refund_tx FROM ethflow_refunds er
-        LEFT JOIN ethflow_orders eo ON er.order_uid = eo.uid
+        SELECT eo.uid, eo.valid_to, er.tx_hash AS refund_tx FROM ethflow_orders eo
+        LEFT JOIN ethflow_refunds er ON er.order_uid = eo.uid
         WHERE er.block_number > $1
     "#;
     sqlx::query_as(QUERY).bind(after_block).fetch(ex)
@@ -175,6 +175,7 @@ mod tests {
         },
         bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},
+        futures::TryStreamExt,
         sqlx::Connection,
     };
 
@@ -266,20 +267,44 @@ mod tests {
             uid: ByteArray([2u8; 56]),
             valid_to: 2,
         };
+        let order_3 = EthOrderPlacement {
+            uid: ByteArray([3u8; 56]),
+            valid_to: 1,
+        };
 
-        insert_or_overwrite_orders(&mut db, vec![order_1.clone(), order_2.clone()].as_slice())
-            .await
-            .unwrap();
+        insert_or_overwrite_orders(
+            &mut db,
+            vec![order_1.clone(), order_2.clone(), order_3.clone()].as_slice(),
+        )
+        .await
+        .unwrap();
         let refund_tx = Default::default();
         insert_refund_tx_hash(&mut db, &refund(order_1.uid))
             .await
             .unwrap();
+        insert_refund_tx_hash(
+            &mut db,
+            &Refund {
+                order_uid: order_3.uid,
+                tx_hash: refund_tx,
+                block_number: 1,
+            },
+        )
+        .await
+        .unwrap();
         // Check that `refund_tx` was changed
         let order_1 = read_order(&mut db, &order_1.uid).await.unwrap().unwrap();
         assert_eq!(order_1.refund_tx, Some(refund_tx));
+        let order_3 = read_order(&mut db, &order_3.uid).await.unwrap().unwrap();
+        assert_eq!(order_3.refund_tx, Some(refund_tx));
         // Check that other orders are not affected from the change
         let order_2 = read_order(&mut db, &order_2.uid).await.unwrap().unwrap();
         assert!(order_2.refund_tx.is_none());
+
+        let mut orders_after: Vec<EthOrderData> =
+            read_orders_after(&mut db, 0).try_collect().await.unwrap();
+        orders_after.sort_by_key(|o| o.uid.0);
+        assert_eq!(orders_after, vec![order_3])
     }
 
     #[tokio::test]
