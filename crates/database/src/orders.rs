@@ -965,9 +965,9 @@ WITH combined_data AS (
     SELECT
         order_uid,
         block_number,
-        NULL as buy_amount,
-        NULL as sell_amount,
-        NULL as fee_amount,
+        0 as buy_amount,
+        0 as sell_amount,
+        0 as fee_amount,
         surplus_fee,
         0 AS invalidated
     FROM order_execution
@@ -977,10 +977,10 @@ WITH combined_data AS (
 
     SELECT
         order_uid,
-        block_number,
-        NULL as buy_amount,
-        NULL as sell_amount,
-        NULL as fee_amount,
+        0 as block_number,
+        0 as buy_amount,
+        0 as sell_amount,
+        0 as fee_amount,
         0 as surplus_fee,
         1 AS invalidated
     FROM invalidations
@@ -990,10 +990,10 @@ WITH combined_data AS (
 
     SELECT
         uid as order_uid,
-        block_number,
-        NULL as buy_amount,
-        NULL as sell_amount,
-        NULL as fee_amount,
+        0 as block_number,
+        0 as buy_amount,
+        0 as sell_amount,
+        0 as fee_amount,
         0 as surplus_fee,
         1 AS invalidated
     FROM onchain_order_invalidations
