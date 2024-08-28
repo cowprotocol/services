@@ -835,7 +835,7 @@ pub fn solvable_orders(
 /// validity period with additional data from other tables.
 ///
 /// The query is similar to OPEN_ORDERS but excludes traded amounts.
-pub fn orders_without_trades_after(
+pub fn orders_base_data_after(
     ex: &mut PgConnection,
     after_timestamp: DateTime<Utc>,
     min_valid_to: i64,
@@ -1703,11 +1703,11 @@ mod tests {
                 .unwrap()
         }
 
-        async fn get_order_without_trades(
+        async fn get_orders_base_data(
             ex: &mut PgConnection,
             min_valid_to: i64,
         ) -> Option<OrderBaseData> {
-            orders_without_trades_after(ex, Default::default(), min_valid_to)
+            orders_base_data_after(ex, Default::default(), min_valid_to)
                 .next()
                 .await
                 .transpose()
@@ -1716,7 +1716,7 @@ mod tests {
 
         // not solvable because valid to
         assert!(get_full_order(&mut db, 4).await.is_none());
-        assert!(get_order_without_trades(&mut db, 4).await.is_none());
+        assert!(get_orders_base_data(&mut db, 4).await.is_none());
 
         // not solvable because fully executed
         crate::events::append(
@@ -1737,7 +1737,7 @@ mod tests {
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
         // This query doesn't count traded amounts.
-        assert!(get_order_without_trades(&mut db, 0).await.is_some());
+        assert!(get_orders_base_data(&mut db, 0).await.is_some());
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // not solvable because invalidated
@@ -1756,17 +1756,12 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
-        assert!(
-            get_order_without_trades(&mut db, 0)
-                .await
-                .unwrap()
-                .invalidated
-        );
+        assert!(get_orders_base_data(&mut db, 0).await.unwrap().invalidated);
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // solvable
         assert!(get_full_order(&mut db, 3).await.is_some());
-        assert!(get_order_without_trades(&mut db, 3).await.is_some());
+        assert!(get_orders_base_data(&mut db, 3).await.is_some());
 
         // still solvable because only partially filled
         crate::events::append(
@@ -1786,7 +1781,7 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 3).await.is_some());
-        assert!(get_order_without_trades(&mut db, 3).await.is_some());
+        assert!(get_orders_base_data(&mut db, 3).await.is_some());
 
         //no longer solvable, if it is a ethflow-order
         //with shorter user_valid_to from the ethflow
@@ -1799,9 +1794,9 @@ mod tests {
             .unwrap();
 
         assert!(get_full_order(&mut db, 3).await.is_none());
-        assert!(get_order_without_trades(&mut db, 3).await.is_none());
+        assert!(get_orders_base_data(&mut db, 3).await.is_none());
         assert!(get_full_order(&mut db, 2).await.is_some());
-        assert!(get_order_without_trades(&mut db, 2).await.is_some());
+        assert!(get_orders_base_data(&mut db, 2).await.is_some());
 
         // no longer solvable, if there was also a onchain order
         // placement error
@@ -1827,11 +1822,11 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_orders_without_trades(
+        async fn get_orders_base_data(
             ex: &mut PgConnection,
             min_timestamp: DateTime<Utc>,
         ) -> Result<Vec<OrderBaseData>, sqlx::Error> {
-            orders_without_trades_after(ex, min_timestamp, 0)
+            orders_base_data_after(ex, min_timestamp, 0)
                 .try_collect()
                 .await
         }
@@ -1870,7 +1865,7 @@ mod tests {
         insert_order(&mut db, &order_c).await.unwrap();
 
         assert_eq!(
-            get_orders_without_trades(&mut db, now - Duration::seconds(1))
+            get_orders_base_data(&mut db, now - Duration::seconds(1))
                 .await
                 .unwrap()
                 .into_iter()
@@ -1883,7 +1878,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            get_orders_without_trades(&mut db, now)
+            get_orders_base_data(&mut db, now)
                 .await
                 .unwrap()
                 .into_iter()
@@ -1892,7 +1887,7 @@ mod tests {
             hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),],
         );
         assert_eq!(
-            get_orders_without_trades(&mut db, now + Duration::seconds(10))
+            get_orders_base_data(&mut db, now + Duration::seconds(10))
                 .await
                 .unwrap()
                 .into_iter()

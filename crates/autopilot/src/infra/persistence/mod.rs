@@ -408,7 +408,7 @@ impl Persistence {
                 .database_queries
                 .with_label_values(&["orders_after"])
                 .start_timer();
-            database::orders::orders_without_trades_after(&mut tx, after_timestamp, min_valid_to)
+            database::orders::orders_base_data_after(&mut tx, after_timestamp, min_valid_to)
                 .try_collect()
                 .await?
         };
