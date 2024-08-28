@@ -18,10 +18,10 @@ pub async fn insert(
     prices: &[AuctionPrice],
 ) -> Result<(), sqlx::Error> {
     const BATCH_SIZE: usize = 5000;
+    const QUERY: &str = "INSERT INTO auction_prices (auction_id, token, price) ";
 
     for chunk in prices.chunks(BATCH_SIZE) {
-        let mut query_builder =
-            QueryBuilder::new("INSERT INTO auction_prices (auction_id, token, price) ");
+        let mut query_builder = QueryBuilder::new(QUERY);
 
         query_builder.push_values(chunk, |mut builder, price| {
             builder
