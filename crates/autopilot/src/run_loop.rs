@@ -64,12 +64,13 @@ pub struct RunLoop {
 
 impl RunLoop {
     pub async fn run_forever(self, update_interval: Duration) -> ! {
-        Maintenance::spawn_background_task(
-            self.maintenance.clone(),
-            self.synchronization,
-            self.eth.current_block().clone(),
-            update_interval,
-        );
+        if let RunLoopMode::Unsynchronized = self.synchronization {
+            Maintenance::spawn_background_task(
+                self.maintenance.clone(),
+                self.eth.current_block().clone(),
+                update_interval,
+            );
+        }
 
         let mut last_auction = None;
         let mut last_block = None;
