@@ -41,7 +41,7 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         OnSettlementEventUpdater::delete_observations(&mut transaction, from_block).await?;
         transaction.commit().await?;
 
-        self.settlement_updater.update().await;
+        self.settlement_updater.schedule_update();
         Ok(())
     }
 
@@ -53,7 +53,7 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         crate::database::events::append_events(&mut transaction, events).await?;
         transaction.commit().await?;
 
-        self.settlement_updater.update().await;
+        self.settlement_updater.schedule_update();
         Ok(())
     }
 }

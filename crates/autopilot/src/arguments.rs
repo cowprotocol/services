@@ -231,12 +231,6 @@ pub struct Arguments {
     /// Controls start of the run loop.
     #[clap(long, env, default_value = "unsynchronized")]
     pub run_loop_mode: RunLoopMode,
-
-    /// If a new run loop would start more than this amount of time after the
-    /// system noticed the latest block, wait for the next block to appear
-    /// before continuing the run loop.
-    #[clap(long, env, default_value = "2s", value_parser = humantime::parse_duration)]
-    pub max_run_loop_delay: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -281,7 +275,6 @@ impl std::fmt::Display for Arguments {
             s3,
             cow_amm_configs,
             run_loop_mode,
-            max_run_loop_delay,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -360,7 +353,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "s3: {:?}", s3)?;
         writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
         writeln!(f, "run_loop_mode: {:?}", run_loop_mode)?;
-        writeln!(f, "max_run_loop_delay: {:?}", max_run_loop_delay)?;
         Ok(())
     }
 }

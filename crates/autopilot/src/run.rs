@@ -14,7 +14,6 @@ use {
         domain,
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
-        maintenance::Maintenance,
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
@@ -37,6 +36,7 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
+        maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
@@ -358,21 +358,23 @@ pub async fn run(args: Arguments) {
             eth.clone(),
             persistence.clone(),
         );
-    let settlement_event_indexer = EventUpdater::new(
+    let event_updater = Arc::new(EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),
         ),
         boundary::events::settlement::Indexer::new(db.clone(), on_settlement_event_updater),
         block_retriever.clone(),
         skip_event_sync_start,
-    );
+    ));
 
-    let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
+    let cow_amm_registry = cow_amm::Registry::new(web3.clone(), eth.current_block().clone());
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(config.index_start, config.factory, config.helper)
             .await;
     }
+
+    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
@@ -396,6 +398,58 @@ pub async fn run(args: Arguments) {
         balance_fetcher.clone(),
         args.price_estimation.quote_verification,
     ));
+
+    if let Some(ethflow_contract) = args.ethflow_contract {
+        let start_block = determine_ethflow_indexing_start(
+            &skip_event_sync_start,
+            args.ethflow_indexing_start,
+            &web3,
+            chain_id,
+        )
+        .await;
+
+        let refund_event_handler = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // This cares only about ethflow refund events because all the other ethflow
+                // events are already indexed by the OnchainOrderParser.
+                EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
+                db.clone(),
+                block_retriever.clone(),
+                start_block,
+            )
+            .await
+            .unwrap(),
+        );
+        maintainers.push(refund_event_handler);
+
+        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
+        let onchain_order_event_parser = OnchainOrderParser::new(
+            db.clone(),
+            web3.clone(),
+            quoter.clone(),
+            Box::new(custom_ethflow_order_parser),
+            DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
+            eth.contracts().settlement().address(),
+        );
+        let broadcaster_event_updater = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // The events from the ethflow contract are read with the more generic contract
+                // interface called CoWSwapOnchainOrders.
+                CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
+                onchain_order_event_parser,
+                block_retriever,
+                start_block,
+            )
+            .await
+            .expect("Should be able to initialize event updater. Database read issues?"),
+        );
+        maintainers.push(broadcaster_event_updater);
+    }
+
+    let service_maintainer = ServiceMaintenance::new(maintainers);
+    tokio::task::spawn(
+        service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
+    );
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -427,10 +481,8 @@ pub async fn run(args: Arguments) {
         args.order_events_cleanup_interval,
         args.order_events_cleanup_threshold,
     );
-    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
-        order_events_cleaner_config,
-        db.clone(),
-    );
+    let order_events_cleaner =
+        crate::periodic_db_cleanup::OrderEventsCleaner::new(order_events_cleaner_config, db);
 
     tokio::task::spawn(
         order_events_cleaner
@@ -448,57 +500,6 @@ pub async fn run(args: Arguments) {
     // updated in background task
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
-
-    let mut maintenance = Maintenance::new(
-        solvable_orders_cache.clone(),
-        settlement_event_indexer,
-        db.clone(),
-    );
-    maintenance.with_cow_amms(&cow_amm_registry);
-
-    if let Some(ethflow_contract) = args.ethflow_contract {
-        let start_block = determine_ethflow_indexing_start(
-            &skip_event_sync_start,
-            args.ethflow_indexing_start,
-            &web3,
-            chain_id,
-        )
-        .await;
-
-        let refund_event_handler = EventUpdater::new_skip_blocks_before(
-            // This cares only about ethflow refund events because all the other ethflow
-            // events are already indexed by the OnchainOrderParser.
-            EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
-            db.clone(),
-            block_retriever.clone(),
-            start_block,
-        )
-        .await
-        .unwrap();
-
-        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
-        let onchain_order_event_parser = OnchainOrderParser::new(
-            db.clone(),
-            web3.clone(),
-            quoter.clone(),
-            Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
-            eth.contracts().settlement().address(),
-        );
-
-        let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
-            // The events from the ethflow contract are read with the more generic contract
-            // interface called CoWSwapOnchainOrders.
-            CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
-            onchain_order_event_parser,
-            block_retriever,
-            start_block,
-        )
-        .await
-        .expect("Should be able to initialize event updater. Database read issues?");
-
-        maintenance.with_ethflow(onchain_order_indexer, refund_event_handler);
-    }
 
     let run = RunLoop {
         eth,
@@ -522,8 +523,6 @@ pub async fn run(args: Arguments) {
         persistence: persistence.clone(),
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
-        max_run_loop_delay: args.max_run_loop_delay,
-        maintenance: Arc::new(maintenance),
     };
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
