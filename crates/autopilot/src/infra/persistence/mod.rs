@@ -25,6 +25,7 @@ use {
     },
     std::{
         collections::{HashMap, HashSet},
+        ops::DerefMut,
         sync::Arc,
     },
     tracing::Instrument,
@@ -403,6 +404,12 @@ impl Persistence {
     ) -> anyhow::Result<boundary::SolvableOrders> {
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so the both SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(tx.deref_mut())
+            .await?;
         let new_orders: Vec<database::orders::OrderBaseData> = {
             let _timer = Metrics::get()
                 .database_queries
