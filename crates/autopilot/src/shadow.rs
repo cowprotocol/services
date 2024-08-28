@@ -69,18 +69,18 @@ impl RunLoop {
             if let RunLoopMode::SyncToBlockchain = self.synchronization {
                 let _ = ethrpc::block_stream::next_block(&self.current_block).await;
             };
-            let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await else {
+            let Some(auction) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
-            observe::log_auction_delta(id, &previous, &auction);
+            observe::log_auction_delta(&previous, &auction);
             self.liveness.auction();
 
-            self.single_run(id, &auction)
-                .instrument(tracing::info_span!("auction", id))
+            self.single_run(auction.id, &auction.auction)
+                .instrument(tracing::info_span!("auction", auction.id))
                 .await;
 
-            previous = Some(auction);
+            previous = Some(auction.auction);
         }
     }
 
