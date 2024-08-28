@@ -943,6 +943,19 @@ pub struct OrderUpdate {
     pub invalidated: bool,
 }
 
+/// This function queries multiple tables (`trades`, `order_execution`,
+/// `invalidations`, and `onchain_order_invalidations`) to gather data about
+/// order updates after the specified block number.
+///
+/// # SQL Query
+///
+/// The SQL query effectively combines data from multiple tables using `UNION
+/// ALL` and aggregates the results. It calculates the maximum block number,
+/// sums of buy/sell/fee amounts, and checks if the order has been invalidated.
+/// The `0 as block_number` is used for values that do not participate in
+/// aggregations to avoid errors in case the same data is fetched twice.
+/// `trades` and `order_execution` tables are updated within a single DB
+/// transaction, so it is safe to collect the latest block number from them.
 pub fn updates_after(
     ex: &mut PgConnection,
     after_block: i64,
@@ -1015,6 +1028,7 @@ GROUP BY order_uid
     sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
+/// Fetches all interactions for the specified orders.
 pub async fn read_interactions_for_orders(
     ex: &mut PgConnection,
     orders: &[OrderUid],

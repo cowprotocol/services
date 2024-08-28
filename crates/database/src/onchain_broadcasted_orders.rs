@@ -115,6 +115,7 @@ pub async fn read_order(
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+/// Fetches the latest event for each order after the given block number.
 pub fn latest_order_events_after(
     ex: &mut PgConnection,
     after_block: i64,

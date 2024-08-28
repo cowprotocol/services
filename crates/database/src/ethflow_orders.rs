@@ -54,6 +54,7 @@ pub async fn read_order(
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+/// Fetches all orders that have been indexed after a certain block.
 pub fn read_orders_after(
     ex: &mut PgConnection,
     after_block: i64,

@@ -173,6 +173,8 @@ async fn insert_presignature(
     Ok(())
 }
 
+/// Fetches the latest presignature event for each order after a given block
+/// number.
 pub fn latest_presignature_events_after(
     ex: &mut PgConnection,
     after_block: i64,
