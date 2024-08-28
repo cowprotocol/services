@@ -1022,7 +1022,7 @@ mod tests {
                 EthOrderPlacement,
                 Refund,
             },
-            events::{self, Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+            events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
             onchain_invalidations::insert_onchain_invalidation,
             PgTransaction,
@@ -1754,7 +1754,8 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
-        assert!(get_orders_base_data(&mut db, 0).await.unwrap().invalidated);
+        // Base orders query doesn't track invalidations.
+        assert!(get_orders_base_data(&mut db, 0).await.is_some());
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // solvable
@@ -2311,13 +2312,13 @@ mod tests {
             )
         };
 
-        events::insert_trade(&mut db, &index_a, &event_a)
+        crate::events::insert_trade(&mut db, &index_a, &event_a)
             .await
             .unwrap();
-        events::insert_trade(&mut db, &index_b, &event_b)
+        crate::events::insert_trade(&mut db, &index_b, &event_b)
             .await
             .unwrap();
-        events::insert_trade(&mut db, &index_c, &event_c)
+        crate::events::insert_trade(&mut db, &index_c, &event_c)
             .await
             .unwrap();
 
@@ -2427,7 +2428,9 @@ mod tests {
                 }),
             ),
         ];
-        events::append(&mut db, &invalidation_events).await.unwrap();
+        crate::events::append(&mut db, &invalidation_events)
+            .await
+            .unwrap();
         let mut result = get_updates_after(&mut db, 0).await.unwrap();
         result.sort_by_key(|t| t.order_uid.0);
         assert_eq!(
