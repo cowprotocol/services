@@ -9,9 +9,13 @@ use {
     bigdecimal::num_traits::CheckedAdd,
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
-    database::{order_events::OrderEventLabel, settlement_observations::Observation},
+    database::{
+        order_events::OrderEventLabel,
+        orders::ExecutionTime,
+        settlement_observations::Observation,
+    },
     futures::TryStreamExt,
-    model::{signature::Signature, time::now_in_epoch_seconds},
+    model::{interaction::InteractionData, signature::Signature, time::now_in_epoch_seconds},
     number::conversions::{
         big_decimal_to_big_uint,
         big_decimal_to_u256,
@@ -410,6 +414,22 @@ impl Persistence {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
+        let current_orders_interactions = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["orders_after"])
+                .start_timer();
+            let current_order_uids = current_orders
+                .orders
+                .keys()
+                .map(|o| ByteArray(o.0))
+                .collect::<Vec<_>>();
+
+            let interactions =
+                database::orders::read_interactions_for_orders(&mut tx, &current_order_uids)
+                    .await?;
+            db_interactions_to_model(&interactions)?
+        };
         let new_orders: Vec<database::orders::OrderBaseData> = {
             let _timer = Metrics::get()
                 .database_queries
@@ -480,6 +500,7 @@ impl Persistence {
 
         Self::build_solvable_orders(
             current_orders,
+            current_orders_interactions,
             new_orders,
             new_quotes,
             order_updates,
@@ -489,8 +510,10 @@ impl Persistence {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
+        current_orders_interactions: HashMap<domain::OrderUid, model::order::Interactions>,
         new_orders: Vec<database::orders::OrderBaseData>,
         mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
         order_updates: HashMap<domain::OrderUid, database::orders::OrderUpdate>,
@@ -504,6 +527,13 @@ impl Persistence {
         let mut latest_trade_block = current_orders.latest_settlement_block;
         let mut orders = current_orders.orders.clone();
         let mut quotes = current_orders.quotes.clone();
+
+        // Update order interactions.
+        for (uid, interactions) in current_orders_interactions {
+            if let Some(order) = orders.get_mut(&uid) {
+                order.interactions = interactions
+            }
+        }
 
         // Blindly insert all new orders and quotes into the cache.
         for new_order in new_orders {
@@ -743,6 +773,32 @@ fn eth_order_data_into_model(
         user_valid_to: eth_order_data.valid_to,
         refund_tx_hash: eth_order_data.refund_tx.map(|tx_hash| H256(tx_hash.0)),
     }
+}
+
+fn db_interactions_to_model(
+    interactions: &[database::orders::Interaction],
+) -> anyhow::Result<HashMap<domain::OrderUid, model::order::Interactions>> {
+    let mut result: HashMap<domain::OrderUid, model::order::Interactions> = HashMap::new();
+
+    for interaction in interactions {
+        let interaction_data = InteractionData {
+            target: H160(interaction.target.0),
+            value: big_decimal_to_u256(&interaction.value)
+                .context("interaction value is not U256")?,
+            call_data: interaction.data.clone(),
+        };
+
+        let entry = result
+            .entry(domain::OrderUid(interaction.order_uid.0))
+            .or_default();
+
+        match interaction.execution {
+            ExecutionTime::Pre => entry.pre.push(interaction_data),
+            ExecutionTime::Post => entry.post.push(interaction_data),
+        }
+    }
+
+    Ok(result)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

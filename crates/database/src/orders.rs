@@ -232,6 +232,7 @@ pub enum ExecutionTime {
 /// One row in the `interactions` table.
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Interaction {
+    pub order_uid: OrderUid,
     pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
@@ -1014,6 +1015,23 @@ GROUP BY order_uid
     sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
+pub async fn read_interactions_for_orders(
+    ex: &mut PgConnection,
+    orders: &[OrderUid],
+) -> Result<Vec<Interaction>, sqlx::Error> {
+    const QUERY: &str = "SELECT * FROM interactions WHERE order_uid IN (";
+
+    let mut query_builder = QueryBuilder::new(QUERY);
+
+    let mut separated = query_builder.separated(", ");
+    for order in orders {
+        separated.push_bind(order);
+    }
+    query_builder.push(")");
+
+    query_builder.build_query_as().fetch_all(ex).await
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -1193,6 +1211,7 @@ mod tests {
             ..Default::default()
         };
         let post_interaction_1 = Interaction {
+            order_uid: order.uid,
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
@@ -1242,6 +1261,7 @@ mod tests {
         assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
 
         let post_interaction_overwrite_0 = Interaction {
+            order_uid: order.uid,
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
@@ -1283,6 +1303,7 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let pre_interaction_0 = Interaction::default();
         let pre_interaction_1 = Interaction {
+            order_uid: order.uid,
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
@@ -1332,6 +1353,7 @@ mod tests {
         assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
 
         let pre_interaction_overwrite_0 = Interaction {
+            order_uid: order.uid,
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
@@ -1359,6 +1381,74 @@ mod tests {
             insert_interaction(&mut db, &order.uid, &pre_interaction_overwrite_1)
                 .await
                 .is_err()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_read_interactions_for_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let pre_interaction_1 = Interaction {
+            order_uid: ByteArray([1; 56]),
+            target: ByteArray([1; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![0u8, 1u8],
+            index: 1,
+            execution: ExecutionTime::Pre,
+        };
+        let pre_interaction_2 = Interaction {
+            order_uid: ByteArray([2; 56]),
+            target: ByteArray([2; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![1u8, 1u8],
+            index: 2,
+            execution: ExecutionTime::Pre,
+        };
+
+        let post_interaction_1 = Interaction {
+            order_uid: ByteArray([3; 56]),
+            target: ByteArray([1; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![0u8, 1u8],
+            index: 3,
+            execution: ExecutionTime::Post,
+        };
+        let post_interaction_2 = Interaction {
+            order_uid: ByteArray([1; 56]),
+            target: ByteArray([3; 20]),
+            value: BigDecimal::new(10.into(), 1),
+            data: vec![2u8, 1u8],
+            index: 4,
+            execution: ExecutionTime::Post,
+        };
+
+        insert_interaction(&mut db, &pre_interaction_1.order_uid, &pre_interaction_1)
+            .await
+            .unwrap();
+        insert_interaction(&mut db, &pre_interaction_2.order_uid, &pre_interaction_2)
+            .await
+            .unwrap();
+        insert_interaction(&mut db, &post_interaction_1.order_uid, &post_interaction_1)
+            .await
+            .unwrap();
+        insert_interaction(&mut db, &post_interaction_2.order_uid, &post_interaction_2)
+            .await
+            .unwrap();
+
+        let mut interactions = read_interactions_for_orders(
+            &mut db,
+            &[ByteArray([1; 56]), ByteArray([3; 56]), ByteArray([4; 56])],
+        )
+        .await
+        .unwrap();
+        interactions.sort_by_key(|i| (i.order_uid.0, i.index));
+
+        assert_eq!(
+            interactions,
+            vec![pre_interaction_1, post_interaction_2, post_interaction_1]
         );
     }
 

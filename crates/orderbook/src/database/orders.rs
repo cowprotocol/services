@@ -118,10 +118,11 @@ async fn cancel_order(
 }
 
 async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
+    let order_uid = ByteArray(order.metadata.uid.0);
     insert_order_event(
         ex,
         &OrderEvent {
-            order_uid: ByteArray(order.metadata.uid.0),
+            order_uid,
             timestamp: Utc::now(),
             label: OrderEventLabel::Created,
         },
@@ -145,6 +146,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .enumerate()
         .map(
             |(index, (interaction, execution))| database::orders::Interaction {
+                order_uid,
                 target: ByteArray(interaction.target.0),
                 value: u256_to_big_decimal(&interaction.value),
                 data: interaction.call_data.clone(),
@@ -157,7 +159,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .collect::<Vec<_>>();
 
     let order = database::orders::Order {
-        uid: ByteArray(order.metadata.uid.0),
+        uid: order_uid,
         owner: ByteArray(order.metadata.owner.0),
         creation_timestamp: order.metadata.creation_date,
         sell_token: ByteArray(order.data.sell_token.0),

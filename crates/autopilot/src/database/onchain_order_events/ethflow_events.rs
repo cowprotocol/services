@@ -122,6 +122,7 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
             // in order to wrap all existing ether to weth, such that the eth can be used as
             // WETH by the cow protocol
             pre_interaction: Interaction {
+                order_uid: order.uid,
                 // For ethflow orders, the owner is always the ethflow contract
                 target: ByteArray(order.owner.0),
                 value: BigDecimal::new(0.into(), 1),
