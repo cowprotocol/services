@@ -417,7 +417,7 @@ impl Persistence {
         let current_orders_interactions = {
             let _timer = Metrics::get()
                 .database_queries
-                .with_label_values(&["orders_after"])
+                .with_label_values(&["read_interactions_for_orders"])
                 .start_timer();
             let current_order_uids = current_orders
                 .orders
