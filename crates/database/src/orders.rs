@@ -519,6 +519,10 @@ impl FullOrder {
             // as the Eip1271 valid to is u32::max
             return valid_to;
         }
+        self.base_valid_to()
+    }
+
+    pub fn base_valid_to(&self) -> i64 {
         self.base.valid_to
     }
 

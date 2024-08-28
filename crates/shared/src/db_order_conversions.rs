@@ -115,7 +115,10 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         receiver: order.receiver().map(|address| H160(address.0)),
         sell_amount: big_decimal_to_u256(order.sell_amount()).context("sell_amount is not U256")?,
         buy_amount: big_decimal_to_u256(order.buy_amount()).context("buy_amount is not U256")?,
-        valid_to: order.valid_to().try_into().context("valid_to is not u32")?,
+        valid_to: order
+            .base_valid_to()
+            .try_into()
+            .context("valid_to is not u32")?,
         app_data: AppDataHash(order.app_data().0),
         fee_amount,
         kind: order_kind_from(*order.kind()),
