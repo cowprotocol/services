@@ -2260,13 +2260,14 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_trades_after(
+        async fn get_updates_after(
             ex: &mut PgConnection,
             min_block: i64,
         ) -> Result<Vec<OrderUpdate>, sqlx::Error> {
             updates_after(ex, min_block).try_collect().await
         }
 
+        // trades table
         let (index_a, event_a) = {
             (
                 EventIndex {
@@ -2320,13 +2321,61 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(get_trades_after(&mut db, 2).await.unwrap().is_empty());
+        assert!(get_updates_after(&mut db, 2).await.unwrap().is_empty());
 
-        let mut result = get_trades_after(&mut db, 0).await.unwrap();
-        result.sort_by_key(|t| t.max_block_number);
+        let mut result = get_updates_after(&mut db, 0).await.unwrap();
+        result.sort_by_key(|t| t.order_uid.0);
         assert_eq!(
             result,
             vec![
+                OrderUpdate {
+                    order_uid: ByteArray([1u8; 56]),
+                    max_block_number: 2,
+                    sum_sell_amount: BigDecimal::from(30),
+                    sum_buy_amount: BigDecimal::from(300),
+                    sum_fee_amount: BigDecimal::from(3),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: false,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([2u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: BigDecimal::from(40),
+                    sum_buy_amount: BigDecimal::from(400),
+                    sum_fee_amount: BigDecimal::from(4),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: false,
+                },
+            ]
+        );
+
+        // order_execution table
+        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 1, 1, &BigDecimal::from(1))
+            .await
+            .unwrap();
+        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 2, 2, &BigDecimal::from(2))
+            .await
+            .unwrap();
+        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 3, 0, &BigDecimal::from(4))
+            .await
+            .unwrap();
+        crate::order_execution::save(&mut db, &ByteArray([3u8; 56]), 2, 3, &BigDecimal::from(4))
+            .await
+            .unwrap();
+        let mut result = get_updates_after(&mut db, 0).await.unwrap();
+        result.sort_by_key(|t| t.order_uid.0);
+        assert_eq!(
+            result,
+            vec![
+                OrderUpdate {
+                    order_uid: ByteArray([1u8; 56]),
+                    max_block_number: 2,
+                    sum_sell_amount: BigDecimal::from(30),
+                    sum_buy_amount: BigDecimal::from(300),
+                    sum_fee_amount: BigDecimal::from(3),
+                    sum_surplus_fee: BigDecimal::from(3),
+                    invalidated: false,
+                },
                 OrderUpdate {
                     order_uid: ByteArray([2u8; 56]),
                     max_block_number: 1,
@@ -2337,14 +2386,173 @@ mod tests {
                     invalidated: false,
                 },
                 OrderUpdate {
+                    order_uid: ByteArray([3u8; 56]),
+                    max_block_number: 3,
+                    sum_sell_amount: Default::default(),
+                    sum_buy_amount: Default::default(),
+                    sum_fee_amount: Default::default(),
+                    sum_surplus_fee: BigDecimal::from(4),
+                    invalidated: false,
+                },
+            ]
+        );
+
+        // invalidations table
+        let invalidation_events = vec![
+            (
+                EventIndex {
+                    block_number: 1,
+                    ..Default::default()
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([1u8; 56]),
+                }),
+            ),
+            (
+                EventIndex {
+                    block_number: 0,
+                    ..Default::default()
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([2u8; 56]),
+                }),
+            ),
+            (
+                EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([4u8; 56]),
+                }),
+            ),
+        ];
+        events::append(&mut db, &invalidation_events).await.unwrap();
+        let mut result = get_updates_after(&mut db, 0).await.unwrap();
+        result.sort_by_key(|t| t.order_uid.0);
+        assert_eq!(
+            result,
+            vec![
+                OrderUpdate {
                     order_uid: ByteArray([1u8; 56]),
                     max_block_number: 2,
                     sum_sell_amount: BigDecimal::from(30),
                     sum_buy_amount: BigDecimal::from(300),
                     sum_fee_amount: BigDecimal::from(3),
+                    sum_surplus_fee: BigDecimal::from(3),
+                    invalidated: true,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([2u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: BigDecimal::from(40),
+                    sum_buy_amount: BigDecimal::from(400),
+                    sum_fee_amount: BigDecimal::from(4),
                     sum_surplus_fee: Default::default(),
                     invalidated: false,
                 },
+                OrderUpdate {
+                    order_uid: ByteArray([3u8; 56]),
+                    max_block_number: 3,
+                    sum_sell_amount: Default::default(),
+                    sum_buy_amount: Default::default(),
+                    sum_fee_amount: Default::default(),
+                    sum_surplus_fee: BigDecimal::from(4),
+                    invalidated: false,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([4u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: Default::default(),
+                    sum_buy_amount: Default::default(),
+                    sum_fee_amount: Default::default(),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: true,
+                },
+            ]
+        );
+
+        // onchain_order_invalidations table
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 0,
+                ..Default::default()
+            },
+            &ByteArray([3u8; 56]),
+        )
+        .await
+        .unwrap();
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                ..Default::default()
+            },
+            &ByteArray([2u8; 56]),
+        )
+        .await
+        .unwrap();
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                ..Default::default()
+            },
+            &ByteArray([5u8; 56]),
+        )
+        .await
+        .unwrap();
+        let mut result = get_updates_after(&mut db, 0).await.unwrap();
+        result.sort_by_key(|t| t.order_uid.0);
+        assert_eq!(
+            result,
+            vec![
+                OrderUpdate {
+                    order_uid: ByteArray([1u8; 56]),
+                    max_block_number: 2,
+                    sum_sell_amount: BigDecimal::from(30),
+                    sum_buy_amount: BigDecimal::from(300),
+                    sum_fee_amount: BigDecimal::from(3),
+                    sum_surplus_fee: BigDecimal::from(3),
+                    invalidated: true,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([2u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: BigDecimal::from(40),
+                    sum_buy_amount: BigDecimal::from(400),
+                    sum_fee_amount: BigDecimal::from(4),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: true,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([3u8; 56]),
+                    max_block_number: 3,
+                    sum_sell_amount: Default::default(),
+                    sum_buy_amount: Default::default(),
+                    sum_fee_amount: Default::default(),
+                    sum_surplus_fee: BigDecimal::from(4),
+                    invalidated: false,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([4u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: Default::default(),
+                    sum_buy_amount: Default::default(),
+                    sum_fee_amount: Default::default(),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: true,
+                },
+                OrderUpdate {
+                    order_uid: ByteArray([5u8; 56]),
+                    max_block_number: 1,
+                    sum_sell_amount: Default::default(),
+                    sum_buy_amount: Default::default(),
+                    sum_fee_amount: Default::default(),
+                    sum_surplus_fee: Default::default(),
+                    invalidated: true,
+                }
             ]
         );
     }
