@@ -990,7 +990,7 @@ WITH combined_data AS (
 
     SELECT
         order_uid,
-        0 as block_number,
+        $1 as block_number,
         0 as buy_amount,
         0 as sell_amount,
         0 as fee_amount,
@@ -1003,7 +1003,7 @@ WITH combined_data AS (
 
     SELECT
         uid as order_uid,
-        0 as block_number,
+        $1 as block_number,
         0 as buy_amount,
         0 as sell_amount,
         0 as fee_amount,
@@ -2573,7 +2573,7 @@ mod tests {
                 },
                 OrderUpdate {
                     order_uid: ByteArray([4u8; 56]),
-                    max_block_number: 1,
+                    max_block_number: 0,
                     sum_sell_amount: Default::default(),
                     sum_buy_amount: Default::default(),
                     sum_fee_amount: Default::default(),
@@ -2648,7 +2648,7 @@ mod tests {
                 },
                 OrderUpdate {
                     order_uid: ByteArray([4u8; 56]),
-                    max_block_number: 1,
+                    max_block_number: 0,
                     sum_sell_amount: Default::default(),
                     sum_buy_amount: Default::default(),
                     sum_fee_amount: Default::default(),
@@ -2657,7 +2657,7 @@ mod tests {
                 },
                 OrderUpdate {
                     order_uid: ByteArray([5u8; 56]),
-                    max_block_number: 1,
+                    max_block_number: 0,
                     sum_sell_amount: Default::default(),
                     sum_buy_amount: Default::default(),
                     sum_fee_amount: Default::default(),
