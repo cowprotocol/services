@@ -439,7 +439,7 @@ impl Persistence {
                 .database_queries
                 .with_label_values(&["onchain_placed_orders_after"])
                 .start_timer();
-            database::onchain_broadcasted_orders::read_orders_after(&mut tx, after_block)
+            database::onchain_broadcasted_orders::latest_order_events_after(&mut tx, after_block)
                 .map_ok(|order| (domain::OrderUid(order.uid.0), order))
                 .try_collect()
                 .await?

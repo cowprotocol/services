@@ -115,7 +115,7 @@ pub async fn read_order(
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
-pub fn read_orders_after(
+pub fn latest_order_events_after(
     ex: &mut PgConnection,
     after_block: i64,
 ) -> BoxStream<'_, Result<OnchainOrderPlacementRow, sqlx::Error>> {
@@ -152,7 +152,13 @@ WHERE rn = 1;
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection, strum::IntoEnumIterator};
+    use {
+        super::*,
+        crate::byte_array::ByteArray,
+        futures::TryStreamExt,
+        sqlx::Connection,
+        strum::IntoEnumIterator,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -329,5 +335,105 @@ mod tests {
             log_index: event_index_2.log_index,
         };
         assert_eq!(expected_row, row);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_latest_order_events_after() {
+        async fn get_latest_order_events_after(
+            ex: &mut PgConnection,
+            after_block: i64,
+        ) -> Vec<OnchainOrderPlacementRow> {
+            latest_order_events_after(ex, after_block)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event_index_0 = EventIndex {
+            block_number: 0,
+            log_index: 0,
+        };
+        let event_index_1 = EventIndex {
+            block_number: 1,
+            log_index: 0,
+        };
+        let event_index_2 = EventIndex {
+            block_number: 1,
+            log_index: 1,
+        };
+        let event_index_3 = EventIndex {
+            block_number: 2,
+            log_index: 0,
+        };
+        let event_index_4 = EventIndex {
+            block_number: 3,
+            log_index: 0,
+        };
+
+        let order_0 = OnchainOrderPlacement {
+            order_uid: ByteArray([3; 56]),
+            sender: ByteArray([3; 20]),
+            placement_error: None,
+        };
+        let order_1 = OnchainOrderPlacement {
+            order_uid: ByteArray([1; 56]),
+            sender: ByteArray([1; 20]),
+            placement_error: None,
+        };
+        let order_2 = OnchainOrderPlacement {
+            order_uid: ByteArray([1; 56]),
+            sender: ByteArray([2; 20]),
+            placement_error: None,
+        };
+        let order_3 = OnchainOrderPlacement {
+            order_uid: ByteArray([2; 56]),
+            sender: ByteArray([2; 20]),
+            placement_error: None,
+        };
+        let order_4 = OnchainOrderPlacement {
+            order_uid: ByteArray([2; 56]),
+            sender: ByteArray([3; 20]),
+            placement_error: None,
+        };
+        append(
+            &mut db,
+            &[
+                (event_index_0, order_0.clone()),
+                (event_index_1, order_1.clone()),
+                (event_index_2, order_2.clone()),
+                (event_index_3, order_3.clone()),
+                (event_index_4, order_4.clone()),
+            ],
+        )
+        .await
+        .unwrap();
+        let mut result = get_latest_order_events_after(&mut db, 0).await;
+        result.sort_by_key(|row| row.uid.0);
+        assert_eq!(
+            result,
+            vec![
+                OnchainOrderPlacementRow {
+                    uid: order_1.order_uid,
+                    sender: order_2.sender,
+                    placement_error: None,
+                    is_reorged: Default::default(),
+                    block_number: event_index_1.block_number,
+                    log_index: event_index_2.log_index,
+                },
+                OnchainOrderPlacementRow {
+                    uid: order_3.order_uid,
+                    sender: order_4.sender,
+                    placement_error: None,
+                    is_reorged: Default::default(),
+                    block_number: event_index_4.block_number,
+                    log_index: event_index_3.log_index,
+                }
+            ]
+        );
     }
 }
