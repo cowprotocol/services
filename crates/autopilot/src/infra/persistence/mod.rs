@@ -466,7 +466,7 @@ impl Persistence {
                 .database_queries
                 .with_label_values(&["presignature_events_after"])
                 .start_timer();
-            database::events::events_after(&mut tx, after_block)
+            database::events::latest_presignature_events_after(&mut tx, after_block)
                 .map_ok(|presignature| (domain::OrderUid(presignature.order_uid.0), presignature))
                 .try_collect()
                 .await?
