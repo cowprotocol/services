@@ -44,7 +44,7 @@ impl Rpc {
         url: &url::Url,
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
-        let web3 = boundary::buffered_web3_client(url, ethrpc_args);
+        let web3 = boundary::web3_client(url, ethrpc_args);
         let chain = web3.eth().chain_id().await?.into();
 
         Ok(Self {
