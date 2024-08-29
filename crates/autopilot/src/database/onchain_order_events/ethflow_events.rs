@@ -219,8 +219,8 @@ pub async fn determine_ethflow_refund_indexing_start(
 }
 
 /// This function attempts to find the latest block that has processed eth-flow
-/// orders or broadcasted orders. If recent Eth-flow orders exist within the
-/// last day, it prioritizes those. Otherwise, it falls back to the most recent
+/// orders or broadcasted orders. If a recent eth-flow refund exists within the
+/// last day, it prioritizes this. Otherwise, it falls back to the most recent
 /// block from broadcasted orders.
 ///
 /// # Panics
