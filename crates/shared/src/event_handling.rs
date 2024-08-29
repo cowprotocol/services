@@ -285,10 +285,13 @@ where
             .await?;
         tracing::info!("newlog update_events_from_old_blocks 1");
 
-        let events = self
+        tracing::info!(?range, "newlog update_events_from_old_blocks 1/2");
+        let e = self
             .past_events_by_block_number_range(&range)
             .await
-            .context("failed to get past events")?
+            .context("failed to get past events")?;
+        tracing::info!("newlog update_events_from_old_blocks 2/2");
+        let events = e
             .chunks(INSERT_EVENT_BATCH_SIZE)
             .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
         futures::pin_mut!(events);
