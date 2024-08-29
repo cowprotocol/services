@@ -464,6 +464,8 @@ pub async fn run(args: Arguments) {
             chain_id,
         )
         .await;
+        tracing::info!("newlog start_block={:?}", start_block);
+        tracing::info!("newlog skip_event_sync_start={:?}", skip_event_sync_start);
 
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
             // This cares only about ethflow refund events because all the other ethflow

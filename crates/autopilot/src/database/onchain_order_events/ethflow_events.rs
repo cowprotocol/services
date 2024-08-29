@@ -156,6 +156,10 @@ pub async fn determine_ethflow_indexing_start(
         return *block_number_hash;
     }
     if let Some(block_number) = ethflow_indexing_start {
+        tracing::info!(
+            "newlog ethflow_indexing_start block_number={:?}",
+            block_number
+        );
         return block_number_to_block_number_hash(web3, block_number.into())
             .await
             .expect("Should be able to find block at specified indexing start");
