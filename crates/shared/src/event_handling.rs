@@ -18,7 +18,7 @@ use {
 // blocks.
 pub const MAX_REORG_BLOCK_COUNT: u64 = 64;
 // Saving events, we process at most this many at a time.
-const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
+// const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 // MAX_BLOCKS_QUERIED is bigger than MAX_REORG_BLOCK_COUNT to increase the
 // chances of avoiding the need for history fetch of block events, since history
 // fetch is less efficient than latest block fetch
@@ -291,10 +291,10 @@ where
             .await
             .context("failed to get past events")?;
         tracing::info!("newlog update_events_from_old_blocks 2/2");
-        let events = e
-            .chunks(INSERT_EVENT_BATCH_SIZE)
-            .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
-        futures::pin_mut!(events);
+        // let events = e
+        // .chunks(INSERT_EVENT_BATCH_SIZE)
+        // .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
+        futures::pin_mut!(e);
         tracing::info!("newlog update_events_from_old_blocks 2");
         // We intentionally do not go with the obvious approach of deleting old events
         // first and then inserting new ones. Instead, we make sure that the
@@ -323,11 +323,13 @@ where
         // not updated it in a long time resulting in many missing events which
         // we would all have to in one transaction.
         let mut have_deleted_old_events = false;
-        while let Some(events_chunk) = events.next().await {
+        while let Some(events_chunk) = e.next().await {
             tracing::info!("newlog update_events_from_old_blocks 3");
             // Early return on error (through `?`) is important here so that the second
             // !have_deleted_old_events check (after the loop) is correct.
-            let unwrapped_events = events_chunk.context("failed to get next chunk of events")?;
+            let event = events_chunk.context("failed to get next chunk of events")?;
+            tracing::info!("newlog event={:?}", event.meta);
+            let unwrapped_events = vec![event];
             if !have_deleted_old_events {
                 tracing::info!("newlog update_events_from_old_blocks 4");
                 self.store
