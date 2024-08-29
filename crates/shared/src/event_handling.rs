@@ -257,8 +257,9 @@ where
         tracing::info!("newlog update_events 1");
         if let Some(range) = event_range.history_range {
             tracing::info!("newlog update_events 2");
-            self.update_events_from_old_blocks(range).await?;
-            tracing::info!("newlog update_events 3");
+            let r = self.update_events_from_old_blocks(range).await;
+            tracing::info!(?r, "newlog update_events 3");
+            r?;
         }
         if !event_range.latest_blocks.is_empty() {
             tracing::info!("newlog update_events 4");
@@ -335,8 +336,10 @@ where
         if !have_deleted_old_events {
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
+        tracing::info!("newlog update_events_from_old_blocks 1");
 
         self.update_last_handled_blocks(&blocks);
+        tracing::info!("newlog update_events_from_old_blocks 2");
         Ok(())
     }
 
