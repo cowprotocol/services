@@ -254,13 +254,19 @@ where
     pub async fn update_events(&mut self) -> Result<()> {
         let event_range = self.event_block_range().await?;
 
+        tracing::info!("newlog update_events 1");
         if let Some(range) = event_range.history_range {
+            tracing::info!("newlog update_events 2");
             self.update_events_from_old_blocks(range).await?;
+            tracing::info!("newlog update_events 3");
         }
         if !event_range.latest_blocks.is_empty() {
+            tracing::info!("newlog update_events 4");
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
                 .await?;
+            tracing::info!("newlog update_events 5");
         }
+        tracing::info!("newlog update_events 6");
         Ok(())
     }
 
@@ -339,6 +345,7 @@ where
         latest_blocks: &[BlockNumberHash],
         is_reorg: bool,
     ) -> Result<()> {
+        tracing::info!("newlog update_events_from_latest_blocks 1");
         debug_assert!(
             !latest_blocks.is_empty(),
             "entered update events with empty block list"
@@ -350,14 +357,18 @@ where
                 "no blocks to be updated - all filtered out"
             ));
         }
+        tracing::info!("newlog update_events_from_latest_blocks 2");
 
         // update storage regardless if it's a full update or partial update
         let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
         if is_reorg {
+            tracing::info!("newlog update_events_from_latest_blocks 3");
             self.store.replace_events(events, range.clone()).await?;
         } else {
+            tracing::info!("newlog update_events_from_latest_blocks 4");
             self.store.append_events(events).await?;
         }
+        tracing::info!("newlog update_events_from_latest_blocks 5");
         self.update_last_handled_blocks(&blocks);
 
         // in case of partial update return error as an indicator that update did not
