@@ -95,18 +95,23 @@ impl Maintenance {
 
     async fn update_inner(&self) -> Result<()> {
         // All these can run independently of each other.
-        tokio::try_join!(
-            self.settlement_indexer.run_maintenance(),
-            self.db_cleanup.run_maintenance(),
-            self.index_refunds(),
-            self.index_ethflow_orders(),
-            futures::future::try_join_all(
-                self.cow_amm_indexer
-                    .iter()
-                    .cloned()
-                    .map(|indexer| async move { indexer.run_maintenance().await })
-            )
-        )?;
+        tracing::info!("newlog update_inner");
+        self.settlement_indexer.run_maintenance().await?;
+        tracing::info!("newlog settlement_indexer ok");
+        self.db_cleanup.run_maintenance().await?;
+        tracing::info!("newlog db_cleanup ok");
+        self.index_refunds().await?;
+        tracing::info!("newlog index_refunds ok");
+        self.index_ethflow_orders().await?;
+        tracing::info!("newlog index_ethflow_orders ok");
+        futures::future::try_join_all(
+            self.cow_amm_indexer
+                .iter()
+                .cloned()
+                .map(|indexer| async move { indexer.run_maintenance().await }),
+        )
+        .await?;
+        tracing::info!("newlog cow_amm_indexer ok");
 
         Ok(())
     }
@@ -167,6 +172,7 @@ impl Maintenance {
                 }
                 RunLoopMode::Unsynchronized => {
                     let mut latest_block = *current_block.borrow();
+                    tracing::info!(?latest_block, "newlog starting background update runloop");
                     let mut stream = into_stream(current_block);
                     loop {
                         let next_update = timeout(update_interval, stream.next());
@@ -178,6 +184,7 @@ impl Maintenance {
                             Ok(None) => break,
                             Err(_timeout) => latest_block,
                         };
+                        tracing::info!(?current_block, "newlog new block");
                         if let Err(err) = self_.update_inner().await {
                             tracing::warn!(?err, "failed to run background task successfully");
                         }
