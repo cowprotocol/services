@@ -890,7 +890,7 @@ mod tests {
         assert_eq!(order.buy_token, full_order.buy_token);
         assert_eq!(order.sell_amount, full_order.sell_amount);
         assert_eq!(order.buy_amount, full_order.buy_amount);
-        assert_eq!(order.valid_to, full_order.valid_to());
+        assert_eq!(order.valid_to, full_order.valid_to);
         assert_eq!(order.app_data, full_order.app_data);
         assert_eq!(order.fee_amount, full_order.fee_amount);
         assert_eq!(order.full_fee_amount, full_order.full_fee_amount);
@@ -1039,8 +1039,8 @@ mod tests {
             vec![vec![], vec![0u8, 1u8]],
             order_
                 .post_interactions
-                .iter()
-                .map(|v| v.2.clone())
+                .into_iter()
+                .map(|v| v.2)
                 .collect::<Vec<Vec<u8>>>()
         );
         let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
@@ -1131,8 +1131,8 @@ mod tests {
             vec![vec![], vec![0u8, 1u8]],
             order_
                 .pre_interactions
-                .iter()
-                .map(|v| v.2.clone())
+                .into_iter()
+                .map(|v| v.2)
                 .collect::<Vec<Vec<u8>>>()
         );
         let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
