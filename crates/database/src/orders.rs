@@ -776,102 +776,6 @@ pub async fn user_orders_with_quote(
 }
 
 #[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
-pub struct OrderUpdate {
-    pub order_uid: OrderUid,
-    pub max_block_number: i64,
-    pub sum_sell_amount: BigDecimal,
-    pub sum_buy_amount: BigDecimal,
-    pub sum_fee_amount: BigDecimal,
-    pub sum_surplus_fee: BigDecimal,
-    pub invalidated: bool,
-}
-
-/// This function queries multiple tables (`trades`, `order_execution`,
-/// `invalidations`, and `onchain_order_invalidations`) to gather data about
-/// order updates after the specified block number.
-///
-/// # SQL Query
-///
-/// The SQL query effectively combines data from multiple tables using `UNION
-/// ALL` and aggregates the results. It calculates the maximum block number,
-/// sums of buy/sell/fee amounts, and checks if the order has been invalidated.
-/// The `0 as block_number` is used for values that do not participate in
-/// aggregations to avoid errors in case the same data is fetched twice.
-/// `trades` and `order_execution` tables are updated within a single DB
-/// transaction, so it is safe to collect the latest block number from them.
-pub fn updates_after(
-    ex: &mut PgConnection,
-    after_block: i64,
-) -> BoxStream<'_, Result<OrderUpdate, sqlx::Error>> {
-    const QUERY: &str = r#"
-WITH combined_data AS (
-    SELECT
-        order_uid,
-        block_number,
-        buy_amount,
-        sell_amount,
-        fee_amount,
-        0 as surplus_fee,
-        0 AS invalidated
-    FROM trades
-    WHERE block_number > $1
-
-    UNION ALL
-
-    SELECT
-        order_uid,
-        block_number,
-        0 as buy_amount,
-        0 as sell_amount,
-        0 as fee_amount,
-        surplus_fee,
-        0 AS invalidated
-    FROM order_execution
-    WHERE block_number > $1
-
-    UNION ALL
-
-    SELECT
-        order_uid,
-        $1 as block_number,
-        0 as buy_amount,
-        0 as sell_amount,
-        0 as fee_amount,
-        0 as surplus_fee,
-        1 AS invalidated
-    FROM invalidations
-    WHERE block_number > $1
-
-    UNION ALL
-
-    SELECT
-        uid as order_uid,
-        $1 as block_number,
-        0 as buy_amount,
-        0 as sell_amount,
-        0 as fee_amount,
-        0 as surplus_fee,
-        1 AS invalidated
-    FROM onchain_order_invalidations
-    WHERE block_number > $1
-)
-
-SELECT
-    order_uid,
-    MAX(block_number) as max_block_number,
-    COALESCE(SUM(buy_amount), 0) as sum_buy_amount,
-    COALESCE(SUM(sell_amount), 0) as sum_sell_amount,
-    COALESCE(SUM(fee_amount), 0) as sum_fee_amount,
-    COALESCE(SUM(surplus_fee), 0) as sum_surplus_fee,
-    MAX(invalidated) > 0 AS invalidated
-FROM combined_data
-GROUP BY order_uid
-"#;
-
-    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
-}
-
-#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct DbOrderUid(pub OrderUid);
 
 pub fn updated_order_uids_after(
@@ -2194,13 +2098,6 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_updates_after(
-            ex: &mut PgConnection,
-            min_block: i64,
-        ) -> Result<Vec<OrderUpdate>, sqlx::Error> {
-            updates_after(ex, min_block).try_collect().await
-        }
-
         async fn get_updated_order_uids_after(
             ex: &mut PgConnection,
             after_block: i64,
@@ -2266,35 +2163,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(get_updates_after(&mut db, 2).await.unwrap().is_empty());
         assert!(get_updated_order_uids_after(&mut db, 2).await.is_empty());
-
-        let mut result = get_updates_after(&mut db, 0).await.unwrap();
-        result.sort_by_key(|t| t.order_uid.0);
-        assert_eq!(
-            result,
-            vec![
-                OrderUpdate {
-                    order_uid: ByteArray([1u8; 56]),
-                    max_block_number: 2,
-                    sum_sell_amount: BigDecimal::from(30),
-                    sum_buy_amount: BigDecimal::from(300),
-                    sum_fee_amount: BigDecimal::from(3),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: false,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([2u8; 56]),
-                    max_block_number: 1,
-                    sum_sell_amount: BigDecimal::from(40),
-                    sum_buy_amount: BigDecimal::from(400),
-                    sum_fee_amount: BigDecimal::from(4),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: false,
-                },
-            ]
-        );
-
         assert_eq!(
             get_updated_order_uids_after(&mut db, 0).await,
             hashset![ByteArray([1u8; 56]), ByteArray([2u8; 56])]
@@ -2313,40 +2182,6 @@ mod tests {
         crate::order_execution::save(&mut db, &ByteArray([3u8; 56]), 2, 3, &BigDecimal::from(4))
             .await
             .unwrap();
-        let mut result = get_updates_after(&mut db, 0).await.unwrap();
-        result.sort_by_key(|t| t.order_uid.0);
-        assert_eq!(
-            result,
-            vec![
-                OrderUpdate {
-                    order_uid: ByteArray([1u8; 56]),
-                    max_block_number: 2,
-                    sum_sell_amount: BigDecimal::from(30),
-                    sum_buy_amount: BigDecimal::from(300),
-                    sum_fee_amount: BigDecimal::from(3),
-                    sum_surplus_fee: BigDecimal::from(3),
-                    invalidated: false,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([2u8; 56]),
-                    max_block_number: 1,
-                    sum_sell_amount: BigDecimal::from(40),
-                    sum_buy_amount: BigDecimal::from(400),
-                    sum_fee_amount: BigDecimal::from(4),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: false,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([3u8; 56]),
-                    max_block_number: 3,
-                    sum_sell_amount: Default::default(),
-                    sum_buy_amount: Default::default(),
-                    sum_fee_amount: Default::default(),
-                    sum_surplus_fee: BigDecimal::from(4),
-                    invalidated: false,
-                },
-            ]
-        );
 
         assert_eq!(
             get_updated_order_uids_after(&mut db, 0).await,
@@ -2390,49 +2225,6 @@ mod tests {
         crate::events::append(&mut db, &invalidation_events)
             .await
             .unwrap();
-        let mut result = get_updates_after(&mut db, 0).await.unwrap();
-        result.sort_by_key(|t| t.order_uid.0);
-        assert_eq!(
-            result,
-            vec![
-                OrderUpdate {
-                    order_uid: ByteArray([1u8; 56]),
-                    max_block_number: 2,
-                    sum_sell_amount: BigDecimal::from(30),
-                    sum_buy_amount: BigDecimal::from(300),
-                    sum_fee_amount: BigDecimal::from(3),
-                    sum_surplus_fee: BigDecimal::from(3),
-                    invalidated: true,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([2u8; 56]),
-                    max_block_number: 1,
-                    sum_sell_amount: BigDecimal::from(40),
-                    sum_buy_amount: BigDecimal::from(400),
-                    sum_fee_amount: BigDecimal::from(4),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: false,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([3u8; 56]),
-                    max_block_number: 3,
-                    sum_sell_amount: Default::default(),
-                    sum_buy_amount: Default::default(),
-                    sum_fee_amount: Default::default(),
-                    sum_surplus_fee: BigDecimal::from(4),
-                    invalidated: false,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([4u8; 56]),
-                    max_block_number: 0,
-                    sum_sell_amount: Default::default(),
-                    sum_buy_amount: Default::default(),
-                    sum_fee_amount: Default::default(),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: true,
-                },
-            ]
-        );
 
         assert_eq!(
             get_updated_order_uids_after(&mut db, 0).await,
@@ -2475,58 +2267,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let mut result = get_updates_after(&mut db, 0).await.unwrap();
-        result.sort_by_key(|t| t.order_uid.0);
-        assert_eq!(
-            result,
-            vec![
-                OrderUpdate {
-                    order_uid: ByteArray([1u8; 56]),
-                    max_block_number: 2,
-                    sum_sell_amount: BigDecimal::from(30),
-                    sum_buy_amount: BigDecimal::from(300),
-                    sum_fee_amount: BigDecimal::from(3),
-                    sum_surplus_fee: BigDecimal::from(3),
-                    invalidated: true,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([2u8; 56]),
-                    max_block_number: 1,
-                    sum_sell_amount: BigDecimal::from(40),
-                    sum_buy_amount: BigDecimal::from(400),
-                    sum_fee_amount: BigDecimal::from(4),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: true,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([3u8; 56]),
-                    max_block_number: 3,
-                    sum_sell_amount: Default::default(),
-                    sum_buy_amount: Default::default(),
-                    sum_fee_amount: Default::default(),
-                    sum_surplus_fee: BigDecimal::from(4),
-                    invalidated: false,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([4u8; 56]),
-                    max_block_number: 0,
-                    sum_sell_amount: Default::default(),
-                    sum_buy_amount: Default::default(),
-                    sum_fee_amount: Default::default(),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: true,
-                },
-                OrderUpdate {
-                    order_uid: ByteArray([5u8; 56]),
-                    max_block_number: 0,
-                    sum_sell_amount: Default::default(),
-                    sum_buy_amount: Default::default(),
-                    sum_fee_amount: Default::default(),
-                    sum_surplus_fee: Default::default(),
-                    invalidated: true,
-                }
-            ]
-        );
+
         assert_eq!(
             get_updated_order_uids_after(&mut db, 0).await,
             hashset![
