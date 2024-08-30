@@ -54,17 +54,14 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     };
     let onchain_user = order.onchain_user.map(|onchain_user| H160(onchain_user.0));
     let class = order_class_from(&order);
-    let onchain_placement_error = order
-        .onchain_placement_error
-        .as_ref()
-        .map(onchain_order_placement_error_from);
+    let onchain_placement_error = onchain_order_placement_error_from(&order);
     let onchain_order_data = onchain_user.map(|onchain_user| OnchainOrderData {
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
     let full_fee_amount =
-        big_decimal_to_u256(order.full_fee_amount()).context("full_fee_amount is not U256")?;
-    let fee_amount = big_decimal_to_u256(order.fee_amount()).context("fee_amount is not U256")?;
+        big_decimal_to_u256(&order.full_fee_amount).context("full_fee_amount is not U256")?;
+    let fee_amount = big_decimal_to_u256(&order.fee_amount).context("fee_amount is not U256")?;
     let solver_fee = match &class {
         // Liquidity orders should never have a fee unless the owner bribes the protocol by setting
         // one themselves.
@@ -76,9 +73,9 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
     };
 
     let metadata = OrderMetadata {
-        creation_date: *order.creation_timestamp(),
-        owner: H160(order.owner().0),
-        uid: OrderUid(order.uid().0),
+        creation_date: order.creation_timestamp,
+        owner: H160(order.owner.0),
+        uid: OrderUid(order.uid.0),
         available_balance: Default::default(),
         executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
             .context("executed buy amount is not an unsigned integer")?,
@@ -87,47 +84,46 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // Executed fee amounts and sell amounts before fees are capped by
         // order's fee and sell amounts, and thus can always fit in a `U256`
         // - as it is limited by the order format.
-        executed_sell_amount_before_fees: big_decimal_to_u256(&(&order.sum_sell - &order.sum_fee))
-            .context("executed sell amount before fees does not fit in a u256")?,
+        executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
+            .context(
+            "executed sell amount before fees does not fit in a u256",
+        )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
         executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
             .context("executed surplus fee is not a valid u256")?,
-        invalidated: order.invalidated(),
+        invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
         class,
-        settlement_contract: H160(order.settlement_contract().0),
+        settlement_contract: H160(order.settlement_contract.0),
         full_fee_amount,
         solver_fee,
         ethflow_data,
         onchain_user,
         onchain_order_data,
         full_app_data: order
-            .full_app_data()
-            .map(|app_data| String::from_utf8(app_data.clone()))
+            .full_app_data
+            .map(String::from_utf8)
             .transpose()
             .context("full app data isn't utf-8")?,
     };
     let data = OrderData {
-        sell_token: H160(order.sell_token().0),
-        buy_token: H160(order.buy_token().0),
-        receiver: order.receiver().map(|address| H160(address.0)),
-        sell_amount: big_decimal_to_u256(order.sell_amount()).context("sell_amount is not U256")?,
-        buy_amount: big_decimal_to_u256(order.buy_amount()).context("buy_amount is not U256")?,
-        valid_to: order
-            .base_valid_to()
-            .try_into()
-            .context("valid_to is not u32")?,
-        app_data: AppDataHash(order.app_data().0),
+        sell_token: H160(order.sell_token.0),
+        buy_token: H160(order.buy_token.0),
+        receiver: order.receiver.map(|address| H160(address.0)),
+        sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount is not U256")?,
+        buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount is not U256")?,
+        valid_to: order.valid_to.try_into().context("valid_to is not u32")?,
+        app_data: AppDataHash(order.app_data.0),
         fee_amount,
-        kind: order_kind_from(*order.kind()),
-        partially_fillable: order.partially_fillable(),
-        sell_token_balance: sell_token_source_from(*order.sell_token_balance()),
-        buy_token_balance: buy_token_destination_from(*order.buy_token_balance()),
+        kind: order_kind_from(order.kind),
+        partially_fillable: order.partially_fillable,
+        sell_token_balance: sell_token_source_from(order.sell_token_balance),
+        buy_token_balance: buy_token_destination_from(order.buy_token_balance),
     };
-    let signing_scheme = signing_scheme_from(*order.signing_scheme());
-    let signature = Signature::from_bytes(signing_scheme, order.signature())?;
+    let signing_scheme = signing_scheme_from(order.signing_scheme);
+    let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
     Ok(Order {
         metadata,
         data,
@@ -144,8 +140,8 @@ pub fn extract_interactions(
     execution: ExecutionTime,
 ) -> Result<Vec<InteractionData>> {
     let interactions = match execution {
-        ExecutionTime::Pre => order.pre_interactions(),
-        ExecutionTime::Post => order.post_interactions(),
+        ExecutionTime::Pre => &order.pre_interactions,
+        ExecutionTime::Post => &order.post_interactions,
     };
     interactions
         .iter()
@@ -183,33 +179,40 @@ pub fn order_class_into(class: &OrderClass) -> DbOrderClass {
 }
 
 pub fn onchain_order_placement_error_from(
-    error: &DbOnchainOrderPlacementError,
-) -> OnchainOrderPlacementError {
-    match error {
-        DbOnchainOrderPlacementError::InvalidOrderData => {
-            OnchainOrderPlacementError::InvalidOrderData
+    order: &FullOrderDb,
+) -> Option<OnchainOrderPlacementError> {
+    match order.onchain_placement_error {
+        Some(DbOnchainOrderPlacementError::InvalidOrderData) => {
+            Some(OnchainOrderPlacementError::InvalidOrderData)
         }
-        DbOnchainOrderPlacementError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
-        DbOnchainOrderPlacementError::PreValidationError => {
-            OnchainOrderPlacementError::PreValidationError
+        Some(DbOnchainOrderPlacementError::QuoteNotFound) => {
+            Some(OnchainOrderPlacementError::QuoteNotFound)
         }
-        DbOnchainOrderPlacementError::DisabledOrderClass => {
-            OnchainOrderPlacementError::DisabledOrderClass
+        Some(DbOnchainOrderPlacementError::PreValidationError) => {
+            Some(OnchainOrderPlacementError::PreValidationError)
         }
-        DbOnchainOrderPlacementError::ValidToTooFarInFuture => {
-            OnchainOrderPlacementError::ValidToTooFarInTheFuture
+        Some(DbOnchainOrderPlacementError::DisabledOrderClass) => {
+            Some(OnchainOrderPlacementError::DisabledOrderClass)
         }
-        DbOnchainOrderPlacementError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
-        DbOnchainOrderPlacementError::InsufficientFee => {
-            OnchainOrderPlacementError::InsufficientFee
+        Some(DbOnchainOrderPlacementError::ValidToTooFarInFuture) => {
+            Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture)
         }
-        DbOnchainOrderPlacementError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
-        DbOnchainOrderPlacementError::Other => OnchainOrderPlacementError::Other,
+        Some(DbOnchainOrderPlacementError::InvalidQuote) => {
+            Some(OnchainOrderPlacementError::InvalidQuote)
+        }
+        Some(DbOnchainOrderPlacementError::InsufficientFee) => {
+            Some(OnchainOrderPlacementError::InsufficientFee)
+        }
+        Some(DbOnchainOrderPlacementError::NonZeroFee) => {
+            Some(OnchainOrderPlacementError::NonZeroFee)
+        }
+        Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
+        None => None,
     }
 }
 
 pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
-    match order.class() {
+    match order.class {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit,

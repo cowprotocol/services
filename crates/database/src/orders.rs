@@ -456,173 +456,6 @@ type RawInteraction = (Address, BigDecimal, Vec<u8>);
 /// needed to construct a model::Order.
 #[derive(Debug, sqlx::FromRow)]
 pub struct FullOrder {
-    #[sqlx(flatten)]
-    base: OrderBaseData,
-    pub sum_sell: BigDecimal,
-    pub sum_buy: BigDecimal,
-    pub sum_fee: BigDecimal,
-    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
-    pub onchain_user: Option<Address>,
-    pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: BigDecimal,
-    pub presignature_pending: bool,
-}
-
-impl From<OrderBaseData> for FullOrder {
-    fn from(base: OrderBaseData) -> Self {
-        let presignature_pending = matches!(&base.signing_scheme, SigningScheme::PreSign);
-        Self {
-            base,
-            sum_sell: Default::default(),
-            sum_buy: Default::default(),
-            sum_fee: Default::default(),
-            ethflow_data: Default::default(),
-            onchain_user: Default::default(),
-            onchain_placement_error: Default::default(),
-            executed_surplus_fee: Default::default(),
-            presignature_pending,
-        }
-    }
-}
-
-impl FullOrder {
-    pub fn uid(&self) -> &OrderUid {
-        &self.base.uid
-    }
-
-    pub fn owner(&self) -> &Address {
-        &self.base.owner
-    }
-
-    pub fn creation_timestamp(&self) -> &DateTime<Utc> {
-        &self.base.creation_timestamp
-    }
-
-    pub fn sell_token(&self) -> &Address {
-        &self.base.sell_token
-    }
-
-    pub fn buy_token(&self) -> &Address {
-        &self.base.buy_token
-    }
-
-    pub fn sell_amount(&self) -> &BigDecimal {
-        &self.base.sell_amount
-    }
-
-    pub fn buy_amount(&self) -> &BigDecimal {
-        &self.base.buy_amount
-    }
-
-    pub fn valid_to(&self) -> i64 {
-        if let Some((_, valid_to)) = self.ethflow_data {
-            // For ethflow orders, we always return the user valid_to,
-            // as the Eip1271 valid to is u32::max
-            return valid_to;
-        }
-        self.base_valid_to()
-    }
-
-    pub fn base_valid_to(&self) -> i64 {
-        self.base.valid_to
-    }
-
-    pub fn app_data(&self) -> &AppId {
-        &self.base.app_data
-    }
-
-    pub fn fee_amount(&self) -> &BigDecimal {
-        &self.base.fee_amount
-    }
-
-    pub fn full_fee_amount(&self) -> &BigDecimal {
-        &self.base.full_fee_amount
-    }
-
-    pub fn kind(&self) -> &OrderKind {
-        &self.base.kind
-    }
-
-    pub fn class(&self) -> &OrderClass {
-        &self.base.class
-    }
-
-    pub fn partially_fillable(&self) -> bool {
-        self.base.partially_fillable
-    }
-
-    pub fn signature(&self) -> &Vec<u8> {
-        &self.base.signature
-    }
-
-    pub fn invalidated(&self) -> bool {
-        self.base.invalidated
-    }
-
-    pub fn receiver(&self) -> Option<&Address> {
-        self.base.receiver.as_ref()
-    }
-
-    pub fn signing_scheme(&self) -> &SigningScheme {
-        &self.base.signing_scheme
-    }
-
-    pub fn settlement_contract(&self) -> &Address {
-        &self.base.settlement_contract
-    }
-
-    pub fn sell_token_balance(&self) -> &SellTokenSource {
-        &self.base.sell_token_balance
-    }
-
-    pub fn buy_token_balance(&self) -> &BuyTokenDestination {
-        &self.base.buy_token_balance
-    }
-
-    pub fn pre_interactions(&self) -> &Vec<RawInteraction> {
-        &self.base.pre_interactions
-    }
-
-    pub fn post_interactions(&self) -> &Vec<RawInteraction> {
-        &self.base.post_interactions
-    }
-
-    pub fn full_app_data(&self) -> Option<&Vec<u8>> {
-        self.base.full_app_data.as_ref()
-    }
-
-    pub fn sum_sell(&self) -> &BigDecimal {
-        &self.sum_sell
-    }
-
-    pub fn sum_buy(&self) -> &BigDecimal {
-        &self.sum_buy
-    }
-
-    pub fn sum_fee(&self) -> &BigDecimal {
-        &self.sum_fee
-    }
-
-    pub fn update_base<F>(&mut self, update_fn: F) -> &mut Self
-    where
-        F: FnOnce(&mut OrderBaseData),
-    {
-        update_fn(&mut self.base);
-        self
-    }
-
-    pub fn update_self<F>(&mut self, update_fn: F) -> &mut Self
-    where
-        F: FnOnce(&mut Self),
-    {
-        update_fn(self);
-        self
-    }
-}
-
-/// Order with extra information from other tables excluding traded data.
-#[derive(Debug, sqlx::FromRow)]
-pub struct OrderBaseData {
     pub uid: OrderUid,
     pub owner: Address,
     pub creation_timestamp: DateTime<Utc>,
@@ -638,15 +471,34 @@ pub struct OrderBaseData {
     pub class: OrderClass,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
+    pub sum_sell: BigDecimal,
+    pub sum_buy: BigDecimal,
+    pub sum_fee: BigDecimal,
     pub invalidated: bool,
     pub receiver: Option<Address>,
     pub signing_scheme: SigningScheme,
     pub settlement_contract: Address,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
+    pub presignature_pending: bool,
     pub pre_interactions: Vec<RawInteraction>,
     pub post_interactions: Vec<RawInteraction>,
+    pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
+    pub onchain_user: Option<Address>,
+    pub onchain_placement_error: Option<OnchainOrderPlacementError>,
+    pub executed_surplus_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
+}
+
+impl FullOrder {
+    pub fn valid_to(&self) -> i64 {
+        if let Some((_, valid_to)) = self.ethflow_data {
+            // For ethflow orders, we always return the user valid_to,
+            // as the Eip1271 valid to is u32::max
+            return valid_to;
+        }
+        self.valid_to
+    }
 }
 
 // When querying orders we have several specialized use cases working with their
@@ -852,34 +704,6 @@ const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
     sqlx::query_as(OPEN_ORDERS_AFTER)
         .bind(after_timestamp)
         .bind(uids)
-        .fetch(ex)
-}
-
-/// Orders created or cancelled after the specified timestamp bounded by min
-/// validity period with additional data from other tables.
-pub fn orders_base_data_after(
-    ex: &mut PgConnection,
-    after_timestamp: DateTime<Utc>,
-    min_valid_to: i64,
-) -> BoxStream<'_, Result<OrderBaseData, sqlx::Error>> {
-    const QUERY: &str = r#"
-SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
-o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class,
-(o.cancellation_timestamp IS NOT NULL) AS invalidated,
-array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'pre' order by p.index) as pre_interactions,
-array(Select (p.target, p.value, p.data) from interactions p where p.order_uid = o.uid and p.execution = 'post' order by p.index) as post_interactions,
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
-FROM orders o
-LEFT OUTER JOIN ethflow_orders eth_o ON eth_o.uid = o.uid
-WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1)
-  AND o.valid_to >= $2
-  AND CASE WHEN eth_o.valid_to IS NULL THEN TRUE ELSE eth_o.valid_to >= $2 END
-"#;
-    sqlx::query_as(QUERY)
-        .bind(after_timestamp)
-        .bind(min_valid_to)
         .fetch(ex)
 }
 
@@ -1155,26 +979,26 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(&order.uid, full_order.uid());
-        assert_eq!(&order.owner, full_order.owner());
-        assert_eq!(&order.creation_timestamp, full_order.creation_timestamp());
-        assert_eq!(&order.sell_token, full_order.sell_token());
-        assert_eq!(&order.buy_token, full_order.buy_token());
-        assert_eq!(&order.sell_amount, full_order.sell_amount());
-        assert_eq!(&order.buy_amount, full_order.buy_amount());
+        assert_eq!(order.uid, full_order.uid);
+        assert_eq!(order.owner, full_order.owner);
+        assert_eq!(order.creation_timestamp, full_order.creation_timestamp);
+        assert_eq!(order.sell_token, full_order.sell_token);
+        assert_eq!(order.buy_token, full_order.buy_token);
+        assert_eq!(order.sell_amount, full_order.sell_amount);
+        assert_eq!(order.buy_amount, full_order.buy_amount);
         assert_eq!(order.valid_to, full_order.valid_to());
-        assert_eq!(&order.app_data, full_order.app_data());
-        assert_eq!(&order.fee_amount, full_order.fee_amount());
-        assert_eq!(&order.full_fee_amount, full_order.full_fee_amount());
-        assert_eq!(&order.kind, full_order.kind());
-        assert_eq!(&order.class, full_order.class());
-        assert_eq!(order.partially_fillable, full_order.partially_fillable());
-        assert_eq!(&order.signature, full_order.signature());
-        assert_eq!(order.receiver.as_ref(), full_order.receiver());
-        assert_eq!(&order.signing_scheme, full_order.signing_scheme());
-        assert_eq!(&order.settlement_contract, full_order.settlement_contract());
-        assert_eq!(&order.sell_token_balance, full_order.sell_token_balance());
-        assert_eq!(&order.buy_token_balance, full_order.buy_token_balance());
+        assert_eq!(order.app_data, full_order.app_data);
+        assert_eq!(order.fee_amount, full_order.fee_amount);
+        assert_eq!(order.full_fee_amount, full_order.full_fee_amount);
+        assert_eq!(order.kind, full_order.kind);
+        assert_eq!(order.class, full_order.class);
+        assert_eq!(order.partially_fillable, full_order.partially_fillable);
+        assert_eq!(order.signature, full_order.signature);
+        assert_eq!(order.receiver, full_order.receiver);
+        assert_eq!(order.signing_scheme, full_order.signing_scheme);
+        assert_eq!(order.settlement_contract, full_order.settlement_contract);
+        assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
+        assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
     }
 
     #[tokio::test]
@@ -1292,7 +1116,7 @@ mod tests {
         assert_eq!(
             vec![ByteArray::default(), ByteArray([1; 20])],
             order_
-                .post_interactions()
+                .post_interactions
                 .clone()
                 .into_iter()
                 .map(|v| v.0)
@@ -1301,7 +1125,7 @@ mod tests {
         assert_eq!(
             vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
             order_
-                .post_interactions()
+                .post_interactions
                 .clone()
                 .into_iter()
                 .map(|v| v.1)
@@ -1310,7 +1134,7 @@ mod tests {
         assert_eq!(
             vec![vec![], vec![0u8, 1u8]],
             order_
-                .post_interactions()
+                .post_interactions
                 .iter()
                 .map(|v| v.2.clone())
                 .collect::<Vec<Vec<u8>>>()
@@ -1384,7 +1208,7 @@ mod tests {
         assert_eq!(
             vec![ByteArray::default(), ByteArray([1; 20])],
             order_
-                .pre_interactions()
+                .pre_interactions
                 .clone()
                 .into_iter()
                 .map(|v| v.0)
@@ -1393,7 +1217,7 @@ mod tests {
         assert_eq!(
             vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
             order_
-                .pre_interactions()
+                .pre_interactions
                 .clone()
                 .into_iter()
                 .map(|v| v.1)
@@ -1402,7 +1226,7 @@ mod tests {
         assert_eq!(
             vec![vec![], vec![0u8, 1u8]],
             order_
-                .pre_interactions()
+                .pre_interactions
                 .iter()
                 .map(|v| v.2.clone())
                 .collect::<Vec<Vec<u8>>>()
@@ -1819,7 +1643,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(!result.invalidated());
+        assert!(!result.invalidated);
         insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
             .await
             .unwrap();
@@ -1827,7 +1651,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(result.invalidated());
+        assert!(result.invalidated);
     }
 
     #[tokio::test]
@@ -1856,20 +1680,8 @@ mod tests {
                 .unwrap()
         }
 
-        async fn get_orders_base_data(
-            ex: &mut PgConnection,
-            min_valid_to: i64,
-        ) -> Option<OrderBaseData> {
-            orders_base_data_after(ex, Default::default(), min_valid_to)
-                .next()
-                .await
-                .transpose()
-                .unwrap()
-        }
-
         // not solvable because valid to
         assert!(get_full_order(&mut db, 4).await.is_none());
-        assert!(get_orders_base_data(&mut db, 4).await.is_none());
 
         // not solvable because fully executed
         crate::events::append(
@@ -1889,8 +1701,6 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
-        // This query doesn't count traded amounts.
-        assert!(get_orders_base_data(&mut db, 0).await.is_some());
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // not solvable because invalidated
@@ -1909,13 +1719,10 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 0).await.is_none());
-        // Base orders query doesn't track invalidations.
-        assert!(get_orders_base_data(&mut db, 0).await.is_some());
         crate::events::delete(&mut db, 0).await.unwrap();
 
         // solvable
         assert!(get_full_order(&mut db, 3).await.is_some());
-        assert!(get_orders_base_data(&mut db, 3).await.is_some());
 
         // still solvable because only partially filled
         crate::events::append(
@@ -1935,7 +1742,6 @@ mod tests {
         .await
         .unwrap();
         assert!(get_full_order(&mut db, 3).await.is_some());
-        assert!(get_orders_base_data(&mut db, 3).await.is_some());
 
         //no longer solvable, if it is a ethflow-order
         //with shorter user_valid_to from the ethflow
@@ -1948,9 +1754,7 @@ mod tests {
             .unwrap();
 
         assert!(get_full_order(&mut db, 3).await.is_none());
-        assert!(get_orders_base_data(&mut db, 3).await.is_none());
         assert!(get_full_order(&mut db, 2).await.is_some());
-        assert!(get_orders_base_data(&mut db, 2).await.is_some());
 
         // no longer solvable, if there was also a onchain order
         // placement error
@@ -1976,21 +1780,12 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_orders_base_data(
-            ex: &mut PgConnection,
-            min_timestamp: DateTime<Utc>,
-        ) -> Result<Vec<OrderBaseData>, sqlx::Error> {
-            orders_base_data_after(ex, min_timestamp, 0)
-                .try_collect()
-                .await
-        }
-
         async fn get_open_orders_after(
             ex: &mut PgConnection,
             after_timestamp: DateTime<Utc>,
         ) -> HashSet<OrderUid> {
             open_orders_after(ex, Default::default(), after_timestamp)
-                .map_ok(|o| *o.uid())
+                .map_ok(|o| o.uid)
                 .try_collect()
                 .await
                 .unwrap()
@@ -2017,19 +1812,6 @@ mod tests {
         insert_order(&mut db, &order_c).await.unwrap();
 
         assert_eq!(
-            get_orders_base_data(&mut db, now - Duration::seconds(1))
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|o| o.uid)
-                .collect::<HashSet<_>>(),
-            hashset![
-                ByteArray([1u8; 56]),
-                ByteArray([2u8; 56]),
-                ByteArray([3u8; 56]),
-            ],
-        );
-        assert_eq!(
             get_open_orders_after(&mut db, now - Duration::seconds(1)).await,
             hashset![
                 ByteArray([1u8; 56]),
@@ -2038,26 +1820,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            get_orders_base_data(&mut db, now)
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|o| o.uid)
-                .collect::<HashSet<_>>(),
-            hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),],
-        );
-        assert_eq!(
             get_open_orders_after(&mut db, now).await,
             hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),]
-        );
-        assert_eq!(
-            get_orders_base_data(&mut db, now + Duration::seconds(10))
-                .await
-                .unwrap()
-                .into_iter()
-                .map(|o| o.uid)
-                .collect::<HashSet<_>>(),
-            hashset![ByteArray([3u8; 56]),],
         );
         assert_eq!(
             get_open_orders_after(&mut db, now + Duration::seconds(10)).await,
@@ -2075,7 +1839,7 @@ mod tests {
         super::user_orders(ex, owner, offset, limit)
             .map(|o| {
                 let o = o.unwrap();
-                (o.uid().0, *o.owner(), *o.creation_timestamp())
+                (o.uid.0, o.owner, o.creation_timestamp)
             })
             .collect::<Vec<_>>()
             .await
@@ -2219,7 +1983,7 @@ mod tests {
             super::user_orders(ex, owner, offset, limit)
                 .map(|o| {
                     let o = o.unwrap();
-                    (o.uid().0, *o.owner(), *o.creation_timestamp())
+                    (o.uid.0, o.owner, o.creation_timestamp)
                 })
                 .collect::<Vec<_>>()
                 .await
@@ -2322,7 +2086,7 @@ mod tests {
             (tx_hash(4), &[uid(7)]),
         ] {
             let actual = full_orders_in_tx(&mut db, &tx_hash)
-                .map_ok(|order| *order.uid())
+                .map_ok(|order| order.uid)
                 .try_collect::<Vec<_>>()
                 .await
                 .unwrap();
@@ -2411,7 +2175,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(full_order.full_app_data().is_none());
+        assert!(full_order.full_app_data.is_none());
         let full_app_data = vec![0u8, 1, 2];
         crate::app_data::insert(&mut db, &order.app_data, &full_app_data)
             .await
@@ -2420,7 +2184,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(full_order.full_app_data(), Some(full_app_data).as_ref());
+        assert_eq!(full_order.full_app_data, Some(full_app_data));
     }
 
     #[tokio::test]
