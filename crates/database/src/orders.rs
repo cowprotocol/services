@@ -1971,7 +1971,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_orders_without_trades_after() {
+    async fn postgres_open_orders_after() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
@@ -1985,34 +1985,32 @@ mod tests {
                 .await
         }
 
+        async fn get_open_orders_after(
+            ex: &mut PgConnection,
+            after_timestamp: DateTime<Utc>,
+        ) -> HashSet<OrderUid> {
+            open_orders_after(ex, Default::default(), after_timestamp)
+                .map_ok(|o| *o.uid())
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
         let now = Utc::now();
         let order_a = Order {
             uid: ByteArray([1u8; 56]),
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 100.into(),
-            partially_fillable: true,
             creation_timestamp: now,
             ..Default::default()
         };
         insert_order(&mut db, &order_a).await.unwrap();
         let order_b = Order {
             uid: ByteArray([2u8; 56]),
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 100.into(),
-            partially_fillable: true,
             creation_timestamp: now + Duration::seconds(10),
             ..Default::default()
         };
         insert_order(&mut db, &order_b).await.unwrap();
         let order_c = Order {
             uid: ByteArray([3u8; 56]),
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 100.into(),
-            partially_fillable: true,
-            creation_timestamp: now,
             cancellation_timestamp: Some(now + Duration::seconds(20)),
             ..Default::default()
         };
@@ -2032,6 +2030,14 @@ mod tests {
             ],
         );
         assert_eq!(
+            get_open_orders_after(&mut db, now - Duration::seconds(1)).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+            ]
+        );
+        assert_eq!(
             get_orders_base_data(&mut db, now)
                 .await
                 .unwrap()
@@ -2041,6 +2047,10 @@ mod tests {
             hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),],
         );
         assert_eq!(
+            get_open_orders_after(&mut db, now).await,
+            hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),]
+        );
+        assert_eq!(
             get_orders_base_data(&mut db, now + Duration::seconds(10))
                 .await
                 .unwrap()
@@ -2048,6 +2058,10 @@ mod tests {
                 .map(|o| o.uid)
                 .collect::<HashSet<_>>(),
             hashset![ByteArray([3u8; 56]),],
+        );
+        assert_eq!(
+            get_open_orders_after(&mut db, now + Duration::seconds(10)).await,
+            hashset![ByteArray([3u8; 56]),]
         );
     }
 
