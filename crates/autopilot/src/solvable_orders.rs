@@ -105,7 +105,6 @@ pub struct SolvableOrdersCache {
 
 type Balances = HashMap<Query, U256>;
 
-#[allow(dead_code)]
 struct Inner {
     auction: domain::Auction,
     solvable_orders: boundary::SolvableOrders,

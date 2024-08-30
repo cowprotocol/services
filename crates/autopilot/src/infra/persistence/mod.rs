@@ -464,7 +464,6 @@ impl Persistence {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
         current_orders_interactions: HashMap<domain::OrderUid, model::order::Interactions>,
