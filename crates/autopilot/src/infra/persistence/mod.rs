@@ -405,23 +405,8 @@ impl Persistence {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
-        let current_orders_interactions = {
-            let _timer = Metrics::get()
-                .database_queries
-                .with_label_values(&["read_interactions_for_orders"])
-                .start_timer();
-            let current_order_uids = current_orders
-                .orders
-                .keys()
-                .map(|o| ByteArray(o.0))
-                .collect::<Vec<_>>();
 
-            let interactions =
-                database::orders::read_interactions_for_orders(&mut tx, &current_order_uids)
-                    .await?;
-            db_interactions_to_model(&interactions)?
-        };
-
+        // Find order uids for orders that were updated after the given block.
         let updated_order_uids: Vec<database::OrderUid> = {
             let _timer = Metrics::get()
                 .database_queries
@@ -433,6 +418,9 @@ impl Persistence {
                 .try_collect()
                 .await?
         };
+
+        // Fetch the orders that were updated after the given block and were created or
+        // cancelled after the given timestamp.
         let next_orders: HashMap<domain::OrderUid, model::order::Order> = {
             let _timer = Metrics::get()
                 .database_queries
@@ -449,16 +437,42 @@ impl Persistence {
                 .await?
         };
 
+        let next_order_uids = next_orders.keys().cloned().collect::<HashSet<_>>();
+
+        // Interactions table doesn't contain block number, so we need to update
+        // interactions for orders from the cache.
+        let current_order_interactions = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["read_interactions_for_orders"])
+                .start_timer();
+
+            let uids_to_update_interactions = current_orders
+                .orders
+                .keys()
+                .filter_map(|uid| (!next_order_uids.contains(uid)).then_some(ByteArray(uid.0)))
+                .collect::<Vec<_>>();
+            let interactions = database::orders::read_interactions_for_orders(
+                &mut tx,
+                uids_to_update_interactions.iter(),
+            )
+            .await?;
+            db_interactions_to_model(&interactions)?
+        };
+
+        let all_order_uids = next_order_uids.iter().chain(current_orders.orders.keys());
+        // Fetch quotes for new orders and also update them for the orders from the
+        // cache since they could also be updated.
+        let updated_quotes = self.postgres.read_quotes(all_order_uids).await?;
+
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut tx).await? as u64;
 
-        let new_quotes = self.postgres.read_quotes(next_orders.keys()).await?;
-
         Self::build_solvable_orders(
             current_orders,
-            current_orders_interactions,
+            current_order_interactions,
             next_orders,
-            new_quotes,
+            updated_quotes,
             latest_settlement_block,
             min_valid_to,
         )
@@ -467,13 +481,12 @@ impl Persistence {
     fn build_solvable_orders(
         current_orders: &boundary::SolvableOrders,
         current_orders_interactions: HashMap<domain::OrderUid, model::order::Interactions>,
-        new_orders: HashMap<domain::OrderUid, model::order::Order>,
+        next_orders: HashMap<domain::OrderUid, model::order::Order>,
         mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
         latest_settlement_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
         let mut orders = current_orders.orders.clone();
-        let mut quotes = current_orders.quotes.clone();
 
         // Update order interactions.
         for (uid, interactions) in current_orders_interactions {
@@ -482,12 +495,9 @@ impl Persistence {
             }
         }
 
-        // Blindly insert all new orders and quotes into the cache.
-        for (uid, order) in new_orders {
+        // Blindly insert all new orders into the cache.
+        for (uid, order) in next_orders {
             orders.insert(uid, order);
-            if let Some(quote) = new_quotes.remove(&uid) {
-                quotes.insert(uid, quote);
-            }
         }
 
         // Filter out all the invalid orders.
@@ -522,11 +532,11 @@ impl Persistence {
         });
 
         // Keep only relevant quotes.
-        quotes.retain(|uid, _quote| orders.contains_key(uid));
+        new_quotes.retain(|uid, _quote| orders.contains_key(uid));
 
         Ok(boundary::SolvableOrders {
             orders,
-            quotes,
+            quotes: new_quotes,
             latest_settlement_block,
         })
     }

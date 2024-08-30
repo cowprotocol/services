@@ -806,7 +806,7 @@ SELECT DISTINCT order_uid FROM (
 /// Fetches all interactions for the specified orders.
 pub async fn read_interactions_for_orders(
     ex: &mut PgConnection,
-    orders: &[OrderUid],
+    orders: impl Iterator<Item = &OrderUid>,
 ) -> Result<Vec<Interaction>, sqlx::Error> {
     const QUERY: &str = "SELECT * FROM interactions WHERE order_uid IN (";
 
@@ -1229,7 +1229,7 @@ mod tests {
 
         let mut interactions = read_interactions_for_orders(
             &mut db,
-            &[ByteArray([1; 56]), ByteArray([3; 56]), ByteArray([4; 56])],
+            [ByteArray([1; 56]), ByteArray([3; 56]), ByteArray([4; 56])].iter(),
         )
         .await
         .unwrap();
