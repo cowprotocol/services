@@ -41,15 +41,11 @@ pub fn big_rational_to_u256(ratio: &BigRational) -> Result<U256> {
 
 pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
     let big_uint = u256_to_big_uint(u256);
-    big_uint_to_big_decimal(&big_uint)
+    BigDecimal::from(BigInt::from(big_uint))
 }
 
 pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
     big_decimal.to_bigint()?.try_into().ok()
-}
-
-pub fn big_uint_to_big_decimal(big_uint: &BigUint) -> BigDecimal {
-    BigDecimal::from(BigInt::from(big_uint.clone()))
 }
 
 pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
