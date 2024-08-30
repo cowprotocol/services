@@ -5,7 +5,11 @@ use {
         database::{
             ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
-                ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
+                ethflow_events::{
+                    determine_ethflow_indexing_start,
+                    determine_ethflow_refund_indexing_start,
+                    EthFlowOnchainOrderParser,
+                },
                 event_retriever::CoWSwapOnchainOrdersContract,
                 OnchainOrderParser,
             },
@@ -457,11 +461,12 @@ pub async fn run(args: Arguments) {
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if let Some(ethflow_contract) = args.ethflow_contract {
-        let start_block = determine_ethflow_indexing_start(
+        let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
             &skip_event_sync_start,
             args.ethflow_indexing_start,
             &web3,
             chain_id,
+            db.clone(),
         )
         .await;
 
@@ -471,7 +476,7 @@ pub async fn run(args: Arguments) {
             EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
             db.clone(),
             block_retriever.clone(),
-            start_block,
+            ethflow_refund_start_block,
         )
         .await
         .unwrap();
@@ -486,13 +491,21 @@ pub async fn run(args: Arguments) {
             eth.contracts().settlement().address(),
         );
 
+        let ethflow_start_block = determine_ethflow_indexing_start(
+            &skip_event_sync_start,
+            args.ethflow_indexing_start,
+            &web3,
+            chain_id,
+        )
+        .await;
+
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
             // The events from the ethflow contract are read with the more generic contract
             // interface called CoWSwapOnchainOrders.
             CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
             onchain_order_event_parser,
             block_retriever,
-            start_block,
+            ethflow_start_block,
         )
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
