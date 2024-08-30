@@ -428,7 +428,7 @@ impl Persistence {
                 .with_label_values(&["updated_order_uids"])
                 .start_timer();
 
-            database::orders::updated_order_uids(&mut tx, after_block)
+            database::orders::updated_order_uids_after(&mut tx, after_block)
                 .map_ok(|uid| uid.0)
                 .try_collect()
                 .await?

@@ -1050,7 +1050,7 @@ GROUP BY order_uid
 #[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct DbOrderUid(pub OrderUid);
 
-pub fn updated_order_uids(
+pub fn updated_order_uids_after(
     ex: &mut PgConnection,
     after_block: i64,
 ) -> BoxStream<'_, Result<DbOrderUid, sqlx::Error>> {
@@ -2425,7 +2425,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_order_updates_after() {
+    async fn postgres_updated_order_uids_after() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
@@ -2435,6 +2435,17 @@ mod tests {
             min_block: i64,
         ) -> Result<Vec<OrderUpdate>, sqlx::Error> {
             updates_after(ex, min_block).try_collect().await
+        }
+
+        async fn get_updated_order_uids_after(
+            ex: &mut PgConnection,
+            after_block: i64,
+        ) -> HashSet<OrderUid> {
+            updated_order_uids_after(ex, after_block)
+                .map_ok(|o| o.0)
+                .try_collect()
+                .await
+                .unwrap()
         }
 
         // trades table
@@ -2492,6 +2503,7 @@ mod tests {
             .unwrap();
 
         assert!(get_updates_after(&mut db, 2).await.unwrap().is_empty());
+        assert!(get_updated_order_uids_after(&mut db, 2).await.is_empty());
 
         let mut result = get_updates_after(&mut db, 0).await.unwrap();
         result.sort_by_key(|t| t.order_uid.0);
@@ -2517,6 +2529,11 @@ mod tests {
                     invalidated: false,
                 },
             ]
+        );
+
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![ByteArray([1u8; 56]), ByteArray([2u8; 56])]
         );
 
         // order_execution table
@@ -2564,6 +2581,15 @@ mod tests {
                     sum_surplus_fee: BigDecimal::from(4),
                     invalidated: false,
                 },
+            ]
+        );
+
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56])
             ]
         );
 
@@ -2641,6 +2667,16 @@ mod tests {
                     sum_surplus_fee: Default::default(),
                     invalidated: true,
                 },
+            ]
+        );
+
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+                ByteArray([4u8; 56])
             ]
         );
 
@@ -2725,6 +2761,16 @@ mod tests {
                     sum_surplus_fee: Default::default(),
                     invalidated: true,
                 }
+            ]
+        );
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+                ByteArray([4u8; 56]),
+                ByteArray([5u8; 56])
             ]
         );
     }
