@@ -194,7 +194,7 @@ impl SolvableOrdersCache {
                             &cache.solvable_orders,
                             cache.last_order_creation_timestamp,
                             cache.solvable_orders.latest_settlement_block,
-                            min_valid_to as i64,
+                            min_valid_to,
                         )
                         .await?,
                     cache.last_order_creation_timestamp,

@@ -836,6 +836,25 @@ pub fn solvable_orders(
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
+pub fn open_orders_after<'a>(
+    ex: &'a mut PgConnection,
+    uids: &'a [OrderUid],
+    after_timestamp: DateTime<Utc>,
+) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
+    #[rustfmt::skip]
+const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
+    "SELECT ", ORDERS_SELECT,
+    " FROM ", ORDERS_FROM,
+    " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
+    " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))",
+);
+
+    sqlx::query_as(OPEN_ORDERS_AFTER)
+        .bind(after_timestamp)
+        .bind(uids)
+        .fetch(ex)
+}
+
 /// Orders created or cancelled after the specified timestamp bounded by min
 /// validity period with additional data from other tables.
 pub fn orders_base_data_after(
@@ -1023,6 +1042,34 @@ SELECT
     MAX(invalidated) > 0 AS invalidated
 FROM combined_data
 GROUP BY order_uid
+"#;
+
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
+}
+
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
+pub struct DbOrderUid(pub OrderUid);
+
+pub fn updated_order_uids(
+    ex: &mut PgConnection,
+    after_block: i64,
+) -> BoxStream<'_, Result<DbOrderUid, sqlx::Error>> {
+    const QUERY: &str = r#"
+SELECT DISTINCT order_uid FROM (
+    SELECT order_uid FROM trades WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM order_execution WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM invalidations WHERE block_number > $1
+    UNION
+    SELECT uid AS order_uid FROM onchain_order_invalidations WHERE block_number > $1
+    UNION
+    SELECT uid AS order_uid FROM onchain_placed_orders WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM ethflow_refunds WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM presignature_events WHERE block_number > $1
+) AS updated_orders
 "#;
 
     sqlx::query_as(QUERY).bind(after_block).fetch(ex)
