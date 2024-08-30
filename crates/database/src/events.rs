@@ -173,36 +173,19 @@ async fn insert_presignature(
     Ok(())
 }
 
-/// Fetches the latest presignature event for each order after a given block
-/// number.
-pub fn latest_presignature_events_after(
+pub fn events_after(
     ex: &mut PgConnection,
     after_block: i64,
 ) -> BoxStream<'_, Result<PreSignature, sqlx::Error>> {
-    const QUERY: &str = r#"
-WITH ranked_events AS (
-    SELECT owner, order_uid, signed, block_number, log_index,
-        ROW_NUMBER() OVER (
-           PARTITION BY order_uid
-           ORDER BY block_number DESC, log_index DESC
-        ) AS rn
-    FROM presignature_events
-    WHERE block_number > $1
-)
-SELECT owner, order_uid, signed
-FROM ranked_events
-WHERE rn = 1
-ORDER BY block_number DESC, log_index DESC
-    "#;
-
-    sqlx::query_as::<_, PreSignature>(QUERY)
-        .bind(after_block)
-        .fetch(ex)
+    const QUERY: &str = "\
+        SELECT owner, order_uid, signed FROM presignature_events WHERE block_number > $1 ORDER BY \
+                         block_number DESC, log_index DESC LIMIT 1";
+    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, futures::TryStreamExt, sqlx::Connection};
+    use {super::*, sqlx::Connection};
 
     #[tokio::test]
     #[ignore]
@@ -257,80 +240,6 @@ mod tests {
 
         delete(&mut db, 0).await.unwrap();
         assert_eq!(last_block(&mut db).await.unwrap(), 0);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_events_after() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        append(
-            &mut db,
-            &[
-                (
-                    EventIndex {
-                        block_number: 0,
-                        log_index: 0,
-                    },
-                    Event::PreSignature(PreSignature {
-                        owner: ByteArray([1; 20]),
-                        order_uid: ByteArray([2; 56]),
-                        signed: false,
-                    }),
-                ),
-                (
-                    EventIndex {
-                        block_number: 1,
-                        log_index: 0,
-                    },
-                    Event::PreSignature(PreSignature {
-                        owner: ByteArray([1; 20]),
-                        order_uid: ByteArray([1; 56]),
-                        signed: false,
-                    }),
-                ),
-                (
-                    EventIndex {
-                        block_number: 1,
-                        log_index: 1,
-                    },
-                    Event::PreSignature(PreSignature {
-                        owner: ByteArray([1; 20]),
-                        order_uid: ByteArray([1; 56]),
-                        signed: true,
-                    }),
-                ),
-                (
-                    EventIndex {
-                        block_number: 2,
-                        log_index: 0,
-                    },
-                    Event::PreSignature(PreSignature {
-                        owner: ByteArray([2; 20]),
-                        order_uid: ByteArray([2; 56]),
-                        signed: false,
-                    }),
-                ),
-            ],
-        )
-        .await
-        .unwrap();
-
-        let mut events_after: Vec<(OrderUid, Address, bool)> =
-            latest_presignature_events_after(&mut db, 0)
-                .map_ok(|e| (e.order_uid, e.owner, e.signed))
-                .try_collect()
-                .await
-                .unwrap();
-        events_after.sort_by_key(|(order_uid, _owner, _signed)| order_uid.0);
-
-        let expected: Vec<(OrderUid, Address, bool)> = vec![
-            (ByteArray([1; 56]), ByteArray([1; 20]), true),
-            (ByteArray([2; 56]), ByteArray([2; 20]), false),
-        ];
-        assert_eq!(events_after, expected);
     }
 
     #[tokio::test]
