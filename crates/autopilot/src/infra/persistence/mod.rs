@@ -454,7 +454,7 @@ impl Persistence {
                 .collect::<Vec<_>>();
             let interactions = database::orders::read_interactions_for_orders(
                 &mut tx,
-                uids_to_update_interactions.iter(),
+                &uids_to_update_interactions,
             )
             .await?;
             db_interactions_to_model(&interactions)?
