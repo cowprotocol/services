@@ -84,8 +84,8 @@ impl Liveness {
     }
 }
 
-async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
-    infra::blockchain::Rpc::new(url)
+async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::blockchain::Rpc {
+    infra::blockchain::Rpc::new(url, ethrpc_args)
         .await
         .expect("connect ethereum RPC")
 }
@@ -154,7 +154,7 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let ethrpc = ethrpc(&args.shared.node_url).await;
+    let ethrpc = ethrpc(&args.shared.node_url, &args.shared.ethrpc).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
     let url = ethrpc.url().clone();
