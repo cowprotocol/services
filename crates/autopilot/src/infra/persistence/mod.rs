@@ -11,6 +11,7 @@ use {
     chrono::{DateTime, Utc},
     database::{order_events::OrderEventLabel, settlement_observations::Observation},
     futures::{StreamExt, TryStreamExt},
+    itertools::Itertools,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     primitive_types::{H160, H256},
     shared::db_order_conversions::full_order_into_model_order,
@@ -436,12 +437,35 @@ impl Persistence {
                 .await?
         };
 
-        let next_order_uids = next_orders.keys().cloned().collect::<HashSet<_>>();
-
-        let all_order_uids = next_order_uids.iter().chain(current_orders.keys());
-        // Fetch quotes for new orders and also update them for the cached orders since
+        // Fetch quotes for new orders and also update them for the cached ones since
         // they could also be updated.
-        let updated_quotes = self.postgres.read_quotes(all_order_uids).await?;
+        let updated_quotes = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["read_quotes"])
+                .start_timer();
+
+            let all_order_uids = next_orders
+                .keys()
+                .chain(current_orders.keys())
+                .unique()
+                .map(|uid| ByteArray(uid.0))
+                .collect::<Vec<_>>();
+
+            database::orders::read_quotes(&mut tx, &all_order_uids)
+                .await?
+                .into_iter()
+                .filter_map(|quote| {
+                    let order_uid = domain::OrderUid(quote.order_uid.0);
+                    dto::quote::into_domain(quote)
+                        .map_err(|err| {
+                            tracing::warn!(?order_uid, ?err, "failed to convert quote from db")
+                        })
+                        .ok()
+                        .map(|quote| (order_uid, quote))
+                })
+                .collect()
+        };
 
         let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
             .await?
