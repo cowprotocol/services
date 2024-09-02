@@ -187,7 +187,6 @@ impl SolvableOrdersCache {
         // the incremental query to load all unfiltered orders into memory, potentially
         // leading to OOM issues.
         let (db_solvable_orders, previous_creation_timestamp) = {
-            // Acquire the lock and clone the necessary data
             let cache_data = {
                 let lock = self.cache.lock().await;
                 match &*lock {
@@ -205,7 +204,6 @@ impl SolvableOrdersCache {
                 }
             };
 
-            // Perform asynchronous operations after the lock is released
             match cache_data {
                 Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => (
                     self.persistence
