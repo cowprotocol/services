@@ -401,7 +401,7 @@ impl Persistence {
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so the both SELECT queries below are executed in the same database snapshot
+        // so all the SELECT queries below are executed in the same database snapshot
         // taken at the moment before the first query is executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
@@ -441,7 +441,7 @@ impl Persistence {
         let next_order_uids = next_orders.keys().cloned().collect::<HashSet<_>>();
 
         // Interactions table doesn't contain block number, so we need to update
-        // interactions for orders from the cache.
+        // interactions for the cached orders.
         let current_order_interactions = {
             let _timer = Metrics::get()
                 .database_queries
@@ -461,8 +461,7 @@ impl Persistence {
         };
 
         let all_order_uids = next_order_uids.iter().chain(current_orders.keys());
-        // Fetch quotes for new orders and also update them for the orders from the
-        // cache since they could also be updated.
+        // Fetch quotes for new orders and also update them for the cached orders since they could also be updated.
         let updated_quotes = self.postgres.read_quotes(all_order_uids).await?;
 
         let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
