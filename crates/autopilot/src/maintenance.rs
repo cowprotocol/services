@@ -95,18 +95,22 @@ impl Maintenance {
 
     async fn update_inner(&self) -> Result<()> {
         // All these can run independently of each other.
-        tokio::try_join!(
-            self.settlement_indexer.run_maintenance(),
-            self.db_cleanup.run_maintenance(),
-            self.index_refunds(),
-            self.index_ethflow_orders(),
-            futures::future::try_join_all(
-                self.cow_amm_indexer
-                    .iter()
-                    .cloned()
-                    .map(|indexer| async move { indexer.run_maintenance().await })
-            )
-        )?;
+        tracing::info!("newlog start settlement_indexer");
+        self.settlement_indexer.run_maintenance().await?;
+        tracing::info!("newlog end settlement_indexer");
+        self.db_cleanup.run_maintenance().await?;
+        tracing::info!("newlog start index_refunds");
+        self.index_refunds().await?;
+        tracing::info!("newlog start index_ethflow_orders");
+        self.index_ethflow_orders().await?;
+        tracing::info!("newlog start cow_amm_indexer");
+        futures::future::try_join_all(
+            self.cow_amm_indexer
+                .iter()
+                .cloned()
+                .map(|indexer| async move { indexer.run_maintenance().await }),
+        )
+        .await?;
 
         Ok(())
     }

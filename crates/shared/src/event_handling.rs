@@ -253,14 +253,20 @@ where
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
         let event_range = self.event_block_range().await?;
+        tracing::info!("newlog event_range={:?}", event_range);
 
         if let Some(range) = event_range.history_range {
+            tracing::info!("newlog starting update_events_from_old_blocks");
             self.update_events_from_old_blocks(range).await?;
+            tracing::info!("newlog update_events_from_old_blocks ok");
         }
         if !event_range.latest_blocks.is_empty() {
+            tracing::info!("newlog starting update_events_from_latest_blocks");
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
                 .await?;
+            tracing::info!("newlog update_events_from_latest_blocks ok");
         }
+        tracing::info!("newlog update_events ok");
         Ok(())
     }
 
