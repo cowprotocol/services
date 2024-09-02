@@ -223,30 +223,30 @@ impl Display for Arguments {
             "blockscout_api_url",
             &blockscout
                 .as_ref()
-                .map(|blockscout| blockscout.blockscout_api_url.clone())
-                .flatten(),
+                .and_then(|blockscout| blockscout.blockscout_api_url.clone()),
         )?;
         display_secret_option(
             f,
             "blockscout_api_key",
-            &blockscout
+            blockscout
                 .as_ref()
-                .map(|blockscout| blockscout.blockscout_api_key.clone()),
+                .and_then(|blockscout| blockscout.blockscout_api_key.clone())
+                .as_ref(),
         )?;
         display_option(
             f,
             "ethplorer_api_url",
             &ethplorer
                 .as_ref()
-                .map(|blockscout| blockscout.ethplorer_api_url.clone())
-                .flatten(),
+                .and_then(|blockscout| blockscout.ethplorer_api_url.clone()),
         )?;
         display_secret_option(
             f,
             "ethplorer_api_key",
-            &ethplorer
+            ethplorer
                 .as_ref()
-                .map(|blockscout| blockscout.ethplorer_api_key.clone()),
+                .and_then(|blockscout| blockscout.ethplorer_api_key.clone())
+                .as_ref(),
         )?;
         display_option(
             f,
@@ -330,8 +330,7 @@ pub async fn init(
             http_factory.create(),
             args.ethplorer
                 .as_ref()
-                .map(|ethplorer| ethplorer.ethplorer_api_key.clone())
-                .flatten(),
+                .and_then(|ethplorer| ethplorer.ethplorer_api_key.clone()),
             chain_id,
         )?;
         if let Some(ethplorer_config) = &args.ethplorer {
