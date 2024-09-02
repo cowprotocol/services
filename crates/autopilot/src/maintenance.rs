@@ -95,12 +95,12 @@ impl Maintenance {
 
     async fn update_inner(&self) -> Result<()> {
         // All these can run independently of each other.
-        tracing::info!("newlog start settlement_indexer");
-        self.settlement_indexer.run_maintenance().await?;
-        tracing::info!("newlog end settlement_indexer");
-        self.db_cleanup.run_maintenance().await?;
         tracing::info!("newlog start index_refunds");
         self.index_refunds().await?;
+        tracing::info!("newlog start settlement_indexer");
+        self.settlement_indexer.run_maintenance().await?;
+        tracing::info!("newlog start db_cleanup");
+        self.db_cleanup.run_maintenance().await?;
         tracing::info!("newlog start index_ethflow_orders");
         self.index_ethflow_orders().await?;
         tracing::info!("newlog start cow_amm_indexer");
