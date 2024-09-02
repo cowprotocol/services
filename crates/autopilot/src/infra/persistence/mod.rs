@@ -489,7 +489,7 @@ impl Persistence {
 
             database::jit_orders::upsert_orders(
                 &mut ex,
-                jit_orders
+                &jit_orders
                     .into_iter()
                     .map(|jit_order| database::jit_orders::JitOrder {
                         block_number,
@@ -549,7 +549,7 @@ impl Persistence {
                             }
                         },
                     })
-                    .collect(),
+                    .collect::<Vec<_>>(),
             )
             .await?;
         }

@@ -88,8 +88,12 @@ pub struct JitOrder {
 
 pub async fn upsert_orders(
     ex: &mut PgConnection,
-    jit_orders: Vec<JitOrder>,
+    jit_orders: &[JitOrder],
 ) -> Result<(), sqlx::Error> {
+    if jit_orders.is_empty() {
+        return Ok(());
+    }
+
     let mut query_builder = QueryBuilder::new(
         r#"
         INSERT INTO jit_orders (
@@ -116,7 +120,7 @@ pub async fn upsert_orders(
         "#,
     );
 
-    query_builder.push_values(jit_orders.into_iter(), |mut builder, jit_order| {
+    query_builder.push_values(jit_orders.iter(), |mut builder, jit_order| {
         builder
             .push_bind(jit_order.block_number)
             .push_bind(jit_order.log_index)
@@ -125,14 +129,14 @@ pub async fn upsert_orders(
             .push_bind(jit_order.creation_timestamp)
             .push_bind(jit_order.sell_token)
             .push_bind(jit_order.buy_token)
-            .push_bind(jit_order.sell_amount)
-            .push_bind(jit_order.buy_amount)
+            .push_bind(jit_order.sell_amount.clone())
+            .push_bind(jit_order.buy_amount.clone())
             .push_bind(jit_order.valid_to)
             .push_bind(jit_order.app_data)
-            .push_bind(jit_order.fee_amount)
+            .push_bind(jit_order.fee_amount.clone())
             .push_bind(jit_order.kind)
             .push_bind(jit_order.partially_fillable)
-            .push_bind(jit_order.signature)
+            .push_bind(jit_order.signature.clone())
             .push_bind(jit_order.receiver)
             .push_bind(jit_order.signing_scheme)
             .push_bind(jit_order.sell_token_balance)
