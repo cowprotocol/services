@@ -11,18 +11,20 @@ use {
 
 mod math;
 
-/// Trade type when evaluated in a context of an Auction.
+/// Trade type evaluated in a context of an Auction.
 #[derive(Clone, Debug)]
 pub enum Trade {
-    /// A regular user order that exist in the orderbook.
+    /// A regular user order that exist in the associated Auction.
     Fulfillment(Fulfillment),
     // JIT trades are not part of the orderbook and are created by solvers at the time of
     // settlement.
+    // Note that user orders can also be classified as JIT orders if they are settled outside of
+    // the Auction.
     Jit(Jit),
 }
 
 impl Trade {
-    /// Order UID that was settled in this trade.
+    /// UID of the order that was settled in this trade.
     pub fn uid(&self) -> &domain::OrderUid {
         match self {
             Self::Fulfillment(trade) => &trade.uid,
@@ -54,6 +56,9 @@ impl Trade {
                 if trade.surplus_capturing {
                     math::Trade::from(trade.clone()).surplus_in_ether(prices)
                 } else {
+                    // JIT orders that are not surplus capturing have zero
+                    // surplus, even if they settled at a better price than
+                    // limit price.
                     Ok(eth::Ether::zero())
                 }
             }
@@ -130,12 +135,12 @@ impl Trade {
 /// Trade representing an user trade. User trades are part of the orderbook.
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
-    pub uid: domain::OrderUid,
-    pub sell: eth::Asset,
-    pub buy: eth::Asset,
-    pub side: order::Side,
-    pub executed: order::TargetAmount,
-    pub prices: Prices,
+    uid: domain::OrderUid,
+    sell: eth::Asset,
+    buy: eth::Asset,
+    side: order::Side,
+    executed: order::TargetAmount,
+    prices: Prices,
 }
 
 /// Trade representing a JIT trade. JIT trades are not part of the orderbook and

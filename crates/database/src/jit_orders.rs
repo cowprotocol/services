@@ -172,18 +172,6 @@ pub async fn upsert_orders(
     Ok(())
 }
 
-pub async fn read_order(
-    ex: &mut PgConnection,
-    uid: &OrderUid,
-) -> Result<Option<JitOrder>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT *
-FROM jit_orders
-WHERE uid = $1
-    ;"#;
-    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
-}
-
 impl From<FullJitOrder> for orders::FullOrder {
     fn from(jit_order: FullJitOrder) -> Self {
         orders::FullOrder {
@@ -225,6 +213,18 @@ impl From<FullJitOrder> for orders::FullOrder {
 
 #[cfg(test)]
 mod tests {
+    pub async fn read_order(
+        ex: &mut PgConnection,
+        uid: &OrderUid,
+    ) -> Result<Option<JitOrder>, sqlx::Error> {
+        const QUERY: &str = r#"
+    SELECT *
+    FROM jit_orders
+    WHERE uid = $1
+        ;"#;
+        sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+    }
+
     use {
         super::*,
         crate::byte_array::ByteArray,

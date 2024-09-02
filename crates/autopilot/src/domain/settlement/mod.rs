@@ -75,8 +75,8 @@ impl Settlement {
                     .unwrap_or_else(|err| {
                         tracing::warn!(
                             ?err,
-                            "possible incomplete fee calculation for trade {}",
-                            trade.uid()
+                            trade = %trade.uid(),
+                            "possible incomplete fee calculation",
                         );
                         num::zero()
                     })

@@ -21,12 +21,12 @@ use {
 /// the surplus, fees and score.
 #[derive(Debug, Clone)]
 pub struct Trade {
-    pub uid: domain::OrderUid,
-    pub sell: eth::Asset,
-    pub buy: eth::Asset,
-    pub side: order::Side,
-    pub executed: order::TargetAmount,
-    pub prices: Prices,
+    uid: domain::OrderUid,
+    sell: eth::Asset,
+    buy: eth::Asset,
+    side: order::Side,
+    executed: order::TargetAmount,
+    prices: Prices,
 }
 
 impl Trade {
