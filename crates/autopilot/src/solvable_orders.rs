@@ -230,7 +230,9 @@ impl SolvableOrdersCache {
             .values()
             .map(|order| order.metadata.creation_date)
             .max()
-            .unwrap_or(previous_creation_timestamp);
+            .map_or(previous_creation_timestamp, |max_creation_timestamp| {
+                std::cmp::max(max_creation_timestamp, previous_creation_timestamp)
+            });
         let orders = db_solvable_orders
             .orders
             .values()
