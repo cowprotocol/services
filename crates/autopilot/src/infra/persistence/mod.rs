@@ -511,6 +511,7 @@ impl Persistence {
                             domain::auction::order::Side::Buy => database::orders::OrderKind::Buy,
                             domain::auction::order::Side::Sell => database::orders::OrderKind::Sell,
                         },
+                        partially_fillable: jit_order.partially_fillable,
                         signature: jit_order.signature.to_bytes(),
                         receiver: ByteArray(jit_order.receiver.0 .0),
                         signing_scheme: match jit_order.signature.scheme() {

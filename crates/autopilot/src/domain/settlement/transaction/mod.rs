@@ -90,6 +90,7 @@ impl Transaction {
                         fee_amount: trade.7.into(),
                         sell_token_balance: flags.sell_token_balance().into(),
                         buy_token_balance: flags.buy_token_balance().into(),
+                        partially_fillable: flags.partially_fillable(),
                         signature: (boundary::Signature::from_bytes(
                             flags.signing_scheme(),
                             &trade.10 .0,
@@ -127,6 +128,7 @@ pub struct EncodedTrade {
     pub fee_amount: eth::TokenAmount,
     pub sell_token_balance: order::SellTokenSource,
     pub buy_token_balance: order::BuyTokenDestination,
+    pub partially_fillable: bool,
     pub signature: order::Signature,
     pub executed: order::TargetAmount,
     pub prices: Prices,

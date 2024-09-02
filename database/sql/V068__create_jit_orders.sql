@@ -15,6 +15,7 @@ CREATE TABLE jit_orders (
     app_data bytea NOT NULL,
     fee_amount numeric(78,0) NOT NULL,
     kind OrderKind NOT NULL,
+    partially_fillable boolean NOT NULL,
     signature bytea NOT NULL, -- r + s + v
     receiver bytea,
     signing_scheme SigningScheme NOT NULL,

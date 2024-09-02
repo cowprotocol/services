@@ -38,6 +38,8 @@ pub async fn single_full_jit_order(
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
 
+/// Jit order combined with trades table and order_execution table, suitable for
+/// API responses.
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct FullJitOrder {
     pub uid: OrderUid,
@@ -51,6 +53,7 @@ pub struct FullJitOrder {
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
+    pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub sum_sell: BigDecimal,
     pub sum_buy: BigDecimal,
@@ -62,6 +65,7 @@ pub struct FullJitOrder {
     pub executed_surplus_fee: BigDecimal,
 }
 
+/// 1:1 mapping to the `jit_orders` table, used to store orders.
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct JitOrder {
     pub block_number: i64,
@@ -77,6 +81,7 @@ pub struct JitOrder {
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
+    pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub receiver: Address,
     pub signing_scheme: SigningScheme,
@@ -100,15 +105,16 @@ pub async fn upsert_order(ex: &mut PgConnection, jit_order: JitOrder) -> Result<
         app_data,
         fee_amount,
         kind,
+        partially_fillable,
         signature,
         receiver,
         signing_scheme,
         sell_token_balance,
         buy_token_balance
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     ON CONFLICT (block_number, log_index) DO UPDATE 
-SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = $7, sell_amount = $8, buy_amount = $9, valid_to = $10, app_data = $11, fee_amount = $12, kind = $13, signature = $14, receiver = $15, signing_scheme = $16, sell_token_balance = $17, buy_token_balance = $18
+SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = $7, sell_amount = $8, buy_amount = $9, valid_to = $10, app_data = $11, fee_amount = $12, kind = $13, partially_fillable = $14, signature = $15, receiver = $16, signing_scheme = $17, sell_token_balance = $18, buy_token_balance = $19
     ;"#;
     sqlx::query(QUERY)
         .bind(jit_order.block_number)
@@ -124,6 +130,7 @@ SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = 
         .bind(jit_order.app_data)
         .bind(jit_order.fee_amount)
         .bind(jit_order.kind)
+        .bind(jit_order.partially_fillable)
         .bind(jit_order.signature)
         .bind(jit_order.receiver)
         .bind(jit_order.signing_scheme)
@@ -162,7 +169,7 @@ impl From<FullJitOrder> for orders::FullOrder {
             full_fee_amount: jit_order.fee_amount,
             kind: jit_order.kind,
             class: orders::OrderClass::Limit, // irrelevant
-            partially_fillable: false,
+            partially_fillable: jit_order.partially_fillable,
             signature: jit_order.signature,
             sum_sell: jit_order.sum_sell,
             sum_buy: jit_order.sum_buy,
