@@ -185,20 +185,37 @@ impl SolvableOrdersCache {
         // the incremental query to load all unfiltered orders into memory, potentially
         // leading to OOM issues.
         let (db_solvable_orders, previous_creation_timestamp) = {
-            let lock = self.cache.lock().await;
-            match &*lock {
-                Some(cache) if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC => (
-                    self.persistence
-                        .solvable_order_after(
-                            &cache.solvable_orders,
+            // Acquire the lock and clone the necessary data
+            let cache_data = {
+                let lock = self.cache.lock().await;
+                match &*lock {
+                    Some(cache)
+                        if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC =>
+                    {
+                        Some((
+                            cache.solvable_orders.orders.clone(),
                             cache.last_order_creation_timestamp,
                             cache.solvable_orders.latest_settlement_block,
+                        ))
+                    }
+                    _ => None,
+                }
+            };
+
+            // Perform asynchronous operations after the lock is released
+            match cache_data {
+                Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => (
+                    self.persistence
+                        .solvable_order_after(
+                            current_orders,
+                            last_order_creation_timestamp,
+                            latest_settlement_block,
                             min_valid_to,
                         )
                         .await?,
-                    cache.last_order_creation_timestamp,
+                    last_order_creation_timestamp,
                 ),
-                _ => (
+                None => (
                     self.persistence.all_solvable_orders(min_valid_to).await?,
                     DateTime::<Utc>::MIN_UTC,
                 ),

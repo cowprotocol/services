@@ -393,7 +393,7 @@ impl Persistence {
 
     pub async fn solvable_order_after(
         &self,
-        current_orders: &boundary::SolvableOrders,
+        current_orders: HashMap<domain::OrderUid, model::order::Order>,
         after_timestamp: DateTime<Utc>,
         after_block: u64,
         min_valid_to: u32,
@@ -449,7 +449,6 @@ impl Persistence {
                 .start_timer();
 
             let uids_to_update_interactions = current_orders
-                .orders
                 .keys()
                 .filter_map(|uid| (!next_order_uids.contains(uid)).then_some(ByteArray(uid.0)))
                 .collect::<Vec<_>>();
@@ -461,7 +460,7 @@ impl Persistence {
             db_interactions_to_model(&interactions)?
         };
 
-        let all_order_uids = next_order_uids.iter().chain(current_orders.orders.keys());
+        let all_order_uids = next_order_uids.iter().chain(current_orders.keys());
         // Fetch quotes for new orders and also update them for the orders from the
         // cache since they could also be updated.
         let updated_quotes = self.postgres.read_quotes(all_order_uids).await?;
@@ -482,29 +481,27 @@ impl Persistence {
     }
 
     fn build_solvable_orders(
-        current_orders: &boundary::SolvableOrders,
+        mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
         current_orders_interactions: HashMap<domain::OrderUid, model::order::Interactions>,
         next_orders: HashMap<domain::OrderUid, model::order::Order>,
         mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
         latest_settlement_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
-        let mut orders = current_orders.orders.clone();
-
         // Update order interactions.
         for (uid, interactions) in current_orders_interactions {
-            if let Some(order) = orders.get_mut(&uid) {
+            if let Some(order) = current_orders.get_mut(&uid) {
                 order.interactions = interactions
             }
         }
 
         // Blindly insert all new orders into the cache.
         for (uid, order) in next_orders {
-            orders.insert(uid, order);
+            current_orders.insert(uid, order);
         }
 
         // Filter out all the invalid orders.
-        orders.retain(|_uid, order| {
+        current_orders.retain(|_uid, order| {
             let expired = order.data.valid_to < min_valid_to
                 || order
                     .metadata
@@ -535,10 +532,10 @@ impl Persistence {
         });
 
         // Keep only relevant quotes.
-        next_quotes.retain(|uid, _quote| orders.contains_key(uid));
+        next_quotes.retain(|uid, _quote| current_orders.contains_key(uid));
 
         Ok(boundary::SolvableOrders {
-            orders,
+            orders: current_orders,
             quotes: next_quotes,
             latest_settlement_block,
         })
