@@ -6,6 +6,7 @@ use {
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
+    bigdecimal::ToPrimitive,
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
     database::{
@@ -465,8 +466,10 @@ impl Persistence {
         // cache since they could also be updated.
         let updated_quotes = self.postgres.read_quotes(all_order_uids).await?;
 
-        let latest_settlement_block =
-            database::orders::latest_settlement_block(&mut tx).await? as u64;
+        let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
+            .await?
+            .to_u64()
+            .context("latest_settlement_block is not u64")?;
 
         Self::build_solvable_orders(
             current_orders,
@@ -507,7 +510,7 @@ impl Persistence {
                     .metadata
                     .ethflow_data
                     .as_ref()
-                    .is_some_and(|data| data.user_valid_to < min_valid_to as i64);
+                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
 
             let invalidated = order.metadata.invalidated;
             let onchain_error = order
