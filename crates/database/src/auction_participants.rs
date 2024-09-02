@@ -1,6 +1,6 @@
 use {
     crate::{auction::AuctionId, Address, PgTransaction},
-    sqlx::PgConnection,
+    sqlx::{PgConnection, QueryBuilder},
     std::ops::DerefMut,
 };
 
@@ -15,15 +15,21 @@ pub async fn insert(
     ex: &mut PgTransaction<'_>,
     participants: &[Participant],
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str =
-        r#"INSERT INTO auction_participants (auction_id, participant) VALUES ($1, $2);"#;
-    for participant in participants {
-        sqlx::query(QUERY)
-            .bind(participant.auction_id)
-            .bind(participant.participant)
-            .execute(ex.deref_mut())
-            .await?;
+    const BATCH_SIZE: usize = 5000;
+    const QUERY: &str = "INSERT INTO auction_participants (auction_id, participant) ";
+
+    for chunk in participants.chunks(BATCH_SIZE) {
+        let mut query_builder = QueryBuilder::new(QUERY);
+
+        query_builder.push_values(chunk, |mut builder, participant| {
+            builder
+                .push_bind(participant.auction_id)
+                .push_bind(participant.participant);
+        });
+
+        query_builder.build().execute(ex.deref_mut()).await?;
     }
+
     Ok(())
 }
 

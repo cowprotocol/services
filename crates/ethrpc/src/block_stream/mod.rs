@@ -328,6 +328,14 @@ pub async fn block_number_to_block_number_hash(
         })
 }
 
+pub async fn block_by_number(web3: &Web3, block_number: BlockNumber) -> Option<Block<H256>> {
+    web3.eth()
+        .block(BlockId::Number(block_number))
+        .await
+        .ok()
+        .flatten()
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
     /// How much a new block number differs from the current block number.

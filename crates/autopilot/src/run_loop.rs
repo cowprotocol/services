@@ -12,6 +12,7 @@ use {
             self,
             solvers::dto::{reveal, settle, solve},
         },
+        maintenance::Maintenance,
         run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
@@ -19,6 +20,7 @@ use {
     anyhow::{Context, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
+    ethrpc::block_stream::BlockInfo,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -32,7 +34,7 @@ use {
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
-        time::{Duration, Instant, SystemTime},
+        time::{Duration, Instant},
     },
     tokio::sync::Mutex,
     tracing::{warn, Instrument},
@@ -51,53 +53,100 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub synchronization: RunLoopMode,
+    /// How much time past observing the current block the runloop is
+    /// allowed to start before it has to re-synchronize to the blockchain
+    /// by waiting for the next block to appear.
+    pub max_run_loop_delay: Duration,
+    /// Maintenance tasks that should run before every runloop to have
+    /// the most recent data available.
+    pub maintenance: Arc<Maintenance>,
 }
 
 impl RunLoop {
     pub async fn run_forever(self, update_interval: Duration) -> ! {
-        if let RunLoopMode::Unsynchronized = self.synchronization {
-            SolvableOrdersCache::spawn_background_task(
-                &self.solvable_orders_cache,
-                self.eth.current_block().clone(),
-                update_interval,
-            );
-        }
+        Maintenance::spawn_background_task(
+            self.maintenance.clone(),
+            self.synchronization,
+            self.eth.current_block().clone(),
+            update_interval,
+        );
 
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            let init_block_timestamp = {
-                if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                    let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-                    if let Err(err) = self.solvable_orders_cache.update(block.number).await {
-                        tracing::error!(?err, "failed to build a new auction");
-                    }
-                    block.timestamp
-                } else {
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    self.eth.current_block().borrow().timestamp
-                }
-            };
-
-            if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
-                let current_block = self.eth.current_block().borrow().hash;
-                // Only run the solvers if the auction or block has changed.
-                let previous = last_auction.replace(auction.clone());
-                if previous.as_ref() != Some(&auction)
-                    || last_block.replace(current_block) != Some(current_block)
-                {
-                    observe::log_auction_delta(id, &previous, &auction);
-                    self.liveness.auction();
-
-                    self.single_run(id, &auction, init_block_timestamp)
-                        .instrument(tracing::info_span!("auction", id))
-                        .await;
-                }
+            let auction = self.next_auction(&mut last_auction, &mut last_block).await;
+            if let Some(domain::AuctionWithId { id, auction }) = auction {
+                self.single_run(id, &auction)
+                    .instrument(tracing::info_span!("auction", id))
+                    .await;
             };
         }
     }
 
-    async fn next_auction(&self) -> Option<domain::AuctionWithId> {
+    /// Sleeps until the next auction is supposed to start, builds it and
+    /// returns it.
+    async fn next_auction(
+        &self,
+        prev_auction: &mut Option<domain::Auction>,
+        prev_block: &mut Option<H256>,
+    ) -> Option<domain::AuctionWithId> {
+        // wait for appropriate time to start building the auction
+        let start_block = match self.synchronization {
+            RunLoopMode::Unsynchronized => {
+                // Sleep a bit to avoid busy loops.
+                tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
+                *self.eth.current_block().borrow()
+            }
+            RunLoopMode::SyncToBlockchain => {
+                let current_block = *self.eth.current_block().borrow();
+                let time_since_last_block = current_block.observed_at.elapsed();
+                let auction_block = if time_since_last_block > self.max_run_loop_delay {
+                    tracing::warn!(
+                        missed_by = ?time_since_last_block - self.max_run_loop_delay,
+                        "missed optimal auction start, wait for new block"
+                    );
+                    ethrpc::block_stream::next_block(self.eth.current_block()).await
+                } else {
+                    current_block
+                };
+
+                self.run_maintenance(&auction_block).await;
+                if let Err(err) = self
+                    .solvable_orders_cache
+                    .update(auction_block.number)
+                    .await
+                {
+                    tracing::warn!(?err, "failed to update auction");
+                }
+                current_block
+            }
+        };
+
+        let auction = self.cut_auction().await?;
+
+        // Only run the solvers if the auction or block has changed.
+        let previous = prev_auction.replace(auction.auction.clone());
+        if previous.as_ref() == Some(&auction.auction)
+            && prev_block.replace(start_block.hash) == Some(start_block.hash)
+        {
+            return None;
+        }
+
+        observe::log_auction_delta(&previous, &auction);
+        self.liveness.auction();
+        Metrics::auction_ready(start_block.observed_at);
+        Some(auction)
+    }
+
+    /// Runs maintenance on all components to ensure the system uses
+    /// the latest available state.
+    async fn run_maintenance(&self, block: &BlockInfo) {
+        let start = Instant::now();
+        self.maintenance.update(block).await;
+        Metrics::ran_maintenance(start.elapsed());
+    }
+
+    async fn cut_auction(&self) -> Option<domain::AuctionWithId> {
         let auction = match self.solvable_orders_cache.current_auction() {
             Some(auction) => auction,
             None => {
@@ -131,13 +180,7 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(
-        &self,
-        auction_id: domain::auction::Id,
-        auction: &domain::Auction,
-        init_block_timestamp: u64,
-    ) {
-        Metrics::single_run_started(init_block_timestamp);
+    async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
         let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
@@ -671,9 +714,10 @@ impl RunLoop {
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
         loop {
-            if self.eth.current_block().borrow().number > deadline {
-                break;
-            }
+            let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
+            // Run maintenance to ensure the system processed the last available block so
+            // it's possible to find the tx in the DB in the next line.
+            self.run_maintenance(&block).await;
 
             match self
                 .persistence
@@ -686,7 +730,9 @@ impl RunLoop {
                 }
                 Ok(None) => {}
             }
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            if block.number >= deadline {
+                break;
+            }
         }
         Err(SettleError::Failure(anyhow::anyhow!(
             "settlement transaction await reached deadline"
@@ -804,6 +850,11 @@ struct Metrics {
     /// Tracks the time spent in pre-processing before sending a `solve`
     /// request.
     auction_preprocessing_time: prometheus::Histogram,
+
+    /// Tracks the time spent running maintenance. This mostly consists of
+    /// indexing new events.
+    #[metric(buckets(0, 0.01, 0.05, 0.1, 0.2, 0.5, 1., 2., 5.))]
+    service_maintenance_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
     #[metric(buckets(0, 1, 5, 10, 15, 20, 25, 30, 35, 40))]
@@ -926,31 +977,27 @@ impl Metrics {
             .observe(elapsed.as_secs_f64());
     }
 
+    fn ran_maintenance(elapsed: Duration) {
+        Self::get()
+            .service_maintenance_time
+            .observe(elapsed.as_secs_f64());
+    }
+
     fn single_run_completed(elapsed: Duration) {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
     }
 
-    fn single_run_started(init_block_timestamp: u64) {
-        match SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-        {
-            Ok(now) => Self::get()
-                .current_block_delay
-                .observe((now - init_block_timestamp) as f64),
-            Err(err) => tracing::error!(?err, "failed to get current time"),
-        }
+    fn auction_ready(init_block_timestamp: Instant) {
+        Self::get()
+            .current_block_delay
+            .observe(init_block_timestamp.elapsed().as_secs_f64())
     }
 }
 
 pub mod observe {
     use {crate::domain, std::collections::HashSet};
 
-    pub fn log_auction_delta(
-        id: i64,
-        previous: &Option<domain::Auction>,
-        current: &domain::Auction,
-    ) {
+    pub fn log_auction_delta(previous: &Option<domain::Auction>, current: &domain::AuctionWithId) {
         let previous_uids = match previous {
             Some(previous) => previous
                 .orders
@@ -960,6 +1007,7 @@ pub mod observe {
             None => HashSet::new(),
         };
         let current_uids = current
+            .auction
             .orders
             .iter()
             .map(|order| order.uid)
@@ -967,12 +1015,12 @@ pub mod observe {
         let added = current_uids.difference(&previous_uids);
         let removed = previous_uids.difference(&current_uids);
         tracing::debug!(
-            id,
+            id = current.id,
             added = ?added,
             "New orders in auction"
         );
         tracing::debug!(
-            id,
+            id = current.id,
             removed = ?removed,
             "Orders no longer in auction"
         );
