@@ -451,9 +451,10 @@ Column                    | Type                         | Nullable | Details
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
 
 Indexes:
-- PRIMARY KEY: btree(`uid`)
+- PRIMARY KEY: btree(`block_number`, `log_index`)
 - jit\_order\_creation\_timestamp: btree(`creation_timestamp`)
 - jit\_order\_owner: hash(`owner`)
+- jit\_order\_uid: hash(`uid`)
 - jit\_user\_order\_creation\_timestamp: btree(`owner`, `creation_timestamp` DESC)
 - jit\_event\_id: btree(`block_number`, `log_index`)
 

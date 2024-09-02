@@ -4,7 +4,7 @@
 CREATE TABLE jit_orders (
     block_number bigint NOT NULL,
     log_index bigint NOT NULL,
-    uid bytea PRIMARY KEY,
+    uid bytea NOT NULL,
     owner bytea NOT NULL,
     creation_timestamp timestamptz NOT NULL,
     sell_token bytea NOT NULL,
@@ -20,11 +20,14 @@ CREATE TABLE jit_orders (
     signing_scheme SigningScheme NOT NULL,
     sell_token_balance SellTokenSource NOT NULL,
     buy_token_balance BuyTokenDestination NOT NULL,
-    UNIQUE (block_number, log_index)
+    
+    PRIMARY KEY (block_number, log_index)
 );
 
 -- Get a specific user's orders.
 CREATE INDEX jit_order_owner ON jit_orders USING HASH (owner);
+
+CREATE INDEX jit_order_uid ON jit_orders USING HASH (uid);
 
 CREATE INDEX jit_order_creation_timestamp ON jit_orders USING BTREE (creation_timestamp);
 
