@@ -238,19 +238,21 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // insert a jit order
-        let jit_order = JitOrder {
-            ..Default::default()
-        };
+        let mut jit_order = JitOrder::default();
 
+        // insert a jit order and read it back
         upsert_orders(&mut db, &[jit_order.clone()]).await.unwrap();
-
-        // read it back
         let jit_order2 = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
         assert_eq!(jit_order, jit_order2);
 
+        // update existing jit order and read it back
+        jit_order.creation_timestamp = DateTime::<Utc>::default() + chrono::Duration::days(1);
+        upsert_orders(&mut db, &[jit_order.clone()]).await.unwrap();
+        let jit_order3 = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
+        assert_eq!(jit_order, jit_order3);
+
         // read non existent order
-        let jit_order3 = read_order(&mut db, &ByteArray([1u8; 56])).await.unwrap();
-        assert!(jit_order3.is_none());
+        let jit_order4 = read_order(&mut db, &ByteArray([1u8; 56])).await.unwrap();
+        assert!(jit_order4.is_none());
     }
 }
