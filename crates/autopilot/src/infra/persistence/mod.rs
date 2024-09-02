@@ -485,7 +485,7 @@ impl Persistence {
         current_orders: &boundary::SolvableOrders,
         current_orders_interactions: HashMap<domain::OrderUid, model::order::Interactions>,
         next_orders: HashMap<domain::OrderUid, model::order::Order>,
-        mut new_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
         latest_settlement_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
@@ -535,11 +535,11 @@ impl Persistence {
         });
 
         // Keep only relevant quotes.
-        new_quotes.retain(|uid, _quote| orders.contains_key(uid));
+        next_quotes.retain(|uid, _quote| orders.contains_key(uid));
 
         Ok(boundary::SolvableOrders {
             orders,
-            quotes: new_quotes,
+            quotes: next_quotes,
             latest_settlement_block,
         })
     }
