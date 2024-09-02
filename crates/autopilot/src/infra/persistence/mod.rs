@@ -503,7 +503,7 @@ impl Persistence {
         // Filter out all the invalid orders.
         orders.retain(|_uid, order| {
             let expired = order.data.valid_to < min_valid_to
-                && !order
+                || order
                     .metadata
                     .ethflow_data
                     .as_ref()
