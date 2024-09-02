@@ -160,7 +160,7 @@ fn into_domain(
             .gas_used
             .ok_or(anyhow::anyhow!("missing gas_used"))?
             .into(),
-        effective_gas_price: receipt
+        gas_price: receipt
             .effective_gas_price
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into(),

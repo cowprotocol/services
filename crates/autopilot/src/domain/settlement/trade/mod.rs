@@ -7,7 +7,6 @@ use {
         fee,
     },
     bigdecimal::Zero,
-    std::collections::HashSet,
 };
 
 mod math;
@@ -41,22 +40,19 @@ impl Trade {
 
     /// CIP38 score defined as surplus + protocol fee
     pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
-        self.as_math().score(auction)
+        match self {
+            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).score(auction),
+            Self::Jit(trade) => math::Trade::from(trade.clone()).score(auction),
+        }
     }
 
     /// Surplus of a trade.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
-            Self::Fulfillment(trade) => {
-                if trade.in_auction {
-                    trade.as_math().surplus_in_ether(prices)
-                } else {
-                    Ok(eth::Ether::zero())
-                }
-            }
+            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).surplus_in_ether(prices),
             Self::Jit(trade) => {
                 if trade.surplus_capturing {
-                    trade.as_math().surplus_in_ether(prices)
+                    math::Trade::from(trade.clone()).surplus_in_ether(prices)
                 } else {
                     Ok(eth::Ether::zero())
                 }
@@ -66,13 +62,19 @@ impl Trade {
 
     /// Total fee taken for the trade.
     pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
-        self.as_math().fee_in_ether(prices)
+        match self {
+            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).fee_in_ether(prices),
+            Self::Jit(trade) => math::Trade::from(trade.clone()).fee_in_ether(prices),
+        }
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
     pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, math::Error> {
-        self.as_math().fee_in_sell_token()
+        match self {
+            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).fee_in_sell_token(),
+            Self::Jit(trade) => math::Trade::from(trade.clone()).fee_in_sell_token(),
+        }
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
@@ -80,26 +82,27 @@ impl Trade {
         &self,
         auction: &super::Auction,
     ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, math::Error> {
-        self.as_math().protocol_fees_in_sell_token(auction)
-    }
-
-    /// Represent the current trade as a math trade, for which we know how
-    /// to calculate surplus, fees, etc.
-    fn as_math(&self) -> math::Trade {
         match self {
-            Trade::Fulfillment(trade) => trade.as_math(),
-            Trade::Jit(trade) => trade.as_math(),
+            Self::Fulfillment(trade) => {
+                math::Trade::from(trade.clone()).protocol_fees_in_sell_token(auction)
+            }
+            Self::Jit(trade) => {
+                math::Trade::from(trade.clone()).protocol_fees_in_sell_token(auction)
+            }
         }
     }
 
-    pub fn new(
-        trade: transaction::EncodedTrade,
-        auction: &super::Auction,
-        database_orders: &HashSet<domain::OrderUid>,
-        created: u32,
-    ) -> Self {
-        // If it's not in a database, then it's definitely a JIT order
-        if !database_orders.contains(&trade.uid) {
+    pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
+        if auction.orders.contains_key(&trade.uid) {
+            Trade::Fulfillment(Fulfillment {
+                uid: trade.uid,
+                sell: trade.sell,
+                buy: trade.buy,
+                side: trade.side,
+                executed: trade.executed,
+                prices: trade.prices,
+            })
+        } else {
             Trade::Jit(Jit {
                 uid: trade.uid,
                 sell: trade.sell,
@@ -120,18 +123,6 @@ impl Trade {
                     .contains(&trade.uid.owner()),
             })
         }
-        // If it's in a database, then it's a normal fulfillment of an user order
-        else {
-            Trade::Fulfillment(Fulfillment {
-                uid: trade.uid,
-                sell: trade.sell,
-                buy: trade.buy,
-                side: trade.side,
-                executed: trade.executed,
-                prices: trade.prices,
-                in_auction: auction.orders.contains_key(&trade.uid),
-            })
-        }
     }
 }
 
@@ -144,23 +135,6 @@ pub struct Fulfillment {
     pub side: order::Side,
     pub executed: order::TargetAmount,
     pub prices: Prices,
-    // Whether the trade was part of an auction
-    pub in_auction: bool,
-}
-
-impl Fulfillment {
-    /// Converts the trade to a math trade, which can be used to calculate
-    /// surplus, fees, etc.
-    pub fn as_math(&self) -> math::Trade {
-        math::Trade {
-            uid: self.uid,
-            sell: self.sell,
-            buy: self.buy,
-            side: self.side,
-            executed: self.executed,
-            prices: self.prices,
-        }
-    }
 }
 
 /// Trade representing a JIT trade. JIT trades are not part of the orderbook and
@@ -182,21 +156,6 @@ pub struct Jit {
     pub prices: super::transaction::Prices,
     pub created: u32,
     pub surplus_capturing: bool,
-}
-
-impl Jit {
-    /// Converts the trade to a math trade, which can be used to calculate
-    /// surplus, fees, etc.
-    pub fn as_math(&self) -> math::Trade {
-        math::Trade {
-            uid: self.uid,
-            sell: self.sell,
-            buy: self.buy,
-            side: self.side,
-            executed: self.executed,
-            prices: self.prices,
-        }
-    }
 }
 
 /// Fee per trade in a solution. These fees are taken for the execution of the

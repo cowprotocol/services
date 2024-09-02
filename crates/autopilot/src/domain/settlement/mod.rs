@@ -24,7 +24,7 @@ pub struct Settlement {
     /// The gas used by the settlement transaction.
     gas: eth::Gas,
     /// The effective gas price of the settlement transaction.
-    effective_gas_price: eth::EffectiveGasPrice,
+    gas_price: eth::EffectiveGasPrice,
     /// The address of the solver that submitted the settlement transaction.
     solver: eth::Address,
     /// The block number of the block that contains the settlement transaction.
@@ -43,7 +43,7 @@ impl Settlement {
 
     /// The effective gas price at the time of settlement.
     pub fn gas_price(&self) -> eth::EffectiveGasPrice {
-        self.effective_gas_price
+        self.gas_price
     }
 
     /// Total surplus for all trades in the settlement.
@@ -56,8 +56,8 @@ impl Settlement {
                     .unwrap_or_else(|err| {
                         tracing::warn!(
                             ?err,
-                            "possible incomplete surplus calculation for trade {}",
-                            trade.uid()
+                            trade = %trade.uid(),
+                            "possible incomplete surplus calculation",
                         );
                         num::zero()
                     })
@@ -128,19 +128,18 @@ impl Settlement {
         }
 
         let auction = persistence.get_auction(settled.auction_id).await?;
-        let database_orders = persistence.orders_that_exist(&settled.order_uids()).await?;
 
         let trades = settled
             .trades
             .into_iter()
-            .map(|trade| Trade::new(trade, &auction, &database_orders, settled.timestamp))
+            .map(|trade| Trade::new(trade, &auction, settled.timestamp))
             .collect();
 
         Ok(Self {
             solver: settled.solver,
             block: settled.block,
             gas: settled.gas,
-            effective_gas_price: settled.effective_gas_price,
+            gas_price: settled.gas_price,
             trades,
             auction,
         })
@@ -346,10 +345,8 @@ mod tests {
             id: 0,
             orders: HashMap::from([(order_uid, vec![])]),
         };
-        let database_orders = HashSet::from([order_uid]);
 
-        let trade =
-            super::trade::Trade::new(transaction.trades[0].clone(), &auction, &database_orders, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
 
         // surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
@@ -488,9 +485,7 @@ mod tests {
                 }],
             )]),
         };
-        let database_orders = HashSet::from([order_uid]);
-        let trade =
-            super::trade::Trade::new(transaction.trades[0].clone(), &auction, &database_orders, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
 
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -649,12 +644,7 @@ mod tests {
             id: 0,
             orders: Default::default(),
         };
-        let trade = super::trade::Trade::new(
-            transaction.trades[0].clone(),
-            &auction,
-            &Default::default(),
-            0,
-        );
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
         println!("{}", trade.uid().owner());
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,

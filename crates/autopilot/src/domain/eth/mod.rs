@@ -278,5 +278,5 @@ pub struct Transaction {
     /// The gas used by the transaction.
     pub gas: Gas,
     /// The effective gas price of the transaction.
-    pub effective_gas_price: EffectiveGasPrice,
+    pub gas_price: EffectiveGasPrice,
 }

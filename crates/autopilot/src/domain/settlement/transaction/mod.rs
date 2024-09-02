@@ -21,7 +21,7 @@ pub struct Transaction {
     /// The gas used by the transaction.
     pub gas: eth::Gas,
     /// The effective gas price of the transaction.
-    pub effective_gas_price: eth::EffectiveGasPrice,
+    pub gas_price: eth::EffectiveGasPrice,
     /// Encoded trades that were settled by the transaction.
     pub trades: Vec<EncodedTrade>,
 }
@@ -50,7 +50,7 @@ impl Transaction {
             block: transaction.block,
             timestamp: transaction.timestamp,
             gas: transaction.gas,
-            effective_gas_price: transaction.effective_gas_price,
+            gas_price: transaction.gas_price,
             trades: {
                 let tokenized::Tokenized {
                     tokens,
@@ -112,10 +112,6 @@ impl Transaction {
                 trades
             },
         })
-    }
-
-    pub fn order_uids(&self) -> Vec<domain::OrderUid> {
-        self.trades.iter().map(|trade| trade.uid).collect()
     }
 }
 

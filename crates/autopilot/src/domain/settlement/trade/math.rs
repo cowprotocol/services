@@ -527,6 +527,32 @@ struct Quote {
     pub fee: eth::TokenAmount,
 }
 
+impl From<super::Fulfillment> for Trade {
+    fn from(fulfillment: super::Fulfillment) -> Self {
+        Self {
+            uid: fulfillment.uid,
+            sell: fulfillment.sell,
+            buy: fulfillment.buy,
+            side: fulfillment.side,
+            executed: fulfillment.executed,
+            prices: fulfillment.prices,
+        }
+    }
+}
+
+impl From<super::Jit> for Trade {
+    fn from(jit: super::Jit) -> Self {
+        Self {
+            uid: jit.uid,
+            sell: jit.sell,
+            buy: jit.buy,
+            side: jit.side,
+            executed: jit.executed,
+            prices: jit.prices,
+        }
+    }
+}
+
 pub mod error {
     use crate::domain::eth;
 
