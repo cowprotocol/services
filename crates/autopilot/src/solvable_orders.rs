@@ -172,6 +172,8 @@ impl SolvableOrdersCache {
     /// the case in unit tests, then concurrent calls might overwrite each
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
+        const INITIAL_ORDER_CREATION_TIMESTAMP: DateTime<Utc> = DateTime::<Utc>::MIN_UTC;
+
         let start = Instant::now();
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
 
@@ -190,7 +192,8 @@ impl SolvableOrdersCache {
                 let lock = self.cache.lock().await;
                 match &*lock {
                     Some(cache)
-                        if cache.last_order_creation_timestamp > DateTime::<Utc>::MIN_UTC =>
+                        if cache.last_order_creation_timestamp
+                            > INITIAL_ORDER_CREATION_TIMESTAMP =>
                     {
                         Some((
                             cache.solvable_orders.orders.clone(),
@@ -217,7 +220,7 @@ impl SolvableOrdersCache {
                 ),
                 None => (
                     self.persistence.all_solvable_orders(min_valid_to).await?,
-                    DateTime::<Utc>::MIN_UTC,
+                    INITIAL_ORDER_CREATION_TIMESTAMP,
                 ),
             }
         };
