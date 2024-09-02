@@ -77,11 +77,11 @@ pub struct Arguments {
 
     /// The blockscout configuration.
     #[clap(flatten)]
-    pub blockscout: Blockscout,
+    pub blockscout: Option<Blockscout>,
 
     /// The ethplorer configuration.
     #[clap(flatten)]
-    pub ethplorer: Ethplorer,
+    pub ethplorer: Option<Ethplorer>,
 
     /// Token owner finding rate limiting strategy. See
     /// --price-estimation-rate-limiter documentation for format details.
@@ -218,10 +218,36 @@ impl Display for Arguments {
             "token_owner_finder_uniswap_v3_fee_values: {:?}",
             token_owner_finder_uniswap_v3_fee_values
         )?;
-        display_option(f, "blockscout_api_url", &blockscout.blockscout_api_url)?;
-        display_secret_option(f, "blockscout_api_key", &blockscout.blockscout_api_key)?;
-        display_option(f, "ethplorer_api_url", &ethplorer.ethplorer_api_url)?;
-        display_secret_option(f, "ethplorer_api_key", &ethplorer.ethplorer_api_key)?;
+        display_option(
+            f,
+            "blockscout_api_url",
+            &blockscout
+                .as_ref()
+                .map(|blockscout| blockscout.blockscout_api_url.clone())
+                .flatten(),
+        )?;
+        display_secret_option(
+            f,
+            "blockscout_api_key",
+            &blockscout
+                .as_ref()
+                .map(|blockscout| blockscout.blockscout_api_key.clone()),
+        )?;
+        display_option(
+            f,
+            "ethplorer_api_url",
+            &ethplorer
+                .as_ref()
+                .map(|blockscout| blockscout.ethplorer_api_url.clone())
+                .flatten(),
+        )?;
+        display_secret_option(
+            f,
+            "ethplorer_api_key",
+            &ethplorer
+                .as_ref()
+                .map(|blockscout| blockscout.ethplorer_api_key.clone()),
+        )?;
         display_option(
             f,
             "token_owner_finder_rate_limiter",
@@ -289,11 +315,9 @@ pub async fn init(
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
         let mut blockscout =
             BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), chain_id)?;
-        if let Some(base_url) = args.blockscout.blockscout_api_url.clone() {
-            blockscout.with_base_url(base_url);
-        }
-        if let Some(api_key) = args.blockscout.blockscout_api_key.clone() {
-            blockscout.with_api_key(api_key);
+        if let Some(blockscout_config) = &args.blockscout {
+            blockscout.with_base_url(blockscout_config.blockscout_api_url.clone().unwrap());
+            blockscout.with_api_key(blockscout_config.blockscout_api_key.clone().unwrap());
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             blockscout.with_rate_limiter(strategy);
@@ -304,11 +328,14 @@ pub async fn init(
     if finders.contains(&TokenOwnerFindingStrategy::Ethplorer) {
         let mut ethplorer = EthplorerTokenOwnerFinder::try_with_network(
             http_factory.create(),
-            args.ethplorer.ethplorer_api_key.clone(),
+            args.ethplorer
+                .as_ref()
+                .map(|ethplorer| ethplorer.ethplorer_api_key.clone())
+                .flatten(),
             chain_id,
         )?;
-        if let Some(base_url) = args.ethplorer.ethplorer_api_url.clone() {
-            ethplorer.with_base_url(base_url);
+        if let Some(ethplorer_config) = &args.ethplorer {
+            ethplorer.with_base_url(ethplorer_config.ethplorer_api_url.clone().unwrap());
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             ethplorer.with_rate_limiter(strategy);
