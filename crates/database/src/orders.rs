@@ -15,15 +15,8 @@ use {
         },
         PgConnection,
         QueryBuilder,
-        Row,
     },
 };
-
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for OrderUid {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        Ok(row.get(0))
-    }
-}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "OrderKind")]
@@ -211,28 +204,6 @@ SELECT * FROM ORDERS
 WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
-}
-
-/// Given a list of order ids, return the orders that are present in the
-/// database.
-pub async fn orders_that_exist(
-    ex: &mut PgConnection,
-    order_ids: &[OrderUid],
-) -> Result<Vec<OrderUid>, sqlx::Error> {
-    if order_ids.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mut query_builder = QueryBuilder::new("SELECT uid FROM orders WHERE uid IN (");
-
-    let mut separated = query_builder.separated(", ");
-    for value_type in order_ids {
-        separated.push_bind(value_type);
-    }
-    separated.push_unseparated(") ");
-
-    let query = query_builder.build_query_as();
-    query.fetch_all(ex).await
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
@@ -864,11 +835,6 @@ mod tests {
         assert_eq!(order.settlement_contract, full_order.settlement_contract);
         assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
         assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
-
-        let existing_orders = orders_that_exist(&mut db, &[order.uid, ByteArray([2u8; 56])])
-            .await
-            .unwrap();
-        assert_eq!(vec![order.uid], existing_orders);
     }
 
     #[tokio::test]
