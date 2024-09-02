@@ -121,12 +121,12 @@ pub struct Arguments {
 ))]
 pub struct Blockscout {
     /// Override the default blockscout API url for this network
-    #[clap(long, env, group = "blockscout")]
-    pub blockscout_api_url: Option<Url>,
+    #[clap(long, env, group = "blockscout", required = false)]
+    pub blockscout_api_url: Url,
 
     /// The blockscout API key.
-    #[clap(long, env, group = "blockscout")]
-    pub blockscout_api_key: Option<String>,
+    #[clap(long, env, group = "blockscout", required = false)]
+    pub blockscout_api_key: String,
 }
 
 #[derive(clap::Parser)]
@@ -141,12 +141,12 @@ pub struct Blockscout {
 ))]
 pub struct Ethplorer {
     /// Override the default ethplorer API url
-    #[clap(long, env, group = "ethplorer")]
-    pub ethplorer_api_url: Option<Url>,
+    #[clap(long, env, group = "ethplorer", required = false)]
+    pub ethplorer_api_url: Url,
 
     /// The Ethplorer token holder API key.
-    #[clap(long, env, group = "ethplorer")]
-    pub ethplorer_api_key: Option<String>,
+    #[clap(long, env, group = "ethplorer", required = false)]
+    pub ethplorer_api_key: String,
 }
 
 fn parse_owners(s: &str) -> Result<HashMap<H160, Vec<H160>>> {
@@ -223,14 +223,14 @@ impl Display for Arguments {
             "blockscout_api_url",
             &blockscout
                 .as_ref()
-                .and_then(|blockscout| blockscout.blockscout_api_url.clone()),
+                .map(|blockscout| blockscout.blockscout_api_url.clone()),
         )?;
         display_secret_option(
             f,
             "blockscout_api_key",
             blockscout
                 .as_ref()
-                .and_then(|blockscout| blockscout.blockscout_api_key.clone())
+                .map(|blockscout| blockscout.blockscout_api_key.clone())
                 .as_ref(),
         )?;
         display_option(
@@ -238,14 +238,15 @@ impl Display for Arguments {
             "ethplorer_api_url",
             &ethplorer
                 .as_ref()
-                .and_then(|blockscout| blockscout.ethplorer_api_url.clone()),
+                .map(|blockscout| blockscout.ethplorer_api_url.clone())
+                .as_ref(),
         )?;
         display_secret_option(
             f,
             "ethplorer_api_key",
             ethplorer
                 .as_ref()
-                .and_then(|blockscout| blockscout.ethplorer_api_key.clone())
+                .map(|blockscout| blockscout.ethplorer_api_key.clone())
                 .as_ref(),
         )?;
         display_option(
@@ -316,8 +317,8 @@ pub async fn init(
         let mut blockscout =
             BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), chain_id)?;
         if let Some(blockscout_config) = &args.blockscout {
-            blockscout.with_base_url(blockscout_config.blockscout_api_url.clone().unwrap());
-            blockscout.with_api_key(blockscout_config.blockscout_api_key.clone().unwrap());
+            blockscout.with_base_url(blockscout_config.blockscout_api_url.clone());
+            blockscout.with_api_key(blockscout_config.blockscout_api_key.clone());
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             blockscout.with_rate_limiter(strategy);
@@ -330,11 +331,11 @@ pub async fn init(
             http_factory.create(),
             args.ethplorer
                 .as_ref()
-                .and_then(|ethplorer| ethplorer.ethplorer_api_key.clone()),
+                .map(|ethplorer| ethplorer.ethplorer_api_key.clone()),
             chain_id,
         )?;
         if let Some(ethplorer_config) = &args.ethplorer {
-            ethplorer.with_base_url(ethplorer_config.ethplorer_api_url.clone().unwrap());
+            ethplorer.with_base_url(ethplorer_config.ethplorer_api_url.clone());
         }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             ethplorer.with_rate_limiter(strategy);
@@ -521,10 +522,9 @@ mod test {
             "https://swap.cow.fi",
         ];
 
-        let blockscout = Blockscout::parse_from(args);
+        let blockscout = Blockscout::try_parse_from(args);
 
-        assert!(blockscout.blockscout_api_url.is_some());
-        assert!(blockscout.blockscout_api_key.is_some());
+        assert!(blockscout.is_ok());
     }
 
     #[test]
@@ -550,10 +550,9 @@ mod test {
             "https://swap.cow.fi",
         ];
 
-        let ethplorer = Ethplorer::parse_from(args);
+        let ethplorer = Ethplorer::try_parse_from(args);
 
-        assert!(ethplorer.ethplorer_api_key.is_some());
-        assert!(ethplorer.ethplorer_api_url.is_some());
+        assert!(ethplorer.is_ok());
     }
 
     #[test]
