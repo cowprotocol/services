@@ -487,10 +487,11 @@ impl Persistence {
                 .await?;
             }
 
-            for jit_order in jit_orders {
-                database::jit_orders::upsert_order(
-                    &mut ex,
-                    database::jit_orders::JitOrder {
+            database::jit_orders::upsert_orders(
+                &mut ex,
+                jit_orders
+                    .into_iter()
+                    .map(|jit_order| database::jit_orders::JitOrder {
                         block_number,
                         log_index,
                         uid: ByteArray(jit_order.uid.0),
@@ -547,10 +548,10 @@ impl Persistence {
                                 database::orders::BuyTokenDestination::Internal
                             }
                         },
-                    },
-                )
-                .await?;
-            }
+                    })
+                    .collect(),
+            )
+            .await?;
         }
 
         ex.commit().await?;

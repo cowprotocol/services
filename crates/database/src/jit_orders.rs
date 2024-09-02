@@ -12,6 +12,7 @@ use {
             BigDecimal,
         },
         PgConnection,
+        QueryBuilder,
     },
 };
 
@@ -85,55 +86,85 @@ pub struct JitOrder {
     pub buy_token_balance: BuyTokenDestination,
 }
 
-pub async fn upsert_order(ex: &mut PgConnection, jit_order: JitOrder) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-    INSERT INTO jit_orders (
-        block_number,
-        log_index,
-        uid,
-        owner,
-        creation_timestamp,
-        sell_token,
-        buy_token,
-        sell_amount,
-        buy_amount,
-        valid_to,
-        app_data,
-        fee_amount,
-        kind,
-        partially_fillable,
-        signature,
-        receiver,
-        signing_scheme,
-        sell_token_balance,
-        buy_token_balance
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-    ON CONFLICT (block_number, log_index) DO UPDATE 
-SET uid = $3, owner = $4, creation_timestamp = $5, sell_token = $6, buy_token = $7, sell_amount = $8, buy_amount = $9, valid_to = $10, app_data = $11, fee_amount = $12, kind = $13, partially_fillable = $14, signature = $15, receiver = $16, signing_scheme = $17, sell_token_balance = $18, buy_token_balance = $19
-    ;"#;
-    sqlx::query(QUERY)
-        .bind(jit_order.block_number)
-        .bind(jit_order.log_index)
-        .bind(jit_order.uid)
-        .bind(jit_order.owner)
-        .bind(jit_order.creation_timestamp)
-        .bind(jit_order.sell_token)
-        .bind(jit_order.buy_token)
-        .bind(jit_order.sell_amount)
-        .bind(jit_order.buy_amount)
-        .bind(jit_order.valid_to)
-        .bind(jit_order.app_data)
-        .bind(jit_order.fee_amount)
-        .bind(jit_order.kind)
-        .bind(jit_order.partially_fillable)
-        .bind(jit_order.signature)
-        .bind(jit_order.receiver)
-        .bind(jit_order.signing_scheme)
-        .bind(jit_order.sell_token_balance)
-        .bind(jit_order.buy_token_balance)
-        .execute(ex)
-        .await?;
+pub async fn upsert_orders(
+    ex: &mut PgConnection,
+    jit_orders: Vec<JitOrder>,
+) -> Result<(), sqlx::Error> {
+    let mut query_builder = QueryBuilder::new(
+        r#"
+        INSERT INTO jit_orders (
+            block_number,
+            log_index,
+            uid,
+            owner,
+            creation_timestamp,
+            sell_token,
+            buy_token,
+            sell_amount,
+            buy_amount,
+            valid_to,
+            app_data,
+            fee_amount,
+            kind,
+            partially_fillable,
+            signature,
+            receiver,
+            signing_scheme,
+            sell_token_balance,
+            buy_token_balance
+        ) 
+        "#,
+    );
+
+    query_builder.push_values(jit_orders.into_iter(), |mut builder, jit_order| {
+        builder
+            .push_bind(jit_order.block_number)
+            .push_bind(jit_order.log_index)
+            .push_bind(jit_order.uid)
+            .push_bind(jit_order.owner)
+            .push_bind(jit_order.creation_timestamp)
+            .push_bind(jit_order.sell_token)
+            .push_bind(jit_order.buy_token)
+            .push_bind(jit_order.sell_amount)
+            .push_bind(jit_order.buy_amount)
+            .push_bind(jit_order.valid_to)
+            .push_bind(jit_order.app_data)
+            .push_bind(jit_order.fee_amount)
+            .push_bind(jit_order.kind)
+            .push_bind(jit_order.partially_fillable)
+            .push_bind(jit_order.signature)
+            .push_bind(jit_order.receiver)
+            .push_bind(jit_order.signing_scheme)
+            .push_bind(jit_order.sell_token_balance)
+            .push_bind(jit_order.buy_token_balance);
+    });
+
+    query_builder.push(
+        r#"
+        ON CONFLICT (block_number, log_index) DO UPDATE 
+        SET uid = EXCLUDED.uid,
+            owner = EXCLUDED.owner,
+            creation_timestamp = EXCLUDED.creation_timestamp,
+            sell_token = EXCLUDED.sell_token,
+            buy_token = EXCLUDED.buy_token,
+            sell_amount = EXCLUDED.sell_amount,
+            buy_amount = EXCLUDED.buy_amount,
+            valid_to = EXCLUDED.valid_to,
+            app_data = EXCLUDED.app_data,
+            fee_amount = EXCLUDED.fee_amount,
+            kind = EXCLUDED.kind,
+            partially_fillable = EXCLUDED.partially_fillable,
+            signature = EXCLUDED.signature,
+            receiver = EXCLUDED.receiver,
+            signing_scheme = EXCLUDED.signing_scheme,
+            sell_token_balance = EXCLUDED.sell_token_balance,
+            buy_token_balance = EXCLUDED.buy_token_balance;
+        "#,
+    );
+
+    let query = query_builder.build();
+    query.execute(ex).await?;
+
     Ok(())
 }
 
@@ -208,7 +239,9 @@ mod tests {
             ..Default::default()
         };
 
-        upsert_order(&mut db, jit_order.clone()).await.unwrap();
+        upsert_orders(&mut db, vec![jit_order.clone()])
+            .await
+            .unwrap();
 
         // read it back
         let jit_order2 = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
