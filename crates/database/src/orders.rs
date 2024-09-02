@@ -694,12 +694,12 @@ pub fn open_orders_after<'a>(
     after_timestamp: DateTime<Utc>,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
     #[rustfmt::skip]
-const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
-    "SELECT ", ORDERS_SELECT,
-    " FROM ", ORDERS_FROM,
-    " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
-    " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))",
-);
+    const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
+        "SELECT ", ORDERS_SELECT,
+        " FROM ", ORDERS_FROM,
+        " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
+        " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))",
+    );
 
     sqlx::query_as(OPEN_ORDERS_AFTER)
         .bind(after_timestamp)
