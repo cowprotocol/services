@@ -9,13 +9,8 @@ use {
     bigdecimal::ToPrimitive,
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
-    database::{
-        order_events::OrderEventLabel,
-        orders::ExecutionTime,
-        settlement_observations::Observation,
-    },
+    database::{order_events::OrderEventLabel, settlement_observations::Observation},
     futures::{StreamExt, TryStreamExt},
-    model::interaction::InteractionData,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     primitive_types::{H160, H256},
     shared::db_order_conversions::full_order_into_model_order,
@@ -443,26 +438,6 @@ impl Persistence {
 
         let next_order_uids = next_orders.keys().cloned().collect::<HashSet<_>>();
 
-        // Interactions table doesn't contain block number, so we need to update
-        // interactions for the cached orders.
-        let current_order_interactions = {
-            let _timer = Metrics::get()
-                .database_queries
-                .with_label_values(&["read_interactions_for_orders"])
-                .start_timer();
-
-            let uids_to_update_interactions = current_orders
-                .keys()
-                .filter_map(|uid| (!next_order_uids.contains(uid)).then_some(ByteArray(uid.0)))
-                .collect::<Vec<_>>();
-            let interactions = database::orders::read_interactions_for_orders(
-                &mut tx,
-                &uids_to_update_interactions,
-            )
-            .await?;
-            db_interactions_to_model(&interactions)?
-        };
-
         let all_order_uids = next_order_uids.iter().chain(current_orders.keys());
         // Fetch quotes for new orders and also update them for the cached orders since
         // they could also be updated.
@@ -475,7 +450,6 @@ impl Persistence {
 
         Self::build_solvable_orders(
             current_orders,
-            current_order_interactions,
             next_orders,
             updated_quotes,
             latest_settlement_block,
@@ -485,19 +459,11 @@ impl Persistence {
 
     fn build_solvable_orders(
         mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
-        current_orders_interactions: HashMap<domain::OrderUid, model::order::Interactions>,
         next_orders: HashMap<domain::OrderUid, model::order::Order>,
         mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
         latest_settlement_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
-        // Update order interactions.
-        for (uid, interactions) in current_orders_interactions {
-            if let Some(order) = current_orders.get_mut(&uid) {
-                order.interactions = interactions
-            }
-        }
-
         // Blindly insert all new orders into the cache.
         for (uid, order) in next_orders {
             current_orders.insert(uid, order);
@@ -651,32 +617,6 @@ impl Persistence {
         ex.commit().await?;
         Ok(())
     }
-}
-
-fn db_interactions_to_model(
-    interactions: &[database::orders::Interaction],
-) -> anyhow::Result<HashMap<domain::OrderUid, model::order::Interactions>> {
-    let mut result: HashMap<domain::OrderUid, model::order::Interactions> = HashMap::new();
-
-    for interaction in interactions {
-        let interaction_data = InteractionData {
-            target: H160(interaction.target.0),
-            value: big_decimal_to_u256(&interaction.value)
-                .context("interaction value is not U256")?,
-            call_data: interaction.data.clone(),
-        };
-
-        let entry = result
-            .entry(domain::OrderUid(interaction.order_uid.0))
-            .or_default();
-
-        match interaction.execution {
-            ExecutionTime::Pre => entry.pre.push(interaction_data),
-            ExecutionTime::Post => entry.post.push(interaction_data),
-        }
-    }
-
-    Ok(result)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
