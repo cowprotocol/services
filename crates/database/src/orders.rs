@@ -688,7 +688,7 @@ pub fn solvable_orders(
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
-pub fn open_orders_after<'a>(
+pub fn open_orders_by_time_and_uids<'a>(
     ex: &'a mut PgConnection,
     uids: &'a [OrderUid],
     after_timestamp: DateTime<Utc>,
@@ -1593,16 +1593,16 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_open_orders_after() {
+    async fn postgres_open_orders_by_time_and_uids() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_open_orders_after(
+        async fn get_open_orders_by_time_and_uids(
             ex: &mut PgConnection,
             after_timestamp: DateTime<Utc>,
         ) -> HashSet<OrderUid> {
-            open_orders_after(ex, Default::default(), after_timestamp)
+            open_orders_by_time_and_uids(ex, Default::default(), after_timestamp)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -1630,7 +1630,7 @@ mod tests {
         insert_order(&mut db, &order_c).await.unwrap();
 
         assert_eq!(
-            get_open_orders_after(&mut db, now - Duration::seconds(1)).await,
+            get_open_orders_by_time_and_uids(&mut db, now - Duration::seconds(1)).await,
             hashset![
                 ByteArray([1u8; 56]),
                 ByteArray([2u8; 56]),
@@ -1638,11 +1638,11 @@ mod tests {
             ]
         );
         assert_eq!(
-            get_open_orders_after(&mut db, now).await,
+            get_open_orders_by_time_and_uids(&mut db, now).await,
             hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),]
         );
         assert_eq!(
-            get_open_orders_after(&mut db, now + Duration::seconds(10)).await,
+            get_open_orders_by_time_and_uids(&mut db, now + Duration::seconds(10)).await,
             hashset![ByteArray([3u8; 56]),]
         );
     }

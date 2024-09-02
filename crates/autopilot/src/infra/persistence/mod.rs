@@ -427,14 +427,18 @@ impl Persistence {
                 .with_label_values(&["open_orders_after"])
                 .start_timer();
 
-            database::orders::open_orders_after(&mut tx, &updated_order_uids, after_timestamp)
-                .map(|result| match result {
-                    Ok(order) => full_order_into_model_order(order)
-                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
-                    Err(err) => Err(anyhow::Error::from(err)),
-                })
-                .try_collect()
-                .await?
+            database::orders::open_orders_by_time_and_uids(
+                &mut tx,
+                &updated_order_uids,
+                after_timestamp,
+            )
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order)
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await?
         };
 
         // Fetch quotes for new orders and also update them for the cached ones since
