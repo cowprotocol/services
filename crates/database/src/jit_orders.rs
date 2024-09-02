@@ -243,9 +243,7 @@ mod tests {
             ..Default::default()
         };
 
-        upsert_orders(&mut db, vec![jit_order.clone()])
-            .await
-            .unwrap();
+        upsert_orders(&mut db, &[jit_order.clone()]).await.unwrap();
 
         // read it back
         let jit_order2 = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
