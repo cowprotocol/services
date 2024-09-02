@@ -67,6 +67,7 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
+    /// Finds solvable orders based on the order's min validity period.
     pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
@@ -391,6 +392,8 @@ impl Persistence {
         Ok(solution)
     }
 
+    /// Computes solvable orders based on the latest observed block number,
+    /// order creation timestamp, and minimum validity period.
     pub async fn solvable_order_after(
         &self,
         current_orders: HashMap<domain::OrderUid, model::order::Order>,
@@ -461,7 +464,8 @@ impl Persistence {
         };
 
         let all_order_uids = next_order_uids.iter().chain(current_orders.keys());
-        // Fetch quotes for new orders and also update them for the cached orders since they could also be updated.
+        // Fetch quotes for new orders and also update them for the cached orders since
+        // they could also be updated.
         let updated_quotes = self.postgres.read_quotes(all_order_uids).await?;
 
         let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
