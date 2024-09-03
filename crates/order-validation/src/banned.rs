@@ -1,22 +1,98 @@
 use {
-    cached::{Cached, TimedCache},
+    cached::Cached,
     contracts::ChainalysisOracle,
     ethcontract::{errors::MethodError, futures::future::join_all, H160},
-    std::{collections::HashSet, sync::Mutex},
+    std::{
+        collections::{HashMap, HashSet},
+        ops::Div,
+        sync::{Arc, Mutex},
+        time::{Duration, Instant},
+    },
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
 pub struct Users {
     list: HashSet<H160>,
-    onchain: Option<Onchain>,
+    onchain: Option<Arc<Onchain>>,
 }
 
 struct Onchain {
     contract: ChainalysisOracle,
-    cache: Mutex<TimedCache<H160, bool>>,
+    cache: Mutex<HashMap<H160, (Instant, bool)>>,
 }
 
-const TTL: u64 = 60 * 60; // 1 hour
+impl Onchain {
+    pub fn new(contract: ChainalysisOracle) -> Arc<Self> {
+        let onchain = Arc::new(Self {
+            contract,
+            cache: Default::default(),
+        });
+
+        onchain.clone().spawn_maintenance_task();
+
+        onchain
+    }
+
+    fn spawn_maintenance_task(self: Arc<Self>) {
+        let cache_expiry = Duration::from_secs(60 * 60);
+        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(60));
+        let detector = Arc::clone(&self);
+
+        tokio::task::spawn(async move {
+            loop {
+                let start = Instant::now();
+
+                let expired_addresses: Vec<H160> = {
+                    let cache = detector.cache.lock().unwrap();
+                    let now = Instant::now();
+                    cache
+                        .iter()
+                        .filter_map(|(address, (instant, _))| {
+                            (now.checked_duration_since(*instant).unwrap_or_default()
+                                >= maintenance_timeout)
+                                .then_some(*address)
+                        })
+                        .collect()
+                };
+
+                let results = join_all(expired_addresses.into_iter().map(|address| {
+                    let detector = detector.clone();
+                    async move {
+                        match detector.fetch(address).await {
+                            Ok(result) => Some((address, result)),
+                            Err(err) => {
+                                tracing::warn!(
+                                    ?address,
+                                    ?err,
+                                    "unable to determine banned status in the background task"
+                                );
+                                None
+                            }
+                        }
+                    }
+                }))
+                .await
+                .into_iter()
+                .flatten();
+
+                detector.insert_many_into_cache(results);
+
+                let remaining_sleep = maintenance_timeout
+                    .checked_sub(start.elapsed())
+                    .unwrap_or_default();
+                tokio::time::sleep(remaining_sleep).await;
+            }
+        });
+    }
+
+    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, bool)>) {
+        let mut cache = self.cache.lock().unwrap();
+        let now = Instant::now();
+        for (address, is_banned) in addresses {
+            cache.insert(address, (now, is_banned));
+        }
+    }
+}
 
 impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
@@ -25,10 +101,7 @@ impl Users {
     pub fn new(contract: Option<ChainalysisOracle>, banned_users: Vec<H160>) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
-            onchain: contract.map(|contract| Onchain {
-                contract,
-                cache: Mutex::new(TimedCache::with_lifespan(TTL)),
-            }),
+            onchain: contract.map(Onchain::new),
         }
     }
 
@@ -75,7 +148,7 @@ impl Users {
             need_lookup
                 .into_iter()
                 .filter(|address| {
-                    if let Some(is_banned) = cache.cache_get(address) {
+                    if let Some((_, is_banned)) = cache.cache_get(address) {
                         is_banned.then(|| banned.insert(*address));
                         false
                     } else {
@@ -93,10 +166,11 @@ impl Users {
         .await;
 
         let mut cache = onchain.cache.lock().expect("unpoisoned");
+        let now = Instant::now();
         for (address, result) in to_cache {
             match result {
                 Ok(is_banned) => {
-                    cache.cache_set(address, is_banned);
+                    cache.cache_set(address, (now, is_banned));
                     is_banned.then(|| banned.insert(address));
                 }
                 Err(err) => {

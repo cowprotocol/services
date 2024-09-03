@@ -3338,6 +3338,7 @@ dependencies = [
  "contracts",
  "ethcontract",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 
