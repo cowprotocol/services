@@ -92,7 +92,13 @@ impl Solution {
                     match (total, protocol) {
                         (Ok(total), Ok(protocol)) => {
                             let network =
-                                total.saturating_sub(protocol.iter().map(|(fee, _)| *fee).sum());
+                                total.saturating_sub(protocol.iter().map(|(_, fee, _)| *fee).sum());
+                            let protocol = protocol
+                                .into_iter()
+                                .map(|(token, amount, policy)| {
+                                    (ExecutedProtocolFee { token, amount }, policy)
+                                })
+                                .collect();
                             Some(ExecutedFee { protocol, network })
                         }
                         _ => None,
@@ -198,13 +204,21 @@ pub struct ExecutedFee {
     pub network: eth::SellTokenAmount,
     /// Breakdown of protocol fees. Executed protocol fees are in the same order
     /// as policies are defined for an order.
-    pub protocol: Vec<(eth::SellTokenAmount, fee::Policy)>,
+    pub protocol: Vec<(ExecutedProtocolFee, fee::Policy)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutedProtocolFee {
+    /// Token in which the fee was paid
+    pub token: eth::TokenAddress,
+    /// Amount of the fee
+    pub amount: eth::SellTokenAmount,
 }
 
 impl ExecutedFee {
     /// Total fee paid for the trade.
     pub fn total(&self) -> eth::SellTokenAmount {
-        self.network + self.protocol.iter().map(|(fee, _)| *fee).sum()
+        self.network + self.protocol.iter().map(|(fee, _)| fee.amount).sum()
     }
 }
 

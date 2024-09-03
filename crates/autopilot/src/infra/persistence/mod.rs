@@ -472,16 +472,29 @@ impl Persistence {
             )
             .await;
 
-            for (order, executed_fee) in order_fees {
+            for (order, order_fee) in order_fees {
+                let executed_fee = order_fee
+                    .as_ref()
+                    .map(|fee| u256_to_big_decimal(&fee.total().0))
+                    .unwrap_or_default();
+                let executed_protocol_fees = order_fee
+                    .map(|fee| {
+                        fee.protocol
+                            .into_iter()
+                            .map(|(fee, _)| database::order_execution::FeeAsset {
+                                token: ByteArray(fee.token.0 .0),
+                                amount: u256_to_big_decimal(&fee.amount.0),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
                 database::order_execution::save(
                     &mut ex,
                     &ByteArray(order.0),
                     auction_id,
                     block_number,
-                    &u256_to_big_decimal(
-                        &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
-                    ),
-                    &[],
+                    &executed_fee,
+                    &executed_protocol_fees,
                 )
                 .await?;
             }

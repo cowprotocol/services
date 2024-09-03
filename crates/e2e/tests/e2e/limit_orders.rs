@@ -5,6 +5,7 @@ use {
     ethcontract::{prelude::U256, H160},
     fee::{FeePolicyOrderClass, ProtocolFee, ProtocolFeesConfig},
     model::{
+        fee_policy::ExecutedFee,
         order::{OrderClass, OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
@@ -826,7 +827,10 @@ async fn no_liquidity_limit_order(web3: Web3) {
                 factor: 0.5,
                 max_volume_factor: 0.01
             },
-            None
+            ExecutedFee {
+                token: token_a.address(),
+                amount: U256::from(99998329410056304u128)
+            }
         )],
     );
 }

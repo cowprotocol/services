@@ -191,10 +191,16 @@ impl Trade {
     pub fn protocol_fees_in_sell_token(
         &self,
         auction: &settlement::Auction,
-    ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, Error> {
+    ) -> Result<Vec<(eth::TokenAddress, eth::SellTokenAmount, fee::Policy)>, Error> {
         self.protocol_fees(auction)?
             .into_iter()
-            .map(|(fee, policy)| Ok((self.fee_into_sell_token(fee.amount)?, policy)))
+            .map(|(fee, policy)| {
+                Ok((
+                    self.sell.token,
+                    self.fee_into_sell_token(fee.amount)?,
+                    policy,
+                ))
+            })
             .collect()
     }
 
