@@ -66,12 +66,18 @@ mod tests {
                         "factor": 1.1,
                         "maxVolumeFactor": 2.2
                     }
-                }, null],
+                }, {
+                    "amount": "5",
+                    "token": "0x000000000000000000000000000000000000000a"
+                }],
                 [{
                     "volume": {
                         "factor": 0.9
                     }
-                }, null],
+                }, {
+                    "amount": "5",
+                    "token": "0x000000000000000000000000000000000000000a"
+                }],
                 [{
                     "priceImprovement": {
                         "factor": 1.2,
@@ -105,9 +111,18 @@ mod tests {
                         factor: 1.1,
                         max_volume_factor: 2.2,
                     },
-                    None,
+                    ExecutedFee {
+                        amount: U256::from(5u64),
+                        token: H160::from_low_u64_be(10),
+                    },
                 ),
-                (FeePolicy::Volume { factor: 0.9 }, None),
+                (
+                    FeePolicy::Volume { factor: 0.9 },
+                    ExecutedFee {
+                        amount: U256::from(5u64),
+                        token: H160::from_low_u64_be(10),
+                    },
+                ),
                 (
                     FeePolicy::PriceImprovement {
                         factor: 1.2,
@@ -118,10 +133,10 @@ mod tests {
                             fee: U256::from(5u64),
                         },
                     },
-                    Some(ExecutedFee {
+                    ExecutedFee {
                         amount: U256::from(5u64),
                         token: H160::from_low_u64_be(10),
-                    }),
+                    },
                 ),
             ],
         };

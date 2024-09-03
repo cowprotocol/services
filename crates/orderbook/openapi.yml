@@ -1686,4 +1686,4 @@ components:
           $ref: '#/components/schemas/FeePolicy'
         executed_fee:
           $ref: '#/components/schemas/ExecutedFee'
-          nullable: true
+          nullable: false
