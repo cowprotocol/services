@@ -15,7 +15,7 @@ impl super::Postgres {
     pub async fn fee_policies(
         &self,
         keys_filter: &[(AuctionId, OrderUid)],
-    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<(FeePolicy, Option<ExecutedFee>)>>> {
+    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<(FeePolicy, ExecutedFee)>>> {
         let mut ex = self.pool.acquire().await?;
 
         let timer = super::Metrics::get()
@@ -59,39 +59,27 @@ impl super::Postgres {
             .collect::<HashMap<_, _>>();
         timer.stop_and_record();
 
-        fee_policies
-            .into_iter()
-            .map(|((auction_id, order_uid), policies)| {
-                let executed_fees: Vec<ExecutedFee> = executed_protocol_fees
-                    .get(&(auction_id, order_uid))
-                    .map(|fees| {
-                        fees.iter()
-                            .map(|fee| {
-                                Ok::<ExecutedFee, anyhow::Error>(ExecutedFee {
-                                    amount: big_decimal_to_u256(&fee.amount)
-                                        .context("executed fee amount")?,
-                                    token: primitive_types::H160(fee.token.0),
-                                })
-                            })
-                            .collect()
-                    })
-                    .transpose()?
-                    .unwrap_or_default();
-                policies
-                    .into_iter()
-                    .map(|policy| fee_policy_from(policy, quotes.get(&order_uid), order_uid))
-                    .collect::<anyhow::Result<Vec<_>>>()
-                    .map(|policies| {
-                        ((auction_id, order_uid), {
-                            policies
-                                .into_iter()
-                                .enumerate()
-                                .map(|(i, policy)| (policy, executed_fees.get(i).cloned()))
-                                .collect()
+        let mut result = HashMap::new();
+        for (key, executed_fees) in executed_protocol_fees {
+            if let Some(policies) = fee_policies.get(&key) {
+                let executed_fees = executed_fees
+                    .iter()
+                    .map(|fee| {
+                        Ok::<ExecutedFee, anyhow::Error>(ExecutedFee {
+                            amount: big_decimal_to_u256(&fee.amount)
+                                .context("executed fee amount")?,
+                            token: primitive_types::H160(fee.token.0),
                         })
                     })
-            })
-            .collect::<anyhow::Result<HashMap<_, _>>>()
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                let policies = policies
+                    .iter()
+                    .map(|policy| fee_policy_from(policy.clone(), quotes.get(&key.1), key.1))
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                result.insert(key, policies.into_iter().zip(executed_fees).collect());
+            }
+        }
+        Ok(result)
     }
 }
 

@@ -33,7 +33,7 @@ pub struct Trade {
     // Settlement Data
     pub tx_hash: Option<H256>,
     // Fee Policy Data
-    pub fee_policies: Vec<(FeePolicy, Option<ExecutedFee>)>,
+    pub fee_policies: Vec<(FeePolicy, ExecutedFee)>,
 }
 
 #[cfg(test)]

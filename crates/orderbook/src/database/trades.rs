@@ -69,10 +69,7 @@ impl TradeRetrieving for Postgres {
     }
 }
 
-fn trade_from(
-    row: TradesQueryRow,
-    fee_policies: Vec<(FeePolicy, Option<ExecutedFee>)>,
-) -> Result<Trade> {
+fn trade_from(row: TradesQueryRow, fee_policies: Vec<(FeePolicy, ExecutedFee)>) -> Result<Trade> {
     let block_number = row
         .block_number
         .try_into()
