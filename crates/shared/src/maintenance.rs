@@ -24,50 +24,11 @@ impl ServiceMaintenance {
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         }
     }
-}
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait::async_trait]
-pub trait Maintaining: Send + Sync {
-    async fn run_maintenance(&self) -> Result<()>;
-    fn name(&self) -> &str;
-}
-
-#[async_trait::async_trait]
-impl Maintaining for ServiceMaintenance {
-    async fn run_maintenance(&self) -> Result<()> {
-        let mut no_error = true;
-        for (i, result) in join_all(self.maintainers.iter().map(|m| m.run_maintenance()))
-            .await
-            .into_iter()
-            .enumerate()
-        {
-            if let Err(err) = result {
-                let maintainer = self.maintainers[i].name();
-                tracing::warn!(
-                    "Service Maintenance Error for maintainer {}: {:?}",
-                    maintainer,
-                    err
-                );
-                self.metrics
-                    .runs
-                    .with_label_values(&["failure", maintainer])
-                    .inc();
-
-                no_error = false;
-            }
-        }
-
-        ensure!(no_error, "maintenance encounted one or more errors");
-        Ok(())
+    pub fn spawn_background_task(self, block_stream: CurrentBlockWatcher) {
+        tokio::task::spawn(self.run_maintenance_on_new_block(block_stream));
     }
 
-    fn name(&self) -> &str {
-        SERVICE_MAINTENANCE_NAME
-    }
-}
-
-impl ServiceMaintenance {
     async fn run_maintenance_for_blocks(self, blocks: impl Stream<Item = BlockInfo>) {
         self.metrics
             .runs
@@ -135,6 +96,47 @@ impl ServiceMaintenance {
             .instrument(tracing::info_span!("service_maintenance"))
             .await;
         panic!("block stream unexpectedly dropped");
+    }
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait Maintaining: Send + Sync {
+    async fn run_maintenance(&self) -> Result<()>;
+    fn name(&self) -> &str;
+}
+
+#[async_trait::async_trait]
+impl Maintaining for ServiceMaintenance {
+    async fn run_maintenance(&self) -> Result<()> {
+        let mut no_error = true;
+        for (i, result) in join_all(self.maintainers.iter().map(|m| m.run_maintenance()))
+            .await
+            .into_iter()
+            .enumerate()
+        {
+            if let Err(err) = result {
+                let maintainer = self.maintainers[i].name();
+                tracing::warn!(
+                    "Service Maintenance Error for maintainer {}: {:?}",
+                    maintainer,
+                    err
+                );
+                self.metrics
+                    .runs
+                    .with_label_values(&["failure", maintainer])
+                    .inc();
+
+                no_error = false;
+            }
+        }
+
+        ensure!(no_error, "maintenance encounted one or more errors");
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        SERVICE_MAINTENANCE_NAME
     }
 }
 

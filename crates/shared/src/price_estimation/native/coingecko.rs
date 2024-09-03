@@ -1,13 +1,19 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::PriceEstimationError,
-    anyhow::{anyhow, Result},
+    crate::{
+        price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
+        token_info::{TokenInfo, TokenInfoFetching},
+    },
+    anyhow::{anyhow, Context, Result},
     futures::{future::BoxFuture, FutureExt},
     primitive_types::H160,
     reqwest::{Client, StatusCode},
-    rust_decimal::prelude::ToPrimitive,
+    rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps},
     serde::Deserialize,
-    std::collections::HashMap,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
     url::Url,
 };
 
@@ -16,7 +22,7 @@ struct Response(HashMap<H160, Price>);
 
 #[derive(Debug, Deserialize)]
 struct Price {
-    eth: f64,
+    eth: Option<f64>,
 }
 
 type Token = H160;
@@ -26,12 +32,17 @@ pub struct CoinGecko {
     base_url: Url,
     api_key: Option<String>,
     chain: String,
-    quote_token: QuoteToken,
+    denominator: Denominator,
+    infos: Arc<dyn TokenInfoFetching>,
 }
 
-enum QuoteToken {
-    Eth,
-    Other(Token),
+/// The token in which prices are denominated in.
+struct Denominator {
+    address: H160,
+    /// Number of decimals of the token. This is necessary
+    /// to know in order to normalize prices for tokens
+    /// with a different number of decimals.
+    decimals: u8,
 }
 
 impl CoinGecko {
@@ -43,19 +54,20 @@ impl CoinGecko {
         base_url: Url,
         api_key: Option<String>,
         chain_id: u64,
-        weth: &contracts::WETH9,
+        native_token: H160,
+        token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Result<Self> {
-        let quote_token = match weth
-            .symbol()
-            .call()
-            .await
-            .unwrap()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "weth" => QuoteToken::Eth,
-            _ => QuoteToken::Other(weth.address()),
+        let denominator_decimals = token_infos
+            .get_token_info(native_token)
+            .await?
+            .decimals
+            .context("could not determine decimals of native token")?;
+
+        let denominator = Denominator {
+            address: native_token,
+            decimals: denominator_decimals,
         };
+
         let chain = match chain_id {
             1 => "ethereum".to_string(),
             100 => "xdai".to_string(),
@@ -67,92 +79,172 @@ impl CoinGecko {
             base_url,
             api_key,
             chain,
-            quote_token,
+            denominator,
+            infos: token_infos,
         })
     }
 
-    pub async fn send_request_price_in_eth(&self, token: Token) -> NativePriceEstimateResult {
+    async fn bulk_fetch_denominated_in_eth(
+        &self,
+        tokens: &HashSet<Token>,
+    ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
         url.query_pairs_mut()
-            .append_pair("contract_addresses", &format!("{:#x}", token))
+            .append_pair(
+                "contract_addresses",
+                &tokens
+                    .iter()
+                    .map(|token| format!("{:#x}", token))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
             .append_pair("vs_currencies", "eth")
             .append_pair("precision", "full");
+
         let mut builder = self.client.get(url.clone());
         if let Some(ref api_key) = self.api_key {
             builder = builder.header(Self::AUTHORIZATION, api_key)
         }
         observe::coingecko_request(&url);
-        let response = builder.send().await.map_err(|e| {
-            PriceEstimationError::EstimatorInternal(anyhow!(
-                "failed to sent CoinGecko price request: {e:?}"
-            ))
-        })?;
+        let response = builder
+            .send()
+            .await
+            .context("failed to sent CoinGecko price request")?;
         if !response.status().is_success() {
-            let status = response.status();
-            return match status {
+            return match response.status() {
                 StatusCode::TOO_MANY_REQUESTS => Err(PriceEstimationError::RateLimited),
-                status => Err(PriceEstimationError::EstimatorInternal(anyhow!(
-                    "failed to retrieve prices from CoinGecko: error with status code {status}."
-                ))),
+                status => Err(PriceEstimationError::EstimatorInternal(anyhow!(format!(
+                    "CoinGecko returned non-success status code: {status}"
+                )))),
             };
         }
         let response = response.text().await;
         observe::coingecko_response(&url, response.as_deref());
-        let response = response.map_err(|e| {
-            PriceEstimationError::EstimatorInternal(anyhow!(
-                "failed to fetch native CoinGecko prices: {e:?}"
-            ))
-        })?;
-        let prices = serde_json::from_str::<Response>(&response)
-            .map_err(|e| {
-                PriceEstimationError::EstimatorInternal(anyhow!(
-                    "failed to parse native CoinGecko prices from {response:?}: {e:?}"
-                ))
-            })?
-            .0;
+        let response = response.context("failed to fetch response body")?;
 
-        let price = prices
-            .get(&token)
-            .ok_or(PriceEstimationError::NoLiquidity)?;
-        Ok(price.eth)
+        let parsed_response = serde_json::from_str::<Response>(&response)
+            .with_context(|| format!("failed to parse response: {response:?}"))?
+            .0
+            .into_iter()
+            .filter_map(|(token, price)| Some((token, price.eth?)))
+            .collect();
+
+        Ok(parsed_response)
+    }
+
+    /// Fetches the prices of the given tokens denominated in the given token.
+    async fn bulk_fetch_denominated_in_token(
+        &self,
+        mut tokens: HashSet<Token>,
+    ) -> Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError> {
+        tokens.insert(self.denominator.address);
+
+        let tokens_vec: Vec<_> = tokens.iter().cloned().collect();
+
+        let (prices_in_eth, infos) = tokio::try_join!(
+            self.bulk_fetch_denominated_in_eth(&tokens),
+            self.infos.get_token_infos(&tokens_vec).map(Result::Ok),
+        )?;
+
+        // fetch price of token we want to denominate all other prices in
+        let denominator_price: Decimal = prices_in_eth
+            .get(&self.denominator.address)
+            .cloned()
+            .ok_or(PriceEstimationError::NoLiquidity)?
+            .try_into()
+            .context("failed to convert price to decimal")?;
+
+        let prices_in_denominator = tokens
+            .into_iter()
+            .map(|token| {
+                let result = Self::denominate_price(
+                    &token,
+                    denominator_price,
+                    &prices_in_eth,
+                    &infos,
+                    &self.denominator,
+                );
+                (token, result)
+            })
+            .collect();
+
+        Ok(prices_in_denominator)
+    }
+
+    /// CoinGecko provides all prices denominated in ETH.
+    /// This function converts such a token price to a price denominated
+    /// in a token provided by the caller.
+    fn denominate_price(
+        token: &Token,
+        denominator_price_eth: Decimal,
+        prices: &HashMap<Token, f64>,
+        infos: &HashMap<Token, TokenInfo>,
+        denominator: &Denominator,
+    ) -> NativePriceEstimateResult {
+        let token_decimals = infos
+            .get(token)
+            .and_then(|i| i.decimals)
+            .with_context(|| format!("missing decimals: {token:?}"))?;
+
+        let token_price_eth: Decimal = prices
+            .get(token)
+            .cloned()
+            .ok_or(PriceEstimationError::NoLiquidity)?
+            .try_into()
+            .context("failed to convert price to decimal")?;
+
+        // When the quoted token and the denominator have different number of decimals
+        // the computed price effectively needs to be shifted by the difference.
+        let adjustment = Decimal::new(10, 0)
+            .checked_powi(i64::from(denominator.decimals) - i64::from(token_decimals))
+            .context("price adjustment overflows Decimal")?;
+
+        let price_denominated_in_token = token_price_eth
+            .checked_div(denominator_price_eth)
+            .context("division by zero")?
+            .checked_mul(adjustment)
+            .context("overflow of decimal")?
+            .to_f64()
+            .context("failed to convert price back to f64")?;
+
+        Ok(price_denominated_in_token)
+    }
+}
+
+impl NativePriceBatchFetching for CoinGecko {
+    fn fetch_native_prices(
+        &'_ self,
+        tokens: HashSet<Token>,
+    ) -> BoxFuture<'_, Result<HashMap<H160, NativePriceEstimateResult>, PriceEstimationError>> {
+        self.bulk_fetch_denominated_in_token(tokens).boxed()
+    }
+
+    fn max_batch_size(&self) -> usize {
+        /// maximum number of price the coingecko API returns in a single batch
+        const MAX_BATCH_SIZE: usize = 20;
+
+        // The estimator denominates prices in a provided token. This token
+        // gets added to every batch call so we have to reserve 1 spot for it.
+        MAX_BATCH_SIZE - 1
     }
 }
 
 impl NativePriceEstimating for CoinGecko {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            match self.quote_token {
-                QuoteToken::Eth => self.send_request_price_in_eth(token).await,
-                QuoteToken::Other(native_price_token) => {
-                    let token_eth = rust_decimal::Decimal::try_from(
-                        self.send_request_price_in_eth(token).await?,
-                    )
-                    .map_err(|e| {
-                        PriceEstimationError::EstimatorInternal(anyhow!(
-                            "failed to parse requested token in ETH to rust decimal: {e:?}"
-                        ))
-                    })?;
-                    let native_price_token_eth = rust_decimal::Decimal::try_from(
-                        self.send_request_price_in_eth(native_price_token).await?,
-                    )
-                    .map_err(|e| {
-                        PriceEstimationError::EstimatorInternal(anyhow!(
-                            "failed to parse native price token in ETH to rust decimal: {e:?}"
-                        ))
-                    })?;
-                    let token_in_native_price =
-                        token_eth.checked_div(native_price_token_eth).ok_or(
-                            PriceEstimationError::EstimatorInternal(anyhow!("division by zero")),
-                        )?;
-                    token_in_native_price
-                        .to_f64()
-                        .ok_or(PriceEstimationError::EstimatorInternal(anyhow!(
-                            "failed to parse result to f64"
-                        )))
-                }
-            }
+            let prices = self.fetch_native_prices(HashSet::from([token])).await?;
+            prices
+                .get(&token)
+                .ok_or(PriceEstimationError::NoLiquidity)?
+                .clone()
         }
         .boxed()
+    }
+}
+
+impl From<anyhow::Error> for PriceEstimationError {
+    fn from(err: anyhow::Error) -> PriceEstimationError {
+        PriceEstimationError::EstimatorInternal(err)
     }
 }
 
@@ -160,12 +252,12 @@ mod observe {
     use url::Url;
 
     /// Observe a request to be sent to CoinGecko
-    pub fn coingecko_request(endpoint: &Url) {
+    pub(super) fn coingecko_request(endpoint: &Url) {
         tracing::trace!(%endpoint, "sending request to CoinGecko");
     }
 
     /// Observe that a response was received from CoinGecko
-    pub fn coingecko_response(endpoint: &Url, res: Result<&str, &reqwest::Error>) {
+    pub(super) fn coingecko_response(endpoint: &Url, res: Result<&str, &reqwest::Error>) {
         match res {
             Ok(res) => {
                 tracing::trace!(%endpoint, ?res, "received response from CoinGecko")
@@ -174,5 +266,270 @@ mod observe {
                 tracing::warn!(%endpoint, ?err, "failed to receive response from CoinGecko")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::token_info::{MockTokenInfoFetching, TokenInfo},
+        std::env,
+    };
+
+    impl CoinGecko {
+        fn new_for_test(
+            client: Client,
+            base_url: Url,
+            api_key: Option<String>,
+            chain_id: u64,
+            token_infos: Arc<dyn TokenInfoFetching>,
+        ) -> Result<Self> {
+            let (chain, denominator) = match chain_id {
+                1 => (
+                    "ethereum".to_string(),
+                    Denominator {
+                        address: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                        decimals: 18,
+                    },
+                ),
+                100 => (
+                    "xdai".to_string(),
+                    Denominator {
+                        address: addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),
+                        decimals: 18,
+                    },
+                ),
+                42161 => (
+                    "arbitrum-one".to_string(),
+                    Denominator {
+                        address: addr!("82af49447d8a07e3bd95bd0d56f35241523fbab1"),
+                        decimals: 18,
+                    },
+                ),
+                n => anyhow::bail!("unsupported network {n}"),
+            };
+            Ok(Self {
+                client,
+                base_url,
+                api_key,
+                chain,
+                denominator,
+                infos: token_infos,
+            })
+        }
+    }
+
+    // It is ok to call this API without an API for local testing purposes as it is
+    // difficulty to hit the rate limit manually
+    const BASE_API_URL: &str = "https://api.coingecko.com/api/v3/simple/token_price";
+
+    // We also need to test the PRO API, because batch requests aren't available in
+    // the free version
+    const BASE_API_PRO_URL: &str = "https://pro-api.coingecko.com/api/v3/simple/token_price";
+
+    fn default_token_info_fetcher() -> Arc<dyn TokenInfoFetching> {
+        let mut mock = MockTokenInfoFetching::new();
+        mock.expect_get_token_infos().returning(|tokens| {
+            tokens
+                .iter()
+                .map(|t| {
+                    let info = TokenInfo {
+                        // all tests that don't specifically
+                        // test price normalization
+                        // use tokens with 18 decimals
+                        decimals: Some(18),
+                        symbol: None,
+                    };
+                    (*t, info)
+                })
+                .collect()
+        });
+
+        Arc::new(mock)
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn works() {
+        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_URL).unwrap(),
+            None,
+            1,
+            default_token_info_fetcher(),
+        )
+        .unwrap();
+
+        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        // Since the WETH precise price against ETH is not always exact to 1.0 (it can
+        // vary slightly)
+        assert!((0.95..=1.05).contains(&estimated_price));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn works_xdai() {
+        // USDT
+        let native_token = addr!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+            default_token_info_fetcher(),
+        )
+        .unwrap();
+
+        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        // Since the USDT precise price against XDAI is not always exact to 1.0
+        // (it can vary slightly)
+        assert!((0.95..=1.05).contains(&estimated_price));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn works_multiple_tokens() {
+        let usdt_token = addr!("4ECaBa5870353805a9F068101A40E0f32ed605C6");
+        let usdc_token = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+            default_token_info_fetcher(),
+        )
+        .unwrap();
+
+        let estimated_price = instance
+            .fetch_native_prices(HashSet::from([usdt_token, usdc_token]))
+            .await
+            .unwrap();
+        let usdt_price = estimated_price.get(&usdt_token).unwrap().clone();
+        let usdc_price = estimated_price.get(&usdc_token).unwrap().clone();
+        // Since the USDT/USDC precise price against XDAI is not always exact to
+        // 1.0 (it can vary slightly)
+        assert!((0.95..=1.05).contains(&usdt_price.unwrap()));
+        assert!((0.95..=1.05).contains(&usdc_price.unwrap()));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn unknown_token_does_not_ruin_batch() {
+        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let unknown_token = addr!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+            default_token_info_fetcher(),
+        )
+        .unwrap();
+
+        let estimated_price = instance
+            .fetch_native_prices(HashSet::from([usdc, unknown_token]))
+            .await
+            .unwrap();
+        let usdc_price = estimated_price.get(&usdc).unwrap().clone();
+        let nonsense_price = estimated_price.get(&unknown_token).unwrap().clone();
+        // Since the USDC precise price against XDAI is not always exact to
+        // 1.0 (it can vary slightly)
+        assert!((0.95..=1.05).contains(&usdc_price.unwrap()));
+        assert_eq!(nonsense_price, Err(PriceEstimationError::NoLiquidity));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn prices_adjusted_for_token_with_fewer_decimals() {
+        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let wxdai = addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+        let mut mock = MockTokenInfoFetching::new();
+        mock.expect_get_token_infos().returning(move |tokens| {
+            tokens
+                .iter()
+                .map(|t| {
+                    let decimals = if *t == usdc { Some(6) } else { Some(18) };
+                    let info = TokenInfo {
+                        decimals,
+                        symbol: None,
+                    };
+                    (*t, info)
+                })
+                .collect()
+        });
+
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+            Arc::new(mock),
+        )
+        .unwrap();
+
+        // usdc_price should be: ~1000000000000.0
+        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        // wxdai_price should be: ~1.0
+        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        dbg!(usdc_price, wxdai_price);
+
+        // The `USDC` token only has 6 decimals whereas `wxDai` has 18. To make
+        // the prices comparable we therefore have to shift `usdc_price` 12 decimals
+        // to the right.
+        let usdc_price_adjusted = usdc_price / 10f64.powi(12);
+
+        // Since Dai and USDC both track the US dollar they should at least be
+        // within 5% of each other after adjusting for their respective decimals.
+        assert!((wxdai_price * 0.95..=wxdai_price * 1.05).contains(&usdc_price_adjusted));
+        assert!((0.95..=1.05).contains(&wxdai_price))
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn prices_adjusted_for_token_with_more_decimals() {
+        let usdc = addr!("2a22f9c3b484c3629090FeED35F17Ff8F88f76F0");
+        let wxdai = addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d");
+        let mut mock = MockTokenInfoFetching::new();
+        mock.expect_get_token_infos().returning(move |tokens| {
+            tokens
+                .iter()
+                .map(|t| {
+                    // Let's pretend USDC has 21 decimals to check if the price adjustment
+                    // also works when the requested token has more decimals.
+                    let decimals = if *t == usdc { Some(21) } else { Some(18) };
+                    let info = TokenInfo {
+                        decimals,
+                        symbol: None,
+                    };
+                    (*t, info)
+                })
+                .collect()
+        });
+
+        let instance = CoinGecko::new_for_test(
+            Client::default(),
+            Url::parse(BASE_API_PRO_URL).unwrap(),
+            env::var("COIN_GECKO_API_KEY").ok(),
+            100,
+            Arc::new(mock),
+        )
+        .unwrap();
+
+        // usdc_price should be: ~0.001
+        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        // wxdai_price should be: ~1.0
+        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        dbg!(usdc_price, wxdai_price);
+
+        // We pretended that `USDC` has 21 decimals now so we need to move it's price
+        // 3 decimals to the left to make it comparable.
+        let usdc_price_adjusted = usdc_price * 10f64.powi(3);
+
+        // Since Dai and USDC both track the US dollar they should at least be
+        // within 5% of each other after adjusting for their respective decimals.
+        assert!((wxdai_price * 0.95..=wxdai_price * 1.05).contains(&usdc_price_adjusted));
+        assert!((0.95..=1.05).contains(&wxdai_price))
     }
 }
