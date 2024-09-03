@@ -1,7 +1,7 @@
 use {
     crate::Amm,
     contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper},
-    ethcontract::Address,
+    ethcontract::{errors::ExecutionError, Address},
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
     std::{collections::BTreeMap, sync::Arc},
@@ -76,22 +76,36 @@ impl EventStoring<CowAmmEvent> for Storage {
         &mut self,
         events: Vec<ethcontract::Event<CowAmmEvent>>,
     ) -> anyhow::Result<()> {
-        let cache = &mut *self.0.cache.write().await;
-
+        let mut processed_events = Vec::with_capacity(events.len());
         for event in events {
-            let meta = event
-                .meta
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
+            let Some(meta) = event.meta else {
+                tracing::warn!(?event, "event does not contain required meta data");
+                continue;
+            };
+
             let CowAmmEvent::CowammpoolCreated(cow_amm) = event.data;
             let cow_amm = cow_amm.amm;
-
-            cache
-                .entry(meta.block_number)
-                .or_default()
-                .push(Arc::new(Amm::new(cow_amm, &self.0.helper).await?));
-            tracing::info!(?cow_amm, "indexed new cow amm");
+            match Amm::new(cow_amm, &self.0.helper).await {
+                Ok(amm) => processed_events.push((meta.block_number, Arc::new(amm))),
+                Err(err) if matches!(&err.inner, ExecutionError::Web3(_)) => {
+                    // Abort completely to later try the entire block range again.
+                    // That keeps the cache in a consistent state and avoids indexing
+                    // the same event multiple times which would result in duplicate amms.
+                    tracing::debug!(?cow_amm, ?err, "retryable error");
+                    return Err(err.into());
+                }
+                Err(err) => {
+                    tracing::info!(?cow_amm, ?err, "helper contract does not support amm");
+                    continue;
+                }
+            };
         }
+        let cache = &mut *self.0.cache.write().await;
+        for (block, amm) in processed_events {
+            tracing::info!(cow_amm = ?amm.address(), "indexed new cow amm");
+            cache.entry(block).or_default().push(amm);
+        }
+
         Ok(())
     }
 
