@@ -4,10 +4,15 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    anyhow::Result,
-    ethcontract::{Bytes, H160, U256},
-    ethrpc::Web3,
+    anyhow::{Context, Result},
+    ethcontract::{tokens::Tokenize, Bytes, H160, U256},
+    ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
     futures::future,
+    std::sync::OnceLock,
+    web3::{
+        ethabi::{self, ParamType, Token},
+        types::CallRequest,
+    },
 };
 
 pub struct Balances {
@@ -37,7 +42,7 @@ impl Balances {
         }
     }
 
-    async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+    fn call(&self, query: &Query, amount: Option<U256>) -> CallRequest {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
@@ -45,34 +50,74 @@ impl Balances {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            contracts::storage_accessible::simulate(
-                contracts::bytecode!(contracts::support::Balances),
-                self.balances.methods().balance(
-                    (self.settlement, self.vault_relayer, self.vault),
-                    query.owner,
-                    query.token,
-                    amount.unwrap_or_default(),
-                    Bytes(query.source.as_bytes()),
-                    query
-                        .interactions
-                        .iter()
-                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                        .collect(),
-                ),
-            )
-            .await?;
-
-        let simulation = Simulation {
-            token_balance,
-            allowance,
-            effective_balance,
-            can_transfer,
-        };
-
-        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
-        Ok(simulation)
+        let call_builder = self.balances.methods().balance(
+            (self.settlement, self.vault_relayer, self.vault),
+            query.owner,
+            query.token,
+            amount.unwrap_or_default(),
+            Bytes(query.source.as_bytes()),
+            query
+                .interactions
+                .iter()
+                .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                .collect(),
+        );
+        contracts::storage_accessible::call(
+            call_builder.tx.to.expect("call builder populates \"to\""),
+            contracts::bytecode!(contracts::support::Balances),
+            call_builder.tx.data.expect("call builder populates \"data\""),
+        )
     }
+
+    async fn simulate(
+        &self,
+        queries: impl IntoIterator<Item = (&Query, Option<U256>)>,
+    ) -> Vec<Result<Simulation>> {
+        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
+
+        // All these requests are pretty fast and roughly take the same amount
+        // of time. By manually batching them together we ensure that the
+        // automatic batching logic of the underlying Web3Transport does not
+        // sneak slow unrelated requests into these batches which would result
+        // in slower execution overall.
+        let web3 = self.balances.raw_instance().web3().transport().clone();
+        let mut batch = Web3CallBatch::new(web3);
+        let futures: Vec<_> = queries
+            .into_iter()
+            .map(|(query, amount)| batch.push(self.call(query, amount), None))
+            .collect();
+
+        batch.execute_all(MAX_BATCH_SIZE).await;
+
+        future::join_all(futures)
+            .await
+            .into_iter()
+            .map(|result| decode_return_data(result?))
+            .collect()
+    }
+}
+
+fn decode_return_data(bytes: web3::types::Bytes) -> Result<Simulation> {
+    static KIND: OnceLock<[ParamType; 4]> = OnceLock::new();
+    let value = KIND.get_or_init(|| {
+        [
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Uint(256),
+            ParamType::Bool,
+        ]
+    });
+
+    let tokens = ethabi::decode(value, &bytes.0)?;
+    let (token_balance, allowance, effective_balance, can_transfer) =
+        <(U256, U256, U256, bool)>::from_token(Token::Tuple(tokens))?;
+
+    Ok(Simulation {
+        token_balance,
+        allowance,
+        effective_balance,
+        can_transfer,
+    })
 }
 
 #[derive(Debug)]
@@ -87,19 +132,18 @@ struct Simulation {
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
-        let futures = queries
-            .iter()
-            .map(|query| async {
-                let simulation = self.simulate(query, None).await?;
+        self.simulate(queries.iter().map(|query| (query, None)))
+            .await
+            .into_iter()
+            .map(|simulation| {
+                let simulation = simulation?;
                 Ok(if simulation.can_transfer {
                     simulation.effective_balance
                 } else {
                     U256::zero()
                 })
             })
-            .collect::<Vec<_>>();
-
-        future::join_all(futures).await
+            .collect()
     }
 
     async fn can_transfer(
@@ -107,7 +151,12 @@ impl BalanceFetching for Balances {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError> {
-        let simulation = self.simulate(query, Some(amount)).await?;
+        let simulation = self
+            .simulate([(query, Some(amount))])
+            .await
+            .pop()
+            .context("simulation did not yield a result")?
+            .map_err(TransferSimulationError::Other)?;
 
         if simulation.token_balance < amount {
             return Err(TransferSimulationError::InsufficientBalance);
