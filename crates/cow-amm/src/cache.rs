@@ -92,7 +92,7 @@ impl EventStoring<CowAmmEvent> for Storage {
                     return Err(err.into());
                 }
                 Err(err) => {
-                    tracing::info!(?err, ?cow_amm, "helper contract does not support amm");
+                    tracing::info!(?cow_amm, ?err, "helper contract does not support amm");
                     continue;
                 }
             };
