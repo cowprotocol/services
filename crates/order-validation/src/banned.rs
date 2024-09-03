@@ -1,5 +1,4 @@
 use {
-    cached::Cached,
     contracts::ChainalysisOracle,
     ethcontract::{
         errors::MethodError,
@@ -10,9 +9,10 @@ use {
     std::{
         collections::{HashMap, HashSet},
         ops::Div,
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::{Duration, Instant},
     },
+    tokio::sync::RwLock,
 };
 
 /// A list of banned users and an optional registry that can be checked onchain.
@@ -43,7 +43,7 @@ impl UserMetadata {
 struct Onchain {
     contract: ChainalysisOracle,
     db_pool: PgPool,
-    cache: Mutex<HashMap<H160, UserMetadata>>,
+    cache: RwLock<HashMap<H160, UserMetadata>>,
 }
 
 impl Onchain {
@@ -83,7 +83,7 @@ impl Onchain {
 
                 let mut expired_data: Vec<(H160, UserMetadata)> = Vec::new();
                 {
-                    let mut cache = detector.cache.lock().unwrap();
+                    let mut cache = detector.cache.write().await;
                     let now = Instant::now();
                     cache.retain(|address, metadata| {
                         let expired = now
@@ -123,7 +123,7 @@ impl Onchain {
                 .into_iter()
                 .flatten();
 
-                detector.insert_many_into_cache(results);
+                detector.insert_many_into_cache(results).await;
 
                 let remaining_sleep = maintenance_timeout
                     .checked_sub(start.elapsed())
@@ -157,8 +157,8 @@ impl Onchain {
         }
     }
 
-    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
-        let mut cache = self.cache.lock().unwrap();
+    async fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
+        let mut cache = self.cache.write().await;
         let now = Instant::now();
         for (address, metadata) in addresses {
             cache.insert(address, metadata.with_last_updated(now));
@@ -220,11 +220,11 @@ impl Users {
         };
         let need_lookup: Vec<_> = {
             // Scope here to release the lock before the async lookups
-            let mut cache = onchain.cache.lock().expect("unpoisoned");
+            let cache = onchain.cache.read().await;
             need_lookup
                 .into_iter()
                 .filter(|(address, _)| {
-                    if let Some(metadata) = cache.cache_get(address) {
+                    if let Some(metadata) = &mut cache.get(address) {
                         metadata.is_banned.then(|| banned.insert(*address));
                         false
                     } else {
@@ -245,12 +245,12 @@ impl Users {
         ))
         .await;
 
-        let mut cache = onchain.cache.lock().expect("unpoisoned");
+        let mut cache = onchain.cache.write().await;
         let now = Instant::now();
         for (address, result, limit_order_participant) in to_cache {
             match result {
                 Ok(is_banned) => {
-                    cache.cache_set(
+                    cache.insert(
                         address,
                         UserMetadata {
                             is_banned,
