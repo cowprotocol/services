@@ -76,18 +76,21 @@ impl EventStoring<CowAmmEvent> for Storage {
         &mut self,
         events: Vec<ethcontract::Event<CowAmmEvent>>,
     ) -> anyhow::Result<()> {
-        let cache = &mut *self.0.cache.write().await;
-
+        let mut processed_events = Vec::with_capacity(events.len());
         for event in events {
-            let meta = event
-                .meta
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
+            let Some(meta) = event.meta else {
+                tracing::warn!(?event, "event does not contain required meta data");
+                continue;
+            };
+
             let CowAmmEvent::CowammpoolCreated(cow_amm) = event.data;
             let cow_amm = cow_amm.amm;
-            let amm = match Amm::new(cow_amm, &self.0.helper).await {
-                Ok(amm) => Arc::new(amm),
+            match Amm::new(cow_amm, &self.0.helper).await {
+                Ok(amm) => processed_events.push((meta.block_number, Arc::new(amm))),
                 Err(err) if matches!(&err.inner, ExecutionError::Web3(_)) => {
+                    // Abort completely to later try the entire block range again.
+                    // That keeps the cache in a consistent state and avoids indexing
+                    // the same event multiple times which would result in duplicate amms.
                     tracing::debug!(?cow_amm, ?err, "retryable error");
                     return Err(err.into());
                 }
@@ -96,10 +99,13 @@ impl EventStoring<CowAmmEvent> for Storage {
                     continue;
                 }
             };
-
-            cache.entry(meta.block_number).or_default().push(amm);
-            tracing::info!(?cow_amm, "indexed new cow amm");
         }
+        let cache = &mut *self.0.cache.write().await;
+        for (block, amm) in processed_events {
+            tracing::info!(cow_amm = ?amm.address(), "indexed new cow amm");
+            cache.entry(block).or_default().push(amm);
+        }
+
         Ok(())
     }
 
