@@ -316,9 +316,7 @@ impl OrderStoring for Postgres {
             Some(order) => Some(order),
             None => {
                 // try to find the order in the JIT orders table
-                database::jit_orders::single_full_jit_order(&mut ex, &ByteArray(uid.0))
-                    .await?
-                    .map(Into::into)
+                database::jit_orders::single_full_jit_order(&mut ex, &ByteArray(uid.0)).await?
             }
         };
         order.map(full_order_into_model_order).transpose()

@@ -19,7 +19,7 @@ use {
 pub async fn single_full_jit_order(
     ex: &mut PgConnection,
     uid: &OrderUid,
-) -> Result<Option<FullJitOrder>, sqlx::Error> {
+) -> Result<Option<orders::FullOrder>, sqlx::Error> {
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
 "SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
@@ -32,34 +32,11 @@ COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o
 " FROM jit_orders o",
 " WHERE o.uid = $1 ",
         );
-    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
-}
-
-/// Jit order combined with trades table and order_execution table, suitable for
-/// API responses.
-#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
-pub struct FullJitOrder {
-    pub uid: OrderUid,
-    pub owner: Address,
-    pub creation_timestamp: DateTime<Utc>,
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub sell_amount: BigDecimal,
-    pub buy_amount: BigDecimal,
-    pub valid_to: i64,
-    pub app_data: AppId,
-    pub fee_amount: BigDecimal,
-    pub kind: OrderKind,
-    pub partially_fillable: bool,
-    pub signature: Vec<u8>,
-    pub sum_sell: BigDecimal,
-    pub sum_buy: BigDecimal,
-    pub sum_fee: BigDecimal,
-    pub receiver: Address,
-    pub signing_scheme: SigningScheme,
-    pub sell_token_balance: SellTokenSource,
-    pub buy_token_balance: BuyTokenDestination,
-    pub executed_surplus_fee: BigDecimal,
+    sqlx::query_as::<_, FullJitOrder>(QUERY)
+        .bind(uid)
+        .fetch_optional(ex)
+        .await
+        .map(|r| r.map(Into::into))
 }
 
 /// 1:1 mapping to the `jit_orders` table, used to store orders.
@@ -170,6 +147,33 @@ pub async fn upsert_orders(
     query.execute(ex).await?;
 
     Ok(())
+}
+
+/// Jit order combined with trades table and order_execution table, suitable for
+/// API responses.
+#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
+struct FullJitOrder {
+    pub uid: OrderUid,
+    pub owner: Address,
+    pub creation_timestamp: DateTime<Utc>,
+    pub sell_token: Address,
+    pub buy_token: Address,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+    pub valid_to: i64,
+    pub app_data: AppId,
+    pub fee_amount: BigDecimal,
+    pub kind: OrderKind,
+    pub partially_fillable: bool,
+    pub signature: Vec<u8>,
+    pub sum_sell: BigDecimal,
+    pub sum_buy: BigDecimal,
+    pub sum_fee: BigDecimal,
+    pub receiver: Address,
+    pub signing_scheme: SigningScheme,
+    pub sell_token_balance: SellTokenSource,
+    pub buy_token_balance: BuyTokenDestination,
+    pub executed_surplus_fee: BigDecimal,
 }
 
 impl From<FullJitOrder> for orders::FullOrder {
