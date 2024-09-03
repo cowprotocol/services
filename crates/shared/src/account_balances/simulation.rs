@@ -63,9 +63,9 @@ impl Balances {
                 .collect(),
         );
         contracts::storage_accessible::call(
-            call_builder.tx.to.expect("call builder populates \"to\""),
+            call_builder.tx.to.expect("builder populates to"),
             contracts::bytecode!(contracts::support::Balances),
-            call_builder.tx.data.expect("call builder populates \"data\""),
+            call_builder.tx.data.expect("builder populates data"),
         )
     }
 
