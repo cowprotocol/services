@@ -1659,6 +1659,7 @@ dependencies = [
  "futures",
  "hex",
  "hex-literal",
+ "maplit",
  "sqlx",
  "strum",
  "tokio",
@@ -3336,7 +3337,9 @@ version = "0.1.0"
 dependencies = [
  "cached",
  "contracts",
+ "database",
  "ethcontract",
+ "sqlx",
  "thiserror",
  "tokio",
  "tracing",

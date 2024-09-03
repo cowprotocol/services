@@ -1,7 +1,12 @@
 use {
     cached::Cached,
     contracts::ChainalysisOracle,
-    ethcontract::{errors::MethodError, futures::future::join_all, H160},
+    ethcontract::{
+        errors::MethodError,
+        futures::{future::join_all, TryStreamExt},
+        H160,
+    },
+    sqlx::PgPool,
     std::{
         collections::{HashMap, HashSet},
         ops::Div,
@@ -20,7 +25,6 @@ pub struct Users {
 struct UserMetadata {
     is_banned: bool,
     last_updated: Instant,
-    #[allow(dead_code)]
     limit_order_participant: bool,
 }
 
@@ -34,22 +38,19 @@ impl UserMetadata {
         self.last_updated = last_updated;
         self
     }
-
-    // pub fn with_limit_order_participation(mut self, limit_order_participation:
-    // bool) -> Self {     self.limit_order_participation =
-    // limit_order_participation;     self
-    // }
 }
 
 struct Onchain {
     contract: ChainalysisOracle,
+    db_pool: PgPool,
     cache: Mutex<HashMap<H160, UserMetadata>>,
 }
 
 impl Onchain {
-    pub fn new(contract: ChainalysisOracle) -> Arc<Self> {
+    pub fn new(contract: ChainalysisOracle, db_pool: PgPool) -> Arc<Self> {
         let onchain = Arc::new(Self {
             contract,
+            db_pool,
             cache: Default::default(),
         });
 
@@ -58,6 +59,14 @@ impl Onchain {
         onchain
     }
 
+    /// Spawns a background task that periodically checks the cache for expired
+    /// entries and re-run checks for them.
+    ///
+    /// Removes from the cache entries that are expired and not limit order
+    /// participants and not part of the current auction. This is made to keep
+    /// addresses of long-lasting limit orders in the cache, which is the vast
+    /// majority. And addresses that open market orders which get settled pretty
+    /// quickly should get flushed out again.
     fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = Duration::from_secs(60 * 60);
         let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(60));
@@ -66,19 +75,32 @@ impl Onchain {
         tokio::task::spawn(async move {
             loop {
                 let start = Instant::now();
+                let Some(current_auction_participants) =
+                    detector.get_current_auction_participants().await
+                else {
+                    continue;
+                };
 
-                let expired_data: Vec<(H160, UserMetadata)> = {
-                    let cache = detector.cache.lock().unwrap();
+                let mut expired_data: Vec<(H160, UserMetadata)> = Vec::new();
+                {
+                    let mut cache = detector.cache.lock().unwrap();
                     let now = Instant::now();
-                    cache
-                        .iter()
-                        .filter_map(|(address, metadata)| {
-                            (now.checked_duration_since(metadata.last_updated)
-                                .unwrap_or_default()
-                                >= maintenance_timeout)
-                                .then_some((*address, metadata.clone()))
-                        })
-                        .collect()
+                    cache.retain(|address, metadata| {
+                        let expired = now
+                            .checked_duration_since(metadata.last_updated)
+                            .unwrap_or_default()
+                            >= maintenance_timeout;
+                        if expired {
+                            expired_data.push((*address, metadata.clone()));
+                        }
+                        // Remove from cache only if all the following conditions are met:
+                        // - The entry is expired
+                        // - The address is not a limit order participant
+                        // - It's not in the current auction participants
+                        !(expired
+                            && !metadata.limit_order_participant
+                            && !current_auction_participants.contains(address))
+                    });
                 };
 
                 let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
@@ -111,6 +133,30 @@ impl Onchain {
         });
     }
 
+    async fn get_current_auction_participants(&self) -> Option<HashSet<H160>> {
+        match self.db_pool.acquire().await {
+            Ok(mut db) => {
+                let participants =
+                    database::auction_participants::latest_auction_participants(&mut db)
+                        .map_ok(|participant| H160(participant.0 .0))
+                        .try_collect()
+                        .await;
+
+                match participants {
+                    Ok(participants) => Some(participants),
+                    Err(err) => {
+                        tracing::error!(?err, "failed to fetch latest auction participants");
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::error!(?err, "failed to acquire db connection");
+                None
+            }
+        }
+    }
+
     fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
         let mut cache = self.cache.lock().unwrap();
         let now = Instant::now();
@@ -124,10 +170,14 @@ impl Users {
     /// Creates a new `Users` instance that checks the hardcoded list and uses
     /// the given `web3` instance to determine whether an onchain registry of
     /// banned addresses is available.
-    pub fn new(contract: Option<ChainalysisOracle>, banned_users: Vec<H160>) -> Self {
+    pub fn new(
+        contract: Option<ChainalysisOracle>,
+        banned_users: Vec<H160>,
+        db_pool: PgPool,
+    ) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
-            onchain: contract.map(Onchain::new),
+            onchain: contract.map(|contract| Onchain::new(contract, db_pool)),
         }
     }
 

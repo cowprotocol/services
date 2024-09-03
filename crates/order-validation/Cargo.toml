@@ -8,7 +8,9 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 cached = { workspace = true }
 contracts = { path = "../contracts" }
+database = { path = "../database" }
 ethcontract = { workspace = true }
+sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
