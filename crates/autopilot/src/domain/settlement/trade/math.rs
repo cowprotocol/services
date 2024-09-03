@@ -527,8 +527,8 @@ struct Quote {
     pub fee: eth::TokenAmount,
 }
 
-impl From<super::Fulfillment> for Trade {
-    fn from(fulfillment: super::Fulfillment) -> Self {
+impl From<&super::Fulfillment> for Trade {
+    fn from(fulfillment: &super::Fulfillment) -> Self {
         Self {
             uid: fulfillment.uid,
             sell: fulfillment.sell,
@@ -540,8 +540,8 @@ impl From<super::Fulfillment> for Trade {
     }
 }
 
-impl From<super::Jit> for Trade {
-    fn from(jit: super::Jit) -> Self {
+impl From<&super::Jit> for Trade {
+    fn from(jit: &super::Jit) -> Self {
         Self {
             uid: jit.uid,
             sell: jit.sell,
@@ -553,8 +553,8 @@ impl From<super::Jit> for Trade {
     }
 }
 
-impl From<super::Trade> for Trade {
-    fn from(trade: super::Trade) -> Self {
+impl From<&super::Trade> for Trade {
+    fn from(trade: &super::Trade) -> Self {
         match trade {
             super::Trade::Fulfillment(fulfillment) => fulfillment.into(),
             super::Trade::Jit(jit) => jit.into(),

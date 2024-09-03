@@ -116,6 +116,8 @@ impl Transaction {
     }
 }
 
+/// Trade containing onchain observable data specific to a settlement
+/// transaction.
 #[derive(Debug, Clone)]
 pub struct EncodedTrade {
     pub uid: domain::OrderUid,

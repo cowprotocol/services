@@ -426,7 +426,7 @@ Indexes:
 
 ### jit\_orders
 
-JIT orders are orders created by solvers and settled onchain. This means that protocol is not aware of them before they appear onchain.
+JIT orders stored here are orders that were settled outside of the competitition Auction. This means both regular JIT orders that protocol is not aware of, as well as regular user orders that were not listed in the Auction can appear in this table.
 
 Column                    | Type                         | Nullable | Details
 --------------------------|------------------------------|----------|--------

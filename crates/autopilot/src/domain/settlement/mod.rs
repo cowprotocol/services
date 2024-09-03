@@ -89,18 +89,17 @@ impl Settlement {
         self.trades
             .iter()
             .map(|trade| {
-                (*trade.uid(), {
-                    let total = trade.fee_in_sell_token();
-                    let protocol = trade.protocol_fees_in_sell_token(&self.auction);
-                    match (total, protocol) {
-                        (Ok(total), Ok(protocol)) => {
-                            let network =
-                                total.saturating_sub(protocol.iter().map(|(fee, _)| *fee).sum());
-                            Some(trade::ExecutedFee { protocol, network })
-                        }
-                        _ => None,
+                let total = trade.fee_in_sell_token();
+                let protocol = trade.protocol_fees_in_sell_token(&self.auction);
+                let fee = match (total, protocol) {
+                    (Ok(total), Ok(protocol)) => {
+                        let network =
+                            total.saturating_sub(protocol.iter().map(|(fee, _)| *fee).sum());
+                        Some(trade::ExecutedFee { protocol, network })
                     }
-                })
+                    _ => None,
+                };
+                (*trade.uid(), fee)
             })
             .collect()
     }

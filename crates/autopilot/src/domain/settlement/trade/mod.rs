@@ -16,10 +16,10 @@ mod math;
 pub enum Trade {
     /// A regular user order that exist in the associated Auction.
     Fulfillment(Fulfillment),
-    // JIT trades are not part of the orderbook and are created by solvers at the time of
-    // settlement.
-    // Note that user orders can also be classified as JIT orders if they are settled outside of
-    // the Auction.
+    /// JIT trades are not part of the orderbook and are created by solvers at
+    /// the time of settlement.
+    /// Note that user orders can also be classified as JIT orders if they are
+    /// settled outside of the Auction.
     Jit(Jit),
 }
 
@@ -42,16 +42,16 @@ impl Trade {
 
     /// CIP38 score defined as surplus + protocol fee
     pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
-        math::Trade::from(self.clone()).score(auction)
+        math::Trade::from(self).score(auction)
     }
 
     /// Surplus of a trade.
     pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
         match self {
-            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).surplus_in_ether(prices),
+            Self::Fulfillment(trade) => math::Trade::from(trade).surplus_in_ether(prices),
             Self::Jit(trade) => {
                 if trade.surplus_capturing {
-                    math::Trade::from(trade.clone()).surplus_in_ether(prices)
+                    math::Trade::from(trade).surplus_in_ether(prices)
                 } else {
                     // JIT orders that are not surplus capturing have zero
                     // surplus, even if they settled at a better price than
@@ -64,13 +64,13 @@ impl Trade {
 
     /// Total fee taken for the trade.
     pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
-        math::Trade::from(self.clone()).fee_in_ether(prices)
+        math::Trade::from(self).fee_in_ether(prices)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
     pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, math::Error> {
-        math::Trade::from(self.clone()).fee_in_sell_token()
+        math::Trade::from(self).fee_in_sell_token()
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
@@ -78,7 +78,7 @@ impl Trade {
         &self,
         auction: &super::Auction,
     ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, math::Error> {
-        math::Trade::from(self.clone()).protocol_fees_in_sell_token(auction)
+        math::Trade::from(self).protocol_fees_in_sell_token(auction)
     }
 
     pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
@@ -119,7 +119,7 @@ impl Trade {
     }
 }
 
-/// Trade representing an user trade. User trades are part of the orderbook.
+/// A trade filling an order that was part of the auction.
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
     uid: domain::OrderUid,
@@ -130,8 +130,7 @@ pub struct Fulfillment {
     prices: Prices,
 }
 
-/// Trade representing a JIT trade. JIT trades are not part of the orderbook and
-/// are created by solvers at the time of settlement.
+/// A trade filling an order that was not part of the auction.
 #[derive(Debug, Clone)]
 pub struct Jit {
     pub uid: domain::OrderUid,

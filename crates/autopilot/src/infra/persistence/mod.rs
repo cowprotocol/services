@@ -8,7 +8,20 @@ use {
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::Utc,
-    database::{order_events::OrderEventLabel, settlement_observations::Observation},
+    database::{
+        order_events::OrderEventLabel,
+        orders::{
+            BuyTokenDestination as DbBuyTokenDestination,
+            SellTokenSource as DbSellTokenSource,
+            SigningScheme as DbSigningScheme,
+        },
+        settlement_observations::Observation,
+    },
+    domain::auction::order::{
+        BuyTokenDestination as DomainBuyTokenDestination,
+        SellTokenSource as DomainSellTokenSource,
+        SigningScheme as DomainSigningScheme,
+    },
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, H256},
     std::{
@@ -516,37 +529,19 @@ impl Persistence {
                         signature: jit_order.signature.to_bytes(),
                         receiver: ByteArray(jit_order.receiver.0 .0),
                         signing_scheme: match jit_order.signature.scheme() {
-                            domain::auction::order::SigningScheme::Eip712 => {
-                                database::orders::SigningScheme::Eip712
-                            }
-                            domain::auction::order::SigningScheme::EthSign => {
-                                database::orders::SigningScheme::EthSign
-                            }
-                            domain::auction::order::SigningScheme::Eip1271 => {
-                                database::orders::SigningScheme::Eip1271
-                            }
-                            domain::auction::order::SigningScheme::PreSign => {
-                                database::orders::SigningScheme::PreSign
-                            }
+                            DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
+                            DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
+                            DomainSigningScheme::Eip1271 => DbSigningScheme::Eip1271,
+                            DomainSigningScheme::PreSign => DbSigningScheme::PreSign,
                         },
                         sell_token_balance: match jit_order.sell_token_balance {
-                            domain::auction::order::SellTokenSource::Erc20 => {
-                                database::orders::SellTokenSource::Erc20
-                            }
-                            domain::auction::order::SellTokenSource::External => {
-                                database::orders::SellTokenSource::External
-                            }
-                            domain::auction::order::SellTokenSource::Internal => {
-                                database::orders::SellTokenSource::Internal
-                            }
+                            DomainSellTokenSource::Erc20 => DbSellTokenSource::Erc20,
+                            DomainSellTokenSource::External => DbSellTokenSource::External,
+                            DomainSellTokenSource::Internal => DbSellTokenSource::Internal,
                         },
                         buy_token_balance: match jit_order.buy_token_balance {
-                            domain::auction::order::BuyTokenDestination::Erc20 => {
-                                database::orders::BuyTokenDestination::Erc20
-                            }
-                            domain::auction::order::BuyTokenDestination::Internal => {
-                                database::orders::BuyTokenDestination::Internal
-                            }
+                            DomainBuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
+                            DomainBuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
                         },
                     })
                     .collect::<Vec<_>>(),

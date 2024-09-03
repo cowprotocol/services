@@ -66,37 +66,33 @@ impl JitOrder {
             model::signature::Signature::Eip1271(signature) => signature,
             model::signature::Signature::PreSign => panic!("Not supported PreSigned JIT orders"),
         };
-        (
-            solvers_dto::solution::JitOrder {
-                sell_token: data.sell_token,
-                buy_token: data.buy_token,
-                receiver: data.receiver.unwrap_or_default(),
-                sell_amount: data.sell_amount,
-                buy_amount: data.buy_amount,
-                valid_to: data.valid_to,
-                app_data: data.app_data.0,
-                kind: match data.kind {
-                    OrderKind::Buy => Kind::Buy,
-                    OrderKind::Sell => Kind::Sell,
-                },
-                sell_token_balance: match data.sell_token_balance {
-                    SellTokenSource::Erc20 => solvers_dto::solution::SellTokenBalance::Erc20,
-                    SellTokenSource::External => solvers_dto::solution::SellTokenBalance::External,
-                    SellTokenSource::Internal => solvers_dto::solution::SellTokenBalance::Internal,
-                },
-                buy_token_balance: match data.buy_token_balance {
-                    BuyTokenDestination::Erc20 => solvers_dto::solution::BuyTokenBalance::Erc20,
-                    BuyTokenDestination::Internal => {
-                        solvers_dto::solution::BuyTokenBalance::Internal
-                    }
-                },
-                signing_scheme: match signing_scheme {
-                    EcdsaSigningScheme::Eip712 => solvers_dto::solution::SigningScheme::Eip712,
-                    EcdsaSigningScheme::EthSign => solvers_dto::solution::SigningScheme::EthSign,
-                },
-                signature,
+        let order = solvers_dto::solution::JitOrder {
+            sell_token: data.sell_token,
+            buy_token: data.buy_token,
+            receiver: data.receiver.unwrap_or_default(),
+            sell_amount: data.sell_amount,
+            buy_amount: data.buy_amount,
+            valid_to: data.valid_to,
+            app_data: data.app_data.0,
+            kind: match data.kind {
+                OrderKind::Buy => Kind::Buy,
+                OrderKind::Sell => Kind::Sell,
             },
-            order_uid,
-        )
+            sell_token_balance: match data.sell_token_balance {
+                SellTokenSource::Erc20 => solvers_dto::solution::SellTokenBalance::Erc20,
+                SellTokenSource::External => solvers_dto::solution::SellTokenBalance::External,
+                SellTokenSource::Internal => solvers_dto::solution::SellTokenBalance::Internal,
+            },
+            buy_token_balance: match data.buy_token_balance {
+                BuyTokenDestination::Erc20 => solvers_dto::solution::BuyTokenBalance::Erc20,
+                BuyTokenDestination::Internal => solvers_dto::solution::BuyTokenBalance::Internal,
+            },
+            signing_scheme: match signing_scheme {
+                EcdsaSigningScheme::Eip712 => solvers_dto::solution::SigningScheme::Eip712,
+                EcdsaSigningScheme::EthSign => solvers_dto::solution::SigningScheme::EthSign,
+            },
+            signature,
+        };
+        (order, order_uid)
     }
 }
