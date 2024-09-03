@@ -394,9 +394,13 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
+        let is_limit_order = matches!(order.class, OrderClass::Limit);
         if !self
             .banned_users
-            .banned([order.receiver, order.owner])
+            .banned([
+                (order.receiver, is_limit_order),
+                (order.owner, is_limit_order),
+            ])
             .await
             .is_empty()
         {

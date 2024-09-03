@@ -16,9 +16,34 @@ pub struct Users {
     onchain: Option<Arc<Onchain>>,
 }
 
+#[derive(Clone)]
+struct UserMetadata {
+    is_banned: bool,
+    last_updated: Instant,
+    #[allow(dead_code)]
+    limit_order_participant: bool,
+}
+
+impl UserMetadata {
+    pub fn with_banned(mut self, banned: bool) -> Self {
+        self.is_banned = banned;
+        self
+    }
+
+    pub fn with_last_updated(mut self, last_updated: Instant) -> Self {
+        self.last_updated = last_updated;
+        self
+    }
+
+    // pub fn with_limit_order_participation(mut self, limit_order_participation:
+    // bool) -> Self {     self.limit_order_participation =
+    // limit_order_participation;     self
+    // }
+}
+
 struct Onchain {
     contract: ChainalysisOracle,
-    cache: Mutex<HashMap<H160, (Instant, bool)>>,
+    cache: Mutex<HashMap<H160, UserMetadata>>,
 }
 
 impl Onchain {
@@ -42,24 +67,25 @@ impl Onchain {
             loop {
                 let start = Instant::now();
 
-                let expired_addresses: Vec<H160> = {
+                let expired_data: Vec<(H160, UserMetadata)> = {
                     let cache = detector.cache.lock().unwrap();
                     let now = Instant::now();
                     cache
                         .iter()
-                        .filter_map(|(address, (instant, _))| {
-                            (now.checked_duration_since(*instant).unwrap_or_default()
+                        .filter_map(|(address, metadata)| {
+                            (now.checked_duration_since(metadata.last_updated)
+                                .unwrap_or_default()
                                 >= maintenance_timeout)
-                                .then_some(*address)
+                                .then_some((*address, metadata.clone()))
                         })
                         .collect()
                 };
 
-                let results = join_all(expired_addresses.into_iter().map(|address| {
+                let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
                     let detector = detector.clone();
                     async move {
                         match detector.fetch(address).await {
-                            Ok(result) => Some((address, result)),
+                            Ok(result) => Some((address, metadata.with_banned(result))),
                             Err(err) => {
                                 tracing::warn!(
                                     ?address,
@@ -85,11 +111,11 @@ impl Onchain {
         });
     }
 
-    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, bool)>) {
+    fn insert_many_into_cache(&self, addresses: impl Iterator<Item = (H160, UserMetadata)>) {
         let mut cache = self.cache.lock().unwrap();
         let now = Instant::now();
-        for (address, is_banned) in addresses {
-            cache.insert(address, (now, is_banned));
+        for (address, metadata) in addresses {
+            cache.insert(address, metadata.with_last_updated(now));
         }
     }
 }
@@ -123,12 +149,12 @@ impl Users {
     }
 
     /// Returns a subset of addresses from the input iterator which are banned.
-    pub async fn banned(&self, addresses: impl IntoIterator<Item = H160>) -> HashSet<H160> {
+    pub async fn banned(&self, addresses: impl IntoIterator<Item = (H160, bool)>) -> HashSet<H160> {
         let mut banned = HashSet::new();
 
         let need_lookup = addresses
             .into_iter()
-            .filter(|address| {
+            .filter(|(address, _)| {
                 if self.list.contains(address) {
                     banned.insert(*address);
                     false
@@ -147,9 +173,9 @@ impl Users {
             let mut cache = onchain.cache.lock().expect("unpoisoned");
             need_lookup
                 .into_iter()
-                .filter(|address| {
-                    if let Some((_, is_banned)) = cache.cache_get(address) {
-                        is_banned.then(|| banned.insert(*address));
+                .filter(|(address, _)| {
+                    if let Some(metadata) = cache.cache_get(address) {
+                        metadata.is_banned.then(|| banned.insert(*address));
                         false
                     } else {
                         true
@@ -158,19 +184,30 @@ impl Users {
                 .collect()
         };
 
-        let to_cache = join_all(
-            need_lookup
-                .into_iter()
-                .map(|address| async move { (address, onchain.fetch(address).await) }),
-        )
+        let to_cache = join_all(need_lookup.into_iter().map(
+            |(address, limit_order_participant)| async move {
+                (
+                    address,
+                    onchain.fetch(address).await,
+                    limit_order_participant,
+                )
+            },
+        ))
         .await;
 
         let mut cache = onchain.cache.lock().expect("unpoisoned");
         let now = Instant::now();
-        for (address, result) in to_cache {
+        for (address, result, limit_order_participant) in to_cache {
             match result {
                 Ok(is_banned) => {
-                    cache.cache_set(address, (now, is_banned));
+                    cache.cache_set(
+                        address,
+                        UserMetadata {
+                            is_banned,
+                            last_updated: now,
+                            limit_order_participant,
+                        },
+                    );
                     is_banned.then(|| banned.insert(address));
                 }
                 Err(err) => {

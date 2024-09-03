@@ -396,11 +396,15 @@ impl SolvableOrdersCache {
 /// users.
 async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
     let banned = banned_users
-        .banned(
-            orders
-                .iter()
-                .flat_map(|order| std::iter::once(order.metadata.owner).chain(order.data.receiver)),
-        )
+        .banned(orders.iter().flat_map(|order| {
+            let is_limit_order = order.is_limit_order();
+            std::iter::once((order.metadata.owner, is_limit_order)).chain(
+                order
+                    .data
+                    .receiver
+                    .map(|receiver| (receiver, is_limit_order)),
+            )
+        }))
         .await;
     orders
         .iter()
