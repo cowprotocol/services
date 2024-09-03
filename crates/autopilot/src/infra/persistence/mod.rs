@@ -481,6 +481,7 @@ impl Persistence {
                     &u256_to_big_decimal(
                         &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
                     ),
+                    &[],
                 )
                 .await?;
             }
