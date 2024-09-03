@@ -82,6 +82,21 @@ pub struct Arguments {
     )]
     pub token_quality_cache_expiry: Duration,
 
+    /// How long before expiry the token quality cache should try to update the
+    /// token quality in the background. This is useful to make sure that token
+    /// quality for every cached token is usable at all times. This value
+    /// has to be smaller than `token_quality_cache_expiry`
+    /// This configuration also affects the period of the token quality
+    /// maintenance job. Maintenance period =
+    /// `token_quality_cache_prefetch_time` / 2
+    #[clap(
+        long,
+        env,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub token_quality_cache_prefetch_time: Duration,
+
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: NonZeroUsize,
@@ -255,6 +270,7 @@ impl std::fmt::Display for Arguments {
             allowed_tokens,
             unsupported_tokens,
             token_quality_cache_expiry,
+            token_quality_cache_prefetch_time,
             pool_cache_lru_size,
             native_price_estimators,
             min_order_validity_period,
@@ -302,6 +318,11 @@ impl std::fmt::Display for Arguments {
             f,
             "token_quality_cache_expiry: {:?}",
             token_quality_cache_expiry
+        )?;
+        writeln!(
+            f,
+            "token_quality_cache_prefetch_time: {:?}",
+            token_quality_cache_prefetch_time
         )?;
         writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
         writeln!(f, "native_price_estimators: {}", native_price_estimators)?;

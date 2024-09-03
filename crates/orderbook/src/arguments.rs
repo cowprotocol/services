@@ -80,6 +80,21 @@ pub struct Arguments {
     )]
     pub token_quality_cache_expiry: Duration,
 
+    /// How long before expiry the token quality cache should try to update the
+    /// token quality in the background. This is useful to make sure that token
+    /// quality for every cached token is usable at all times. This value
+    /// has to be smaller than `token_quality_cache_expiry`
+    /// This configuration also affects the period of the token quality
+    /// maintenance job. Maintenance period =
+    /// `token_quality_cache_prefetch_time` / 2
+    #[clap(
+        long,
+        env,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub token_quality_cache_prefetch_time: Duration,
+
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
@@ -163,6 +178,7 @@ impl std::fmt::Display for Arguments {
             max_order_validity_period,
             max_limit_order_validity_period,
             token_quality_cache_expiry,
+            token_quality_cache_prefetch_time,
             unsupported_tokens,
             banned_users,
             allowed_tokens,
@@ -208,6 +224,11 @@ impl std::fmt::Display for Arguments {
             f,
             "token_quality_cache_expiry: {:?}",
             token_quality_cache_expiry
+        )?;
+        writeln!(
+            f,
+            "token_quality_cache_prefetch_time: {:?}",
+            token_quality_cache_prefetch_time
         )?;
         writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
         writeln!(f, "banned_users: {:?}", banned_users)?;
