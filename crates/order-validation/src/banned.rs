@@ -20,7 +20,6 @@ pub struct Users {
 struct UserMetadata {
     is_banned: bool,
     last_updated: Instant,
-    limit_order_participant: bool,
 }
 
 impl UserMetadata {
@@ -82,7 +81,7 @@ impl Onchain {
                             expired_data.push((*address, metadata.clone()));
                         }
 
-                        !expired || metadata.limit_order_participant
+                        !expired
                     });
                 };
 
@@ -154,12 +153,12 @@ impl Users {
     }
 
     /// Returns a subset of addresses from the input iterator which are banned.
-    pub async fn banned(&self, addresses: impl IntoIterator<Item = (H160, bool)>) -> HashSet<H160> {
+    pub async fn banned(&self, addresses: impl IntoIterator<Item = H160>) -> HashSet<H160> {
         let mut banned = HashSet::new();
 
         let need_lookup = addresses
             .into_iter()
-            .filter(|(address, _)| {
+            .filter(|address| {
                 if self.list.contains(address) {
                     banned.insert(*address);
                     false
@@ -178,7 +177,7 @@ impl Users {
             let cache = onchain.cache.read().await;
             need_lookup
                 .into_iter()
-                .filter(|(address, _)| {
+                .filter(|address| {
                     if let Some(metadata) = &mut cache.get(address) {
                         metadata.is_banned.then(|| banned.insert(*address));
                         false
@@ -189,20 +188,16 @@ impl Users {
                 .collect()
         };
 
-        let to_cache = join_all(need_lookup.into_iter().map(
-            |(address, limit_order_participant)| async move {
-                (
-                    address,
-                    onchain.fetch(address).await,
-                    limit_order_participant,
-                )
-            },
-        ))
+        let to_cache = join_all(
+            need_lookup
+                .into_iter()
+                .map(|address| async move { (address, onchain.fetch(address).await) }),
+        )
         .await;
 
         let mut cache = onchain.cache.write().await;
         let now = Instant::now();
-        for (address, result, limit_order_participant) in to_cache {
+        for (address, result) in to_cache {
             match result {
                 Ok(is_banned) => {
                     cache.insert(
@@ -210,7 +205,6 @@ impl Users {
                         UserMetadata {
                             is_banned,
                             last_updated: now,
-                            limit_order_participant,
                         },
                     );
                     is_banned.then(|| banned.insert(address));
