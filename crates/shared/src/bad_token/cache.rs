@@ -38,6 +38,10 @@ impl CachingDetector {
         cache_expiry: Duration,
         prefetch_time: Duration,
     ) -> Arc<Self> {
+        assert!(
+            cache_expiry > prefetch_time,
+            "token quality cache prefetch time needs to be less than token quality cache expiry"
+        );
         let detector = Arc::new(Self {
             inner,
             cache: Default::default(),
@@ -78,9 +82,10 @@ impl CachingDetector {
         // We need to prefetch the token quality the `prefetch_time` before the cache
         // expires
         let prefetch_time_to_expire = self.cache_expiry - self.prefetch_time;
-        // The maintenance period has to be at least double of the prefetch time in
-        // order to guarantee that the prefetch time is executed before the token
-        // quality expires. This is because of the Nyquist–Shannon sampling theorem.
+        // The maintenance frequency has to be at least double of the prefetch time
+        // frequency in order to guarantee that the prefetch time is executed
+        // before the token quality expires. This is because of the
+        // Nyquist–Shannon sampling theorem.
         let maintenance_timeout = self.prefetch_time.div(2);
         let detector = Arc::clone(&self);
 

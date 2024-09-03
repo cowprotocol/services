@@ -236,6 +236,31 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
+
+    /// The amount of time in seconds a classification of a token into good or
+    /// bad is valid for.
+    #[clap(
+        long,
+        env,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub token_quality_cache_expiry: Duration,
+
+    /// How long before expiry the token quality cache should try to update the
+    /// token quality in the background. This is useful to make sure that token
+    /// quality for every cached token is usable at all times. This value
+    /// has to be smaller than `token_quality_cache_expiry`
+    /// This configuration also affects the period of the token quality
+    /// maintenance job. Maintenance period =
+    /// `token_quality_cache_prefetch_time` / 2
+    #[clap(
+        long,
+        env,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub token_quality_cache_prefetch_time: Duration,
 }
 
 pub fn display_secret_option<T>(
@@ -336,6 +361,8 @@ impl Display for Arguments {
             custom_univ2_baseline_sources,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
+            token_quality_cache_expiry,
+            token_quality_cache_prefetch_time,
         } = self;
 
         write!(f, "{}", ethrpc)?;
@@ -403,6 +430,16 @@ impl Display for Arguments {
             f,
             "max_pools_to_initialize_cache: {}",
             max_pools_to_initialize_cache
+        )?;
+        writeln!(
+            f,
+            "token_quality_cache_expiry: {:?}",
+            token_quality_cache_expiry
+        )?;
+        writeln!(
+            f,
+            "token_quality_cache_prefetch_time: {:?}",
+            token_quality_cache_prefetch_time
         )?;
 
         Ok(())
