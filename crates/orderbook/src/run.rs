@@ -344,7 +344,6 @@ pub async fn run(args: Arguments) {
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
             args.banned_users,
-            postgres.pool.clone(),
         )),
         validity_configuration,
         args.eip1271_skip_creation_validation,
