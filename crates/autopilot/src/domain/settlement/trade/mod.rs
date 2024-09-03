@@ -42,10 +42,7 @@ impl Trade {
 
     /// CIP38 score defined as surplus + protocol fee
     pub fn score(&self, auction: &super::Auction) -> Result<eth::Ether, math::Error> {
-        match self {
-            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).score(auction),
-            Self::Jit(trade) => math::Trade::from(trade.clone()).score(auction),
-        }
+        math::Trade::from(self.clone()).score(auction)
     }
 
     /// Surplus of a trade.
@@ -67,19 +64,13 @@ impl Trade {
 
     /// Total fee taken for the trade.
     pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, math::Error> {
-        match self {
-            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).fee_in_ether(prices),
-            Self::Jit(trade) => math::Trade::from(trade.clone()).fee_in_ether(prices),
-        }
+        math::Trade::from(self.clone()).fee_in_ether(prices)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
     pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, math::Error> {
-        match self {
-            Self::Fulfillment(trade) => math::Trade::from(trade.clone()).fee_in_sell_token(),
-            Self::Jit(trade) => math::Trade::from(trade.clone()).fee_in_sell_token(),
-        }
+        math::Trade::from(self.clone()).fee_in_sell_token()
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
@@ -87,14 +78,7 @@ impl Trade {
         &self,
         auction: &super::Auction,
     ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, math::Error> {
-        match self {
-            Self::Fulfillment(trade) => {
-                math::Trade::from(trade.clone()).protocol_fees_in_sell_token(auction)
-            }
-            Self::Jit(trade) => {
-                math::Trade::from(trade.clone()).protocol_fees_in_sell_token(auction)
-            }
-        }
+        math::Trade::from(self.clone()).protocol_fees_in_sell_token(auction)
     }
 
     pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
@@ -108,6 +92,9 @@ impl Trade {
                 prices: trade.prices,
             })
         } else {
+            // All orders that were settled outside of the auction are JIT orders. This
+            // includes regular JIT orders that the protocol is not aware of upfront, as
+            // well as user orders that were not listed in the auction during competition.
             Trade::Jit(Jit {
                 uid: trade.uid,
                 sell: trade.sell,

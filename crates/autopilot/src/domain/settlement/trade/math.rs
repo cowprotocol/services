@@ -20,7 +20,7 @@ use {
 /// A trade containing bare minimum of onchain information required to calculate
 /// the surplus, fees and score.
 #[derive(Debug, Clone)]
-pub struct Trade {
+pub(super) struct Trade {
     uid: domain::OrderUid,
     sell: eth::Asset,
     buy: eth::Asset,
@@ -553,6 +553,14 @@ impl From<super::Jit> for Trade {
     }
 }
 
+impl From<super::Trade> for Trade {
+    fn from(trade: super::Trade) -> Self {
+        match trade {
+            super::Trade::Fulfillment(fulfillment) => fulfillment.into(),
+            super::Trade::Jit(jit) => jit.into(),
+        }
+    }
+}
 pub mod error {
     use crate::domain::eth;
 

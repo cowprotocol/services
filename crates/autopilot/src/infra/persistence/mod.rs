@@ -497,7 +497,7 @@ impl Persistence {
                         uid: ByteArray(jit_order.uid.0),
                         owner: ByteArray(jit_order.uid.owner().0 .0),
                         creation_timestamp: chrono::DateTime::from_timestamp(
-                            jit_order.created as i64,
+                            i64::from(jit_order.created),
                             0,
                         )
                         .unwrap_or_default(),
@@ -505,7 +505,7 @@ impl Persistence {
                         buy_token: ByteArray(jit_order.buy.token.0 .0),
                         sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
                         buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
-                        valid_to: jit_order.valid_to as i64,
+                        valid_to: i64::from(jit_order.valid_to),
                         app_data: ByteArray(jit_order.app_data.0),
                         fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
                         kind: match jit_order.side {
