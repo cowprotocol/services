@@ -1,7 +1,7 @@
 use {
     crate::Amm,
     contracts::{cow_amm_legacy_helper::Event as CowAmmEvent, CowAmmLegacyHelper},
-    ethcontract::Address,
+    ethcontract::{errors::ExecutionError, Address},
     ethrpc::block_stream::RangeInclusive,
     shared::event_handling::EventStoring,
     std::{collections::BTreeMap, sync::Arc},
@@ -85,11 +85,19 @@ impl EventStoring<CowAmmEvent> for Storage {
                 .ok_or_else(|| anyhow::anyhow!("Event missing meta"))?;
             let CowAmmEvent::CowammpoolCreated(cow_amm) = event.data;
             let cow_amm = cow_amm.amm;
+            let amm = match Amm::new(cow_amm, &self.0.helper).await {
+                Ok(amm) => Arc::new(amm),
+                Err(err) if matches!(&err.inner, ExecutionError::Web3(_)) => {
+                    tracing::debug!(?cow_amm, ?err, "retryable error");
+                    return Err(err.into());
+                }
+                Err(err) => {
+                    tracing::info!(?err, ?cow_amm, "helper contract does not support amm");
+                    continue;
+                }
+            };
 
-            cache
-                .entry(meta.block_number)
-                .or_default()
-                .push(Arc::new(Amm::new(cow_amm, &self.0.helper).await?));
+            cache.entry(meta.block_number).or_default().push(amm);
             tracing::info!(?cow_amm, "indexed new cow amm");
         }
         Ok(())
