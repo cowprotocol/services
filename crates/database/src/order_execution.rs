@@ -11,14 +11,6 @@ pub struct FeeAsset {
     pub token: Address,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
-struct ProtocolFees {
-    pub order_uid: OrderUid,
-    pub auction_id: AuctionId,
-    pub protocol_fee_tokens: Vec<Address>,
-    pub protocol_fee_amounts: Vec<BigDecimal>,
-}
-
 pub async fn save(
     ex: &mut PgConnection,
     order: &OrderUid,
@@ -64,35 +56,12 @@ pub async fn executed_protocol_fees(
         return Ok(HashMap::new());
     }
 
-    let mut fees = HashMap::new();
-    for fee in get_protocol_fees(ex, keys_filter).await? {
-        fees.insert(
-            (fee.auction_id, fee.order_uid),
-            fee.protocol_fee_tokens
-                .into_iter()
-                .zip(fee.protocol_fee_amounts)
-                .map(|(token, amount)| FeeAsset { token, amount })
-                .collect(),
-        );
-    }
-
-    Ok(fees)
-}
-
-// executed procotol fee for a single <order, auction> pair
-async fn get_protocol_fees(
-    ex: &mut PgConnection,
-    keys: &[(AuctionId, OrderUid)],
-) -> Result<Vec<ProtocolFees>, sqlx::Error> {
-    if keys.is_empty() {
-        return Ok(vec![]);
-    }
-
     let mut query_builder = QueryBuilder::new(
-        "SELECT order_uid, auction_id, protocol_fee_tokens, protocol_fee_amounts FROM order_execution WHERE ",
+        "SELECT order_uid, auction_id, protocol_fee_tokens, protocol_fee_amounts FROM \
+         order_execution WHERE ",
     );
 
-    for (i, (auction_id, order_uid)) in keys.iter().enumerate() {
+    for (i, (auction_id, order_uid)) in keys_filter.iter().enumerate() {
         if i > 0 {
             query_builder.push(" OR ");
         }
@@ -104,10 +73,29 @@ async fn get_protocol_fees(
             .push(")");
     }
 
+    #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
+    struct ProtocolFees {
+        pub order_uid: OrderUid,
+        pub auction_id: AuctionId,
+        pub protocol_fee_tokens: Vec<Address>,
+        pub protocol_fee_amounts: Vec<BigDecimal>,
+    }
     let query = query_builder.build_query_as::<ProtocolFees>();
-    let rows = query.fetch_all(ex).await?;
+    let rows: Vec<ProtocolFees> = query.fetch_all(ex).await?;
 
-    Ok(rows)
+    let mut fees = HashMap::new();
+    for row in rows {
+        fees.insert(
+            (row.auction_id, row.order_uid),
+            row.protocol_fee_tokens
+                .into_iter()
+                .zip(row.protocol_fee_amounts)
+                .map(|(token, amount)| FeeAsset { token, amount })
+                .collect(),
+        );
+    }
+
+    Ok(fees)
 }
 
 #[cfg(test)]
@@ -142,7 +130,8 @@ mod tests {
         .await
         .unwrap();
 
-        // save entry without protocol fees (simulate case when we are still not calculating them)
+        // save entry without protocol fees (simulate case when we are still not
+        // calculating them)
         save(&mut db, &Default::default(), 2, 0, &Default::default(), &[])
             .await
             .unwrap();
@@ -153,8 +142,7 @@ mod tests {
             (3, Default::default()),
         ];
 
-        let protocol_fees = get_protocol_fees(&mut db, &keys).await.unwrap();
+        let protocol_fees = executed_protocol_fees(&mut db, &keys).await.unwrap();
         assert_eq!(protocol_fees.len(), 2);
-        dbg!(protocol_fees);
     }
 }
