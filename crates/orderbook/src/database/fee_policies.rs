@@ -5,17 +5,17 @@ use {
         FromPrimitive,
     },
     database::{auction::AuctionId, OrderUid},
-    model::fee_policy::{ExecutedFee, FeePolicy, Quote},
+    model::fee_policy::{ExecutedProtocolFee, FeePolicy, Quote},
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256},
     std::collections::HashMap,
 };
 
 impl super::Postgres {
-    pub async fn fee_policies(
+    pub async fn executed_protocol_fees(
         &self,
         keys_filter: &[(AuctionId, OrderUid)],
-    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<(FeePolicy, ExecutedFee)>>> {
+    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<ExecutedProtocolFee>>> {
         let mut ex = self.pool.acquire().await?;
 
         let timer = super::Metrics::get()
@@ -62,21 +62,18 @@ impl super::Postgres {
         let mut result = HashMap::new();
         for (key, executed_fees) in executed_protocol_fees {
             if let Some(policies) = fee_policies.get(&key) {
-                let executed_fees = executed_fees
-                    .iter()
-                    .map(|fee| {
-                        Ok::<ExecutedFee, anyhow::Error>(ExecutedFee {
-                            amount: big_decimal_to_u256(&fee.amount)
-                                .context("executed fee amount")?,
-                            token: primitive_types::H160(fee.token.0),
-                        })
-                    })
-                    .collect::<anyhow::Result<Vec<_>>>()?;
-                let policies = policies
-                    .iter()
-                    .map(|policy| fee_policy_from(policy.clone(), quotes.get(&key.1), key.1))
-                    .collect::<anyhow::Result<Vec<_>>>()?;
-                result.insert(key, policies.into_iter().zip(executed_fees).collect());
+                for (policy, executed_fee) in policies.iter().zip(executed_fees) {
+                    let executed_protocol_fee = ExecutedProtocolFee {
+                        amount: big_decimal_to_u256(&executed_fee.amount)
+                            .context("executed fee amount")?,
+                        token: primitive_types::H160(executed_fee.token.0),
+                        policy: fee_policy_from(policy.clone(), quotes.get(&key.1), key.1)?,
+                    };
+                    result
+                        .entry(key)
+                        .or_insert_with(Vec::new)
+                        .push(executed_protocol_fee);
+                }
             }
         }
         Ok(result)

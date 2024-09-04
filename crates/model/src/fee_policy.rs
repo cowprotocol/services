@@ -36,10 +36,11 @@ pub struct Quote {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(any(test, feature = "e2e"), derive(serde::Deserialize))]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutedFee {
+pub struct ExecutedProtocolFee {
+    pub policy: FeePolicy,
     #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
     pub token: H160,
