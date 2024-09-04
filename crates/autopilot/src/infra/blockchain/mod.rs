@@ -40,8 +40,11 @@ pub struct Rpc {
 impl Rpc {
     /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
     /// at the specifed URL.
-    pub async fn new(url: &url::Url) -> Result<Self, Error> {
-        let web3 = boundary::buffered_web3_client(url);
+    pub async fn new(
+        url: &url::Url,
+        ethrpc_args: &shared::ethrpc::Arguments,
+    ) -> Result<Self, Error> {
+        let web3 = boundary::web3_client(url, ethrpc_args);
         let chain = web3.eth().chain_id().await?.into();
 
         Ok(Self {

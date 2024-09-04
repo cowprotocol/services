@@ -19,7 +19,11 @@ use {
         code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
-        price_estimation::{competition::PriceRanking, native::NativePriceEstimating},
+        price_estimation::{
+            buffered::{self, BufferedRequest, NativePriceBatchFetching},
+            competition::PriceRanking,
+            native::NativePriceEstimating,
+        },
         token_info::TokenInfoFetching,
     },
     anyhow::{Context as _, Result},
@@ -203,20 +207,46 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.components.tokens.clone(),
                 )),
             )),
-            NativePriceEstimatorSource::CoinGecko => Ok((
-                "CoinGecko".into(),
-                Arc::new(
-                    native::CoinGecko::new(
-                        self.components.http_factory.create(),
-                        self.args.coin_gecko_url.clone(),
-                        self.args.coin_gecko_api_key.clone(),
-                        self.network.chain_id,
-                        weth.address(),
-                        self.components.tokens.clone(),
-                    )
-                    .await?,
-                ),
-            )),
+            NativePriceEstimatorSource::CoinGecko => {
+                let coin_gecko = native::CoinGecko::new(
+                    self.components.http_factory.create(),
+                    self.args.coin_gecko.coin_gecko_url.clone(),
+                    self.args.coin_gecko.coin_gecko_api_key.clone(),
+                    self.network.chain_id,
+                    weth.address(),
+                    self.components.tokens.clone(),
+                )
+                .await?;
+
+                let coin_gecko: Arc<dyn NativePriceEstimating> =
+                    if let Some(coin_gecko_buffered_configuration) =
+                        &self.args.coin_gecko.coin_gecko_buffered
+                    {
+                        let configuration = buffered::Configuration {
+                            max_concurrent_requests: Some(
+                                coin_gecko
+                                    .max_batch_size()
+                                    .try_into()
+                                    .context("invalid CoinGecko max batch size")?,
+                            ),
+                            debouncing_time: coin_gecko_buffered_configuration
+                                .coin_gecko_debouncing_time
+                                .unwrap(),
+                            result_ready_timeout: coin_gecko_buffered_configuration
+                                .coin_gecko_result_ready_timeout
+                                .unwrap(),
+                            broadcast_channel_capacity: coin_gecko_buffered_configuration
+                                .coin_gecko_broadcast_channel_capacity
+                                .unwrap(),
+                        };
+
+                        Arc::new(BufferedRequest::with_config(coin_gecko, configuration))
+                    } else {
+                        Arc::new(coin_gecko)
+                    };
+
+                Ok(("CoinGecko".into(), coin_gecko))
+            }
         }
     }
 

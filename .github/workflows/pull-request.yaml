@@ -122,8 +122,6 @@ jobs:
   test-forked-node:
     timeout-minutes: 60
     runs-on: ubuntu-latest
-    concurrency:
-      group: archive_node
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0

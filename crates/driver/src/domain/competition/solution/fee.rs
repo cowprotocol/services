@@ -126,7 +126,11 @@ impl Fulfillment {
                 )?;
                 self.calculate_fee(price_limits, prices, *factor, *max_volume_factor)
             }
-            FeePolicy::Volume { factor } => self.fee_from_volume(prices, *factor),
+            FeePolicy::Volume { factor } => {
+                let fee_from_volume = self.fee_from_volume(prices, *factor)?;
+                tracing::debug!(uid=?self.order().uid, ?fee_from_volume, executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+                Ok(fee_from_volume)
+            }
         }
     }
 

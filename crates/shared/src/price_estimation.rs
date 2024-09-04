@@ -183,17 +183,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "https://api.1inch.dev/")]
     pub one_inch_url: Url,
 
-    /// The API key for the CoinGecko API.
-    #[clap(long, env)]
-    pub coin_gecko_api_key: Option<String>,
-
-    /// The base URL for the CoinGecko API.
-    #[clap(
-        long,
-        env,
-        default_value = "https://api.coingecko.com/api/v3/simple/token_price"
-    )]
-    pub coin_gecko_url: Url,
+    /// The CoinGecko native price configuration
+    #[clap(flatten)]
+    pub coin_gecko: CoinGecko,
 
     /// How inaccurate a quote must be before it gets discarded provided as a
     /// factor.
@@ -220,6 +212,52 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub quote_timeout: Duration,
+}
+
+#[derive(clap::Parser)]
+pub struct CoinGecko {
+    /// The API key for the CoinGecko API.
+    #[clap(long, env)]
+    pub coin_gecko_api_key: Option<String>,
+
+    /// The base URL for the CoinGecko API.
+    #[clap(
+        long,
+        env,
+        default_value = "https://api.coingecko.com/api/v3/simple/token_price"
+    )]
+    pub coin_gecko_url: Url,
+
+    #[clap(flatten)]
+    pub coin_gecko_buffered: Option<CoinGeckoBuffered>,
+}
+
+#[derive(clap::Parser)]
+#[clap(group(
+    clap::ArgGroup::new("coin_gecko_buffered")
+    .requires_all(&[
+        "coin_gecko_debouncing_time",
+        "coin_gecko_result_ready_timeout",
+        "coin_gecko_broadcast_channel_capacity"
+    ])
+    .multiple(true)
+    .required(false),
+))]
+pub struct CoinGeckoBuffered {
+    /// An additional minimum delay to wait for collecting CoinGecko requests.
+    ///
+    /// The delay to start counting after receiving the first request.
+    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
+    pub coin_gecko_debouncing_time: Option<Duration>,
+
+    /// The timeout to wait for the result to be ready
+    #[clap(long, env, value_parser = humantime::parse_duration, group = "coin_gecko_buffered")]
+    pub coin_gecko_result_ready_timeout: Option<Duration>,
+
+    /// Maximum capacity of the broadcast channel to store the CoinGecko native
+    /// prices results
+    #[clap(long, env, group = "coin_gecko_buffered")]
+    pub coin_gecko_broadcast_channel_capacity: Option<usize>,
 }
 
 /// Controls which level of quote verification gets applied.
@@ -249,8 +287,7 @@ impl Display for Arguments {
             balancer_sor_url,
             one_inch_api_key,
             one_inch_url,
-            coin_gecko_api_key,
-            coin_gecko_url,
+            coin_gecko,
             quote_inaccuracy_limit,
             quote_verification,
             quote_timeout,
@@ -292,10 +329,42 @@ impl Display for Arguments {
             amount_to_estimate_prices_with,
         )?;
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
-        display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
+        display_secret_option(
+            f,
+            "one_inch_spot_price_api_key: {:?}",
+            one_inch_api_key.as_ref(),
+        )?;
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
-        display_secret_option(f, "coin_gecko_api_key: {:?}", coin_gecko_api_key)?;
-        writeln!(f, "coin_gecko_api_url: {}", coin_gecko_url)?;
+        display_secret_option(
+            f,
+            "coin_gecko_api_key: {:?}",
+            coin_gecko.coin_gecko_api_key.as_ref(),
+        )?;
+        writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
+        writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
+        writeln!(
+            f,
+            "coin_gecko_result_ready_timeout: {:?}",
+            coin_gecko
+                .coin_gecko_buffered
+                .as_ref()
+                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_result_ready_timeout),
+        )?;
+        writeln!(
+            f,
+            "coin_gecko_debouncing_time: {:?}",
+            coin_gecko
+                .coin_gecko_buffered
+                .as_ref()
+                .map(|coin_gecko_buffered| coin_gecko_buffered.coin_gecko_debouncing_time),
+        )?;
+        writeln!(
+            f,
+            "coin_gecko_broadcast_channel_capacity: {:?}",
+            coin_gecko.coin_gecko_buffered.as_ref().map(
+                |coin_gecko_buffered| coin_gecko_buffered.coin_gecko_broadcast_channel_capacity
+            ),
+        )?;
         writeln!(f, "quote_inaccuracy_limit: {}", quote_inaccuracy_limit)?;
         writeln!(f, "quote_verification: {:?}", quote_verification)?;
         writeln!(f, "quote_timeout: {:?}", quote_timeout)?;
@@ -501,7 +570,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, clap::Parser};
 
     #[test]
     fn string_repr_round_trip_native_price_estimators() {
@@ -525,5 +594,69 @@ mod tests {
         ] {
             assert_eq!(stringified(&parsed(repr).unwrap()), repr);
         }
+    }
+
+    #[test]
+    fn enable_coin_gecko_buffered() {
+        let args = vec![
+            "test", // Program name
+            "--coin-gecko-api-key",
+            "someapikey",
+            "--coin-gecko-url",
+            "https://api.coingecko.com/api/v3/simple/token_price",
+            "--coin-gecko-debouncing-time",
+            "300ms",
+            "--coin-gecko-result-ready-timeout",
+            "600ms",
+            "--coin-gecko-broadcast-channel-capacity",
+            "50",
+        ];
+
+        let coin_gecko = CoinGecko::parse_from(args);
+
+        assert!(coin_gecko.coin_gecko_buffered.is_some());
+
+        let buffered = coin_gecko.coin_gecko_buffered.unwrap();
+        assert_eq!(
+            buffered.coin_gecko_debouncing_time.unwrap(),
+            Duration::from_millis(300)
+        );
+        assert_eq!(
+            buffered.coin_gecko_result_ready_timeout.unwrap(),
+            Duration::from_millis(600)
+        );
+        assert_eq!(buffered.coin_gecko_broadcast_channel_capacity.unwrap(), 50);
+    }
+
+    #[test]
+    fn test_without_buffered_present() {
+        let args = vec![
+            "test", // Program name
+            "--coin-gecko-api-key",
+            "someapikey",
+            "--coin-gecko-url",
+            "https://api.coingecko.com/api/v3/simple/token_price",
+        ];
+
+        let coin_gecko = CoinGecko::parse_from(args);
+
+        assert!(coin_gecko.coin_gecko_buffered.is_none());
+    }
+
+    #[test]
+    fn test_invalid_partial_buffered_present() {
+        let args = vec![
+            "test", // Program name
+            "--coin-gecko-api-key",
+            "someapikey",
+            "--coin-gecko-url",
+            "https://api.coingecko.com/api/v3/simple/token_price",
+            "--coin-gecko-debouncing-time",
+            "300ms",
+        ];
+
+        let result = CoinGecko::try_parse_from(args);
+
+        assert!(result.is_err());
     }
 }
