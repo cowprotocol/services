@@ -18,7 +18,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::{ops::DerefMut, time::Duration},
+    std::time::Duration,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -146,7 +146,6 @@ impl<'a> Services<'a> {
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::run(args));
-        self.wait_until_autopilot_ready().await;
     }
 
     /// Start the api service in a background tasks.
@@ -299,21 +298,6 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for API timed out");
-    }
-
-    async fn wait_until_autopilot_ready(&self) {
-        let is_up = || async {
-            let mut db = self.db.acquire().await.unwrap();
-            const QUERY: &str = "SELECT COUNT(*) FROM auctions";
-            let count: i64 = sqlx::query_scalar(QUERY)
-                .fetch_one(db.deref_mut())
-                .await
-                .unwrap();
-            count > 0
-        };
-        wait_for_condition(TIMEOUT, is_up)
-            .await
-            .expect("waiting for autopilot timed out");
     }
 
     pub async fn get_auction(&self) -> dto::AuctionWithId {
