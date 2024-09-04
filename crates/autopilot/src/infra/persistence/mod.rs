@@ -500,7 +500,7 @@ impl Persistence {
                 .await?;
             }
 
-            database::jit_orders::upsert_orders(
+            database::jit_orders::insert(
                 &mut ex,
                 &jit_orders
                     .into_iter()

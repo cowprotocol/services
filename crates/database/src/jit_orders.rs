@@ -63,10 +63,7 @@ pub struct JitOrder {
     pub buy_token_balance: BuyTokenDestination,
 }
 
-pub async fn upsert_orders(
-    ex: &mut PgConnection,
-    jit_orders: &[JitOrder],
-) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgConnection, jit_orders: &[JitOrder]) -> Result<(), sqlx::Error> {
     if jit_orders.is_empty() {
         return Ok(());
     }
@@ -224,21 +221,27 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let mut jit_order = JitOrder::default();
+        let jit_order = JitOrder::default();
 
         // insert a jit order and read it back
-        upsert_orders(&mut db, &[jit_order.clone()]).await.unwrap();
-        let jit_order2 = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
-        assert_eq!(jit_order, jit_order2);
+        insert(&mut db, &[jit_order.clone()]).await.unwrap();
+        let read_jit_order = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
+        assert_eq!(jit_order, read_jit_order);
 
-        // update existing jit order and read it back
-        jit_order.creation_timestamp = DateTime::<Utc>::default() + chrono::Duration::days(1);
-        upsert_orders(&mut db, &[jit_order.clone()]).await.unwrap();
-        let jit_order3 = read_order(&mut db, &jit_order.uid).await.unwrap().unwrap();
-        assert_eq!(jit_order, jit_order3);
+        // try to insert updated order, but no update was done on conflict
+        let jit_order_updated = JitOrder {
+            creation_timestamp: DateTime::<Utc>::default() + chrono::Duration::days(1),
+            ..jit_order.clone()
+        };
+        insert(&mut db, &[jit_order_updated.clone()]).await.unwrap();
+        let read_jit_order = read_order(&mut db, &jit_order_updated.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(jit_order, read_jit_order);
 
         // read non existent order
-        let jit_order4 = read_order(&mut db, &ByteArray([1u8; 56])).await.unwrap();
-        assert!(jit_order4.is_none());
+        let read_jit_order = read_order(&mut db, &ByteArray([1u8; 56])).await.unwrap();
+        assert!(read_jit_order.is_none());
     }
 }
