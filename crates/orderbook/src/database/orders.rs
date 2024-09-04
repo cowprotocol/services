@@ -329,6 +329,11 @@ impl OrderStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
+        let jit_orders = database::jit_orders::get_by_tx(&mut ex, &ByteArray(tx_hash.0))
+            .await?
+            .into_iter()
+            .map(full_order_into_model_order)
+            .collect::<Result<Vec<_>>>()?;
         database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order),
@@ -336,6 +341,10 @@ impl OrderStoring for Postgres {
             })
             .try_collect()
             .await
+            .map(|mut orders: Vec<Order>| {
+                orders.extend(jit_orders);
+                orders
+            })
     }
 
     async fn user_orders(
