@@ -174,7 +174,17 @@ impl SolvableOrdersCache {
     pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
 
-        let (db_solvable_orders, latest_creation_timestamp) = self.get_solvable_orders().await?;
+        let db_solvable_orders = self.get_solvable_orders().await?;
+        if db_solvable_orders.orders.is_empty() {
+            return Ok(());
+        }
+
+        let latest_creation_timestamp = db_solvable_orders
+            .orders
+            .values()
+            .map(|order| order.metadata.creation_date)
+            .max()
+            .unwrap_or_default();
 
         let orders = db_solvable_orders
             .orders
@@ -342,67 +352,31 @@ impl SolvableOrdersCache {
 
     /// Returns current solvable orders along with the latest order creation
     /// timestamp.
-    async fn get_solvable_orders(&self) -> Result<(SolvableOrders, DateTime<Utc>)> {
-        const INITIAL_ORDER_CREATION_TIMESTAMP: DateTime<Utc> = DateTime::<Utc>::MIN_UTC;
-
-        // A new auction should be created regardless of whether new solvable orders are
-        // found. The incremental solvable orders cache updater should only be
-        // enabled after the initial full SQL query
-        // (`persistence::solvable_orders`) returned some orders. Until then, `MIN_UTC`
-        // is used to indicate that no orders have been found yet by
-        // (`persistence::solvable_orders`). This prevents situations where
-        // starting the service with a large existing DB would cause
-        // the incremental query to load all unfiltered orders into memory, potentially
-        // leading to OOM issues.
-        let (db_solvable_orders, previous_creation_timestamp) = {
-            let cache_data = {
-                let lock = self.cache.lock().await;
-                match &*lock {
-                    Some(cache)
-                        if cache.last_order_creation_timestamp
-                            > INITIAL_ORDER_CREATION_TIMESTAMP =>
-                    {
-                        Some((
-                            cache.solvable_orders.orders.clone(),
-                            cache.last_order_creation_timestamp,
-                            cache.solvable_orders.latest_settlement_block,
-                        ))
-                    }
-                    _ => None,
-                }
-            };
-
-            let min_valid_to =
-                now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-            match cache_data {
-                Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => (
-                    self.persistence
-                        .solvable_order_after(
-                            current_orders,
-                            last_order_creation_timestamp,
-                            latest_settlement_block,
-                            min_valid_to,
-                        )
-                        .await?,
-                    last_order_creation_timestamp,
-                ),
-                None => (
-                    self.persistence.all_solvable_orders(min_valid_to).await?,
-                    INITIAL_ORDER_CREATION_TIMESTAMP,
-                ),
-            }
+    async fn get_solvable_orders(&self) -> Result<SolvableOrders> {
+        let cache_data = {
+            self.cache.lock().await.as_ref().map(|cache| {
+                (
+                    cache.solvable_orders.orders.clone(),
+                    cache.last_order_creation_timestamp,
+                    cache.solvable_orders.latest_settlement_block,
+                )
+            })
         };
 
-        let latest_creation_timestamp = db_solvable_orders
-            .orders
-            .values()
-            .map(|order| order.metadata.creation_date)
-            .max()
-            .map_or(previous_creation_timestamp, |max_creation_timestamp| {
-                std::cmp::max(max_creation_timestamp, previous_creation_timestamp)
-            });
-
-        Ok((db_solvable_orders, latest_creation_timestamp))
+        let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
+        match cache_data {
+            Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => {
+                self.persistence
+                    .solvable_order_after(
+                        current_orders,
+                        last_order_creation_timestamp,
+                        latest_settlement_block,
+                        min_valid_to,
+                    )
+                    .await
+            }
+            None => Ok(self.persistence.all_solvable_orders(min_valid_to).await?),
+        }
     }
 
     /// Executed orders filtering in parallel.
