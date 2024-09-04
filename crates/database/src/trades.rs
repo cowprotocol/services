@@ -45,18 +45,24 @@ LEFT OUTER JOIN LATERAL (
     AND   s.log_index > t.log_index
     ORDER BY s.log_index ASC
     LIMIT 1
-) AS settlement ON true
-JOIN orders o
-ON o.uid = t.order_uid"#;
+) AS settlement ON true"#;
+
     const QUERY: &str = const_format::concatcp!(
         COMMON_QUERY,
+        " JOIN orders o ON o.uid = t.order_uid",
         " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
-        "UNION",
+        " UNION ",
         COMMON_QUERY,
+        " JOIN orders o ON o.uid = t.order_uid",
         " LEFT OUTER JOIN onchain_placed_orders onchain_o",
         " ON onchain_o.uid = t.order_uid",
         " WHERE onchain_o.sender = $1",
+        " AND ($2 IS NULL OR o.uid = $2)",
+        " UNION ",
+        COMMON_QUERY,
+        " JOIN jit_orders o ON o.uid = t.order_uid",
+        " WHERE ($1 IS NULL OR o.owner = $1)",
         " AND ($2 IS NULL OR o.uid = $2)",
     );
 

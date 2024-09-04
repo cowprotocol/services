@@ -2,7 +2,7 @@ use {
     anyhow::Result,
     app_data::AppDataHash,
     contracts::CowAmmLegacyHelper,
-    ethcontract::{Address, Bytes, U256},
+    ethcontract::{errors::MethodError, Address, Bytes, U256},
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -18,7 +18,10 @@ pub struct Amm {
 }
 
 impl Amm {
-    pub(crate) async fn new(address: Address, helper: &CowAmmLegacyHelper) -> Result<Self> {
+    pub(crate) async fn new(
+        address: Address,
+        helper: &CowAmmLegacyHelper,
+    ) -> Result<Self, MethodError> {
         let tradeable_tokens = helper.tokens(address).call().await?;
 
         Ok(Self {

@@ -126,13 +126,26 @@ impl Ethereum {
         )?;
         let transaction = transaction.ok_or(Error::TransactionNotFound)?;
         let receipt = receipt.ok_or(Error::TransactionNotFound)?;
-        into_domain(transaction, receipt).map_err(Error::IncompleteTransactionData)
+        let block_hash =
+            receipt
+                .block_hash
+                .ok_or(Error::IncompleteTransactionData(anyhow::anyhow!(
+                    "missing block_hash"
+                )))?;
+        let block = self
+            .web3
+            .eth()
+            .block(block_hash.into())
+            .await?
+            .ok_or(Error::TransactionNotFound)?;
+        into_domain(transaction, receipt, block.timestamp).map_err(Error::IncompleteTransactionData)
     }
 }
 
 fn into_domain(
     transaction: web3::types::Transaction,
     receipt: web3::types::TransactionReceipt,
+    timestamp: U256,
 ) -> anyhow::Result<eth::Transaction> {
     Ok(eth::Transaction {
         hash: transaction.hash.into(),
@@ -150,10 +163,11 @@ fn into_domain(
             .gas_used
             .ok_or(anyhow::anyhow!("missing gas_used"))?
             .into(),
-        effective_gas_price: receipt
+        gas_price: receipt
             .effective_gas_price
             .ok_or(anyhow::anyhow!("missing effective_gas_price"))?
             .into(),
+        timestamp: timestamp.as_u32(),
     })
 }
 
