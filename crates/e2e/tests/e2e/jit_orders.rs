@@ -202,8 +202,5 @@ async fn single_limit_order_test(web3: Web3) {
         .get_orders_for_tx(&orders[0].tx_hash.unwrap())
         .await
         .unwrap();
-    assert!(orders_by_tx
-        .iter()
-        .find(|o| o.metadata.uid == jit_order_uid)
-        .is_some());
+    assert!(orders_by_tx.iter().any(|o| o.metadata.uid == jit_order_uid));
 }
