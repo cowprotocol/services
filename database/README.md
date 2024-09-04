@@ -167,7 +167,8 @@ Indexes:
 
 ### order\_execution
 
-Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
+Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else. 
+Protocol fee tokens/amounts are stored in the same order as fee policies in fee_policies table.
 
  Column                 | Type      | Nullable | Details
 ------------------------|-----------|----------|--------
