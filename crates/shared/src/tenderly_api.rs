@@ -313,7 +313,7 @@ impl Display for Arguments {
 
         display_option(f, "tenderly_user", tenderly_user)?;
         display_option(f, "tenderly_project", tenderly_project)?;
-        display_secret_option(f, "tenderly_api_key", tenderly_api_key)?;
+        display_secret_option(f, "tenderly_api_key", tenderly_api_key.as_ref())?;
 
         Ok(())
     }

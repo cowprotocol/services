@@ -235,7 +235,7 @@ impl std::fmt::Display for Arguments {
             max_limit_orders_per_user
         )?;
         writeln!(f, "ipfs_gateway: {:?}", ipfs_gateway)?;
-        display_secret_option(f, "ipfs_pinata_auth", ipfs_pinata_auth)?;
+        display_secret_option(f, "ipfs_pinata_auth", ipfs_pinata_auth.as_ref())?;
         display_option(
             f,
             "hooks_contract_address",
