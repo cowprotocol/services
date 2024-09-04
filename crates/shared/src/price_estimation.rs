@@ -329,12 +329,16 @@ impl Display for Arguments {
             amount_to_estimate_prices_with,
         )?;
         display_option(f, "balancer_sor_url", balancer_sor_url)?;
-        display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
+        display_secret_option(
+            f,
+            "one_inch_spot_price_api_key: {:?}",
+            one_inch_api_key.as_ref(),
+        )?;
         writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
         display_secret_option(
             f,
             "coin_gecko_api_key: {:?}",
-            &coin_gecko.coin_gecko_api_key,
+            coin_gecko.coin_gecko_api_key.as_ref(),
         )?;
         writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;
         writeln!(f, "coin_gecko_api_url: {}", coin_gecko.coin_gecko_url)?;

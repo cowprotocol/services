@@ -99,7 +99,7 @@ pub struct OrderQuotingArguments {
 
 logging_args_with_default_filter!(
     LoggingArguments,
-    "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug"
+    "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,cow_amm=debug"
 );
 
 #[derive(clap::Parser)]
@@ -266,7 +266,7 @@ pub struct Arguments {
 pub fn display_secret_option<T>(
     f: &mut Formatter<'_>,
     name: &str,
-    option: &Option<T>,
+    option: Option<&T>,
 ) -> std::fmt::Result {
     display_option(f, name, &option.as_ref().map(|_| "SECRET"))
 }
@@ -373,7 +373,7 @@ impl Display for Arguments {
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
-        display_secret_option(f, "blocknative_api_key", blocknative_api_key)?;
+        display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
         writeln!(f, "base_tokens: {:?}", base_tokens)?;
         writeln!(f, "baseline_sources: {:?}", baseline_sources)?;
         writeln!(f, "pool_cache_blocks: {}", pool_cache_blocks)?;
@@ -395,7 +395,11 @@ impl Display for Arguments {
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
         writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
-        display_secret_option(f, "solver_competition_auth", solver_competition_auth)?;
+        display_secret_option(
+            f,
+            "solver_competition_auth",
+            solver_competition_auth.as_ref(),
+        )?;
         display_option(
             f,
             "network_block_interval",
