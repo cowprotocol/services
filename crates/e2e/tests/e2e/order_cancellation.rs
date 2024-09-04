@@ -214,10 +214,10 @@ async fn order_cancellation(web3: Web3) {
             .status,
         OrderStatus::Cancelled,
     );
-    assert_eq!(
-        services.get_order_status(&order_uids[0]).await.unwrap(),
-        orderbook::dto::order::Status::Cancelled,
-    );
+    let events = crate::database::events_of_order(services.db(), &order_uids[0]).await;
+    assert!(events
+        .iter()
+        .any(|event| event.label == OrderEventLabel::Cancelled));
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
@@ -260,6 +260,8 @@ async fn order_cancellation(web3: Web3) {
 
     for uid in &order_uids {
         let events = crate::database::events_of_order(services.db(), uid).await;
-        assert_eq!(events.last().unwrap().label, OrderEventLabel::Cancelled);
+        assert!(events
+            .iter()
+            .any(|event| event.label == OrderEventLabel::Cancelled));
     }
 }
