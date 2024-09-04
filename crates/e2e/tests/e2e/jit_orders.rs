@@ -112,6 +112,28 @@ async fn single_limit_order_test(web3: Web3) {
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
+    let (jit_order, jit_order_uid) = JitOrder {
+        owner: trader.address(),
+        sell: Asset {
+            amount: to_wei(10),
+            token: token.address(),
+        },
+        buy: Asset {
+            amount: to_wei(1),
+            token: onchain.contracts().weth.address(),
+        },
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        app_data: Default::default(),
+        receiver: solver.address(),
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(solver.private_key()).unwrap()),
+    );
+
     mock_solver.configure_solution(Some(Solution {
         id: 0,
         prices: HashMap::from([
@@ -120,27 +142,7 @@ async fn single_limit_order_test(web3: Web3) {
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
-                order: JitOrder {
-                    owner: trader.address(),
-                    sell: Asset {
-                        amount: to_wei(10),
-                        token: token.address(),
-                    },
-                    buy: Asset {
-                        amount: to_wei(1),
-                        token: onchain.contracts().weth.address(),
-                    },
-                    kind: OrderKind::Sell,
-                    partially_fillable: false,
-                    valid_to: model::time::now_in_epoch_seconds() + 300,
-                    app_data: Default::default(),
-                    receiver: solver.address(),
-                }
-                .sign(
-                    EcdsaSigningScheme::Eip712,
-                    &onchain.contracts().domain_separator,
-                    SecretKeyRef::from(&SecretKey::from_slice(solver.private_key()).unwrap()),
-                ),
+                order: jit_order,
                 executed_amount: to_wei(10),
                 fee: Some(0.into()),
             }),
@@ -190,4 +192,10 @@ async fn single_limit_order_test(web3: Web3) {
     })
     .await
     .unwrap();
+
+    // jit order can be found on /get_order
+    services.get_order(&jit_order_uid).await.unwrap();
+    // jit order can be found on /get_trades
+    let orders = services.get_trades(&jit_order_uid).await.unwrap();
+    assert_eq!(orders.len(), 1);
 }
