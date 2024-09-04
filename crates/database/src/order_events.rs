@@ -64,7 +64,7 @@ pub async fn insert_order_event(
         WHERE NOT EXISTS (
             SELECT 1
             FROM cte
-            WHERE label = $3
+            WHERE label = $3 OR label = 'cancelled'
         )
     "#;
     sqlx::query(QUERY)
