@@ -1596,8 +1596,9 @@ mod tests {
         async fn get_open_orders_by_time_and_uids(
             ex: &mut PgConnection,
             after_timestamp: DateTime<Utc>,
+            uids: &[OrderUid],
         ) -> HashSet<OrderUid> {
-            open_orders_by_time_and_uids(ex, Default::default(), after_timestamp)
+            open_orders_by_time_and_uids(ex, uids, after_timestamp)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -1624,22 +1625,55 @@ mod tests {
         };
         insert_order(&mut db, &order_c).await.unwrap();
 
+        // Check fetching by timestamp only.
+        // Early timestamp should cover all the orders.
         assert_eq!(
-            get_open_orders_by_time_and_uids(&mut db, now - Duration::seconds(1)).await,
+            get_open_orders_by_time_and_uids(
+                &mut db,
+                now - Duration::seconds(1),
+                Default::default()
+            )
+            .await,
             hashset![
                 ByteArray([1u8; 56]),
                 ByteArray([2u8; 56]),
                 ByteArray([3u8; 56]),
             ]
         );
+        // Only 2 orders created after `now`.
         assert_eq!(
-            get_open_orders_by_time_and_uids(&mut db, now).await,
+            get_open_orders_by_time_and_uids(&mut db, now, Default::default()).await,
             hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),]
         );
+        // Only 1 order created after `now + 10s`
         assert_eq!(
-            get_open_orders_by_time_and_uids(&mut db, now + Duration::seconds(10)).await,
+            get_open_orders_by_time_and_uids(
+                &mut db,
+                now + Duration::seconds(10),
+                Default::default()
+            )
+            .await,
             hashset![ByteArray([3u8; 56]),]
         );
+        // Even though no orders should be returned after the provided timestamp,
+        // specified order UIDs list helps to return all the requested orders.
+        assert_eq!(
+            get_open_orders_by_time_and_uids(
+                &mut db,
+                now + Duration::seconds(20),
+                &[
+                    ByteArray([1u8; 56]),
+                    ByteArray([2u8; 56]),
+                    ByteArray([3u8; 56]),
+                ]
+            )
+            .await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+            ]
+        )
     }
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
