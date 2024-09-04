@@ -39,7 +39,7 @@ async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
 }
 
 #[tokio::test]
-#[ignore]
+//#[ignore]
 async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
@@ -832,6 +832,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
             max_volume_factor: 0.01
         }
     );
-    assert_eq!(executed_protocol_fee.token, token_a.address());
+    assert_eq!(executed_protocol_fee.token, onchain.contracts().weth.address());
     assert!(executed_protocol_fee.amount > U256::zero());
 }
