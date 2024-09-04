@@ -4,7 +4,7 @@ use {
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
@@ -372,8 +372,9 @@ impl SolvableOrdersCache {
                 }
             };
 
-            let min_valid_to =
-                now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
+            let min_valid_to = now_in_epoch_seconds()
+                + u32::try_from(self.min_order_validity_period.as_secs())
+                    .context("min_order_validity_period is not u32")?;
             match cache_data {
                 Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => (
                     self.persistence
