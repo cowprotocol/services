@@ -404,10 +404,10 @@ pub async fn run(args: Arguments) {
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         persistence.clone(),
-        infra::banned::Users::new(
+        Arc::new(infra::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
             args.banned_users,
-        ),
+        )),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         native_price_estimator.clone(),

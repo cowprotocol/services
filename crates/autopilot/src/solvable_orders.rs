@@ -16,6 +16,7 @@ use {
         time::now_in_epoch_seconds,
     },
     number::conversions::u256_to_big_decimal,
+    order_validation::banned::{Onchain, UserMetadata},
     primitive_types::{H160, H256, U256},
     prometheus::{
         Histogram,
@@ -38,6 +39,7 @@ use {
     },
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
+        iter,
         sync::{Arc, Mutex, Weak},
         time::Duration,
     },
@@ -88,7 +90,7 @@ pub struct Metrics {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     persistence: infra::Persistence,
-    banned_users: banned::Users,
+    banned_users: Arc<banned::Users>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     cache: Mutex<Inner>,
@@ -113,7 +115,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         persistence: infra::Persistence,
-        banned_users: banned::Users,
+        banned_users: Arc<banned::Users>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_price_estimator: Arc<CachingNativePriceEstimator>,
@@ -126,7 +128,7 @@ impl SolvableOrdersCache {
         let self_ = Arc::new(Self {
             min_order_validity_period,
             persistence,
-            banned_users,
+            banned_users: banned_users.clone(),
             balance_fetcher,
             bad_token_detector,
             cache: Mutex::new(Inner {
@@ -141,6 +143,43 @@ impl SolvableOrdersCache {
             protocol_fees,
             cow_amm_registry,
         });
+
+        let solvable_orders_cache_clone = self_.clone();
+        banned_users.spawn_maintenance_task(move |cache| {
+            let solvable_orders_cache = solvable_orders_cache_clone.clone();
+            async move {
+                let mut expired_data: Vec<(H160, UserMetadata)> = Vec::new();
+                {
+                    let auction_participants: HashSet<_> = solvable_orders_cache
+                        .current_auction()
+                        .into_iter()
+                        .flat_map(|auction| {
+                            auction.orders.into_iter().flat_map(|order| {
+                                let owner = order.owner.0;
+                                let receiver = order.receiver.as_ref().map(|address| address.0);
+                                iter::once(owner).chain(receiver)
+                            })
+                        })
+                        .collect();
+
+                    let mut cache = cache.cache.write().await;
+                    let now = Instant::now();
+                    cache.retain(|address, metadata| {
+                        let expired = now
+                            .checked_duration_since(metadata.last_updated.into())
+                            .unwrap_or_default()
+                            >= Onchain::TTL;
+                        if expired {
+                            expired_data.push((*address, metadata.clone()));
+                        }
+
+                        auction_participants.contains(address) || !expired
+                    });
+                };
+                expired_data
+            }
+        });
+
         self_
     }
 
@@ -346,7 +385,7 @@ impl SolvableOrdersCache {
     ) -> Vec<Order> {
         let banned_user_orders_fut = async {
             let _timer = self.stage_timer("banned_user_filtering");
-            find_banned_user_orders(&orders, &self.banned_users).await
+            find_banned_user_orders(&orders, self.banned_users.clone()).await
         };
         let invalid_signature_orders_fut = async {
             let _timer = self.stage_timer("invalid_signature_filtering");
@@ -394,7 +433,10 @@ impl SolvableOrdersCache {
 
 /// Finds all orders whose owners or receivers are in the set of "banned"
 /// users.
-async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users) -> Vec<OrderUid> {
+async fn find_banned_user_orders(
+    orders: &[Order],
+    banned_users: Arc<banned::Users>,
+) -> Vec<OrderUid> {
     let banned = banned_users
         .banned(
             orders
@@ -1040,7 +1082,7 @@ mod tests {
 
         let banned_user_orders = find_banned_user_orders(
             &orders,
-            &order_validation::banned::Users::from_set(banned_users),
+            Arc::new(order_validation::banned::Users::from_set(banned_users)),
         )
         .await;
         assert_eq!(

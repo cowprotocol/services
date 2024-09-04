@@ -3,7 +3,6 @@ use {
     ethcontract::{errors::MethodError, futures::future::join_all, H160},
     std::{
         collections::{HashMap, HashSet},
-        ops::Div,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -17,9 +16,9 @@ pub struct Users {
 }
 
 #[derive(Clone)]
-struct UserMetadata {
-    is_banned: bool,
-    last_updated: Instant,
+pub struct UserMetadata {
+    pub is_banned: bool,
+    pub last_updated: Instant,
 }
 
 impl UserMetadata {
@@ -34,21 +33,20 @@ impl UserMetadata {
     }
 }
 
-struct Onchain {
+pub struct Onchain {
     contract: ChainalysisOracle,
-    cache: RwLock<HashMap<H160, UserMetadata>>,
+    pub cache: RwLock<HashMap<H160, UserMetadata>>,
 }
 
 impl Onchain {
+    const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
+    pub const TTL: Duration = Duration::from_secs(60 * 60);
+
     pub fn new(contract: ChainalysisOracle) -> Arc<Self> {
-        let onchain = Arc::new(Self {
+        Arc::new(Self {
             contract,
             cache: Default::default(),
-        });
-
-        onchain.clone().spawn_maintenance_task();
-
-        onchain
+        })
     }
 
     /// Spawns a background task that periodically checks the cache for expired
@@ -59,31 +57,18 @@ impl Onchain {
     /// addresses of long-lasting limit orders in the cache, which is the vast
     /// majority. And addresses that open market orders which get settled pretty
     /// quickly should get flushed out again.
-    fn spawn_maintenance_task(self: Arc<Self>) {
-        let cache_expiry = Duration::from_secs(60 * 60);
-        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(60));
+    pub fn spawn_maintenance_task<F, Fut>(self: Arc<Self>, calculate_expired_data: F)
+    where
+        F: Fn(Arc<Self>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Vec<(H160, UserMetadata)>> + Send,
+    {
         let detector = Arc::clone(&self);
 
         tokio::task::spawn(async move {
             loop {
                 let start = Instant::now();
 
-                let mut expired_data: Vec<(H160, UserMetadata)> = Vec::new();
-                {
-                    let mut cache = detector.cache.write().await;
-                    let now = Instant::now();
-                    cache.retain(|address, metadata| {
-                        let expired = now
-                            .checked_duration_since(metadata.last_updated)
-                            .unwrap_or_default()
-                            >= maintenance_timeout;
-                        if expired {
-                            expired_data.push((*address, metadata.clone()));
-                        }
-
-                        !expired
-                    });
-                };
+                let expired_data = calculate_expired_data(detector.clone()).await;
 
                 let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
                     let detector = detector.clone();
@@ -107,7 +92,7 @@ impl Onchain {
 
                 detector.insert_many_into_cache(results).await;
 
-                let remaining_sleep = maintenance_timeout
+                let remaining_sleep = Self::MAINTENANCE_TIMEOUT
                     .checked_sub(start.elapsed())
                     .unwrap_or_default();
                 tokio::time::sleep(remaining_sleep).await;
@@ -133,6 +118,16 @@ impl Users {
             list: HashSet::from_iter(banned_users),
             onchain: contract.map(Onchain::new),
         }
+    }
+
+    pub fn spawn_maintenance_task<F, Fut>(&self, calculate_expired_data: F)
+    where
+        F: Fn(Arc<Onchain>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Vec<(H160, UserMetadata)>> + Send,
+    {
+        if let Some(onchain) = self.onchain.clone() {
+            onchain.spawn_maintenance_task(calculate_expired_data)
+        };
     }
 
     /// Creates a new `Users` instance that passes all addresses.
