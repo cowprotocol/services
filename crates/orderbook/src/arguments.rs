@@ -70,16 +70,6 @@ pub struct Arguments {
     )]
     pub max_limit_order_validity_period: Duration,
 
-    /// The amount of time in seconds a classification of a token into good or
-    /// bad is valid for.
-    #[clap(
-        long,
-        env,
-        default_value = "10m",
-        value_parser = humantime::parse_duration,
-    )]
-    pub token_quality_cache_expiry: Duration,
-
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
@@ -162,7 +152,6 @@ impl std::fmt::Display for Arguments {
             min_order_validity_period,
             max_order_validity_period,
             max_limit_order_validity_period,
-            token_quality_cache_expiry,
             unsupported_tokens,
             banned_users,
             allowed_tokens,
@@ -203,11 +192,6 @@ impl std::fmt::Display for Arguments {
             f,
             "max_limit_order_validity_period: {:?}",
             max_limit_order_validity_period
-        )?;
-        writeln!(
-            f,
-            "token_quality_cache_expiry: {:?}",
-            token_quality_cache_expiry
         )?;
         writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
         writeln!(f, "banned_users: {:?}", banned_users)?;
