@@ -154,6 +154,13 @@ pub struct FeeBreakdown {
     pub total: eth::SellTokenAmount,
     /// Breakdown of protocol fees. Executed protocol fees are in the same order
     /// as policies are defined for an order.
-    /// Expressed in surplus token
-    pub protocol: Vec<(eth::Asset, fee::Policy)>,
+    pub protocol: Vec<ExecutedProtocolFee>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutedProtocolFee {
+    /// Policy that was used to calculate the fee.
+    pub policy: fee::Policy,
+    /// Fee that was taken for the trade, in surplus token.
+    pub fee: eth::Asset,
 }

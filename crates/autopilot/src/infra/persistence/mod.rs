@@ -496,10 +496,14 @@ impl Persistence {
                     .map(|fee| {
                         fee.protocol
                             .into_iter()
-                            .map(|(fee, _)| database::order_execution::FeeAsset {
-                                token: ByteArray(fee.token.0 .0),
-                                amount: u256_to_big_decimal(&fee.amount.0),
-                            })
+                            .map(
+                                |executed_protocol_fee| database::order_execution::FeeAsset {
+                                    token: ByteArray(executed_protocol_fee.fee.token.0 .0),
+                                    amount: u256_to_big_decimal(
+                                        &executed_protocol_fee.fee.amount.0,
+                                    ),
+                                },
+                            )
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
