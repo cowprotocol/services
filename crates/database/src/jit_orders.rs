@@ -16,7 +16,7 @@ use {
     },
 };
 
-pub async fn single_full_jit_order(
+pub async fn get_by_id(
     ex: &mut PgConnection,
     uid: &OrderUid,
 ) -> Result<Option<orders::FullOrder>, sqlx::Error> {
@@ -32,7 +32,7 @@ COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o
 " FROM jit_orders o",
 " WHERE o.uid = $1 ",
         );
-    sqlx::query_as::<_, FullJitOrder>(QUERY)
+    sqlx::query_as::<_, JitOrderWithExecutions>(QUERY)
         .bind(uid)
         .fetch_optional(ex)
         .await
@@ -122,25 +122,7 @@ pub async fn upsert_orders(
 
     query_builder.push(
         r#"
-        ON CONFLICT (block_number, log_index) DO UPDATE 
-        SET uid = EXCLUDED.uid,
-            owner = EXCLUDED.owner,
-            creation_timestamp = EXCLUDED.creation_timestamp,
-            sell_token = EXCLUDED.sell_token,
-            buy_token = EXCLUDED.buy_token,
-            sell_amount = EXCLUDED.sell_amount,
-            buy_amount = EXCLUDED.buy_amount,
-            valid_to = EXCLUDED.valid_to,
-            app_data = EXCLUDED.app_data,
-            fee_amount = EXCLUDED.fee_amount,
-            kind = EXCLUDED.kind,
-            partially_fillable = EXCLUDED.partially_fillable,
-            signature = EXCLUDED.signature,
-            receiver = EXCLUDED.receiver,
-            signing_scheme = EXCLUDED.signing_scheme,
-            sell_token_balance = EXCLUDED.sell_token_balance,
-            buy_token_balance = EXCLUDED.buy_token_balance;
-        "#,
+        ON CONFLICT DO NOTHING"#,
     );
 
     let query = query_builder.build();
@@ -152,7 +134,7 @@ pub async fn upsert_orders(
 /// Jit order combined with trades table and order_execution table, suitable for
 /// API responses.
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
-struct FullJitOrder {
+struct JitOrderWithExecutions {
     pub uid: OrderUid,
     pub owner: Address,
     pub creation_timestamp: DateTime<Utc>,
@@ -176,8 +158,8 @@ struct FullJitOrder {
     pub executed_surplus_fee: BigDecimal,
 }
 
-impl From<FullJitOrder> for orders::FullOrder {
-    fn from(jit_order: FullJitOrder) -> Self {
+impl From<JitOrderWithExecutions> for orders::FullOrder {
+    fn from(jit_order: JitOrderWithExecutions) -> Self {
         orders::FullOrder {
             uid: jit_order.uid,
             owner: jit_order.owner,
