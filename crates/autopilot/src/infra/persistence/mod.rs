@@ -10,6 +10,7 @@ use {
     chrono::Utc,
     database::{
         order_events::OrderEventLabel,
+        order_execution::FeeAsset,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
             SellTokenSource as DbSellTokenSource,
@@ -496,14 +497,10 @@ impl Persistence {
                     .map(|fee| {
                         fee.protocol
                             .into_iter()
-                            .map(
-                                |executed_protocol_fee| database::order_execution::FeeAsset {
-                                    token: ByteArray(executed_protocol_fee.fee.token.0 .0),
-                                    amount: u256_to_big_decimal(
-                                        &executed_protocol_fee.fee.amount.0,
-                                    ),
-                                },
-                            )
+                            .map(|executed| FeeAsset {
+                                token: ByteArray(executed.fee.token.0 .0),
+                                amount: u256_to_big_decimal(&executed.fee.amount.0),
+                            })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();

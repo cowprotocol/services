@@ -39,7 +39,7 @@ async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
 }
 
 #[tokio::test]
-//#[ignore]
+#[ignore]
 async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
