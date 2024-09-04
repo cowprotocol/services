@@ -237,7 +237,7 @@ pub struct Arguments {
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
 
-    /// The amount of time in seconds a classification of a token into good or
+    /// The amount of time a classification of a token into good or
     /// bad is valid for.
     #[clap(
         long,
