@@ -2,7 +2,7 @@ use {
     app_data::AppDataHash,
     ethcontract::common::abi::ethereum_types::Address,
     model::{
-        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+        order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::EcdsaSigningScheme,
         DomainSeparator,
     },
@@ -45,22 +45,28 @@ impl JitOrder {
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
         key: SecretKeyRef,
-    ) -> solvers_dto::solution::JitOrder {
+    ) -> (solvers_dto::solution::JitOrder, OrderUid) {
         let data = self.data();
-        let signature = match model::signature::EcdsaSignature::sign(
+        let signature = model::signature::EcdsaSignature::sign(
             signing_scheme,
             domain,
             &data.hash_struct(),
             key,
         )
-        .to_signature(signing_scheme)
-        {
+        .to_signature(signing_scheme);
+        let order_uid = data.uid(
+            domain,
+            &signature
+                .recover_owner(&signature.to_bytes(), domain, &data.hash_struct())
+                .unwrap(),
+        );
+        let signature = match signature {
             model::signature::Signature::Eip712(signature) => signature.to_bytes().to_vec(),
             model::signature::Signature::EthSign(signature) => signature.to_bytes().to_vec(),
             model::signature::Signature::Eip1271(signature) => signature,
             model::signature::Signature::PreSign => panic!("Not supported PreSigned JIT orders"),
         };
-        solvers_dto::solution::JitOrder {
+        let order = solvers_dto::solution::JitOrder {
             sell_token: data.sell_token,
             buy_token: data.buy_token,
             receiver: data.receiver.unwrap_or_default(),
@@ -86,6 +92,7 @@ impl JitOrder {
                 EcdsaSigningScheme::EthSign => solvers_dto::solution::SigningScheme::EthSign,
             },
             signature,
-        }
+        };
+        (order, order_uid)
     }
 }

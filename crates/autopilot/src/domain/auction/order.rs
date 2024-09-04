@@ -155,11 +155,49 @@ pub enum Signature {
     PreSign,
 }
 
+impl Signature {
+    pub fn scheme(&self) -> SigningScheme {
+        match self {
+            Signature::Eip712(_) => SigningScheme::Eip712,
+            Signature::EthSign(_) => SigningScheme::EthSign,
+            Signature::Eip1271(_) => SigningScheme::Eip1271,
+            Signature::PreSign => SigningScheme::PreSign,
+        }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
+            Self::Eip1271(signature) => signature.clone(),
+            Self::PreSign => Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
+pub enum SigningScheme {
+    Eip712,
+    EthSign,
+    Eip1271,
+    PreSign,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct EcdsaSignature {
     pub r: H256,
     pub s: H256,
     pub v: u8,
+}
+
+impl EcdsaSignature {
+    /// r + s + v
+    pub fn to_bytes(self) -> [u8; 65] {
+        let mut bytes = [0u8; 65];
+        bytes[..32].copy_from_slice(self.r.as_bytes());
+        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[64] = self.v;
+        bytes
+    }
 }
 
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in

@@ -7,6 +7,7 @@ pub mod byte_array;
 pub mod ethflow_orders;
 pub mod events;
 pub mod fee_policies;
+pub mod jit_orders;
 pub mod onchain_broadcasted_orders;
 pub mod onchain_invalidations;
 pub mod order_events;
@@ -67,6 +68,7 @@ pub const TABLES: &[&str] = &[
     "auction_prices",
     "auction_participants",
     "app_data",
+    "jit_orders",
 ];
 
 /// The names of potentially big volume tables we use in the db.
