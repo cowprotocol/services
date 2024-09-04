@@ -8,7 +8,20 @@ use {
     anyhow::Context,
     boundary::database::byte_array::ByteArray,
     chrono::Utc,
-    database::{order_events::OrderEventLabel, settlement_observations::Observation},
+    database::{
+        order_events::OrderEventLabel,
+        orders::{
+            BuyTokenDestination as DbBuyTokenDestination,
+            SellTokenSource as DbSellTokenSource,
+            SigningScheme as DbSigningScheme,
+        },
+        settlement_observations::Observation,
+    },
+    domain::auction::order::{
+        BuyTokenDestination as DomainBuyTokenDestination,
+        SellTokenSource as DomainSellTokenSource,
+        SigningScheme as DomainSigningScheme,
+    },
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::{H160, H256},
     std::{
@@ -436,9 +449,10 @@ impl Persistence {
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
             let gas_price = settlement.gas_price();
-            let surplus = settlement.native_surplus();
-            let fee = settlement.native_fee();
+            let surplus = settlement.surplus_in_ether();
+            let fee = settlement.fee_in_ether();
             let order_fees = settlement.order_fees();
+            let jit_orders = settlement.jit_orders();
 
             tracing::debug!(
                 ?auction_id,
@@ -448,6 +462,7 @@ impl Persistence {
                 ?surplus,
                 ?fee,
                 ?order_fees,
+                ?jit_orders,
                 "settlement update",
             );
 
@@ -498,6 +513,54 @@ impl Persistence {
                 )
                 .await?;
             }
+
+            database::jit_orders::insert(
+                &mut ex,
+                &jit_orders
+                    .into_iter()
+                    .map(|jit_order| database::jit_orders::JitOrder {
+                        block_number,
+                        log_index,
+                        uid: ByteArray(jit_order.uid.0),
+                        owner: ByteArray(jit_order.uid.owner().0 .0),
+                        creation_timestamp: chrono::DateTime::from_timestamp(
+                            i64::from(jit_order.created),
+                            0,
+                        )
+                        .unwrap_or_default(),
+                        sell_token: ByteArray(jit_order.sell.token.0 .0),
+                        buy_token: ByteArray(jit_order.buy.token.0 .0),
+                        sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
+                        buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
+                        valid_to: i64::from(jit_order.valid_to),
+                        app_data: ByteArray(jit_order.app_data.0),
+                        fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
+                        kind: match jit_order.side {
+                            domain::auction::order::Side::Buy => database::orders::OrderKind::Buy,
+                            domain::auction::order::Side::Sell => database::orders::OrderKind::Sell,
+                        },
+                        partially_fillable: jit_order.partially_fillable,
+                        signature: jit_order.signature.to_bytes(),
+                        receiver: ByteArray(jit_order.receiver.0 .0),
+                        signing_scheme: match jit_order.signature.scheme() {
+                            DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
+                            DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
+                            DomainSigningScheme::Eip1271 => DbSigningScheme::Eip1271,
+                            DomainSigningScheme::PreSign => DbSigningScheme::PreSign,
+                        },
+                        sell_token_balance: match jit_order.sell_token_balance {
+                            DomainSellTokenSource::Erc20 => DbSellTokenSource::Erc20,
+                            DomainSellTokenSource::External => DbSellTokenSource::External,
+                            DomainSellTokenSource::Internal => DbSellTokenSource::Internal,
+                        },
+                        buy_token_balance: match jit_order.buy_token_balance {
+                            DomainBuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
+                            DomainBuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
+                        },
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
         }
 
         ex.commit().await?;
