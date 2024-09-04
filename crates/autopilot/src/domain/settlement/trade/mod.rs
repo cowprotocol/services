@@ -67,18 +67,12 @@ impl Trade {
         math::Trade::from(self).fee_in_ether(prices)
     }
 
-    /// Total fee (protocol fee + network fee). Equal to a surplus difference
-    /// before and after applying the fees.
-    pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, math::Error> {
-        math::Trade::from(self).fee_in_sell_token()
-    }
-
-    /// Protocol fees are defined by fee policies attached to the order.
-    pub fn protocol_fees_in_sell_token(
-        &self,
-        auction: &super::Auction,
-    ) -> Result<Vec<(eth::TokenAddress, eth::SellTokenAmount, fee::Policy)>, math::Error> {
-        math::Trade::from(self).protocol_fees_in_sell_token(auction)
+    /// All fees broke down into protocol fees per policy and total fee.
+    pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
+        let math_trade = math::Trade::from(self);
+        let total = math_trade.fee_in_sell_token()?;
+        let protocol = math_trade.protocol_fees(auction)?;
+        Ok(FeeBreakdown { total, protocol })
     }
 
     pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
@@ -154,25 +148,12 @@ pub struct Jit {
 /// Fee per trade in a solution. These fees are taken for the execution of the
 /// trade.
 #[derive(Debug, Clone)]
-pub struct ExecutedFee {
-    /// Gas fee spent to bring the order onchain
-    pub network: eth::SellTokenAmount,
+pub struct FeeBreakdown {
+    /// Total fee spent to bring the order onchain (network fee + protocol fee)
+    /// TODO: express in surplus token
+    pub total: eth::SellTokenAmount,
     /// Breakdown of protocol fees. Executed protocol fees are in the same order
     /// as policies are defined for an order.
-    pub protocol: Vec<(ExecutedProtocolFee, fee::Policy)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExecutedProtocolFee {
-    /// Token in which the fee was paid
-    pub token: eth::TokenAddress,
-    /// Amount of the fee
-    pub amount: eth::SellTokenAmount,
-}
-
-impl ExecutedFee {
-    /// Total fee paid for the trade.
-    pub fn total(&self) -> eth::SellTokenAmount {
-        self.network + self.protocol.iter().map(|(fee, _)| fee.amount).sum()
-    }
+    /// Expressed in surplus token
+    pub protocol: Vec<(eth::Asset, fee::Policy)>,
 }

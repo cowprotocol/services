@@ -451,7 +451,7 @@ impl Persistence {
             let gas_price = settlement.gas_price();
             let surplus = settlement.surplus_in_ether();
             let fee = settlement.fee_in_ether();
-            let order_fees = settlement.order_fees();
+            let fee_breakdown = settlement.fee_breakdown();
             let jit_orders = settlement.jit_orders();
 
             tracing::debug!(
@@ -461,7 +461,7 @@ impl Persistence {
                 ?gas_price,
                 ?surplus,
                 ?fee,
-                ?order_fees,
+                ?fee_breakdown,
                 ?jit_orders,
                 "settlement update",
             );
@@ -481,16 +481,16 @@ impl Persistence {
 
             store_order_events(
                 &mut ex,
-                order_fees.keys().cloned().collect(),
+                fee_breakdown.keys().cloned().collect(),
                 OrderEventLabel::Traded,
                 Utc::now(),
             )
             .await;
 
-            for (order, order_fee) in order_fees {
+            for (order, order_fee) in fee_breakdown {
                 let executed_fee = order_fee
                     .as_ref()
-                    .map(|fee| u256_to_big_decimal(&fee.total().0))
+                    .map(|fee| u256_to_big_decimal(&fee.total.0))
                     .unwrap_or_default();
                 let executed_protocol_fees = order_fee
                     .map(|fee| {

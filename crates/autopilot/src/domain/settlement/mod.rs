@@ -4,9 +4,7 @@
 //! a form of settlement transaction.
 
 use {
-    self::trade::{ExecutedFee, ExecutedProtocolFee},
     crate::{domain, domain::eth, infra},
-    num::Saturating,
     std::collections::HashMap,
 };
 
@@ -86,28 +84,10 @@ impl Settlement {
     }
 
     /// Per order fees breakdown. Contains all orders from the settlement
-    pub fn order_fees(&self) -> HashMap<domain::OrderUid, Option<trade::ExecutedFee>> {
+    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, Option<trade::FeeBreakdown>> {
         self.trades
             .iter()
-            .map(|trade| {
-                let total = trade.fee_in_sell_token();
-                let protocol = trade.protocol_fees_in_sell_token(&self.auction);
-                let fee = match (total, protocol) {
-                    (Ok(total), Ok(protocol)) => {
-                        let network =
-                            total.saturating_sub(protocol.iter().map(|(_, fee, _)| *fee).sum());
-                        let protocol = protocol
-                            .into_iter()
-                            .map(|(token, amount, policy)| {
-                                (ExecutedProtocolFee { token, amount }, policy)
-                            })
-                            .collect();
-                        Some(ExecutedFee { protocol, network })
-                    }
-                    _ => None,
-                };
-                (*trade.uid(), fee)
-            })
+            .map(|trade| (*trade.uid(), trade.fee_breakdown(&self.auction).ok()))
             .collect()
     }
 
