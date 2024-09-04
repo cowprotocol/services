@@ -232,7 +232,6 @@ pub enum ExecutionTime {
 /// One row in the `interactions` table.
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Interaction {
-    pub order_uid: OrderUid,
     pub target: Address,
     pub value: BigDecimal,
     pub data: Vec<u8>,
@@ -982,7 +981,6 @@ mod tests {
             ..Default::default()
         };
         let post_interaction_1 = Interaction {
-            order_uid: order.uid,
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
@@ -1032,7 +1030,6 @@ mod tests {
         assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
 
         let post_interaction_overwrite_0 = Interaction {
-            order_uid: order.uid,
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
@@ -1074,7 +1071,6 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let pre_interaction_0 = Interaction::default();
         let pre_interaction_1 = Interaction {
-            order_uid: order.uid,
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
@@ -1124,7 +1120,6 @@ mod tests {
         assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
 
         let pre_interaction_overwrite_0 = Interaction {
-            order_uid: order.uid,
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],

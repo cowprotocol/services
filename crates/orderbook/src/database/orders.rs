@@ -146,7 +146,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .enumerate()
         .map(
             |(index, (interaction, execution))| database::orders::Interaction {
-                order_uid,
                 target: ByteArray(interaction.target.0),
                 value: u256_to_big_decimal(&interaction.value),
                 data: interaction.call_data.clone(),
