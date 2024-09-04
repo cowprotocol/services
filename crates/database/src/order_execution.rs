@@ -20,7 +20,10 @@ pub async fn save(
     executed_protocol_fees: &[FeeAsset],
 ) -> Result<(), sqlx::Error> {
     let (protocol_fee_tokens, protocol_fee_amounts) = executed_protocol_fees.iter().fold(
-        (Vec::new(), Vec::new()),
+        (
+            Vec::with_capacity(executed_protocol_fees.len()),
+            Vec::with_capacity(executed_protocol_fees.len()),
+        ),
         |(mut tokens, mut amounts), fee| {
             tokens.push(fee.token);
             amounts.push(fee.amount.clone());
