@@ -35,6 +35,10 @@ pub fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
 }
 
+pub fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
+    format!("/api/v1/transactions/{tx_hash:?}/orders")
+}
+
 pub struct ServicesBuilder {
     timeout: Duration,
 }
@@ -472,6 +476,26 @@ impl<'a> Services<'a> {
             StatusCode::OK => {
                 Ok(serde_json::from_str::<orderbook::dto::order::Status>(&body).unwrap())
             }
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_orders_for_tx(
+        &self,
+        tx_hash: &H256,
+    ) -> Result<Vec<Order>, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{}", orders_for_tx_endpoint(tx_hash)))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err((code, body)),
         }
     }
