@@ -52,11 +52,11 @@ impl Onchain {
     /// Spawns a background task that periodically checks the cache for expired
     /// entries and re-run checks for them.
     ///
-    /// Removes from the cache entries that are expired and not part of the
-    /// current auction. This is made to keep addresses of long-lasting
-    /// limit orders in the cache, which is the vast majority. And addresses
-    /// that open market orders which get settled pretty quickly should get
-    /// flushed out again.
+    /// Removes from the cache entries that are expired and not limit order
+    /// participants and not part of the current auction. This is made to keep
+    /// addresses of long-lasting limit orders in the cache, which is the vast
+    /// majority. And addresses that open market orders which get settled pretty
+    /// quickly should get flushed out again.
     pub fn spawn_maintenance_task<F, Fut>(self: Arc<Self>, calculate_expired_data: F)
     where
         F: Fn(Arc<Self>) -> Fut + Send + Sync + 'static,
