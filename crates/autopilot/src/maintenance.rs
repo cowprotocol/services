@@ -3,7 +3,6 @@ use {
         arguments::RunLoopMode,
         boundary::events::settlement::{GPv2SettlementContract, Indexer},
         database::{
-            ethflow_events::event_retriever::EthFlowRefundRetriever,
             onchain_order_events::{
                 ethflow_events::{EthFlowData, EthFlowDataForDb},
                 event_retriever::CoWSwapOnchainOrdersContract,
@@ -36,8 +35,6 @@ pub struct Maintenance {
     settlement_indexer: EventUpdater<Indexer, GPv2SettlementContract>,
     /// Indexes ethflow orders (orders selling native ETH).
     ethflow_indexer: Option<EthflowIndexer>,
-    /// Indexes refunds issued for unsettled ethflow orders.
-    refund_indexer: Option<EventUpdater<Postgres, EthFlowRefundRetriever>>,
     /// Used for periodic cleanup tasks to not have the DB overflow with old
     /// data.
     db_cleanup: Postgres,
@@ -58,7 +55,6 @@ impl Maintenance {
             settlement_indexer,
             db_cleanup,
             cow_amm_indexer: Default::default(),
-            refund_indexer: None,
             ethflow_indexer: None,
             last_processed: Default::default(),
         }
@@ -98,7 +94,6 @@ impl Maintenance {
         tokio::try_join!(
             self.settlement_indexer.run_maintenance(),
             self.db_cleanup.run_maintenance(),
-            self.index_refunds(),
             self.index_ethflow_orders(),
             futures::future::try_join_all(
                 self.cow_amm_indexer
@@ -113,24 +108,12 @@ impl Maintenance {
 
     /// Registers all maintenance tasks that are necessary to correctly support
     /// ethflow orders.
-    pub fn with_ethflow(
-        &mut self,
-        ethflow_indexer: EthflowIndexer,
-        refund_indexer: EventUpdater<Postgres, EthFlowRefundRetriever>,
-    ) {
+    pub fn with_ethflow(&mut self, ethflow_indexer: EthflowIndexer) {
         self.ethflow_indexer = Some(ethflow_indexer);
-        self.refund_indexer = Some(refund_indexer);
     }
 
     pub fn with_cow_amms(&mut self, registry: &cow_amm::Registry) {
         self.cow_amm_indexer = registry.maintenance_tasks().clone();
-    }
-
-    async fn index_refunds(&self) -> Result<()> {
-        if let Some(indexer) = &self.refund_indexer {
-            return indexer.run_maintenance().await;
-        }
-        Ok(())
     }
 
     async fn index_ethflow_orders(&self) -> Result<()> {

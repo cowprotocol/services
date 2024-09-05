@@ -41,6 +41,7 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         http_client::HttpClientFactory,
+        maintenance::ServiceMaintenance,
         metrics::LivenessChecking,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory},
@@ -283,7 +284,8 @@ pub async fn run(args: Arguments) {
                 finder,
                 settlement_contract: eth.contracts().settlement().address(),
             }),
-            args.token_quality_cache_expiry,
+            args.shared.token_quality_cache_expiry,
+            args.shared.token_quality_cache_prefetch_time,
         )
     });
     let bad_token_detector = Arc::new(
@@ -510,7 +512,13 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Should be able to initialize event updater. Database read issues?");
 
-        maintenance.with_ethflow(onchain_order_indexer, refund_event_handler);
+        maintenance.with_ethflow(onchain_order_indexer);
+        // refunds are not critical for correctness and can therefore be indexed
+        // sporadically in a background task
+        let service_maintainer = ServiceMaintenance::new(vec![Arc::new(refund_event_handler)]);
+        tokio::task::spawn(
+            service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
+        );
     }
 
     let run = RunLoop {

@@ -6,7 +6,10 @@ use {
             auction::{self, order},
             eth,
             fee,
-            settlement,
+            settlement::{
+                transaction::{ClearingPrices, Prices},
+                {self},
+            },
         },
         util::conv::U256Ext,
     },
@@ -14,12 +17,11 @@ use {
     num::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
 };
 
-/// A single trade executed on-chain, as part of the [`settlement::Solution`].
-///
-/// Referenced as [`settlement::solution::Trade`] in the codebase.
+/// A trade containing bare minimum of onchain information required to calculate
+/// the surplus, fees and score.
 #[derive(Debug, Clone)]
-pub struct Trade {
-    order_uid: domain::OrderUid,
+pub(super) struct Trade {
+    uid: domain::OrderUid,
     sell: eth::Asset,
     buy: eth::Asset,
     side: order::Side,
@@ -28,33 +30,11 @@ pub struct Trade {
 }
 
 impl Trade {
-    pub fn new(
-        order_uid: domain::OrderUid,
-        sell: eth::Asset,
-        buy: eth::Asset,
-        side: order::Side,
-        executed: order::TargetAmount,
-        prices: Prices,
-    ) -> Self {
-        Self {
-            order_uid,
-            sell,
-            buy,
-            side,
-            executed,
-            prices,
-        }
-    }
-
-    pub fn order_uid(&self) -> &domain::OrderUid {
-        &self.order_uid
-    }
-
     /// CIP38 score defined as surplus + protocol fee
     ///
     /// Denominated in NATIVE token
     pub fn score(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        Ok(self.native_surplus(auction)? + self.native_protocol_fee(auction)?)
+        Ok(self.surplus_in_ether(&auction.prices)? + self.protocol_fee_in_ether(auction)?)
     }
 
     /// A general surplus function.
@@ -118,16 +98,9 @@ impl Trade {
 
     /// Surplus based on custom clearing prices returns the surplus after all
     /// fees have been applied.
-    ///
-    /// Denominated in NATIVE token
-    pub fn native_surplus(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
-        if !auction.is_surplus_capturing(&self.order_uid) {
-            return Ok(Zero::zero());
-        }
-
+    pub fn surplus_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
         let surplus = self.surplus_over_limit_price()?;
-        let price = auction
-            .prices
+        let price = prices
             .get(&surplus.token)
             .ok_or(Error::MissingPrice(surplus.token))?;
 
@@ -136,10 +109,8 @@ impl Trade {
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    ///
-    /// Denominated in NATIVE token
-    pub fn native_fee(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let total_fee = self.total_fee_in_sell_token()?;
+    pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
+        let total_fee = self.fee_in_sell_token()?;
         let price = prices
             .get(&self.sell.token)
             .ok_or(Error::MissingPrice(self.sell.token))?;
@@ -162,9 +133,7 @@ impl Trade {
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
-    ///
-    /// Denominated in SELL token
-    pub fn total_fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
+    pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
         let fee = self.fee()?;
         self.fee_into_sell_token(fee.amount)
     }
@@ -186,8 +155,6 @@ impl Trade {
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
-    ///
-    /// Denominated in SELL token
     pub fn protocol_fees_in_sell_token(
         &self,
         auction: &settlement::Auction,
@@ -207,7 +174,7 @@ impl Trade {
     ) -> Result<Vec<(eth::Asset, fee::Policy)>, Error> {
         let policies = auction
             .orders
-            .get(&self.order_uid)
+            .get(&self.uid)
             .map(|value| value.as_slice())
             .unwrap_or_default();
         let mut current_trade = self.clone();
@@ -456,9 +423,7 @@ impl Trade {
     }
 
     /// Protocol fee is defined by fee policies attached to the order.
-    ///
-    /// Denominated in NATIVE token
-    fn native_protocol_fee(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
+    fn protocol_fee_in_ether(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
         self.protocol_fees(auction)?
             .into_iter()
             .map(|(fee, _)| {
@@ -479,24 +444,10 @@ impl Trade {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Prices {
-    pub uniform: ClearingPrices,
-    /// Adjusted uniform prices to account for fees (gas cost and protocol fees)
-    pub custom: ClearingPrices,
-}
-
 #[derive(Clone, Debug)]
 pub struct PriceLimits {
     pub sell: eth::TokenAmount,
     pub buy: eth::TokenAmount,
-}
-
-/// Uniform clearing prices at which the trade was executed.
-#[derive(Debug, Clone, Copy)]
-pub struct ClearingPrices {
-    pub sell: eth::U256,
-    pub buy: eth::U256,
 }
 
 /// This function adjusts quote amounts to directly compare them with the
@@ -576,6 +527,40 @@ struct Quote {
     pub fee: eth::TokenAmount,
 }
 
+impl From<&super::Fulfillment> for Trade {
+    fn from(fulfillment: &super::Fulfillment) -> Self {
+        Self {
+            uid: fulfillment.uid,
+            sell: fulfillment.sell,
+            buy: fulfillment.buy,
+            side: fulfillment.side,
+            executed: fulfillment.executed,
+            prices: fulfillment.prices,
+        }
+    }
+}
+
+impl From<&super::Jit> for Trade {
+    fn from(jit: &super::Jit) -> Self {
+        Self {
+            uid: jit.uid,
+            sell: jit.sell,
+            buy: jit.buy,
+            side: jit.side,
+            executed: jit.executed,
+            prices: jit.prices,
+        }
+    }
+}
+
+impl From<&super::Trade> for Trade {
+    fn from(trade: &super::Trade) -> Self {
+        match trade {
+            super::Trade::Fulfillment(fulfillment) => fulfillment.into(),
+            super::Trade::Jit(jit) => jit.into(),
+        }
+    }
+}
 pub mod error {
     use crate::domain::eth;
 
