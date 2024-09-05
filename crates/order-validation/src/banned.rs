@@ -21,18 +21,6 @@ struct UserMetadata {
     last_updated: Instant,
 }
 
-impl UserMetadata {
-    pub fn with_banned(mut self, banned: bool) -> Self {
-        self.is_banned = banned;
-        self
-    }
-
-    pub fn with_last_updated(mut self, last_updated: Instant) -> Self {
-        self.last_updated = last_updated;
-        self
-    }
-}
-
 struct Onchain {
     contract: ChainalysisOracle,
     cache: RwLock<HashMap<H160, UserMetadata>>,
@@ -83,7 +71,13 @@ impl Onchain {
                     let detector = detector.clone();
                     async move {
                         match detector.fetch(address).await {
-                            Ok(result) => Some((address, metadata.with_banned(result))),
+                            Ok(result) => Some((
+                                address,
+                                UserMetadata {
+                                    is_banned: result,
+                                    ..metadata
+                                },
+                            )),
                             Err(err) => {
                                 tracing::warn!(
                                     ?address,
@@ -113,7 +107,13 @@ impl Onchain {
         let mut cache = self.cache.write().await;
         let now = Instant::now();
         for (address, metadata) in addresses {
-            cache.insert(address, metadata.with_last_updated(now));
+            cache.insert(
+                address,
+                UserMetadata {
+                    last_updated: now,
+                    ..metadata
+                },
+            );
         }
     }
 }
