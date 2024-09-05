@@ -787,13 +787,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await
         .unwrap_err();
 
-    // Create liquidity
-    onchain
-        .seed_weth_uni_v2_pools([&token_a].iter().copied(), to_wei(1000), to_wei(1000))
-        .await;
-
-    // Drive solution
-    tracing::info!("Waiting for trade.");
     let balance_before = onchain
         .contracts()
         .weth
@@ -801,29 +794,38 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .call()
         .await
         .unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
+    // Create liquidity
+    onchain
+        .seed_weth_uni_v2_pools([&token_a].iter().copied(), to_wei(1000), to_wei(1000))
+        .await;
 
-    let balance_after = onchain
-        .contracts()
-        .weth
-        .balance_of(trader_a.address())
-        .call()
-        .await
-        .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+    // Drive solution
+    tracing::info!("Waiting for trade.");
 
-    let trades = services.get_trades(&order_id).await.unwrap();
-    assert_eq!(
-        trades.first().unwrap().fee_policies,
-        vec![model::fee_policy::FeePolicy::Surplus {
-            factor: 0.5,
-            max_volume_factor: 0.01
-        }],
-    );
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = onchain
+            .contracts()
+            .weth
+            .balance_of(trader_a.address())
+            .call()
+            .await
+            .unwrap();
+        balance_after.checked_sub(balance_before).unwrap() >= to_wei(5)
+    })
+    .await
+    .unwrap();
+
+    wait_for_condition(TIMEOUT, || async {
+        let trades = services.get_trades(&order_id).await.unwrap();
+        trades.first().is_some_and(|trade| {
+            trade.fee_policies
+                == vec![model::fee_policy::FeePolicy::Surplus {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                }]
+        })
+    })
+    .await
+    .unwrap();
 }
