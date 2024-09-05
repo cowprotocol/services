@@ -53,11 +53,7 @@ impl Onchain {
     /// Spawns a background task that periodically checks the cache for expired
     /// entries and re-run checks for them.
     ///
-    /// Removes from the cache entries that are expired and not limit order
-    /// participants and not part of the current auction. This is made to keep
-    /// addresses of long-lasting limit orders in the cache, which is the vast
-    /// majority. And addresses that open market orders which get settled pretty
-    /// quickly should get flushed out again.
+    /// Doesn't clean the cache, so it can grow indefinitely.
     fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = Duration::from_secs(60 * 60);
         let maintenance_timeout = Duration::from_secs(60);
