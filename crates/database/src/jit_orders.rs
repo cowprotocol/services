@@ -58,7 +58,11 @@ pub async fn get_by_tx(
         t.block_number = (SELECT block_number FROM settlement) AND
         -- BETWEEN is inclusive
         t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM \
-         settlement) ",
+         settlement) 
+        AND NOT EXISTS (
+            SELECT 1 FROM orders ord
+            WHERE ord.uid = o.uid)
+        ",
     );
     sqlx::query_as::<_, JitOrderWithExecutions>(QUERY)
         .bind(tx_hash)
