@@ -72,7 +72,7 @@ impl Onchain {
                             let expired = now
                                 .checked_duration_since(metadata.last_updated)
                                 .unwrap_or_default()
-                                >= cache_expiry;
+                                >= cache_expiry - maintenance_timeout;
 
                             expired.then_some((*address, metadata.clone()))
                         })
