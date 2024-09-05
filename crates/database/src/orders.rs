@@ -574,7 +574,7 @@ pub async fn single_full_order(
 // this, a tx hash is no longer enough to uniquely identify a settlement so the
 // "orders for tx hash" route needs to change in some way like taking block
 // number and log index directly.
-const SETTLEMENT_LOG_INDICES: &str = r#"
+pub const SETTLEMENT_LOG_INDICES: &str = r#"
 WITH
     -- The log index in this query is the log index from the settlement event, which comes after the trade events.
     settlement AS (

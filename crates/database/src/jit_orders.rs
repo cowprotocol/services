@@ -1,10 +1,10 @@
 use {
     crate::{
-        orders,
-        orders::{BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
+        orders::{self, BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
         Address,
         AppId,
         OrderUid,
+        TransactionHash,
     },
     sqlx::{
         types::{
@@ -16,19 +16,24 @@ use {
     },
 };
 
+const JIT_ORDERS_SELECT: &str = r#"
+o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
+o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
+o.receiver, o.signing_scheme, o.sell_token_balance, o.buy_token_balance,
+(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
+(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
+(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
+COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee
+"#;
+
 pub async fn get_by_id(
     ex: &mut PgConnection,
     uid: &OrderUid,
 ) -> Result<Option<orders::FullOrder>, sqlx::Error> {
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
-"SELECT o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
-o.receiver, o.signing_scheme, o.sell_token_balance, o.buy_token_balance,
-(SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
-(SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
-(SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
-COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee",
+"SELECT ",
+JIT_ORDERS_SELECT,
 " FROM jit_orders o",
 " WHERE o.uid = $1 ",
         );
@@ -37,6 +42,29 @@ COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o
         .fetch_optional(ex)
         .await
         .map(|r| r.map(Into::into))
+}
+
+pub async fn get_by_tx(
+    ex: &mut PgConnection,
+    tx_hash: &TransactionHash,
+) -> Result<Vec<orders::FullOrder>, sqlx::Error> {
+    const QUERY: &str = const_format::concatcp!(
+        orders::SETTLEMENT_LOG_INDICES,
+        "SELECT ",
+        JIT_ORDERS_SELECT,
+        " FROM jit_orders o 
+        JOIN trades t ON t.order_uid = o.uid",
+        " WHERE
+        t.block_number = (SELECT block_number FROM settlement) AND
+        -- BETWEEN is inclusive
+        t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM \
+         settlement) ",
+    );
+    sqlx::query_as::<_, JitOrderWithExecutions>(QUERY)
+        .bind(tx_hash)
+        .fetch_all(ex)
+        .await
+        .map(|r| r.into_iter().map(Into::into).collect())
 }
 
 /// 1:1 mapping to the `jit_orders` table, used to store orders.
