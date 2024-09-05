@@ -1,5 +1,6 @@
 use {
     crate::{
+        byte_array::ByteArray,
         orders::{self, BuyTokenDestination, OrderKind, SellTokenSource, SigningScheme},
         Address,
         AppId,
@@ -198,7 +199,7 @@ impl From<JitOrderWithExecutions> for orders::FullOrder {
             fee_amount: jit_order.fee_amount.clone(),
             full_fee_amount: jit_order.fee_amount,
             kind: jit_order.kind,
-            class: orders::OrderClass::Limit, // irrelevant
+            class: orders::OrderClass::Liquidity,
             partially_fillable: jit_order.partially_fillable,
             signature: jit_order.signature,
             sum_sell: jit_order.sum_sell,
@@ -207,7 +208,13 @@ impl From<JitOrderWithExecutions> for orders::FullOrder {
             invalidated: false,
             receiver: Some(jit_order.receiver),
             signing_scheme: jit_order.signing_scheme,
-            settlement_contract: Address::default(),
+            settlement_contract: ByteArray(
+                hex::decode("9008d19f58aabd9ed0d60971565aa8510560ab41")
+                    .unwrap()
+                    .as_slice()
+                    .try_into()
+                    .unwrap(),
+            ),
             sell_token_balance: jit_order.sell_token_balance,
             buy_token_balance: jit_order.buy_token_balance,
             presignature_pending: false,
