@@ -348,12 +348,14 @@ impl SolvableOrdersCache {
         // A new auction should be created regardless of whether new solvable orders are
         // found. The incremental solvable orders cache updater should only be
         // enabled after the initial full SQL query
-        // (`persistence::solvable_orders`) returned some orders. Until then, `MIN_UTC`
-        // is used to indicate that no orders have been found yet by
-        // (`persistence::solvable_orders`). This prevents situations where
+        // (`persistence::all_solvable_orders`) returned some orders. Until then,
+        // `MIN_UTC` is used to indicate that no orders have been found yet by
+        // (`persistence::all_solvable_orders`). This prevents situations where
         // starting the service with a large existing DB would cause
         // the incremental query to load all unfiltered orders into memory, potentially
-        // leading to OOM issues.
+        // leading to OOM issues because incremental query doesn't filter out
+        // expired/invalid orders in the SQL query and basically can return the whole
+        // table when filters with default values are used.
         let (db_solvable_orders, previous_creation_timestamp) = {
             let cache_data = {
                 let lock = self.cache.lock().await;
