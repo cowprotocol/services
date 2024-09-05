@@ -43,9 +43,7 @@ use {
         time,
         DomainSeparator,
     },
-    order_validation::banned::{Onchain, UserMetadata},
     std::{sync::Arc, time::Duration},
-    tokio::time::Instant,
 };
 
 #[mockall::automock]
@@ -326,9 +324,9 @@ impl OrderValidator {
         app_data_validator: Validator,
         max_gas_per_order: u64,
     ) -> Self {
-        let self_ = Self {
+        Self {
             native_token,
-            banned_users: banned_users.clone(),
+            banned_users,
             validity_configuration,
             eip1271_skip_creation_validation,
             bad_token_detector,
@@ -341,29 +339,7 @@ impl OrderValidator {
             code_fetcher,
             app_data_validator,
             max_gas_per_order,
-        };
-
-        banned_users.spawn_maintenance_task(move |cache| async move {
-            let mut expired_data: Vec<(H160, UserMetadata)> = Vec::new();
-            {
-                let mut cache = cache.cache.write().await;
-                let now = Instant::now();
-                cache.retain(|address, metadata| {
-                    let expired = now
-                        .checked_duration_since(metadata.last_updated.into())
-                        .unwrap_or_default()
-                        >= Onchain::TTL;
-                    if expired {
-                        expired_data.push((*address, metadata.clone()));
-                    }
-
-                    !expired
-                });
-            };
-            expired_data
-        });
-
-        self_
+        }
     }
 
     async fn check_max_limit_orders(&self, owner: H160) -> Result<(), ValidationError> {
