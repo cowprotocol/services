@@ -324,7 +324,7 @@ impl OrderStoring for Postgres {
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
         tokio::try_join!(
-            self.regular_orders_for_tx(tx_hash),
+            self.user_order_for_tx(tx_hash),
             self.jit_orders_for_tx(tx_hash)
         )
         .map(|(mut user_orders, jit_orders)| {
@@ -374,10 +374,10 @@ impl OrderStoring for Postgres {
 
 impl Postgres {
     /// Retrieve all user posted orders for a given transaction.
-    pub async fn regular_orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+    pub async fn user_order_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["regular_orders_for_tx"])
+            .with_label_values(&["user_order_for_tx"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
