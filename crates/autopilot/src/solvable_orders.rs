@@ -380,7 +380,7 @@ impl SolvableOrdersCache {
             match cache_data {
                 Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => (
                     self.persistence
-                        .solvable_order_after(
+                        .solvable_orders_after(
                             current_orders,
                             last_order_creation_timestamp,
                             latest_settlement_block,

@@ -403,7 +403,7 @@ impl Persistence {
 
     /// Computes solvable orders based on the latest observed block number,
     /// order creation timestamp, and minimum validity period.
-    pub async fn solvable_order_after(
+    pub async fn solvable_orders_after(
         &self,
         current_orders: HashMap<domain::OrderUid, model::order::Order>,
         after_timestamp: DateTime<Utc>,
