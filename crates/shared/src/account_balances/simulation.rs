@@ -4,13 +4,12 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    anyhow::{anyhow, Result},
+    anyhow::Result,
     contracts::{erc20::Contract, BalancerV2Vault},
     ethcontract::{Bytes, H160, U256},
     ethrpc::Web3,
     futures::future,
     model::order::SellTokenSource,
-    std::collections::HashMap,
 };
 
 pub struct Balances {
@@ -144,24 +143,13 @@ struct Simulation {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
-        let mut tokens: HashMap<_, _> = Default::default();
-        for query in queries {
-            if query.interactions.is_empty() {
-                tokens
-                    .entry(query.token)
-                    .or_insert_with(|| contracts::ERC20::at(&self.web3, query.token));
-            }
-        }
-
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries
             .iter()
             .map(|query| async {
                 if query.interactions.is_empty() {
-                    let token = tokens
-                        .get(&query.token)
-                        .ok_or(anyhow!(format!("missing token {} contract", query.token)))?;
-                    self.tradable_balance_simple(query, token).await
+                    let token = contracts::ERC20::at(&self.web3, query.token);
+                    self.tradable_balance_simple(query, &token).await
                 } else {
                     self.tradable_balance_simulated(query).await
                 }
