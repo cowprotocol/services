@@ -69,9 +69,9 @@ impl Trade {
 
     /// All fees broke down into protocol fees per policy and total fee.
     pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
-        let math_trade = math::Trade::from(self);
-        let total = math_trade.fee_in_sell_token()?;
-        let protocol = math_trade.protocol_fees(auction)?;
+        let trade = math::Trade::from(self);
+        let total = trade.fee_in_sell_token()?;
+        let protocol = trade.protocol_fees(auction)?;
         Ok(FeeBreakdown { total, protocol })
     }
 
@@ -150,7 +150,7 @@ pub struct Jit {
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
     /// Total fee spent to bring the order onchain (network fee + protocol fee)
-    /// TODO: express in surplus token
+    // TODO: express in surplus token
     pub total: eth::SellTokenAmount,
     /// Breakdown of protocol fees. Executed protocol fees are in the same order
     /// as policies are defined for an order.

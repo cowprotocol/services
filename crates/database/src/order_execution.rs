@@ -19,17 +19,10 @@ pub async fn save(
     executed_fee: &BigDecimal,
     executed_protocol_fees: &[FeeAsset],
 ) -> Result<(), sqlx::Error> {
-    let (protocol_fee_tokens, protocol_fee_amounts) = executed_protocol_fees.iter().fold(
-        (
-            Vec::with_capacity(executed_protocol_fees.len()),
-            Vec::with_capacity(executed_protocol_fees.len()),
-        ),
-        |(mut tokens, mut amounts), fee| {
-            tokens.push(fee.token);
-            amounts.push(fee.amount.clone());
-            (tokens, amounts)
-        },
-    );
+    let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = executed_protocol_fees
+        .iter()
+        .map(|entry| (entry.token, entry.amount.clone()))
+        .unzip();
 
     const QUERY: &str = r#"
 INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, block_number, protocol_fee_tokens, protocol_fee_amounts)
@@ -50,7 +43,7 @@ DO UPDATE SET reward = $3, surplus_fee = $4, block_number = $5, protocol_fee_tok
     Ok(())
 }
 
-// fetch protocol fees for all keys in the filter
+/// Fetch protocol fees for all keys in the filter
 pub async fn executed_protocol_fees(
     ex: &mut PgConnection,
     keys_filter: &[(AuctionId, OrderUid)],
@@ -113,22 +106,23 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         // save entry with protocol fees
+        let protocol_fees = vec![
+            FeeAsset {
+                amount: BigDecimal::from(1),
+                token: Default::default(),
+            },
+            FeeAsset {
+                amount: BigDecimal::from(2),
+                token: Default::default(),
+            },
+        ];
         save(
             &mut db,
             &Default::default(),
             1,
             0,
             &Default::default(),
-            &[
-                FeeAsset {
-                    amount: Default::default(),
-                    token: Default::default(),
-                },
-                FeeAsset {
-                    amount: Default::default(),
-                    token: Default::default(),
-                },
-            ],
+            protocol_fees.as_slice(),
         )
         .await
         .unwrap();
@@ -145,7 +139,8 @@ mod tests {
             (3, Default::default()),
         ];
 
-        let protocol_fees = executed_protocol_fees(&mut db, &keys).await.unwrap();
-        assert_eq!(protocol_fees.len(), 2);
+        let read_protocol_fees = executed_protocol_fees(&mut db, &keys).await.unwrap();
+        assert_eq!(read_protocol_fees.len(), 2);
+        assert_eq!(read_protocol_fees[&(1, Default::default())], protocol_fees);
     }
 }
