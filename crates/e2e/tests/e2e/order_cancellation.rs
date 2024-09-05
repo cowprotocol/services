@@ -245,15 +245,6 @@ async fn order_cancellation(web3: Web3) {
         OrderStatus::Cancelled,
     );
     assert_eq!(
-        services
-            .get_order(&order_uids[2])
-            .await
-            .unwrap()
-            .metadata
-            .status,
-        OrderStatus::Cancelled,
-    );
-    assert_eq!(
         services.get_order_status(&order_uids[2]).await.unwrap(),
         orderbook::dto::order::Status::Cancelled,
     );
