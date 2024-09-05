@@ -3,7 +3,6 @@ use {
     ethcontract::{errors::MethodError, futures::future::join_all, H160},
     std::{
         collections::{HashMap, HashSet},
-        ops::Div,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -61,28 +60,27 @@ impl Onchain {
     /// quickly should get flushed out again.
     fn spawn_maintenance_task(self: Arc<Self>) {
         let cache_expiry = Duration::from_secs(60 * 60);
-        let maintenance_timeout = cache_expiry.div(10).max(Duration::from_secs(60));
+        let maintenance_timeout = Duration::from_secs(60);
         let detector = Arc::clone(&self);
 
         tokio::task::spawn(async move {
             loop {
                 let start = Instant::now();
 
-                let mut expired_data: Vec<(H160, UserMetadata)> = Vec::new();
-                {
-                    let mut cache = detector.cache.write().await;
+                let expired_data: Vec<_> = {
                     let now = Instant::now();
-                    cache.retain(|address, metadata| {
-                        let expired = now
-                            .checked_duration_since(metadata.last_updated)
-                            .unwrap_or_default()
-                            >= maintenance_timeout;
-                        if expired {
-                            expired_data.push((*address, metadata.clone()));
-                        }
+                    let cache = detector.cache.read().await;
+                    cache
+                        .iter()
+                        .filter_map(|(address, metadata)| {
+                            let expired = now
+                                .checked_duration_since(metadata.last_updated)
+                                .unwrap_or_default()
+                                >= cache_expiry;
 
-                        !expired
-                    });
+                            expired.then_some((*address, metadata.clone()))
+                        })
+                        .collect()
                 };
 
                 let results = join_all(expired_data.into_iter().map(|(address, metadata)| {
