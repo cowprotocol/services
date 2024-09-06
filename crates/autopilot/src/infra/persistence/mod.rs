@@ -80,11 +80,11 @@ impl Persistence {
     pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, DatabaseError> {
+    ) -> anyhow::Result<boundary::SolvableOrders> {
         self.postgres
             .all_solvable_orders(min_valid_to)
             .await
-            .map_err(DatabaseError)
+            .context("failed to fetch all solvable orders")
     }
 
     /// Saves the given auction to storage for debugging purposes.
@@ -411,6 +411,7 @@ impl Persistence {
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
+        let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
         // so all the SELECT queries below are executed in the same database snapshot
@@ -492,6 +493,7 @@ impl Persistence {
             updated_quotes,
             latest_settlement_block,
             min_valid_to,
+            started_at,
         )
     }
 
@@ -501,6 +503,7 @@ impl Persistence {
         mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
         latest_settlement_block: u64,
         min_valid_to: u32,
+        started_at: chrono::DateTime<chrono::Utc>,
     ) -> anyhow::Result<boundary::SolvableOrders> {
         // Blindly insert all new orders into the cache.
         for (uid, order) in next_orders {
@@ -545,6 +548,7 @@ impl Persistence {
             orders: current_orders,
             quotes: next_quotes,
             latest_settlement_block,
+            fetched_from_db: started_at,
         })
     }
 

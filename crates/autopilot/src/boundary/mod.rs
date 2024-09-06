@@ -39,4 +39,5 @@ pub struct SolvableOrders {
     pub orders: HashMap<domain::OrderUid, model::order::Order>,
     pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
+    pub fetched_from_db: chrono::DateTime<chrono::Utc>,
 }
