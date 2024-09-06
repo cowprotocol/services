@@ -2,7 +2,7 @@
 //! as described by the openapi documentation.
 
 use {
-    crate::{fee_policy::FeePolicy, order::OrderUid},
+    crate::{fee_policy::ExecutedProtocolFee, order::OrderUid},
     num::BigUint,
     primitive_types::{H160, H256},
     serde::Serialize,
@@ -29,15 +29,14 @@ pub struct Trade {
     pub sell_token: H160,
     // Settlement Data
     pub tx_hash: Option<H256>,
-    // Fee Policy Data
-    pub fee_policies: Vec<FeePolicy>,
+    pub executed_protocol_fees: Vec<ExecutedProtocolFee>,
 }
 
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::fee_policy::Quote,
+        crate::fee_policy::{FeePolicy, Quote},
         primitive_types::U256,
         serde_json::json,
         shared::assert_json_matches,
@@ -57,29 +56,41 @@ mod tests {
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
             "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040",
-            "feePolicies": [
+            "executedProtocolFees": [
                 {
-                    "surplus": {
-                        "factor": 1.1,
-                        "maxVolumeFactor": 2.2
-                    }
-                },
-                {
-                    "volume": {
-                        "factor": 0.9
-                    }
-                },
-                {
-                    "priceImprovement": {
-                        "factor": 1.2,
-                        "maxVolumeFactor": 1.5,
-                        "quote": {
-                            "sellAmount": "100",
-                            "buyAmount": "150",
-                            "fee": "5"
+                    "amount": "5",
+                    "token": "0x000000000000000000000000000000000000000a",
+                    "policy": {
+                        "surplus": {
+                            "factor": 1.1,
+                            "maxVolumeFactor": 2.2
                         }
                     }
-                }
+                },
+                {
+                    "amount": "5",
+                    "token": "0x000000000000000000000000000000000000000a",
+                    "policy": {
+                        "volume": {
+                            "factor": 0.9
+                        }
+                    }
+                },
+                {
+                    "amount": "5",
+                    "token": "0x000000000000000000000000000000000000000a",
+                    "policy": {
+                        "priceImprovement": {
+                            "factor": 1.2,
+                            "maxVolumeFactor": 1.5,
+                            "quote": {
+                                "sellAmount": "100",
+                                "buyAmount": "150",
+                                "fee": "5"
+                            }
+                        }
+                    }
+                },
             ]
         });
         let expected = Trade {
@@ -93,19 +104,31 @@ mod tests {
             buy_token: H160::from_low_u64_be(9),
             sell_token: H160::from_low_u64_be(10),
             tx_hash: Some(H256::from_low_u64_be(64)),
-            fee_policies: vec![
-                FeePolicy::Surplus {
-                    factor: 1.1,
-                    max_volume_factor: 2.2,
+            executed_protocol_fees: vec![
+                ExecutedProtocolFee {
+                    amount: U256::from(5u64),
+                    token: H160::from_low_u64_be(10),
+                    policy: FeePolicy::Surplus {
+                        factor: 1.1,
+                        max_volume_factor: 2.2,
+                    },
                 },
-                FeePolicy::Volume { factor: 0.9 },
-                FeePolicy::PriceImprovement {
-                    factor: 1.2,
-                    max_volume_factor: 1.5,
-                    quote: Quote {
-                        sell_amount: U256::from(100u64),
-                        buy_amount: U256::from(150u64),
-                        fee: U256::from(5u64),
+                ExecutedProtocolFee {
+                    amount: U256::from(5u64),
+                    token: H160::from_low_u64_be(10),
+                    policy: FeePolicy::Volume { factor: 0.9 },
+                },
+                ExecutedProtocolFee {
+                    amount: U256::from(5u64),
+                    token: H160::from_low_u64_be(10),
+                    policy: FeePolicy::PriceImprovement {
+                        factor: 1.2,
+                        max_volume_factor: 1.5,
+                        quote: Quote {
+                            sell_amount: U256::from(100u64),
+                            buy_amount: U256::from(150u64),
+                            fee: U256::from(5u64),
+                        },
                     },
                 },
             ],

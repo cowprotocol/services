@@ -420,7 +420,7 @@ impl<'a> Services<'a> {
     ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
         let quoting = self
             .http
-            .post(&format!("{API_HOST}{QUOTING_ENDPOINT}"))
+            .post(format!("{API_HOST}{QUOTING_ENDPOINT}"))
             .json(&quote)
             .send()
             .await

@@ -337,7 +337,7 @@ async fn test_account_query(
     contracts: &Contracts,
 ) {
     let query = client
-        .get(&format!(
+        .get(format!(
             "{API_HOST}{ACCOUNT_ENDPOINT}/{queried_account:?}/orders",
         ))
         .send()
@@ -366,7 +366,7 @@ enum TradeQuery {
 
 async fn test_trade_query(query_type: &TradeQuery, client: &Client, contracts: &Contracts) {
     let query = client
-        .get(&format!("{API_HOST}{TRADES_ENDPOINT}",))
+        .get(format!("{API_HOST}{TRADES_ENDPOINT}",))
         .query(&[match query_type {
             TradeQuery::ByUid(uid) => ("orderUid", format!("{uid:?}")),
             TradeQuery::ByOwner(owner) => ("owner", format!("{owner:?}")),

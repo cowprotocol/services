@@ -167,15 +167,18 @@ Indexes:
 
 ### order\_execution
 
-Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
+Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else. 
+Protocol fee tokens/amounts are stored in the same order as fee policies in fee_policies table.
 
- Column       | Type    | Nullable | Details
---------------|---------|----------|--------
- order\_uid   | bytea   | not null | which order this trade execution is related to
- auction\_id  | bigint  | not null | in which auction this trade was initiated
- reward       | double  | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
- surplus\_fee | numeric | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
- block\_number| bigint  | not null | block in which the order was executed
+ Column                 | Type      | Nullable | Details
+------------------------|-----------|----------|--------
+ order\_uid             | bytea     | not null | which order this trade execution is related to
+ auction\_id            | bigint    | not null | in which auction this trade was initiated
+ reward                 | double    | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
+ surplus\_fee           | numeric   | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
+ block\_number          | bigint    | not null | block in which the order was executed
+ protocol\_fee\_tokens  | bytea[]   | not null | tokens in which the protocol fees are taken
+ protocol\_fee\_amounts | numeric[] | not null | amounts of protocol fees taken, aligned protocol\_fee\_tokens array
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)

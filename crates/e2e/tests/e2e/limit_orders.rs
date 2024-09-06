@@ -820,16 +820,19 @@ async fn no_liquidity_limit_order(web3: Web3) {
     .await
     .unwrap();
 
+    // wait for trade to be indexed
     wait_for_condition(TIMEOUT, || async {
-        let trades = services.get_trades(&order_id).await.unwrap();
-        trades.first().is_some_and(|trade| {
-            trade.fee_policies
-                == vec![model::fee_policy::FeePolicy::Surplus {
-                    factor: 0.5,
-                    max_volume_factor: 0.01,
-                }]
-        })
+        !services.get_trades(&order_id).await.unwrap().is_empty()
     })
     .await
     .unwrap();
+
+    let trade = services.get_trades(&order_id).await.unwrap().pop().unwrap();
+    let fee = trade.executed_protocol_fees.first().unwrap();
+    assert_eq!(fee.policy, model::fee_policy::FeePolicy::Surplus {
+        factor: 0.5,
+        max_volume_factor: 0.01
+    });
+    assert_eq!(fee.token, onchain.contracts().weth.address());
+    assert!(fee.amount > 0.into());
 }
