@@ -127,7 +127,7 @@ async fn order_cancellation(web3: Web3) {
 
         async move {
             let cancellation = client
-                .delete(&format!("{API_HOST}{ORDERS_ENDPOINT}/{order_uid}"))
+                .delete(format!("{API_HOST}{ORDERS_ENDPOINT}/{order_uid}"))
                 .json(&CancellationPayload {
                     signature: cancellation.signature,
                     signing_scheme: cancellation.signing_scheme,
@@ -159,7 +159,7 @@ async fn order_cancellation(web3: Web3) {
 
         async move {
             let cancellation = client
-                .delete(&format!("{API_HOST}{ORDERS_ENDPOINT}"))
+                .delete(format!("{API_HOST}{ORDERS_ENDPOINT}"))
                 .json(&signed_cancellations)
                 .send()
                 .await

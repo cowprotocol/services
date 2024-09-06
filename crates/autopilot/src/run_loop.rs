@@ -150,7 +150,7 @@ impl RunLoop {
     }
 
     async fn cut_auction(&self) -> Option<domain::AuctionWithId> {
-        let auction = match self.solvable_orders_cache.current_auction() {
+        let auction = match self.solvable_orders_cache.current_auction().await {
             Some(auction) => auction,
             None => {
                 tracing::debug!("no current auction");

@@ -5,17 +5,19 @@ use {
         FromPrimitive,
     },
     database::{auction::AuctionId, OrderUid},
-    model::fee_policy::{FeePolicy, Quote},
+    model::fee_policy::{ExecutedProtocolFee, FeePolicy, Quote},
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256},
     std::collections::HashMap,
 };
 
+type Execution = (AuctionId, OrderUid);
+
 impl super::Postgres {
-    pub async fn fee_policies(
+    pub async fn executed_protocol_fees(
         &self,
-        keys_filter: &[(AuctionId, OrderUid)],
-    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>> {
+        keys_filter: &[Execution],
+    ) -> anyhow::Result<HashMap<Execution, Vec<ExecutedProtocolFee>>> {
         let mut ex = self.pool.acquire().await?;
 
         let timer = super::Metrics::get()
@@ -23,6 +25,14 @@ impl super::Postgres {
             .with_label_values(&["fee_policies"])
             .start_timer();
         let fee_policies = database::fee_policies::fetch_all(&mut ex, keys_filter).await?;
+        timer.stop_and_record();
+
+        let timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["executed_protocol_fees"])
+            .start_timer();
+        let executed_protocol_fees =
+            database::order_execution::executed_protocol_fees(&mut ex, keys_filter).await?;
         timer.stop_and_record();
 
         let quote_order_uids = fee_policies
@@ -51,16 +61,30 @@ impl super::Postgres {
             .collect::<HashMap<_, _>>();
         timer.stop_and_record();
 
-        fee_policies
-            .into_iter()
-            .map(|((auction_id, order_uid), policies)| {
-                policies
-                    .into_iter()
-                    .map(|policy| fee_policy_from(policy, quotes.get(&order_uid), order_uid))
-                    .collect::<anyhow::Result<Vec<_>>>()
-                    .map(|policies| ((auction_id, order_uid), policies))
-            })
-            .collect::<anyhow::Result<HashMap<_, _>>>()
+        let mut result = HashMap::new();
+        for (key, executed_fees) in executed_protocol_fees {
+            if let Some(policies) = fee_policies.get(&key) {
+                for (policy, executed_fee) in policies.iter().zip(executed_fees) {
+                    let executed_protocol_fee = ExecutedProtocolFee {
+                        amount: big_decimal_to_u256(&executed_fee.amount)
+                            .context("executed fee amount")?,
+                        token: primitive_types::H160(executed_fee.token.0),
+                        policy: fee_policy_from(policy.clone(), quotes.get(&key.1), key.1)?,
+                    };
+                    result
+                        .entry(key)
+                        .or_insert_with(Vec::new)
+                        .push(executed_protocol_fee);
+                }
+            } else {
+                tracing::warn!(
+                    auction_id = ?key.0,
+                    order = ?model::order::OrderUid(key.1.0),
+                    "missing fee policies for executed protocol fee",
+                );
+            }
+        }
+        Ok(result)
     }
 }
 
