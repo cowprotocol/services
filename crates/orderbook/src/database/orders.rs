@@ -364,32 +364,32 @@ impl OrderStoring for Postgres {
         let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
         order
             .map(|order_with_quote| {
-                let quote = order_with_quote
-                    .quote_buy_amount
-                    .zip(order_with_quote.quote_sell_amount)
-                    .zip(order_with_quote.quote_gas_amount)
-                    .zip(order_with_quote.quote_gas_price)
-                    .zip(order_with_quote.quote_sell_token_price)
-                    .zip(order_with_quote.solver)
-                    .map(
-                        |(
-                            (
-                                (((buy_amount, sell_amount), gas_amount), gas_price),
-                                sell_token_price,
-                            ),
-                            solver,
-                        )| {
-                            orders::Quote {
-                                order_uid: order_with_quote.full_order.uid,
-                                gas_amount,
-                                gas_price,
-                                sell_token_price,
-                                sell_amount,
-                                buy_amount,
-                                solver,
-                            }
-                        },
-                    );
+                let quote = match (
+                    order_with_quote.quote_buy_amount,
+                    order_with_quote.quote_sell_amount,
+                    order_with_quote.quote_gas_amount,
+                    order_with_quote.quote_gas_price,
+                    order_with_quote.quote_sell_token_price,
+                    order_with_quote.solver,
+                ) {
+                    (
+                        Some(buy_amount),
+                        Some(sell_amount),
+                        Some(gas_amount),
+                        Some(gas_price),
+                        Some(sell_token_price),
+                        Some(solver),
+                    ) => Some(orders::Quote {
+                        order_uid: order_with_quote.full_order.uid,
+                        gas_amount,
+                        gas_price,
+                        sell_token_price,
+                        sell_amount,
+                        buy_amount,
+                        solver,
+                    }),
+                    _ => None,
+                };
 
                 Ok(OrderWithQuote {
                     order: full_order_into_model_order(order_with_quote.full_order)?,
