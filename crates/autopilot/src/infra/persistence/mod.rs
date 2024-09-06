@@ -437,7 +437,7 @@ impl Persistence {
                 .with_label_values(&["open_orders_after"])
                 .start_timer();
 
-            database::orders::open_orders_by_time_and_uids(
+            database::orders::open_orders_by_time_or_uids(
                 &mut tx,
                 &updated_order_uids,
                 after_timestamp,

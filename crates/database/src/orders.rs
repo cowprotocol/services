@@ -687,7 +687,7 @@ pub fn solvable_orders(
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
-pub fn open_orders_by_time_and_uids<'a>(
+pub fn open_orders_by_time_or_uids<'a>(
     ex: &'a mut PgConnection,
     uids: &'a [OrderUid],
     after_timestamp: DateTime<Utc>,
@@ -1585,17 +1585,17 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_open_orders_by_time_and_uids() {
+    async fn postgres_open_orders_by_time_or_uids() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_open_orders_by_time_and_uids(
+        async fn get_open_orders_by_time_or_uids(
             ex: &mut PgConnection,
             after_timestamp: DateTime<Utc>,
             uids: &[OrderUid],
         ) -> HashSet<OrderUid> {
-            open_orders_by_time_and_uids(ex, uids, after_timestamp)
+            open_orders_by_time_or_uids(ex, uids, after_timestamp)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -1625,7 +1625,7 @@ mod tests {
         // Check fetching by timestamp only.
         // Early timestamp should cover all the orders.
         assert_eq!(
-            get_open_orders_by_time_and_uids(
+            get_open_orders_by_time_or_uids(
                 &mut db,
                 now - Duration::seconds(1),
                 Default::default()
@@ -1639,12 +1639,12 @@ mod tests {
         );
         // Only 2 orders created after `now`.
         assert_eq!(
-            get_open_orders_by_time_and_uids(&mut db, now, Default::default()).await,
+            get_open_orders_by_time_or_uids(&mut db, now, Default::default()).await,
             hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),]
         );
         // Only 1 order created after `now + 10s`
         assert_eq!(
-            get_open_orders_by_time_and_uids(
+            get_open_orders_by_time_or_uids(
                 &mut db,
                 now + Duration::seconds(10),
                 Default::default()
@@ -1655,7 +1655,7 @@ mod tests {
         // Even though no orders should be returned after the provided timestamp,
         // specified order UIDs list helps to return all the requested orders.
         assert_eq!(
-            get_open_orders_by_time_and_uids(
+            get_open_orders_by_time_or_uids(
                 &mut db,
                 now + Duration::seconds(20),
                 &[
