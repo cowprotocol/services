@@ -118,10 +118,11 @@ async fn cancel_order(
 }
 
 async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
+    let order_uid = ByteArray(order.metadata.uid.0);
     insert_order_event(
         ex,
         &OrderEvent {
-            order_uid: ByteArray(order.metadata.uid.0),
+            order_uid,
             timestamp: Utc::now(),
             label: OrderEventLabel::Created,
         },
@@ -157,7 +158,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         .collect::<Vec<_>>();
 
     let order = database::orders::Order {
-        uid: ByteArray(order.metadata.uid.0),
+        uid: order_uid,
         owner: ByteArray(order.metadata.owner.0),
         creation_timestamp: order.metadata.creation_date,
         sell_token: ByteArray(order.data.sell_token.0),
@@ -323,19 +324,14 @@ impl OrderStoring for Postgres {
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["orders_for_tx"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
-            .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect()
-            .await
+        tokio::try_join!(
+            self.user_order_for_tx(tx_hash),
+            self.jit_orders_for_tx(tx_hash)
+        )
+        .map(|(mut user_orders, jit_orders)| {
+            user_orders.extend(jit_orders);
+            user_orders
+        })
     }
 
     async fn user_orders(
@@ -374,6 +370,40 @@ impl OrderStoring for Postgres {
         database::order_events::get_latest(&mut ex, &ByteArray(order_uid.0))
             .await
             .context("order_events::get_latest")
+    }
+}
+
+impl Postgres {
+    /// Retrieve all user posted orders for a given transaction.
+    pub async fn user_order_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["user_order_for_tx"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        database::orders::full_orders_in_tx(&mut ex, &ByteArray(tx_hash.0))
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await
+    }
+
+    /// Retrieve all JIT orders for a given transaction.
+    pub async fn jit_orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["jit_orders_for_tx"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        database::jit_orders::get_by_tx(&mut ex, &ByteArray(tx_hash.0))
+            .await?
+            .into_iter()
+            .map(full_order_into_model_order)
+            .collect::<Result<Vec<_>>>()
     }
 }
 

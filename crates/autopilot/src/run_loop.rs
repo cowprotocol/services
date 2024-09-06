@@ -101,10 +101,13 @@ impl RunLoop {
                 let current_block = *self.eth.current_block().borrow();
                 let time_since_last_block = current_block.observed_at.elapsed();
                 let auction_block = if time_since_last_block > self.max_run_loop_delay {
-                    tracing::warn!(
-                        missed_by = ?time_since_last_block - self.max_run_loop_delay,
-                        "missed optimal auction start, wait for new block"
-                    );
+                    if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
+                        // don't emit warning if we finished prev run loop within the same block
+                        tracing::warn!(
+                            missed_by = ?time_since_last_block - self.max_run_loop_delay,
+                            "missed optimal auction start, wait for new block"
+                        );
+                    }
                     ethrpc::block_stream::next_block(self.eth.current_block()).await
                 } else {
                     current_block
@@ -118,7 +121,7 @@ impl RunLoop {
                 {
                     tracing::warn!(?err, "failed to update auction");
                 }
-                current_block
+                auction_block
             }
         };
 
@@ -147,7 +150,7 @@ impl RunLoop {
     }
 
     async fn cut_auction(&self) -> Option<domain::AuctionWithId> {
-        let auction = match self.solvable_orders_cache.current_auction() {
+        let auction = match self.solvable_orders_cache.current_auction().await {
             Some(auction) => auction,
             None => {
                 tracing::debug!("no current auction");
@@ -862,7 +865,7 @@ struct Metrics {
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 40))]
+    #[metric(buckets(0.5, 1, 1.5, 2, 4, 6, 8, 10, 12, 16))]
     current_block_delay: prometheus::Histogram,
 }
 
