@@ -1,5 +1,6 @@
 pub use error::Error;
 use {
+    super::ExecutedProtocolFee,
     crate::{
         domain::{
             self,
@@ -155,23 +156,12 @@ impl Trade {
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
-    pub fn protocol_fees_in_sell_token(
-        &self,
-        auction: &settlement::Auction,
-    ) -> Result<Vec<(eth::SellTokenAmount, fee::Policy)>, Error> {
-        self.protocol_fees(auction)?
-            .into_iter()
-            .map(|(fee, policy)| Ok((self.fee_into_sell_token(fee.amount)?, policy)))
-            .collect()
-    }
-
-    /// Protocol fees are defined by fee policies attached to the order.
     ///
     /// Denominated in SURPLUS token
-    fn protocol_fees(
+    pub fn protocol_fees(
         &self,
         auction: &settlement::Auction,
-    ) -> Result<Vec<(eth::Asset, fee::Policy)>, Error> {
+    ) -> Result<Vec<ExecutedProtocolFee>, Error> {
         let policies = auction
             .orders
             .get(&self.uid)
@@ -180,11 +170,14 @@ impl Trade {
         let mut current_trade = self.clone();
         let mut total = eth::TokenAmount::default();
         let mut fees = vec![];
-        for (i, protocol_fee) in policies.iter().enumerate().rev() {
-            let fee = current_trade.protocol_fee(protocol_fee)?;
+        for (i, policy) in policies.iter().enumerate().rev() {
+            let fee = current_trade.protocol_fee(policy)?;
             // Do not need to calculate the last custom prices because in the last iteration
             // the prices are not used anymore to calculate the protocol fee
-            fees.push((fee, *protocol_fee));
+            fees.push(ExecutedProtocolFee {
+                policy: *policy,
+                fee,
+            });
             total += fee.amount;
             if !i.is_zero() {
                 current_trade.prices.custom = self.calculate_custom_prices(total)?;
@@ -426,7 +419,7 @@ impl Trade {
     fn protocol_fee_in_ether(&self, auction: &settlement::Auction) -> Result<eth::Ether, Error> {
         self.protocol_fees(auction)?
             .into_iter()
-            .map(|(fee, _)| {
+            .map(|ExecutedProtocolFee { fee, policy: _ }| {
                 let price = auction
                     .prices
                     .get(&fee.token)

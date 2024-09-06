@@ -11,6 +11,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         order_events::OrderEventLabel,
+        order_execution::Asset,
         orders::{
             BuyTokenDestination as DbBuyTokenDestination,
             SellTokenSource as DbSellTokenSource,
@@ -69,9 +70,8 @@ impl Persistence {
         self.postgres
             .replace_current_auction(&auction)
             .await
-            .map(|auction_id| {
+            .inspect(|&auction_id| {
                 self.archive_auction(auction_id, auction);
-                auction_id
             })
             .map_err(DatabaseError)
     }
@@ -594,7 +594,7 @@ impl Persistence {
             let gas_price = settlement.gas_price();
             let surplus = settlement.surplus_in_ether();
             let fee = settlement.fee_in_ether();
-            let order_fees = settlement.order_fees();
+            let fee_breakdown = settlement.fee_breakdown();
             let jit_orders = settlement.jit_orders();
 
             tracing::debug!(
@@ -604,7 +604,7 @@ impl Persistence {
                 ?gas_price,
                 ?surplus,
                 ?fee,
-                ?order_fees,
+                ?fee_breakdown,
                 ?jit_orders,
                 "settlement update",
             );
@@ -624,21 +624,35 @@ impl Persistence {
 
             store_order_events(
                 &mut ex,
-                order_fees.keys().cloned().collect(),
+                fee_breakdown.keys().cloned().collect(),
                 OrderEventLabel::Traded,
                 Utc::now(),
             )
             .await;
 
-            for (order, executed_fee) in order_fees {
+            for (order, order_fee) in fee_breakdown {
+                let total_fee = order_fee
+                    .as_ref()
+                    .map(|fee| u256_to_big_decimal(&fee.total.0))
+                    .unwrap_or_default();
+                let executed_protocol_fees = order_fee
+                    .map(|fee| {
+                        fee.protocol
+                            .into_iter()
+                            .map(|executed| Asset {
+                                token: ByteArray(executed.fee.token.0 .0),
+                                amount: u256_to_big_decimal(&executed.fee.amount.0),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
                 database::order_execution::save(
                     &mut ex,
                     &ByteArray(order.0),
                     auction_id,
                     block_number,
-                    &u256_to_big_decimal(
-                        &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
-                    ),
+                    &total_fee,
+                    &executed_protocol_fees,
                 )
                 .await?;
             }

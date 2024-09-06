@@ -4,6 +4,8 @@ use {
     std::collections::HashMap,
 };
 
+type Execution = (AuctionId, OrderUid);
+
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct FeePolicy {
     pub auction_id: AuctionId,
@@ -55,8 +57,8 @@ pub async fn insert_batch(
 
 pub async fn fetch_all(
     ex: &mut PgConnection,
-    keys_filter: &[(AuctionId, OrderUid)],
-) -> Result<HashMap<(AuctionId, OrderUid), Vec<FeePolicy>>, sqlx::Error> {
+    keys_filter: &[Execution],
+) -> Result<HashMap<Execution, Vec<FeePolicy>>, sqlx::Error> {
     if keys_filter.is_empty() {
         return Ok(HashMap::new());
     }
