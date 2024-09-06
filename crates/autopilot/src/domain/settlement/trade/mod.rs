@@ -149,7 +149,7 @@ pub struct Jit {
 /// trade.
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
-    /// Total fee spent to bring the order onchain (network fee + protocol fee)
+    /// Total fee the trade was charged (network fee + protocol fee)
     // TODO: express in surplus token
     pub total: eth::SellTokenAmount,
     /// Breakdown of protocol fees. Executed protocol fees are in the same order

@@ -11,11 +11,13 @@ use {
     std::collections::HashMap,
 };
 
+type Execution = (AuctionId, OrderUid);
+
 impl super::Postgres {
     pub async fn executed_protocol_fees(
         &self,
-        keys_filter: &[(AuctionId, OrderUid)],
-    ) -> anyhow::Result<HashMap<(AuctionId, OrderUid), Vec<ExecutedProtocolFee>>> {
+        keys_filter: &[Execution],
+    ) -> anyhow::Result<HashMap<Execution, Vec<ExecutedProtocolFee>>> {
         let mut ex = self.pool.acquire().await?;
 
         let timer = super::Metrics::get()
@@ -74,6 +76,12 @@ impl super::Postgres {
                         .or_insert_with(Vec::new)
                         .push(executed_protocol_fee);
                 }
+            } else {
+                tracing::warn!(
+                    auction_id = ?key.0,
+                    order = ?model::order::OrderUid(key.1.0),
+                    "missing fee policies for executed protocol fee",
+                );
             }
         }
         Ok(result)

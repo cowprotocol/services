@@ -5,8 +5,10 @@ use {
     std::collections::HashMap,
 };
 
+type Execution = (AuctionId, OrderUid);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FeeAsset {
+pub struct Asset {
     pub amount: BigDecimal,
     pub token: Address,
 }
@@ -17,7 +19,7 @@ pub async fn save(
     auction: AuctionId,
     block_number: i64,
     executed_fee: &BigDecimal,
-    executed_protocol_fees: &[FeeAsset],
+    executed_protocol_fees: &[Asset],
 ) -> Result<(), sqlx::Error> {
     let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = executed_protocol_fees
         .iter()
@@ -46,8 +48,8 @@ DO UPDATE SET reward = $3, surplus_fee = $4, block_number = $5, protocol_fee_tok
 /// Fetch protocol fees for all keys in the filter
 pub async fn executed_protocol_fees(
     ex: &mut PgConnection,
-    keys_filter: &[(AuctionId, OrderUid)],
-) -> Result<HashMap<(AuctionId, OrderUid), Vec<FeeAsset>>, sqlx::Error> {
+    keys_filter: &[Execution],
+) -> Result<HashMap<Execution, Vec<Asset>>, sqlx::Error> {
     if keys_filter.is_empty() {
         return Ok(HashMap::new());
     }
@@ -86,7 +88,7 @@ pub async fn executed_protocol_fees(
             row.protocol_fee_tokens
                 .into_iter()
                 .zip(row.protocol_fee_amounts)
-                .map(|(token, amount)| FeeAsset { token, amount })
+                .map(|(token, amount)| Asset { token, amount })
                 .collect(),
         );
     }
@@ -107,11 +109,11 @@ mod tests {
 
         // save entry with protocol fees
         let protocol_fees = vec![
-            FeeAsset {
+            Asset {
                 amount: BigDecimal::from(1),
                 token: Default::default(),
             },
-            FeeAsset {
+            Asset {
                 amount: BigDecimal::from(2),
                 token: Default::default(),
             },
