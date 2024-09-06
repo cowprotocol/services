@@ -145,10 +145,11 @@ impl Persistence {
     /// because this is just debugging information.
     pub fn store_order_events(
         &self,
-        order_uids: Vec<domain::OrderUid>,
+        order_uids: impl IntoIterator<Item = domain::OrderUid>,
         label: boundary::OrderEventLabel,
     ) {
         let db = self.postgres.clone();
+        let order_uids = order_uids.into_iter().collect();
         tokio::spawn(
             async move {
                 let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
