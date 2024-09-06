@@ -774,13 +774,10 @@ pub async fn user_orders_with_quote(
         .await
 }
 
-#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
-pub struct DbOrderUid(pub OrderUid);
-
-pub fn updated_order_uids_after(
+pub async fn updated_order_uids_after(
     ex: &mut PgConnection,
     after_block: i64,
-) -> BoxStream<'_, Result<DbOrderUid, sqlx::Error>> {
+) -> Result<Vec<OrderUid>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT DISTINCT order_uid FROM (
     SELECT order_uid FROM trades WHERE block_number > $1
@@ -799,7 +796,7 @@ SELECT DISTINCT order_uid FROM (
 ) AS updated_orders
 "#;
 
-    sqlx::query_as(QUERY).bind(after_block).fetch(ex)
+    sqlx::query_as(QUERY).bind(after_block).fetch_all(ex).await
 }
 
 #[cfg(test)]
@@ -2046,10 +2043,10 @@ mod tests {
             after_block: i64,
         ) -> HashSet<OrderUid> {
             updated_order_uids_after(ex, after_block)
-                .map_ok(|o| o.0)
-                .try_collect()
                 .await
                 .unwrap()
+                .into_iter()
+                .collect()
         }
 
         // trades table

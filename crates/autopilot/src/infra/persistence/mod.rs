@@ -420,16 +420,13 @@ impl Persistence {
             .await?;
 
         // Find order uids for orders that were updated after the given block.
-        let updated_order_uids: Vec<database::OrderUid> = {
+        let updated_order_uids = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["updated_order_uids"])
                 .start_timer();
 
-            database::orders::updated_order_uids_after(&mut tx, after_block)
-                .map_ok(|uid| uid.0)
-                .try_collect()
-                .await?
+            database::orders::updated_order_uids_after(&mut tx, after_block).await?
         };
 
         // Fetch the orders that were updated after the given block and were created or
