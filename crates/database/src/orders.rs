@@ -124,7 +124,6 @@ const INSERT_ORDER_QUERY: &str = r#"
 INSERT INTO orders (
     uid,
     owner,
-    creation_timestamp,
     sell_token,
     buy_token,
     receiver,
@@ -142,9 +141,10 @@ INSERT INTO orders (
     buy_token_balance,
     full_fee_amount,
     cancellation_timestamp,
-    class
+    class,
+    creation_timestamp
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, now())
     "#;
 
 pub async fn insert_order_and_ignore_conflicts(
@@ -167,7 +167,6 @@ async fn insert_order_execute_sqlx(
     sqlx::query(query_str)
         .bind(order.uid)
         .bind(order.owner)
-        .bind(order.creation_timestamp)
         .bind(order.sell_token)
         .bind(order.buy_token)
         .bind(order.receiver)
