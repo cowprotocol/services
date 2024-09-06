@@ -419,6 +419,16 @@ impl Persistence {
             .execute(tx.deref_mut())
             .await?;
 
+        // Find order uids for orders that were updated after the given block.
+        let updated_order_uids = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["updated_order_uids"])
+                .start_timer();
+
+            database::orders::updated_order_uids_after(&mut tx, after_block).await?
+        };
+
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
         let next_orders: HashMap<domain::OrderUid, model::order::Order> = {
@@ -427,14 +437,18 @@ impl Persistence {
                 .with_label_values(&["open_orders_after"])
                 .start_timer();
 
-            database::orders::open_orders_after(&mut tx, after_block, after_timestamp)
-                .map(|result| match result {
-                    Ok(order) => full_order_into_model_order(order)
-                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
-                    Err(err) => Err(anyhow::Error::from(err)),
-                })
-                .try_collect()
-                .await?
+            database::orders::open_orders_by_time_or_uids(
+                &mut tx,
+                &updated_order_uids,
+                after_timestamp,
+            )
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order)
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await?
         };
 
         // Fetch quotes for new orders and also update them for the cached ones since
