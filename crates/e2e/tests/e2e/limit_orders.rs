@@ -803,11 +803,14 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
 
-    wait_for_condition(TIMEOUT, || async {
-        // Keep minting blocks to eventually invalidate the liquidity cached by the
-        // driver making it refetch the current state which allows it to finally compute
-        // a solution.
+    // Keep minting blocks to eventually invalidate the liquidity cached by the
+    // driver making it refetch the current state which allows it to finally compute
+    // a solution.
+    for _ in 0..20 {
         onchain.mint_block().await;
+    }
+
+    wait_for_condition(TIMEOUT, || async {
         let balance_after = onchain
             .contracts()
             .weth
