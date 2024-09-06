@@ -38,7 +38,7 @@ async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
     run_test(limit_does_not_apply_to_in_market_orders_test).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[ignore]
 async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
@@ -787,13 +787,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await
         .unwrap_err();
 
-    // Create liquidity
-    onchain
-        .seed_weth_uni_v2_pools([&token_a].iter().copied(), to_wei(1000), to_wei(1000))
-        .await;
-
-    // Drive solution
-    tracing::info!("Waiting for trade.");
     let balance_before = onchain
         .contracts()
         .weth
@@ -801,13 +794,40 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .call()
         .await
         .unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
+    // Create liquidity
+    onchain
+        .seed_weth_uni_v2_pools([&token_a].iter().copied(), to_wei(1000), to_wei(1000))
+        .await;
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+
+    // Keep minting blocks to eventually invalidate the liquidity cached by the
+    // driver making it refetch the current state which allows it to finally compute
+    // a solution.
+    for _ in 0..20 {
+        onchain.mint_block().await;
+    }
+
+    // wait for trade to be indexed
+    wait_for_condition(TIMEOUT, || async {
+        !services.get_trades(&order_id).await.unwrap().is_empty()
+    })
+    .await
+    .unwrap();
+
+    let trade = services.get_trades(&order_id).await.unwrap().pop().unwrap();
+    let fee = trade.executed_protocol_fees.first().unwrap();
+    assert_eq!(
+        fee.policy,
+        model::fee_policy::FeePolicy::Surplus {
+            factor: 0.5,
+            max_volume_factor: 0.01
+        }
+    );
+    assert_eq!(fee.token, onchain.contracts().weth.address());
+    assert!(fee.amount > 0.into());
 
     let balance_after = onchain
         .contracts()
@@ -817,24 +837,4 @@ async fn no_liquidity_limit_order(web3: Web3) {
         .await
         .unwrap();
     assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
-
-    let trades = services.get_trades(&order_id).await.unwrap();
-    let executed_protocol_fee = trades
-        .first()
-        .unwrap()
-        .executed_protocol_fees
-        .first()
-        .unwrap();
-    assert_eq!(
-        executed_protocol_fee.policy,
-        model::fee_policy::FeePolicy::Surplus {
-            factor: 0.5,
-            max_volume_factor: 0.01
-        }
-    );
-    assert_eq!(
-        executed_protocol_fee.token,
-        onchain.contracts().weth.address()
-    );
-    assert!(executed_protocol_fee.amount > U256::zero());
 }
