@@ -1,0 +1,39 @@
+on:
+  # only run when manually triggered to debug a specific test
+  workflow_dispatch:
+
+jobs:
+  run-flaky-test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
+      TOML_TRACE_ERROR: 1
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      # Start the build process in the background. The following cargo test command will automatically
+      # wait for the build process to be done before proceeding.
+      - run: cargo build -p e2e --tests &
+      - uses: taiki-e/install-action@nextest
+      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+        with:
+          file: docker-compose.yaml
+          up-opts: -d db migrations
+      - name: Run test in a loop
+        run: |
+          attempt=1
+          while true; do
+            echo "Running test attempt #$i"
+            if ! cargo nextest run -p e2e local_node_no_liquidity_limit_order --test-threads 1 --failure-output final --run-ignored ignored-only; then
+              echo "Test failed on attempt #$i"
+              exit 1
+            fi
+          done
