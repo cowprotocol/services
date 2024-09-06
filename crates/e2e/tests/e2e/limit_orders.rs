@@ -810,19 +810,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
         onchain.mint_block().await;
     }
 
-    wait_for_condition(TIMEOUT, || async {
-        let balance_after = onchain
-            .contracts()
-            .weth
-            .balance_of(trader_a.address())
-            .call()
-            .await
-            .unwrap();
-        balance_after.checked_sub(balance_before).unwrap() >= to_wei(5)
-    })
-    .await
-    .unwrap();
-
     // wait for trade to be indexed
     wait_for_condition(TIMEOUT, || async {
         !services.get_trades(&order_id).await.unwrap().is_empty()
@@ -841,4 +828,13 @@ async fn no_liquidity_limit_order(web3: Web3) {
     );
     assert_eq!(fee.token, onchain.contracts().weth.address());
     assert!(fee.amount > 0.into());
+
+    let balance_after = onchain
+        .contracts()
+        .weth
+        .balance_of(trader_a.address())
+        .call()
+        .await
+        .unwrap();
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
 }
