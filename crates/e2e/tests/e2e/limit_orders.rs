@@ -38,7 +38,7 @@ async fn local_node_limit_does_not_apply_to_in_market_orders_test() {
     run_test(limit_does_not_apply_to_in_market_orders_test).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[ignore]
 async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
