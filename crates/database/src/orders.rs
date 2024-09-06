@@ -1728,18 +1728,46 @@ mod tests {
         );
 
         // order_execution table
-        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 1, 1, &BigDecimal::from(1))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 2, 2, &BigDecimal::from(2))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 3, 0, &BigDecimal::from(4))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &ByteArray([3u8; 56]), 2, 3, &BigDecimal::from(4))
-            .await
-            .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            1,
+            1,
+            &BigDecimal::from(1),
+            &[],
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            2,
+            2,
+            &BigDecimal::from(2),
+            &[],
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            3,
+            0,
+            &BigDecimal::from(4),
+            &[],
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([3u8; 56]),
+            2,
+            3,
+            &BigDecimal::from(4),
+            &[],
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             get_open_orders_after(&mut db, 0, future_timestamp).await,
@@ -2169,7 +2197,7 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, fee);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee)
+        crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee, &[])
             .await
             .unwrap();
 
