@@ -68,7 +68,7 @@ impl Postgres {
             .start_timer();
 
         let start = chrono::offset::Utc::now();
-        tracing::info!(checkpoint = ?start, "create checkpoint for incremental cache");
+        tracing::info!(checkpoint = ?start, "create checkpoint for incremental cache (full query)");
         let mut ex = self.pool.begin().await?;
         // Set the transaction isolation level to REPEATABLE READ
         // so the both SELECT queries below are executed in the same database snapshot
