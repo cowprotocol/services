@@ -410,10 +410,9 @@ impl Persistence {
         after_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
-        tracing::info!(current_orders = ?current_orders.keys(), ?after_timestamp, ?after_block, min_valid_to, "call solvable after");
+        tracing::debug!(?after_timestamp, ?after_block, "fetch orders updated since");
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
         let started_at = chrono::offset::Utc::now();
-        tracing::info!(checkpoint = ?started_at, "create checkpoint for incremental cache");
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
         // so all the SELECT queries below are executed in the same database snapshot

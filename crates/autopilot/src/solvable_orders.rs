@@ -173,7 +173,6 @@ impl SolvableOrdersCache {
         let start = Instant::now();
 
         let db_solvable_orders = self.get_solvable_orders().await?;
-        tracing::info!(orders = ?db_solvable_orders.orders.keys());
 
         let orders = db_solvable_orders
             .orders
