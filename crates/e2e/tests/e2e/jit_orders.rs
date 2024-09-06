@@ -203,4 +203,16 @@ async fn single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
     assert!(orders_by_tx.iter().any(|o| o.metadata.uid == jit_order_uid));
+    // jit order can be found on /api/v1/account/{owner}/orders
+    let orders_by_owner = services
+        .get_orders_for_owner(&jit_order_uid.parts().1, 0, 10)
+        .await
+        .unwrap();
+    assert!(orders_by_owner.iter().any(|o| o.metadata.uid == jit_order_uid));
+    // make sure the offset works
+    let orders_by_owner = services
+        .get_orders_for_owner(&jit_order_uid.parts().1, 1, 1)
+        .await
+        .unwrap();
+    assert!(orders_by_owner.is_empty());
 }

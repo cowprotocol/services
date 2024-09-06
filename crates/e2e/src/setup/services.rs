@@ -9,7 +9,7 @@ use {
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::H256,
+    ethcontract::{H160, H256},
     model::{
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
@@ -37,6 +37,10 @@ pub fn order_status_endpoint(uid: &OrderUid) -> String {
 
 pub fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
     format!("/api/v1/transactions/{tx_hash:?}/orders")
+}
+
+pub fn orders_for_owner(owner: &H160, offset: u64, limit: u64) -> String {
+    format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
 
 pub struct ServicesBuilder {
@@ -487,6 +491,31 @@ impl<'a> Services<'a> {
         let response = self
             .http
             .get(format!("{API_HOST}{}", orders_for_tx_endpoint(tx_hash)))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_orders_for_owner(
+        &self,
+        owner: &H160,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<Order>, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}{}",
+                orders_for_owner(owner, offset, limit)
+            ))
             .send()
             .await
             .unwrap();
