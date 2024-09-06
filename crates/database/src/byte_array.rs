@@ -13,7 +13,7 @@ use {
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres
 /// implementation.
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, sqlx::FromRow)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> Debug for ByteArray<N> {
