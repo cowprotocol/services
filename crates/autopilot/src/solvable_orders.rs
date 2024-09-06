@@ -8,7 +8,7 @@ use {
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::CurrentBlockWatcher,
-    futures::future::join_all,
+    futures::{future::join_all, FutureExt},
     indexmap::IndexSet,
     itertools::{Either, Itertools},
     model::{
@@ -343,26 +343,24 @@ impl SolvableOrdersCache {
             + u32::try_from(self.min_order_validity_period.as_secs())
                 .context("min_order_validity_period is not u32")?;
 
+        // only build future while holding the lock but execute outside of lock
         let lock = self.cache.lock().await;
-        let solvable_orders = match &*lock {
-            Some(cache) => {
-                // Only use incremental query after cache already got initialized
-                // because it's not optimized for very long durations.
-                let fetch_orders = self.persistence.solvable_orders_after(
+        let fetch_orders = match &*lock {
+            // Only use incremental query after cache already got initialized
+            // because it's not optimized for very long durations.
+            Some(cache) => self
+                .persistence
+                .solvable_orders_after(
                     cache.solvable_orders.orders.clone(),
                     cache.solvable_orders.fetched_from_db,
                     cache.solvable_orders.latest_settlement_block,
                     min_valid_to,
-                );
-                drop(lock);
-                fetch_orders.await?
-            }
-            _ => {
-                drop(lock);
-                self.persistence.all_solvable_orders(min_valid_to).await?
-            }
+                )
+                .boxed(),
+            None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
         };
-        Ok(solvable_orders)
+
+        fetch_orders.await
     }
 
     /// Executed orders filtering in parallel.

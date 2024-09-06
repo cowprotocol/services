@@ -80,11 +80,11 @@ impl Persistence {
     pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, DatabaseError> {
+    ) -> anyhow::Result<boundary::SolvableOrders> {
         self.postgres
             .all_solvable_orders(min_valid_to)
             .await
-            .map_err(DatabaseError)
+            .context("failed to fetch all solvable orders")
     }
 
     /// Saves the given auction to storage for debugging purposes.
