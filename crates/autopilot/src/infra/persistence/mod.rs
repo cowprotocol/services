@@ -51,9 +51,8 @@ impl Persistence {
         self.postgres
             .replace_current_auction(&auction)
             .await
-            .map(|auction_id| {
+            .inspect(|&auction_id| {
                 self.archive_auction(auction_id, auction);
-                auction_id
             })
             .map_err(DatabaseError)
     }
