@@ -292,6 +292,8 @@ async fn cow_amm_jit(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(bob.private_key()).unwrap()),
     );
     let user_order_id = services.create_order(&user_order).await.unwrap();
+    let api_order = services.get_order(&user_order_id).await.unwrap();
+    tracing::info!(order = ?api_order, "full order from api");
 
     let amm_balance_before = dai.balance_of(cow_amm.address()).call().await.unwrap();
     let bob_balance_before = dai.balance_of(bob.address()).call().await.unwrap();
