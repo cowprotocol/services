@@ -13,6 +13,7 @@ pub mod onchain_invalidations;
 pub mod order_events;
 pub mod order_execution;
 pub mod orders;
+pub mod orders_history;
 pub mod quotes;
 pub mod settlement_call_data;
 pub mod settlement_observations;

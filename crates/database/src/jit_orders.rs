@@ -16,7 +16,7 @@ use {
     },
 };
 
-pub const JIT_ORDERS_SELECT: &str = r#"
+pub const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.fee_amount AS full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, '\x9008d19f58aabd9ed0d60971565aa8510560ab41'::bytea AS settlement_contract, o.sell_token_balance, o.buy_token_balance,
@@ -42,7 +42,7 @@ pub async fn get_by_id(
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
 "SELECT ",
-JIT_ORDERS_SELECT,
+ORDERS_SELECT,
 " FROM jit_orders o",
 " WHERE o.uid = $1 ",
         );
@@ -56,7 +56,7 @@ pub async fn get_by_tx(
     const QUERY: &str = const_format::concatcp!(
         orders::SETTLEMENT_LOG_INDICES,
         "SELECT ",
-        JIT_ORDERS_SELECT,
+        ORDERS_SELECT,
         " FROM jit_orders o 
         JOIN trades t ON t.order_uid = o.uid",
         " WHERE
