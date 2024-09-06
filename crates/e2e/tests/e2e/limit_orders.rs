@@ -819,11 +819,22 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
 
     let trades = services.get_trades(&order_id).await.unwrap();
+    let executed_protocol_fee = trades
+        .first()
+        .unwrap()
+        .executed_protocol_fees
+        .first()
+        .unwrap();
     assert_eq!(
-        trades.first().unwrap().fee_policies,
-        vec![model::fee_policy::FeePolicy::Surplus {
+        executed_protocol_fee.policy,
+        model::fee_policy::FeePolicy::Surplus {
             factor: 0.5,
             max_volume_factor: 0.01
-        }],
+        }
     );
+    assert_eq!(
+        executed_protocol_fee.token,
+        onchain.contracts().weth.address()
+    );
+    assert!(executed_protocol_fee.amount > U256::zero());
 }

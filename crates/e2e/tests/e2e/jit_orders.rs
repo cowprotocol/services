@@ -193,9 +193,14 @@ async fn single_limit_order_test(web3: Web3) {
     .await
     .unwrap();
 
-    // jit order can be found on /get_order
+    // jit order can be found on /api/v1/orders
     services.get_order(&jit_order_uid).await.unwrap();
-    // jit order can be found on /get_trades
+    // jit order can be found on /api/v1/trades
     let orders = services.get_trades(&jit_order_uid).await.unwrap();
-    assert_eq!(orders.len(), 1);
+    // jit order can be found on /api/v1/transactions/{tx_hash}/orders
+    let orders_by_tx = services
+        .get_orders_for_tx(&orders[0].tx_hash.unwrap())
+        .await
+        .unwrap();
+    assert!(orders_by_tx.iter().any(|o| o.metadata.uid == jit_order_uid));
 }

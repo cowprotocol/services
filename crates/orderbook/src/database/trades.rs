@@ -4,7 +4,7 @@ use {
     database::{byte_array::ByteArray, trades::TradesQueryRow},
     ethcontract::H160,
     futures::stream::TryStreamExt,
-    model::{fee_policy::FeePolicy, order::OrderUid, trade::Trade},
+    model::{fee_policy::ExecutedProtocolFee, order::OrderUid, trade::Trade},
     number::conversions::big_decimal_to_big_uint,
     primitive_types::H256,
     std::convert::TryInto,
@@ -45,27 +45,32 @@ impl TradeRetrieving for Postgres {
             .iter()
             .filter_map(|t| t.auction_id.map(|auction_id| (auction_id, t.order_uid)))
             .collect::<Vec<_>>();
-        let fee_policies = self.fee_policies(auction_order_uids.as_slice()).await?;
+        let executed_protocol_fees = self
+            .executed_protocol_fees(auction_order_uids.as_slice())
+            .await?;
 
         trades
             .into_iter()
             .map(|trade| {
-                let fee_policies = trade
+                let executed_protocol_fees = trade
                     .auction_id
                     .map(|auction_id| {
-                        fee_policies
+                        executed_protocol_fees
                             .get(&(auction_id, trade.order_uid))
                             .cloned()
                             .unwrap_or_default()
                     })
                     .unwrap_or_default();
-                trade_from(trade, fee_policies)
+                trade_from(trade, executed_protocol_fees)
             })
             .collect::<Result<Vec<_>>>()
     }
 }
 
-fn trade_from(row: TradesQueryRow, fee_policies: Vec<FeePolicy>) -> Result<Trade> {
+fn trade_from(
+    row: TradesQueryRow,
+    executed_protocol_fees: Vec<ExecutedProtocolFee>,
+) -> Result<Trade> {
     let block_number = row
         .block_number
         .try_into()
@@ -93,7 +98,7 @@ fn trade_from(row: TradesQueryRow, fee_policies: Vec<FeePolicy>) -> Result<Trade
         buy_token,
         sell_token,
         tx_hash,
-        fee_policies,
+        executed_protocol_fees,
     })
 }
 

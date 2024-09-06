@@ -1,10 +1,12 @@
 use {
     crate::{
+        boundary::{self, SolvableOrders},
         domain::{self, auction::Price, eth},
         infra::{self, banned},
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     bigdecimal::BigDecimal,
+    chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
     ethrpc::block_stream::CurrentBlockWatcher,
     futures::future::join_all,
@@ -38,11 +40,11 @@ use {
     },
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
-        sync::{Arc, Mutex, Weak},
+        sync::{Arc, Weak},
         time::Duration,
     },
     strum::VariantNames,
-    tokio::time::Instant,
+    tokio::{sync::Mutex, time::Instant},
     tracing::Instrument,
 };
 
@@ -91,7 +93,7 @@ pub struct SolvableOrdersCache {
     banned_users: banned::Users,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    cache: Mutex<Inner>,
+    cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
@@ -104,8 +106,9 @@ pub struct SolvableOrdersCache {
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: Option<domain::Auction>,
-    update_time: Instant,
+    auction: domain::Auction,
+    solvable_orders: boundary::SolvableOrders,
+    last_order_creation_timestamp: DateTime<Utc>,
 }
 
 impl SolvableOrdersCache {
@@ -129,10 +132,7 @@ impl SolvableOrdersCache {
             banned_users,
             balance_fetcher,
             bad_token_detector,
-            cache: Mutex::new(Inner {
-                auction: None,
-                update_time: Instant::now(),
-            }),
+            cache: Mutex::new(None),
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
@@ -157,8 +157,12 @@ impl SolvableOrdersCache {
         );
     }
 
-    pub fn current_auction(&self) -> Option<domain::Auction> {
-        self.cache.lock().unwrap().auction.clone()
+    pub async fn current_auction(&self) -> Option<domain::Auction> {
+        self.cache
+            .lock()
+            .await
+            .as_ref()
+            .map(|inner| inner.auction.clone())
     }
 
     /// Manually update solvable orders. Usually called by the background
@@ -169,30 +173,28 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let start = Instant::now();
-        let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
-        let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
+        let (db_solvable_orders, latest_creation_timestamp) = self.get_solvable_orders().await?;
+
+        let orders = db_solvable_orders
+            .orders
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let mut counter = OrderFilterCounter::new(self.metrics, &orders);
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
         let (balances, orders, cow_amms) = {
-            let queries = db_solvable_orders
-                .orders
-                .iter()
-                .map(Query::from_order)
-                .collect::<Vec<_>>();
+            let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
             let cow_amms_fut = async {
                 let _timer = self.stage_timer("cow_amm_registry");
                 self.cow_amm_registry.amms().await
             };
             tokio::join!(
                 self.fetch_balances(queries),
-                self.filter_invalid_orders(
-                    db_solvable_orders.orders,
-                    &mut counter,
-                    &mut invalid_order_uids,
-                ),
+                self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
                 cow_amms_fut
             )
         };
@@ -301,10 +303,11 @@ impl SolvableOrdersCache {
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
-        *self.cache.lock().unwrap() = Inner {
-            auction: Some(auction),
-            update_time: Instant::now(),
-        };
+        *self.cache.lock().await = Some(Inner {
+            auction,
+            solvable_orders: db_solvable_orders,
+            last_order_creation_timestamp: latest_creation_timestamp,
+        });
 
         tracing::debug!(%block, "updated current auction cache");
         self.metrics
@@ -335,6 +338,74 @@ impl SolvableOrdersCache {
                 }
             })
             .collect()
+    }
+
+    /// Returns current solvable orders along with the latest order creation
+    /// timestamp.
+    async fn get_solvable_orders(&self) -> Result<(SolvableOrders, DateTime<Utc>)> {
+        const INITIAL_ORDER_CREATION_TIMESTAMP: DateTime<Utc> = DateTime::<Utc>::MIN_UTC;
+
+        // A new auction should be created regardless of whether new solvable orders are
+        // found. The incremental solvable orders cache updater should only be
+        // enabled after the initial full SQL query
+        // (`persistence::all_solvable_orders`) returned some orders. Until then,
+        // `MIN_UTC` is used to indicate that no orders have been found yet by
+        // (`persistence::all_solvable_orders`). This prevents situations where
+        // starting the service with a large existing DB would cause
+        // the incremental query to load all unfiltered orders into memory, potentially
+        // leading to OOM issues because incremental query doesn't filter out
+        // expired/invalid orders in the SQL query and basically can return the whole
+        // table when filters with default values are used.
+        let (db_solvable_orders, previous_creation_timestamp) = {
+            let cache_data = {
+                let lock = self.cache.lock().await;
+                match &*lock {
+                    Some(cache)
+                        if cache.last_order_creation_timestamp
+                            > INITIAL_ORDER_CREATION_TIMESTAMP =>
+                    {
+                        Some((
+                            cache.solvable_orders.orders.clone(),
+                            cache.last_order_creation_timestamp,
+                            cache.solvable_orders.latest_settlement_block,
+                        ))
+                    }
+                    _ => None,
+                }
+            };
+
+            let min_valid_to = now_in_epoch_seconds()
+                + u32::try_from(self.min_order_validity_period.as_secs())
+                    .context("min_order_validity_period is not u32")?;
+            match cache_data {
+                Some((current_orders, last_order_creation_timestamp, latest_settlement_block)) => (
+                    self.persistence
+                        .solvable_orders_after(
+                            current_orders,
+                            last_order_creation_timestamp,
+                            latest_settlement_block,
+                            min_valid_to,
+                        )
+                        .await?,
+                    last_order_creation_timestamp,
+                ),
+                None => (
+                    self.persistence.all_solvable_orders(min_valid_to).await?,
+                    INITIAL_ORDER_CREATION_TIMESTAMP,
+                ),
+            }
+        };
+
+        let latest_creation_timestamp = db_solvable_orders
+            .orders
+            .values()
+            .map(|order| order.metadata.creation_date)
+            .max()
+            .map_or(previous_creation_timestamp, |max_creation_timestamp| {
+                std::cmp::max(max_creation_timestamp, previous_creation_timestamp)
+            });
+
+        Ok((db_solvable_orders, latest_creation_timestamp))
     }
 
     /// Executed orders filtering in parallel.
@@ -371,10 +442,6 @@ impl SolvableOrdersCache {
 
         orders.retain(|order| !invalid_order_uids.contains(&order.metadata.uid));
         orders
-    }
-
-    pub fn last_update_time(&self) -> Instant {
-        self.cache.lock().unwrap().update_time
     }
 
     pub fn track_auction_update(&self, result: &str) {
