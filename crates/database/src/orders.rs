@@ -1728,18 +1728,46 @@ mod tests {
         );
 
         // order_execution table
-        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 1, 1, &BigDecimal::from(1))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 2, 2, &BigDecimal::from(2))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &ByteArray([1u8; 56]), 3, 0, &BigDecimal::from(4))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &ByteArray([3u8; 56]), 2, 3, &BigDecimal::from(4))
-            .await
-            .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            1,
+            1,
+            &BigDecimal::from(1),
+            &[],
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            2,
+            2,
+            &BigDecimal::from(2),
+            &[],
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            3,
+            0,
+            &BigDecimal::from(4),
+            &[],
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([3u8; 56]),
+            2,
+            3,
+            &BigDecimal::from(4),
+            &[],
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             get_open_orders_after(&mut db, 0, future_timestamp).await,
