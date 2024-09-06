@@ -182,7 +182,7 @@ jobs:
       - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
 
   run-flaky-test:
-    # set to true while you debug a flaky test
+    # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
     if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
@@ -211,9 +211,9 @@ jobs:
         run: |
           attempt=1
           while true; do
-            echo "Running test attempt #$i"
+            echo "Running test attempt #$attempt"
             if ! cargo nextest run -p e2e local_node_no_liquidity_limit_order --test-threads 1 --failure-output final --run-ignored ignored-only; then
-              echo "Test failed on attempt #$i"
               exit 1
             fi
+            attempt=$((attempt+1))
           done
