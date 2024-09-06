@@ -217,7 +217,7 @@ mod tests {
 
         let jit_order = JitOrder::default();
 
-        // insert a jit order and read it back
+        // insert a jit order and make sure JIT_ORDERS_SELECT works properly
         insert(&mut db, &[jit_order.clone()]).await.unwrap();
         get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
     }
