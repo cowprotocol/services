@@ -576,10 +576,30 @@ impl<'a> Services<'a> {
 
 pub async fn clear_database() {
     tracing::info!("Clearing database.");
-    let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await.unwrap();
-    let mut db = db.begin().await.unwrap();
-    database::clear_DANGER_(&mut db).await.unwrap();
-    db.commit().await.unwrap();
+
+    async fn truncate_tables() -> Result<(), sqlx::Error> {
+        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
+        let mut db = db.begin().await?;
+        database::clear_DANGER_(&mut db).await?;
+        db.commit().await
+    }
+
+    // This operation can fail when postgres detects a deadlock.
+    // It will terminate one of the deadlocking requests and if it decideds
+    // to terminate this request we need to retry it.
+    let mut attempt = 0;
+    loop {
+        match truncate_tables().await {
+            Ok(_) => return,
+            Err(err) => {
+                tracing::error!(?err, "failed to truncate tables");
+            }
+        }
+        attempt += 1;
+        if attempt >= 10 {
+            panic!("repeatedly failed to clear DB");
+        }
+    }
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;
