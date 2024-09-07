@@ -141,7 +141,7 @@ async fn smart_contract_orders(web3: Web3) {
             .await
             .expect("Couldn't fetch native token balance");
 
-        token_balance > 0.into() && weth_balance > to_wei(6)
+        token_balance.is_zero() && weth_balance > to_wei(6)
     })
     .await
     .unwrap();
