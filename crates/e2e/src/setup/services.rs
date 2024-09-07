@@ -136,7 +136,7 @@ impl<'a> Services<'a> {
     /// driver delays the submission of the solution until shortly before the
     /// deadline in case the solution would start to revert at some point)
     pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
-        let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(1));
+        let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
 
         let args = [
             "autopilot".to_string(),
