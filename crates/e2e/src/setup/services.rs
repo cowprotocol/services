@@ -107,6 +107,7 @@ impl<'a> Services<'a> {
             "--block-stream-poll-interval=1s".to_string(),
             "--simulation-node-url=http://localhost:8545".to_string(),
             "--native-price-cache-max-age=1s".to_string(),
+            "--native-price-prefetch-time=500ms".to_string(),
         ]
         .into_iter()
     }
