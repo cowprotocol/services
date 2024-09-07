@@ -74,6 +74,12 @@ impl AwaitableCondition for Option<bool> {
     }
 }
 
+impl AwaitableCondition for Result<bool> {
+    fn was_successful(&self) -> bool {
+        self.as_ref().is_ok_and(|inner| *inner)
+    }
+}
+
 static NODE_MUTEX: Mutex<()> = Mutex::new(());
 
 const DEFAULT_FILTERS: &[&str] = &[
