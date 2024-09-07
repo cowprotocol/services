@@ -810,9 +810,14 @@ async fn no_liquidity_limit_order(web3: Web3) {
         onchain.mint_block().await;
     }
 
-    // wait for trade to be indexed
+    // wait for trade to be indexed and post-processed
     wait_for_condition(TIMEOUT, || async {
-        !services.get_trades(&order_id).await.unwrap().is_empty()
+        services
+            .get_trades(&order_id)
+            .await
+            .unwrap()
+            .first()
+            .is_some_and(|t| !t.executed_protocol_fees.is_empty())
     })
     .await
     .unwrap();
