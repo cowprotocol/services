@@ -106,6 +106,7 @@ impl<'a> Services<'a> {
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             "--simulation-node-url=http://localhost:8545".to_string(),
+            "--native-price-cache-max-age=1s".to_string(),
         ]
         .into_iter()
     }
@@ -134,7 +135,7 @@ impl<'a> Services<'a> {
     /// driver delays the submission of the solution until shortly before the
     /// deadline in case the solution would start to revert at some point)
     pub async fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
-        let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
+        let solve_deadline = solve_deadline.unwrap_or(Duration::from_millis(500));
 
         let args = [
             "autopilot".to_string(),
