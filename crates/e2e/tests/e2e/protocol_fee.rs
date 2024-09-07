@@ -288,7 +288,6 @@ async fn combined_protocol_fees(web3: Web3) {
         .expect("Timeout waiting for the orders to trade");
 
     tracing::info!("Checking executions...");
-    // somehow we got here shortly before we even called `/settle` the first time...
     let market_price_improvement_order = services
         .get_order(&market_price_improvement_uid)
         .await
@@ -352,13 +351,8 @@ async fn combined_protocol_fees(web3: Web3) {
         limit_executed_surplus_fee_in_buy_token,
         limit_order_token_balance
     );
-    // These values are off by a factor of 51!
     assert_approximately_eq!(
-        // 103616074113323423325
-        // predicted partner fee for that order
         partner_fee_executed_surplus_fee_in_buy_token,
-        // 2031687727712223986
-        // the balance of the settlement contract of the fee token of the partner fee order
         partner_fee_order_token_balance
     );
 }
