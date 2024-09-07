@@ -154,23 +154,19 @@ async fn single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
+    let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_b.balance_of(trader_a.address()).call().await.unwrap();
+        balance_after.checked_sub(balance_before).unwrap() >= to_wei(5)
+    })
+    .await
+    .unwrap();
 }
 
 async fn two_limit_orders_test(web3: Web3) {
@@ -566,12 +562,6 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         })
         .await;
 
-    let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
-
-    // Drive solution
-    tracing::info!("Waiting for trade.");
     let sell_token_balance_before = token_usdc
         .balance_of(trader.address())
         .call()
@@ -582,28 +572,30 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .call()
         .await
         .unwrap();
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
+    // Drive solution
+    tracing::info!("Waiting for trade.");
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        let sell_token_balance_after = token_usdc
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap();
+        let buy_token_balance_after = token_usdt
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap();
 
-    let sell_token_balance_after = token_usdc
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-    let buy_token_balance_after = token_usdt
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-
-    assert!(sell_token_balance_before > sell_token_balance_after);
-    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6));
+        (sell_token_balance_before > sell_token_balance_after)
+            && (buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6))
+    })
+    .await
+    .unwrap();
 }
 
 async fn forked_gnosis_single_limit_order_test(web3: Web3) {
@@ -662,12 +654,6 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
-
-    // Drive solution
-    tracing::info!("Waiting for trade.");
     let sell_token_balance_before = token_usdc
         .balance_of(trader.address())
         .call()
@@ -678,28 +664,30 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .call()
         .await
         .unwrap();
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
+    // Drive solution
+    tracing::info!("Waiting for trade.");
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        let sell_token_balance_after = token_usdc
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap();
+        let buy_token_balance_after = token_wxdai
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap();
 
-    let sell_token_balance_after = token_usdc
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-    let buy_token_balance_after = token_wxdai
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-
-    assert!(sell_token_balance_before > sell_token_balance_after);
-    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei(500));
+        (sell_token_balance_before > sell_token_balance_after)
+            && (buy_token_balance_after >= buy_token_balance_before + to_wei(500))
+    })
+    .await
+    .unwrap();
 }
 
 async fn no_liquidity_limit_order(web3: Web3) {
