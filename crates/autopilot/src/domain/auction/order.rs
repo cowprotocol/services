@@ -14,7 +14,6 @@ pub struct Order {
     pub buy: eth::Asset,
     pub protocol_fees: Vec<fee::Policy>,
     pub side: Side,
-    pub class: Class,
     pub created: u32,
     pub valid_to: u32,
     pub receiver: Option<eth::Address>,
@@ -30,18 +29,6 @@ pub struct Order {
     pub app_data: AppDataHash,
     pub signature: Signature,
     pub quote: Option<domain::Quote>,
-}
-
-impl Order {
-    pub fn is_limit_order(&self) -> bool {
-        matches!(self.class, Class::Limit)
-    }
-
-    /// For some orders the protocol doesn't precompute a fee. Instead solvers
-    /// are supposed to compute a reasonable fee themselves.
-    pub fn solver_determines_fee(&self) -> bool {
-        self.is_limit_order()
-    }
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -85,13 +72,6 @@ impl fmt::Debug for OrderUid {
 pub enum Side {
     Buy,
     Sell,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Class {
-    Market,
-    Limit,
-    Liquidity,
 }
 
 #[derive(Clone, Debug, PartialEq)]
