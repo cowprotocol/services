@@ -39,7 +39,7 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Repeatedly evaluates condition until it returns a truthy value
-/// (true, Some(true), Result(true)) or the timeout is reached. 
+/// (true, Some(true), Result(true)) or the timeout is reached.
 /// If condition evaluates to truthy, Ok(()) is returned. If the timeout
 /// is reached Err is returned.
 pub async fn wait_for_condition<Fut>(
