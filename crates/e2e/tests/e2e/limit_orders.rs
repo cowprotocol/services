@@ -252,6 +252,10 @@ async fn two_limit_orders_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
+
+    let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
+
     let order_id = services.create_order(&order_a).await.unwrap();
 
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -276,26 +280,17 @@ async fn two_limit_orders_test(web3: Web3) {
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
-        .await
-        .unwrap();
-
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let balance_before_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let balance_after_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    let balance_after_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    assert!(balance_after_a.checked_sub(balance_before_a).unwrap() >= to_wei(5));
-    assert!(balance_after_b.checked_sub(balance_before_b).unwrap() >= to_wei(2));
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after_a = token_b.balance_of(trader_a.address()).call().await.unwrap();
+        let balance_after_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
+        let order_a_settled = balance_after_a.saturating_sub(balance_before_a) >= to_wei(5);
+        let order_b_settled = balance_after_b.saturating_sub(balance_before_b) >= to_wei(2);
+        order_a_settled && order_b_settled
+    })
+    .await
+    .unwrap();
 }
 
 async fn too_many_limit_orders_test(web3: Web3) {
