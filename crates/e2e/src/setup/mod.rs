@@ -46,16 +46,32 @@ pub async fn wait_for_condition<Fut>(
     mut condition: impl FnMut() -> Fut,
 ) -> Result<()>
 where
-    Fut: Future<Output = bool>,
+    Fut: Future<Output: AwaitableCondition>,
 {
     let start = std::time::Instant::now();
-    while !condition().await {
+    while !condition().await.was_successful() {
         tokio::time::sleep(Duration::from_millis(200)).await;
         if start.elapsed() > timeout {
             return Err(anyhow!("timeout"));
         }
     }
     Ok(())
+}
+
+pub trait AwaitableCondition {
+    fn was_successful(&self) -> bool;
+}
+
+impl AwaitableCondition for bool {
+    fn was_successful(&self) -> bool {
+        *self
+    }
+}
+
+impl AwaitableCondition for Option<bool> {
+    fn was_successful(&self) -> bool {
+        self.is_some_and(|inner| inner)
+    }
 }
 
 static NODE_MUTEX: Mutex<()> = Mutex::new(());

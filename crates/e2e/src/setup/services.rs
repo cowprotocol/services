@@ -322,6 +322,9 @@ impl<'a> Services<'a> {
             .expect("waiting for autopilot timed out");
     }
 
+    /// Fetches the current auction. Don't use this as a synchronization
+    /// mechanism in tests because that is prone to race conditions
+    /// which would make tests flaky.
     pub async fn get_auction(&self) -> dto::AuctionWithId {
         let response = self
             .http
@@ -435,10 +438,6 @@ impl<'a> Services<'a> {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err((code, body)),
         }
-    }
-
-    pub async fn solvable_orders(&self) -> usize {
-        self.get_auction().await.auction.orders.len()
     }
 
     /// Retrieve an [`Order`]. If the respons status is not `200`, return the

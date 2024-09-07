@@ -42,7 +42,6 @@ async fn eth_integration(web3: Web3) {
     );
 
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
-    let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
@@ -103,23 +102,13 @@ async fn eth_integration(web3: Web3) {
     services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
-        .await
-        .unwrap();
-
     let trade_happened = || async {
         let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
         let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();
-        balance_a != trader_a_eth_balance_before && balance_b != trader_b_eth_balance_before
+
+        let trader_a_eth_decreased = (balance_a - trader_a_eth_balance_before) == to_wei(49);
+        let trader_b_eth_increased = balance_b >= to_wei(49);
+        trader_a_eth_decreased && trader_b_eth_increased
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-
-    // Check matching
-    let trader_a_eth_balance_after = web3.eth().balance(trader_a.address(), None).await.unwrap();
-    let trader_b_eth_balance_after = web3.eth().balance(trader_b.address(), None).await.unwrap();
-    assert_eq!(
-        trader_a_eth_balance_after - trader_a_eth_balance_before,
-        to_wei(49)
-    );
-    assert!(trader_b_eth_balance_after >= to_wei(49));
 }
