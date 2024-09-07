@@ -212,7 +212,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e protocol_fee::local_node_volume_fee_buy_order --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run -p e2e protocol_fee::local_node_combined_protocol_fees --test-threads 1 --failure-output final --run-ignored ignored-only; then
               exit 1
             fi
             attempt=$((attempt+1))
