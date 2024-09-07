@@ -274,9 +274,10 @@ async fn combined_protocol_fees(web3: Web3) {
                 &partner_fee_order_uid,
             ]
             .map(|uid| async {
-                let order = services.get_order(uid).await;
-                tracing::info!(?order, "latest state");
-                order.is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero())
+                services
+                    .get_order(uid)
+                    .await
+                    .is_ok_and(|order| !order.metadata.executed_surplus_fee.is_zero())
             }),
         )
         .await
