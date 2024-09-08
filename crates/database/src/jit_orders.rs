@@ -16,7 +16,7 @@ use {
     },
 };
 
-pub const ORDERS_SELECT: &str = r#"
+pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.fee_amount AS full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, '\x9008d19f58aabd9ed0d60971565aa8510560ab41'::bytea AS settlement_contract, o.sell_token_balance, o.buy_token_balance,
@@ -35,6 +35,8 @@ COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o
 NULL AS full_app_data
 "#;
 
+pub const FROM: &str = "jit_orders o";
+
 pub async fn get_by_id(
     ex: &mut PgConnection,
     uid: &OrderUid,
@@ -42,8 +44,8 @@ pub async fn get_by_id(
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
 "SELECT ",
-ORDERS_SELECT,
-" FROM jit_orders o",
+SELECT,
+" FROM ", FROM,
 " WHERE o.uid = $1 ",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
@@ -56,9 +58,10 @@ pub async fn get_by_tx(
     const QUERY: &str = const_format::concatcp!(
         orders::SETTLEMENT_LOG_INDICES,
         "SELECT ",
-        ORDERS_SELECT,
-        " FROM jit_orders o 
-        JOIN trades t ON t.order_uid = o.uid",
+        SELECT,
+        " FROM ",
+        FROM,
+        "JOIN trades t ON t.order_uid = o.uid",
         " WHERE
         t.block_number = (SELECT block_number FROM settlement) AND
         -- BETWEEN is inclusive
@@ -217,7 +220,7 @@ mod tests {
 
         let jit_order = JitOrder::default();
 
-        // insert a jit order and make sure ORDERS_SELECT works properly
+        // insert a jit order and make sure "SELECT" query works properly
         insert(&mut db, &[jit_order.clone()]).await.unwrap();
         get_by_id(&mut db, &jit_order.uid).await.unwrap().unwrap();
     }

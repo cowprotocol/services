@@ -522,7 +522,7 @@ impl FullOrder {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides
 // that with the current amount of data this wouldn't be better.
-pub const ORDERS_SELECT: &str = r#"
+pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
@@ -552,7 +552,7 @@ COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
-pub const ORDERS_FROM: &str = "orders o";
+pub const FROM: &str = "orders o";
 
 pub async fn single_full_order(
     ex: &mut PgConnection,
@@ -560,8 +560,8 @@ pub async fn single_full_order(
 ) -> Result<Option<FullOrder>, sqlx::Error> {
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
-"SELECT ", ORDERS_SELECT,
-" FROM ", ORDERS_FROM,
+"SELECT ", SELECT,
+" FROM ", FROM,
 " WHERE o.uid = $1 ",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
@@ -599,8 +599,8 @@ pub fn full_orders_in_tx<'a>(
     const QUERY: &str = const_format::formatcp!(
         r#"
 {SETTLEMENT_LOG_INDICES}
-SELECT {ORDERS_SELECT}
-FROM {ORDERS_FROM}
+SELECT {SELECT}
+FROM {FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
@@ -623,8 +623,8 @@ WHERE
 #[rustfmt::skip]
 const OPEN_ORDERS: &str = const_format::concatcp!(
 "SELECT * FROM ( ",
-    "SELECT ", ORDERS_SELECT,
-    " FROM ", ORDERS_FROM,
+    "SELECT ", SELECT,
+    " FROM ", FROM,
     " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
     " WHERE o.valid_to >= $1",
     " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
@@ -677,8 +677,8 @@ WITH updated_uids AS (
     #[rustfmt::skip]
     const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
         UPDATED_UIDS_QUERY,
-        " SELECT ", ORDERS_SELECT,
-        " FROM ", ORDERS_FROM,
+        " SELECT ", SELECT,
+        " FROM ", FROM,
         " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
         " WHERE (o.creation_timestamp > $2 OR o.cancellation_timestamp > $2 OR o.uid IN (SELECT order_uid FROM updated_uids))",
     );

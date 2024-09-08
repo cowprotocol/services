@@ -31,15 +31,15 @@ pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
-pub fn order_status_endpoint(uid: &OrderUid) -> String {
+fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
 }
 
-pub fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
+fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
     format!("/api/v1/transactions/{tx_hash:?}/orders")
 }
 
-pub fn orders_for_owner(owner: &H160, offset: u64, limit: u64) -> String {
+fn orders_for_owner(owner: &H160, offset: u64, limit: u64) -> String {
     format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
 
