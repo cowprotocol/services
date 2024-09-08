@@ -61,7 +61,7 @@ pub async fn get_by_tx(
         SELECT,
         " FROM ",
         FROM,
-        "JOIN trades t ON t.order_uid = o.uid",
+        " JOIN trades t ON t.order_uid = o.uid",
         " WHERE
         t.block_number = (SELECT block_number FROM settlement) AND
         -- BETWEEN is inclusive
