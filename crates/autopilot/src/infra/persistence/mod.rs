@@ -80,11 +80,11 @@ impl Persistence {
     pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, DatabaseError> {
+    ) -> anyhow::Result<boundary::SolvableOrders> {
         self.postgres
             .all_solvable_orders(min_valid_to)
             .await
-            .map_err(DatabaseError)
+            .context("failed to fetch all solvable orders")
     }
 
     /// Saves the given auction to storage for debugging purposes.
@@ -411,6 +411,7 @@ impl Persistence {
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
+        let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
         // so all the SELECT queries below are executed in the same database snapshot
@@ -418,6 +419,16 @@ impl Persistence {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
+
+        // Find order uids for orders that were updated after the given block.
+        let updated_order_uids = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["updated_order_uids"])
+                .start_timer();
+
+            database::orders::updated_order_uids_after(&mut tx, after_block).await?
+        };
 
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
@@ -427,14 +438,18 @@ impl Persistence {
                 .with_label_values(&["open_orders_after"])
                 .start_timer();
 
-            database::orders::open_orders_after(&mut tx, after_block, after_timestamp)
-                .map(|result| match result {
-                    Ok(order) => full_order_into_model_order(order)
-                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
-                    Err(err) => Err(anyhow::Error::from(err)),
-                })
-                .try_collect()
-                .await?
+            database::orders::open_orders_by_time_or_uids(
+                &mut tx,
+                &updated_order_uids,
+                after_timestamp,
+            )
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order)
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await?
         };
 
         // Fetch quotes for new orders and also update them for the cached ones since
@@ -478,6 +493,7 @@ impl Persistence {
             updated_quotes,
             latest_settlement_block,
             min_valid_to,
+            started_at,
         )
     }
 
@@ -487,6 +503,7 @@ impl Persistence {
         mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
         latest_settlement_block: u64,
         min_valid_to: u32,
+        started_at: chrono::DateTime<chrono::Utc>,
     ) -> anyhow::Result<boundary::SolvableOrders> {
         // Blindly insert all new orders into the cache.
         for (uid, order) in next_orders {
@@ -531,6 +548,7 @@ impl Persistence {
             orders: current_orders,
             quotes: next_quotes,
             latest_settlement_block,
+            fetched_from_db: started_at,
         })
     }
 

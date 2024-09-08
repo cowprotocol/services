@@ -84,6 +84,9 @@ The CI (check .github/workflows/pull-request.yaml) runs unit tests, e2e tests, `
 
 `cargo clippy --all-features --all-targets -- -D warnings`
 
+### Flaky Tests
+In case a test is flaky and only fails **sometimes** in CI you can use the [`run-flaky-test`](.github/workflows/pull-request.yaml) github action to test your fix with the CI to get confidence that the fix that works locally also works in CI.
+
 ## Development Setup
 
 ### Postgres

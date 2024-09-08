@@ -649,43 +649,22 @@ pub fn solvable_orders(
     sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
-pub fn open_orders_after(
-    ex: &mut PgConnection,
-    after_block: i64,
+pub fn open_orders_by_time_or_uids<'a>(
+    ex: &'a mut PgConnection,
+    uids: &'a [OrderUid],
     after_timestamp: DateTime<Utc>,
-) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
-    const UPDATED_UIDS_QUERY: &str = r#"
-WITH updated_uids AS (
-    SELECT DISTINCT order_uid FROM (
-        SELECT order_uid FROM trades WHERE block_number > $1
-        UNION
-        SELECT order_uid FROM order_execution WHERE block_number > $1
-        UNION
-        SELECT order_uid FROM invalidations WHERE block_number > $1
-        UNION
-        SELECT uid AS order_uid FROM onchain_order_invalidations WHERE block_number > $1
-        UNION
-        SELECT uid AS order_uid FROM onchain_placed_orders WHERE block_number > $1
-        UNION
-        SELECT order_uid FROM ethflow_refunds WHERE block_number > $1
-        UNION
-        SELECT order_uid FROM presignature_events WHERE block_number > $1
-    )
-)
-    "#;
-
+) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
     #[rustfmt::skip]
     const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
-        UPDATED_UIDS_QUERY,
-        " SELECT ", SELECT,
+        "SELECT ", SELECT,
         " FROM ", FROM,
         " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
-        " WHERE (o.creation_timestamp > $2 OR o.cancellation_timestamp > $2 OR o.uid IN (SELECT order_uid FROM updated_uids))",
+        " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))",
     );
 
     sqlx::query_as(OPEN_ORDERS_AFTER)
-        .bind(after_block)
         .bind(after_timestamp)
+        .bind(uids)
         .fetch(ex)
 }
 
@@ -755,6 +734,31 @@ pub async fn user_orders_with_quote(
         .bind(owner)
         .fetch_all(ex)
         .await
+}
+
+pub async fn updated_order_uids_after(
+    ex: &mut PgConnection,
+    after_block: i64,
+) -> Result<Vec<OrderUid>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT DISTINCT order_uid FROM (
+    SELECT order_uid FROM trades WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM order_execution WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM invalidations WHERE block_number > $1
+    UNION
+    SELECT uid AS order_uid FROM onchain_order_invalidations WHERE block_number > $1
+    UNION
+    SELECT uid AS order_uid FROM onchain_placed_orders WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM ethflow_refunds WHERE block_number > $1
+    UNION
+    SELECT order_uid FROM presignature_events WHERE block_number > $1
+) AS updated_orders
+"#;
+
+    sqlx::query_as(QUERY).bind(after_block).fetch_all(ex).await
 }
 
 #[cfg(test)]
@@ -1543,17 +1547,17 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_open_orders_after() {
+    async fn postgres_open_orders_by_time_or_uids() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        async fn get_open_orders_after(
+        async fn get_open_orders_by_time_or_uids(
             ex: &mut PgConnection,
-            after_block: i64,
             after_timestamp: DateTime<Utc>,
+            uids: &[OrderUid],
         ) -> HashSet<OrderUid> {
-            open_orders_after(ex, after_block, after_timestamp)
+            open_orders_by_time_or_uids(ex, uids, after_timestamp)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -1579,264 +1583,56 @@ mod tests {
             ..Default::default()
         };
         insert_order(&mut db, &order_c).await.unwrap();
-        let order_d = Order {
-            uid: ByteArray([4u8; 56]),
-            cancellation_timestamp: Some(now + Duration::seconds(25)),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order_d).await.unwrap();
-        let order_e = Order {
-            uid: ByteArray([5u8; 56]),
-            cancellation_timestamp: Some(now + Duration::seconds(25)),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order_e).await.unwrap();
 
         // Check fetching by timestamp only.
         // Early timestamp should cover all the orders.
         assert_eq!(
-            get_open_orders_after(&mut db, Default::default(), now - Duration::seconds(1)).await,
-            hashset![
-                ByteArray([1u8; 56]),
-                ByteArray([2u8; 56]),
-                ByteArray([3u8; 56]),
-                ByteArray([4u8; 56]),
-                ByteArray([5u8; 56]),
-            ]
-        );
-        // First order created at `now` timestamp.
-        assert_eq!(
-            get_open_orders_after(&mut db, Default::default(), now).await,
-            hashset![
-                ByteArray([2u8; 56]),
-                ByteArray([3u8; 56]),
-                ByteArray([4u8; 56]),
-                ByteArray([5u8; 56])
-            ]
-        );
-        // First to orders created before `now + 10s` timestamp.
-        assert_eq!(
-            get_open_orders_after(&mut db, Default::default(), now + Duration::seconds(10)).await,
-            hashset![
-                ByteArray([3u8; 56]),
-                ByteArray([4u8; 56]),
-                ByteArray([5u8; 56])
-            ]
-        );
-
-        // Check fetching by block number.
-        let future_timestamp = now + Duration::seconds(50000);
-        // trades table
-        let (index_a, event_a) = {
-            (
-                EventIndex {
-                    block_number: 1,
-                    ..Default::default()
-                },
-                Trade {
-                    order_uid: ByteArray([1u8; 56]),
-                    sell_amount_including_fee: BigDecimal::from(10),
-                    buy_amount: BigDecimal::from(100),
-                    fee_amount: BigDecimal::from(1),
-                },
+            get_open_orders_by_time_or_uids(
+                &mut db,
+                now - Duration::seconds(1),
+                Default::default()
             )
-        };
-        let (index_b, event_b) = {
-            (
-                EventIndex {
-                    block_number: 2,
-                    ..Default::default()
-                },
-                Trade {
-                    order_uid: ByteArray([1u8; 56]),
-                    sell_amount_including_fee: BigDecimal::from(20),
-                    buy_amount: BigDecimal::from(200),
-                    fee_amount: BigDecimal::from(2),
-                },
+            .await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+            ]
+        );
+        // Only 2 orders created after `now`.
+        assert_eq!(
+            get_open_orders_by_time_or_uids(&mut db, now, Default::default()).await,
+            hashset![ByteArray([2u8; 56]), ByteArray([3u8; 56]),]
+        );
+        // Only 1 order created after `now + 10s`
+        assert_eq!(
+            get_open_orders_by_time_or_uids(
+                &mut db,
+                now + Duration::seconds(10),
+                Default::default()
             )
-        };
-        let (index_c, event_c) = {
-            (
-                EventIndex {
-                    block_number: 1,
-                    log_index: 1,
-                },
-                Trade {
-                    order_uid: ByteArray([2u8; 56]),
-                    sell_amount_including_fee: BigDecimal::from(40),
-                    buy_amount: BigDecimal::from(400),
-                    fee_amount: BigDecimal::from(4),
-                },
+            .await,
+            hashset![ByteArray([3u8; 56]),]
+        );
+        // Even though no orders should be returned after the provided timestamp,
+        // specified order UIDs list helps to return all the requested orders.
+        assert_eq!(
+            get_open_orders_by_time_or_uids(
+                &mut db,
+                now + Duration::seconds(20),
+                &[
+                    ByteArray([1u8; 56]),
+                    ByteArray([2u8; 56]),
+                    ByteArray([3u8; 56]),
+                ]
             )
-        };
-
-        crate::events::insert_trade(&mut db, &index_a, &event_a)
-            .await
-            .unwrap();
-        crate::events::insert_trade(&mut db, &index_b, &event_b)
-            .await
-            .unwrap();
-        crate::events::insert_trade(&mut db, &index_c, &event_c)
-            .await
-            .unwrap();
-
-        // No events after block 2.
-        assert!(get_open_orders_after(&mut db, 2, future_timestamp)
-            .await
-            .is_empty());
-        assert_eq!(
-            get_open_orders_after(&mut db, 0, future_timestamp).await,
-            hashset![ByteArray([1u8; 56]), ByteArray([2u8; 56])]
-        );
-
-        // order_execution table
-        crate::order_execution::save(
-            &mut db,
-            &ByteArray([1u8; 56]),
-            1,
-            1,
-            &BigDecimal::from(1),
-            &[],
-        )
-        .await
-        .unwrap();
-        crate::order_execution::save(
-            &mut db,
-            &ByteArray([1u8; 56]),
-            2,
-            2,
-            &BigDecimal::from(2),
-            &[],
-        )
-        .await
-        .unwrap();
-        crate::order_execution::save(
-            &mut db,
-            &ByteArray([1u8; 56]),
-            3,
-            0,
-            &BigDecimal::from(4),
-            &[],
-        )
-        .await
-        .unwrap();
-        crate::order_execution::save(
-            &mut db,
-            &ByteArray([3u8; 56]),
-            2,
-            3,
-            &BigDecimal::from(4),
-            &[],
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            get_open_orders_after(&mut db, 0, future_timestamp).await,
-            hashset![
-                ByteArray([1u8; 56]),
-                ByteArray([2u8; 56]),
-                ByteArray([3u8; 56])
-            ]
-        );
-
-        // invalidations table
-        let invalidation_events = vec![
-            (
-                EventIndex {
-                    block_number: 1,
-                    ..Default::default()
-                },
-                Event::Invalidation(Invalidation {
-                    order_uid: ByteArray([1u8; 56]),
-                }),
-            ),
-            (
-                EventIndex {
-                    block_number: 0,
-                    ..Default::default()
-                },
-                Event::Invalidation(Invalidation {
-                    order_uid: ByteArray([2u8; 56]),
-                }),
-            ),
-            (
-                EventIndex {
-                    block_number: 2,
-                    log_index: 1,
-                },
-                Event::Invalidation(Invalidation {
-                    order_uid: ByteArray([4u8; 56]),
-                }),
-            ),
-        ];
-        crate::events::append(&mut db, &invalidation_events)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            get_open_orders_after(&mut db, 0, future_timestamp).await,
+            .await,
             hashset![
                 ByteArray([1u8; 56]),
                 ByteArray([2u8; 56]),
                 ByteArray([3u8; 56]),
-                ByteArray([4u8; 56])
             ]
-        );
-
-        // onchain_order_invalidations table
-        insert_onchain_invalidation(
-            &mut db,
-            &EventIndex {
-                block_number: 0,
-                ..Default::default()
-            },
-            &ByteArray([3u8; 56]),
         )
-        .await
-        .unwrap();
-        insert_onchain_invalidation(
-            &mut db,
-            &EventIndex {
-                block_number: 1,
-                ..Default::default()
-            },
-            &ByteArray([2u8; 56]),
-        )
-        .await
-        .unwrap();
-        insert_onchain_invalidation(
-            &mut db,
-            &EventIndex {
-                block_number: 1,
-                ..Default::default()
-            },
-            &ByteArray([5u8; 56]),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            get_open_orders_after(&mut db, 0, future_timestamp).await,
-            hashset![
-                ByteArray([1u8; 56]),
-                ByteArray([2u8; 56]),
-                ByteArray([3u8; 56]),
-                ByteArray([4u8; 56]),
-                ByteArray([5u8; 56])
-            ]
-        );
-
-        // Combined query. Order 3 has event after block 2 and order 4, 5 have creation
-        // timestamp after `now + 20s`.
-        assert_eq!(
-            get_open_orders_after(&mut db, 2, now + Duration::seconds(20)).await,
-            hashset![
-                ByteArray([3u8; 56]),
-                ByteArray([4u8; 56]),
-                ByteArray([5u8; 56]),
-            ]
-        );
     }
 
     #[tokio::test]
@@ -2007,5 +1803,222 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(full_order.full_app_data, Some(full_app_data));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_updated_order_uids_after() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn get_updated_order_uids_after(
+            ex: &mut PgConnection,
+            after_block: i64,
+        ) -> HashSet<OrderUid> {
+            updated_order_uids_after(ex, after_block)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect()
+        }
+
+        // trades table
+        let (index_a, event_a) = {
+            (
+                EventIndex {
+                    block_number: 1,
+                    ..Default::default()
+                },
+                Trade {
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(10),
+                    buy_amount: BigDecimal::from(100),
+                    fee_amount: BigDecimal::from(1),
+                },
+            )
+        };
+        let (index_b, event_b) = {
+            (
+                EventIndex {
+                    block_number: 2,
+                    ..Default::default()
+                },
+                Trade {
+                    order_uid: ByteArray([1u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(20),
+                    buy_amount: BigDecimal::from(200),
+                    fee_amount: BigDecimal::from(2),
+                },
+            )
+        };
+        let (index_c, event_c) = {
+            (
+                EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+                Trade {
+                    order_uid: ByteArray([2u8; 56]),
+                    sell_amount_including_fee: BigDecimal::from(40),
+                    buy_amount: BigDecimal::from(400),
+                    fee_amount: BigDecimal::from(4),
+                },
+            )
+        };
+
+        crate::events::insert_trade(&mut db, &index_a, &event_a)
+            .await
+            .unwrap();
+        crate::events::insert_trade(&mut db, &index_b, &event_b)
+            .await
+            .unwrap();
+        crate::events::insert_trade(&mut db, &index_c, &event_c)
+            .await
+            .unwrap();
+
+        assert!(get_updated_order_uids_after(&mut db, 2).await.is_empty());
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![ByteArray([1u8; 56]), ByteArray([2u8; 56])]
+        );
+
+        // order_execution table
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            1,
+            1,
+            &BigDecimal::from(1),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            2,
+            2,
+            &BigDecimal::from(2),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([1u8; 56]),
+            3,
+            0,
+            &BigDecimal::from(4),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &ByteArray([3u8; 56]),
+            2,
+            3,
+            &BigDecimal::from(4),
+            Default::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56])
+            ]
+        );
+
+        // invalidations table
+        let invalidation_events = vec![
+            (
+                EventIndex {
+                    block_number: 1,
+                    ..Default::default()
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([1u8; 56]),
+                }),
+            ),
+            (
+                EventIndex {
+                    block_number: 0,
+                    ..Default::default()
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([2u8; 56]),
+                }),
+            ),
+            (
+                EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray([4u8; 56]),
+                }),
+            ),
+        ];
+        crate::events::append(&mut db, &invalidation_events)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+                ByteArray([4u8; 56])
+            ]
+        );
+
+        // onchain_order_invalidations table
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 0,
+                ..Default::default()
+            },
+            &ByteArray([3u8; 56]),
+        )
+        .await
+        .unwrap();
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                ..Default::default()
+            },
+            &ByteArray([2u8; 56]),
+        )
+        .await
+        .unwrap();
+        insert_onchain_invalidation(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                ..Default::default()
+            },
+            &ByteArray([5u8; 56]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            get_updated_order_uids_after(&mut db, 0).await,
+            hashset![
+                ByteArray([1u8; 56]),
+                ByteArray([2u8; 56]),
+                ByteArray([3u8; 56]),
+                ByteArray([4u8; 56]),
+                ByteArray([5u8; 56])
+            ]
+        );
     }
 }
