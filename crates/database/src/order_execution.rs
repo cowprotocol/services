@@ -19,6 +19,7 @@ pub async fn save(
     auction: AuctionId,
     block_number: i64,
     executed_fee: &BigDecimal,
+    _executed_fee_token: &Address, // todo
     executed_protocol_fees: &[Asset],
 ) -> Result<(), sqlx::Error> {
     let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = executed_protocol_fees

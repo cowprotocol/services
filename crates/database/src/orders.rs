@@ -486,6 +486,7 @@ pub struct FullOrder {
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
     pub executed_surplus_fee: BigDecimal,
+    pub executed_surplus_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -549,6 +550,7 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
+COALESCE((SELECT SUM(surplus_fee_token) FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_surplus_fee_token, -- TODO surplus token
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 

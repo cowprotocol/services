@@ -75,6 +75,13 @@ impl Trade {
         Ok(FeeBreakdown { total, protocol })
     }
 
+    pub fn sell_token(&self) -> eth::TokenAddress {
+        match self {
+            Self::Fulfillment(trade) => trade.sell.token,
+            Self::Jit(trade) => trade.sell.token,
+        }
+    }
+
     pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
         if auction.orders.contains_key(&trade.uid) {
             Trade::Fulfillment(Fulfillment {
@@ -150,8 +157,8 @@ pub struct Jit {
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
     /// Total fee the trade was charged (network fee + protocol fee)
-    // TODO: express in surplus token
-    pub total: eth::SellTokenAmount,
+    // TODO surplus token
+    pub total: eth::Asset,
     /// Breakdown of protocol fees.
     pub protocol: Vec<ExecutedProtocolFee>,
 }

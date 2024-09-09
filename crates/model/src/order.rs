@@ -701,6 +701,7 @@ pub struct OrderMetadata {
     pub executed_fee_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_surplus_fee: U256,
+    pub executed_surplus_fee_token: H160,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]

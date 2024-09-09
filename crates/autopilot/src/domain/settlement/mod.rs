@@ -84,10 +84,27 @@ impl Settlement {
     }
 
     /// Per order fees breakdown. Contains all orders from the settlement
-    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, Option<trade::FeeBreakdown>> {
+    pub fn fee_breakdown(&self) -> HashMap<domain::OrderUid, trade::FeeBreakdown> {
         self.trades
             .iter()
-            .map(|trade| (*trade.uid(), trade.fee_breakdown(&self.auction).ok()))
+            .map(|trade| {
+                let fee_breakdown = trade.fee_breakdown(&self.auction).unwrap_or_else(|err| {
+                    tracing::warn!(
+                        ?err,
+                        trade = %trade.uid(),
+                        "possible incomplete fee breakdown calculation",
+                    );
+                    trade::FeeBreakdown {
+                        total: eth::Asset {
+                            // TODO surplus token
+                            token: trade.sell_token(),
+                            amount: num::zero(),
+                        },
+                        protocol: vec![],
+                    }
+                });
+                (*trade.uid(), fee_breakdown)
+            })
             .collect()
     }
 
