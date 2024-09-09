@@ -346,7 +346,7 @@ impl OrderStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        database::orders::user_orders(
+        database::order_history::user_orders(
             &mut ex,
             &ByteArray(owner.0),
             i64::try_from(offset).unwrap_or(i64::MAX),
