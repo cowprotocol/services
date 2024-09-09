@@ -4,7 +4,6 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            auction::order::Class,
             competition::{self, SolutionError, TradedAmounts},
             OrderUid,
         },
@@ -169,11 +168,7 @@ impl RunLoop {
             }
         };
 
-        if auction.orders.iter().all(|order| match order.class {
-            Class::Market => false,
-            Class::Liquidity => true,
-            Class::Limit => false,
-        }) {
+        if auction.orders.is_empty() {
             // Updating liveness probe to not report unhealthy due to this optimization
             self.liveness.auction();
             tracing::debug!("skipping empty auction");
