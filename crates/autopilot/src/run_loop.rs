@@ -451,6 +451,7 @@ impl RunLoop {
             tracing::debug!(
                 driver=%solution.driver.name,
                 orders=?solution.solution.order_ids(),
+                solution=solution.solution.id(),
                 "proposed solution"
             );
         });
