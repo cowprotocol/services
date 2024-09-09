@@ -10,7 +10,7 @@
 use {
     crate::{
         arguments::RunLoopMode,
-        domain::{self},
+        domain,
         infra::{
             self,
             solvers::dto::{reveal, solve},
