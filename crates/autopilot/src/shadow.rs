@@ -10,7 +10,7 @@
 use {
     crate::{
         arguments::RunLoopMode,
-        domain::{self, auction::order::Class},
+        domain,
         infra::{
             self,
             solvers::dto::{reveal, solve},
@@ -102,16 +102,7 @@ impl RunLoop {
             return None;
         }
 
-        if auction
-            .auction
-            .orders
-            .iter()
-            .all(|order| match order.class {
-                Class::Market => false,
-                Class::Liquidity => true,
-                Class::Limit => false,
-            })
-        {
+        if auction.auction.orders.is_empty() {
             tracing::trace!("skipping empty auction");
             return None;
         }
