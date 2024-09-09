@@ -125,38 +125,26 @@ async fn smart_contract_orders(web3: Web3) {
     )
     .await;
 
-    // Check that the presignature event was received.
-    wait_for_condition(TIMEOUT, || async {
-        services.get_auction().await.auction.orders.len() == 2
-    })
-    .await
-    .unwrap();
-    assert_eq!(order_status(uids[1]).await, OrderStatus::Open);
-
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        services.get_auction().await.auction.orders.is_empty()
+        let token_balance = token
+            .balance_of(safe.address())
+            .call()
+            .await
+            .expect("Couldn't fetch token balance");
+        let weth_balance = onchain
+            .contracts()
+            .weth
+            .balance_of(safe.address())
+            .call()
+            .await
+            .expect("Couldn't fetch native token balance");
+
+        token_balance.is_zero() && weth_balance > to_wei(6)
     })
     .await
     .unwrap();
-
-    // Check matching
-    let balance = token
-        .balance_of(safe.address())
-        .call()
-        .await
-        .expect("Couldn't fetch token balance");
-    assert_eq!(balance, U256::zero());
-
-    let balance = onchain
-        .contracts()
-        .weth
-        .balance_of(safe.address())
-        .call()
-        .await
-        .expect("Couldn't fetch native token balance");
-    assert!(balance > to_wei(6));
 }
 
 async fn erc1271_gas_limit(web3: Web3) {

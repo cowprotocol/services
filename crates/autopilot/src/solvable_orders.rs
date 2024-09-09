@@ -54,7 +54,7 @@ pub struct Metrics {
     auction_update: IntCounterVec,
 
     /// Time taken to update the solvable orders cache.
-    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))]
+    #[metric(buckets(0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10))]
     auction_update_total_time: Histogram,
 
     /// Time spent on auction update individual stage.
@@ -297,6 +297,7 @@ impl SolvableOrdersCache {
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
+
         *self.cache.lock().await = Some(Inner {
             auction,
             solvable_orders: db_solvable_orders,
@@ -356,7 +357,15 @@ impl SolvableOrdersCache {
             None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
         };
 
-        fetch_orders.await
+        let mut orders = fetch_orders.await?;
+
+        // Move the checkpoint slightly back in time to mitigate race conditions
+        // caused by inconsistencies of stored timestamps. See #2959 for more details.
+        // This will cause us to fetch orders created or cancelled in the buffer
+        // period multiple times but that is a small price to pay for not missing
+        // orders.
+        orders.fetched_from_db -= chrono::TimeDelta::seconds(60);
+        Ok(orders)
     }
 
     /// Executed orders filtering in parallel.

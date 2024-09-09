@@ -522,7 +522,7 @@ impl FullOrder {
 // SET enable_nestloop = false;
 // to get a better idea of what indexes postgres *could* use even if it decides
 // that with the current amount of data this wouldn't be better.
-const ORDERS_SELECT: &str = r#"
+pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
@@ -552,7 +552,7 @@ COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
-const ORDERS_FROM: &str = "orders o";
+pub const FROM: &str = "orders o";
 
 pub async fn single_full_order(
     ex: &mut PgConnection,
@@ -560,8 +560,8 @@ pub async fn single_full_order(
 ) -> Result<Option<FullOrder>, sqlx::Error> {
     #[rustfmt::skip]
         const QUERY: &str = const_format::concatcp!(
-"SELECT ", ORDERS_SELECT,
-" FROM ", ORDERS_FROM,
+"SELECT ", SELECT,
+" FROM ", FROM,
 " WHERE o.uid = $1 ",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
@@ -599,8 +599,8 @@ pub fn full_orders_in_tx<'a>(
     const QUERY: &str = const_format::formatcp!(
         r#"
 {SETTLEMENT_LOG_INDICES}
-SELECT {ORDERS_SELECT}
-FROM {ORDERS_FROM}
+SELECT {SELECT}
+FROM {FROM}
 JOIN trades t ON t.order_uid = o.uid
 WHERE
     t.block_number = (SELECT block_number FROM settlement) AND
@@ -609,44 +609,6 @@ WHERE
 ;"#
     );
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
-}
-
-pub fn user_orders<'a>(
-    ex: &'a mut PgConnection,
-    owner: &'a Address,
-    offset: i64,
-    limit: Option<i64>,
-) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // As a future consideration for this query we could move from offset to an
-    // approach called keyset pagination where the offset is identified by "key"
-    // of the previous query. In our case that would be the lowest
-    // creation_timestamp. This way the database can start immediately at the
-    // offset through the index without enumerating the first N elements
-    // before as is the case with OFFSET.
-    // On the other hand that approach is less flexible so we will consider if we
-    // see that these queries are taking too long in practice.
-    #[rustfmt::skip]
-    const QUERY: &str = const_format::concatcp!(
-"(SELECT ", ORDERS_SELECT,
-" FROM ", ORDERS_FROM,
-" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE o.owner = $1",
-" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
-" UNION ",
-" (SELECT ", ORDERS_SELECT,
-" FROM ", ORDERS_FROM,
-" LEFT OUTER JOIN onchain_placed_orders onchain_o on onchain_o.uid = o.uid",
-" WHERE onchain_o.sender = $1 ",
-" ORDER BY creation_timestamp DESC LIMIT $2 + $3 ) ",
-" ORDER BY creation_timestamp DESC ",
-" LIMIT $2 ",
-" OFFSET $3 ",
-    );
-    sqlx::query_as(QUERY)
-        .bind(owner)
-        .bind(limit)
-        .bind(offset)
-        .fetch(ex)
 }
 
 /// The base solvable orders query used in specialized queries. Parametrized by valid_to.
@@ -661,8 +623,8 @@ pub fn user_orders<'a>(
 #[rustfmt::skip]
 const OPEN_ORDERS: &str = const_format::concatcp!(
 "SELECT * FROM ( ",
-    "SELECT ", ORDERS_SELECT,
-    " FROM ", ORDERS_FROM,
+    "SELECT ", SELECT,
+    " FROM ", FROM,
     " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
     " WHERE o.valid_to >= $1",
     " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
@@ -694,8 +656,8 @@ pub fn open_orders_by_time_or_uids<'a>(
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
     #[rustfmt::skip]
     const OPEN_ORDERS_AFTER: &str = const_format::concatcp!(
-        "SELECT ", ORDERS_SELECT,
-        " FROM ", ORDERS_FROM,
+        "SELECT ", SELECT,
+        " FROM ", FROM,
         " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
         " WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))",
     );
@@ -1671,194 +1633,6 @@ mod tests {
                 ByteArray([3u8; 56]),
             ]
         )
-    }
-
-    type Data = ([u8; 56], Address, DateTime<Utc>);
-    async fn user_orders(
-        ex: &mut PgConnection,
-        owner: &Address,
-        offset: i64,
-        limit: Option<i64>,
-    ) -> Vec<Data> {
-        super::user_orders(ex, owner, offset, limit)
-            .map(|o| {
-                let o = o.unwrap();
-                (o.uid.0, o.owner, o.creation_timestamp)
-            })
-            .collect::<Vec<_>>()
-            .await
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_user_orders_performance_many_users_with_some_orders() {
-        // The following test can be used as performance test,
-        // if the values for i and j are increased ->i=100
-        // and j=1000 the query should still 10 ms
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        for i in 0..1u32 {
-            let mut owner_bytes = i.to_ne_bytes().to_vec();
-            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
-            let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..10u32 {
-                let mut i_as_bytes = i.to_ne_bytes().to_vec();
-                let mut j_as_bytes = j.to_ne_bytes().to_vec();
-                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
-                order_uid_info.append(&mut j_as_bytes);
-                i_as_bytes.append(&mut order_uid_info);
-                let uid = ByteArray(i_as_bytes.try_into().unwrap());
-                let order = Order {
-                    owner,
-                    uid,
-                    creation_timestamp: Utc::now(),
-                    ..Default::default()
-                };
-                insert_order(&mut db, &order).await.unwrap();
-                if j % 10 == 0 {
-                    let onchain_order = OnchainOrderPlacement {
-                        order_uid: uid,
-                        sender: owner,
-                        placement_error: None,
-                    };
-                    let event_index = EventIndex::default();
-                    insert_onchain_order(&mut db, &event_index, &onchain_order)
-                        .await
-                        .unwrap();
-                }
-            }
-        }
-
-        let now = std::time::Instant::now();
-        let number_of_query_executions = 100;
-        for _ in 0..number_of_query_executions {
-            let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
-        }
-        let elapsed = now.elapsed();
-        println!(
-            "Time per execution {:?}",
-            elapsed / number_of_query_executions
-        );
-        assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_user_orders_performance_user_with_many_orders() {
-        // The following test can be used as performance test close to prod env,
-        // if the values for j increased ->j=100_000 query should still finish
-        // below 200 ms
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        for i in 0..1u32 {
-            let mut owner_bytes = i.to_ne_bytes().to_vec();
-            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
-            let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..10u32 {
-                let mut i_as_bytes = i.to_ne_bytes().to_vec();
-                let mut j_as_bytes = j.to_ne_bytes().to_vec();
-                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
-                order_uid_info.append(&mut j_as_bytes);
-                i_as_bytes.append(&mut order_uid_info);
-                let order = Order {
-                    owner,
-                    uid: ByteArray(i_as_bytes.try_into().unwrap()),
-                    creation_timestamp: Utc::now(),
-                    ..Default::default()
-                };
-                insert_order(&mut db, &order).await.unwrap();
-            }
-        }
-
-        let now = std::time::Instant::now();
-        let number_of_query_executions = 100;
-        for _ in 0..number_of_query_executions {
-            let _result = user_orders(&mut db, &ByteArray([0u8; 20]), 10, Some(10)).await;
-        }
-        let elapsed = now.elapsed();
-        println!(
-            "Time per execution {:?}",
-            elapsed / number_of_query_executions
-        );
-        assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_user_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
-
-        fn datetime(offset: u32) -> DateTime<Utc> {
-            Utc.timestamp_opt(offset as i64, 0).unwrap()
-        }
-
-        type Data = ([u8; 56], Address, DateTime<Utc>);
-        let orders = [
-            ([3u8; 56], owners[0], datetime(3)),
-            ([1u8; 56], owners[1], datetime(2)),
-            ([0u8; 56], owners[0], datetime(1)),
-            ([2u8; 56], owners[1], datetime(0)),
-        ];
-
-        for order in &orders {
-            let order = Order {
-                uid: ByteArray(order.0),
-                owner: order.1,
-                creation_timestamp: order.2,
-                ..Default::default()
-            };
-            insert_order(&mut db, &order).await.unwrap();
-        }
-
-        async fn user_orders(
-            ex: &mut PgConnection,
-            owner: &Address,
-            offset: i64,
-            limit: Option<i64>,
-        ) -> Vec<Data> {
-            super::user_orders(ex, owner, offset, limit)
-                .map(|o| {
-                    let o = o.unwrap();
-                    (o.uid.0, o.owner, o.creation_timestamp)
-                })
-                .collect::<Vec<_>>()
-                .await
-        }
-
-        let result = user_orders(&mut db, &owners[0], 0, None).await;
-        assert_eq!(result, vec![orders[0], orders[2]]);
-
-        let result = user_orders(&mut db, &owners[1], 0, None).await;
-        assert_eq!(result, vec![orders[1], orders[3]]);
-
-        let result = user_orders(&mut db, &owners[0], 0, Some(1)).await;
-        assert_eq!(result, vec![orders[0]]);
-
-        let result = user_orders(&mut db, &owners[0], 1, Some(1)).await;
-        assert_eq!(result, vec![orders[2]]);
-
-        let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
-        assert_eq!(result, vec![]);
-
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(orders[0].0),
-            sender: owners[2],
-            placement_error: None,
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &onchain_order)
-            .await
-            .unwrap();
-        let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
-        assert_eq!(result, vec![orders[0]]);
     }
 
     #[tokio::test]

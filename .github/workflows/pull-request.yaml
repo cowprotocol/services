@@ -145,7 +145,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo nextest run -p e2e forked_node --nocapture --run-ignored ignored-only
+      - run: cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final
 
   test-driver:
     timeout-minutes: 60
@@ -212,7 +212,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! cargo nextest run -p e2e local_node_no_liquidity_limit_order --test-threads 1 --failure-output final --run-ignored ignored-only; then
+            if ! cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
               exit 1
             fi
             attempt=$((attempt+1))
