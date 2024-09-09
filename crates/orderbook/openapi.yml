@@ -886,6 +886,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: true
+        executedSurplusFeeToken:
+          description: Token of the surplus fee.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: true
         fullAppData:
           description: |
             Full `appData`, which the contract-level `appData` is a hash of. See `OrderCreation`
