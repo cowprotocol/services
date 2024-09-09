@@ -6,11 +6,9 @@ use {
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
-        signature::EcdsaSigningScheme,
+        signature::{hashed_eip712_message, Signature},
     },
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -31,6 +29,9 @@ async fn test(web3: Web3) {
         .await;
 
     token.mint(trader.address(), to_wei(4)).await;
+    safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(4)))
+        .await;
+    token.mint(safe.address(), to_wei(4)).await;
     tx!(
         trader.account(),
         token.approve(onchain.contracts().allowance, to_wei(4))
@@ -49,7 +50,8 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(balance, 0.into());
-    let order = OrderCreation {
+    let mut order = OrderCreation {
+        from: Some(safe.address()),
         sell_token: token.address(),
         sell_amount: to_wei(4),
         buy_token: BUY_ETH_ADDRESS,
@@ -59,12 +61,11 @@ async fn test(web3: Web3) {
         kind: OrderKind::Sell,
         receiver: Some(safe.address()),
         ..Default::default()
-    }
-    .sign(
-        EcdsaSigningScheme::Eip712,
+    };
+    order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-    );
+        &order.data().hash_struct(),
+    )));
     services.create_order(&order).await.unwrap();
 
     tracing::info!("Waiting for trade.");
