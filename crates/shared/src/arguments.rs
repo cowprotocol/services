@@ -236,12 +236,37 @@ pub struct Arguments {
     /// Override address of the balancer vault contract.
     #[clap(long, env)]
     pub balancer_v2_vault_address: Option<H160>,
+
+    /// The amount of time a classification of a token into good or
+    /// bad is valid for.
+    #[clap(
+        long,
+        env,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub token_quality_cache_expiry: Duration,
+
+    /// How long before expiry the token quality cache should try to update the
+    /// token quality in the background. This is useful to make sure that token
+    /// quality for every cached token is usable at all times. This value
+    /// has to be smaller than `token_quality_cache_expiry`
+    /// This configuration also affects the period of the token quality
+    /// maintenance job. Maintenance period =
+    /// `token_quality_cache_prefetch_time` / 2
+    #[clap(
+        long,
+        env,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+    )]
+    pub token_quality_cache_prefetch_time: Duration,
 }
 
 pub fn display_secret_option<T>(
     f: &mut Formatter<'_>,
     name: &str,
-    option: &Option<T>,
+    option: Option<&T>,
 ) -> std::fmt::Result {
     display_option(f, name, &option.as_ref().map(|_| "SECRET"))
 }
@@ -336,6 +361,8 @@ impl Display for Arguments {
             custom_univ2_baseline_sources,
             liquidity_fetcher_max_age_update,
             max_pools_to_initialize_cache,
+            token_quality_cache_expiry,
+            token_quality_cache_prefetch_time,
         } = self;
 
         write!(f, "{}", ethrpc)?;
@@ -346,7 +373,7 @@ impl Display for Arguments {
         display_option(f, "chain_id", chain_id)?;
         display_option(f, "simulation_node_url", simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
-        display_secret_option(f, "blocknative_api_key", blocknative_api_key)?;
+        display_secret_option(f, "blocknative_api_key", blocknative_api_key.as_ref())?;
         writeln!(f, "base_tokens: {:?}", base_tokens)?;
         writeln!(f, "baseline_sources: {:?}", baseline_sources)?;
         writeln!(f, "pool_cache_blocks: {}", pool_cache_blocks)?;
@@ -368,7 +395,11 @@ impl Display for Arguments {
         writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
         writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
-        display_secret_option(f, "solver_competition_auth", solver_competition_auth)?;
+        display_secret_option(
+            f,
+            "solver_competition_auth",
+            solver_competition_auth.as_ref(),
+        )?;
         display_option(
             f,
             "network_block_interval",
@@ -403,6 +434,16 @@ impl Display for Arguments {
             f,
             "max_pools_to_initialize_cache: {}",
             max_pools_to_initialize_cache
+        )?;
+        writeln!(
+            f,
+            "token_quality_cache_expiry: {:?}",
+            token_quality_cache_expiry
+        )?;
+        writeln!(
+            f,
+            "token_quality_cache_prefetch_time: {:?}",
+            token_quality_cache_prefetch_time
         )?;
 
         Ok(())

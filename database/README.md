@@ -167,15 +167,18 @@ Indexes:
 
 ### order\_execution
 
-Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
+Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else. 
+Protocol fee tokens/amounts are stored in the same order as fee policies in fee_policies table.
 
- Column       | Type    | Nullable | Details
---------------|---------|----------|--------
- order\_uid   | bytea   | not null | which order this trade execution is related to
- auction\_id  | bigint  | not null | in which auction this trade was initiated
- reward       | double  | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
- surplus\_fee | numeric | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
- block\_number| bigint  | not null | block in which the order was executed
+ Column                 | Type      | Nullable | Details
+------------------------|-----------|----------|--------
+ order\_uid             | bytea     | not null | which order this trade execution is related to
+ auction\_id            | bigint    | not null | in which auction this trade was initiated
+ reward                 | double    | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
+ surplus\_fee           | numeric   | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
+ block\_number          | bigint    | not null | block in which the order was executed
+ protocol\_fee\_tokens  | bytea[]   | not null | tokens in which the protocol fees are taken
+ protocol\_fee\_amounts | numeric[] | not null | amounts of protocol fees taken, aligned protocol\_fee\_tokens array
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)
@@ -423,6 +426,40 @@ owners      | bytea[] | not null | surplus capturing jit order owner included in
 
 Indexes:
 - PRIMARY KEY: btree(`auction_id`)
+
+### jit\_orders
+
+JIT orders stored here are orders that were settled outside of the competitition Auction. This means both regular JIT orders that protocol is not aware of, as well as regular user orders that were not listed in the Auction can appear in this table.
+
+Column                    | Type                         | Nullable | Details
+--------------------------|------------------------------|----------|--------
+ block\_number            | bigint                       | not null | block in which the event happened
+ log\_index               | bigint                       | not null | index in which the event was emitted
+ uid                      | bytea                        | not null | 56 bytes identifier composed of a 32 bytes `hash` over the order data signed by the user, 20 bytes containing the `owner` and 4 bytes containing `valid_to`.
+ owner                    | bytea                        | not null | address who created this order and where the sell\_token will be taken from, note that for ethflow orders this is the [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) smart contract and not the user that actually initiated the trade
+ creation\_timestamp      | timestamptz                  | not null | when the order was created
+ sell\_token              | bytea                        | not null | address of the token that will be sold
+ buy\_token               | bytea                        | not null | address of the token that will be bought
+ sell\_amount             | numeric                      | not null | amount in sell\_token that should be sold at most
+ buy\_amount              | numeric                      | not null | amount of buy\_token that should be bought at least
+ valid\_to                | timestamptz                  | not null | point in time when the order can no longer be settled
+ fee\_amount              | numeric                      | not null | amount in sell\_token the owner agreed upfront as a fee to be taken for the trade
+ kind                     | [enum](#orderkind)           | not null | trade semantics of the order
+ signature                | bytea                        | not null | signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme
+ receiver                 | bytea                        | nullable | address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens
+ app\_data                | bytea                        | not null | arbitrary data associated with this order but per [design](https://docs.cow.fi/cow-sdk/order-meta-data-appdata) this is an IPFS hash which may contain additional meta data for this order signed by the user
+ signing\_scheme          | [enum](#signingscheme)       | not null | what kind of signature was used to proof that the `owner` actually created the order
+ sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
+ buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
+ class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
+
+Indexes:
+- PRIMARY KEY: btree(`block_number`, `log_index`)
+- jit\_order\_creation\_timestamp: btree(`creation_timestamp`)
+- jit\_order\_owner: hash(`owner`)
+- jit\_order\_uid: hash(`uid`)
+- jit\_user\_order\_creation\_timestamp: btree(`owner`, `creation_timestamp` DESC)
+- jit\_event\_id: btree(`block_number`, `log_index`)
 
 ### Enums
 

@@ -6,13 +6,32 @@ use {
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
+    bigdecimal::ToPrimitive,
     boundary::database::byte_array::ByteArray,
-    chrono::Utc,
-    database::{order_events::OrderEventLabel, settlement_observations::Observation},
-    number::conversions::{big_decimal_to_u256, u256_to_big_decimal},
+    chrono::{DateTime, Utc},
+    database::{
+        order_events::OrderEventLabel,
+        order_execution::Asset,
+        orders::{
+            BuyTokenDestination as DbBuyTokenDestination,
+            SellTokenSource as DbSellTokenSource,
+            SigningScheme as DbSigningScheme,
+        },
+        settlement_observations::Observation,
+    },
+    domain::auction::order::{
+        BuyTokenDestination as DomainBuyTokenDestination,
+        SellTokenSource as DomainSellTokenSource,
+        SigningScheme as DomainSigningScheme,
+    },
+    futures::{StreamExt, TryStreamExt},
+    itertools::Itertools,
+    number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     primitive_types::{H160, H256},
+    shared::db_order_conversions::full_order_into_model_order,
     std::{
         collections::{HashMap, HashSet},
+        ops::DerefMut,
         sync::Arc,
     },
     tracing::Instrument,
@@ -57,14 +76,15 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    pub async fn solvable_orders(
+    /// Finds solvable orders based on the order's min validity period.
+    pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, DatabaseError> {
+    ) -> anyhow::Result<boundary::SolvableOrders> {
         self.postgres
-            .solvable_orders(min_valid_to)
+            .all_solvable_orders(min_valid_to)
             .await
-            .map_err(DatabaseError)
+            .context("failed to fetch all solvable orders")
     }
 
     /// Saves the given auction to storage for debugging purposes.
@@ -381,6 +401,158 @@ impl Persistence {
         Ok(solution)
     }
 
+    /// Computes solvable orders based on the latest observed block number,
+    /// order creation timestamp, and minimum validity period.
+    pub async fn solvable_orders_after(
+        &self,
+        current_orders: HashMap<domain::OrderUid, model::order::Order>,
+        after_timestamp: DateTime<Utc>,
+        after_block: u64,
+        min_valid_to: u32,
+    ) -> anyhow::Result<boundary::SolvableOrders> {
+        tracing::debug!(?after_timestamp, ?after_block, "fetch orders updated since");
+        let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
+        let started_at = chrono::offset::Utc::now();
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so all the SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(tx.deref_mut())
+            .await?;
+
+        // Find order uids for orders that were updated after the given block.
+        let updated_order_uids = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["updated_order_uids"])
+                .start_timer();
+
+            database::orders::updated_order_uids_after(&mut tx, after_block).await?
+        };
+
+        // Fetch the orders that were updated after the given block and were created or
+        // cancelled after the given timestamp.
+        let next_orders: HashMap<domain::OrderUid, model::order::Order> = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["open_orders_after"])
+                .start_timer();
+
+            database::orders::open_orders_by_time_or_uids(
+                &mut tx,
+                &updated_order_uids,
+                after_timestamp,
+            )
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order)
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await?
+        };
+
+        // Fetch quotes for new orders and also update them for the cached ones since
+        // they could also be updated.
+        let updated_quotes = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["read_quotes"])
+                .start_timer();
+
+            let all_order_uids = next_orders
+                .keys()
+                .chain(current_orders.keys())
+                .unique()
+                .map(|uid| ByteArray(uid.0))
+                .collect::<Vec<_>>();
+
+            database::orders::read_quotes(&mut tx, &all_order_uids)
+                .await?
+                .into_iter()
+                .filter_map(|quote| {
+                    let order_uid = domain::OrderUid(quote.order_uid.0);
+                    dto::quote::into_domain(quote)
+                        .map_err(|err| {
+                            tracing::warn!(?order_uid, ?err, "failed to convert quote from db")
+                        })
+                        .ok()
+                        .map(|quote| (order_uid, quote))
+                })
+                .collect()
+        };
+
+        let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
+            .await?
+            .to_u64()
+            .context("latest_settlement_block is not u64")?;
+
+        Self::build_solvable_orders(
+            current_orders,
+            next_orders,
+            updated_quotes,
+            latest_settlement_block,
+            min_valid_to,
+            started_at,
+        )
+    }
+
+    fn build_solvable_orders(
+        mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
+        next_orders: HashMap<domain::OrderUid, model::order::Order>,
+        mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
+        latest_settlement_block: u64,
+        min_valid_to: u32,
+        started_at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<boundary::SolvableOrders> {
+        // Blindly insert all new orders into the cache.
+        for (uid, order) in next_orders {
+            current_orders.insert(uid, order);
+        }
+
+        // Filter out all the invalid orders.
+        current_orders.retain(|_uid, order| {
+            let expired = order.data.valid_to < min_valid_to
+                || order
+                    .metadata
+                    .ethflow_data
+                    .as_ref()
+                    .is_some_and(|data| data.user_valid_to < i64::from(min_valid_to));
+
+            let invalidated = order.metadata.invalidated;
+            let onchain_error = order
+                .metadata
+                .onchain_order_data
+                .as_ref()
+                .is_some_and(|data| data.placement_error.is_some());
+            let fulfilled = {
+                match order.data.kind {
+                    model::order::OrderKind::Sell => {
+                        order.metadata.executed_sell_amount
+                            >= u256_to_big_uint(&order.data.sell_amount)
+                    }
+                    model::order::OrderKind::Buy => {
+                        order.metadata.executed_buy_amount
+                            >= u256_to_big_uint(&order.data.buy_amount)
+                    }
+                }
+            };
+
+            !expired && !invalidated && !onchain_error && !fulfilled
+        });
+
+        // Keep only relevant quotes.
+        next_quotes.retain(|uid, _quote| current_orders.contains_key(uid));
+
+        Ok(boundary::SolvableOrders {
+            orders: current_orders,
+            quotes: next_quotes,
+            latest_settlement_block,
+            fetched_from_db: started_at,
+        })
+    }
+
     /// Returns the oldest settlement event for which the accociated auction is
     /// not yet populated in the database.
     pub async fn get_settlement_without_auction(
@@ -435,9 +607,10 @@ impl Persistence {
         if let Some(settlement) = settlement {
             let gas = settlement.gas();
             let gas_price = settlement.gas_price();
-            let surplus = settlement.native_surplus();
-            let fee = settlement.native_fee();
-            let order_fees = settlement.order_fees();
+            let surplus = settlement.surplus_in_ether();
+            let fee = settlement.fee_in_ether();
+            let fee_breakdown = settlement.fee_breakdown();
+            let jit_orders = settlement.jit_orders();
 
             tracing::debug!(
                 ?auction_id,
@@ -446,7 +619,8 @@ impl Persistence {
                 ?gas_price,
                 ?surplus,
                 ?fee,
-                ?order_fees,
+                ?fee_breakdown,
+                ?jit_orders,
                 "settlement update",
             );
 
@@ -465,24 +639,86 @@ impl Persistence {
 
             store_order_events(
                 &mut ex,
-                order_fees.keys().cloned().collect(),
+                fee_breakdown.keys().cloned().collect(),
                 OrderEventLabel::Traded,
                 Utc::now(),
             )
             .await;
 
-            for (order, executed_fee) in order_fees {
+            for (order, order_fee) in fee_breakdown {
+                let total_fee = order_fee
+                    .as_ref()
+                    .map(|fee| u256_to_big_decimal(&fee.total.0))
+                    .unwrap_or_default();
+                let executed_protocol_fees = order_fee
+                    .map(|fee| {
+                        fee.protocol
+                            .into_iter()
+                            .map(|executed| Asset {
+                                token: ByteArray(executed.fee.token.0 .0),
+                                amount: u256_to_big_decimal(&executed.fee.amount.0),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
                 database::order_execution::save(
                     &mut ex,
                     &ByteArray(order.0),
                     auction_id,
                     block_number,
-                    &u256_to_big_decimal(
-                        &executed_fee.map(|fee| fee.total()).unwrap_or_default().0,
-                    ),
+                    &total_fee,
+                    &executed_protocol_fees,
                 )
                 .await?;
             }
+
+            database::jit_orders::insert(
+                &mut ex,
+                &jit_orders
+                    .into_iter()
+                    .map(|jit_order| database::jit_orders::JitOrder {
+                        block_number,
+                        log_index,
+                        uid: ByteArray(jit_order.uid.0),
+                        owner: ByteArray(jit_order.uid.owner().0 .0),
+                        creation_timestamp: chrono::DateTime::from_timestamp(
+                            i64::from(jit_order.created),
+                            0,
+                        )
+                        .unwrap_or_default(),
+                        sell_token: ByteArray(jit_order.sell.token.0 .0),
+                        buy_token: ByteArray(jit_order.buy.token.0 .0),
+                        sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
+                        buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
+                        valid_to: i64::from(jit_order.valid_to),
+                        app_data: ByteArray(jit_order.app_data.0),
+                        fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
+                        kind: match jit_order.side {
+                            domain::auction::order::Side::Buy => database::orders::OrderKind::Buy,
+                            domain::auction::order::Side::Sell => database::orders::OrderKind::Sell,
+                        },
+                        partially_fillable: jit_order.partially_fillable,
+                        signature: jit_order.signature.to_bytes(),
+                        receiver: ByteArray(jit_order.receiver.0 .0),
+                        signing_scheme: match jit_order.signature.scheme() {
+                            DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
+                            DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
+                            DomainSigningScheme::Eip1271 => DbSigningScheme::Eip1271,
+                            DomainSigningScheme::PreSign => DbSigningScheme::PreSign,
+                        },
+                        sell_token_balance: match jit_order.sell_token_balance {
+                            DomainSellTokenSource::Erc20 => DbSellTokenSource::Erc20,
+                            DomainSellTokenSource::External => DbSellTokenSource::External,
+                            DomainSellTokenSource::Internal => DbSellTokenSource::Internal,
+                        },
+                        buy_token_balance: match jit_order.buy_token_balance {
+                            DomainBuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
+                            DomainBuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
+                        },
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
         }
 
         ex.commit().await?;

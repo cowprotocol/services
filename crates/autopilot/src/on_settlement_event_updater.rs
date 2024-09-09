@@ -134,11 +134,5 @@ fn retryable(err: &settlement::Error) -> bool {
         settlement::Error::Infra(_) => true,
         settlement::Error::InconsistentData(_) => false,
         settlement::Error::WrongEnvironment => false,
-        settlement::Error::BuildingSolution(_) => false,
-        settlement::Error::BuildingScore(_) => false,
-        settlement::Error::SolverMismatch {
-            expected: _,
-            got: _,
-        } => false,
     }
 }

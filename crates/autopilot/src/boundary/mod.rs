@@ -36,7 +36,10 @@ pub fn web3_client(ethrpc: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> Web
 }
 
 pub struct SolvableOrders {
-    pub orders: Vec<model::order::Order>,
+    pub orders: HashMap<domain::OrderUid, model::order::Order>,
     pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
+    /// Used as a checkpoint - meaning at this point in time
+    /// **at least** the stored orders were present in the system.
+    pub fetched_from_db: chrono::DateTime<chrono::Utc>,
 }
