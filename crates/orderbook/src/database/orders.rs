@@ -667,6 +667,7 @@ mod tests {
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
+        primitive_types::U256,
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
@@ -1146,9 +1147,27 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order, None).await.unwrap();
+        let quote = Quote {
+            id: Some(5),
+            sell_amount: U256::from(1),
+            buy_amount: U256::from(2),
+            ..Default::default()
+        };
+        db.insert_order(&order, Some(quote.clone())).await.unwrap();
 
         let interactions = db.single_order(&uid).await.unwrap().unwrap().interactions;
         assert_eq!(interactions, order.interactions);
+
+        // Test `single_order_with_quote`
+        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
+        assert_eq!(single_order_with_quote.order, order);
+        assert_eq!(
+            single_order_with_quote.quote.clone().unwrap().sell_amount,
+            u256_to_big_decimal(&quote.sell_amount)
+        );
+        assert_eq!(
+            single_order_with_quote.quote.unwrap().buy_amount,
+            u256_to_big_decimal(&quote.buy_amount)
+        );
     }
 }
