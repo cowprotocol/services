@@ -468,10 +468,12 @@ impl RunLoop {
             .difference(&winning_orders)
             .cloned()
             .collect();
+        self.persistence.store_order_events(
+            non_winning_orders.iter().cloned(),
+            OrderEventLabel::Considered,
+        );
         self.persistence
-            .store_order_events(non_winning_orders.clone(), OrderEventLabel::Considered);
-        self.persistence
-            .store_order_events(winning_orders.clone(), OrderEventLabel::Executing);
+            .store_order_events(winning_orders, OrderEventLabel::Executing);
 
         let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
