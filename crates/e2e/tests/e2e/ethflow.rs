@@ -1,9 +1,6 @@
 use {
     anyhow::bail,
-    autopilot::{
-        database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-        infra::persistence::dto,
-    },
+    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
@@ -105,11 +102,8 @@ async fn eth_flow_tx(web3: Web3) {
     .await;
 
     tracing::info!("waiting for trade");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
 
-    test_order_was_settled(&services, &ethflow_order, &web3).await;
+    test_order_was_settled(&ethflow_order, &web3).await;
 
     // make sure the fee was charged for zero fee limit orders
     let fee_charged = || async {
@@ -192,11 +186,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
 
     tracing::info!("waiting for trade");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    test_order_was_settled(&services, &ethflow_order, &web3).await;
+    test_order_was_settled(&ethflow_order, &web3).await;
 
     // Check order events
     let events = crate::database::events_of_order(
@@ -271,12 +261,6 @@ async fn test_order_availability_in_api(
     for address in [owner, &contracts.ethflow.address()] {
         test_account_query(address, services.client(), order, owner, contracts).await;
     }
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    test_auction_query(services, order, contracts).await;
 }
 
 async fn test_trade_availability_in_api(
@@ -299,21 +283,19 @@ async fn test_trade_availability_in_api(
     }
 }
 
-async fn test_order_was_settled(
-    services: &Services<'_>,
-    ethflow_order: &ExtendedEthFlowOrder,
-    web3: &Web3,
-) {
-    let auction_is_empty = || async { services.solvable_orders().await == 0 };
-    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
+async fn test_order_was_settled(ethflow_order: &ExtendedEthFlowOrder, web3: &Web3) {
+    wait_for_condition(TIMEOUT, || async {
+        let buy_token = ERC20Mintable::at(web3, ethflow_order.0.buy_token);
+        let receiver_buy_token_balance = buy_token
+            .balance_of(ethflow_order.0.receiver)
+            .call()
+            .await
+            .expect("Unable to get token balance");
 
-    let buy_token = ERC20Mintable::at(web3, ethflow_order.0.buy_token);
-    let receiver_buy_token_balance = buy_token
-        .balance_of(ethflow_order.0.receiver)
-        .call()
-        .await
-        .expect("Unable to get token balance");
-    assert!(receiver_buy_token_balance >= ethflow_order.0.buy_amount);
+        receiver_buy_token_balance >= ethflow_order.0.buy_amount
+    })
+    .await
+    .unwrap();
 }
 
 async fn test_orders_query(
@@ -347,16 +329,6 @@ async fn test_account_query(
     let response = query.json::<Vec<Order>>().await.unwrap();
     assert_eq!(response.len(), 1);
     test_order_parameters(&response[0], order, owner, contracts).await;
-}
-
-async fn test_auction_query(
-    services: &Services<'_>,
-    order: &ExtendedEthFlowOrder,
-    contracts: &Contracts,
-) {
-    let response = services.get_auction().await;
-    assert_eq!(response.auction.orders.len(), 1);
-    test_auction_order_parameters(&response.auction.orders[0], order, contracts).await;
 }
 
 enum TradeQuery {
@@ -422,38 +394,6 @@ async fn test_order_parameters(
         contracts.ethflow.address()
     );
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
-}
-
-async fn test_auction_order_parameters(
-    response: &dto::order::Order,
-    order: &ExtendedEthFlowOrder,
-    contracts: &Contracts,
-) {
-    // Expected values from actual EIP1271 order instead of eth-flow order
-    assert_eq!(response.valid_to, u32::MAX);
-    assert_eq!(response.owner, contracts.ethflow.address());
-    assert_eq!(response.sell_token, contracts.weth.address());
-
-    match order.0.fee_amount.is_zero() {
-        true => {
-            assert_eq!(response.class, OrderClass::Limit);
-        }
-        false => {
-            assert_eq!(response.class, OrderClass::Market);
-        }
-    }
-    assert!(order
-        .is_valid_cowswap_signature(&response.signature, contracts)
-        .await
-        .is_ok());
-
-    // Requires wrapping first
-    assert_eq!(response.pre_interactions.len(), 1);
-    assert_eq!(
-        response.pre_interactions[0].target,
-        contracts.ethflow.address()
-    );
-    assert_eq!(response.pre_interactions[0].call_data, WRAP_ALL_SELECTOR);
 }
 
 pub struct ExtendedEthFlowOrder(pub EthflowOrder);

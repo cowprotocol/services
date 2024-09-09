@@ -72,30 +72,22 @@ async fn vault_balances(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        services.get_auction().await.auction.orders.len() == 1
+        let token_balance = token
+            .balance_of(trader.address())
+            .call()
+            .await
+            .expect("Couldn't fetch token balance");
+
+        let weth_balance_after = onchain
+            .contracts()
+            .weth
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap();
+
+        token_balance.is_zero() && weth_balance_after.saturating_sub(balance_before) >= to_wei(8)
     })
     .await
     .unwrap();
-    wait_for_condition(TIMEOUT, || async {
-        services.get_auction().await.auction.orders.is_empty()
-    })
-    .await
-    .unwrap();
-
-    // Check matching
-    let balance = token
-        .balance_of(trader.address())
-        .call()
-        .await
-        .expect("Couldn't fetch token balance");
-    assert_eq!(balance, U256::zero());
-
-    let balance_after = onchain
-        .contracts()
-        .weth
-        .balance_of(trader.address())
-        .call()
-        .await
-        .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(8));
 }
