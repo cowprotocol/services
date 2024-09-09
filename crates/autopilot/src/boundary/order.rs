@@ -40,7 +40,6 @@ pub fn to_domain(
             .collect(),
         sell_token_balance: order.data.sell_token_balance.into(),
         buy_token_balance: order.data.buy_token_balance.into(),
-        class: order.metadata.class.into(),
         app_data: order.data.app_data.into(),
         signature: order.signature.into(),
         quote,
