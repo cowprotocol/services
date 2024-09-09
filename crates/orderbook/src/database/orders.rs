@@ -49,7 +49,7 @@ use {
         order_validation::{is_order_outside_market_price, Amounts, LimitOrderCounting},
     },
     sqlx::{types::BigDecimal, Connection, PgConnection},
-    std::{convert::TryInto, ops::Deref},
+    std::convert::TryInto,
 };
 
 #[cfg_attr(test, mockall::automock)]
@@ -103,14 +103,6 @@ impl OrderWithQuote {
             }),
             order,
         }
-    }
-}
-
-impl Deref for OrderWithQuote {
-    type Target = Order;
-
-    fn deref(&self) -> &Self::Target {
-        &self.order
     }
 }
 
