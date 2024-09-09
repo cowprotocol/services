@@ -539,7 +539,6 @@ pub async fn run(args: Arguments) {
         submission_deadline: args.submission_deadline as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
-        in_flight_orders: Default::default(),
         persistence: persistence.clone(),
         liveness: liveness.clone(),
         synchronization: args.run_loop_mode,

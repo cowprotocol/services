@@ -35,7 +35,6 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::Mutex,
     tracing::{warn, Instrument},
 };
 
@@ -49,7 +48,6 @@ pub struct RunLoop {
     pub submission_deadline: u64,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub in_flight_orders: Arc<Mutex<Option<InFlightOrders>>>,
     pub liveness: Arc<Liveness>,
     pub synchronization: RunLoopMode,
     /// How much time past observing the current block the runloop is
@@ -182,11 +180,10 @@ impl RunLoop {
         let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
-        let auction = self.remove_in_flight_orders(auction.clone()).await;
         Metrics::pre_processed(single_run_start.elapsed());
 
         let mut solutions = {
-            let mut solutions = self.competition(auction_id, &auction).await;
+            let mut solutions = self.competition(auction_id, auction).await;
             if solutions.is_empty() {
                 tracing::info!("no solutions for auction");
                 return;
@@ -200,7 +197,7 @@ impl RunLoop {
         let competition_simulation_block = self.eth.current_block().borrow().number;
 
         // Make sure the winning solution is fair.
-        while !Self::is_solution_fair(solutions.last(), &solutions, &auction) {
+        while !Self::is_solution_fair(solutions.last(), &solutions, auction) {
             let unfair_solution = solutions.pop().expect("must exist");
             warn!(
                 invalidated = unfair_solution.driver.name,
@@ -249,7 +246,7 @@ impl RunLoop {
             if let Err(err) = self
                 .post_processing(
                     auction_id,
-                    auction,
+                    auction.clone(),
                     competition_simulation_block,
                     solution,
                     &solutions,
@@ -665,10 +662,6 @@ impl RunLoop {
         let tx_hash = self
             .wait_for_settlement(driver, auction_id, request)
             .await?;
-        *self.in_flight_orders.lock().await = Some(InFlightOrders {
-            tx_hash,
-            orders: solved.order_ids().copied().collect(),
-        });
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
@@ -736,41 +729,6 @@ impl RunLoop {
             "settlement transaction await reached deadline"
         )))
     }
-
-    /// Removes orders that are currently being settled to avoid solvers trying
-    /// to fill an order a second time.
-    async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
-        let Some(in_flight) = &*self.in_flight_orders.lock().await else {
-            return auction;
-        };
-
-        let transaction = self.eth.transaction(in_flight.tx_hash.into()).await;
-
-        let prev_settlement_block = match transaction {
-            Ok(transaction) => transaction.block,
-            // Could not find the block of the previous settlement, let's be
-            // conservative and assume all orders are still in-flight.
-            _ => u64::MAX.into(),
-        };
-
-        if auction.latest_settlement_block < prev_settlement_block.0 {
-            // Auction was built before the in-flight orders were processed.
-            auction
-                .orders
-                .retain(|o| !in_flight.orders.contains(&o.uid));
-            tracing::debug!(orders = ?in_flight.orders, "filtered out in-flight orders");
-        }
-
-        auction
-    }
-}
-
-/// Orders settled in the previous auction that might still be in-flight.
-#[derive(Default)]
-pub struct InFlightOrders {
-    /// The transaction that these orders where settled in.
-    tx_hash: H256,
-    orders: HashSet<domain::OrderUid>,
 }
 
 struct Participant<'a> {
