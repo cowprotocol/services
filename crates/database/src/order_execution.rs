@@ -126,6 +126,7 @@ mod tests {
             1,
             0,
             &Default::default(),
+            &Default::default(),
             protocol_fees.as_slice(),
         )
         .await
@@ -133,9 +134,17 @@ mod tests {
 
         // save entry without protocol fees (simulate case when we are still not
         // calculating them)
-        save(&mut db, &Default::default(), 2, 0, &Default::default(), &[])
-            .await
-            .unwrap();
+        save(
+            &mut db,
+            &Default::default(),
+            2,
+            0,
+            &Default::default(),
+            &Default::default(),
+            &[],
+        )
+        .await
+        .unwrap();
 
         let keys: Vec<(AuctionId, OrderUid)> = vec![
             (1, Default::default()),

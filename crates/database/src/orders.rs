@@ -1769,7 +1769,7 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, fee);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee, &[])
+        crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee, &Default::default(), &[])
             .await
             .unwrap();
 
@@ -1892,6 +1892,7 @@ mod tests {
             1,
             1,
             &BigDecimal::from(1),
+            &Default::default(),
             Default::default(),
         )
         .await
@@ -1902,6 +1903,7 @@ mod tests {
             2,
             2,
             &BigDecimal::from(2),
+            &Default::default(),
             Default::default(),
         )
         .await
@@ -1912,6 +1914,7 @@ mod tests {
             3,
             0,
             &BigDecimal::from(4),
+            &Default::default(),
             Default::default(),
         )
         .await
@@ -1922,6 +1925,7 @@ mod tests {
             2,
             3,
             &BigDecimal::from(4),
+            &Default::default(),
             Default::default(),
         )
         .await
