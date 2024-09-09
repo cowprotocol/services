@@ -5,12 +5,13 @@ use {
     chrono::{DateTime, Utc},
     futures::{StreamExt, TryStreamExt},
     model::{order::Order, quote::QuoteId},
+    num::ToPrimitive,
     shared::{
         db_order_conversions::full_order_into_model_order,
         event_storing_helpers::{create_db_search_parameters, create_quote_row},
         order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
     },
-    std::ops::DerefMut,
+    std::{collections::HashMap, ops::DerefMut},
 };
 
 #[async_trait::async_trait]
@@ -60,12 +61,13 @@ impl QuoteStoring for Postgres {
 }
 
 impl Postgres {
-    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<boundary::SolvableOrders> {
+    pub async fn all_solvable_orders(&self, min_valid_to: u32) -> Result<boundary::SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["solvable_orders"])
             .start_timer();
 
+        let start = chrono::offset::Utc::now();
         let mut ex = self.pool.begin().await?;
         // Set the transaction isolation level to REPEATABLE READ
         // so the both SELECT queries below are executed in the same database snapshot
@@ -73,28 +75,25 @@ impl Postgres {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
-        let orders: Vec<Order> = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
-            .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect()
-            .await?;
-        let latest_settlement_block =
-            database::orders::latest_settlement_block(&mut ex).await? as u64;
-        let quotes = self
-            .read_quotes(
-                orders
-                    .iter()
-                    .map(|order| domain::OrderUid(order.metadata.uid.0))
-                    .collect::<Vec<_>>()
-                    .iter(),
-            )
-            .await?;
+        let orders: HashMap<domain::OrderUid, Order> =
+            database::orders::solvable_orders(&mut ex, i64::from(min_valid_to))
+                .map(|result| match result {
+                    Ok(order) => full_order_into_model_order(order)
+                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                    Err(err) => Err(anyhow::Error::from(err)),
+                })
+                .try_collect()
+                .await?;
+        let latest_settlement_block = database::orders::latest_settlement_block(&mut ex)
+            .await?
+            .to_u64()
+            .context("latest_settlement_block is not u64")?;
+        let quotes = self.read_quotes(orders.keys()).await?;
         Ok(boundary::SolvableOrders {
             orders,
             quotes,
             latest_settlement_block,
+            fetched_from_db: start,
         })
     }
 

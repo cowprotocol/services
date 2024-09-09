@@ -10,6 +10,7 @@ cached = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

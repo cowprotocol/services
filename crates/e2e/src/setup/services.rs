@@ -9,7 +9,7 @@ use {
     app_data::{AppDataDocument, AppDataHash},
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::H256,
+    ethcontract::{H160, H256},
     model::{
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
@@ -31,8 +31,16 @@ pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
-pub fn order_status_endpoint(uid: &OrderUid) -> String {
+fn order_status_endpoint(uid: &OrderUid) -> String {
     format!("/api/v1/orders/{uid}/status")
+}
+
+fn orders_for_tx_endpoint(tx_hash: &H256) -> String {
+    format!("/api/v1/transactions/{tx_hash:?}/orders")
+}
+
+fn orders_for_owner(owner: &H160, offset: u64, limit: u64) -> String {
+    format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
 
 pub struct ServicesBuilder {
@@ -102,6 +110,8 @@ impl<'a> Services<'a> {
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval=1s".to_string(),
             "--simulation-node-url=http://localhost:8545".to_string(),
+            "--native-price-cache-max-age=2s".to_string(),
+            "--native-price-prefetch-time=500ms".to_string(),
         ]
         .into_iter()
     }
@@ -316,6 +326,9 @@ impl<'a> Services<'a> {
             .expect("waiting for autopilot timed out");
     }
 
+    /// Fetches the current auction. Don't use this as a synchronization
+    /// mechanism in tests because that is prone to race conditions
+    /// which would make tests flaky.
     pub async fn get_auction(&self) -> dto::AuctionWithId {
         let response = self
             .http
@@ -416,7 +429,7 @@ impl<'a> Services<'a> {
     ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
         let quoting = self
             .http
-            .post(&format!("{API_HOST}{QUOTING_ENDPOINT}"))
+            .post(format!("{API_HOST}{QUOTING_ENDPOINT}"))
             .json(&quote)
             .send()
             .await
@@ -429,10 +442,6 @@ impl<'a> Services<'a> {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err((code, body)),
         }
-    }
-
-    pub async fn solvable_orders(&self) -> usize {
-        self.get_auction().await.auction.orders.len()
     }
 
     /// Retrieve an [`Order`]. If the respons status is not `200`, return the
@@ -472,6 +481,51 @@ impl<'a> Services<'a> {
             StatusCode::OK => {
                 Ok(serde_json::from_str::<orderbook::dto::order::Status>(&body).unwrap())
             }
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_orders_for_tx(
+        &self,
+        tx_hash: &H256,
+    ) -> Result<Vec<Order>, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{}", orders_for_tx_endpoint(tx_hash)))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_orders_for_owner(
+        &self,
+        owner: &H160,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<Order>, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!(
+                "{API_HOST}{}",
+                orders_for_owner(owner, offset, limit)
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err((code, body)),
         }
     }
@@ -552,10 +606,30 @@ impl<'a> Services<'a> {
 
 pub async fn clear_database() {
     tracing::info!("Clearing database.");
-    let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await.unwrap();
-    let mut db = db.begin().await.unwrap();
-    database::clear_DANGER_(&mut db).await.unwrap();
-    db.commit().await.unwrap();
+
+    async fn truncate_tables() -> Result<(), sqlx::Error> {
+        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
+        let mut db = db.begin().await?;
+        database::clear_DANGER_(&mut db).await?;
+        db.commit().await
+    }
+
+    // This operation can fail when postgres detects a deadlock.
+    // It will terminate one of the deadlocking requests and if it decideds
+    // to terminate this request we need to retry it.
+    let mut attempt = 0;
+    loop {
+        match truncate_tables().await {
+            Ok(_) => return,
+            Err(err) => {
+                tracing::error!(?err, "failed to truncate tables");
+            }
+        }
+        attempt += 1;
+        if attempt >= 10 {
+            panic!("repeatedly failed to clear DB");
+        }
+    }
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;

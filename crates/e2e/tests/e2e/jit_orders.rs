@@ -108,6 +108,9 @@ async fn single_limit_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+
+    let trader_balance_before = token.balance_of(trader.address()).call().await.unwrap();
+    let solver_balance_before = token.balance_of(solver.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
@@ -160,42 +163,55 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let trader_balance_before = token.balance_of(trader.address()).call().await.unwrap();
-    let solver_balance_before = token.balance_of(solver.address()).call().await.unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let trader_balance_after = token.balance_of(trader.address()).call().await.unwrap();
-    let solver_balance_after = token.balance_of(solver.address()).call().await.unwrap();
-
     wait_for_condition(TIMEOUT, || async {
-        trader_balance_after
-            .checked_sub(trader_balance_before)
-            .unwrap()
-            >= to_wei(5)
+        let trader_balance_after = token.balance_of(trader.address()).call().await.unwrap();
+        let solver_balance_after = token.balance_of(solver.address()).call().await.unwrap();
+
+        let trader_balance_increased =
+            trader_balance_after.saturating_sub(trader_balance_before) >= to_wei(5);
+        // Since the fee is 0 in the custom solution, the balance difference has to be
+        // exactly 10 wei
+        let solver_balance_decreased =
+            solver_balance_before.saturating_sub(solver_balance_after) == to_wei(10);
+        trader_balance_increased && solver_balance_decreased
     })
     .await
     .unwrap();
 
-    // Since the fee is 0 in the custom solution, the balance difference has to
-    // be exactly 10 wei
+    tracing::info!("Waiting for trade to be indexed.");
     wait_for_condition(TIMEOUT, || async {
-        solver_balance_before
-            .checked_sub(solver_balance_after)
-            .unwrap()
-            == to_wei(10)
+        // jit order can be found on /api/v1/orders
+        services.get_order(&jit_order_uid).await.ok()?;
+
+        // jit order can be found on /api/v1/trades
+        let tx_hash = services
+            .get_trades(&jit_order_uid)
+            .await
+            .ok()?
+            .pop()?
+            .tx_hash?;
+
+        // jit order can be found on /api/v1/transactions/{tx_hash}/orders
+        let orders_by_tx = services.get_orders_for_tx(&tx_hash).await.ok()?;
+
+        // jit order can be found on /api/v1/account/{owner}/orders
+        let orders_by_owner = services
+            .get_orders_for_owner(&jit_order_uid.parts().1, 0, 10)
+            .await
+            .ok()?;
+        let jit_order_by_owner = orders_by_owner
+            .iter()
+            .any(|o| o.metadata.uid == jit_order_uid);
+        let jit_order_by_tx = orders_by_tx.iter().any(|o| o.metadata.uid == jit_order_uid);
+        Some(jit_order_by_owner && jit_order_by_tx)
     })
     .await
     .unwrap();
 
-    // jit order can be found on /get_order
-    services.get_order(&jit_order_uid).await.unwrap();
-    // jit order can be found on /get_trades
-    let orders = services.get_trades(&jit_order_uid).await.unwrap();
-    assert_eq!(orders.len(), 1);
+    // make sure the offset works
+    let orders_by_owner = services
+        .get_orders_for_owner(&jit_order_uid.parts().1, 1, 1)
+        .await
+        .unwrap();
+    assert!(orders_by_owner.is_empty());
 }
