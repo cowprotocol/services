@@ -410,6 +410,7 @@ impl Persistence {
         after_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
+        tracing::debug!(?after_timestamp, ?after_block, "fetch orders updated since");
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
         let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
