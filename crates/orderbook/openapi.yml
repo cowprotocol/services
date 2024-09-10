@@ -885,12 +885,12 @@ components:
           description: Surplus fee that the limit order was executed with.
           allOf:
             - $ref: "#/components/schemas/BigUint"
-          nullable: true
+          nullable: false
         executedSurplusFeeToken:
           description: Token of the surplus fee.
           allOf:
             - $ref: "#/components/schemas/Address"
-          nullable: true
+          nullable: false
         fullAppData:
           description: |
             Full `appData`, which the contract-level `appData` is a hash of. See `OrderCreation`
