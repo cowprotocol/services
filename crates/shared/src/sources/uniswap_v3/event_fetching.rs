@@ -145,6 +145,10 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
             .cloned()
             .context("no events")
     }
+
+    async fn update_counter(&mut self, _new_value: u64) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -118,4 +118,8 @@ impl EventStoring<CowAmmEvent> for Storage {
             .unwrap_or(self.0.start_of_index);
         Ok(last_block)
     }
+
+    async fn update_counter(&mut self, _new_value: u64) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

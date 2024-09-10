@@ -10,6 +10,8 @@ use {
     },
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
+    num::ToPrimitive,
+    sqlx::PgPool,
     std::sync::Arc,
     tokio::sync::Mutex,
 };
@@ -69,7 +71,6 @@ pub trait EventStoring<T>: Send + Sync {
         events: Vec<EthcontractEvent<T>>,
         range: RangeInclusive<u64>,
     ) -> Result<()>;
-
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments
@@ -77,6 +78,38 @@ pub trait EventStoring<T>: Send + Sync {
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
     async fn last_event_block(&self) -> Result<u64>;
+
+    async fn update_counter(&mut self, new_value: u64) -> Result<()>;
+}
+
+#[async_trait::async_trait]
+pub trait PgEventCounter<T>: EventStoring<T> {
+    const INDEXER_NAME: &'static str;
+
+    fn pg_pool(&self) -> &PgPool;
+
+    async fn last_event_block(&self) -> Result<u64> {
+        let mut ex = self.pg_pool().acquire().await?;
+        Ok(
+            database::event_indexer_counters::current_value(&mut ex, Self::INDEXER_NAME)
+                .await?
+                .unwrap_or_default()
+                .to_u64()
+                .context("last event block is not u64")?,
+        )
+    }
+
+    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
+        let mut ex = self.pg_pool().acquire().await?;
+        database::event_indexer_counters::insert_or_update_counter(
+            &mut ex,
+            Self::INDEXER_NAME,
+            i64::try_from(new_value).context("new value of counter is not i64")?,
+        )
+        .await?;
+
+        Ok(())
+    }
 }
 
 pub trait EventRetrieving {
@@ -356,6 +389,9 @@ where
         }
 
         self.update_last_handled_blocks(&blocks);
+        if let Some(last_block) = self.last_handled_blocks.last() {
+            self.store.update_counter(last_block.0).await?;
+        }
         Ok(())
     }
 
@@ -622,6 +658,16 @@ mod tests {
     /// Simple event storage for testing purposes of EventHandler
     struct EventStorage<T> {
         pub events: Vec<EthcontractEvent<T>>,
+        pub last_processed_block: u64,
+    }
+
+    impl<T> Default for EventStorage<T> {
+        fn default() -> Self {
+            Self {
+                events: vec![],
+                last_processed_block: 0,
+            }
+        }
     }
 
     #[async_trait::async_trait]
@@ -646,11 +692,12 @@ mod tests {
         }
 
         async fn last_event_block(&self) -> Result<u64> {
-            Ok(self
-                .events
-                .last()
-                .map(|event| event.meta.clone().unwrap().block_number)
-                .unwrap_or_default())
+            Ok(self.last_processed_block)
+        }
+
+        async fn update_counter(&mut self, counter: u64) -> Result<()> {
+            self.last_processed_block = counter;
+            Ok(())
         }
     }
 
@@ -764,7 +811,7 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
-        let storage = EventStorage { events: vec![] };
+        let storage = EventStorage::default();
         let blocks = vec![
             (
                 15575559,
@@ -811,7 +858,7 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
-        let storage = EventStorage { events: vec![] };
+        let storage = EventStorage::default();
         let current_block = web3.eth().block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
@@ -895,7 +942,7 @@ mod tests {
         // settlement contract that are at least MAX_REORG_BLOCK_COUNT apart.
         const RANGE_SIZE: u64 = 24 * 3600 / 12;
 
-        let storage_empty = EventStorage { events: vec![] };
+        let storage_empty = EventStorage::default();
         let event_start =
             block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
                 .await
@@ -915,7 +962,7 @@ mod tests {
 
         // We collect events again with an event handler generated from the same start
         // date but using `new_skip_blocks_before` if there are no events
-        let storage_empty = EventStorage { events: vec![] };
+        let storage_empty = EventStorage::default();
         let event_start =
             block_number_to_block_number_hash(&web3, (current_block - RANGE_SIZE).into())
                 .await
@@ -957,6 +1004,7 @@ mod tests {
         // Recreate the same event handler with the last event already in storage.
         let storage_nonempty = EventStorage {
             events: vec![last_event.clone()],
+            last_processed_block: last_event.meta.as_ref().unwrap().block_number,
         };
         let mut nonempty_event_handler = EventHandler::new_skip_blocks_before(
             Arc::new(web3.clone()),

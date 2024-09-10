@@ -212,6 +212,10 @@ where
     async fn last_event_block(&self) -> Result<u64> {
         Ok(self.last_event_block())
     }
+
+    async fn update_counter(&mut self, _new_value: u64) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
