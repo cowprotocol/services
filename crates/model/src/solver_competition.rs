@@ -167,8 +167,6 @@ mod tests {
                             "executedAmount": "14",
                         }
                     ],
-                    "callData": "0x13",
-                    "uninternalizedCallData": "0x1314",
                 },
             ],
         });
