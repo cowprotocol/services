@@ -48,7 +48,7 @@ use {
             sell_token_source_into,
             signing_scheme_into,
         },
-        event_handling::EventStoring,
+        event_handling::{EventStoring, PgEventCounter},
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
             convert_signing_scheme_into_quote_signing_scheme,
@@ -56,6 +56,7 @@ use {
             onchain_order_placement_error_from,
         },
     },
+    sqlx::PgPool,
     std::{collections::HashMap, sync::Arc},
     web3::types::U64,
 };
@@ -185,16 +186,22 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        let _timer = DatabaseMetrics::get()
-            .database_queries
-            .with_label_values(&["last_event_block"])
-            .start_timer();
+        PgEventCounter::last_event_block(self).await
+    }
 
-        let mut con = self.db.pool.acquire().await?;
-        let block_number = database::onchain_broadcasted_orders::last_block(&mut con)
-            .await
-            .context("block_number_of_most_recent_event failed")?;
-        block_number.try_into().context("block number is negative")
+    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
+        PgEventCounter::update_counter(self, new_value).await
+    }
+}
+
+#[async_trait::async_trait]
+impl<T: Sync + Send + Clone, W: Sync + Send + Clone> PgEventCounter<ContractEvent>
+    for OnchainOrderParser<T, W>
+{
+    const INDEXER_NAME: &'static str = "onchain_order_indexer";
+
+    fn pg_pool(&self) -> &PgPool {
+        &self.db.pool
     }
 }
 

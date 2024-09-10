@@ -1,11 +1,13 @@
 //! Implements the logic for indexing `OrderRefund` events of the ethflow
 //! contract.
+
 use {
     crate::database::{events::bytes_to_order_uid, Postgres},
     anyhow::Result,
     database::ethflow_orders::Refund,
     ethrpc::block_stream::RangeInclusive,
-    shared::event_handling::EventStoring,
+    shared::event_handling::{EventStoring, PgEventCounter},
+    sqlx::PgPool,
 };
 
 fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refund>> {
@@ -37,12 +39,6 @@ type EthFlowEvent = contracts::cowswap_eth_flow::Event;
 
 #[async_trait::async_trait]
 impl EventStoring<EthFlowEvent> for Postgres {
-    async fn last_event_block(&self) -> Result<u64> {
-        let mut ex = self.pool.acquire().await?;
-        let block = database::ethflow_orders::last_indexed_block(&mut ex).await?;
-        Ok(block.unwrap_or_default() as u64)
-    }
-
     async fn append_events(&mut self, events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<()> {
         let refunds = match get_refunds(events)? {
             refunds if !refunds.is_empty() => refunds,
@@ -78,5 +74,22 @@ impl EventStoring<EthFlowEvent> for Postgres {
         database::ethflow_orders::insert_refund_tx_hashes(&mut ex, &refunds).await?;
         ex.commit().await?;
         Ok(())
+    }
+
+    async fn last_event_block(&self) -> Result<u64> {
+        PgEventCounter::last_event_block(self).await
+    }
+
+    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
+        PgEventCounter::update_counter(self, new_value).await
+    }
+}
+
+#[async_trait::async_trait]
+impl PgEventCounter<EthFlowEvent> for Postgres {
+    const INDEXER_NAME: &'static str = "ethflow_refund_indexer";
+
+    fn pg_pool(&self) -> &PgPool {
+        &self.pool
     }
 }
