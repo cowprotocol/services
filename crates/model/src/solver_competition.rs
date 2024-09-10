@@ -1,6 +1,5 @@
 use {
     crate::{auction::AuctionId, order::OrderUid},
-    bytes_hex::BytesHex,
     derivative::Derivative,
     number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
@@ -55,14 +54,6 @@ pub struct SolverSettlement {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<BytesHex>")]
-    #[derivative(Debug(format_with = "crate::format::debug_optional_bytes"))]
-    pub call_data: Option<Vec<u8>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<BytesHex>")]
-    #[derivative(Debug(format_with = "crate::format::debug_optional_bytes"))]
-    pub uninternalized_call_data: Option<Vec<u8>>,
 }
 
 #[serde_as]
@@ -219,8 +210,6 @@ mod tests {
                             executed_amount: 14.into(),
                         },
                     ],
-                    call_data: Some(vec![0x13]),
-                    uninternalized_call_data: Some(vec![0x13, 0x14]),
                 }],
             },
         };
