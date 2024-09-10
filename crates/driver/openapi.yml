@@ -28,7 +28,7 @@ paths:
             - `sell`: amount is in sell_token, out_amount is in buy_token
           schema:
             type: string
-            enum: ["buy", "sell"]
+            enum: [ "buy", "sell" ]
           required: true
         - in: query
           name: amount
@@ -93,7 +93,7 @@ paths:
       description: |
         Reveal the calldata of the previously solved auction.
 
-        This may be used by the autopilot to verify the solution before requesting its execution it on chain.
+        This may be used by the autopilot for the shadow competition to verify the solution before requesting its execution it on chain.
       requestBody:
         required: true
         content:
@@ -203,7 +203,7 @@ components:
           type: integer
         kind:
           type: string
-          enum: ["buy", "sell"]
+          enum: [ "buy", "sell" ]
         receiver:
           description: The address that should receive the bought tokens.
           $ref: "#/components/schemas/Address"
@@ -231,19 +231,19 @@ components:
             $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
           type: string
-          enum: ["erc20", "internal", "external"]
+          enum: [ "erc20", "internal", "external" ]
         buyTokenBalance:
           type: string
-          enum: ["erc20", "internal"]
+          enum: [ "erc20", "internal" ]
         class:
           type: string
-          enum: ["market", "limit", "liquidity"]
+          enum: [ "market", "limit", "liquidity" ]
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
           type: string
         signingScheme:
           type: string
-          enum: ["eip712", "ethsign", "presign", "eip1271"]
+          enum: [ "eip712", "ethsign", "presign", "eip1271" ]
         signature:
           description: Hex encoded bytes with `0x` prefix.
           type: string
@@ -380,7 +380,7 @@ components:
               solutionId:
                 description: |
                   The unique identifier of the solution.
-    
+                  
                   This id is used to identify the solution when executing it.
                 type: string
                 example: "1"
@@ -408,7 +408,7 @@ components:
               clearingPrices:
                 description: |
                   Mapping of hex token address to price.
-    
+                  
                   The prices of tokens for settled user orders as passed to the settlement contract.
                 type: object
                 additionalProperties:
@@ -451,7 +451,7 @@ components:
       properties:
         kind:
           type: string
-          enum: ["surplus"]
+          enum: [ "surplus" ]
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
@@ -483,7 +483,7 @@ components:
       properties:
         kind:
           type: string
-          enum: ["volume"]
+          enum: [ "volume" ]
         factor:
           description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
           type: number
