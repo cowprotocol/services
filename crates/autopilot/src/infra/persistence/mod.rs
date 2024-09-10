@@ -501,12 +501,12 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            let all_order_uids = current_orders
+            let order_uids = current_orders
                 .keys()
                 .map(|uid| ByteArray(uid.0))
                 .collect::<Vec<_>>();
 
-            database::orders::read_quotes(&mut tx, &all_order_uids)
+            database::orders::read_quotes(&mut tx, &order_uids)
                 .await?
                 .into_iter()
                 .filter_map(|quote| {
