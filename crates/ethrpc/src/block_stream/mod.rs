@@ -157,6 +157,7 @@ pub async fn current_block_stream(
                 continue;
             }
 
+            tracing::info!(number=%block.number, hash=?block.hash, "noticed a new block");
             if sender.send(block).is_err() {
                 tracing::debug!("exiting polling loop");
                 break;
