@@ -185,8 +185,6 @@ impl RunLoop {
         let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
-        Metrics::pre_processed(single_run_start.elapsed());
-
         let solutions = self.competition(auction_id, auction).await;
         if solutions.is_empty() {
             tracing::info!("no solutions for auction");
@@ -833,10 +831,6 @@ struct Metrics {
     /// solved and before sending a `settle` request.
     auction_postprocessing_time: prometheus::Histogram,
 
-    /// Tracks the time spent in pre-processing before sending a `solve`
-    /// request.
-    auction_preprocessing_time: prometheus::Histogram,
-
     /// Tracks the time spent running maintenance. This mostly consists of
     /// indexing new events.
     #[metric(buckets(0, 0.01, 0.05, 0.1, 0.2, 0.5, 1., 2., 5.))]
@@ -954,12 +948,6 @@ impl Metrics {
     fn post_processed(elapsed: Duration) {
         Self::get()
             .auction_postprocessing_time
-            .observe(elapsed.as_secs_f64());
-    }
-
-    fn pre_processed(elapsed: Duration) {
-        Self::get()
-            .auction_preprocessing_time
             .observe(elapsed.as_secs_f64());
     }
 
