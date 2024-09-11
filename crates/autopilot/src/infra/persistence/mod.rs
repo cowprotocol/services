@@ -494,13 +494,19 @@ impl Persistence {
             !expired && !invalidated && !onchain_error && !fulfilled
         });
 
-        let new_quotes: HashMap<_, _> = {
+        current_quotes.retain(|uid, _| current_orders.contains_key(uid));
+
+        {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes for only newly created and placed onchain orders.
+            // Fetch quotes only for newly created and also on-chain placed orders due to
+            // the following case: if a block containing an on-chain order
+            // (e.g., ethflow) gets reorganized, the same order with the same
+            // UID might be created in the new block, and the temporary quote
+            // associated with it may have changed in the meantime.
             let order_uids = current_orders
                 .values()
                 .filter_map(|order| {
@@ -510,26 +516,16 @@ impl Persistence {
                 })
                 .collect::<Vec<_>>();
 
-            database::orders::read_quotes(&mut tx, &order_uids)
-                .await?
-                .into_iter()
-                .filter_map(|quote| {
-                    let order_uid = domain::OrderUid(quote.order_uid.0);
-                    dto::quote::into_domain(quote)
-                        .map_err(|err| {
-                            tracing::warn!(?order_uid, ?err, "failed to convert quote from db")
-                        })
-                        .ok()
-                        .map(|quote| (order_uid, quote))
-                })
-                .collect()
+            for quote in database::orders::read_quotes(&mut tx, &order_uids).await? {
+                let order_uid = domain::OrderUid(quote.order_uid.0);
+                match dto::quote::into_domain(quote) {
+                    Ok(quote) => {
+                        current_quotes.insert(order_uid, quote);
+                    }
+                    Err(err) => tracing::warn!(?order_uid, ?err, "failed to convert quote from db"),
+                }
+            }
         };
-
-        current_quotes.retain(|uid, _| current_orders.contains_key(uid));
-
-        for (order_uid, quote) in new_quotes {
-            current_quotes.insert(order_uid, quote);
-        }
 
         Ok(boundary::SolvableOrders {
             orders: current_orders,
