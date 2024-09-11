@@ -63,22 +63,22 @@ pub async fn fetch_all(
         return Ok(HashMap::new());
     }
 
-    let mut query_builder = QueryBuilder::new("SELECT * FROM fee_policies WHERE ");
+    let mut query_builder = QueryBuilder::new("SELECT * FROM fee_policies fp INNER JOIN (VALUES ");
     for (i, (auction_id, order_uid)) in keys_filter.iter().enumerate() {
         if i > 0 {
-            query_builder.push(" OR ");
+            query_builder.push(", ");
         }
         query_builder
             .push("(")
-            .push("auction_id = ")
-            .push_bind(auction_id)
-            .push(" AND ")
-            .push("order_uid = ")
             .push_bind(order_uid)
+            .push(", ")
+            .push_bind(auction_id)
             .push(")");
     }
+    query_builder.push(") AS vals(order_uid, auction_id) ");
+    query_builder.push("ON (fp.order_uid, fp.auction_id) = (vals.order_uid, vals.auction_id) ");
 
-    query_builder.push(" ORDER BY application_order");
+    query_builder.push("ORDER BY fp.application_order");
 
     let query = query_builder.build_query_as::<FeePolicy>();
     let rows = query.fetch_all(ex).await?;

@@ -55,21 +55,24 @@ pub async fn executed_protocol_fees(
     }
 
     let mut query_builder = QueryBuilder::new(
-        "SELECT order_uid, auction_id, protocol_fee_tokens, protocol_fee_amounts FROM \
-         order_execution WHERE ",
+        "SELECT oe.order_uid, oe.auction_id, oe.protocol_fee_tokens, oe.protocol_fee_amounts FROM \
+         order_execution oe INNER JOIN (VALUES ",
     );
 
     for (i, (auction_id, order_uid)) in keys_filter.iter().enumerate() {
         if i > 0 {
-            query_builder.push(" OR ");
+            query_builder.push(", ");
         }
         query_builder
-            .push("(order_uid = ")
+            .push("(")
             .push_bind(order_uid)
-            .push(" AND auction_id = ")
+            .push(", ")
             .push_bind(auction_id)
             .push(")");
     }
+
+    query_builder.push(") AS vals(order_uid, auction_id) ");
+    query_builder.push("ON (oe.order_uid, oe.auction_id) = (vals.order_uid, vals.auction_id)");
 
     #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
     struct ProtocolFees {
