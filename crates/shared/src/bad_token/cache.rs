@@ -1,20 +1,19 @@
 use {
     super::{BadTokenDetecting, TokenQuality},
     anyhow::Result,
+    dashmap::DashMap,
     futures::future::join_all,
     primitive_types::H160,
     std::{
-        collections::HashMap,
         ops::Div,
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::RwLock,
 };
 
 pub struct CachingDetector {
     inner: Box<dyn BadTokenDetecting>,
-    cache: RwLock<HashMap<H160, (Instant, TokenQuality)>>,
+    cache: DashMap<H160, (Instant, TokenQuality)>,
     cache_expiry: Duration,
     prefetch_time: Duration,
 }
@@ -22,12 +21,12 @@ pub struct CachingDetector {
 #[async_trait::async_trait]
 impl BadTokenDetecting for CachingDetector {
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
-        if let Some(quality) = self.get_from_cache(&token, Instant::now()).await {
+        if let Some(quality) = self.get_from_cache(&token, Instant::now()) {
             return Ok(quality);
         }
 
         let result = self.inner.detect(token).await?;
-        self.insert_into_cache(token, result.clone()).await;
+        self.insert_into_cache(token, result.clone());
         Ok(result)
     }
 }
@@ -52,29 +51,28 @@ impl CachingDetector {
         detector
     }
 
-    async fn get_from_cache(&self, token: &H160, now: Instant) -> Option<TokenQuality> {
-        match self.cache.read().await.get(token) {
-            Some((instant, quality))
-                if now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry =>
-            {
-                Some(quality.clone())
+    fn get_from_cache(&self, token: &H160, now: Instant) -> Option<TokenQuality> {
+        match self.cache.get(token) {
+            Some(entry) => {
+                let (instant, quality) = entry.value();
+                if now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry {
+                    Some(quality.clone())
+                } else {
+                    None
+                }
             }
-            _ => None,
+            None => None,
         }
     }
 
-    async fn insert_into_cache(&self, token: H160, quality: TokenQuality) {
-        self.cache
-            .write()
-            .await
-            .insert(token, (Instant::now(), quality));
+    fn insert_into_cache(&self, token: H160, quality: TokenQuality) {
+        self.cache.insert(token, (Instant::now(), quality));
     }
 
-    async fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
-        let mut cache = self.cache.write().await;
+    fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
         let now = Instant::now();
         tokens.into_iter().for_each(|(token, quality)| {
-            cache.insert(token, (now, quality));
+            self.cache.insert(token, (now, quality));
         });
     }
 
@@ -94,11 +92,12 @@ impl CachingDetector {
                 let start = Instant::now();
 
                 let expired_tokens: Vec<H160> = {
-                    let cache = detector.cache.read().await;
                     let now = Instant::now();
-                    cache
+                    detector
+                        .cache
                         .iter()
-                        .filter_map(|(token, (instant, _))| {
+                        .filter_map(|entry| {
+                            let (token, (instant, _)) = entry.pair();
                             (now.checked_duration_since(*instant).unwrap_or_default()
                                 >= prefetch_time_to_expire)
                                 .then_some(*token)
@@ -126,7 +125,7 @@ impl CachingDetector {
                 .into_iter()
                 .flatten();
 
-                detector.insert_many_into_cache(results).await;
+                detector.insert_many_into_cache(results);
 
                 let remaining_sleep = maintenance_timeout
                     .checked_sub(start.elapsed())
@@ -175,18 +174,12 @@ mod tests {
             Duration::from_millis(200),
         );
         let now = Instant::now();
-        detector
-            .cache
-            .write()
-            .await
-            .insert(token, (now, TokenQuality::Good));
+        detector.cache.insert(token, (now, TokenQuality::Good));
         assert!(detector
             .get_from_cache(&token, now + Duration::from_secs(1))
-            .await
             .is_some());
         assert!(detector
             .get_from_cache(&token, now + Duration::from_secs(3))
-            .await
             .is_none());
     }
 
