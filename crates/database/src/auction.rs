@@ -25,7 +25,7 @@ LIMIT 1
 }
 
 pub async fn delete_all_auctions(ex: &mut PgConnection) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "TRUNCATE auctions;";
+    const QUERY: &str = "DELETE FROM auctions;";
     sqlx::query(QUERY).execute(ex).await.map(|_| ())
 }
 
