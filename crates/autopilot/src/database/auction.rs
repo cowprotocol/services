@@ -104,10 +104,8 @@ impl Postgres {
             .start_timer();
 
         let data = serde_json::to_value(auction)?;
-        let mut ex = self.pool.begin().await?;
-        database::auction::delete_all_auctions(&mut ex).await?;
-        let id = database::auction::save(&mut ex, &data).await?;
-        ex.commit().await?;
+        let mut ex = self.pool.acquire().await?;
+        let id = database::auction::replace_auction(&mut ex, &data).await?;
         Ok(id)
     }
 }
