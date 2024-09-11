@@ -1776,7 +1776,7 @@ mod tests {
             1,
             0,
             Asset {
-                amount: fee,
+                amount: fee.clone(),
                 token: Default::default(),
             },
             &[],
@@ -1902,8 +1902,10 @@ mod tests {
             &ByteArray([1u8; 56]),
             1,
             1,
-            &BigDecimal::from(1),
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(1),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
@@ -1913,8 +1915,10 @@ mod tests {
             &ByteArray([1u8; 56]),
             2,
             2,
-            &BigDecimal::from(2),
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(2),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
@@ -1924,8 +1928,10 @@ mod tests {
             &ByteArray([1u8; 56]),
             3,
             0,
-            &BigDecimal::from(4),
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(4),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
@@ -1935,8 +1941,10 @@ mod tests {
             &ByteArray([3u8; 56]),
             2,
             3,
-            &BigDecimal::from(4),
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(4),
+                token: Default::default(),
+            },
             Default::default(),
         )
         .await
