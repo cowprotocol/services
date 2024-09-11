@@ -52,13 +52,11 @@ impl CachingDetector {
     }
 
     fn get_from_cache(&self, token: &H160, now: Instant) -> Option<TokenQuality> {
-        match self.cache.get(token) {
-            Some(entry) => {
-                let (instant, quality) = entry.value();
-                (now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry).then_some(quality.clone())
-            }
-            None => None,
-        }
+        self.cache.get(token).and_then(|entry| {
+            let (instant, quality) = entry.value();
+            (now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry)
+                .then_some(quality.clone())
+        })
     }
 
     fn insert_into_cache(&self, token: H160, quality: TokenQuality) {
