@@ -18,27 +18,26 @@ pub async fn save(
     order: &OrderUid,
     auction: AuctionId,
     block_number: i64,
-    executed_fee: &BigDecimal,
-    executed_fee_token: &Address,
-    executed_protocol_fees: &[Asset],
+    total_fee: Asset,
+    protocol_fees: &[Asset],
 ) -> Result<(), sqlx::Error> {
-    let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = executed_protocol_fees
+    let (protocol_fee_tokens, protocol_fee_amounts): (Vec<_>, Vec<_>) = protocol_fees
         .iter()
         .map(|entry| (entry.token, entry.amount.clone()))
         .unzip();
 
     const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, surplus_fee_token, block_number, protocol_fee_tokens, protocol_fee_amounts)
+INSERT INTO order_execution (order_uid, auction_id, reward, total_fee, total_fee_token, block_number, protocol_fee_tokens, protocol_fee_amounts)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (order_uid, auction_id)
-DO UPDATE SET reward = $3, surplus_fee = $4, surplus_fee_token = $5, block_number = $6, protocol_fee_tokens = $7, protocol_fee_amounts = $8
+DO UPDATE SET reward = $3, total_fee = $4, total_fee_token = $5, block_number = $6, protocol_fee_tokens = $7, protocol_fee_amounts = $8
 ;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
-        .bind(Some(executed_fee))
-        .bind(executed_fee_token)
+        .bind(Some(total_fee.amount))
+        .bind(total_fee.token)
         .bind(block_number)
         .bind(protocol_fee_tokens)
         .bind(protocol_fee_amounts)
@@ -125,8 +124,10 @@ mod tests {
             &Default::default(),
             1,
             0,
-            &Default::default(),
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(3),
+                token: Default::default(),
+            },
             protocol_fees.as_slice(),
         )
         .await
@@ -139,8 +140,10 @@ mod tests {
             &Default::default(),
             2,
             0,
-            &Default::default(),
-            &Default::default(),
+            Asset {
+                amount: BigDecimal::from(3),
+                token: Default::default(),
+            },
             &[],
         )
         .await

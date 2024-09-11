@@ -1,10 +1,11 @@
 -- Add a new column to the order_execution table to store the surplus fee token
 ALTER TABLE order_execution 
-ADD COLUMN surplus_fee_token bytea NOT NULL DEFAULT '\x0000000000000000000000000000000000000000';
+ADD COLUMN total_fee_token bytea NOT NULL DEFAULT '\x0000000000000000000000000000000000000000',
+RENAME COLUMN surplus_fee TO total_fee;
 
 -- Now populate existing rows with the sell token taken from the 'orders' table, or if it doesn't exist, try from 'jit_orders'.
 UPDATE order_execution oe
-SET surplus_fee_token = COALESCE(
+SET total_fee_token = COALESCE(
     sub.sell_token, '\x0000000000000000000000000000000000000000'
 )
 FROM (
@@ -17,5 +18,5 @@ FROM (
 ) AS sub
 WHERE oe.order_uid = sub.uid;
 
--- Drop the default value for the surplus_fee_token column
-ALTER TABLE order_execution ALTER COLUMN surplus_fee_token DROP DEFAULT;
+-- Drop the default value for the total_fee_token column
+ALTER TABLE order_execution ALTER COLUMN total_fee_token DROP DEFAULT;

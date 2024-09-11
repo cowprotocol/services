@@ -881,13 +881,13 @@ components:
             can be found in this object.
           allOf:
             - $ref: "#/components/schemas/OnchainOrderData"
-        executedSurplusFee:
-          description: Surplus fee that the limit order was executed with.
+        executedTotalFee:
+          description: Total fee charged for execution of the order. Contains network fee and protocol fees.
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: false
-        executedSurplusFeeToken:
-          description: Token of the surplus fee.
+        executedTotalFeeToken:
+          description: Token of the total fee.
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: false

@@ -700,8 +700,8 @@ pub struct OrderMetadata {
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
-    pub executed_surplus_fee: U256,
-    pub executed_surplus_fee_token: H160,
+    pub executed_total_fee: U256,
+    pub executed_total_fee_token: H160,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]
@@ -1061,8 +1061,8 @@ mod tests {
             "validTo": 4294967295u32,
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "executedSurplusFee": "1",
-            "executedSurplusFeeToken": "0x000000000000000000000000000000000000000a",
+            "executedTotalFee": "1",
+            "executedTotalFeeToken": "0x000000000000000000000000000000000000000a",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
@@ -1093,8 +1093,8 @@ mod tests {
                 executed_sell_amount: BigUint::from_bytes_be(&[5]),
                 executed_sell_amount_before_fees: 4.into(),
                 executed_fee_amount: 1.into(),
-                executed_surplus_fee: 1.into(),
-                executed_surplus_fee_token: H160::from_low_u64_be(10),
+                executed_total_fee: 1.into(),
+                executed_total_fee_token: H160::from_low_u64_be(10),
                 invalidated: true,
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),

@@ -485,8 +485,8 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: BigDecimal,
-    pub executed_surplus_fee_token: Address,
+    pub executed_total_fee: BigDecimal,
+    pub executed_total_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -549,8 +549,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
-COALESCE((SELECT surplus_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_surplus_fee_token, -- TODO surplus token
+COALESCE((SELECT SUM(total_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_total_fee,
+COALESCE((SELECT total_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_total_fee_token, -- TODO surplus token
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
@@ -778,6 +778,7 @@ mod tests {
             events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
             onchain_invalidations::insert_onchain_invalidation,
+            order_execution::Asset,
             PgTransaction,
         },
         bigdecimal::num_bigint::{BigInt, ToBigInt},
@@ -1766,18 +1767,28 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, fee);
+        assert_eq!(order.executed_total_fee, fee);
 
         let fee: BigDecimal = 1.into();
-        crate::order_execution::save(&mut db, &order_uid, 1, 0, &fee, &Default::default(), &[])
-            .await
-            .unwrap();
+        crate::order_execution::save(
+            &mut db,
+            &order_uid,
+            1,
+            0,
+            Asset {
+                amount: fee,
+                token: Default::default(),
+            },
+            &[],
+        )
+        .await
+        .unwrap();
 
         let order = single_full_order(&mut db, &order_uid)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, fee);
+        assert_eq!(order.executed_total_fee, fee);
     }
 
     #[tokio::test]

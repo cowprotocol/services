@@ -650,8 +650,10 @@ impl Persistence {
                     &ByteArray(order.0),
                     auction_id,
                     block_number,
-                    &u256_to_big_decimal(&order_fee.total.amount.0),
-                    &ByteArray(order_fee.total.token.0 .0),
+                    Asset {
+                        token: ByteArray(order_fee.total.token.0 .0),
+                        amount: u256_to_big_decimal(&order_fee.total.amount.0),
+                    },
                     &order_fee
                         .protocol
                         .into_iter()

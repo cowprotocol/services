@@ -356,7 +356,7 @@ mod tests {
             trade.surplus_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(52937525819789126u128)
         );
-        // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        // fee read from "executedTotalFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
         assert_eq!(
             trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(6890975030480504u128)
