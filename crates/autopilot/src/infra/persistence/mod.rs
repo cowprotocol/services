@@ -405,6 +405,7 @@ impl Persistence {
     pub async fn solvable_orders_after(
         &self,
         mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
+        mut current_quotes: HashMap<domain::OrderUid, domain::Quote>,
         after_timestamp: DateTime<Utc>,
         after_block: u64,
         min_valid_to: u32,
@@ -493,17 +494,20 @@ impl Persistence {
             !expired && !invalidated && !onchain_error && !fulfilled
         });
 
-        // Fetch quotes for new orders and also update them for the cached ones since
-        // they could also be updated.
-        let quotes = {
+        let new_quotes: HashMap<_, _> = {
             let _timer = Metrics::get()
                 .database_queries
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
+            // Fetch quotes for only newly created and placed onchain orders.
             let order_uids = current_orders
-                .keys()
-                .map(|uid| ByteArray(uid.0))
+                .values()
+                .filter_map(|order| {
+                    (order.metadata.onchain_user.is_some()
+                        || order.metadata.creation_date > after_timestamp)
+                        .then_some(ByteArray(order.metadata.uid.0))
+                })
                 .collect::<Vec<_>>();
 
             database::orders::read_quotes(&mut tx, &order_uids)
@@ -521,9 +525,15 @@ impl Persistence {
                 .collect()
         };
 
+        current_quotes.retain(|uid, _| current_orders.contains_key(uid));
+
+        for (order_uid, quote) in new_quotes {
+            current_quotes.insert(order_uid, quote);
+        }
+
         Ok(boundary::SolvableOrders {
             orders: current_orders,
-            quotes,
+            quotes: current_quotes,
             latest_settlement_block,
             fetched_from_db: started_at,
         })

@@ -353,6 +353,7 @@ impl SolvableOrdersCache {
                 .persistence
                 .solvable_orders_after(
                     cache.solvable_orders.orders.clone(),
+                    cache.solvable_orders.quotes.clone(),
                     cache.solvable_orders.fetched_from_db,
                     cache.solvable_orders.latest_settlement_block,
                     min_valid_to,
