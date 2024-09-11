@@ -55,11 +55,7 @@ impl CachingDetector {
         match self.cache.get(token) {
             Some(entry) => {
                 let (instant, quality) = entry.value();
-                if now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry {
-                    Some(quality.clone())
-                } else {
-                    None
-                }
+                (now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry).then_some(quality.clone())
             }
             None => None,
         }
