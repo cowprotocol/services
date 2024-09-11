@@ -246,17 +246,13 @@ impl SolvableOrdersCache {
         // spawning a background task since `order_events` table insert operation takes
         // a while and the result is ignored.
         self.persistence.store_order_events(
-            invalid_order_uids
-                .iter()
-                .map(|id| domain::OrderUid(id.0))
-                .collect(),
+            invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
             OrderEventLabel::Invalid,
         );
         self.persistence.store_order_events(
             filtered_order_events
                 .iter()
-                .map(|id| domain::OrderUid(id.0))
-                .collect(),
+                .map(|id| domain::OrderUid(id.0)),
             OrderEventLabel::Filtered,
         );
 
@@ -353,6 +349,7 @@ impl SolvableOrdersCache {
                 .persistence
                 .solvable_orders_after(
                     cache.solvable_orders.orders.clone(),
+                    cache.solvable_orders.quotes.clone(),
                     cache.solvable_orders.fetched_from_db,
                     cache.solvable_orders.latest_settlement_block,
                     min_valid_to,
