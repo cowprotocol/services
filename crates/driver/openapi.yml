@@ -93,7 +93,7 @@ paths:
       description: |
         Reveal the calldata of the previously solved auction.
 
-        This may be used by the autopilot to verify the solution before requesting its execution it on chain.
+        This may be used by the autopilot for the shadow competition to verify the solution before requesting its execution it on chain.
       requestBody:
         required: true
         content:
@@ -243,7 +243,7 @@ components:
           type: string
         signingScheme:
           type: string
-          enum: ["eip712", "ethsign", "presign", "eip1271"]
+          enum: [ "eip712", "ethsign", "presign", "eip1271" ]
         signature:
           description: Hex encoded bytes with `0x` prefix.
           type: string
@@ -380,7 +380,7 @@ components:
               solutionId:
                 description: |
                   The unique identifier of the solution.
-    
+                  
                   This id is used to identify the solution when executing it.
                 type: string
                 example: "1"
@@ -408,7 +408,7 @@ components:
               clearingPrices:
                 description: |
                   Mapping of hex token address to price.
-    
+                  
                   The prices of tokens for settled user orders as passed to the settlement contract.
                 type: object
                 additionalProperties:
@@ -467,7 +467,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [ "priceImprovement" ]
+          enum: ["priceImprovement"]
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
