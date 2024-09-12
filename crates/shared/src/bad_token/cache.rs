@@ -26,7 +26,7 @@ impl BadTokenDetecting for CachingDetector {
         }
 
         let result = self.inner.detect(token).await?;
-        self.insert_into_cache(token, result.clone());
+        self.cache.insert(token, (Instant::now(), result.clone()));
         Ok(result)
     }
 }
@@ -52,15 +52,9 @@ impl CachingDetector {
     }
 
     fn get_from_cache(&self, token: &H160, now: Instant) -> Option<TokenQuality> {
-        self.cache.get(token).and_then(|entry| {
-            let (instant, quality) = entry.value();
-            (now.checked_duration_since(*instant).unwrap_or_default() < self.cache_expiry)
-                .then_some(quality.clone())
-        })
-    }
-
-    fn insert_into_cache(&self, token: H160, quality: TokenQuality) {
-        self.cache.insert(token, (Instant::now(), quality));
+        let (instant, quality) = self.cache.get(token)?.value().clone();
+        let still_valid = now.saturating_duration_since(instant) < self.cache_expiry;
+        still_valid.then_some(quality)
     }
 
     fn insert_many_into_cache(&self, tokens: impl Iterator<Item = (H160, TokenQuality)>) {
@@ -92,9 +86,9 @@ impl CachingDetector {
                         .iter()
                         .filter_map(|entry| {
                             let (token, (instant, _)) = entry.pair();
-                            (now.checked_duration_since(*instant).unwrap_or_default()
-                                >= prefetch_time_to_expire)
-                                .then_some(*token)
+                            let valid =
+                                now.saturating_duration_since(*instant) >= prefetch_time_to_expire;
+                            valid.then_some(*token)
                         })
                         .collect()
                 };
