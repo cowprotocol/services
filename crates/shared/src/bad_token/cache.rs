@@ -79,23 +79,14 @@ impl CachingDetector {
             loop {
                 let start = Instant::now();
 
-                let expired_tokens: Vec<H160> = {
-                    let now = Instant::now();
-                    detector
-                        .cache
-                        .iter()
-                        .filter_map(|entry| {
-                            let (token, (instant, _)) = entry.pair();
-                            let valid =
-                                now.saturating_duration_since(*instant) >= prefetch_time_to_expire;
-                            valid.then_some(*token)
-                        })
-                        .collect()
-                };
-
-                let results = join_all(expired_tokens.into_iter().map(|token| {
+                let futures = detector.cache.iter().filter_map(|entry| {
+                    let (token, (instant, _)) = entry.pair();
+                    let (token, instant) = (*token, *instant);
+                    if start.saturating_duration_since(instant) < prefetch_time_to_expire {
+                        return None;
+                    }
                     let detector = detector.clone();
-                    async move {
+                    Some(async move {
                         match detector.inner.detect(token).await {
                             Ok(result) => Some((token, result)),
                             Err(err) => {
@@ -107,17 +98,13 @@ impl CachingDetector {
                                 None
                             }
                         }
-                    }
-                }))
-                .await
-                .into_iter()
-                .flatten();
+                    })
+                });
 
-                detector.insert_many_into_cache(results);
+                let results = join_all(futures).await;
+                detector.insert_many_into_cache(results.into_iter().flatten());
 
-                let remaining_sleep = maintenance_timeout
-                    .checked_sub(start.elapsed())
-                    .unwrap_or_default();
+                let remaining_sleep = maintenance_timeout.saturating_sub(start.elapsed());
                 tokio::time::sleep(remaining_sleep).await;
             }
         });
