@@ -386,10 +386,31 @@ pub struct Solved {
     pub gas: Option<eth::Gas>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Amounts {
-    pub sell: eth::TokenAmount,
-    pub buy: eth::TokenAmount,
+    pub side: order::Side,
+    pub sell: eth::Asset,
+    pub buy: eth::Asset,
+    pub traded_sell: eth::TokenAmount,
+    pub traded_buy: eth::TokenAmount,
+}
+
+impl Default for Amounts {
+    fn default() -> Self {
+        Self {
+            side: order::Side::Buy,
+            sell: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(Default::default())),
+                amount: Default::default(),
+            },
+            buy: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(Default::default())),
+                amount: Default::default(),
+            },
+            traded_sell: Default::default(),
+            traded_buy: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

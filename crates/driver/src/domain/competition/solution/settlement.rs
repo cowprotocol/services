@@ -261,13 +261,16 @@ impl Settlement {
                 sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
                 buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
             };
-            order.sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
+            order.side = trade.order().side;
+            order.sell = trade.order().sell;
+            order.buy = trade.order().buy;
+            order.traded_sell = trade.sell_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
                         tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
                         0.into()
                     });
-            order.buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
+            order.traded_buy = trade.buy_amount(&prices).unwrap_or_else(|err| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
                         tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");

@@ -115,8 +115,8 @@ impl Solution {
                     (
                         o.into(),
                         domain::competition::TradedAmounts {
-                            sell: amounts.sell_amount.into(),
-                            buy: amounts.buy_amount.into(),
+                            sell: amounts.traded_sell().into(),
+                            buy: amounts.traded_buy().into(),
                         },
                     )
                 })
@@ -132,7 +132,65 @@ impl Solution {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(untagged)]
+pub enum TradedOrder {
+    #[serde(rename_all = "camelCase")]
+    TradedAmount {
+        /// The effective amount that left the user's wallet including all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        sell_amount: U256,
+        /// The effective amount the user received after all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        buy_amount: U256,
+    },
+    #[serde(rename_all = "camelCase")]
+    TradedOrder {
+        side: Side,
+        sell_token: H160,
+        buy_token: H160,
+        #[serde_as(as = "HexOrDecimalU256")]
+        /// Sell limit order amount.
+        sell_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        /// Buy limit order amount.
+        buy_amount: U256,
+        /// The effective amount that left the user's wallet including all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        traded_sell: U256,
+        /// The effective amount the user received after all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        traded_buy: U256,
+    },
+}
+
+impl TradedOrder {
+    pub fn traded_sell(&self) -> U256 {
+        match self {
+            Self::TradedAmount { sell_amount, .. } => *sell_amount,
+            Self::TradedOrder { traded_sell, .. } => *traded_sell,
+        }
+    }
+
+    pub fn traded_buy(&self) -> U256 {
+        match self {
+            Self::TradedAmount { buy_amount, .. } => *buy_amount,
+            Self::TradedOrder { traded_buy, .. } => *traded_buy,
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
@@ -143,13 +201,13 @@ pub struct Solution {
     pub score: U256,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: H160,
-    pub orders: HashMap<boundary::OrderUid, TradedAmounts>,
+    pub orders: HashMap<boundary::OrderUid, TradedOrder>,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
     pub gas: Option<u64>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Response {
     pub solutions: Vec<Solution>,
