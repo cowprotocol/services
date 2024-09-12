@@ -65,7 +65,7 @@ pub fn from_domain(order: domain::Order) -> Order {
             .collect(),
         sell_token_balance: order.sell_token_balance.into(),
         buy_token_balance: order.buy_token_balance.into(),
-        class: order.class.into(),
+        class: boundary::OrderClass::Limit,
         app_data: order.app_data.into(),
         signature: order.signature.into(),
         quote: order.quote.map(Into::into),
@@ -99,7 +99,6 @@ pub fn to_domain(order: Order) -> domain::Order {
             .collect(),
         sell_token_balance: order.sell_token_balance.into(),
         buy_token_balance: order.buy_token_balance.into(),
-        class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
         quote: order.quote.map(|q| q.to_domain(order.uid.into())),
@@ -132,26 +131,6 @@ impl From<boundary::OrderKind> for domain::auction::order::Side {
         match kind {
             boundary::OrderKind::Buy => Self::Buy,
             boundary::OrderKind::Sell => Self::Sell,
-        }
-    }
-}
-
-impl From<domain::auction::order::Class> for boundary::OrderClass {
-    fn from(class: domain::auction::order::Class) -> Self {
-        match class {
-            domain::auction::order::Class::Limit => Self::Limit,
-            domain::auction::order::Class::Market => Self::Market,
-            domain::auction::order::Class::Liquidity => Self::Liquidity,
-        }
-    }
-}
-
-impl From<boundary::OrderClass> for domain::auction::order::Class {
-    fn from(class: boundary::OrderClass) -> Self {
-        match class {
-            boundary::OrderClass::Limit => Self::Limit,
-            boundary::OrderClass::Market => Self::Market,
-            boundary::OrderClass::Liquidity => Self::Liquidity,
         }
     }
 }

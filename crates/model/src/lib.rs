@@ -2,7 +2,6 @@
 
 pub mod auction;
 pub mod fee_policy;
-mod format;
 pub mod interaction;
 pub mod order;
 pub mod quote;

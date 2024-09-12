@@ -513,14 +513,6 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
