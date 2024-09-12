@@ -192,6 +192,62 @@ impl Settlement {
                 })
                 .collect(),
         }
+
+        // let mut trades = Vec::with_capacity(solution.orders().len());
+        // for (order_uid, traded) in solution.orders().iter() {
+        //     let trade = EncodedTrade {
+        //         uid: *order_uid,
+        //         sell: traded.sell,
+        //         buy: traded.buy,
+        //         side: traded.side,
+        //         executed: match traded.side {
+        //             domain::auction::order::Side::Buy => traded.traded_sell,
+        //             domain::auction::order::Side::Sell => traded.traded_buy,
+        //         },
+        //         prices: transaction::Prices {
+        //             uniform: transaction::ClearingPrices {
+        //                 sell: solution
+        //                     .prices()
+        //                     .get(&traded.sell.token)
+        //                     .expect("this should be guaranteed for each valid
+        // trade")                     .get()
+        //                     .into(),
+        //                 buy: solution
+        //                     .prices()
+        //                     .get(&traded.buy.token)
+        //                     .expect("this should be guaranteed for each valid
+        // trade")                     .get()
+        //                     .into(),
+        //             },
+        //             custom: transaction::ClearingPrices {
+        //                 sell: traded.buy.into(),
+        //                 buy: traded.sell.into(),
+        //             },
+        //         },
+        //         // rest of the data irrelevant for score computation
+        //         receiver: Default::default(),
+        //         valid_to: Default::default(),
+        //         app_data:
+        // domain::auction::order::AppDataHash(Default::default()),
+        //         fee_amount: Default::default(),
+        //         sell_token_balance:
+        // domain::auction::order::SellTokenSource::Erc20,
+        //         buy_token_balance:
+        // domain::auction::order::BuyTokenDestination::Erc20,
+        //         partially_fillable: Default::default(),
+        //         signature: domain::auction::order::Signature::PreSign,
+        //     };
+        //     trades.push(trade::Trade::new(trade, &auction, 0));
+        // }
+
+        // Self {
+        //     gas: Default::default(),
+        //     gas_price: Default::default(),
+        //     solver: solution.solver(),
+        //     block: Default::default(),
+        //     auction,
+        //     trades,
+        // }
     }
 }
 
