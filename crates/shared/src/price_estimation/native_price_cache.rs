@@ -14,7 +14,7 @@ use {
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
-struct Metrics {
+pub(in crate::price_estimation) struct Metrics {
     /// native price cache hits misses
     #[metric(labels("result"))]
     native_price_cache_access: IntCounterVec,
@@ -24,11 +24,21 @@ struct Metrics {
     native_price_cache_background_updates: IntCounter,
     /// number of items in cache that are outdated
     native_price_cache_outdated_entries: IntGauge,
+    /// Tracks the CoinGecko batch size
+    #[metric(labels("result"))]
+    coin_gecko_batch_size: IntCounterVec,
 }
 
 impl Metrics {
     fn get() -> &'static Self {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+
+    pub(in crate::price_estimation) fn coin_gecko_batch_size(size: u64) {
+        Metrics::get()
+            .coin_gecko_batch_size
+            .with_label_values(&["result"])
+            .inc_by(size);
     }
 }
 

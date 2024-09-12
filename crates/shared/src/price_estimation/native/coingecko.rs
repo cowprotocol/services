@@ -1,7 +1,11 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::{
-        price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
+        price_estimation::{
+            buffered::NativePriceBatchFetching,
+            native_price_cache::Metrics,
+            PriceEstimationError,
+        },
         token_info::{TokenInfo, TokenInfoFetching},
     },
     anyhow::{anyhow, Context, Result},
@@ -89,6 +93,7 @@ impl CoinGecko {
         tokens: &HashSet<Token>,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
+        Metrics::coin_gecko_batch_size(tokens.len() as u64);
         url.query_pairs_mut()
             .append_pair(
                 "contract_addresses",
