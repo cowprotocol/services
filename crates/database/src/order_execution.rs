@@ -133,8 +133,7 @@ mod tests {
         .await
         .unwrap();
 
-        // save entry without protocol fees (simulate case when we are still not
-        // calculating them)
+        // save entry for an order without protocol fees
         save(
             &mut db,
             &Default::default(),
