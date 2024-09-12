@@ -111,11 +111,11 @@ impl Trade {
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
     pub fn fee_in_ether(&self, prices: &auction::Prices) -> Result<eth::Ether, Error> {
-        let total_fee = self.fee_in_sell_token()?;
+        let fee = self.fee()?;
         let price = prices
-            .get(&self.sell.token)
-            .ok_or(Error::MissingPrice(self.sell.token))?;
-        Ok(price.in_eth(total_fee.into()))
+            .get(&fee.token)
+            .ok_or(Error::MissingPrice(fee.token))?;
+        Ok(price.in_eth(fee.amount))
     }
 
     /// Converts given surplus fee into sell token fee.
