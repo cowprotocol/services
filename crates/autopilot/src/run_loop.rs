@@ -9,7 +9,7 @@ use {
         },
         infra::{
             self,
-            solvers::dto::{reveal, settle, solve},
+            solvers::dto::{settle, solve},
         },
         maintenance::Maintenance,
         run::Liveness,
@@ -192,19 +192,6 @@ impl RunLoop {
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
-            let reveal_start = Instant::now();
-            let revealed = match self.reveal(driver, auction_id, solution.id()).await {
-                Ok(result) => {
-                    Metrics::reveal_ok(driver, reveal_start.elapsed());
-                    result
-                }
-                Err(err) => {
-                    Metrics::reveal_err(driver, reveal_start.elapsed(), &err);
-                    tracing::warn!(driver = %driver.name, ?err, "failed to reveal winning solution");
-                    return;
-                }
-            };
-
             let block_deadline = competition_simulation_block + self.submission_deadline;
 
             // Post-processing should not be executed asynchronously since it includes steps
@@ -216,7 +203,6 @@ impl RunLoop {
                     competition_simulation_block,
                     solution,
                     &solutions,
-                    revealed,
                     block_deadline,
                 )
                 .await
@@ -250,7 +236,6 @@ impl RunLoop {
         competition_simulation_block: u64,
         winning_solution: &competition::SolutionWithId,
         solutions: &[Participant<'_>],
-        revealed: reveal::Response,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
@@ -267,9 +252,6 @@ impl RunLoop {
             .collect::<HashSet<_>>();
 
         let mut fee_policies = Vec::new();
-        let call_data = revealed.calldata.internalized.clone();
-        let uninternalized_call_data = revealed.calldata.uninternalized.clone();
-
         for order_id in winning_solution.order_ids() {
             match auction
                 .orders
@@ -303,38 +285,27 @@ impl RunLoop {
             solutions: solutions
                 .iter()
                 .enumerate()
-                .map(|(index, participant)| {
-                    let is_winner = solutions.len() - index == 1;
-                    let mut settlement = SolverSettlement {
-                        solver: participant.driver.name.clone(),
-                        solver_address: participant.solution.solver().0,
-                        score: Some(Score::Solver(participant.solution.score().get().0)),
-                        ranking: solutions.len() - index,
-                        orders: participant
-                            .solution
-                            .orders()
-                            .iter()
-                            .map(|(id, order)| Order::Colocated {
-                                id: (*id).into(),
-                                sell_amount: order.sell.into(),
-                                buy_amount: order.buy.into(),
-                            })
-                            .collect(),
-                        clearing_prices: participant
-                            .solution
-                            .prices()
-                            .iter()
-                            .map(|(token, price)| (token.0, price.get().into()))
-                            .collect(),
-                        call_data: None,
-                        uninternalized_call_data: None,
-                    };
-                    if is_winner {
-                        settlement.call_data = Some(revealed.calldata.internalized.clone());
-                        settlement.uninternalized_call_data =
-                            Some(revealed.calldata.uninternalized.clone());
-                    }
-                    settlement
+                .map(|(index, participant)| SolverSettlement {
+                    solver: participant.driver.name.clone(),
+                    solver_address: participant.solution.solver().0,
+                    score: Some(Score::Solver(participant.solution.score().get().0)),
+                    ranking: solutions.len() - index,
+                    orders: participant
+                        .solution
+                        .orders()
+                        .iter()
+                        .map(|(id, order)| Order::Colocated {
+                            id: (*id).into(),
+                            sell_amount: order.sell.into(),
+                            buy_amount: order.buy.into(),
+                        })
+                        .collect(),
+                    clearing_prices: participant
+                        .solution
+                        .prices()
+                        .iter()
+                        .map(|(token, price)| (token.0, price.get().into()))
+                        .collect(),
                 })
                 .collect(),
         };
@@ -351,8 +322,6 @@ impl RunLoop {
                 .collect(),
             block_deadline,
             competition_simulation_block,
-            call_data,
-            uninternalized_call_data,
             competition_table,
         };
 
@@ -647,28 +616,6 @@ impl RunLoop {
         Ok(futures::future::join_all(futures).await)
     }
 
-    /// Ask the winning solver to reveal their solution.
-    async fn reveal(
-        &self,
-        driver: &infra::Driver,
-        auction: domain::auction::Id,
-        solution_id: u64,
-    ) -> Result<reveal::Response, RevealError> {
-        let response = driver
-            .reveal(&reveal::Request { solution_id })
-            .await
-            .map_err(RevealError::Failure)?;
-        if !response
-            .calldata
-            .internalized
-            .ends_with(&auction.to_be_bytes())
-        {
-            return Err(RevealError::AuctionMismatch);
-        }
-
-        Ok(response)
-    }
-
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
     async fn settle(
@@ -765,14 +712,6 @@ enum SolveError {
     Timeout,
     #[error("driver did not propose any solutions")]
     NoSolutions,
-    #[error(transparent)]
-    Failure(anyhow::Error),
-}
-
-#[derive(Debug, thiserror::Error)]
-enum RevealError {
-    #[error("revealed calldata does not match auction")]
-    AuctionMismatch,
     #[error(transparent)]
     Failure(anyhow::Error),
 }
@@ -886,24 +825,6 @@ impl Metrics {
             .solutions
             .with_label_values(&[&driver.name, label])
             .inc();
-    }
-
-    fn reveal_ok(driver: &infra::Driver, elapsed: Duration) {
-        Self::get()
-            .reveal
-            .with_label_values(&[&driver.name, "success"])
-            .observe(elapsed.as_secs_f64());
-    }
-
-    fn reveal_err(driver: &infra::Driver, elapsed: Duration, err: &RevealError) {
-        let label = match err {
-            RevealError::AuctionMismatch => "mismatch",
-            RevealError::Failure(_) => "error",
-        };
-        Self::get()
-            .reveal
-            .with_label_values(&[&driver.name, label])
-            .observe(elapsed.as_secs_f64());
     }
 
     fn settle_ok(driver: &infra::Driver, elapsed: Duration) {
