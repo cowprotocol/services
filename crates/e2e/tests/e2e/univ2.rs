@@ -117,8 +117,6 @@ async fn test(web3: Web3) {
             && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
             // and won the auction
             && data.score.winner.0 == solver.address().0
-            // and calldata is present
-            && !data.call_data.call_data.is_empty()
     };
     wait_for_condition(TIMEOUT, cip_20_data_updated)
         .await

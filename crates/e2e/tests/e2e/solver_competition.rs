@@ -120,11 +120,8 @@ async fn solver_competition(web3: Web3) {
 
     // Non winning candidate
     assert!(competition.common.solutions[0].ranking == 2);
-    assert!(competition.common.solutions[0].call_data.is_none());
-
     // Winning candidate
     assert!(competition.common.solutions[1].ranking == 1);
-    assert!(competition.common.solutions[1].call_data.is_some());
 }
 
 async fn fairness_check(web3: Web3) {

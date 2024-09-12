@@ -19,6 +19,7 @@ cached = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
+dashmap = "6.1.0"
 database = { path = "../database" }
 ttl_cache = "0.5"
 derivative = { workspace = true }

@@ -340,9 +340,11 @@ mod tests {
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedSurplusFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
+        // but not equal to 6890975030480504 anymore, since after this tx we switched to
+        // convert the fee from surplus token directly to ether
         assert_eq!(
             trade.fee_in_ether(&auction.prices).unwrap().0,
-            eth::U256::from(6890975030480504u128)
+            eth::U256::from(6752697350740628u128)
         );
     }
 

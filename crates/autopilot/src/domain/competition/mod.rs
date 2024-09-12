@@ -41,7 +41,7 @@ impl SolutionWithId {
         self.solution.score()
     }
 
-    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> {
+    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {
         self.solution.order_ids()
     }
 
@@ -85,7 +85,7 @@ impl Solution {
         self.score
     }
 
-    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> {
+    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {
         self.orders.keys()
     }
 

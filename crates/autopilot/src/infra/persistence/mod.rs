@@ -25,7 +25,6 @@ use {
         SigningScheme as DomainSigningScheme,
     },
     futures::{StreamExt, TryStreamExt},
-    itertools::Itertools,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     primitive_types::{H160, H256},
     shared::db_order_conversions::full_order_into_model_order,
@@ -80,11 +79,11 @@ impl Persistence {
     pub async fn all_solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<boundary::SolvableOrders, DatabaseError> {
+    ) -> anyhow::Result<boundary::SolvableOrders> {
         self.postgres
             .all_solvable_orders(min_valid_to)
             .await
-            .map_err(DatabaseError)
+            .context("failed to fetch all solvable orders")
     }
 
     /// Saves the given auction to storage for debugging purposes.
@@ -145,10 +144,11 @@ impl Persistence {
     /// because this is just debugging information.
     pub fn store_order_events(
         &self,
-        order_uids: Vec<domain::OrderUid>,
+        order_uids: impl IntoIterator<Item = domain::OrderUid>,
         label: boundary::OrderEventLabel,
     ) {
         let db = self.postgres.clone();
+        let order_uids = order_uids.into_iter().collect();
         tokio::spawn(
             async move {
                 let mut tx = db.pool.acquire().await.expect("failed to acquire tx");
@@ -405,12 +405,15 @@ impl Persistence {
     /// order creation timestamp, and minimum validity period.
     pub async fn solvable_orders_after(
         &self,
-        current_orders: HashMap<domain::OrderUid, model::order::Order>,
+        mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
+        mut current_quotes: HashMap<domain::OrderUid, domain::Quote>,
         after_timestamp: DateTime<Utc>,
         after_block: u64,
         min_valid_to: u32,
     ) -> anyhow::Result<boundary::SolvableOrders> {
+        tracing::debug!(?after_timestamp, ?after_block, "fetch orders updated since");
         let after_block = i64::try_from(after_block).context("block number value exceeds i64")?;
+        let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
         // so all the SELECT queries below are executed in the same database snapshot
@@ -418,6 +421,16 @@ impl Persistence {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
+
+        // Find order uids for orders that were updated after the given block.
+        let updated_order_uids = {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["updated_order_uids"])
+                .start_timer();
+
+            database::orders::updated_order_uids_after(&mut tx, after_block).await?
+        };
 
         // Fetch the orders that were updated after the given block and were created or
         // cancelled after the given timestamp.
@@ -427,44 +440,18 @@ impl Persistence {
                 .with_label_values(&["open_orders_after"])
                 .start_timer();
 
-            database::orders::open_orders_after(&mut tx, after_block, after_timestamp)
-                .map(|result| match result {
-                    Ok(order) => full_order_into_model_order(order)
-                        .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
-                    Err(err) => Err(anyhow::Error::from(err)),
-                })
-                .try_collect()
-                .await?
-        };
-
-        // Fetch quotes for new orders and also update them for the cached ones since
-        // they could also be updated.
-        let updated_quotes = {
-            let _timer = Metrics::get()
-                .database_queries
-                .with_label_values(&["read_quotes"])
-                .start_timer();
-
-            let all_order_uids = next_orders
-                .keys()
-                .chain(current_orders.keys())
-                .unique()
-                .map(|uid| ByteArray(uid.0))
-                .collect::<Vec<_>>();
-
-            database::orders::read_quotes(&mut tx, &all_order_uids)
-                .await?
-                .into_iter()
-                .filter_map(|quote| {
-                    let order_uid = domain::OrderUid(quote.order_uid.0);
-                    dto::quote::into_domain(quote)
-                        .map_err(|err| {
-                            tracing::warn!(?order_uid, ?err, "failed to convert quote from db")
-                        })
-                        .ok()
-                        .map(|quote| (order_uid, quote))
-                })
-                .collect()
+            database::orders::open_orders_by_time_or_uids(
+                &mut tx,
+                &updated_order_uids,
+                after_timestamp,
+            )
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order)
+                    .map(|order| (domain::OrderUid(order.metadata.uid.0), order)),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await?
         };
 
         let latest_settlement_block = database::orders::latest_settlement_block(&mut tx)
@@ -472,22 +459,6 @@ impl Persistence {
             .to_u64()
             .context("latest_settlement_block is not u64")?;
 
-        Self::build_solvable_orders(
-            current_orders,
-            next_orders,
-            updated_quotes,
-            latest_settlement_block,
-            min_valid_to,
-        )
-    }
-
-    fn build_solvable_orders(
-        mut current_orders: HashMap<domain::OrderUid, model::order::Order>,
-        next_orders: HashMap<domain::OrderUid, model::order::Order>,
-        mut next_quotes: HashMap<domain::OrderUid, domain::Quote>,
-        latest_settlement_block: u64,
-        min_valid_to: u32,
-    ) -> anyhow::Result<boundary::SolvableOrders> {
         // Blindly insert all new orders into the cache.
         for (uid, order) in next_orders {
             current_orders.insert(uid, order);
@@ -524,13 +495,44 @@ impl Persistence {
             !expired && !invalidated && !onchain_error && !fulfilled
         });
 
-        // Keep only relevant quotes.
-        next_quotes.retain(|uid, _quote| current_orders.contains_key(uid));
+        current_quotes.retain(|uid, _| current_orders.contains_key(uid));
+
+        {
+            let _timer = Metrics::get()
+                .database_queries
+                .with_label_values(&["read_quotes"])
+                .start_timer();
+
+            // Fetch quotes only for newly created and also on-chain placed orders due to
+            // the following case: if a block containing an on-chain order
+            // (e.g., ethflow) gets reorganized, the same order with the same
+            // UID might be created in the new block, and the temporary quote
+            // associated with it may have changed in the meantime.
+            let order_uids = current_orders
+                .values()
+                .filter_map(|order| {
+                    (order.metadata.onchain_user.is_some()
+                        || order.metadata.creation_date > after_timestamp)
+                        .then_some(ByteArray(order.metadata.uid.0))
+                })
+                .collect::<Vec<_>>();
+
+            for quote in database::orders::read_quotes(&mut tx, &order_uids).await? {
+                let order_uid = domain::OrderUid(quote.order_uid.0);
+                match dto::quote::into_domain(quote) {
+                    Ok(quote) => {
+                        current_quotes.insert(order_uid, quote);
+                    }
+                    Err(err) => tracing::warn!(?order_uid, ?err, "failed to convert quote from db"),
+                }
+            }
+        };
 
         Ok(boundary::SolvableOrders {
             orders: current_orders,
-            quotes: next_quotes,
+            quotes: current_quotes,
             latest_settlement_block,
+            fetched_from_db: started_at,
         })
     }
 

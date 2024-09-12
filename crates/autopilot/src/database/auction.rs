@@ -67,6 +67,7 @@ impl Postgres {
             .with_label_values(&["solvable_orders"])
             .start_timer();
 
+        let start = chrono::offset::Utc::now();
         let mut ex = self.pool.begin().await?;
         // Set the transaction isolation level to REPEATABLE READ
         // so the both SELECT queries below are executed in the same database snapshot
@@ -92,6 +93,7 @@ impl Postgres {
             orders,
             quotes,
             latest_settlement_block,
+            fetched_from_db: start,
         })
     }
 
@@ -102,10 +104,8 @@ impl Postgres {
             .start_timer();
 
         let data = serde_json::to_value(auction)?;
-        let mut ex = self.pool.begin().await?;
-        database::auction::delete_all_auctions(&mut ex).await?;
-        let id = database::auction::save(&mut ex, &data).await?;
-        ex.commit().await?;
+        let mut ex = self.pool.acquire().await?;
+        let id = database::auction::replace_auction(&mut ex, &data).await?;
         Ok(id)
     }
 }

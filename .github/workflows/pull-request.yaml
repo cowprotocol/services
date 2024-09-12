@@ -145,7 +145,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo nextest run -p e2e forked_node --nocapture --run-ignored ignored-only
+      - run: cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final
 
   test-driver:
     timeout-minutes: 60
@@ -180,3 +180,40 @@ jobs:
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
+
+  run-flaky-test:
+    # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
+    if: ${{ false }}
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
+      TOML_TRACE_ERROR: 1
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: Swatinem/rust-cache@v2
+      # Start the build process in the background. The following cargo test command will automatically
+      # wait for the build process to be done before proceeding.
+      - run: cargo build -p e2e --tests &
+      - uses: taiki-e/install-action@nextest
+      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+        with:
+          file: docker-compose.yaml
+          up-opts: -d db migrations
+      - name: Run test in a loop
+        run: |
+          attempt=1
+          while true; do
+            echo "Running test attempt #$attempt"
+            if ! cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only; then
+              exit 1
+            fi
+            attempt=$((attempt+1))
+          done
