@@ -180,11 +180,14 @@ impl Persistence {
         &self,
         auction_id: i64,
     ) -> Result<Vec<eth::TxId>, DatabaseError> {
-        self.postgres
+        Ok(self
+            .postgres
             .find_settlement_transactions(auction_id)
             .await
-            .map_err(DatabaseError)
-            .map(|hashes| hashes.into_iter().map(eth::TxId).collect())
+            .map_err(DatabaseError)?
+            .into_iter()
+            .map(eth::TxId)
+            .collect())
     }
 
     /// Checks if an auction already has an accociated settlement.
