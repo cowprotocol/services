@@ -5,6 +5,7 @@ use {
         domain::{
             self,
             competition::{self, SolutionError, TradedAmounts},
+            eth,
             OrderUid,
         },
         infra::{
@@ -644,7 +645,7 @@ impl RunLoop {
         driver: &infra::Driver,
         auction_id: i64,
         request: settle::Request,
-    ) -> Result<H256, SettleError> {
+    ) -> Result<eth::TxId, SettleError> {
         match futures::future::select(
             Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
             Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
@@ -670,7 +671,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
-    ) -> Result<H256, SettleError> {
+    ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
@@ -682,14 +683,18 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_tx_hash_by_auction_id(auction_id)
+                .find_settlement_transactions(auction_id)
                 .await
             {
-                Ok(Some(hash)) => return Ok(hash),
+                Ok(hashes) if hashes.is_empty() => {}
+                Ok(hashes) => {
+                    if let Some(hash) = hashes.into_iter().next() {
+                        return Ok(hash);
+                    }
+                }
                 Err(err) => {
                     tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
                 }
-                Ok(None) => {}
             }
             if block.number >= deadline {
                 break;
