@@ -477,6 +477,11 @@ impl Orderbook {
                 .collect::<Vec<_>>()
         };
 
+        let latest_competition = async {
+            let competition = self.database.load_latest_competition().await?;
+            Ok::<_, anyhow::Error>(solutions(competition))
+        };
+
         // Once an order was executed we always want to return `Traded` with the
         // competition data of the **first** time it was traded for a stable result.
         // Under some circumstances it can happen that the latest state of an already
@@ -490,18 +495,20 @@ impl Orderbook {
             })
             .await?;
 
-        if let Some(tx_hash) = trades.first().and_then(|t| t.tx_hash) {
-            let competition = self
-                .database
-                .load_competition(Identifier::Transaction(tx_hash))
-                .await?;
-            return Ok(Some(dto::order::Status::Traded(solutions(competition))));
-        };
-
-        let latest_competition = async {
-            let competition = self.database.load_latest_competition().await?;
-            Ok::<_, anyhow::Error>(solutions(competition))
-        };
+        match trades.first().map(|trade| trade.tx_hash) {
+            Some(Some(tx_hash)) => {
+                let competition = self
+                    .database
+                    .load_competition(Identifier::Transaction(tx_hash))
+                    .await?;
+                return Ok(Some(dto::order::Status::Traded(solutions(competition))));
+            }
+            // order executed but not fully indexed and processed
+            Some(None) => {
+                return Ok(Some(dto::order::Status::Traded(latest_competition.await?)));
+            }
+            None => (),
+        }
 
         let latest_event = self.database.latest_order_event(uid).await?;
         let status = match latest_event.context("no event")?.label {
@@ -509,8 +516,7 @@ impl Orderbook {
             OrderEventLabel::Created => dto::order::Status::Scheduled,
             OrderEventLabel::Considered => dto::order::Status::Solved(latest_competition.await?),
             OrderEventLabel::Executing => dto::order::Status::Executing(latest_competition.await?),
-            // Order was already traded but the trade was not yet indexed correctly. In that case
-            // return the latest competition as it's likely the correct one.
+            // order executed but not fully indexed and processed
             OrderEventLabel::Traded => dto::order::Status::Traded(latest_competition.await?),
             OrderEventLabel::Cancelled => dto::order::Status::Cancelled,
             OrderEventLabel::Filtered => dto::order::Status::Open,
