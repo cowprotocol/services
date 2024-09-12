@@ -585,14 +585,14 @@ pub async fn single_full_order_with_quote(
 ) -> Result<Option<FullOrderWithQuote>, sqlx::Error> {
     #[rustfmt::skip]
     const QUERY: &str = const_format::concatcp!(
-        "SELECT ", ORDERS_SELECT,
+        "SELECT ", SELECT,
         ", o_quotes.sell_amount as quote_sell_amount",
         ", o_quotes.buy_amount as quote_buy_amount",
         ", o_quotes.gas_amount as quote_gas_amount",
         ", o_quotes.gas_price as quote_gas_price",
         ", o_quotes.sell_token_price as quote_sell_token_price",
         ", o_quotes.solver as solver",
-        " FROM ", ORDERS_FROM,
+        " FROM ", FROM,
         " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
         " WHERE o.uid = $1",
         );
