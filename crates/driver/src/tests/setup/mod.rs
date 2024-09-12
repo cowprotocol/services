@@ -1239,11 +1239,11 @@ impl<'a> SolveOk<'a> {
                 None => (quoted_order.sell, quoted_order.buy),
             };
             assert!(is_approximately_equal(
-                u256(trade.get("sellAmount").unwrap()),
+                u256(trade.get("tradedSell").unwrap()),
                 expected_sell
             ));
             assert!(is_approximately_equal(
-                u256(trade.get("buyAmount").unwrap()),
+                u256(trade.get("tradedBuy").unwrap()),
                 expected_buy
             ));
         }
