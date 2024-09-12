@@ -639,7 +639,7 @@ mod tests {
             onchain_user: None,
             onchain_placement_error: None,
             executed_total_fee: Default::default(),
-            executed_total_fee_token: ByteArray([1; 20]), // TODO surplus token
+            executed_total_fee_token: ByteArray([2; 20]),
             full_app_data: Default::default(),
         };
 

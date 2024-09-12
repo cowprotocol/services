@@ -70,15 +70,22 @@ impl Trade {
     /// All fees broke down into protocol fees per policy and total fee.
     pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
         let trade = math::Trade::from(self);
-        let total = trade.fee_in_sell_token()?;
+        let total = trade.fee()?;
         let protocol = trade.protocol_fees(auction)?;
         Ok(FeeBreakdown { total, protocol })
     }
 
-    pub fn sell_token(&self) -> eth::TokenAddress {
+    /// Sell token for buy orders and buy token for sell orders.
+    pub fn surplus_token(&self) -> eth::TokenAddress {
         match self {
-            Self::Fulfillment(trade) => trade.sell.token,
-            Self::Jit(trade) => trade.sell.token,
+            Self::Fulfillment(trade) => match trade.side {
+                order::Side::Buy => trade.sell.token,
+                order::Side::Sell => trade.buy.token,
+            },
+            Self::Jit(trade) => match trade.side {
+                order::Side::Buy => trade.sell.token,
+                order::Side::Sell => trade.buy.token,
+            },
         }
     }
 
@@ -157,7 +164,6 @@ pub struct Jit {
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
     /// Total fee the trade was charged (network fee + protocol fee)
-    // TODO surplus token
     pub total: eth::Asset,
     /// Breakdown of protocol fees.
     pub protocol: Vec<ExecutedProtocolFee>,

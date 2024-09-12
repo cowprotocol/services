@@ -149,7 +149,7 @@ impl Trade {
     /// before and after applying the fees.
     ///
     /// Denominated in SURPLUS token
-    fn fee(&self) -> Result<eth::Asset, Error> {
+    pub fn fee(&self) -> Result<eth::Asset, Error> {
         let fee = self
             .surplus_over_limit_price_before_fee()?
             .amount

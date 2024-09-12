@@ -96,8 +96,7 @@ impl Settlement {
                     );
                     trade::FeeBreakdown {
                         total: eth::Asset {
-                            // TODO surplus token
-                            token: trade.sell_token(),
+                            token: trade.surplus_token(),
                             amount: num::zero(),
                         },
                         protocol: vec![],
