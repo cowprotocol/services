@@ -7,7 +7,7 @@ use {
     database::{
         byte_array::ByteArray,
         order_events::{insert_order_event, OrderEvent, OrderEventLabel},
-        orders::{FullOrder, OrderKind as DbOrderKind},
+        orders::{self, FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
@@ -76,11 +76,34 @@ pub trait OrderStoring: Send + Sync {
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>>;
+    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>>;
 }
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
+}
+
+pub struct OrderWithQuote {
+    pub order: Order,
+    pub quote: Option<orders::Quote>,
+}
+
+impl OrderWithQuote {
+    pub fn new(order: Order, quote: Option<Quote>) -> Self {
+        Self {
+            quote: quote.map(|quote| orders::Quote {
+                order_uid: ByteArray(order.metadata.uid.0),
+                gas_amount: quote.data.fee_parameters.gas_amount,
+                gas_price: quote.data.fee_parameters.gas_price,
+                sell_token_price: quote.data.fee_parameters.sell_token_price,
+                sell_amount: u256_to_big_decimal(&quote.sell_amount),
+                buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                solver: ByteArray(quote.data.solver.0),
+            }),
+            order,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -321,6 +344,51 @@ impl OrderStoring for Postgres {
             }
         };
         order.map(full_order_into_model_order).transpose()
+    }
+
+    async fn single_order_with_quote(&self, uid: &OrderUid) -> Result<Option<OrderWithQuote>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["single_order_with_quote"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        let order = orders::single_full_order_with_quote(&mut ex, &ByteArray(uid.0)).await?;
+        order
+            .map(|order_with_quote| {
+                let quote = match (
+                    order_with_quote.quote_buy_amount,
+                    order_with_quote.quote_sell_amount,
+                    order_with_quote.quote_gas_amount,
+                    order_with_quote.quote_gas_price,
+                    order_with_quote.quote_sell_token_price,
+                    order_with_quote.solver,
+                ) {
+                    (
+                        Some(buy_amount),
+                        Some(sell_amount),
+                        Some(gas_amount),
+                        Some(gas_price),
+                        Some(sell_token_price),
+                        Some(solver),
+                    ) => Some(orders::Quote {
+                        order_uid: order_with_quote.full_order.uid,
+                        gas_amount,
+                        gas_price,
+                        sell_token_price,
+                        sell_amount,
+                        buy_amount,
+                        solver,
+                    }),
+                    _ => None,
+                };
+
+                Ok(OrderWithQuote {
+                    order: full_order_into_model_order(order_with_quote.full_order)?,
+                    quote,
+                })
+            })
+            .transpose()
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
@@ -599,6 +667,7 @@ mod tests {
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
+        primitive_types::U256,
         std::sync::atomic::{AtomicI64, Ordering},
     };
 
@@ -1078,9 +1147,27 @@ mod tests {
             ..Default::default()
         };
 
-        db.insert_order(&order, None).await.unwrap();
+        let quote = Quote {
+            id: Some(5),
+            sell_amount: U256::from(1),
+            buy_amount: U256::from(2),
+            ..Default::default()
+        };
+        db.insert_order(&order, Some(quote.clone())).await.unwrap();
 
         let interactions = db.single_order(&uid).await.unwrap().unwrap().interactions;
         assert_eq!(interactions, order.interactions);
+
+        // Test `single_order_with_quote`
+        let single_order_with_quote = db.single_order_with_quote(&uid).await.unwrap().unwrap();
+        assert_eq!(single_order_with_quote.order, order);
+        assert_eq!(
+            single_order_with_quote.quote.clone().unwrap().sell_amount,
+            u256_to_big_decimal(&quote.sell_amount)
+        );
+        assert_eq!(
+            single_order_with_quote.quote.unwrap().buy_amount,
+            u256_to_big_decimal(&quote.buy_amount)
+        );
     }
 }
