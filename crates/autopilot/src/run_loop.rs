@@ -687,7 +687,11 @@ impl RunLoop {
                 .await
             {
                 Ok(hashes) if hashes.is_empty() => {}
-                Ok(hashes) => return Ok(hashes.into_iter().next().expect("non-empty")),
+                Ok(hashes) => {
+                    if let Some(hash) = hashes.into_iter().next() {
+                        return Ok(hash);
+                    }
+                }
                 Err(err) => {
                     tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
                 }
