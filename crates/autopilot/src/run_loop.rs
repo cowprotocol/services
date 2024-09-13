@@ -753,7 +753,7 @@ struct Metrics {
     /// Tracks the times and results of driver `/settle` requests.
     #[metric(
         labels("driver", "result"),
-        buckets(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 40)
+        buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48)
     )]
     settle: prometheus::HistogramVec,
 
@@ -776,12 +776,12 @@ struct Metrics {
     service_maintenance_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
-    #[metric(buckets(0, 1, 5, 10, 15, 20, 25, 30, 35, 40))]
+    #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
     single_run_time: prometheus::Histogram,
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0.5, 1, 1.5, 2, 4, 6, 8, 10, 12, 16))]
+    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 }
 
