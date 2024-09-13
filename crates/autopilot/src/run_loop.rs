@@ -276,15 +276,15 @@ impl RunLoop {
                 .extend(solved_order_uids.clone());
 
             let solution_id = solution.id();
-            let self_clone = self.clone();
-            let driver_clone = driver.clone();
+            let driver_ = driver.clone();
+            let self_ = self.clone();
             let settle_fut = async move {
-                tracing::info!(driver = %driver_clone.name, "settling");
+                tracing::info!(driver = %driver_.name, "settling");
                 let submission_start = Instant::now();
 
-                match self_clone
+                match self_
                     .settle(
-                        driver_clone.clone(),
+                        driver_.clone(),
                         solution_id,
                         solved_order_uids,
                         auction_id,
@@ -292,10 +292,10 @@ impl RunLoop {
                     )
                     .await
                 {
-                    Ok(()) => Metrics::settle_ok(&driver_clone, submission_start.elapsed()),
+                    Ok(()) => Metrics::settle_ok(&driver_, submission_start.elapsed()),
                     Err(err) => {
-                        Metrics::settle_err(&driver_clone, submission_start.elapsed(), &err);
-                        tracing::warn!(?err, driver = %driver_clone.name, "settlement failed");
+                        Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
+                        tracing::warn!(?err, driver = %driver_.name, "settlement failed");
                     }
                 }
                 Metrics::single_run_completed(single_run_start.elapsed());
