@@ -521,11 +521,10 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let run = RunLoop {
+    let run = RunLoop::new(
         eth,
-        solvable_orders_cache,
-        drivers: args
-            .drivers
+        persistence.clone(),
+        args.drivers
             .into_iter()
             .map(|driver| {
                 Arc::new(infra::Driver::new(
@@ -535,17 +534,16 @@ pub async fn run(args: Arguments) {
                 ))
             })
             .collect(),
+        solvable_orders_cache,
         market_makable_token_list,
-        submission_deadline: args.submission_deadline as u64,
-        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
-        solve_deadline: args.solve_deadline,
-        in_flight_orders: Default::default(),
-        persistence: persistence.clone(),
-        liveness: liveness.clone(),
-        synchronization: args.run_loop_mode,
-        max_run_loop_delay: args.max_run_loop_delay,
-        maintenance: Arc::new(maintenance),
-    };
+        args.submission_deadline as u64,
+        args.max_settlement_transaction_wait,
+        args.solve_deadline,
+        liveness.clone(),
+        args.run_loop_mode,
+        args.max_run_loop_delay,
+        Arc::new(maintenance),
+    );
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
 }

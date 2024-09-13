@@ -20,6 +20,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
+    futures::future::BoxFuture,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -35,7 +36,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::Mutex,
+    tokio::sync::{mpsc, Mutex},
     tracing::{warn, Instrument},
 };
 
@@ -59,9 +60,54 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     pub maintenance: Arc<Maintenance>,
+    /// Queue for executing settle futures one by one guarantying FIFO execution
+    /// order.
+    execution_queue: mpsc::Sender<BoxFuture<'static, ()>>,
 }
 
 impl RunLoop {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        eth: infra::Ethereum,
+        persistence: infra::Persistence,
+        drivers: Vec<Arc<infra::Driver>>,
+        solvable_orders_cache: Arc<SolvableOrdersCache>,
+        market_makable_token_list: AutoUpdatingTokenList,
+        submission_deadline: u64,
+        max_settlement_transaction_wait: Duration,
+        solve_deadline: Duration,
+        liveness: Arc<Liveness>,
+        synchronization: RunLoopMode,
+        max_run_loop_delay: Duration,
+        maintenance: Arc<Maintenance>,
+    ) -> Self {
+        let (tx, mut rx) = mpsc::channel::<BoxFuture<'static, ()>>(100);
+
+        tokio::spawn(async move {
+            while let Some(future) = rx.recv().await {
+                future.await;
+            }
+            tracing::info!("runloop execution queue stopped")
+        });
+
+        Self {
+            eth,
+            persistence,
+            drivers,
+            solvable_orders_cache,
+            market_makable_token_list,
+            submission_deadline,
+            max_settlement_transaction_wait,
+            solve_deadline,
+            in_flight_orders: Default::default(),
+            liveness,
+            synchronization,
+            max_run_loop_delay,
+            maintenance,
+            execution_queue: tx,
+        }
+    }
+
     pub async fn run_forever(self, update_interval: Duration) -> ! {
         Maintenance::spawn_background_task(
             self.maintenance.clone(),
@@ -230,7 +276,7 @@ impl RunLoop {
             let solved_order_uids = solution.orders().keys().cloned().collect();
             let self_clone = self.clone();
             let driver_clone = driver.clone();
-            tokio::task::spawn(async move {
+            let future = async move {
                 tracing::info!(driver = %driver_clone.name, "settling");
                 let submission_start = Instant::now();
 
@@ -251,7 +297,15 @@ impl RunLoop {
                     }
                 }
                 Metrics::single_run_completed(single_run_start.elapsed());
-            });
+            };
+
+            let _ = self
+                .execution_queue
+                .send(Box::pin(future))
+                .await
+                .inspect_err(|err| {
+                    tracing::error!(?err, "failed to send settle future to execution queue");
+                });
         }
     }
 
