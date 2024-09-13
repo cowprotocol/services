@@ -62,7 +62,7 @@ pub struct RunLoop {
     pub maintenance: Arc<Maintenance>,
     /// Queue for executing settle futures one by one guarantying FIFO execution
     /// order.
-    execution_queue: mpsc::Sender<BoxFuture<'static, ()>>,
+    execution_queue: mpsc::UnboundedSender<BoxFuture<'static, ()>>,
 }
 
 impl RunLoop {
@@ -81,7 +81,7 @@ impl RunLoop {
         max_run_loop_delay: Duration,
         maintenance: Arc<Maintenance>,
     ) -> Self {
-        let (tx, mut rx) = mpsc::channel::<BoxFuture<'static, ()>>(100);
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
         tokio::spawn(async move {
             while let Some(future) = rx.recv().await {
@@ -301,7 +301,7 @@ impl RunLoop {
                 Metrics::single_run_completed(single_run_start.elapsed());
             };
 
-            if let Err(err) = self.execution_queue.send(Box::pin(settle_fut)).await {
+            if let Err(err) = self.execution_queue.send(Box::pin(settle_fut)) {
                 tracing::error!(?err, "failed to send settle future to execution queue");
             }
         }
