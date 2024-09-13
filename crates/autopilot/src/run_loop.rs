@@ -791,7 +791,7 @@ struct Metrics {
     single_run_time: prometheus::Histogram,
 
     /// Total number of blocks mined during the single run loop.
-    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 10, 20, 30, 40))]
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 10, 20, 30, 40, 60, 80, 100, 120))]
     single_run_blocks_count: prometheus::Histogram,
 
     /// Time difference between the current block and when the single run
