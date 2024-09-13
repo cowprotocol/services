@@ -5,6 +5,7 @@ use {
         domain::{
             self,
             competition::{self, SolutionError, TradedAmounts},
+            eth,
             OrderUid,
         },
         infra::{
@@ -732,7 +733,7 @@ impl RunLoop {
         driver: Arc<infra::Driver>,
         auction_id: i64,
         request: settle::Request,
-    ) -> Result<H256, SettleError> {
+    ) -> Result<eth::TxId, SettleError> {
         match futures::future::select(
             Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
             Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
@@ -758,7 +759,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
-    ) -> Result<H256, SettleError> {
+    ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
@@ -770,14 +771,18 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_tx_hash_by_auction_id(auction_id)
+                .find_settlement_transactions(auction_id)
                 .await
             {
-                Ok(Some(hash)) => return Ok(hash),
+                Ok(hashes) if hashes.is_empty() => {}
+                Ok(hashes) => {
+                    if let Some(hash) = hashes.into_iter().next() {
+                        return Ok(hash);
+                    }
+                }
                 Err(err) => {
                     tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
                 }
-                Ok(None) => {}
             }
             if block.number >= deadline {
                 break;
@@ -850,7 +855,7 @@ struct Metrics {
     /// Tracks the times and results of driver `/settle` requests.
     #[metric(
         labels("driver", "result"),
-        buckets(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 40)
+        buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48)
     )]
     settle: prometheus::HistogramVec,
 
@@ -869,16 +874,16 @@ struct Metrics {
 
     /// Tracks the time spent running maintenance. This mostly consists of
     /// indexing new events.
-    #[metric(buckets(0, 0.01, 0.05, 0.1, 0.2, 0.5, 1., 2., 5.))]
+    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
     service_maintenance_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
-    #[metric(buckets(0, 1, 5, 10, 15, 20, 25, 30, 35, 40))]
+    #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
     single_run_time: prometheus::Histogram,
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0.5, 1, 1.5, 2, 4, 6, 8, 10, 12, 16))]
+    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 }
 

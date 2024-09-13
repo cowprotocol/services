@@ -3396,6 +3396,7 @@ dependencies = [
  "serde_with",
  "shared",
  "sqlx",
+ "strum_macros",
  "testlib",
  "thiserror",
  "tokio",

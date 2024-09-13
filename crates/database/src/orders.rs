@@ -489,6 +489,18 @@ pub struct FullOrder {
     pub full_app_data: Option<Vec<u8>>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct FullOrderWithQuote {
+    #[sqlx(flatten)]
+    pub full_order: FullOrder,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_gas_amount: Option<f64>,
+    pub quote_gas_price: Option<f64>,
+    pub quote_sell_token_price: Option<f64>,
+    pub solver: Option<Address>,
+}
+
 impl FullOrder {
     pub fn valid_to(&self) -> i64 {
         if let Some((_, valid_to)) = self.ethflow_data {
@@ -563,6 +575,26 @@ pub async fn single_full_order(
 "SELECT ", SELECT,
 " FROM ", FROM,
 " WHERE o.uid = $1 ",
+        );
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
+pub async fn single_full_order_with_quote(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+) -> Result<Option<FullOrderWithQuote>, sqlx::Error> {
+    #[rustfmt::skip]
+    const QUERY: &str = const_format::concatcp!(
+        "SELECT ", SELECT,
+        ", o_quotes.sell_amount as quote_sell_amount",
+        ", o_quotes.buy_amount as quote_buy_amount",
+        ", o_quotes.gas_amount as quote_gas_amount",
+        ", o_quotes.gas_price as quote_gas_price",
+        ", o_quotes.sell_token_price as quote_sell_token_price",
+        ", o_quotes.solver as solver",
+        " FROM ", FROM,
+        " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
+        " WHERE o.uid = $1",
         );
     sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
 }
@@ -1236,6 +1268,95 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(quote, quote_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_with_quote_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let full_order = Order::default();
+        insert_order(&mut db, &full_order).await.unwrap();
+        let quote = Quote {
+            order_uid: Default::default(),
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: 4.into(),
+            buy_amount: 5.into(),
+            solver: ByteArray([1; 20]),
+        };
+        insert_quote(&mut db, &quote).await.unwrap();
+        let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(order_with_quote.quote_buy_amount.unwrap(), quote.buy_amount);
+        assert_eq!(
+            order_with_quote.quote_sell_amount.unwrap(),
+            quote.sell_amount
+        );
+        assert_eq!(order_with_quote.quote_gas_amount.unwrap(), quote.gas_amount);
+        assert_eq!(order_with_quote.quote_gas_price.unwrap(), quote.gas_price);
+        assert_eq!(
+            order_with_quote.quote_sell_token_price.unwrap(),
+            quote.sell_token_price
+        );
+        assert_eq!(order_with_quote.full_order.uid, full_order.uid);
+        assert_eq!(order_with_quote.full_order.owner, full_order.owner);
+        assert_eq!(
+            order_with_quote.full_order.creation_timestamp,
+            full_order.creation_timestamp
+        );
+        assert_eq!(
+            order_with_quote.full_order.sell_token,
+            full_order.sell_token
+        );
+        assert_eq!(order_with_quote.full_order.buy_token, full_order.buy_token);
+        assert_eq!(
+            order_with_quote.full_order.sell_amount,
+            full_order.sell_amount
+        );
+        assert_eq!(
+            order_with_quote.full_order.buy_amount,
+            full_order.buy_amount
+        );
+        assert_eq!(order_with_quote.full_order.valid_to, full_order.valid_to);
+        assert_eq!(order_with_quote.full_order.app_data, full_order.app_data);
+        assert_eq!(
+            order_with_quote.full_order.fee_amount,
+            full_order.fee_amount
+        );
+        assert_eq!(
+            order_with_quote.full_order.full_fee_amount,
+            full_order.full_fee_amount
+        );
+        assert_eq!(order_with_quote.full_order.kind, full_order.kind);
+        assert_eq!(order_with_quote.full_order.class, full_order.class);
+        assert_eq!(
+            order_with_quote.full_order.partially_fillable,
+            full_order.partially_fillable
+        );
+        assert_eq!(order_with_quote.full_order.signature, full_order.signature);
+        assert_eq!(order_with_quote.full_order.receiver, full_order.receiver);
+        assert_eq!(
+            order_with_quote.full_order.signing_scheme,
+            full_order.signing_scheme
+        );
+        assert_eq!(
+            order_with_quote.full_order.settlement_contract,
+            full_order.settlement_contract
+        );
+        assert_eq!(
+            order_with_quote.full_order.sell_token_balance,
+            full_order.sell_token_balance
+        );
+        assert_eq!(
+            order_with_quote.full_order.buy_token_balance,
+            full_order.buy_token_balance
+        );
     }
 
     #[tokio::test]
