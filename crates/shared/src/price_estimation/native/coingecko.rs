@@ -1,15 +1,12 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::{
-        price_estimation::{
-            buffered::NativePriceBatchFetching,
-            native_price_cache::Metrics,
-            PriceEstimationError,
-        },
+        price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
         token_info::{TokenInfo, TokenInfoFetching},
     },
     anyhow::{anyhow, Context, Result},
     futures::{future::BoxFuture, FutureExt},
+    metrics::Metrics,
     primitive_types::H160,
     reqwest::{Client, StatusCode},
     rust_decimal::{prelude::ToPrimitive, Decimal, MathematicalOps},
@@ -93,7 +90,7 @@ impl CoinGecko {
         tokens: &HashSet<Token>,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
-        Metrics::coin_gecko_batch_size(tokens.len() as u64);
+        Metrics::coin_gecko_batch_size(tokens.len());
         url.query_pairs_mut()
             .append_pair(
                 "contract_addresses",
@@ -270,6 +267,27 @@ mod observe {
             Err(err) => {
                 tracing::warn!(%endpoint, ?err, "failed to receive response from CoinGecko")
             }
+        }
+    }
+}
+
+mod metrics {
+    use {observe::metrics, prometheus::Histogram};
+
+    #[derive(prometheus_metric_storage::MetricStorage)]
+    pub(super) struct Metrics {
+        /// Tracks the CoinGecko batch size
+        #[metric(buckets(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20))]
+        coin_gecko_batch_size: Histogram,
+    }
+
+    impl Metrics {
+        fn get() -> &'static Self {
+            Metrics::instance(metrics::get_storage_registry()).unwrap()
+        }
+
+        pub(super) fn coin_gecko_batch_size(size: usize) {
+            Metrics::get().coin_gecko_batch_size.observe(size as f64);
         }
     }
 }
