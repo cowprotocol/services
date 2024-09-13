@@ -36,7 +36,7 @@ DO UPDATE SET reward = $3, total_fee = $4, total_fee_token = $5, block_number = 
         .bind(order)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
-        .bind(Some(total_fee.amount))
+        .bind(total_fee.amount)
         .bind(total_fee.token)
         .bind(block_number)
         .bind(protocol_fee_tokens)
