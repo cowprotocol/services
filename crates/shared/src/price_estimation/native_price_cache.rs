@@ -25,8 +25,7 @@ pub(in crate::price_estimation) struct Metrics {
     /// number of items in cache that are outdated
     native_price_cache_outdated_entries: IntGauge,
     /// Tracks the CoinGecko batch size
-    #[metric(labels("result"))]
-    coin_gecko_batch_size: IntCounterVec,
+    coin_gecko_batch_size: IntCounter,
 }
 
 impl Metrics {
@@ -35,10 +34,7 @@ impl Metrics {
     }
 
     pub(in crate::price_estimation) fn coin_gecko_batch_size(size: u64) {
-        Metrics::get()
-            .coin_gecko_batch_size
-            .with_label_values(&["result"])
-            .inc_by(size);
+        Metrics::get().coin_gecko_batch_size.inc_by(size);
     }
 }
 
