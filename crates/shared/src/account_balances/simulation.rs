@@ -5,13 +5,16 @@
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
     anyhow::Result,
+    contracts::{erc20::Contract, BalancerV2Vault},
     ethcontract::{Bytes, H160, U256},
     ethrpc::Web3,
     futures::future,
+    model::order::SellTokenSource,
 };
 
 pub struct Balances {
     balances: contracts::support::Balances,
+    web3: Web3,
     settlement: H160,
     vault_relayer: H160,
     vault: H160,
@@ -28,9 +31,11 @@ impl Balances {
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
         let web3 = ethrpc::instrumented::instrument_with_label(web3, "balanceFetching".into());
+        let balances = contracts::support::Balances::at(&web3, settlement);
 
         Self {
-            balances: contracts::support::Balances::at(&web3, settlement),
+            web3,
+            balances,
             settlement,
             vault_relayer,
             vault,
@@ -73,6 +78,58 @@ impl Balances {
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
         Ok(simulation)
     }
+
+    async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
+        let simulation = self.simulate(query, None).await?;
+        Ok(if simulation.can_transfer {
+            simulation.effective_balance
+        } else {
+            U256::zero()
+        })
+    }
+
+    async fn tradable_balance_simple(&self, query: &Query, token: &Contract) -> Result<U256> {
+        let usable_balance = match query.source {
+            SellTokenSource::Erc20 => {
+                let balance = token.balance_of(query.owner).call();
+                let allowance = token.allowance(query.owner, self.vault_relayer).call();
+                let (balance, allowance) = futures::try_join!(balance, allowance)?;
+                std::cmp::min(balance, allowance)
+            }
+            SellTokenSource::External => {
+                let vault = BalancerV2Vault::at(&self.web3, self.vault);
+                let balance = token.balance_of(query.owner).call();
+                let approved = vault
+                    .methods()
+                    .has_approved_relayer(query.owner, self.vault_relayer)
+                    .call();
+                let allowance = token.allowance(query.owner, self.vault).call();
+                let (balance, approved, allowance) =
+                    futures::try_join!(balance, approved, allowance)?;
+                match approved {
+                    true => std::cmp::min(balance, allowance),
+                    false => 0.into(),
+                }
+            }
+            SellTokenSource::Internal => {
+                let vault = BalancerV2Vault::at(&self.web3, self.vault);
+                let balance = vault
+                    .methods()
+                    .get_internal_balance(query.owner, vec![query.token])
+                    .call();
+                let approved = vault
+                    .methods()
+                    .has_approved_relayer(query.owner, self.vault_relayer)
+                    .call();
+                let (balance, approved) = futures::try_join!(balance, approved)?;
+                match approved {
+                    true => balance[0], // internal approvals are always U256::MAX
+                    false => 0.into(),
+                }
+            }
+        };
+        Ok(usable_balance)
+    }
 }
 
 #[derive(Debug)]
@@ -90,12 +147,12 @@ impl BalanceFetching for Balances {
         let futures = queries
             .iter()
             .map(|query| async {
-                let simulation = self.simulate(query, None).await?;
-                Ok(if simulation.can_transfer {
-                    simulation.effective_balance
+                if query.interactions.is_empty() {
+                    let token = contracts::ERC20::at(&self.web3, query.token);
+                    self.tradable_balance_simple(query, &token).await
                 } else {
-                    U256::zero()
-                })
+                    self.tradable_balance_simulated(query).await
+                }
             })
             .collect::<Vec<_>>();
 

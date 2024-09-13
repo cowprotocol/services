@@ -23,7 +23,7 @@ use {
         SigningScheme,
         Solution,
     },
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     web3::signing::SecretKeyRef,
 };
 
@@ -551,7 +551,10 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     wait_for_condition(TIMEOUT, || async {
         let auctions = mock_solver.get_auctions();
-        let found_cow_amms = &auctions.last().unwrap().surplus_capturing_jit_order_owners;
+        let found_cow_amms: HashSet<_> = auctions
+            .iter()
+            .flat_map(|a| a.surplus_capturing_jit_order_owners.clone())
+            .collect();
 
         expected_cow_amms
             .iter()
@@ -576,13 +579,18 @@ async fn cow_amm_driver_support(web3: Web3) {
 
     wait_for_condition(TIMEOUT, || async {
         let auctions = mock_solver.get_auctions();
-        let auction_prices = &auctions.last().unwrap().tokens;
+        let auction_prices: HashSet<_> = auctions
+            .iter()
+            .flat_map(|a| {
+                a.tokens
+                    .iter()
+                    .filter_map(|(token, info)| info.reference_price.map(|_| token))
+            })
+            .collect();
 
-        expected_prices.iter().all(|token| {
-            auction_prices
-                .get(token)
-                .is_some_and(|t| t.reference_price.is_some())
-        })
+        expected_prices
+            .iter()
+            .all(|token| auction_prices.contains(token))
     })
     .await
     .unwrap();

@@ -1557,20 +1557,6 @@ components:
                 $ref: "#/components/schemas/UID"
               executedAmount:
                 $ref: "#/components/schemas/BigUint"
-        callData:
-          allOf:
-            - $ref: "#/components/schemas/CallData"
-          description: Transaction `calldata` that is executed on-chain if the settlement is executed.
-        uninternalizedCallData:
-          allOf:
-            - $ref: "#/components/schemas/CallData"
-          description: |
-            Full `calldata` as generated from the original solver output.
-
-            It can be different from the executed transaction if part of the settlements are internalised
-            (use internal liquidity in lieu of trading against on-chain liquidity).
-
-            This field is omitted in case it coincides with `callData`.
     NativePriceResponse:
       description: |
         The estimated native price for the token

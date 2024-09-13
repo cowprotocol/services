@@ -5,7 +5,6 @@ use {
         auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
-        settlement_call_data::SettlementCallData,
         settlement_scores::Score,
         surplus_capturing_jit_order_owners,
         Address,
@@ -34,12 +33,6 @@ pub struct Competition {
     /// chain before this block height.
     pub block_deadline: u64,
     pub competition_simulation_block: u64,
-    /// Winner settlement call data
-    #[derivative(Debug(format_with = "shared::debug_bytes"))]
-    pub call_data: Vec<u8>,
-    /// Uninternalized winner settlement call data
-    #[derivative(Debug(format_with = "shared::debug_bytes"))]
-    pub uninternalized_call_data: Vec<u8>,
     pub competition_table: SolverCompetitionDB,
 }
 
@@ -108,17 +101,6 @@ impl super::Postgres {
         )
         .await
         .context("auction_prices::insert")?;
-
-        database::settlement_call_data::insert(
-            &mut ex,
-            SettlementCallData {
-                auction_id: competition.auction_id,
-                call_data: competition.call_data.clone(),
-                uninternalized_call_data: competition.uninternalized_call_data.clone(),
-            },
-        )
-        .await
-        .context("settlement_call_data::insert")?;
 
         database::auction_orders::insert(
             &mut ex,

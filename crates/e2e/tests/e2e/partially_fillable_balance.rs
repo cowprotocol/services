@@ -2,7 +2,7 @@ use {
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -87,21 +87,18 @@ async fn test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
-    services.create_order(&order_a).await.unwrap();
-
-    tracing::info!("Waiting for order to show up in auction.");
-    let has_order = || async { services.get_auction().await.auction.orders.len() == 1 };
-    wait_for_condition(TIMEOUT, has_order).await.unwrap();
-
-    let auction = services.get_auction().await.auction;
-    let order = auction.orders.into_iter().next().unwrap();
-    assert!(order.partially_fillable);
-    assert!(matches!(order.class, OrderClass::Limit));
+    let order_uid = services.create_order(&order_a).await.unwrap();
+    let order = services.get_order(&order_uid).await.unwrap();
+    assert!(order.is_limit_order());
+    assert!(order.data.partially_fillable);
 
     tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
-    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+    wait_for_condition(TIMEOUT, || async {
+        let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
+        !balance.is_zero()
+    })
+    .await
+    .unwrap();
 
     // Expecting a partial fill because order sells 100 but user only has balance of
     // 50.

@@ -127,26 +127,19 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
+    let balance_before = token_a.balance_of(trader_a.address()).call().await.unwrap();
     let response = services.create_order(&new_order).await;
     let (error_code, _) = response.err().unwrap();
     assert_eq!(error_code, StatusCode::UNAUTHORIZED);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let balance_before = token_a.balance_of(trader_a.address()).call().await.unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let balance_after = token_a.balance_of(trader_a.address()).call().await.unwrap();
-    assert_eq!(
-        balance_before.checked_sub(balance_after).unwrap(),
-        to_wei(10)
-    );
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_a.balance_of(trader_a.address()).call().await.unwrap();
+        balance_before.saturating_sub(balance_after) == to_wei(10)
+    })
+    .await
+    .unwrap();
 }
 
 async fn single_replace_order_test(web3: Web3) {
@@ -257,6 +250,7 @@ async fn single_replace_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+    let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 
     // Check the previous order is cancelled
@@ -265,29 +259,22 @@ async fn single_replace_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-
-    let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(
-        balance_before.checked_sub(balance_after).unwrap(),
-        to_wei(3)
-    );
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
+        balance_before.saturating_sub(balance_after) == to_wei(3)
+    })
+    .await
+    .unwrap();
 
     // Check the previous order is cancelled
-    let new_order = services.get_order(&new_order_uid).await.unwrap();
-
-    assert_eq!(
-        new_order
+    wait_for_condition(TIMEOUT, || async {
+        let new_order = services.get_order(&new_order_uid).await.unwrap();
+        let new_order_appdata = new_order
             .metadata
             .full_app_data
-            .expect("valid full appData"),
-        app_data
-    );
+            .expect("valid full appData");
+        new_order_appdata == app_data
+    })
+    .await
+    .unwrap()
 }

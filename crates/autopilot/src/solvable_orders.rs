@@ -246,17 +246,13 @@ impl SolvableOrdersCache {
         // spawning a background task since `order_events` table insert operation takes
         // a while and the result is ignored.
         self.persistence.store_order_events(
-            invalid_order_uids
-                .iter()
-                .map(|id| domain::OrderUid(id.0))
-                .collect(),
+            invalid_order_uids.iter().map(|id| domain::OrderUid(id.0)),
             OrderEventLabel::Invalid,
         );
         self.persistence.store_order_events(
             filtered_order_events
                 .iter()
-                .map(|id| domain::OrderUid(id.0))
-                .collect(),
+                .map(|id| domain::OrderUid(id.0)),
             OrderEventLabel::Filtered,
         );
 
@@ -301,6 +297,7 @@ impl SolvableOrdersCache {
                 .collect::<Result<_, _>>()?,
             surplus_capturing_jit_order_owners,
         };
+
         *self.cache.lock().await = Some(Inner {
             auction,
             solvable_orders: db_solvable_orders,
@@ -352,6 +349,7 @@ impl SolvableOrdersCache {
                 .persistence
                 .solvable_orders_after(
                     cache.solvable_orders.orders.clone(),
+                    cache.solvable_orders.quotes.clone(),
                     cache.solvable_orders.fetched_from_db,
                     cache.solvable_orders.latest_settlement_block,
                     min_valid_to,
@@ -360,7 +358,15 @@ impl SolvableOrdersCache {
             None => self.persistence.all_solvable_orders(min_valid_to).boxed(),
         };
 
-        fetch_orders.await
+        let mut orders = fetch_orders.await?;
+
+        // Move the checkpoint slightly back in time to mitigate race conditions
+        // caused by inconsistencies of stored timestamps. See #2959 for more details.
+        // This will cause us to fetch orders created or cancelled in the buffer
+        // period multiple times but that is a small price to pay for not missing
+        // orders.
+        orders.fetched_from_db -= chrono::TimeDelta::seconds(60);
+        Ok(orders)
     }
 
     /// Executed orders filtering in parallel.

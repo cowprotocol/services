@@ -69,16 +69,11 @@ async fn test(web3: Web3) {
     tracing::info!("Deposit ETH to make order executable");
     tx_value!(trader.account(), to_wei(2), weth.deposit());
 
-    tracing::info!("Waiting for order to show up in auction");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
-        .await
-        .unwrap();
-
-    // Drive solution
     tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
-        .await
-        .unwrap();
-    let balance_after = weth.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(U256::one(), balance_after);
+    wait_for_condition(TIMEOUT, || async {
+        let balance_after = weth.balance_of(trader.address()).call().await.unwrap();
+        !balance_after.is_zero()
+    })
+    .await
+    .unwrap();
 }
