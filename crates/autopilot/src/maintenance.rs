@@ -81,9 +81,6 @@ impl Maintenance {
             "successfully ran maintenance task"
         );
 
-        metrics()
-            .update_duration
-            .observe(start.elapsed().as_secs_f64());
         metrics().updates.with_label_values(&["success"]).inc();
         metrics().last_updated_block.set(new_block.number);
         *last_block = *new_block;
@@ -191,10 +188,6 @@ struct Metrics {
     /// Autopilot maintenance error counter
     #[metric(labels("result"))]
     updates: IntCounterVec,
-
-    /// Execution time for updates
-    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
-    update_duration: Histogram,
 }
 
 fn metrics() -> &'static Metrics {
