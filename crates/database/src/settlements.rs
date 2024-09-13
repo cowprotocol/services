@@ -21,20 +21,17 @@ WHERE
         .await
 }
 
-pub async fn get_hash_by_auction_id(
+pub async fn get_hashes_by_auction_id(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> Result<Option<TransactionHash>, sqlx::Error> {
+) -> Result<Vec<TransactionHash>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT tx_hash
 FROM settlements
 WHERE
     auction_id = $1
     "#;
-    sqlx::query_scalar::<_, TransactionHash>(QUERY)
-        .bind(auction_id)
-        .fetch_optional(ex)
-        .await
+    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
 }
 
 #[derive(Debug, sqlx::FromRow)]

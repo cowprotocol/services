@@ -174,16 +174,20 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// Retrieves the transaction hash for the settlement with the given
-    /// auction_id.
-    pub async fn find_tx_hash_by_auction_id(
+    /// For a given auction, finds all settlements and returns their transaction
+    /// hashes.
+    pub async fn find_settlement_transactions(
         &self,
         auction_id: i64,
-    ) -> Result<Option<H256>, DatabaseError> {
-        self.postgres
-            .find_tx_hash_by_auction_id(auction_id)
+    ) -> Result<Vec<eth::TxId>, DatabaseError> {
+        Ok(self
+            .postgres
+            .find_settlement_transactions(auction_id)
             .await
-            .map_err(DatabaseError)
+            .map_err(DatabaseError)?
+            .into_iter()
+            .map(eth::TxId)
+            .collect())
     }
 
     /// Checks if an auction already has an accociated settlement.
