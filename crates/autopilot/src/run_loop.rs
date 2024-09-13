@@ -278,7 +278,7 @@ impl RunLoop {
             let solution_id = solution.id();
             let self_clone = self.clone();
             let driver_clone = driver.clone();
-            let future = async move {
+            let settle_fut = async move {
                 tracing::info!(driver = %driver_clone.name, "settling");
                 let submission_start = Instant::now();
 
@@ -301,13 +301,9 @@ impl RunLoop {
                 Metrics::single_run_completed(single_run_start.elapsed());
             };
 
-            let _ = self
-                .execution_queue
-                .send(Box::pin(future))
-                .await
-                .inspect_err(|err| {
-                    tracing::error!(?err, "failed to send settle future to execution queue");
-                });
+            if let Err(err) = self.execution_queue.send(Box::pin(settle_fut)).await {
+                tracing::error!(?err, "failed to send settle future to execution queue");
+            }
         }
     }
 
@@ -624,11 +620,11 @@ impl RunLoop {
         let result = self.try_solve(driver.clone(), request).await;
         let solutions = match result {
             Ok(solutions) => {
-                Metrics::solve_ok(&driver.clone(), start.elapsed());
+                Metrics::solve_ok(&driver, start.elapsed());
                 solutions
             }
             Err(err) => {
-                Metrics::solve_err(&driver.clone(), start.elapsed(), &err);
+                Metrics::solve_err(&driver, start.elapsed(), &err);
                 if matches!(err, SolveError::NoSolutions) {
                     tracing::debug!(driver = %driver.name, "solver found no solution");
                 } else {
