@@ -528,11 +528,11 @@ pub async fn run(args: Arguments) {
             .drivers
             .into_iter()
             .map(|driver| {
-                infra::Driver::new(
+                Arc::new(infra::Driver::new(
                     driver.url,
                     driver.name,
                     driver.fairness_threshold.map(Into::into),
-                )
+                ))
             })
             .collect(),
         market_makable_token_list,
