@@ -206,7 +206,7 @@ impl SolvableOrdersCache {
 
         // create auction
         let (orders, mut prices) =
-            get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics);
+            get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics).await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let _timer = self.stage_timer("weth_price_fetch");
@@ -229,7 +229,7 @@ impl SolvableOrdersCache {
             .cloned()
             .collect::<Vec<_>>();
         let cow_amm_prices =
-            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator);
+            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator).await;
         prices.extend(cow_amm_prices);
 
         let removed = counter.checkpoint("missing_price", &orders);
@@ -440,12 +440,13 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
         .collect()
 }
 
-fn get_native_prices(
+async fn get_native_prices(
     tokens: &[H160],
     native_price_estimator: &CachingNativePriceEstimator,
 ) -> HashMap<H160, U256> {
     native_price_estimator
-        .get_cached_prices(tokens)
+        .estimate_native_prices(tokens)
+        .await
         .into_iter()
         .flat_map(|(token, result)| {
             let price = to_normalized_price(result.ok()?)?;
@@ -612,7 +613,7 @@ async fn update_task(
     }
 }
 
-fn get_orders_with_native_prices(
+async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
@@ -624,7 +625,7 @@ fn get_orders_with_native_prices(
         .into_iter()
         .collect::<Vec<_>>();
 
-    let prices = get_native_prices(&traded_tokens, native_price_estimator);
+    let prices = get_native_prices(&traded_tokens, native_price_estimator).await;
 
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.
@@ -1011,20 +1012,9 @@ mod tests {
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
-        // We'll have no native prices in this call. But this call will cause a
-        // background task to fetch the missing prices so we'll have them in the
-        // next call.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
-        assert!(filtered_orders.is_empty());
-        assert!(prices.is_empty());
-
-        // Wait for native prices to get fetched.
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-
         // Now we have all the native prices we want.
         let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics);
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics).await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(

@@ -290,6 +290,64 @@ impl CachingNativePriceEstimator {
     pub fn replace_high_priority(&self, tokens: IndexSet<H160>) {
         *self.0.high_priority.lock().unwrap() = tokens;
     }
+
+    pub async fn estimate_native_prices(
+        &self,
+        tokens: &[H160],
+    ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
+        // Read the tokens from the cache
+        let mut results = {
+            let cache = self.0.cache.lock().unwrap();
+            tokens
+                .iter()
+                .filter_map(|token| cache.get(token).map(|cache| (*token, cache.result.clone())))
+                .collect::<HashMap<_, _>>()
+        };
+
+        let missing_prices_futures = tokens
+            .iter()
+            .filter(|token| !results.contains_key(token))
+            .map(|token| async {
+                (
+                    *token,
+                    self.estimate_native_price(*token)
+                        .await
+                        .map_err(PriceEstimationError::from),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // Return early if all the requested tokens are in the cache
+        if missing_prices_futures.is_empty() {
+            return results;
+        }
+
+        // Wait for the new prices
+        let new_prices = futures::future::join_all(missing_prices_futures)
+            .await
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+
+        // Update the cache
+        {
+            let now = Instant::now();
+            let mut cache = self.0.cache.lock().unwrap();
+            new_prices.iter().for_each(|(token, result)| {
+                if should_cache(result) {
+                    cache.insert(
+                        *token,
+                        CachedResult {
+                            result: result.clone(),
+                            updated_at: now,
+                            requested_at: now,
+                        },
+                    );
+                }
+            })
+        }
+        results.extend(new_prices);
+        results
+    }
 }
 
 impl NativePriceEstimating for CachingNativePriceEstimator {
