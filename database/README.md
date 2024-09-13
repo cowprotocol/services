@@ -343,19 +343,6 @@ Stores the best and second best solution quality (score) of every auction promis
 Indexes:
 - PRIMARY KEY: btree(`auction_id`)
 
-### settlement\_call\_data
-
-Stores the final calldata and uninternalized calldata of the winning solution for each auction
-
- Column                       | Type     | Nullable | Details
-------------------------------|----------|----------|--------
- auction\_id                  | bigint   | not null | id of the auction the winning transaction calldata belongs to
- call_data                    | bytea    | not null | final calldata as it appears on the blockchain
- uninternalized\_call\_data   | numeric  | not null | uninternalized calldata, different from final calldata if solution contains interactions that can be internalized against gpv2 settlement contract internal buffers.
-
-Indexes:
-- PRIMARY KEY: btree(`auction_id`)
-
 ### settlements
 
 Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) events emitted from the settlement contract.

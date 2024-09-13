@@ -15,7 +15,6 @@ pub mod order_execution;
 pub mod order_history;
 pub mod orders;
 pub mod quotes;
-pub mod settlement_call_data;
 pub mod settlement_observations;
 pub mod settlement_scores;
 pub mod settlements;

@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, competition, eth},
+        domain::{self, eth},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -26,7 +26,7 @@ use {
     },
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{
         collections::{HashMap, HashSet},
@@ -174,16 +174,20 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// Retrieves the transaction hash for the settlement with the given
-    /// auction_id.
-    pub async fn find_tx_hash_by_auction_id(
+    /// For a given auction, finds all settlements and returns their transaction
+    /// hashes.
+    pub async fn find_settlement_transactions(
         &self,
         auction_id: i64,
-    ) -> Result<Option<H256>, DatabaseError> {
-        self.postgres
-            .find_tx_hash_by_auction_id(auction_id)
+    ) -> Result<Vec<eth::TxId>, DatabaseError> {
+        Ok(self
+            .postgres
+            .find_settlement_transactions(auction_id)
             .await
-            .map_err(DatabaseError)
+            .map_err(DatabaseError)?
+            .into_iter()
+            .map(eth::TxId)
+            .collect())
     }
 
     /// Checks if an auction already has an accociated settlement.
@@ -311,94 +315,6 @@ impl Persistence {
             prices,
             surplus_capturing_jit_order_owners,
         })
-    }
-
-    /// Returns the proposed solver solution that won the competition for a
-    /// given auction.
-    ///
-    /// It is expected for a solution to exist, so missing data is considered an
-    /// error.
-    ///
-    /// Returns error for old non-colocated auctions.
-    pub async fn get_winning_solution(
-        &self,
-        auction_id: domain::auction::Id,
-    ) -> Result<domain::competition::Solution, error::Solution> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["get_competition_winner"])
-            .start_timer();
-
-        let mut ex = self
-            .postgres
-            .pool
-            .begin()
-            .await
-            .map_err(error::Solution::DatabaseError)?;
-
-        let competition = database::settlement_scores::fetch(&mut ex, auction_id)
-            .await
-            .map_err(error::Solution::DatabaseError)?
-            .ok_or(error::Solution::NotFound)?;
-
-        let winner = H160(competition.winner.0).into();
-        let score = competition::Score::new(
-            big_decimal_to_u256(&competition.winning_score)
-                .ok_or(error::Solution::InvalidScore(anyhow::anyhow!(
-                    "database score"
-                )))?
-                .into(),
-        )
-        .map_err(|err| error::Solution::InvalidScore(anyhow::anyhow!("score, {}", err)))?;
-
-        let solution = {
-            // TODO: stabilize the solver competition table to get promised solution.
-            let solver_competition = database::solver_competition::load_by_id(&mut ex, auction_id)
-                .await
-                .map_err(error::Solution::DatabaseError)?
-                .ok_or(error::Solution::NotFound)?;
-            let competition: model::solver_competition::SolverCompetitionDB =
-                serde_json::from_value(solver_competition.json)
-                    .context("deserialize SolverCompetitionDB")
-                    .map_err(error::Solution::InvalidSolverCompetition)?;
-            let winning_solution = competition
-                .solutions
-                .last()
-                .ok_or(error::Solution::NotFound)?;
-            let mut orders = HashMap::new();
-            for order in winning_solution.orders.iter() {
-                match order {
-                    model::solver_competition::Order::Colocated {
-                        id,
-                        sell_amount,
-                        buy_amount,
-                    } => {
-                        orders.insert(
-                            domain::OrderUid(id.0),
-                            competition::TradedAmounts {
-                                sell: (*sell_amount).into(),
-                                buy: (*buy_amount).into(),
-                            },
-                        );
-                    }
-                    model::solver_competition::Order::Legacy {
-                        id: _,
-                        executed_amount: _,
-                    } => return Err(error::Solution::NotFound),
-                }
-            }
-            let mut prices = HashMap::new();
-            for (token, price) in winning_solution.clearing_prices.clone().into_iter() {
-                prices.insert(
-                    token.into(),
-                    domain::auction::Price::new(price.into())
-                        .map_err(|_| error::Solution::InvalidPrice(eth::TokenAddress(token)))?,
-                );
-            }
-            competition::Solution::new(winner, score, orders, prices)
-        };
-
-        Ok(solution)
     }
 
     /// Computes solvable orders based on the latest observed block number,
@@ -745,19 +661,5 @@ pub mod error {
         InvalidFeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error("invalid price fetched from database for token: {0:?}")]
         InvalidPrice(eth::TokenAddress),
-    }
-
-    #[derive(Debug, thiserror::Error)]
-    pub enum Solution {
-        #[error("failed communication with the database: {0}")]
-        DatabaseError(#[from] sqlx::Error),
-        #[error("solution not found")]
-        NotFound,
-        #[error("invalid score fetched from database: {0}")]
-        InvalidScore(anyhow::Error),
-        #[error("invalid price fetched from database for token: {0:?}")]
-        InvalidPrice(eth::TokenAddress),
-        #[error("invalid solver competition data fetched from database: {0}")]
-        InvalidSolverCompetition(anyhow::Error),
     }
 }
