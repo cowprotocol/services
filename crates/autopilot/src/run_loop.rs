@@ -772,7 +772,7 @@ struct Metrics {
 
     /// Tracks the time spent running maintenance. This mostly consists of
     /// indexing new events.
-    #[metric(buckets(0, 0.01, 0.05, 0.1, 0.2, 0.5, 1., 2., 5.))]
+    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
     service_maintenance_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
