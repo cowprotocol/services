@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             competition::{self, SolutionError, TradedAmounts},
-            eth,
+            eth::{self, TxId},
             OrderUid,
         },
         infra::{
@@ -227,16 +227,24 @@ impl RunLoop {
                 .settle(driver, solution, auction_id, block_deadline)
                 .await
             {
-                Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
+                Ok(tx_id) => {
+                    Metrics::settle_ok(driver, submission_start.elapsed());
+                    let elapsed = single_run_start.elapsed();
+                    tokio::spawn(async move {
+                        let blocks_mined = self
+                            .eth
+                            .transaction(tx_id)
+                            .await
+                            .map(|tx| tx.block.0 - start_block + 1)
+                            .ok();
+                        Metrics::single_run_completed(elapsed, blocks_mined);
+                    });
+                }
                 Err(err) => {
                     Metrics::settle_err(driver, submission_start.elapsed(), &err);
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
-
-            let current_block = *self.eth.current_block().borrow();
-            let blocks_mined = current_block.number - start_block;
-            Metrics::single_run_completed(single_run_start.elapsed(), blocks_mined);
         }
     }
 
@@ -636,7 +644,7 @@ impl RunLoop {
         solved: &competition::SolutionWithId,
         auction_id: i64,
         submission_deadline_latest_block: u64,
-    ) -> Result<(), SettleError> {
+    ) -> Result<TxId, SettleError> {
         let request = settle::Request {
             solution_id: solved.id(),
             submission_deadline_latest_block,
@@ -646,7 +654,7 @@ impl RunLoop {
             .await?;
         tracing::debug!(?tx_hash, "solution settled");
 
-        Ok(())
+        Ok(tx_hash)
     }
 
     /// Wait for either the settlement transaction to be mined or the driver
@@ -893,11 +901,13 @@ impl Metrics {
             .observe(elapsed.as_secs_f64());
     }
 
-    fn single_run_completed(elapsed: Duration, blocks: u64) {
+    fn single_run_completed(elapsed: Duration, blocks: Option<u64>) {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
-        Self::get()
-            .single_run_blocks_count
-            .observe(blocks.into_f64())
+        if let Some(blocks) = blocks {
+            Self::get()
+                .single_run_blocks_count
+                .observe(blocks.into_f64())
+        }
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
