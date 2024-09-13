@@ -305,7 +305,7 @@ impl RunLoop {
                                 .eth
                                 .transaction(tx_id)
                                 .await
-                                .map(|tx| tx.block.0 - start_block + 1)
+                                .map(|tx| tx.block.0 - start_block)
                                 .ok();
                             Metrics::single_run_completed(elapsed, blocks_mined);
                         });
