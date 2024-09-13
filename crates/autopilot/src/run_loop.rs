@@ -776,7 +776,7 @@ struct Metrics {
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10))]
+    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 }
 
