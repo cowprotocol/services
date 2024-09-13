@@ -277,7 +277,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 services
                     .get_order(uid)
                     .await
-                    .is_ok_and(|order| !order.metadata.executed_total_fee.is_zero())
+                    .is_ok_and(|order| !order.metadata.executed_fee.is_zero())
             }),
         )
         .await
@@ -293,38 +293,38 @@ async fn combined_protocol_fees(web3: Web3) {
         .get_order(&market_price_improvement_uid)
         .await
         .unwrap();
-    let market_executed_total_fee_in_buy_token =
-        total_fee_in_buy_token(&market_price_improvement_order, &market_quote_after.quote);
+    let market_executed_fee_in_buy_token =
+        fee_in_buy_token(&market_price_improvement_order, &market_quote_after.quote);
     let market_quote_diff = market_quote_after
         .quote
         .buy_amount
         .saturating_sub(market_quote_before.quote.buy_amount);
     // see `market_price_improvement_policy.factor`, which is 0.3
-    assert!(market_executed_total_fee_in_buy_token >= market_quote_diff * 3 / 10);
+    assert!(market_executed_fee_in_buy_token >= market_quote_diff * 3 / 10);
 
     let partner_fee_order = services.get_order(&partner_fee_order_uid).await.unwrap();
-    let partner_fee_executed_total_fee_in_buy_token =
-        total_fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
+    let partner_fee_executed_fee_in_buy_token =
+        fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
         // see `--fee-policy-max-partner-fee` autopilot config argument, which is 0.02
-        partner_fee_executed_total_fee_in_buy_token >= partner_fee_quote.quote.buy_amount * 2 / 100
+        partner_fee_executed_fee_in_buy_token >= partner_fee_quote.quote.buy_amount * 2 / 100
     );
     let limit_quote_diff = partner_fee_quote_after
         .quote
         .buy_amount
         .saturating_sub(partner_fee_order.data.buy_amount);
     // see `limit_surplus_policy.factor`, which is 0.3
-    assert!(partner_fee_executed_total_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+    assert!(partner_fee_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
     let limit_surplus_order = services.get_order(&limit_surplus_order_uid).await.unwrap();
-    let limit_executed_total_fee_in_buy_token =
-        total_fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
+    let limit_executed_fee_in_buy_token =
+        fee_in_buy_token(&limit_surplus_order, &limit_quote_after.quote);
     let limit_quote_diff = limit_quote_after
         .quote
         .buy_amount
         .saturating_sub(limit_surplus_order.data.buy_amount);
     // see `limit_surplus_policy.factor`, which is 0.3
-    assert!(limit_executed_total_fee_in_buy_token >= limit_quote_diff * 3 / 10);
+    assert!(limit_executed_fee_in_buy_token >= limit_quote_diff * 3 / 10);
 
     let [market_order_token_balance, limit_order_token_balance, partner_fee_order_token_balance] =
         futures::future::try_join_all(
@@ -343,16 +343,10 @@ async fn combined_protocol_fees(web3: Web3) {
         .unwrap()
         .try_into()
         .expect("Expected exactly four elements");
+    assert_approximately_eq!(market_executed_fee_in_buy_token, market_order_token_balance);
+    assert_approximately_eq!(limit_executed_fee_in_buy_token, limit_order_token_balance);
     assert_approximately_eq!(
-        market_executed_total_fee_in_buy_token,
-        market_order_token_balance
-    );
-    assert_approximately_eq!(
-        limit_executed_total_fee_in_buy_token,
-        limit_order_token_balance
-    );
-    assert_approximately_eq!(
-        partner_fee_executed_total_fee_in_buy_token,
+        partner_fee_executed_fee_in_buy_token,
         partner_fee_order_token_balance
     );
 }
@@ -385,8 +379,8 @@ async fn get_quote(
     services.submit_quote(&quote_request).await
 }
 
-fn total_fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
-    order.metadata.executed_total_fee * quote.buy_amount / quote.sell_amount
+fn fee_in_buy_token(order: &Order, quote: &OrderQuote) -> U256 {
+    order.metadata.executed_fee * quote.buy_amount / quote.sell_amount
 }
 
 fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
@@ -515,13 +509,13 @@ async fn volume_fee_buy_order_test(web3: Web3) {
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_total_fee.is_zero()
+        !order.metadata.executed_fee.is_zero()
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 
     let order = services.get_order(&uid).await.unwrap();
     let fee_in_buy_token = quote.fee_amount * quote.buy_amount / quote.sell_amount;
-    assert!(order.metadata.executed_total_fee >= fee_in_buy_token + quote.sell_amount / 10);
+    assert!(order.metadata.executed_fee >= fee_in_buy_token + quote.sell_amount / 10);
 
     // Check settlement contract balance
     let balance_after = token_gno
@@ -529,5 +523,5 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert_eq!(order.metadata.executed_total_fee, balance_after);
+    assert_eq!(order.metadata.executed_fee, balance_after);
 }

@@ -31,8 +31,8 @@ ARRAY[]::record[] AS post_interactions,
 NULL AS ethflow_data,
 NULL AS onchain_user,
 NULL AS onchain_placement_error,
-COALESCE((SELECT SUM(total_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_total_fee,
-COALESCE((SELECT total_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_total_fee_token, -- TODO surplus token
+COALESCE((SELECT SUM(total_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
+COALESCE((SELECT total_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_fee_token, -- TODO surplus token
 NULL AS full_app_data
 "#;
 

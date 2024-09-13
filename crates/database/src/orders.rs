@@ -485,8 +485,8 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_total_fee: BigDecimal,
-    pub executed_total_fee_token: Address,
+    pub executed_fee: BigDecimal,
+    pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -561,8 +561,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-COALESCE((SELECT SUM(total_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_total_fee,
-COALESCE((SELECT total_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_total_fee_token, -- TODO surplus token
+COALESCE((SELECT SUM(total_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
+COALESCE((SELECT total_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid), o.sell_token) as executed_fee_token, -- TODO surplus token
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
@@ -1888,7 +1888,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_total_fee, fee);
+        assert_eq!(order.executed_fee, fee);
 
         let fee: BigDecimal = 1.into();
         crate::order_execution::save(
@@ -1909,7 +1909,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_total_fee, fee);
+        assert_eq!(order.executed_fee, fee);
     }
 
     #[tokio::test]

@@ -116,7 +116,7 @@ async fn test(web3: Web3) {
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_total_fee.is_zero()
+        !order.metadata.executed_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
             && order.metadata.executed_sell_amount != Default::default()
     };

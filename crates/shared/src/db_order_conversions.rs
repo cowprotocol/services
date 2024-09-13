@@ -90,9 +90,11 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
-        executed_total_fee: big_decimal_to_u256(&order.executed_total_fee)
-            .context("executed total fee is not a valid u256")?,
-        executed_total_fee_token: H160(order.executed_total_fee_token.0),
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_fee)
+            .context("executed fee is not a valid u256")?,
+        executed_fee: big_decimal_to_u256(&order.executed_fee)
+            .context("executed fee is not a valid u256")?,
+        executed_fee_token: H160(order.executed_fee_token.0),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,

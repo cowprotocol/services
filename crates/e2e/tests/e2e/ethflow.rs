@@ -112,7 +112,7 @@ async fn eth_flow_tx(web3: Web3) {
             .get_order(&ethflow_order.uid(onchain.contracts()).await)
             .await
             .unwrap();
-        order.metadata.executed_total_fee > U256::zero()
+        order.metadata.executed_fee > U256::zero()
     };
     wait_for_condition(TIMEOUT, fee_charged).await.unwrap();
 

@@ -582,9 +582,11 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
-        executed_total_fee: big_decimal_to_u256(&order.executed_total_fee)
-            .context("executed surplus fee is not a valid u256")?,
-        executed_total_fee_token: H160(order.executed_total_fee_token.0),
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_fee)
+            .context("executed fee is not a valid u256")?,
+        executed_fee: big_decimal_to_u256(&order.executed_fee)
+            .context("executed fee is not a valid u256")?,
+        executed_fee_token: H160(order.executed_fee_token.0),
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -707,8 +709,8 @@ mod tests {
             ethflow_data: None,
             onchain_user: None,
             onchain_placement_error: None,
-            executed_total_fee: Default::default(),
-            executed_total_fee_token: ByteArray([1; 20]), // TODO surplus token
+            executed_fee: Default::default(),
+            executed_fee_token: ByteArray([1; 20]), // TODO surplus token
             full_app_data: Default::default(),
         };
 
