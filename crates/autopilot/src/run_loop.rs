@@ -29,6 +29,7 @@ use {
         SolverSettlement,
     },
     primitive_types::H256,
+    prometheus::core::Number,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
@@ -72,9 +73,12 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            let auction = self.next_auction(&mut last_auction, &mut last_block).await;
-            if let Some(domain::AuctionWithId { id, auction }) = auction {
-                self.single_run(id, &auction)
+            let auction_with_block_number =
+                self.next_auction(&mut last_auction, &mut last_block).await;
+            if let Some((domain::AuctionWithId { id, auction }, start_block)) =
+                auction_with_block_number
+            {
+                self.single_run(id, &auction, start_block)
                     .instrument(tracing::info_span!("auction", id))
                     .await;
             };
@@ -87,7 +91,7 @@ impl RunLoop {
         &self,
         prev_auction: &mut Option<domain::Auction>,
         prev_block: &mut Option<H256>,
-    ) -> Option<domain::AuctionWithId> {
+    ) -> Option<(domain::AuctionWithId, u64)> {
         // wait for appropriate time to start building the auction
         let start_block = match self.synchronization {
             RunLoopMode::Unsynchronized => {
@@ -136,7 +140,7 @@ impl RunLoop {
         observe::log_auction_delta(&previous, &auction);
         self.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
-        Some(auction)
+        Some((auction, start_block.number))
     }
 
     /// Runs maintenance on all components to ensure the system uses
@@ -177,7 +181,12 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
+    async fn single_run(
+        &self,
+        auction_id: domain::auction::Id,
+        auction: &domain::Auction,
+        start_block: u64,
+    ) {
         let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
@@ -225,7 +234,9 @@ impl RunLoop {
                 }
             }
 
-            Metrics::single_run_completed(single_run_start.elapsed());
+            let current_block = *self.eth.current_block().borrow();
+            let blocks_mined = current_block.number - start_block;
+            Metrics::single_run_completed(single_run_start.elapsed(), blocks_mined);
         }
     }
 
@@ -779,6 +790,10 @@ struct Metrics {
     #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
     single_run_time: prometheus::Histogram,
 
+    /// Total number of blocks mined during the single run loop.
+    #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 10, 20, 30, 40))]
+    single_run_blocks_count: prometheus::Histogram,
+
     /// Time difference between the current block and when the single run
     /// function is started.
     #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
@@ -878,8 +893,11 @@ impl Metrics {
             .observe(elapsed.as_secs_f64());
     }
 
-    fn single_run_completed(elapsed: Duration) {
+    fn single_run_completed(elapsed: Duration, blocks: u64) {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
+        Self::get()
+            .single_run_blocks_count
+            .observe(blocks.into_f64())
     }
 
     fn auction_ready(init_block_timestamp: Instant) {
