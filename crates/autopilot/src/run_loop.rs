@@ -125,9 +125,11 @@ impl RunLoop {
             let auction_with_block_number = self_arc
                 .next_auction(&mut last_auction, &mut last_block)
                 .await;
-            if let Some((domain::AuctionWithId { id, auction }, start_block)) = auction_with_block_number {
+            if let Some((domain::AuctionWithId { id, auction }, start_block)) =
+                auction_with_block_number
+            {
                 self_arc
-                    .single_run(id, &auction, start_block)
+                    .single_run(id, auction, start_block)
                     .instrument(tracing::info_span!("auction", id))
                     .await;
             };
@@ -299,7 +301,7 @@ impl RunLoop {
                         Metrics::settle_ok(&driver_, submission_start.elapsed());
                         let elapsed = single_run_start.elapsed();
                         tokio::spawn(async move {
-                            let blocks_mined = self
+                            let blocks_mined = self_
                                 .eth
                                 .transaction(tx_id)
                                 .await
@@ -307,13 +309,12 @@ impl RunLoop {
                                 .ok();
                             Metrics::single_run_completed(elapsed, blocks_mined);
                         });
-                    },
+                    }
                     Err(err) => {
                         Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
                         tracing::warn!(?err, driver = %driver_.name, "settlement failed");
                     }
                 }
-                Metrics::single_run_completed(single_run_start.elapsed());
             };
 
             if let Err(err) = self.execution_queue.send(Box::pin(settle_fut)) {
