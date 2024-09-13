@@ -464,7 +464,7 @@ impl Orderbook {
                             id,
                             sell_amount,
                             buy_amount,
-                        } => (id.0 == uid.0).then_some(dto::order::ExecutedAmounts {
+                        } => (id == uid).then_some(dto::order::ExecutedAmounts {
                             sell: *sell_amount,
                             buy: *buy_amount,
                         }),
