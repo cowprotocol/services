@@ -18,6 +18,7 @@ use {
     futures::StreamExt,
     prometheus::{
         core::{AtomicU64, GenericGauge},
+        HistogramVec,
         IntCounterVec,
     },
     shared::maintenance::Maintaining,
@@ -86,17 +87,47 @@ impl Maintenance {
     }
 
     async fn update_inner(&self) -> Result<()> {
-        // All these can run independently of each other.
-        tokio::try_join!(
-            self.settlement_indexer.run_maintenance(),
-            self.db_cleanup.run_maintenance(),
-            self.index_ethflow_orders(),
+        let settlement_indexer_fut = async {
+            let _timer = metrics()
+                .maintenance_stage_time
+                .with_label_values(&["settlement_indexer"])
+                .start_timer();
+            self.settlement_indexer.run_maintenance().await
+        };
+        let db_cleanup_fut = async {
+            let _timer = metrics()
+                .maintenance_stage_time
+                .with_label_values(&["db_cleanup"])
+                .start_timer();
+            self.db_cleanup.run_maintenance().await
+        };
+        let ethflow_indexer_fut = async {
+            let _timer = metrics()
+                .maintenance_stage_time
+                .with_label_values(&["ethflow_indexer"])
+                .start_timer();
+            self.index_ethflow_orders().await
+        };
+        let cow_amm_indexer_fut = async {
+            let _timer = metrics()
+                .maintenance_stage_time
+                .with_label_values(&["cow_amm_indexer"])
+                .start_timer();
             futures::future::try_join_all(
                 self.cow_amm_indexer
                     .iter()
                     .cloned()
-                    .map(|indexer| async move { indexer.run_maintenance().await })
+                    .map(|indexer| async move { indexer.run_maintenance().await }),
             )
+            .await
+        };
+
+        // All these can run independently of each other.
+        tokio::try_join!(
+            settlement_indexer_fut,
+            db_cleanup_fut,
+            ethflow_indexer_fut,
+            cow_amm_indexer_fut
         )?;
 
         Ok(())
@@ -187,6 +218,10 @@ struct Metrics {
     /// Autopilot maintenance error counter
     #[metric(labels("result"))]
     updates: IntCounterVec,
+
+    /// Autopilot maintenance stage time
+    #[metric(labels("stage"))]
+    maintenance_stage_time: HistogramVec,
 }
 
 fn metrics() -> &'static Metrics {
