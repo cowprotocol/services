@@ -18,11 +18,11 @@ use {
     futures::StreamExt,
     prometheus::{
         core::{AtomicU64, GenericGauge},
-        Histogram,
+        HistogramVec,
         IntCounterVec,
     },
     shared::maintenance::Maintaining,
-    std::{sync::Arc, time::Duration},
+    std::{future::Future, sync::Arc, time::Duration},
     tokio::{sync::Mutex, time::timeout},
 };
 
@@ -81,9 +81,6 @@ impl Maintenance {
             "successfully ran maintenance task"
         );
 
-        metrics()
-            .update_duration
-            .observe(start.elapsed().as_secs_f64());
         metrics().updates.with_label_values(&["success"]).inc();
         metrics().last_updated_block.set(new_block.number);
         *last_block = *new_block;
@@ -92,15 +89,21 @@ impl Maintenance {
     async fn update_inner(&self) -> Result<()> {
         // All these can run independently of each other.
         tokio::try_join!(
-            self.settlement_indexer.run_maintenance(),
-            self.db_cleanup.run_maintenance(),
-            self.index_ethflow_orders(),
-            futures::future::try_join_all(
-                self.cow_amm_indexer
-                    .iter()
-                    .cloned()
-                    .map(|indexer| async move { indexer.run_maintenance().await })
-            )
+            Self::timed_future(
+                "settlement_indexer",
+                self.settlement_indexer.run_maintenance()
+            ),
+            Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
+            Self::timed_future("ethflow_indexer", self.index_ethflow_orders()),
+            Self::timed_future(
+                "cow_amm_indexer",
+                futures::future::try_join_all(
+                    self.cow_amm_indexer
+                        .iter()
+                        .cloned()
+                        .map(|indexer| async move { indexer.run_maintenance().await }),
+                )
+            ),
         )?;
 
         Ok(())
@@ -174,6 +177,15 @@ impl Maintenance {
             }
         });
     }
+
+    /// Runs the future and collects runtime metrics.
+    async fn timed_future<T>(label: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = metrics()
+            .maintenance_stage_time
+            .with_label_values(&[label])
+            .start_timer();
+        fut.await
+    }
 }
 
 type EthflowIndexer =
@@ -192,9 +204,12 @@ struct Metrics {
     #[metric(labels("result"))]
     updates: IntCounterVec,
 
-    /// Execution time for updates
-    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
-    update_duration: Histogram,
+    /// Autopilot maintenance stage time
+    #[metric(
+        labels("stage"),
+        buckets(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2.0, 2.5, 3, 3.5, 4)
+    )]
+    maintenance_stage_time: HistogramVec,
 }
 
 fn metrics() -> &'static Metrics {
