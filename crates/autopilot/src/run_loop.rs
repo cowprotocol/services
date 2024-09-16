@@ -21,6 +21,7 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
+    futures::future::BoxFuture,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -36,7 +37,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::{sync::Mutex, task::JoinHandle},
+    tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex},
     tracing::Instrument,
 };
 
@@ -60,8 +61,9 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     pub maintenance: Arc<Maintenance>,
-    /// Tracks active settlement tasks per solver.
-    settlement_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    /// Queues by solver for executing settle futures one by one guarantying
+    /// FIFO execution order.
+    settlement_queues: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<BoxFuture<'static, ()>>>>>,
 }
 
 impl RunLoop {
@@ -94,7 +96,7 @@ impl RunLoop {
             synchronization,
             max_run_loop_delay,
             maintenance,
-            settlement_tasks: Arc::new(Mutex::new(HashMap::new())),
+            settlement_queues: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -269,15 +271,6 @@ impl RunLoop {
             let driver_ = driver.clone();
             let self_ = self.clone();
 
-            let existing_task = self.settlement_tasks.lock().await.remove(&driver_.name);
-            // If there was an existing task, wait for it to finish outside the lock scope.
-            if let Some(existing_task) = existing_task {
-                tracing::info!(driver = %driver_.name, "waiting for previous settlement task to finish");
-                if let Err(err) = existing_task.await {
-                    tracing::warn!(?err, driver = %driver_.name, "previous settlement task failed");
-                }
-            }
-
             let settle_fut = async move {
                 tracing::info!(driver = %driver_.name, "settling");
                 let submission_start = Instant::now();
@@ -303,11 +296,54 @@ impl RunLoop {
                 Metrics::single_run_completed(single_run_start.elapsed());
             };
 
-            // Spawn the settlement task only once a lock is acquired.
-            {
-                let mut lock = self.settlement_tasks.lock().await;
-                let handle = tokio::spawn(settle_fut);
-                lock.insert(driver.name.clone(), handle);
+            let sender = self.get_settlement_queue_sender(&driver.name).await;
+            if let Err(err) = sender.send(Box::pin(settle_fut)) {
+                tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
+            }
+        }
+    }
+
+    async fn get_settlement_queue_sender(
+        self: &Arc<Self>,
+        driver_name: &str,
+    ) -> UnboundedSender<BoxFuture<'static, ()>> {
+        const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+        let mut settlement_queues = self.settlement_queues.lock().await;
+        match settlement_queues.get(driver_name) {
+            Some(sender) => sender.clone(),
+            None => {
+                let (tx, mut rx) = mpsc::unbounded_channel::<BoxFuture<'static, ()>>();
+                let driver_name = driver_name.to_string();
+                let self_clone = self.clone();
+
+                settlement_queues.insert(driver_name.clone(), tx.clone());
+
+                tokio::spawn(async move {
+                    let mut deadline = Instant::now() + IDLE_TIMEOUT;
+                    loop {
+                        match tokio::time::timeout_at(deadline.into(), rx.recv()).await {
+                            Ok(Some(fut)) => {
+                                fut.await;
+                                deadline = Instant::now() + IDLE_TIMEOUT;
+                            }
+                            Ok(None) => {
+                                tracing::info!(driver = %driver_name, "settlement execution queue stopped");
+                                break;
+                            }
+                            // Timeout occurred, no new futures were received.
+                            Err(_) => {
+                                break;
+                            }
+                        }
+                    }
+                    self_clone
+                        .settlement_queues
+                        .lock()
+                        .await
+                        .remove(&driver_name);
+                });
+                tx
             }
         }
     }
@@ -727,7 +763,7 @@ impl RunLoop {
             .await
             .retain(|order| !solved_order_uids.contains(order));
 
-        self.settlement_tasks.lock().await.remove(&driver.name);
+        self.settlement_queues.lock().await.remove(&driver.name);
 
         Ok(())
     }
