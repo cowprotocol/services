@@ -34,10 +34,10 @@ pub async fn fetch(
     tx_hashes: &[TransactionHash],
 ) -> Result<Vec<Observation>, sqlx::Error> {
     const QUERY: &str = r#"
- SELECT *
- FROM settlement_observations so
- JOIN settlements s ON s.log_index = so.log_index AND s.block_number = so.block_number
- WHERE s.tx_hash = ANY($1)
+SELECT *
+FROM settlement_observations so
+JOIN settlements s ON s.log_index = so.log_index AND s.block_number = so.block_number
+WHERE s.tx_hash = ANY($1)
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hashes).fetch_all(ex).await
 }
