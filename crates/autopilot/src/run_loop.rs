@@ -303,6 +303,19 @@ impl RunLoop {
         }
     }
 
+    /// Retrieves or creates the settlement queue sender for a given driver.
+    ///
+    /// This function ensures that there is a settlement execution queue
+    /// associated with the specified `driver_name`. If a queue already
+    /// exists, it returns the existing sender. If not, it creates a new
+    /// queue, starts a background task to process settlement futures
+    /// sequentially, and returns the new sender.
+    ///
+    /// The background task processes futures from the queue one by one,
+    /// guaranteeing FIFO execution order for settlements per driver. It
+    /// also implements an idle timeout: if no new futures are received within
+    /// `IDLE_TIMEOUT`, the background task terminates, and the queue is
+    /// removed.
     async fn get_settlement_queue_sender(
         self: &Arc<Self>,
         driver_name: &str,
