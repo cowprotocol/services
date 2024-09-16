@@ -38,9 +38,11 @@ pub struct RunLoop {
     liveness: Arc<Liveness>,
     synchronization: RunLoopMode,
     current_block: CurrentBlockWatcher,
+    _max_winners_per_auction: usize,
 }
 
 impl RunLoop {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<infra::Driver>,
@@ -49,6 +51,7 @@ impl RunLoop {
         liveness: Arc<Liveness>,
         synchronization: RunLoopMode,
         current_block: CurrentBlockWatcher,
+        _max_winners_per_auction: usize,
     ) -> Self {
         Self {
             orderbook,
@@ -60,6 +63,7 @@ impl RunLoop {
             liveness,
             synchronization,
             current_block,
+            _max_winners_per_auction,
         }
     }
 

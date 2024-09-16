@@ -55,6 +55,7 @@ pub struct RunLoop {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+    pub max_winners_per_auction: usize,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     pub maintenance: Arc<Maintenance>,

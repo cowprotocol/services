@@ -227,6 +227,11 @@ pub struct Arguments {
     /// before continuing the run loop.
     #[clap(long, env, default_value = "2s", value_parser = humantime::parse_duration)]
     pub max_run_loop_delay: Duration,
+
+    #[clap(long, env, default_value = "1")]
+    /// The maximum number of winners per auction. Each winner will be allowed
+    /// to settle their winning orders at the same time.
+    pub max_winners_per_auction: usize,
 }
 
 impl std::fmt::Display for Arguments {
@@ -271,6 +276,7 @@ impl std::fmt::Display for Arguments {
             cow_amm_configs,
             run_loop_mode,
             max_run_loop_delay,
+            max_winners_per_auction,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -345,6 +351,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
         writeln!(f, "run_loop_mode: {:?}", run_loop_mode)?;
         writeln!(f, "max_run_loop_delay: {:?}", max_run_loop_delay)?;
+        writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
         Ok(())
     }
 }
