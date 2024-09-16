@@ -22,7 +22,7 @@ use {
         IntCounterVec,
     },
     shared::maintenance::Maintaining,
-    std::{sync::Arc, time::Duration},
+    std::{future::Future, sync::Arc, time::Duration},
     tokio::{sync::Mutex, time::timeout},
 };
 
@@ -87,47 +87,23 @@ impl Maintenance {
     }
 
     async fn update_inner(&self) -> Result<()> {
-        let settlement_indexer_fut = async {
-            let _timer = metrics()
-                .maintenance_stage_time
-                .with_label_values(&["settlement_indexer"])
-                .start_timer();
-            self.settlement_indexer.run_maintenance().await
-        };
-        let db_cleanup_fut = async {
-            let _timer = metrics()
-                .maintenance_stage_time
-                .with_label_values(&["db_cleanup"])
-                .start_timer();
-            self.db_cleanup.run_maintenance().await
-        };
-        let ethflow_indexer_fut = async {
-            let _timer = metrics()
-                .maintenance_stage_time
-                .with_label_values(&["ethflow_indexer"])
-                .start_timer();
-            self.index_ethflow_orders().await
-        };
-        let cow_amm_indexer_fut = async {
-            let _timer = metrics()
-                .maintenance_stage_time
-                .with_label_values(&["cow_amm_indexer"])
-                .start_timer();
-            futures::future::try_join_all(
-                self.cow_amm_indexer
-                    .iter()
-                    .cloned()
-                    .map(|indexer| async move { indexer.run_maintenance().await }),
-            )
-            .await
-        };
-
         // All these can run independently of each other.
         tokio::try_join!(
-            settlement_indexer_fut,
-            db_cleanup_fut,
-            ethflow_indexer_fut,
-            cow_amm_indexer_fut
+            Self::timed_future(
+                "settlement_indexer",
+                self.settlement_indexer.run_maintenance()
+            ),
+            Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
+            Self::timed_future("ethflow_indexer", self.index_ethflow_orders()),
+            Self::timed_future(
+                "cow_amm_indexer",
+                futures::future::try_join_all(
+                    self.cow_amm_indexer
+                        .iter()
+                        .cloned()
+                        .map(|indexer| async move { indexer.run_maintenance().await }),
+                )
+            ),
         )?;
 
         Ok(())
@@ -200,6 +176,15 @@ impl Maintenance {
                 }
             }
         });
+    }
+
+    /// Runs the future and collects runtime metrics.
+    async fn timed_future<T>(label: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = metrics()
+            .maintenance_stage_time
+            .with_label_values(&[label])
+            .start_timer();
+        fut.await
     }
 }
 
