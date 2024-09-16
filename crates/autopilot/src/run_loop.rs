@@ -269,10 +269,7 @@ impl RunLoop {
             let driver_ = driver.clone();
             let self_ = self.clone();
 
-            let existing_task = {
-                let mut settlement_tasks = self.settlement_tasks.lock().await;
-                settlement_tasks.remove(&driver_.name)
-            };
+            let existing_task = self.settlement_tasks.lock().await.remove(&driver_.name);
             // If there was an existing task, wait for it to finish outside the lock scope.
             if let Some(existing_task) = existing_task {
                 tracing::info!(driver = %driver_.name, "waiting for previous settlement task to finish");
@@ -306,10 +303,11 @@ impl RunLoop {
                 Metrics::single_run_completed(single_run_start.elapsed());
             };
 
-            let handle = tokio::spawn(settle_fut);
+            // Spawn the settlement task only once a lock is acquired.
             {
-                let mut settlement_tasks = self.settlement_tasks.lock().await;
-                settlement_tasks.insert(driver.name.clone(), handle);
+                let mut lock = self.settlement_tasks.lock().await;
+                let handle = tokio::spawn(settle_fut);
+                lock.insert(driver.name.clone(), handle);
             }
         }
     }
