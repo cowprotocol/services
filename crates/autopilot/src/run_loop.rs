@@ -729,6 +729,8 @@ impl RunLoop {
             .await
             .retain(|order| !solved_order_uids.contains(order));
 
+        self.settlement_tasks.lock().await.remove(&driver.name);
+
         Ok(())
     }
 
