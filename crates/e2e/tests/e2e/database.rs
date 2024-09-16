@@ -61,13 +61,12 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .await
         .ok()?;
 
-    let mut observations = Vec::with_capacity(txs.len());
-    for tx in &txs {
-        let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
-            .await
-            .unwrap()?;
-        observations.push(observation);
-    }
+    let observations = database::settlement_observations::fetch(
+        &mut db,
+        &txs.iter().map(|tx| tx.tx_hash).collect::<Vec<_>>(),
+    )
+    .await
+    .ok()?;
     let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
