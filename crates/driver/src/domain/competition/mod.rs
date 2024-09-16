@@ -389,9 +389,13 @@ pub struct Solved {
 #[derive(Debug)]
 pub struct Amounts {
     pub side: order::Side,
+    /// The sell token and it's limit amount.
     pub sell: eth::Asset,
+    /// The buy token and it's limit amount.
     pub buy: eth::Asset,
+    /// The effective amount that left the user's wallet including all fees.
     pub executed_sell: eth::TokenAmount,
+    /// The effective amount the user received after all fees.
     pub executed_buy: eth::TokenAmount,
 }
 
