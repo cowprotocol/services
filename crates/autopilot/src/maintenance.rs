@@ -220,7 +220,10 @@ struct Metrics {
     updates: IntCounterVec,
 
     /// Autopilot maintenance stage time
-    #[metric(labels("stage"))]
+    #[metric(
+        labels("stage"),
+        buckets(0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2.0, 2.5, 3, 3.5, 4)
+    )]
     maintenance_stage_time: HistogramVec,
 }
 
