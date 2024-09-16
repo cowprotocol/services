@@ -45,7 +45,7 @@ pub struct Configuration {
 /// Trait for fetching a batch of native price estimates.
 #[allow(dead_code)]
 #[cfg_attr(test, mockall::automock)]
-pub trait NativePriceBatchFetching: Sync + Send + NativePriceEstimating {
+pub trait NativePriceBatchFetching: Sync + Send {
     /// Fetches a batch of native price estimates.
     ///
     /// It returns a HashMap which maps the token with its native price
@@ -83,7 +83,7 @@ struct NativePriceResult {
 
 impl<Inner> NativePriceEstimating for BufferedRequest<Inner>
 where
-    Inner: NativePriceBatchFetching + NativePriceEstimating + 'static,
+    Inner: NativePriceBatchFetching + 'static,
 {
     /// Request to get estimate prices in a batch
     fn estimate_native_price(
@@ -132,7 +132,7 @@ where
 #[allow(dead_code)]
 impl<Inner> BufferedRequest<Inner>
 where
-    Inner: NativePriceBatchFetching + Send + Sync + NativePriceEstimating + 'static,
+    Inner: NativePriceBatchFetching + Send + Sync + 'static,
 {
     /// Creates a new buffered transport with the specified configuration.
     pub fn with_config(inner: Inner, config: Configuration) -> Self {

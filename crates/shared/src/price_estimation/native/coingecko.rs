@@ -1,5 +1,5 @@
 use {
-    super::{NativePriceEstimateResult, NativePriceEstimating},
+    super::NativePriceEstimateResult,
     crate::{
         price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
         token_info::{TokenInfo, TokenInfoFetching},
@@ -229,19 +229,6 @@ impl NativePriceBatchFetching for CoinGecko {
     }
 }
 
-impl NativePriceEstimating for CoinGecko {
-    fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
-        async move {
-            let prices = self.fetch_native_prices(HashSet::from([token])).await?;
-            prices
-                .get(&token)
-                .ok_or(PriceEstimationError::NoLiquidity)?
-                .clone()
-        }
-        .boxed()
-    }
-}
-
 impl From<anyhow::Error> for PriceEstimationError {
     fn from(err: anyhow::Error) -> PriceEstimationError {
         PriceEstimationError::EstimatorInternal(err)
@@ -362,7 +349,14 @@ mod tests {
         )
         .unwrap();
 
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        let estimated_price = instance
+            .fetch_native_prices(HashSet::from([native_token]))
+            .await
+            .unwrap()
+            .get(&native_token)
+            .unwrap()
+            .clone()
+            .unwrap();
         // Since the WETH precise price against ETH is not always exact to 1.0 (it can
         // vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
@@ -382,7 +376,14 @@ mod tests {
         )
         .unwrap();
 
-        let estimated_price = instance.estimate_native_price(native_token).await.unwrap();
+        let estimated_price = instance
+            .fetch_native_prices(HashSet::from([native_token]))
+            .await
+            .unwrap()
+            .get(&native_token)
+            .unwrap()
+            .clone()
+            .unwrap();
         // Since the USDT precise price against XDAI is not always exact to 1.0
         // (it can vary slightly)
         assert!((0.95..=1.05).contains(&estimated_price));
@@ -470,9 +471,23 @@ mod tests {
         .unwrap();
 
         // usdc_price should be: ~1000000000000.0
-        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        let usdc_price = instance
+            .fetch_native_prices(HashSet::from([usdc]))
+            .await
+            .unwrap()
+            .get(&usdc)
+            .unwrap()
+            .clone()
+            .unwrap();
         // wxdai_price should be: ~1.0
-        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        let wxdai_price = instance
+            .fetch_native_prices(HashSet::from([wxdai]))
+            .await
+            .unwrap()
+            .get(&wxdai)
+            .unwrap()
+            .clone()
+            .unwrap();
         dbg!(usdc_price, wxdai_price);
 
         // The `USDC` token only has 6 decimals whereas `wxDai` has 18. To make
@@ -518,9 +533,23 @@ mod tests {
         .unwrap();
 
         // usdc_price should be: ~0.001
-        let usdc_price = instance.estimate_native_price(usdc).await.unwrap();
+        let usdc_price = instance
+            .fetch_native_prices(HashSet::from([usdc]))
+            .await
+            .unwrap()
+            .get(&usdc)
+            .unwrap()
+            .clone()
+            .unwrap();
         // wxdai_price should be: ~1.0
-        let wxdai_price = instance.estimate_native_price(wxdai).await.unwrap();
+        let wxdai_price = instance
+            .fetch_native_prices(HashSet::from([wxdai]))
+            .await
+            .unwrap()
+            .get(&wxdai)
+            .unwrap()
+            .clone()
+            .unwrap();
         dbg!(usdc_price, wxdai_price);
 
         // We pretended that `USDC` has 21 decimals now so we need to move it's price
