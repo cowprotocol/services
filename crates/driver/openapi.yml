@@ -406,7 +406,7 @@ components:
                       description: Token being sold
                       $ref: "#/components/schemas/Address"
                     buyToken:
-                      description: Token being sold
+                      description: Token being bought
                       $ref: "#/components/schemas/Address"
                     limitSell:
                       type: string
