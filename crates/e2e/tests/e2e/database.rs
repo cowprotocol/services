@@ -61,16 +61,13 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .await
         .ok()?;
 
-    let observations = {
-        let mut observations = vec![];
-        for tx in &txs {
-            let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
-                .await
-                .unwrap()?;
-            observations.push(observation);
-        }
-        observations
-    };
+    let mut observations = vec![];
+    for tx in &txs {
+        let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
+            .await
+            .unwrap()?;
+        observations.push(observation);
+    }
     let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
