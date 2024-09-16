@@ -6,7 +6,7 @@ use {
         PriceEstimationError,
     },
     crate::{
-        account_balances::{BalanceFetching, Query},
+        account_balances::{Balance, BalanceFetching, Query},
         db_order_conversions::order_kind_from,
         fee::FeeParameters,
         order_validation::PreOrderData,
@@ -475,7 +475,7 @@ impl OrderQuoter {
             }
         };
 
-        if balance >= sell_amount {
+        if balance.balance >= sell_amount && balance.allowance >= sell_amount {
             // Quote could not be verified although user has the required balance.
             // This likely indicates a weird token that solvers are not able to handle.
             return Err(CalculateQuoteError::QuoteNotVerified);
@@ -484,7 +484,7 @@ impl OrderQuoter {
         Ok(())
     }
 
-    async fn get_balance(&self, verification: &Verification, token: H160) -> Result<U256> {
+    async fn get_balance(&self, verification: &Verification, token: H160) -> Result<Balance> {
         let query = Query {
             owner: verification.from,
             token,
@@ -650,8 +650,17 @@ mod tests {
 
     fn mock_balance_fetcher() -> Arc<dyn BalanceFetching> {
         let mut mock = MockBalanceFetching::new();
-        mock.expect_get_balances()
-            .returning(|addresses| addresses.iter().map(|_| Ok(U256::MAX)).collect());
+        mock.expect_get_balances().returning(|addresses| {
+            addresses
+                .iter()
+                .map(|_| {
+                    Ok(Balance {
+                        balance: U256::MAX,
+                        allowance: U256::MAX,
+                    })
+                })
+                .collect()
+        });
         Arc::new(mock)
     }
 

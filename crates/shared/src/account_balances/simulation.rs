@@ -4,6 +4,7 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
+    crate::account_balances::Balance,
     anyhow::Result,
     contracts::{erc20::Contract, BalancerV2Vault},
     ethcontract::{Bytes, H160, U256},
@@ -79,22 +80,25 @@ impl Balances {
         Ok(simulation)
     }
 
-    async fn tradable_balance_simulated(&self, query: &Query) -> Result<U256> {
+    async fn tradable_balance_simulated(&self, query: &Query) -> Result<Balance> {
         let simulation = self.simulate(query, None).await?;
         Ok(if simulation.can_transfer {
-            simulation.effective_balance
+            Balance {
+                allowance: simulation.allowance,
+                balance: simulation.effective_balance,
+            }
         } else {
-            U256::zero()
+            Balance::default()
         })
     }
 
-    async fn tradable_balance_simple(&self, query: &Query, token: &Contract) -> Result<U256> {
+    async fn tradable_balance_simple(&self, query: &Query, token: &Contract) -> Result<Balance> {
         let usable_balance = match query.source {
             SellTokenSource::Erc20 => {
                 let balance = token.balance_of(query.owner).call();
                 let allowance = token.allowance(query.owner, self.vault_relayer).call();
                 let (balance, allowance) = futures::try_join!(balance, allowance)?;
-                std::cmp::min(balance, allowance)
+                Balance { balance, allowance }
             }
             SellTokenSource::External => {
                 let vault = BalancerV2Vault::at(&self.web3, self.vault);
@@ -107,8 +111,8 @@ impl Balances {
                 let (balance, approved, allowance) =
                     futures::try_join!(balance, approved, allowance)?;
                 match approved {
-                    true => std::cmp::min(balance, allowance),
-                    false => 0.into(),
+                    true => Balance { balance, allowance },
+                    false => Balance::default(),
                 }
             }
             SellTokenSource::Internal => {
@@ -123,8 +127,14 @@ impl Balances {
                     .call();
                 let (balance, approved) = futures::try_join!(balance, approved)?;
                 match approved {
-                    true => balance[0], // internal approvals are always U256::MAX
-                    false => 0.into(),
+                    true => {
+                        // internal approvals are always U256::MAX
+                        Balance {
+                            balance: balance[0],
+                            allowance: U256::MAX,
+                        }
+                    }
+                    false => Balance::default(),
                 }
             }
         };
@@ -142,7 +152,7 @@ struct Simulation {
 
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<Balance>> {
         // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries
             .iter()

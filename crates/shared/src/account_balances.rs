@@ -45,12 +45,18 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Balance {
+    pub allowance: U256,
+    pub balance: U256,
+}
+
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner
     // and token taking both balance as well as "allowance" into account.
-    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>>;
+    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<Balance>>;
 
     // Check that the settlement contract can make use of this user's token balance.
     // This check could fail if the user does not have enough balance, has not

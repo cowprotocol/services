@@ -20,7 +20,7 @@ use {
     primitive_types::{H160, H256, U256},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
-        account_balances::{BalanceFetching, Query},
+        account_balances::{Balance, BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
             native::{to_normalized_price, NativePriceEstimating},
@@ -94,7 +94,7 @@ pub struct SolvableOrdersCache {
     cow_amm_registry: cow_amm::Registry,
 }
 
-type Balances = HashMap<Query, U256>;
+type Balances = HashMap<Query, Balance>;
 
 struct Inner {
     auction: domain::Auction,
@@ -186,6 +186,10 @@ impl SolvableOrdersCache {
         };
 
         let orders = orders_with_balance(orders, &balances);
+        let removed = counter.checkpoint("insufficient_balance", &orders);
+        invalid_order_uids.extend(removed);
+
+        let orders = orders_with_allowance(orders, &balances);
         let removed = counter.checkpoint("insufficient_balance", &orders);
         invalid_order_uids.extend(removed);
 
@@ -299,7 +303,7 @@ impl SolvableOrdersCache {
         Ok(())
     }
 
-    async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
+    async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, Balance> {
         let fetched_balances = self
             .timed_future(
                 "balance_filtering",
@@ -511,7 +515,31 @@ fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order
     orders.retain(|order| {
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
-            Some(balance) => *balance,
+            Some(balance) => balance.balance,
+        };
+
+        if order.data.partially_fillable && balance >= 1.into() {
+            return true;
+        }
+
+        let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
+            None => return false,
+            Some(balance) => balance,
+        };
+        balance >= needed_balance
+    });
+    orders
+}
+
+/// Removes orders that can't possibly be settled because the allowance is not
+/// enough
+fn orders_with_allowance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+    // Prefer newer orders over older ones.
+    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
+    orders.retain(|order| {
+        let balance = match balances.get(&Query::from_order(order)) {
+            None => return false,
+            Some(balance) => balance.allowance,
         };
 
         if order.data.partially_fillable && balance >= 1.into() {
@@ -536,7 +564,7 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
         }
 
         let balance = if let Some(balance) = balances.get(&Query::from_order(order)) {
-            *balance
+            balance.balance
         } else {
             return false;
         };
@@ -1278,10 +1306,34 @@ mod tests {
             },
         ];
         let balances = [
-            (Query::from_order(&orders[0]), 2.into()),
-            (Query::from_order(&orders[1]), 1.into()),
-            (Query::from_order(&orders[2]), 1.into()),
-            (Query::from_order(&orders[3]), 0.into()),
+            (
+                Query::from_order(&orders[0]),
+                Balance {
+                    balance: 2.into(),
+                    allowance: U256::MAX,
+                },
+            ),
+            (
+                Query::from_order(&orders[1]),
+                Balance {
+                    balance: 1.into(),
+                    allowance: U256::MAX,
+                },
+            ),
+            (
+                Query::from_order(&orders[2]),
+                Balance {
+                    balance: 1.into(),
+                    allowance: U256::MAX,
+                },
+            ),
+            (
+                Query::from_order(&orders[3]),
+                Balance {
+                    balance: 0.into(),
+                    allowance: U256::MAX,
+                },
+            ),
         ]
         .into_iter()
         .collect();
