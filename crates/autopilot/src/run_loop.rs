@@ -21,7 +21,6 @@ use {
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::future::BoxFuture,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -37,8 +36,8 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::{mpsc, Mutex},
-    tracing::{warn, Instrument},
+    tokio::{sync::Mutex, task::JoinHandle},
+    tracing::Instrument,
 };
 
 pub struct RunLoop {
@@ -61,9 +60,8 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     pub maintenance: Arc<Maintenance>,
-    /// Queue for executing settle futures one by one guarantying FIFO execution
-    /// order.
-    execution_queue: mpsc::UnboundedSender<BoxFuture<'static, ()>>,
+    /// Tracks active settlement tasks per solver.
+    settlement_tasks: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 impl RunLoop {
@@ -82,15 +80,6 @@ impl RunLoop {
         max_run_loop_delay: Duration,
         maintenance: Arc<Maintenance>,
     ) -> Self {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-            while let Some(future) = rx.recv().await {
-                future.await;
-            }
-            tracing::info!("runloop execution queue stopped")
-        });
-
         Self {
             eth,
             persistence,
@@ -105,7 +94,7 @@ impl RunLoop {
             synchronization,
             max_run_loop_delay,
             maintenance,
-            execution_queue: tx,
+            settlement_tasks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -279,6 +268,19 @@ impl RunLoop {
             let solution_id = solution.id();
             let driver_ = driver.clone();
             let self_ = self.clone();
+
+            let existing_task = {
+                let mut settlement_tasks = self.settlement_tasks.lock().await;
+                settlement_tasks.remove(&driver_.name)
+            };
+            // If there was an existing task, wait for it to finish outside the lock scope.
+            if let Some(existing_task) = existing_task {
+                tracing::info!(driver = %driver_.name, "waiting for previous settlement task to finish");
+                if let Err(err) = existing_task.await {
+                    tracing::warn!(?err, driver = %driver_.name, "previous settlement task failed");
+                }
+            }
+
             let settle_fut = async move {
                 tracing::info!(driver = %driver_.name, "settling");
                 let submission_start = Instant::now();
@@ -293,7 +295,9 @@ impl RunLoop {
                     )
                     .await
                 {
-                    Ok(()) => Metrics::settle_ok(&driver_, submission_start.elapsed()),
+                    Ok(()) => {
+                        Metrics::settle_ok(&driver_, submission_start.elapsed());
+                    }
                     Err(err) => {
                         Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
                         tracing::warn!(?err, driver = %driver_.name, "settlement failed");
@@ -302,8 +306,10 @@ impl RunLoop {
                 Metrics::single_run_completed(single_run_start.elapsed());
             };
 
-            if let Err(err) = self.execution_queue.send(Box::pin(settle_fut)) {
-                tracing::error!(?err, "failed to send settle future to execution queue");
+            let handle = tokio::spawn(settle_fut);
+            {
+                let mut settlement_tasks = self.settlement_tasks.lock().await;
+                settlement_tasks.insert(driver.name.clone(), handle);
             }
         }
     }
@@ -468,7 +474,7 @@ impl RunLoop {
         // Make sure the winning solution is fair.
         while !Self::is_solution_fair(solutions.last(), &solutions, auction) {
             let unfair_solution = solutions.pop().expect("must exist");
-            warn!(
+            tracing::warn!(
                 invalidated = unfair_solution.driver.name,
                 "fairness check invalidated of solution"
             );
