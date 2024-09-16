@@ -32,8 +32,8 @@ pub struct AuctionTransaction {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct Cip20Data {
-    pub observation: database::settlement_observations::Observation,
-    pub tx: AuctionTransaction,
+    pub observations: Vec<database::settlement_observations::Observation>,
+    pub txs: Vec<AuctionTransaction>,
     pub participants: Vec<database::auction_participants::Participant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
     pub score: database::settlement_scores::Score,
@@ -55,15 +55,22 @@ pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
     const TX_QUERY: &str = r"
 SELECT * FROM settlements WHERE auction_id = $1";
 
-    let tx: AuctionTransaction = sqlx::query_as(TX_QUERY)
+    let txs: Vec<AuctionTransaction> = sqlx::query_as(TX_QUERY)
         .bind(auction_id)
-        .fetch_optional(db.deref_mut())
+        .fetch_all(db.deref_mut())
         .await
-        .unwrap()?;
+        .ok()?;
 
-    let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
-        .await
-        .unwrap()?;
+    let observations = {
+        let mut observations = vec![];
+        for tx in &txs {
+            let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
+                .await
+                .unwrap()?;
+            observations.push(observation);
+        }
+        observations
+    };
     let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
@@ -79,8 +86,8 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .json;
 
     Some(Cip20Data {
-        observation,
-        tx,
+        observations,
+        txs,
         participants,
         prices,
         score,
