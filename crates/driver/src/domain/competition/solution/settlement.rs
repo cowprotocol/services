@@ -264,13 +264,13 @@ impl Settlement {
                 side: trade.order().side,
                 sell: trade.order().sell,
                 buy: trade.order().buy,
-                traded_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
+                executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
                     // This should never happen, returning 0 is better than panicking, but we
                     // should still alert.
                     tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
                     0.into()
                 }),
-                traded_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
+                executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
                     // This should never happen, returning 0 is better than panicking, but we
                     // should still alert.
                     tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");

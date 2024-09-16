@@ -115,8 +115,8 @@ impl Solution {
                     (
                         o.into(),
                         domain::competition::TradedAmounts {
-                            sell: amounts.traded_sell().into(),
-                            buy: amounts.traded_buy().into(),
+                            sell: amounts.executed_sell().into(),
+                            buy: amounts.executed_buy().into(),
                         },
                     )
                 })
@@ -152,31 +152,31 @@ pub enum TradedOrder {
         buy_token: H160,
         #[serde_as(as = "HexOrDecimalU256")]
         /// Sell limit order amount.
-        sell_amount: U256,
+        limit_sell: U256,
         #[serde_as(as = "HexOrDecimalU256")]
         /// Buy limit order amount.
-        buy_amount: U256,
+        limit_buy: U256,
         /// The effective amount that left the user's wallet including all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        traded_sell: U256,
+        executed_sell: U256,
         /// The effective amount the user received after all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        traded_buy: U256,
+        executed_buy: U256,
     },
 }
 
 impl TradedOrder {
-    pub fn traded_sell(&self) -> U256 {
+    pub fn executed_sell(&self) -> U256 {
         match self {
             Self::TradedAmount { sell_amount, .. } => *sell_amount,
-            Self::TradedOrder { traded_sell, .. } => *traded_sell,
+            Self::TradedOrder { executed_sell, .. } => *executed_sell,
         }
     }
 
-    pub fn traded_buy(&self) -> U256 {
+    pub fn executed_buy(&self) -> U256 {
         match self {
             Self::TradedAmount { buy_amount, .. } => *buy_amount,
-            Self::TradedOrder { traded_buy, .. } => *traded_buy,
+            Self::TradedOrder { executed_buy, .. } => *executed_buy,
         }
     }
 }

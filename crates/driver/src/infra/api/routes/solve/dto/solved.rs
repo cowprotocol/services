@@ -44,11 +44,11 @@ impl Solution {
                                 order::Side::Sell => Side::Sell,
                             },
                             sell_token: amounts.sell.token.into(),
-                            sell_amount: amounts.sell.amount.into(),
+                            limit_sell: amounts.sell.amount.into(),
                             buy_token: amounts.buy.token.into(),
-                            buy_amount: amounts.buy.amount.into(),
-                            traded_sell: amounts.traded_sell.into(),
-                            traded_buy: amounts.traded_buy.into(),
+                            limit_buy: amounts.buy.amount.into(),
+                            executed_sell: amounts.executed_sell.into(),
+                            executed_buy: amounts.executed_buy.into(),
                         },
                     )
                 })
@@ -90,16 +90,16 @@ pub struct TradedOrder {
     pub buy_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
     /// Sell limit order amount.
-    pub sell_amount: eth::U256,
+    pub limit_sell: eth::U256,
     #[serde_as(as = "serialize::U256")]
     /// Buy limit order amount.
-    pub buy_amount: eth::U256,
+    pub limit_buy: eth::U256,
     /// The effective amount that left the user's wallet including all fees.
     #[serde_as(as = "serialize::U256")]
-    pub traded_sell: eth::U256,
+    pub executed_sell: eth::U256,
     /// The effective amount the user received after all fees.
     #[serde_as(as = "serialize::U256")]
-    pub traded_buy: eth::U256,
+    pub executed_buy: eth::U256,
 }
 
 #[serde_as]

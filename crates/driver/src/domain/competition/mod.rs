@@ -391,8 +391,8 @@ pub struct Amounts {
     pub side: order::Side,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub traded_sell: eth::TokenAmount,
-    pub traded_buy: eth::TokenAmount,
+    pub executed_sell: eth::TokenAmount,
+    pub executed_buy: eth::TokenAmount,
 }
 
 #[derive(Clone, Debug)]
