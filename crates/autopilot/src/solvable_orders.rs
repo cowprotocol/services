@@ -18,15 +18,7 @@ use {
     },
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
-    prometheus::{
-        Histogram,
-        HistogramTimer,
-        HistogramVec,
-        IntCounter,
-        IntCounterVec,
-        IntGauge,
-        IntGaugeVec,
-    },
+    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -39,6 +31,7 @@ use {
     },
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
+        future::Future,
         sync::{Arc, Weak},
         time::Duration,
     },
@@ -185,14 +178,10 @@ impl SolvableOrdersCache {
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
-            let cow_amms_fut = async {
-                let _timer = self.stage_timer("cow_amm_registry");
-                self.cow_amm_registry.amms().await
-            };
             tokio::join!(
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
-                cow_amms_fut
+                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
 
@@ -209,10 +198,11 @@ impl SolvableOrdersCache {
             get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics);
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
-            let _timer = self.stage_timer("weth_price_fetch");
             let weth_price = self
-                .native_price_estimator
-                .estimate_native_price(self.weth)
+                .timed_future(
+                    "weth_price_fetch",
+                    self.native_price_estimator.estimate_native_price(self.weth),
+                )
                 .await
                 .expect("weth price fetching can never fail");
             let weth_price = to_normalized_price(weth_price)
@@ -310,10 +300,12 @@ impl SolvableOrdersCache {
     }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        let fetched_balances = {
-            let _timer = self.stage_timer("balance_fetch");
-            self.balance_fetcher.get_balances(&queries).await
-        };
+        let fetched_balances = self
+            .timed_future(
+                "balance_filtering",
+                self.balance_fetcher.get_balances(&queries),
+            )
+            .await;
         queries
             .into_iter()
             .zip(fetched_balances)
@@ -375,22 +367,19 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let banned_user_orders_fut = async {
-            let _timer = self.stage_timer("banned_user_filtering");
-            find_banned_user_orders(&orders, &self.banned_users).await
-        };
-        let invalid_signature_orders_fut = async {
-            let _timer = self.stage_timer("invalid_signature_filtering");
-            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
-        };
-        let unsupported_token_orders_fut = async {
-            let _timer = self.stage_timer("unsupported_token_filtering");
-            find_unsupported_tokens(&orders, self.bad_token_detector.clone()).await
-        };
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
-            banned_user_orders_fut,
-            invalid_signature_orders_fut,
-            unsupported_token_orders_fut,
+            self.timed_future(
+                "banned_user_filtering",
+                find_banned_user_orders(&orders, &self.banned_users)
+            ),
+            self.timed_future(
+                "invalid_signature_filtering",
+                find_invalid_signature_orders(&orders, self.signature_validator.as_ref())
+            ),
+            self.timed_future(
+                "unsupported_token_filtering",
+                find_unsupported_tokens(&orders, self.bad_token_detector.clone())
+            ),
         );
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
@@ -411,11 +400,14 @@ impl SolvableOrdersCache {
             .inc();
     }
 
-    fn stage_timer(&self, stage: &str) -> HistogramTimer {
-        self.metrics
+    /// Runs the future and collects runtime metrics.
+    async fn timed_future<T>(&self, label: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = self
+            .metrics
             .auction_update_stage_time
-            .with_label_values(&[stage])
-            .start_timer()
+            .with_label_values(&[label])
+            .start_timer();
+        fut.await
     }
 }
 
