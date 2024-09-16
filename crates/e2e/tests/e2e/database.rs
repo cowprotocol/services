@@ -61,7 +61,7 @@ SELECT * FROM settlements WHERE auction_id = $1";
         .await
         .ok()?;
 
-    let mut observations = vec![];
+    let mut observations = Vec::with_capacity(txs.len());
     for tx in &txs {
         let observation = database::settlement_observations::fetch(&mut db, &tx.tx_hash)
             .await
