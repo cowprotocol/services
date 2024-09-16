@@ -410,10 +410,10 @@ components:
                       $ref: "#/components/schemas/Address"
                     limitSell:
                       type: string
-                      description: Amount to be sold.
+                      description: Maximum amount to be sold.
                     limitBuy:
                       type: string
-                      description: Amount to be bought.
+                      description: Minimum amount to be bought.
                     executedSell:
                       type: string
                       description: The effective amount that left the user's wallet including all fees.
