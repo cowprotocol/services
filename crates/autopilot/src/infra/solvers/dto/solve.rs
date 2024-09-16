@@ -137,6 +137,7 @@ impl Solution {
 #[serde(untagged)]
 pub enum TradedOrder {
     #[serde(rename_all = "camelCase")]
+    /// An old format that only includes the executed amounts for an order.
     TradedAmount {
         /// The effective amount that left the user's wallet including all fees.
         #[serde_as(as = "HexOrDecimalU256")]
@@ -146,6 +147,10 @@ pub enum TradedOrder {
         buy_amount: U256,
     },
     #[serde(rename_all = "camelCase")]
+    /// Contains basic order information and the executed amounts. Basic order
+    /// information are required because of JIT orders which are not part of an
+    /// auction, so autopilot can be aware of them before the solution is
+    /// settled on-chain.
     TradedOrder {
         side: Side,
         sell_token: H160,
