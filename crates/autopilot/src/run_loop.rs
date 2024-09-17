@@ -764,17 +764,15 @@ impl RunLoop {
             solution_id,
             submission_deadline_latest_block,
         };
-        let tx_hash = self
-            .wait_for_settlement(driver, auction_id, request)
-            .await?;
-        tracing::debug!(?tx_hash, "solution settled");
+        let result = self.wait_for_settlement(driver, auction_id, request).await;
 
+        // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
             .lock()
             .await
             .retain(|order| !solved_order_uids.contains(order));
 
-        Ok(())
+        result.map(|tx_hash| tracing::debug!(?tx_hash, "solution settled"))
     }
 
     /// Wait for either the settlement transaction to be mined or the driver
