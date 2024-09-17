@@ -44,25 +44,25 @@ use {
 };
 
 pub struct RunLoop {
-    pub eth: infra::Ethereum,
-    pub persistence: infra::Persistence,
-    pub drivers: Vec<Arc<infra::Driver>>,
+    eth: infra::Ethereum,
+    persistence: infra::Persistence,
+    drivers: Vec<Arc<infra::Driver>>,
 
-    pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub market_makable_token_list: AutoUpdatingTokenList,
-    pub submission_deadline: u64,
-    pub max_settlement_transaction_wait: Duration,
-    pub solve_deadline: Duration,
-    pub in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
-    pub liveness: Arc<Liveness>,
-    pub synchronization: RunLoopMode,
+    solvable_orders_cache: Arc<SolvableOrdersCache>,
+    market_makable_token_list: AutoUpdatingTokenList,
+    submission_deadline: u64,
+    max_settlement_transaction_wait: Duration,
+    solve_deadline: Duration,
+    in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
+    liveness: Arc<Liveness>,
+    synchronization: RunLoopMode,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
-    pub max_run_loop_delay: Duration,
+    max_run_loop_delay: Duration,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
-    pub maintenance: Arc<Maintenance>,
+    maintenance: Arc<Maintenance>,
     /// Queues by solver for executing settle futures one by one guaranteeing
     /// FIFO execution order.
     settlement_queues: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<BoxFuture<'static, ()>>>>>,
