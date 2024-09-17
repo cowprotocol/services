@@ -217,12 +217,14 @@ where
             latest_range
         );
 
+        let start_time = Instant::now();
         let latest_blocks = self.block_retriever.blocks(latest_range).await?;
         tracing::debug!(
             "latest blocks: {:?} - {:?}",
             latest_blocks.first(),
             latest_blocks.last(),
         );
+        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent on block_retriever.blocks");
 
         // do not try to shorten the latest_blocks list if history range exists
         // if history range exists then we want to update for the full range of blocks,
@@ -252,14 +254,20 @@ where
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
+        let start = Instant::now();
         let event_range = self.event_block_range().await?;
+        tracing::info!(elapsed = ?start.elapsed(), "newlog: time spent on event_block_range");
 
         if let Some(range) = event_range.history_range {
+            let start = Instant::now();
             self.update_events_from_old_blocks(range).await?;
+            tracing::info!(elapsed = ?start.elapsed(), "newlog: time spent on update_events_from_old_blocks");
         }
         if !event_range.latest_blocks.is_empty() {
+            let start = Instant::now();
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
                 .await?;
+            tracing::info!(elapsed = ?start.elapsed(), "newlog: time spent on update_events_from_latest_blocks");
         }
         Ok(())
     }
@@ -385,8 +393,10 @@ where
         &self,
         blocks: &[BlockNumberHash],
     ) -> (Vec<BlockNumberHash>, Vec<EthcontractEvent<C::Event>>) {
+        let start_total = Instant::now();
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
         for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
+            let start = Instant::now();
             for (i, result) in future::join_all(
                 chunk
                     .iter()
@@ -411,7 +421,9 @@ where
                     Err(_) => return (blocks_filtered, events),
                 }
             }
+            tracing::info!(elapsed = ?start.elapsed(), chunk_size = %chunk.len(), "newlog: time spent on past_events_by_block_hashes chunk");
         }
+        tracing::info!(elapsed = ?start_total.elapsed(), "newlog: time spent on past_events_by_block_hashes total");
 
         (blocks_filtered, events)
     }
