@@ -12,7 +12,6 @@ use {
         infra::{
             self,
             solvers::dto::{settle, solve},
-            Driver,
         },
         maintenance::Maintenance,
         run::Liveness,
@@ -280,7 +279,7 @@ impl RunLoop {
         self: &Arc<Self>,
         auction_id: Id,
         single_run_start: Instant,
-        driver: &Arc<Driver>,
+        driver: &Arc<infra::Driver>,
         solution: &SolutionWithId,
         block_deadline: u64,
     ) {
