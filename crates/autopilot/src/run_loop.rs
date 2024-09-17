@@ -690,14 +690,14 @@ impl RunLoop {
             .into_iter()
             .filter_map(|solution| match solution {
                 Ok(solution) => {
-                    Metrics::solution_ok(&driver.clone());
+                    Metrics::solution_ok(&driver);
                     Some(Participant {
                         driver: driver.clone(),
                         solution,
                     })
                 }
                 Err(err) => {
-                    Metrics::solution_err(&driver.clone(), &err);
+                    Metrics::solution_err(&driver, &err);
                     tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
                     None
                 }
