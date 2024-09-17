@@ -4,13 +4,15 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            competition::{self, SolutionError, TradedAmounts},
+            auction::Id,
+            competition::{self, SolutionError, SolutionWithId, TradedAmounts},
             eth,
             OrderUid,
         },
         infra::{
             self,
             solvers::dto::{settle, solve},
+            Driver,
         },
         maintenance::Maintenance,
         run::Liveness,
@@ -261,45 +263,65 @@ impl RunLoop {
                 return;
             }
 
-            let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
-            self.in_flight_orders
-                .lock()
+            self.start_settlement_execution(
+                auction_id,
+                single_run_start,
+                driver,
+                solution,
+                block_deadline,
+            )
+            .await;
+        }
+    }
+
+    /// Starts settlement execution in a background task. The function is async
+    /// only to get access to the locks.
+    async fn start_settlement_execution(
+        self: &Arc<Self>,
+        auction_id: Id,
+        single_run_start: Instant,
+        driver: &Arc<Driver>,
+        solution: &SolutionWithId,
+        block_deadline: u64,
+    ) {
+        let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
+        self.in_flight_orders
+            .lock()
+            .await
+            .extend(solved_order_uids.clone());
+
+        let solution_id = solution.id();
+        let driver_ = driver.clone();
+        let self_ = self.clone();
+
+        let settle_fut = async move {
+            tracing::info!(driver = %driver_.name, "settling");
+            let submission_start = Instant::now();
+
+            match self_
+                .settle(
+                    driver_.clone(),
+                    solution_id,
+                    solved_order_uids,
+                    auction_id,
+                    block_deadline,
+                )
                 .await
-                .extend(solved_order_uids.clone());
-
-            let solution_id = solution.id();
-            let driver_ = driver.clone();
-            let self_ = self.clone();
-
-            let settle_fut = async move {
-                tracing::info!(driver = %driver_.name, "settling");
-                let submission_start = Instant::now();
-
-                match self_
-                    .settle(
-                        driver_.clone(),
-                        solution_id,
-                        solved_order_uids,
-                        auction_id,
-                        block_deadline,
-                    )
-                    .await
-                {
-                    Ok(()) => {
-                        Metrics::settle_ok(&driver_, submission_start.elapsed());
-                    }
-                    Err(err) => {
-                        Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
-                        tracing::warn!(?err, driver = %driver_.name, "settlement failed");
-                    }
+            {
+                Ok(()) => {
+                    Metrics::settle_ok(&driver_, submission_start.elapsed());
                 }
-                Metrics::single_run_completed(single_run_start.elapsed());
-            };
-
-            let sender = self.get_settlement_queue_sender(&driver.name).await;
-            if let Err(err) = sender.send(Box::pin(settle_fut)) {
-                tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
+                Err(err) => {
+                    Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
+                    tracing::warn!(?err, driver = %driver_.name, "settlement failed");
+                }
             }
+            Metrics::single_run_completed(single_run_start.elapsed());
+        };
+
+        let sender = self.get_settlement_queue_sender(&driver.name).await;
+        if let Err(err) = sender.send(Box::pin(settle_fut)) {
+            tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
         }
     }
 
