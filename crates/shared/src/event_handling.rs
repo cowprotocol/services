@@ -10,7 +10,7 @@ use {
     },
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
-    std::{sync::Arc, time::Instant},
+    std::sync::Arc,
     tokio::sync::Mutex,
 };
 
@@ -273,7 +273,6 @@ where
     }
 
     async fn update_events_from_old_blocks(&mut self, range: RangeInclusive<u64>) -> Result<()> {
-        let start_time = Instant::now();
         // first get the blocks needed to update `last_handled_blocks` because if it
         // fails, it's safer to fail at the beginning of the function before we
         // update Storage
@@ -284,16 +283,13 @@ where
                 *range.end(),
             )?)
             .await?;
-        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent retrieving blocks");
 
-        let start_time = Instant::now();
         let events = self
             .past_events_by_block_number_range(&range)
             .await
             .context("failed to get past events")?
             .chunks(INSERT_EVENT_BATCH_SIZE)
             .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
-        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent retrieving events stream");
         futures::pin_mut!(events);
         // We intentionally do not go with the obvious approach of deleting old events
         // first and then inserting new ones. Instead, we make sure that the
@@ -322,14 +318,7 @@ where
         // not updated it in a long time resulting in many missing events which
         // we would all have to in one transaction.
         let mut have_deleted_old_events = false;
-        while let Some(events_chunk) = {
-            let start_time = Instant::now();
-            let next_chunk = events.next().await;
-            if let Some(Ok(chunk)) = &next_chunk {
-                tracing::info!(elapsed = ?start_time.elapsed(), chunk_size = %chunk.len(), "newlog: time spent retrieving events chunk");
-            }
-            next_chunk
-        } {
+        while let Some(events_chunk) = events.next().await {
             // Early return on error (through `?`) is important here so that the second
             // !have_deleted_old_events check (after the loop) is correct.
             let unwrapped_events = events_chunk.context("failed to get next chunk of events")?;
