@@ -89,6 +89,7 @@ impl CoinGecko {
         tokens: &HashSet<Token>,
     ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
         let mut url = crate::url::join(&self.base_url, &self.chain);
+        metrics::batch_size(tokens.len());
         url.query_pairs_mut()
             .append_pair(
                 "contract_addresses",
@@ -266,6 +267,27 @@ mod observe {
                 tracing::warn!(%endpoint, ?err, "failed to receive response from CoinGecko")
             }
         }
+    }
+}
+
+mod metrics {
+    use {observe::metrics, prometheus::Histogram};
+
+    #[derive(prometheus_metric_storage::MetricStorage)]
+    struct Metrics {
+        /// Tracks the CoinGecko batch size
+        #[metric(buckets(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20))]
+        coin_gecko_batch_size: Histogram,
+    }
+
+    impl Metrics {
+        fn get() -> &'static Self {
+            Metrics::instance(metrics::get_storage_registry()).unwrap()
+        }
+    }
+
+    pub(super) fn batch_size(size: usize) {
+        Metrics::get().coin_gecko_batch_size.observe(size as _);
     }
 }
 
