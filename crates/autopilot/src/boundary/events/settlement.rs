@@ -3,6 +3,7 @@ use {
     anyhow::Result,
     ethrpc::block_stream::RangeInclusive,
     shared::{event_handling::EventStoring, impl_event_retrieving},
+    std::time::Instant,
 };
 
 impl_event_retrieving! {
@@ -35,13 +36,21 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         events: Vec<ethcontract::Event<contracts::gpv2_settlement::Event>>,
         range: RangeInclusive<u64>,
     ) -> Result<()> {
+        let start = Instant::now();
         let mut transaction = self.db.pool.begin().await?;
         let from_block = *range.start();
+        let start_time = Instant::now();
         crate::database::events::replace_events(&mut transaction, events, from_block).await?;
+        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent on replace_events");
+        let start_time = Instant::now();
         OnSettlementEventUpdater::delete_observations(&mut transaction, from_block).await?;
+        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent on delete_observations");
         transaction.commit().await?;
+        tracing::info!(elapsed = ?start.elapsed(), "newlog: time spent on the whole replace_events");
 
+        let start_time = Instant::now();
         self.settlement_updater.update().await;
+        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent on settlement_updater from replace events");
         Ok(())
     }
 
@@ -53,7 +62,9 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         crate::database::events::append_events(&mut transaction, events).await?;
         transaction.commit().await?;
 
+        let start_time = Instant::now();
         self.settlement_updater.update().await;
+        tracing::info!(elapsed = ?start_time.elapsed(), "newlog: time spent on settlement_updater from append events");
         Ok(())
     }
 }
