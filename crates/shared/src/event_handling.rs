@@ -10,7 +10,7 @@ use {
     },
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
-    std::sync::Arc,
+    std::{sync::Arc, time::Instant},
     tokio::sync::Mutex,
 };
 
