@@ -39,7 +39,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tokio::sync::{mpsc, mpsc::UnboundedSender, Mutex},
+    tokio::sync::{mpsc, Mutex},
     tracing::Instrument,
 };
 
@@ -336,7 +336,7 @@ impl RunLoop {
     async fn get_settlement_queue_sender(
         self: &Arc<Self>,
         driver_name: &str,
-    ) -> UnboundedSender<BoxFuture<'static, ()>> {
+    ) -> mpsc::UnboundedSender<BoxFuture<'static, ()>> {
         let mut settlement_queues = self.settlement_queues.lock().await;
         match settlement_queues.get(driver_name) {
             Some(sender) => sender.clone(),
