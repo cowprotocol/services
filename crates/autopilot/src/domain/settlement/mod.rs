@@ -144,7 +144,6 @@ impl Settlement {
             gas_price: Default::default(),
             solver: solution.solver(),
             block: Default::default(),
-            auction,
             trades: solution
                 .orders()
                 .iter()
@@ -155,8 +154,8 @@ impl Settlement {
                         buy: traded.buy,
                         side: traded.side,
                         executed: match traded.side {
-                            domain::auction::order::Side::Buy => traded.traded_buy,
-                            domain::auction::order::Side::Sell => traded.traded_sell,
+                            domain::auction::order::Side::Buy => traded.executed_buy.0.into(),
+                            domain::auction::order::Side::Sell => traded.executed_sell.0.into(),
                         },
                         prices: transaction::Prices {
                             uniform: transaction::ClearingPrices {
@@ -174,8 +173,8 @@ impl Settlement {
                                     .into(),
                             },
                             custom: transaction::ClearingPrices {
-                                sell: traded.buy.into(),
-                                buy: traded.sell.into(),
+                                sell: traded.executed_buy.into(),
+                                buy: traded.executed_sell.into(),
                             },
                         },
                         // rest of the data irrelevant for score computation
@@ -191,6 +190,7 @@ impl Settlement {
                     trade::Trade::new(trade, &auction, 0)
                 })
                 .collect(),
+            auction,
         }
     }
 }
