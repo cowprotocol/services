@@ -61,7 +61,7 @@ pub struct RunLoop {
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     pub maintenance: Arc<Maintenance>,
-    /// Queues by solver for executing settle futures one by one guarantying
+    /// Queues by solver for executing settle futures one by one guaranteeing
     /// FIFO execution order.
     settlement_queues: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<BoxFuture<'static, ()>>>>>,
 }
@@ -775,8 +775,6 @@ impl RunLoop {
             .lock()
             .await
             .retain(|order| !solved_order_uids.contains(order));
-
-        self.settlement_queues.lock().await.remove(&driver.name);
 
         Ok(())
     }
