@@ -445,7 +445,7 @@ async fn get_native_prices(
     native_price_estimator: &CachingNativePriceEstimator,
 ) -> HashMap<H160, U256> {
     native_price_estimator
-        .estimate_native_prices(tokens)
+        .estimate_native_prices_with_timeout(tokens)
         .await
         .into_iter()
         .flat_map(|(token, result)| {
