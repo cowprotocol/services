@@ -291,8 +291,8 @@ impl RunLoop {
             .extend(solved_order_uids.clone());
 
         let solution_id = solution.id();
-        let driver_ = driver.clone();
         let self_ = self.clone();
+        let driver_ = driver.clone();
 
         let settle_fut = async move {
             tracing::info!(driver = %driver_.name, "settling");
@@ -300,7 +300,7 @@ impl RunLoop {
 
             match self_
                 .settle(
-                    driver_.clone(),
+                    &driver_,
                     solution_id,
                     solved_order_uids,
                     auction_id,
@@ -755,7 +755,7 @@ impl RunLoop {
     /// transaction has been mined.
     async fn settle(
         &self,
-        driver: Arc<infra::Driver>,
+        driver: &infra::Driver,
         solution_id: u64,
         solved_order_uids: HashSet<OrderUid>,
         auction_id: i64,
@@ -766,7 +766,7 @@ impl RunLoop {
             submission_deadline_latest_block,
         };
         let tx_hash = self
-            .wait_for_settlement(driver.clone(), auction_id, request)
+            .wait_for_settlement(driver, auction_id, request)
             .await?;
         tracing::debug!(?tx_hash, "solution settled");
 
@@ -782,7 +782,7 @@ impl RunLoop {
     /// returned a result.
     async fn wait_for_settlement(
         &self,
-        driver: Arc<infra::Driver>,
+        driver: &infra::Driver,
         auction_id: i64,
         request: settle::Request,
     ) -> Result<eth::TxId, SettleError> {
