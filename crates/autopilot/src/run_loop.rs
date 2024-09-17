@@ -670,7 +670,7 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Vec<Participant> {
         let start = Instant::now();
-        let result = self.try_solve(driver.clone(), request).await;
+        let result = self.try_solve(&driver, request).await;
         let solutions = match result {
             Ok(solutions) => {
                 Metrics::solve_ok(&driver, start.elapsed());
@@ -709,7 +709,7 @@ impl RunLoop {
     /// Sends `/solve` request to the driver and forwards errors to the caller.
     async fn try_solve(
         &self,
-        driver: Arc<infra::Driver>,
+        driver: &infra::Driver,
         request: &solve::Request,
     ) -> Result<
         Vec<Result<competition::SolutionWithId, domain::competition::SolutionError>>,
