@@ -42,23 +42,26 @@ use {
     tracing::Instrument,
 };
 
-pub struct RunLoop {
-    eth: infra::Ethereum,
-    persistence: infra::Persistence,
-    drivers: Vec<Arc<infra::Driver>>,
-
-    solvable_orders_cache: Arc<SolvableOrdersCache>,
-    market_makable_token_list: AutoUpdatingTokenList,
-    submission_deadline: u64,
-    max_settlement_transaction_wait: Duration,
-    solve_deadline: Duration,
-    in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
-    liveness: Arc<Liveness>,
-    synchronization: RunLoopMode,
+pub struct Config {
+    pub submission_deadline: u64,
+    pub max_settlement_transaction_wait: Duration,
+    pub solve_deadline: Duration,
+    pub synchronization: RunLoopMode,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
-    max_run_loop_delay: Duration,
+    pub max_run_loop_delay: Duration,
+}
+
+pub struct RunLoop {
+    config: Config,
+    eth: infra::Ethereum,
+    persistence: infra::Persistence,
+    drivers: Vec<Arc<infra::Driver>>,
+    solvable_orders_cache: Arc<SolvableOrdersCache>,
+    market_makable_token_list: AutoUpdatingTokenList,
+    in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
+    liveness: Arc<Liveness>,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
     maintenance: Arc<Maintenance>,
@@ -70,32 +73,24 @@ pub struct RunLoop {
 impl RunLoop {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        config: Config,
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
         market_makable_token_list: AutoUpdatingTokenList,
-        submission_deadline: u64,
-        max_settlement_transaction_wait: Duration,
-        solve_deadline: Duration,
         liveness: Arc<Liveness>,
-        synchronization: RunLoopMode,
-        max_run_loop_delay: Duration,
         maintenance: Arc<Maintenance>,
     ) -> Self {
         Self {
+            config,
             eth,
             persistence,
             drivers,
             solvable_orders_cache,
             market_makable_token_list,
-            submission_deadline,
-            max_settlement_transaction_wait,
-            solve_deadline,
             in_flight_orders: Default::default(),
             liveness,
-            synchronization,
-            max_run_loop_delay,
             maintenance,
             settlement_queues: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -104,7 +99,7 @@ impl RunLoop {
     pub async fn run_forever(self, update_interval: Duration) -> ! {
         Maintenance::spawn_background_task(
             self.maintenance.clone(),
-            self.synchronization,
+            self.config.synchronization,
             self.eth.current_block().clone(),
             update_interval,
         );
@@ -133,7 +128,7 @@ impl RunLoop {
         prev_block: &mut Option<H256>,
     ) -> Option<domain::AuctionWithId> {
         // wait for appropriate time to start building the auction
-        let start_block = match self.synchronization {
+        let start_block = match self.config.synchronization {
             RunLoopMode::Unsynchronized => {
                 // Sleep a bit to avoid busy loops.
                 tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
@@ -142,11 +137,11 @@ impl RunLoop {
             RunLoopMode::SyncToBlockchain => {
                 let current_block = *self.eth.current_block().borrow();
                 let time_since_last_block = current_block.observed_at.elapsed();
-                let auction_block = if time_since_last_block > self.max_run_loop_delay {
+                let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
                     if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
                         // don't emit warning if we finished prev run loop within the same block
                         tracing::warn!(
-                            missed_by = ?time_since_last_block - self.max_run_loop_delay,
+                            missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
                             "missed optimal auction start, wait for new block"
                         );
                     }
@@ -243,7 +238,7 @@ impl RunLoop {
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
-            let block_deadline = competition_simulation_block + self.submission_deadline;
+            let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
             // Post-processing should not be executed asynchronously since it includes steps
             // of storing all the competition/auction-related data to the DB.
@@ -495,7 +490,7 @@ impl RunLoop {
             id,
             auction,
             &self.market_makable_token_list.all(),
-            self.solve_deadline,
+            self.config.solve_deadline,
         );
         let request = &request;
 
@@ -715,7 +710,7 @@ impl RunLoop {
         Vec<Result<competition::SolutionWithId, domain::competition::SolutionError>>,
         SolveError,
     > {
-        let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
+        let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
             .map_err(SolveError::Failure)?;
@@ -785,8 +780,10 @@ impl RunLoop {
         request: settle::Request,
     ) -> Result<eth::TxId, SettleError> {
         match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
-            Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
+            Box::pin(
+                self.wait_for_settlement_transaction(auction_id, self.config.submission_deadline),
+            ),
+            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
         )
         .await
         {

@@ -19,7 +19,7 @@ use {
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         maintenance::Maintenance,
-        run_loop::RunLoop,
+        run_loop::{self, RunLoop},
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
@@ -521,7 +521,16 @@ pub async fn run(args: Arguments) {
         );
     }
 
+    let run_loop_config = run_loop::Config {
+        submission_deadline: args.submission_deadline as u64,
+        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
+        solve_deadline: args.solve_deadline,
+        synchronization: args.run_loop_mode,
+        max_run_loop_delay: args.max_run_loop_delay,
+    };
+
     let run = RunLoop::new(
+        run_loop_config,
         eth,
         persistence.clone(),
         args.drivers
@@ -536,12 +545,7 @@ pub async fn run(args: Arguments) {
             .collect(),
         solvable_orders_cache,
         market_makable_token_list,
-        args.submission_deadline as u64,
-        args.max_settlement_transaction_wait,
-        args.solve_deadline,
         liveness.clone(),
-        args.run_loop_mode,
-        args.max_run_loop_delay,
         Arc::new(maintenance),
     );
     run.run_forever(args.auction_update_interval).await;
