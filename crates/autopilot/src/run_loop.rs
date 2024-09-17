@@ -6,7 +6,7 @@ use {
             self,
             auction::Id,
             competition::{self, SolutionError, SolutionWithId, TradedAmounts},
-            eth,
+            eth::{self, TxId},
             OrderUid,
         },
         infra::{
@@ -307,8 +307,9 @@ impl RunLoop {
                 )
                 .await
             {
-                Ok(()) => {
+                Ok(tx_hash) => {
                     Metrics::settle_ok(&driver_, submission_start.elapsed());
+                    tracing::debug!(?tx_hash, driver = %driver_.name, "solution settled");
                 }
                 Err(err) => {
                     Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
@@ -759,7 +760,7 @@ impl RunLoop {
         solved_order_uids: HashSet<OrderUid>,
         auction_id: i64,
         submission_deadline_latest_block: u64,
-    ) -> Result<(), SettleError> {
+    ) -> Result<TxId, SettleError> {
         let request = settle::Request {
             solution_id,
             submission_deadline_latest_block,
@@ -772,7 +773,7 @@ impl RunLoop {
             .await
             .retain(|order| !solved_order_uids.contains(order));
 
-        result.map(|tx_hash| tracing::debug!(?tx_hash, "solution settled"))
+        result
     }
 
     /// Wait for either the settlement transaction to be mined or the driver
