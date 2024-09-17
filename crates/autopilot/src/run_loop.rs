@@ -320,41 +320,23 @@ impl RunLoop {
         self: &Arc<Self>,
         driver_name: &str,
     ) -> UnboundedSender<BoxFuture<'static, ()>> {
-        const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
-
         let mut settlement_queues = self.settlement_queues.lock().await;
         match settlement_queues.get(driver_name) {
             Some(sender) => sender.clone(),
             None => {
                 let (tx, mut rx) = mpsc::unbounded_channel::<BoxFuture<'static, ()>>();
                 let driver_name = driver_name.to_string();
-                let self_clone = self.clone();
+                let self_ = self.clone();
 
                 settlement_queues.insert(driver_name.clone(), tx.clone());
 
                 tokio::spawn(async move {
-                    let mut deadline = Instant::now() + IDLE_TIMEOUT;
-                    loop {
-                        match tokio::time::timeout_at(deadline.into(), rx.recv()).await {
-                            Ok(Some(fut)) => {
-                                fut.await;
-                                deadline = Instant::now() + IDLE_TIMEOUT;
-                            }
-                            Ok(None) => {
-                                tracing::info!(driver = %driver_name, "settlement execution queue stopped");
-                                break;
-                            }
-                            // Timeout occurred, no new futures were received.
-                            Err(_) => {
-                                break;
-                            }
-                        }
+                    while let Some(fut) = rx.recv().await {
+                        fut.await;
                     }
-                    self_clone
-                        .settlement_queues
-                        .lock()
-                        .await
-                        .remove(&driver_name);
+
+                    tracing::info!(driver = %driver_name, "settlement execution queue stopped");
+                    self_.settlement_queues.lock().await.remove(&driver_name);
                 });
                 tx
             }
