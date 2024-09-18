@@ -34,6 +34,7 @@ CREATE INDEX idx_solution_id_on_solution ON proposed_solutions(solution_id);
 
 -- Table to store all order executions of a solution
 CREATE TABLE proposed_solution_executions (
+   auction_id bigint NOT NULL,
    solution_id numeric NOT NULL,
    order_uid bytea NOT NULL,
    sell_token bytea NOT NULL,
@@ -50,8 +51,8 @@ CREATE TABLE proposed_solution_executions (
    -- The effective amount the user received after all fees.
    executed_buy numeric(78,0) NOT NULL,
 
-   PRIMARY (solution_id, order_uid)
+   PRIMARY (auction_id, solution_id, order_uid)
 );
 
--- For performant JOINs on solution_id
-CREATE INDEX idx_solution_id_on_execution ON proposed_solution_executions(solution_id);
+-- For performant JOINs on auction_id
+CREATE INDEX idx_auction_id_on_execution ON proposed_solution_executions(auction_id);
