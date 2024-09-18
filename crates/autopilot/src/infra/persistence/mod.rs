@@ -192,8 +192,7 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         let hashes = database::settlements::get_transactions_by_auction_id(&mut ex, auction_id)
-            .await
-            .context("get_transactions_by_auction_id")?
+            .await?
             .into_iter()
             .map(|(hash, solver)| (H256(hash.0).into(), H160(solver.0).into()))
             .collect();
