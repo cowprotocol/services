@@ -1,32 +1,14 @@
 use {
-    crate::{events::EventIndex, PgTransaction, TransactionHash},
+    crate::{Address, PgTransaction, TransactionHash},
     sqlx::{Executor, PgConnection},
 };
 
-pub async fn get_hash_by_event(
-    ex: &mut PgConnection,
-    event: &EventIndex,
-) -> Result<TransactionHash, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT tx_hash
-FROM settlements
-WHERE
-    block_number = $1 AND
-    log_index = $2
-    "#;
-    sqlx::query_scalar::<_, TransactionHash>(QUERY)
-        .bind(event.block_number)
-        .bind(event.log_index)
-        .fetch_one(ex)
-        .await
-}
-
-pub async fn get_hashes_by_auction_id(
+pub async fn get_transactions_by_auction_id(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> Result<Vec<TransactionHash>, sqlx::Error> {
+) -> Result<Vec<(TransactionHash, Address)>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT tx_hash
+SELECT tx_hash, solver
 FROM settlements
 WHERE
     auction_id = $1

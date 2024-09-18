@@ -26,7 +26,7 @@ use {
     },
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    primitive_types::H256,
+    primitive_types::{H160, H256},
     shared::db_order_conversions::full_order_into_model_order,
     std::{
         collections::{HashMap, HashSet},
@@ -179,20 +179,25 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// For a given auction, finds all settlements and returns their transaction
-    /// hashes.
+    /// For a given auction, finds all settlements and returns their associated
+    /// pairs of <transaction_hash, solver>.
     pub async fn find_settlement_transactions(
         &self,
         auction_id: i64,
-    ) -> Result<Vec<eth::TxId>, DatabaseError> {
-        Ok(self
-            .postgres
-            .find_settlement_transactions(auction_id)
+    ) -> Result<Vec<(eth::TxId, eth::Address)>, DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["find_settlement_transactions"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        let hashes = database::settlements::get_transactions_by_auction_id(&mut ex, auction_id)
             .await
-            .map_err(DatabaseError)?
+            .context("get_transactions_by_auction_id")?
             .into_iter()
-            .map(eth::TxId)
-            .collect())
+            .map(|(hash, solver)| (H256(hash.0).into(), H160(solver.0).into()))
+            .collect();
+        Ok(hashes)
     }
 
     /// Checks if an auction already has an accociated settlement.

@@ -619,25 +619,9 @@ impl RunLoop {
             solution_id: solved.id(),
             submission_deadline_latest_block,
         };
-        let tx_hash = self
-            .wait_for_settlement(driver, auction_id, request)
-            .await?;
-        tracing::debug!(?tx_hash, "solution settled");
-
-        Ok(())
-    }
-
-    /// Wait for either the settlement transaction to be mined or the driver
-    /// returned a result.
-    async fn wait_for_settlement(
-        &self,
-        driver: &infra::Driver,
-        auction_id: i64,
-        request: settle::Request,
-    ) -> Result<eth::TxId, SettleError> {
-        match futures::future::select(
+        let (tx_hash, solver) = match futures::future::select(
             Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
-            Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
+            Box::pin(driver.settle(&request.clone(), self.max_settlement_transaction_wait)),
         )
         .await
         {
@@ -649,7 +633,16 @@ impl RunLoop {
                 })?;
                 onchain_task.await
             }
+        }?;
+        if solved.solver() != solver {
+            tracing::warn!(
+                ?solver,
+                solution = %solved.id(),
+                "solver mismatch in settlement transaction"
+            );
         }
+        tracing::debug!(?tx_hash, "solution settled");
+        Ok(())
     }
 
     /// Tries to find a `settle` contract call with calldata ending in `tag`.
@@ -660,7 +653,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
-    ) -> Result<eth::TxId, SettleError> {
+    ) -> Result<(eth::TxId, eth::Address), SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
@@ -675,10 +668,10 @@ impl RunLoop {
                 .find_settlement_transactions(auction_id)
                 .await
             {
-                Ok(hashes) if hashes.is_empty() => {}
-                Ok(hashes) => {
-                    if let Some(hash) = hashes.into_iter().next() {
-                        return Ok(hash);
+                Ok(transactions) if transactions.is_empty() => {}
+                Ok(transactions) => {
+                    if let Some(transaction) = transactions.into_iter().next() {
+                        return Ok(transaction);
                     }
                 }
                 Err(err) => {
