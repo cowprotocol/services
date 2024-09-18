@@ -9,6 +9,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
+    tracing::Instrument,
 };
 
 pub struct CachingDetector {
@@ -87,7 +88,15 @@ impl CachingDetector {
                     }
                     let detector = detector.clone();
                     Some(async move {
-                        match detector.inner.detect(token).await {
+                        match detector
+                            .inner
+                            .detect(token)
+                            .instrument(tracing::info_span!(
+                                "token_quality",
+                                token = format!("{token:#x}")
+                            ))
+                            .await
+                        {
                             Ok(result) => Some((token, result)),
                             Err(err) => {
                                 tracing::warn!(

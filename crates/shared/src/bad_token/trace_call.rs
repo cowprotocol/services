@@ -73,9 +73,17 @@ impl TraceCallDetector {
         // implementation sending to an address that does not have any balance
         // yet (implicitly 0) causes an allocation.
         let request = self.create_trace_request(token, amount, take_from);
-        let traces = trace_many::trace_many(request, &self.web3)
-            .await
-            .context("trace_many")?;
+        let traces = match trace_many::trace_many(request, &self.web3).await {
+            Ok(result) => result,
+            Err(web3::Error::Transport(e)) => {
+                tracing::warn!(
+                    error=?e,
+                    "unable to perform trace call with configured node, assume good quality"
+                );
+                return Ok(TokenQuality::Good);
+            }
+            Err(e) => return Err(e).context("trace_many"),
+        };
         Self::handle_response(&traces, amount, take_from)
     }
 
@@ -663,7 +671,7 @@ mod tests {
                     UniswapV3Finder::new(
                         IUniswapV3Factory::deployed(&web3).await.unwrap(),
                         base_tokens.to_vec(),
-                        FeeValues::Dynamic,
+                        FeeValues::Static,
                     )
                     .await
                     .unwrap(),

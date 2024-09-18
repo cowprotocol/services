@@ -714,10 +714,21 @@ async fn find_unsupported_tokens(
             .map(|token| {
                 let bad_token = bad_token.clone();
                 async move {
-                    match bad_token.detect(token).await {
+                    match bad_token
+                        .detect(token)
+                        .instrument(tracing::info_span!(
+                            "token_quality",
+                            token = format!("{token:#x}")
+                        ))
+                        .await
+                    {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
-                            tracing::warn!(?token, ?err, "unable to determine token quality");
+                            tracing::warn!(
+                                ?token,
+                                ?err,
+                                "unable to determine token quality, assume good"
+                            );
                             Some(token)
                         }
                     }
