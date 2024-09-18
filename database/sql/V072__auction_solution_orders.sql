@@ -14,9 +14,6 @@ CREATE TABLE auctions (
 -- This design allows for multiple solutions from a single solver
 CREATE TABLE proposed_solutions (
    auction_id bigint NOT NULL,
-   -- The block number until which the solutions should be settled
-   -- Not NULL for winning orders
-   deadline bigint,
    -- solver submission address
    solver bytea NOT NULL,
    -- Has to be unique accross auctions (hash of the (auction_id + solver + solutionId received from solver)?)
