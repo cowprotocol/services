@@ -252,22 +252,11 @@ impl RunLoop {
             .iter()
             .map(|participant| participant.solution.solver().into())
             .collect::<HashSet<_>>();
-
-        let mut fee_policies = Vec::new();
-        for order_id in winning_solution.order_ids() {
-            match auction
-                .orders
-                .iter()
-                .find(|auction_order| &auction_order.uid == order_id)
-            {
-                Some(auction_order) => {
-                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
-                }
-                None => {
-                    tracing::debug!(?order_id, "order not found in auction");
-                }
-            }
-        }
+        let fee_policies = auction
+            .orders
+            .iter()
+            .map(|order| (order.uid, order.protocol_fees.clone()))
+            .collect::<Vec<_>>();
 
         let competition_table = SolverCompetitionDB {
             auction_start_block: auction.block,
