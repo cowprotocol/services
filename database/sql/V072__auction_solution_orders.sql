@@ -29,8 +29,6 @@ CREATE TABLE proposed_solutions (
 
 -- For performant filtering of solutions by auction_id and JOINs on auction_id
 CREATE INDEX idx_auction_id ON proposed_solutions(auction_id);
--- For performant JOINs on solution_id
-CREATE INDEX idx_solution_id_on_solution ON proposed_solutions(solution_id);
 
 -- Table to store all order executions of a solution
 CREATE TABLE proposed_solution_executions (
