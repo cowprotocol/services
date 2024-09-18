@@ -667,15 +667,12 @@ impl RunLoop {
                 .persistence
                 .find_settlement_transactions(auction_id)
                 .await
+                .map(|mut hashes| hashes.pop())
             {
-                Ok(transactions) if transactions.is_empty() => {}
-                Ok(transactions) => {
-                    if let Some(transaction) = transactions.into_iter().next() {
-                        return Ok(transaction);
-                    }
-                }
+                Ok(Some(transaction)) => return Ok(transaction),
+                Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
+                    tracing::warn!(?err, "failed to fetch recent settlement transactions");
                 }
             }
             if block.number >= deadline {
