@@ -55,4 +55,4 @@ CREATE TABLE proposed_solution_executions (
 );
 
 -- For performant JOINs on auction_id
-CREATE INDEX idx_auction_id_on_execution ON proposed_solution_executions(auction_id);
+CREATE INDEX idx_auction_id_solution_id_on_execution ON proposed_solution_executions(auction_id, solution_id);
