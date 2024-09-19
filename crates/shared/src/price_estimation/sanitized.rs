@@ -41,15 +41,7 @@ impl SanitizedPriceEstimator {
     /// Checks if the traded tokens are supported by the protocol.
     async fn handle_bad_tokens(&self, query: &Query) -> Result<(), PriceEstimationError> {
         for token in [query.sell_token, query.buy_token] {
-            match self
-                .bad_token_detector
-                .detect(token)
-                .instrument(tracing::info_span!(
-                    "token_quality",
-                    token = format!("{token:#x}")
-                ))
-                .await
-            {
+            match self.bad_token_detector.detect(token).await {
                 Err(err) => return Err(PriceEstimationError::ProtocolInternal(err)),
                 Ok(TokenQuality::Bad { reason }) => {
                     return Err(PriceEstimationError::UnsupportedToken { token, reason })

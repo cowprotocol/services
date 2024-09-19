@@ -435,10 +435,6 @@ impl OrderValidating for OrderValidator {
             if let TokenQuality::Bad { reason } = self
                 .bad_token_detector
                 .detect(token)
-                .instrument(tracing::info_span!(
-                    "token_quality",
-                    token = format!("{token:#x}")
-                ))
                 .await
                 .map_err(PartialValidationError::Other)?
             {

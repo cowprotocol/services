@@ -33,7 +33,14 @@ pub struct InstrumentedBadTokenDetector {
 #[async_trait::async_trait]
 impl BadTokenDetecting for InstrumentedBadTokenDetector {
     async fn detect(&self, token: ethcontract::H160) -> Result<TokenQuality> {
-        let result = self.inner.detect(token).await;
+        let result = self
+            .inner
+            .detect(token)
+            .instrument(tracing::info_span!(
+                "token_quality",
+                token = format!("{token:#x}")
+            ))
+            .await;
 
         let label = match &result {
             Ok(TokenQuality::Good) => "good",
