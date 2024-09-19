@@ -11,6 +11,7 @@ use {
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
+    prometheus::IntCounterVec,
     rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
@@ -517,6 +518,27 @@ pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRation
         sell_amount.to_big_int(),
         buy_amount.to_big_int(),
     ))
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub(in crate::price_estimation) struct Metrics {
+    /// number of requests done by each estimator
+    #[metric(labels("requests"))]
+    native_price_requests: IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Metrics {
+        Metrics::instance(observe::metrics::get_storage_registry())
+            .expect("unexpected error getting metrics instance")
+    }
+
+    pub(in crate::price_estimation) fn inc_estimator(estimator: &str) {
+        Metrics::get()
+            .native_price_requests
+            .with_label_values(&[estimator])
+            .inc_by(1);
+    }
 }
 
 pub const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);

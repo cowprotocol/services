@@ -6,7 +6,7 @@ use {
         PriceEstimating,
         Query,
     },
-    crate::trade_finding::external::ExternalTradeFinder,
+    crate::{price_estimation::Metrics, trade_finding::external::ExternalTradeFinder},
     ethrpc::block_stream::CurrentBlockWatcher,
     rate_limit::RateLimiter,
     reqwest::{Client, Url},
@@ -17,6 +17,7 @@ pub struct ExternalPriceEstimator(TradeEstimator);
 
 impl ExternalPriceEstimator {
     pub fn new(
+        name: &str,
         driver: Url,
         client: Client,
         rate_limiter: Arc<RateLimiter>,
@@ -32,6 +33,7 @@ impl ExternalPriceEstimator {
             )),
             rate_limiter,
             driver.to_string(),
+            name,
         ))
     }
 
@@ -42,6 +44,7 @@ impl ExternalPriceEstimator {
 
 impl PriceEstimating for ExternalPriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        Metrics::inc_estimator(self.0.name());
         self.0.estimate(query)
     }
 }

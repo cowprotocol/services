@@ -1,6 +1,9 @@
 use {
     super::{NativePrice, NativePriceEstimateResult, NativePriceEstimating},
-    crate::{price_estimation::PriceEstimationError, token_info::TokenInfoFetching},
+    crate::{
+        price_estimation::{Metrics, PriceEstimationError},
+        token_info::TokenInfoFetching,
+    },
     anyhow::{anyhow, Context, Result},
     ethrpc::block_stream::{into_stream, CurrentBlockWatcher},
     futures::{future::BoxFuture, FutureExt, StreamExt},
@@ -90,6 +93,7 @@ impl OneInch {
 impl NativePriceEstimating for OneInch {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
+            Metrics::inc_estimator("OneInch");
             let prices = self.prices.lock().unwrap();
             prices
                 .get(&token)

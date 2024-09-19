@@ -23,10 +23,12 @@ use {
 
 /// A `TradeFinding`-based price estimator with request sharing and rate
 /// limiting.
+#[derive(Clone)]
 pub struct TradeEstimator {
     inner: Arc<Inner>,
     sharing: RequestSharing<Arc<Query>, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
     rate_limiter: Arc<RateLimiter>,
+    name: String,
 }
 
 #[derive(Clone)]
@@ -41,6 +43,7 @@ impl TradeEstimator {
         finder: Arc<dyn TradeFinding>,
         rate_limiter: Arc<RateLimiter>,
         label: String,
+        name: &str,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -49,7 +52,12 @@ impl TradeEstimator {
             }),
             sharing: RequestSharing::labelled(format!("estimator_{}", label)),
             rate_limiter,
+            name: name.to_string(),
         }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn with_verifier(mut self, verifier: Arc<dyn TradeVerifying>) -> Self {
@@ -101,16 +109,6 @@ impl Inner {
             solver: quote.solver,
             verified: false,
         })
-    }
-}
-
-impl Clone for TradeEstimator {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            sharing: self.sharing.clone(),
-            rate_limiter: self.rate_limiter.clone(),
-        }
     }
 }
 
