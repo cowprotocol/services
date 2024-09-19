@@ -185,9 +185,6 @@ pub fn onchain_order_placement_error_from(
         Some(DbOnchainOrderPlacementError::InvalidOrderData) => {
             Some(OnchainOrderPlacementError::InvalidOrderData)
         }
-        Some(DbOnchainOrderPlacementError::QuoteNotFound) => {
-            Some(OnchainOrderPlacementError::QuoteNotFound)
-        }
         Some(DbOnchainOrderPlacementError::PreValidationError) => {
             Some(OnchainOrderPlacementError::PreValidationError)
         }
