@@ -19,7 +19,6 @@ use {
     app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     contracts::{HooksTrampoline, WETH9},
-    database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
         interaction::InteractionData,
@@ -167,16 +166,6 @@ pub enum ValidationError {
 impl From<AppDataValidationError> for ValidationError {
     fn from(value: AppDataValidationError) -> Self {
         Self::AppData(value)
-    }
-}
-
-pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrderPlacementError {
-    match error {
-        ValidationError::QuoteNotFound => OnchainOrderPlacementError::QuoteNotFound,
-        ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
-        ValidationError::InvalidQuote => OnchainOrderPlacementError::InvalidQuote,
-        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
-        _ => OnchainOrderPlacementError::Other,
     }
 }
 
@@ -575,7 +564,8 @@ impl OrderValidating for OrderValidator {
                 order.signature.scheme(),
                 true,
                 verification_gas_limit,
-            )?,
+            )
+            .map_err(|_| ValidationError::InvalidSignature)?,
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
@@ -942,16 +932,18 @@ pub fn is_order_outside_market_price(
     })
 }
 
+pub type InvalidSigningScheme = ();
+
 pub fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
     order_placement_via_api: bool,
     verification_gas_limit: u64,
-) -> Result<QuoteSigningScheme, ValidationError> {
+) -> Result<QuoteSigningScheme, InvalidSigningScheme> {
     match (order_placement_via_api, scheme) {
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
         (true, SigningScheme::EthSign) => Ok(QuoteSigningScheme::EthSign),
-        (false, SigningScheme::Eip712) => Err(ValidationError::IncompatibleSigningScheme),
-        (false, SigningScheme::EthSign) => Err(ValidationError::IncompatibleSigningScheme),
+        (false, SigningScheme::Eip712) => Err(()),
+        (false, SigningScheme::EthSign) => Err(()),
         (order_placement_via_api, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign {
             onchain_order: !order_placement_via_api,
         }),

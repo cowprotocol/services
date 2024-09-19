@@ -53,7 +53,7 @@ use {
         order_validation::{
             convert_signing_scheme_into_quote_signing_scheme,
             get_quote_and_check_fee,
-            onchain_order_placement_error_from,
+            ValidationError,
         },
     },
     std::{collections::HashMap, sync::Arc},
@@ -528,7 +528,7 @@ async fn get_quote(
         // For general orders, this could result in a too big subsidy.
         0u64,
     )
-    .map_err(onchain_order_placement_error_from)?;
+    .map_err(|_| OnchainOrderPlacementError::Other)?;
 
     let parameters = QuoteSearchParameters {
         sell_token: H160::from(order_data.sell_token.0),
@@ -548,17 +548,33 @@ async fn get_quote(
         // verified quote here on purpose.
         verification: Default::default(),
     };
-    let fee_amount = match order_data.fee_amount.is_zero() {
-        // If an ETHFlow order was created with 0 fee it means it has the semantics
-        // of a limit order where solvers are responsible of baking in an appropriate execution fee
-        // into their limit prices. In that case we don't require that the fee amount matches one of
-        // our stored quotes.
-        true => None,
-        false => Some(order_data.fee_amount),
-    };
-    get_quote_and_check_fee(quoter, &parameters.clone(), Some(*quote_id), fee_amount)
-        .await
-        .map_err(onchain_order_placement_error_from)
+    let mut result = get_quote_and_check_fee(
+        quoter,
+        &parameters.clone(),
+        Some(*quote_id),
+        Some(order_data.fee_amount),
+    )
+    .await;
+
+    // If we didn't find the quote, recompute a fresh one
+    if matches!(
+        result,
+        Err(ValidationError::QuoteNotFound | ValidationError::InvalidQuote)
+    ) {
+        result = get_quote_and_check_fee(
+            quoter,
+            &parameters.clone(),
+            None,
+            Some(order_data.fee_amount),
+        )
+        .await;
+    }
+
+    result.map_err(|err| match err {
+        ValidationError::Partial(_) => OnchainOrderPlacementError::PreValidationError,
+        ValidationError::NonZeroFee => OnchainOrderPlacementError::NonZeroFee,
+        _ => OnchainOrderPlacementError::Other,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
