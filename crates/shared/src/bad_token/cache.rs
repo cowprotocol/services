@@ -9,7 +9,6 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tracing::Instrument,
 };
 
 pub struct CachingDetector {

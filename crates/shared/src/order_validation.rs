@@ -44,7 +44,6 @@ use {
         DomainSeparator,
     },
     std::{sync::Arc, time::Duration},
-    tracing::Instrument,
 };
 
 #[mockall::automock]

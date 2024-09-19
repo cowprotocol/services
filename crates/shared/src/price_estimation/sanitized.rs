@@ -14,7 +14,6 @@ use {
     model::order::BUY_ETH_ADDRESS,
     primitive_types::H160,
     std::sync::Arc,
-    tracing::Instrument,
 };
 
 /// Verifies that buy and sell tokens are supported and handles

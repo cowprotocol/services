@@ -3,6 +3,7 @@ use {
     anyhow::Result,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
+    tracing::Instrument,
 };
 
 pub trait InstrumentedBadTokenDetectorExt {
