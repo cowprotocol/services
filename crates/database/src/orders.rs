@@ -1652,7 +1652,7 @@ mod tests {
         // no longer solvable, if there was also a onchain order
         // placement error
         let onchain_order_placement = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
+            placement_error: Some(OnchainOrderPlacementError::NonZeroFee),
             ..Default::default()
         };
         let event_index = EventIndex {
