@@ -932,7 +932,7 @@ pub fn is_order_outside_market_price(
     })
 }
 
-pub type InvalidSigningScheme = ();
+pub struct InvalidSigningScheme;
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
@@ -942,8 +942,8 @@ pub fn convert_signing_scheme_into_quote_signing_scheme(
     match (order_placement_via_api, scheme) {
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
         (true, SigningScheme::EthSign) => Ok(QuoteSigningScheme::EthSign),
-        (false, SigningScheme::Eip712) => Err(()),
-        (false, SigningScheme::EthSign) => Err(()),
+        (false, SigningScheme::Eip712) => Err(InvalidSigningScheme),
+        (false, SigningScheme::EthSign) => Err(InvalidSigningScheme),
         (order_placement_via_api, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign {
             onchain_order: !order_placement_via_api,
         }),
