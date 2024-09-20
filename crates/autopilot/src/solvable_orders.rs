@@ -1000,6 +1000,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            None,
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 

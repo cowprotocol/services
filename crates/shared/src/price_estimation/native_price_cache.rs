@@ -3,10 +3,10 @@ use {
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
     futures::{FutureExt, StreamExt},
     indexmap::IndexSet,
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     std::{
-        collections::{hash_map::Entry, HashMap},
+        collections::{hash_map::Entry, BTreeMap, HashMap},
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
@@ -227,6 +227,22 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
+    /// Convert from normalized price to floating point price
+    fn from_normalized_price(price: U256) -> Option<f64> {
+        // Convert U256 to f64
+        let price_in_eth = price.to_f64_lossy();
+
+        // Divide by 1e18 to reverse the multiplication by 1e18
+        let normalized_price = price_in_eth / 1e18;
+
+        // Ensure the price is in the normal float range
+        if normalized_price.is_normal() && normalized_price >= 1e-18 {
+            Some(normalized_price)
+        } else {
+            None
+        }
+    }
+
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate
     /// native prices which get cached a duration of `max_age`.
     /// Spawns a background task maintaining the cache once per
@@ -241,10 +257,34 @@ impl CachingNativePriceEstimator {
         update_size: Option<usize>,
         prefetch_time: Duration,
         concurrent_requests: usize,
+        prices: Option<BTreeMap<H160, U256>>,
     ) -> Self {
+        let cache = prices.map_or(Default::default(), |prices| {
+            let now = Instant::now();
+            // Update the cache to half max age time, so it is fetch sooner, since we don't
+            // know exactly how old the price was
+            let updated_at = now - (max_age / 2);
+
+            Mutex::new(
+                prices
+                    .into_iter()
+                    .filter_map(|(token, price)| {
+                        Some((
+                            token,
+                            CachedResult {
+                                result: Ok(Self::from_normalized_price(price)?),
+                                updated_at,
+                                requested_at: now,
+                            },
+                        ))
+                    })
+                    .collect::<HashMap<_, _>>(),
+            )
+        });
+
         let inner = Arc::new(Inner {
             estimator,
-            cache: Default::default(),
+            cache,
             high_priority: Default::default(),
             max_age,
         });
@@ -341,6 +381,39 @@ mod tests {
         H160::from_low_u64_be(u)
     }
 
+    #[test]
+    fn computes_price_from_normalized_price() {
+        assert_eq!(
+            CachingNativePriceEstimator::from_normalized_price(U256::from(
+                500_000_000_000_000_000_u128
+            ))
+            .unwrap(),
+            0.5
+        );
+    }
+
+    #[tokio::test]
+    async fn caches_successful_estimates_with_loaded_prices() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner.expect_estimate_native_price().never();
+
+        let prices = BTreeMap::from([(token(0), U256::from(1_000_000_000_000_000_000_u128))]);
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+            Some(prices),
+        );
+
+        for _ in 0..10 {
+            let result = estimator.estimate_native_price(token(0)).await;
+            assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
+        }
+    }
+
     #[tokio::test]
     async fn caches_successful_estimates() {
         let mut inner = MockNativePriceEstimating::new();
@@ -356,6 +429,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            None,
         );
 
         for _ in 0..10 {
@@ -379,6 +453,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            None,
         );
 
         for _ in 0..10 {
@@ -405,6 +480,7 @@ mod tests {
             None,
             Default::default(),
             1,
+            None,
         );
 
         for _ in 0..10 {
@@ -459,6 +535,7 @@ mod tests {
             Some(1),
             Duration::default(),
             1,
+            None,
         );
 
         // fill cache with 2 different queries
@@ -497,6 +574,7 @@ mod tests {
             None,
             Duration::default(),
             1,
+            None,
         );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
@@ -542,6 +620,7 @@ mod tests {
             None,
             Duration::default(),
             BATCH_SIZE,
+            None,
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();

@@ -276,11 +276,17 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
+    let prices = postgres
+        .most_recent_auction()
+        .await
+        .unwrap()
+        .map(|auction| auction.auction.prices);
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.fast_price_estimation_results_required,
             native_token.clone(),
+            prices,
         )
         .await
         .unwrap();
