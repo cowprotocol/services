@@ -164,6 +164,11 @@ impl Persistence {
         auction_id: domain::auction::Id,
         fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
     ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["store_fee_policies"])
+            .start_timer();
+
         let mut ex = self.postgres.pool.begin().await.context("begin")?;
         for chunk in fee_policies.chunks(self.postgres.config.insert_batch_size.get()) {
             crate::database::fee_policies::insert_batch(&mut ex, auction_id, chunk.iter().cloned())
