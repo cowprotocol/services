@@ -3,10 +3,10 @@ use {
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
     futures::{FutureExt, StreamExt},
     indexmap::IndexSet,
-    primitive_types::{H160, U256},
+    primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     std::{
-        collections::{hash_map::Entry, BTreeMap, HashMap},
+        collections::{hash_map::Entry, HashMap},
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
@@ -227,23 +227,7 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    /// Convert from normalized price to floating point price
-    fn from_normalized_price(price: U256) -> Option<f64> {
-        // Convert U256 to f64
-        let price_in_eth = price.to_f64_lossy();
-
-        // Divide by 1e18 to reverse the multiplication by 1e18
-        let normalized_price = price_in_eth / 1e18;
-
-        // Ensure the price is in the normal float range
-        if normalized_price.is_normal() && normalized_price >= 1e-18 {
-            Some(normalized_price)
-        } else {
-            None
-        }
-    }
-
-    pub async fn initialize_cache(&self, prices: BTreeMap<H160, U256>) {
+    pub async fn initialize_cache(&self, prices: HashMap<H160, f64>) {
         let now = Instant::now();
         // Update the cache to half max age time, so it gets fetched sooner, since we
         // don't know exactly how old the price was
@@ -251,15 +235,15 @@ impl CachingNativePriceEstimator {
 
         let cache = prices
             .into_iter()
-            .filter_map(|(token, price)| {
-                Some((
+            .map(|(token, price)| {
+                (
                     token,
                     CachedResult {
-                        result: Ok(Self::from_normalized_price(price)?),
+                        result: Ok(price),
                         updated_at,
                         requested_at: now,
                     },
-                ))
+                )
             })
             .collect::<HashMap<_, _>>();
 
@@ -380,23 +364,12 @@ mod tests {
         H160::from_low_u64_be(u)
     }
 
-    #[test]
-    fn computes_price_from_normalized_price() {
-        assert_eq!(
-            CachingNativePriceEstimator::from_normalized_price(U256::from(
-                500_000_000_000_000_000_u128
-            ))
-            .unwrap(),
-            0.5
-        );
-    }
-
     #[tokio::test]
     async fn caches_successful_estimates_with_loaded_prices() {
         let mut inner = MockNativePriceEstimating::new();
         inner.expect_estimate_native_price().never();
 
-        let prices = BTreeMap::from([(token(0), U256::from(1_000_000_000_000_000_000_u128))]);
+        let prices = HashMap::from([(token(0), 1.0)]);
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             Duration::from_millis(30),
