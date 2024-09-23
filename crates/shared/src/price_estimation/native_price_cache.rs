@@ -261,8 +261,8 @@ impl CachingNativePriceEstimator {
     ) -> Self {
         let cache = prices.map_or(Default::default(), |prices| {
             let now = Instant::now();
-            // Update the cache to half max age time, so it is fetch sooner, since we don't
-            // know exactly how old the price was
+            // Update the cache to half max age time, so it gets fetched sooner, since we
+            // don't know exactly how old the price was
             let updated_at = now - (max_age / 2);
 
             Mutex::new(
@@ -410,7 +410,7 @@ mod tests {
 
         for _ in 0..10 {
             let result = estimator.estimate_native_price(token(0)).await;
-            assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
 
@@ -434,7 +434,7 @@ mod tests {
 
         for _ in 0..10 {
             let result = estimator.estimate_native_price(token(0)).await;
-            assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
 
