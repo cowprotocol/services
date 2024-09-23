@@ -31,14 +31,9 @@ use {
     ethrpc::block_stream::CurrentBlockWatcher,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::U256,
     rate_limit::RateLimiter,
     reqwest::Url,
-    std::{
-        collections::{BTreeMap, HashMap},
-        num::NonZeroUsize,
-        sync::Arc,
-    },
+    std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
 
 /// A factory for initializing shared price estimators.
@@ -332,7 +327,6 @@ impl<'a> PriceEstimatorFactory<'a> {
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: contracts::WETH9,
-        prices: Option<BTreeMap<H160, U256>>,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
@@ -359,7 +353,6 @@ impl<'a> PriceEstimatorFactory<'a> {
             Some(self.args.native_price_cache_max_update_size),
             self.args.native_price_prefetch_time,
             self.args.native_price_cache_concurrent_requests,
-            prices,
         ));
         Ok(native_estimator)
     }

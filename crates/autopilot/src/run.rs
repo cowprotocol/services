@@ -335,20 +335,22 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
-    let prices = db
-        .most_recent_auction()
-        .await
-        .unwrap()
-        .map(|auction| auction.auction.prices);
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             args.native_price_estimation_results_required,
             eth.contracts().weth().clone(),
-            prices,
         )
         .await
         .unwrap();
+    if let Some(prices) = db
+        .most_recent_auction()
+        .await
+        .unwrap()
+        .map(|auction| auction.auction.prices)
+    {
+        native_price_estimator.initialize_cache(prices).await;
+    }
     let price_estimator = price_estimator_factory
         .price_estimator(
             &args.order_quoting.price_estimation_drivers,

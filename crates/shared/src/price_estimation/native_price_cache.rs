@@ -243,6 +243,29 @@ impl CachingNativePriceEstimator {
         }
     }
 
+    pub async fn initialize_cache(&self, prices: BTreeMap<H160, U256>) {
+        let now = Instant::now();
+        // Update the cache to half max age time, so it gets fetched sooner, since we
+        // don't know exactly how old the price was
+        let updated_at = now - (self.0.max_age / 2);
+
+        let cache = prices
+            .into_iter()
+            .filter_map(|(token, price)| {
+                Some((
+                    token,
+                    CachedResult {
+                        result: Ok(Self::from_normalized_price(price)?),
+                        updated_at,
+                        requested_at: now,
+                    },
+                ))
+            })
+            .collect::<HashMap<_, _>>();
+
+        *self.0.cache.lock().unwrap() = cache;
+    }
+
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate
     /// native prices which get cached a duration of `max_age`.
     /// Spawns a background task maintaining the cache once per
@@ -257,34 +280,10 @@ impl CachingNativePriceEstimator {
         update_size: Option<usize>,
         prefetch_time: Duration,
         concurrent_requests: usize,
-        prices: Option<BTreeMap<H160, U256>>,
     ) -> Self {
-        let cache = prices.map_or(Default::default(), |prices| {
-            let now = Instant::now();
-            // Update the cache to half max age time, so it gets fetched sooner, since we
-            // don't know exactly how old the price was
-            let updated_at = now - (max_age / 2);
-
-            Mutex::new(
-                prices
-                    .into_iter()
-                    .filter_map(|(token, price)| {
-                        Some((
-                            token,
-                            CachedResult {
-                                result: Ok(Self::from_normalized_price(price)?),
-                                updated_at,
-                                requested_at: now,
-                            },
-                        ))
-                    })
-                    .collect::<HashMap<_, _>>(),
-            )
-        });
-
         let inner = Arc::new(Inner {
             estimator,
-            cache,
+            cache: Default::default(),
             high_priority: Default::default(),
             max_age,
         });
@@ -405,8 +404,8 @@ mod tests {
             None,
             Default::default(),
             1,
-            Some(prices),
         );
+        estimator.initialize_cache(prices).await;
 
         for _ in 0..10 {
             let result = estimator.estimate_native_price(token(0)).await;
@@ -429,7 +428,6 @@ mod tests {
             None,
             Default::default(),
             1,
-            None,
         );
 
         for _ in 0..10 {
@@ -453,7 +451,6 @@ mod tests {
             None,
             Default::default(),
             1,
-            None,
         );
 
         for _ in 0..10 {
@@ -480,7 +477,6 @@ mod tests {
             None,
             Default::default(),
             1,
-            None,
         );
 
         for _ in 0..10 {
@@ -535,7 +531,6 @@ mod tests {
             Some(1),
             Duration::default(),
             1,
-            None,
         );
 
         // fill cache with 2 different queries
@@ -574,7 +569,6 @@ mod tests {
             None,
             Duration::default(),
             1,
-            None,
         );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
@@ -620,7 +614,6 @@ mod tests {
             None,
             Duration::default(),
             BATCH_SIZE,
-            None,
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();
