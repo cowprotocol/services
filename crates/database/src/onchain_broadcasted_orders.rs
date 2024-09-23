@@ -7,10 +7,13 @@ use {
 #[derive(Clone, Debug, Eq, PartialEq, sqlx::Type, strum::EnumIter)]
 #[sqlx(type_name = "OnchainOrderPlacementError", rename_all = "snake_case")]
 pub enum OnchainOrderPlacementError {
+    QuoteNotFound, //No longer used (kept for backwards compatibility)
+    InvalidQuote,  //No longer used (kept for backwards compatibility)
     PreValidationError,
     DisabledOrderClass,
     ValidToTooFarInFuture,
     InvalidOrderData,
+    InsufficientFee, //No longer used (kept for backwards compatibility)
     NonZeroFee,
     Other,
 }
@@ -18,10 +21,13 @@ pub enum OnchainOrderPlacementError {
 impl OnchainOrderPlacementError {
     pub fn to_metrics_label(&self) -> &str {
         match self {
+            Self::QuoteNotFound => "no_quote",
+            Self::InvalidQuote => "invalid_quote",
             Self::PreValidationError => "invalid_order",
             Self::DisabledOrderClass => "disabled_class",
             Self::ValidToTooFarInFuture => "expired",
             Self::InvalidOrderData => "invalid_data",
+            Self::InsufficientFee => "low_fee",
             Self::NonZeroFee => "non_zero_fee",
             Self::Other => "unspecified",
         }

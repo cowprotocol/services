@@ -198,7 +198,12 @@ pub fn onchain_order_placement_error_from(
             Some(OnchainOrderPlacementError::NonZeroFee)
         }
         Some(DbOnchainOrderPlacementError::Other) => Some(OnchainOrderPlacementError::Other),
-        None => None,
+        Some(
+            database::onchain_broadcasted_orders::OnchainOrderPlacementError::QuoteNotFound
+            | database::onchain_broadcasted_orders::OnchainOrderPlacementError::InvalidQuote
+            | database::onchain_broadcasted_orders::OnchainOrderPlacementError::InsufficientFee,
+        )
+        | None => None,
     }
 }
 
