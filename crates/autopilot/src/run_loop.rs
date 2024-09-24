@@ -297,16 +297,22 @@ impl RunLoop {
                 .settle(
                     &driver_,
                     solution_id,
-                    solver,
                     solved_order_uids,
                     auction_id,
                     block_deadline,
                 )
                 .await
             {
-                Ok((tx_hash, solver)) => {
+                Ok((tx_hash, found_solver)) => {
                     Metrics::settle_ok(&driver_, submission_start.elapsed());
                     tracing::debug!(?tx_hash, ?solver, driver = %driver_.name, "solution settled");
+                    if solver != found_solver {
+                        tracing::warn!(
+                            ?solver,
+                            ?found_solver,
+                            "solver address mismatch in settlement"
+                        );
+                    }
                 }
                 Err(err) => {
                     Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
@@ -743,7 +749,6 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         solution_id: u64,
-        solver: eth::Address,
         solved_order_uids: HashSet<OrderUid>,
         auction_id: i64,
         submission_deadline_latest_block: u64,
@@ -777,15 +782,7 @@ impl RunLoop {
             .await
             .retain(|order| !solved_order_uids.contains(order));
 
-        let (transaction, found_solver) = result?;
-        if solver != found_solver {
-            tracing::warn!(
-                ?solver,
-                ?solution_id,
-                "solver mismatch in settlement transaction"
-            );
-        }
-        Ok((transaction, solver))
+        result
     }
 
     // /// Wait for either the settlement transaction to be mined or the driver
