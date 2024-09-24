@@ -204,28 +204,30 @@ where
             });
         }
 
-        // special case where multiple new blocks were added and no reorg happened
+        // Special case where multiple new blocks were added and no reorg happened.
+        // Because we need to fetch the full block range we only do this if the number
+        // of new blocks is sufficiently small.
         let block_range = RangeInclusive::try_new(last_handled_block_number, current_block_number)?;
-        let new_blocks = self.block_retriever.blocks(block_range).await?;
-        if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
-            // first block is not actually new and was only fetched to detect a reorg
-            let (finalized, unfinalized) = separate_finalized_blocks(new_blocks)?;
-            tracing::debug!(
-                history=?finalized,
-                first_new=?unfinalized.first(),
-                last_new=?unfinalized.last(),
-                "multiple new blocks without reorg"
-            );
-            return Ok(EventRange {
-                history_range: finalized,
-                latest_blocks: unfinalized,
-                is_reorg: false,
-            });
+        if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
+            let new_blocks = self.block_retriever.blocks(block_range).await?;
+            if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
+                // first block is not actually new and was only fetched to detect a reorg
+                let (finalized, unfinalized) = separate_finalized_blocks(new_blocks)?;
+                tracing::debug!(
+                    history=?finalized,
+                    first_new=?unfinalized.first(),
+                    last_new=?unfinalized.last(),
+                    "multiple new blocks without reorg"
+                );
+                return Ok(EventRange {
+                    history_range: finalized,
+                    latest_blocks: unfinalized,
+                    is_reorg: false,
+                });
+            }
         }
 
-        // At this point we are sure a reorg happened somewhere. Since this happens
-        // very rarely we just fetch the entire block range we consider not finalized
-        // to look for the reorg.
+        // full range of blocks which are considered for event update
         let block_range = RangeInclusive::try_new(
             last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
             current_block_number,
