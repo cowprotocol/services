@@ -717,7 +717,11 @@ async fn find_unsupported_tokens(
                     match bad_token.detect(token).await {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
-                            tracing::warn!(?token, ?err, "unable to determine token quality");
+                            tracing::warn!(
+                                ?token,
+                                ?err,
+                                "unable to determine token quality, assume good"
+                            );
                             Some(token)
                         }
                     }
