@@ -46,11 +46,8 @@ pub fn to_normalized_price(price: f64) -> Option<U256> {
     let uint_max = 2.0_f64.powi(256);
 
     let price_in_eth = 1e18 * price;
-    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
-    } else {
-        None
-    }
+    (price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max)
+        .then_some(U256::from_f64_lossy(price_in_eth))
 }
 
 #[mockall::automock]
