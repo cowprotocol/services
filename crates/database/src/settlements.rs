@@ -3,17 +3,22 @@ use {
     sqlx::{Executor, PgConnection},
 };
 
-pub async fn get_transactions_by_auction_id(
+pub async fn get_transactions_by_auction_id_and_solver(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> Result<Vec<(TransactionHash, Address)>, sqlx::Error> {
+    solver: Address,
+) -> Result<Option<TransactionHash>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT tx_hash, solver
+SELECT tx_hash
 FROM settlements
 WHERE
-    auction_id = $1
+    auction_id = $1 AND solver = $2
     "#;
-    sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .bind(solver)
+        .fetch_optional(ex)
+        .await
 }
 
 #[derive(Debug, sqlx::FromRow)]

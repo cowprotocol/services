@@ -298,21 +298,15 @@ impl RunLoop {
                     &driver_,
                     solution_id,
                     solved_order_uids,
+                    solver,
                     auction_id,
                     block_deadline,
                 )
                 .await
             {
-                Ok((tx_hash, found_solver)) => {
+                Ok(tx_hash) => {
                     Metrics::settle_ok(&driver_, submission_start.elapsed());
                     tracing::debug!(?tx_hash, ?solver, driver = %driver_.name, "solution settled");
-                    if solver != found_solver {
-                        tracing::warn!(
-                            ?solver,
-                            ?found_solver,
-                            "solver address mismatch in settlement"
-                        );
-                    }
                 }
                 Err(err) => {
                     Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
@@ -750,18 +744,21 @@ impl RunLoop {
         driver: &infra::Driver,
         solution_id: u64,
         solved_order_uids: HashSet<OrderUid>,
+        solver: eth::Address,
         auction_id: i64,
         submission_deadline_latest_block: u64,
-    ) -> Result<(TxId, eth::Address), SettleError> {
+    ) -> Result<TxId, SettleError> {
         let request = settle::Request {
             solution_id,
             submission_deadline_latest_block,
         };
 
         let result = match futures::future::select(
-            Box::pin(
-                self.wait_for_settlement_transaction(auction_id, self.config.submission_deadline),
-            ),
+            Box::pin(self.wait_for_settlement_transaction(
+                auction_id,
+                self.config.submission_deadline,
+                solver,
+            )),
             Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
         )
         .await
@@ -785,7 +782,8 @@ impl RunLoop {
         result
     }
 
-    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    /// Tries to find a `settle` contract call with calldata ending in `tag` and
+    /// originated from the `solver`.
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
@@ -793,7 +791,8 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
-    ) -> Result<(eth::TxId, eth::Address), SettleError> {
+        solver: eth::Address,
+    ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
@@ -805,9 +804,8 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_settlement_transactions(auction_id)
+                .find_settlement_transaction(auction_id, solver)
                 .await
-                .map(|mut hashes| hashes.pop())
             {
                 Ok(Some(transaction)) => return Ok(transaction),
                 Ok(None) => {}
