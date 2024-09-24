@@ -138,7 +138,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30s",
+        default_value = "10m",
         value_parser = humantime::parse_duration,
     )]
     pub native_price_cache_max_age: Duration,
@@ -150,7 +150,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "2s",
+        default_value = "80s",
         value_parser = humantime::parse_duration,
     )]
     pub native_price_prefetch_time: Duration,
