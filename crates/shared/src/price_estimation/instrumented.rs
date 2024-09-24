@@ -36,6 +36,18 @@ impl<T> InstrumentedPriceEstimator<T> {
             metrics,
         }
     }
+
+    /// Determines the result of a price estimate as either "success" or
+    /// "failure".
+    fn estimate_result<B>(&self, estimate: Result<&B, &PriceEstimationError>) -> &str {
+        // Count as a successful request if the answer is ok (no error) or if the error
+        // is No Liquidity
+        if estimate.is_ok() || matches!(estimate, Err(PriceEstimationError::NoLiquidity)) {
+            "success"
+        } else {
+            "failure"
+        }
+    }
 }
 
 impl<T: PriceEstimating> PriceEstimating for InstrumentedPriceEstimator<T> {
@@ -50,9 +62,7 @@ impl<T: PriceEstimating> PriceEstimating for InstrumentedPriceEstimator<T> {
                 .price_estimation_times
                 .with_label_values(&[self.name.as_str()])
                 .observe(start.elapsed().as_secs_f64());
-
-            let success = !matches!(&estimate, Err(PriceEstimationError::EstimatorInternal(_)));
-            let result = if success { "success" } else { "failure" };
+            let result = self.estimate_result(estimate.as_ref());
             self.metrics
                 .price_estimates
                 .with_label_values(&[self.name.as_str(), result])
@@ -74,12 +84,7 @@ impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstima
                 .native_price_estimation_times
                 .with_label_values(&[self.name.as_str()])
                 .observe(start.elapsed().as_secs_f64());
-
-            // Count as a successful request if the answer is ok (no error) or if the error
-            // is No Liquidity
-            let success =
-                estimate.is_ok() || matches!(&estimate, Err(PriceEstimationError::NoLiquidity));
-            let result = if success { "success" } else { "failure" };
+            let result = self.estimate_result(estimate.as_ref());
             self.metrics
                 .native_price_estimates
                 .with_label_values(&[self.name.as_str(), result])
@@ -92,6 +97,10 @@ impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstima
     }
 }
 
+/// Most native estimators are regular estimators with a wrapper. In
+/// those cases, the native price requests will get counted as regular
+/// price_estimates. Therefore, native_price_estimates only counts requests
+/// for estimators which are exclusively native price estimators.
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// price estimates
