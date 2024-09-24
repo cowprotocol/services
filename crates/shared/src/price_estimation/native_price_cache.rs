@@ -1,6 +1,11 @@
 use {
     super::PriceEstimationError,
-    crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
+    crate::price_estimation::native::{
+        from_normalized_price,
+        NativePriceEstimateResult,
+        NativePriceEstimating,
+    },
+    bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
     indexmap::IndexSet,
     primitive_types::H160,
@@ -227,7 +232,7 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
-    pub async fn initialize_cache(&self, prices: HashMap<H160, f64>) {
+    pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
         let now = Instant::now();
         // Update the cache to half max age time, so it gets fetched sooner, since we
         // don't know exactly how old the price was
@@ -235,15 +240,15 @@ impl CachingNativePriceEstimator {
 
         let cache = prices
             .into_iter()
-            .map(|(token, price)| {
-                (
+            .filter_map(|(token, price)| {
+                Some((
                     token,
                     CachedResult {
-                        result: Ok(price),
+                        result: Ok(from_normalized_price(price)?),
                         updated_at,
                         requested_at: now,
                     },
-                )
+                ))
             })
             .collect::<HashMap<_, _>>();
 
@@ -369,7 +374,7 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         inner.expect_estimate_native_price().never();
 
-        let prices = HashMap::from([(token(0), 1.0)]);
+        let prices = HashMap::from([(token(0), BigDecimal::try_from(1e18).unwrap())]);
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             Duration::from_millis(30),

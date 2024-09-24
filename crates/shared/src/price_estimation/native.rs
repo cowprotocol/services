@@ -1,6 +1,7 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     bigdecimal::{BigDecimal, ToPrimitive},
+    cached::once_cell::sync::Lazy,
     futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
@@ -28,11 +29,13 @@ pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U2
 
 /// Convert from normalized price to floating point price
 pub fn from_normalized_price(price: BigDecimal) -> Option<f64> {
-    // Convert U256 to f64
-    let price_in_eth = price.to_f64()?;
+    static ONE_E18: Lazy<BigDecimal> = Lazy::new(|| BigDecimal::try_from(1e18).unwrap());
 
     // Divide by 1e18 to reverse the multiplication by 1e18
-    let normalized_price = price_in_eth / 1e18;
+    let normalized_price = price / ONE_E18.clone();
+
+    // Convert U256 to f64
+    let normalized_price = normalized_price.to_f64()?;
 
     // Ensure the price is in the normal float range
     normalized_price.is_normal().then_some(normalized_price)
