@@ -19,6 +19,13 @@ pub enum Trade {
 }
 
 impl Trade {
+    pub fn uid(&self) -> order::Uid {
+        match self {
+            Trade::Fulfillment(fulfillment) => fulfillment.order().uid,
+            Trade::Jit(jit) => jit.order().uid,
+        }
+    }
+
     pub fn side(&self) -> Side {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.order().side,
@@ -62,7 +69,7 @@ impl Trade {
     }
 
     /// The effective amount that left the user's wallet including all fees.
-    fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
+    pub fn sell_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let before_fee = match self.side() {
             order::Side::Sell => self.executed().0,
             order::Side::Buy => self
@@ -81,7 +88,7 @@ impl Trade {
     /// The effective amount the user received after all fees.
     ///
     /// Settlement contract uses `ceil` division for buy amount calculation.
-    fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
+    pub fn buy_amount(&self, prices: &ClearingPrices) -> Result<eth::TokenAmount, error::Math> {
         let amount = match self.side() {
             order::Side::Buy => self.executed().0,
             order::Side::Sell => self

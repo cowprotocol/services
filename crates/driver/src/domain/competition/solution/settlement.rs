@@ -255,15 +255,15 @@ impl Settlement {
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
-        for trade in self.solution.user_trades() {
+        for trade in self.solution.trades() {
             let prices = ClearingPrices {
-                sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
-                buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
+                sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
+                buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
             };
             let order = competition::Amounts {
-                side: trade.order().side,
-                sell: trade.order().sell,
-                buy: trade.order().buy,
+                side: trade.side(),
+                sell: trade.sell(),
+                buy: trade.buy(),
                 executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
                     // This should never happen, returning 0 is better than panicking, but we
                     // should still alert.
@@ -277,7 +277,7 @@ impl Settlement {
                     0.into()
                 }),
             };
-            acc.insert(trade.order().uid, order);
+            acc.insert(trade.uid(), order);
         }
         acc
     }
