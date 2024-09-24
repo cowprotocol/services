@@ -15,7 +15,7 @@ use {
 
 /// An instrumented price estimator.
 pub struct InstrumentedPriceEstimator<T> {
-    inner: Arc<T>,
+    inner: T,
     name: String,
     metrics: &'static Metrics,
 }
@@ -31,7 +31,7 @@ impl<T> InstrumentedPriceEstimator<T> {
                 .reset();
         }
         Self {
-            inner: Arc::new(inner),
+            inner,
             name,
             metrics,
         }

@@ -155,7 +155,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .as_ref()
             .and_then(|trade_verifier| estimator.verified(trade_verifier));
 
-        let fast = instrument::<T>(estimator, name);
+        let fast = instrument(estimator, name);
         let optimal = match verified {
             Some(verified) => instrument(verified, name),
             None => fast.clone(),
@@ -168,7 +168,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         // price estimator (this is because request sharing isn't benificial),
         // nor do we configure the trade verifier (because external price
         // precision is less critical).
-        let native = instrument::<T>(T::init(self, name, params)?, name);
+        let native = instrument(T::init(self, name, params)?, name);
 
         Ok(EstimatorEntry {
             optimal,
