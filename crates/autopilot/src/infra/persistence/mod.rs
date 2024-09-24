@@ -193,7 +193,7 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         Ok(
-            database::settlements::get_transactions_by_auction_id_and_solver(
+            database::settlements::find_settlement_transaction(
                 &mut ex,
                 auction_id,
                 ByteArray(solver.0 .0),

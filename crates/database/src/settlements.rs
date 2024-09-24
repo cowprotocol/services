@@ -3,7 +3,7 @@ use {
     sqlx::{Executor, PgConnection},
 };
 
-pub async fn get_transactions_by_auction_id_and_solver(
+pub async fn find_settlement_transaction(
     ex: &mut PgConnection,
     auction_id: i64,
     solver: Address,
