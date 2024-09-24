@@ -204,7 +204,29 @@ where
             });
         }
 
-        // full range of blocks which are considered for event update
+        // handle special case where multiple new blocks were added (assuming no reorg
+        // happened)
+        let block_range = RangeInclusive::try_new(last_handled_block_number, current_block_number)?;
+        let mut new_blocks = self.block_retriever.blocks(block_range).await?;
+        if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
+            // the oldest block is actually not new and was only fetched to check if a reorg
+            // happened
+            new_blocks.remove(0);
+            tracing::debug!(
+                first_new = ?new_blocks.first(),
+                last_new = ?new_blocks.last(),
+                "multiple blocks added without reorg"
+            );
+            return Ok(EventRange {
+                history_range: None,
+                latest_blocks: new_blocks,
+                is_reorg: false,
+            });
+        }
+
+        // At this point we are sure a reorg happened somewhere. Since this happens
+        // very rarely we just fetch the entire block range we consider not finalized
+        // to look for the reorg.
         let block_range = RangeInclusive::try_new(
             last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
             current_block_number,
@@ -809,6 +831,40 @@ mod tests {
         );
         let _result = event_handler.update_events().await;
         // add logs to event handler and observe
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn multiple_new_blocks_but_no_reorg_test() {
+        tracing_subscriber::fmt::init();
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        let storage = EventStorage { events: vec![] };
+        let current_block = web3.eth().block_number().await.unwrap();
+
+        const NUMBER_OF_BLOCKS: u64 = 300;
+
+        //get block in history (current_block - NUMBER_OF_BLOCKS)
+        let block = web3
+            .eth()
+            .block(
+                BlockNumber::Number(current_block.saturating_sub(NUMBER_OF_BLOCKS.into())).into(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let block = (block.number.unwrap().as_u64(), block.hash.unwrap());
+        let mut event_handler = EventHandler::new(
+            Arc::new(web3),
+            GPv2SettlementContract(contract),
+            storage,
+            Some(block),
+        );
+        let _result = event_handler.update_events().await;
+        tracing::info!("wait for at least 2 blocks to see if we hit the new code path");
+        tokio::time::sleep(tokio::time::Duration::from_millis(26_000)).await;
+        let _result = event_handler.update_events().await;
     }
 
     #[tokio::test]
