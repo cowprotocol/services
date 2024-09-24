@@ -204,22 +204,21 @@ where
             });
         }
 
-        // handle special case where multiple new blocks were added (assuming no reorg
-        // happened)
+        // special case where multiple new blocks were added and no reorg happened
         let block_range = RangeInclusive::try_new(last_handled_block_number, current_block_number)?;
-        let mut new_blocks = self.block_retriever.blocks(block_range).await?;
+        let new_blocks = self.block_retriever.blocks(block_range).await?;
         if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
-            // the oldest block is actually not new and was only fetched to check if a reorg
-            // happened
-            new_blocks.remove(0);
+            // first block is not actually new and was only fetched to detect a reorg
+            let (finalized, unfinalized) = separate_finalized_blocks(new_blocks)?;
             tracing::debug!(
-                first_new = ?new_blocks.first(),
-                last_new = ?new_blocks.last(),
-                "multiple blocks added without reorg"
+                history=?finalized,
+                first_new=?unfinalized.first(),
+                last_new=?unfinalized.last(),
+                "multiple new blocks without reorg"
             );
             return Ok(EventRange {
-                history_range: None,
-                latest_blocks: new_blocks,
+                history_range: finalized,
+                latest_blocks: unfinalized,
                 is_reorg: false,
             });
         }
@@ -515,6 +514,26 @@ fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, Rang
     } else {
         (None, range)
     }
+}
+
+/// Splits a range of blocks into an optional range of historic block numbers
+/// which are reorgs safe and a range of blocks which could still be reorged in
+/// the future. Function assumes `blocks`:
+///     - is sorted in increasing order
+///     - has no gaps or duplicates (e.g. [1,2,3,4])
+///     - last block (youngest) is the current block
+fn separate_finalized_blocks(
+    mut blocks: Vec<BlockNumberHash>,
+) -> Result<(Option<RangeInclusive<u64>>, Vec<BlockNumberHash>)> {
+    let split_index = blocks
+        .len()
+        .saturating_sub(MAX_REORG_BLOCK_COUNT.try_into()?);
+    let unfinalized = blocks.split_off(split_index);
+    let finalized = match (blocks.first(), blocks.last()) {
+        (Some(first), Some(last)) => Some(RangeInclusive::try_new(first.0, last.0)?),
+        _ => None,
+    };
+    Ok((finalized, unfinalized))
 }
 
 #[async_trait::async_trait]
