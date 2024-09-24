@@ -785,42 +785,6 @@ impl RunLoop {
         result
     }
 
-    // /// Wait for either the settlement transaction to be mined or the driver
-    // /// returned a result.
-    // async fn wait_for_settlement(
-    //     &self,
-    //     driver: &infra::Driver,
-    //     auction_id: i64,
-    //     request: settle::Request,
-    // ) -> Result<eth::TxId, SettleError> {
-    //     match futures::future::select(
-    //         Box::pin(
-    //             self.wait_for_settlement_transaction(auction_id,
-    // self.config.submission_deadline),         ),
-    //         Box::pin(driver.settle(&request,
-    // self.config.max_settlement_transaction_wait)),     )
-    //     .await
-    //     {
-    //         futures::future::Either::Left((res, _)) => res,
-    //         futures::future::Either::Right((driver_result, onchain_task)) => {
-    //             driver_result.map_err(|err| {
-    //                 tracing::warn!(?err, "driver settle request failed");
-    //                 SettleError::Failure(err)
-    //             })?;
-    //             onchain_task.await
-    //         }
-    //     }?;
-    //     if solved.solver() != solver {
-    //         tracing::warn!(
-    //             ?solver,
-    //             solution = %solved.id(),
-    //             "solver mismatch in settlement transaction"
-    //         );
-    //     }
-    //     tracing::debug!(?tx_hash, "solution settled");
-    //     Ok(())
-    // }
-
     /// Tries to find a `settle` contract call with calldata ending in `tag`.
     ///
     /// Returns None if no transaction was found within the deadline or the task
