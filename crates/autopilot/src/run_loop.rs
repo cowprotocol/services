@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, SolutionError, SolutionWithId, TradedAmounts},
+            competition::{self, SolutionError, SolutionWithId, TradedOrder},
             eth::{self, TxId},
             OrderUid,
         },
@@ -412,8 +412,8 @@ impl RunLoop {
                         .iter()
                         .map(|(id, order)| Order::Colocated {
                             id: (*id).into(),
-                            sell_amount: order.sell.into(),
-                            buy_amount: order.buy.into(),
+                            sell_amount: order.executed_sell.into(),
+                            buy_amount: order.executed_buy.into(),
                         })
                         .collect(),
                     clearing_prices: participant
@@ -573,12 +573,12 @@ impl RunLoop {
         // Returns the surplus difference in the buy token if `left`
         // is better for the trader than `right`, or 0 otherwise.
         // This takes differently partial fills into account.
-        let improvement_in_buy = |left: &TradedAmounts, right: &TradedAmounts| {
+        let improvement_in_buy = |left: &TradedOrder, right: &TradedOrder| {
             // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
             // trader either sells less or gets more. This can be reformulated as
             // `right.sell * left.buy > left.sell * right.buy`.
-            let right_sell_left_buy = right.sell.0.full_mul(left.buy.0);
-            let left_sell_right_buy = left.sell.0.full_mul(right.buy.0);
+            let right_sell_left_buy = right.executed_sell.0.full_mul(left.executed_buy.0);
+            let left_sell_right_buy = left.executed_sell.0.full_mul(right.executed_buy.0);
             let improvement = right_sell_left_buy
                 .checked_sub(left_sell_right_buy)
                 .unwrap_or_default();
@@ -587,7 +587,7 @@ impl RunLoop {
             // token. Casting to U256 is safe because the difference is smaller than the
             // original product, which if re-divided by right.sell must fit in U256.
             improvement
-                .checked_div(right.sell.0.into())
+                .checked_div(right.executed_sell.0.into())
                 .map(|v| U256::try_from(v).expect("improvement in buy fits in U256"))
                 .unwrap_or_default()
         };
