@@ -4,7 +4,6 @@
 use {
     crate::price_estimation::{
         native::{NativePriceEstimateResult, NativePriceEstimating},
-        Metrics,
         PriceEstimationError,
     },
     anyhow::anyhow,
@@ -92,7 +91,6 @@ where
         token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            Metrics::inc_estimator("buffered");
             // We must subscribe before we send the request, so we get the `rx` pointing to
             // the current memory point, this way we avoid losing the result for
             // the corner case in which the request is sent between the `unbounded_send()`

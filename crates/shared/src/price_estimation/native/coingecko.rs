@@ -1,7 +1,7 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::{
-        price_estimation::{buffered::NativePriceBatchFetching, Metrics, PriceEstimationError},
+        price_estimation::{buffered::NativePriceBatchFetching, PriceEstimationError},
         token_info::{TokenInfo, TokenInfoFetching},
     },
     anyhow::{anyhow, Context, Result},
@@ -233,7 +233,6 @@ impl NativePriceBatchFetching for CoinGecko {
 impl NativePriceEstimating for CoinGecko {
     fn estimate_native_price(&self, token: Token) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            Metrics::inc_estimator("CoinGecko");
             let prices = self.fetch_native_prices(HashSet::from([token])).await?;
             prices
                 .get(&token)

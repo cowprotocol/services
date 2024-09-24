@@ -155,7 +155,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .as_ref()
             .and_then(|trade_verifier| estimator.verified(trade_verifier));
 
-        let fast = instrument(estimator, name);
+        let fast = instrument::<T>(estimator, name);
         let optimal = match verified {
             Some(verified) => instrument(verified, name),
             None => fast.clone(),
@@ -168,7 +168,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         // price estimator (this is because request sharing isn't benificial),
         // nor do we configure the trade verifier (because external price
         // precision is less critical).
-        let native = instrument(T::init(self, name, params)?, name);
+        let native = instrument::<T>(T::init(self, name, params)?, name);
 
         Ok(EstimatorEntry {
             optimal,
@@ -189,25 +189,35 @@ impl<'a> PriceEstimatorFactory<'a> {
                 let estimator = self.get_estimator(driver)?.native.clone();
                 Ok((
                     driver.name.clone(),
-                    Arc::new(NativePriceEstimator::new(
-                        Arc::new(self.sanitized(estimator)),
-                        self.network.native_token,
-                        native_token_price_estimation_amount,
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        NativePriceEstimator::new(
+                            Arc::new(self.sanitized(estimator)),
+                            self.network.native_token,
+                            native_token_price_estimation_amount,
+                        ),
+                        driver.name.to_string(),
                     )),
                 ))
             }
-            NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
-                "OneInchSpotPriceApi".into(),
-                Arc::new(native::OneInch::new(
-                    self.components.http_factory.create(),
-                    self.args.one_inch_url.clone(),
-                    self.args.one_inch_api_key.clone(),
-                    self.network.chain_id,
-                    self.network.block_stream.clone(),
-                    self.components.tokens.clone(),
-                )),
-            )),
+            NativePriceEstimatorSource::OneInchSpotPriceApi => {
+                let name = "OneInchSpotPriceApi".to_string();
+                Ok((
+                    name.clone(),
+                    Arc::new(InstrumentedPriceEstimator::new(
+                        native::OneInch::new(
+                            self.components.http_factory.create(),
+                            self.args.one_inch_url.clone(),
+                            self.args.one_inch_api_key.clone(),
+                            self.network.chain_id,
+                            self.network.block_stream.clone(),
+                            self.components.tokens.clone(),
+                        ),
+                        name,
+                    )),
+                ))
+            }
             NativePriceEstimatorSource::CoinGecko => {
+                let name = "CoinGecko".to_string();
                 let coin_gecko = native::CoinGecko::new(
                     self.components.http_factory.create(),
                     self.args.coin_gecko.coin_gecko_url.clone(),
@@ -240,12 +250,15 @@ impl<'a> PriceEstimatorFactory<'a> {
                                 .unwrap(),
                         };
 
-                        Arc::new(BufferedRequest::with_config(coin_gecko, configuration))
+                        Arc::new(InstrumentedPriceEstimator::new(
+                            BufferedRequest::with_config(coin_gecko, configuration),
+                            name.clone() + "Buffered",
+                        ))
                     } else {
-                        Arc::new(coin_gecko)
+                        Arc::new(InstrumentedPriceEstimator::new(coin_gecko, name.clone()))
                     };
 
-                Ok(("CoinGecko".into(), coin_gecko))
+                Ok((name, coin_gecko))
             }
         }
     }
@@ -253,7 +266,6 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn get_estimator(&mut self, solver: &ExternalSolver) -> Result<&EstimatorEntry> {
         let params = ExternalEstimatorParams {
             driver: solver.url.clone(),
-            name: solver.name.clone(),
             timeout: self.args.quote_timeout,
         };
         if !self.estimators.contains_key(&solver.name) {
@@ -375,7 +387,6 @@ trait PriceEstimatorCreating: Sized {
 #[derive(Debug, Clone)]
 struct ExternalEstimatorParams {
     driver: Url,
-    name: String,
     timeout: std::time::Duration,
 }
 
@@ -384,7 +395,6 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
 
     fn init(factory: &PriceEstimatorFactory, name: &str, params: Self::Params) -> Result<Self> {
         Ok(Self::new(
-            params.name.as_str(),
             params.driver,
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
@@ -398,12 +408,9 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
     }
 }
 
-fn instrument(
-    estimator: impl PriceEstimating,
+fn instrument<T: PriceEstimating>(
+    estimator: T,
     name: impl Into<String>,
-) -> Arc<InstrumentedPriceEstimator> {
-    Arc::new(InstrumentedPriceEstimator::new(
-        Box::new(estimator),
-        name.into(),
-    ))
+) -> Arc<InstrumentedPriceEstimator<T>> {
+    Arc::new(InstrumentedPriceEstimator::new(estimator, name.into()))
 }

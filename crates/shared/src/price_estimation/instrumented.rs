@@ -1,21 +1,28 @@
 use {
-    crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
+    crate::price_estimation::{
+        native::{NativePriceEstimateResult, NativePriceEstimating},
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
+    },
+    ethcontract::jsonrpc::futures_util::future::BoxFuture,
     futures::future::FutureExt,
+    primitive_types::H160,
     prometheus::{HistogramVec, IntCounterVec},
     std::{sync::Arc, time::Instant},
     tracing::Instrument,
 };
 
 /// An instrumented price estimator.
-pub struct InstrumentedPriceEstimator {
-    inner: Box<dyn PriceEstimating>,
+pub struct InstrumentedPriceEstimator<T> {
+    inner: Arc<T>,
     name: String,
     metrics: &'static Metrics,
 }
 
-impl InstrumentedPriceEstimator {
+impl<T> InstrumentedPriceEstimator<T> {
     /// Wraps an existing price estimator in an instrumented one.
-    pub fn new(inner: Box<dyn PriceEstimating>, name: String) -> Self {
+    pub fn new(inner: T, name: String) -> Self {
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         for result in ["success", "failure"] {
             metrics
@@ -24,14 +31,14 @@ impl InstrumentedPriceEstimator {
                 .reset();
         }
         Self {
-            inner,
+            inner: Arc::new(inner),
             name,
             metrics,
         }
     }
 }
 
-impl PriceEstimating for InstrumentedPriceEstimator {
+impl<T: PriceEstimating> PriceEstimating for InstrumentedPriceEstimator<T> {
     fn estimate(
         &self,
         query: Arc<Query>,
@@ -58,6 +65,33 @@ impl PriceEstimating for InstrumentedPriceEstimator {
     }
 }
 
+impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstimator<T> {
+    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            let start = Instant::now();
+            let estimate = self.inner.estimate_native_price(token).await;
+            self.metrics
+                .native_price_estimation_times
+                .with_label_values(&[self.name.as_str()])
+                .observe(start.elapsed().as_secs_f64());
+
+            // Count as a successful request if the answer is ok (no error) or if the error
+            // is No Liquidity
+            let success =
+                estimate.is_ok() || matches!(&estimate, Err(PriceEstimationError::NoLiquidity));
+            let result = if success { "success" } else { "failure" };
+            self.metrics
+                .native_price_estimates
+                .with_label_values(&[self.name.as_str(), result])
+                .inc();
+
+            estimate
+        }
+        .instrument(tracing::info_span!("native estimator", name = &self.name,))
+        .boxed()
+    }
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// price estimates
@@ -67,6 +101,14 @@ struct Metrics {
     /// price estimation times
     #[metric(labels("estimator_type"))]
     price_estimation_times: HistogramVec,
+
+    /// number of native price requests sent to each estimator
+    #[metric(labels("estimator_type", "result"))]
+    native_price_estimates: IntCounterVec,
+
+    /// native price estimation times
+    #[metric(labels("estimator_type"))]
+    native_price_estimation_times: HistogramVec,
 }
 
 #[cfg(test)]
@@ -117,7 +159,7 @@ mod tests {
                 async { Err(PriceEstimationError::EstimatorInternal(anyhow!(""))) }.boxed()
             });
 
-        let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
+        let instrumented = InstrumentedPriceEstimator::new(estimator, "foo".to_string());
 
         let _ = instrumented.estimate(queries[0].clone()).await;
         let _ = instrumented.estimate(queries[1].clone()).await;
