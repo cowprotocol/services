@@ -313,6 +313,7 @@ Indexes:
 ### settlement\_observations
 
 During the solver competition solvers promise a solution of a certain quality. If the settlement that eventually gets executed on-chain is worse than what was promised solvers can get slashed. This table stores the quality of the solution that was actually observed on-chain. (see [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f))
+This table is not read by the backend service but is meant for other services, such as the circuit breaker, to verify the quality of promised solutions.
 
  Column                | Type    | Nullable | Details
 -----------------------|---------|----------|--------

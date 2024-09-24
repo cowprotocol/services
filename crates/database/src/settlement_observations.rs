@@ -31,15 +31,15 @@ SET gas_used = $1, effective_gas_price = $2, surplus = $3, fee = $4
 
 pub async fn fetch(
     ex: &mut PgConnection,
-    tx_hash: &TransactionHash,
-) -> Result<Option<Observation>, sqlx::Error> {
+    tx_hashes: &[TransactionHash],
+) -> Result<Vec<Observation>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT *
 FROM settlement_observations so
 JOIN settlements s ON s.log_index = so.log_index AND s.block_number = so.block_number
-WHERE s.tx_hash = $1
+WHERE s.tx_hash = ANY($1)
     ;"#;
-    sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
+    sqlx::query_as(QUERY).bind(tx_hashes).fetch_all(ex).await
 }
 
 #[cfg(test)]
