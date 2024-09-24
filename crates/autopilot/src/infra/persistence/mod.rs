@@ -192,15 +192,13 @@ impl Persistence {
             .start_timer();
 
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
-        Ok(
-            database::settlements::find_settlement_transaction(
-                &mut ex,
-                auction_id,
-                ByteArray(solver.0 .0),
-            )
-            .await?
-            .map(|hash| H256(hash.0).into()),
+        Ok(database::settlements::find_settlement_transaction(
+            &mut ex,
+            auction_id,
+            ByteArray(solver.0 .0),
         )
+        .await?
+        .map(|hash| H256(hash.0).into()))
     }
 
     /// Checks if an auction already has an accociated settlement.
