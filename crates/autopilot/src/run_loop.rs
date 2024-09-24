@@ -23,6 +23,7 @@ use {
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
     futures::future::BoxFuture,
+    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -377,11 +378,25 @@ impl RunLoop {
             .iter()
             .map(|participant| participant.solution.solver().into())
             .collect::<HashSet<_>>();
-        let fee_policies = auction
-            .orders
+        let mut fee_policies = Vec::new();
+        for order_id in solutions
             .iter()
-            .map(|order| (order.uid, order.protocol_fees.clone()))
-            .collect::<Vec<_>>();
+            .flat_map(|participant| participant.solution.order_ids())
+            .unique()
+        {
+            match auction
+                .orders
+                .iter()
+                .find(|auction_order| &auction_order.uid == order_id)
+            {
+                Some(auction_order) => {
+                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+                }
+                None => {
+                    tracing::debug!(?order_id, "order not found in auction");
+                }
+            }
+        }
 
         let competition_table = SolverCompetitionDB {
             auction_start_block: auction.block,
