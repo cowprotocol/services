@@ -23,7 +23,7 @@ use {
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
-            native::NativePriceEstimating,
+            native::{to_normalized_price, NativePriceEstimating},
             native_price_cache::CachingNativePriceEstimator,
         },
         remaining_amounts,
@@ -691,17 +691,6 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     high_priority_tokens
 }
 
-fn to_normalized_price(price: f64) -> Option<U256> {
-    let uint_max = 2.0_f64.powi(256);
-
-    let price_in_eth = 1e18 * price;
-    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
-    } else {
-        None
-    }
-}
-
 async fn find_unsupported_tokens(
     orders: &[Order],
     bad_token: Arc<dyn BadTokenDetecting>,
@@ -917,30 +906,6 @@ mod tests {
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
     };
-
-    #[test]
-    fn computes_u256_prices_normalized_to_1e18() {
-        assert_eq!(
-            to_normalized_price(0.5).unwrap(),
-            U256::from(500_000_000_000_000_000_u128),
-        );
-    }
-
-    #[test]
-    fn normalize_prices_fail_when_outside_valid_input_range() {
-        assert!(to_normalized_price(0.).is_none());
-        assert!(to_normalized_price(-1.).is_none());
-        assert!(to_normalized_price(f64::INFINITY).is_none());
-
-        let min_price = 1. / 1e18;
-        assert!(to_normalized_price(min_price).is_some());
-        assert!(to_normalized_price(min_price * (1. - f64::EPSILON)).is_none());
-
-        let uint_max = 2.0_f64.powi(256);
-        let max_price = uint_max / 1e18;
-        assert!(to_normalized_price(max_price).is_none());
-        assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
-    }
 
     #[tokio::test]
     async fn filters_tokens_without_native_prices() {

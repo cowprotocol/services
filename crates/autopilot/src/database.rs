@@ -5,6 +5,7 @@ use {
 };
 
 mod auction;
+pub mod auction_prices;
 pub mod competition;
 pub mod ethflow_events;
 pub mod events;
