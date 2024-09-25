@@ -218,10 +218,12 @@ impl SolvableOrdersCache {
             .filter(|token| !prices.contains_key(token))
             .cloned()
             .collect::<Vec<_>>();
-        let cow_amm_prices = {
-            let _timer = self.stage_timer("cow_amm_prices");
-            get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator).await
-        };
+        let cow_amm_prices = self
+            .timed_future(
+                "cow_amm_prices",
+                get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator),
+            )
+            .await;
         prices.extend(cow_amm_prices);
 
         let removed = counter.checkpoint("missing_price", &orders);
