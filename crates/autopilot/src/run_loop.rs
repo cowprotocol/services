@@ -313,7 +313,8 @@ impl RunLoop {
                 }
             }
             Metrics::single_run_completed(single_run_start.elapsed());
-        };
+        }
+        .instrument(tracing::Span::current());
 
         let sender = self.get_settlement_queue_sender(&driver.name).await;
         if let Err(err) = sender.send(Box::pin(settle_fut)) {
