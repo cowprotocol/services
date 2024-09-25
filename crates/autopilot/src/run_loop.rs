@@ -18,11 +18,11 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::{Context, Result},
+    anyhow::Result,
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::future::BoxFuture,
+    futures::{future::BoxFuture, TryFutureExt},
     itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
@@ -458,28 +458,21 @@ impl RunLoop {
         };
 
         tracing::trace!(?competition, "saving competition");
-        self.persistence
-            .save_competition(&competition)
-            .await
-            .context("failed to save competition")?;
+        futures::try_join!(
+            self.persistence
+                .save_competition(&competition)
+                .map_err(|e| e.0.context("failed to save competition")),
+            self.persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &auction.surplus_capturing_jit_order_owners,
+                )
+                .map_err(|e| e.0.context("failed to save jit order owners")),
+            self.persistence
+                .store_fee_policies(auction_id, fee_policies)
+                .map_err(|e| e.context("failed to fee_policies")),
+        )?;
 
-        self.persistence
-            .save_surplus_capturing_jit_orders_orders(
-                auction_id,
-                &auction.surplus_capturing_jit_order_owners,
-            )
-            .await
-            .context("failed to save surplus capturing jit order owners")?;
-
-        tracing::info!("saving fee policies");
-        if let Err(err) = self
-            .persistence
-            .store_fee_policies(auction_id, fee_policies)
-            .await
-        {
-            Metrics::fee_policies_store_error();
-            tracing::warn!(?err, "failed to save fee policies");
-        }
         Metrics::post_processed(start.elapsed());
         Ok(())
     }
@@ -1011,13 +1004,6 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
-    }
-
-    fn fee_policies_store_error() {
-        Self::get()
-            .db_metric_error
-            .with_label_values(&["fee_policies_store"])
-            .inc();
     }
 
     fn post_processed(elapsed: Duration) {
