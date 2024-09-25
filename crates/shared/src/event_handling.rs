@@ -207,22 +207,23 @@ where
         // Special case where multiple new blocks were added and no reorg happened.
         // Because we need to fetch the full block range we only do this if the number
         // of new blocks is sufficiently small.
-        let block_range = RangeInclusive::try_new(last_handled_block_number, current_block_number)?;
-        if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
-            let mut new_blocks = self.block_retriever.blocks(block_range).await?;
-            if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
-                // first block is not actually new and was only fetched to detect a reorg
-                new_blocks.remove(0);
-                tracing::debug!(
-                    first_new=?new_blocks.first(),
-                    last_new=?new_blocks.last(),
-                    "multiple new blocks without reorg"
-                );
-                return Ok(EventRange {
-                    history_range: None,
-                    latest_blocks: new_blocks,
-                    is_reorg: false,
-                });
+        if let Ok(block_range) = RangeInclusive::try_new(last_handled_block_number, current_block_number) {
+            if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
+                let mut new_blocks = self.block_retriever.blocks(block_range).await?;
+                if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
+                    // first block is not actually new and was only fetched to detect a reorg
+                    new_blocks.remove(0);
+                    tracing::debug!(
+                        first_new=?new_blocks.first(),
+                        last_new=?new_blocks.last(),
+                        "multiple new blocks without reorg"
+                    );
+                    return Ok(EventRange {
+                        history_range: None,
+                        latest_blocks: new_blocks,
+                        is_reorg: false,
+                    });
+                }
             }
         }
 
