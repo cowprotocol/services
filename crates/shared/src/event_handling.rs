@@ -207,7 +207,9 @@ where
         // Special case where multiple new blocks were added and no reorg happened.
         // Because we need to fetch the full block range we only do this if the number
         // of new blocks is sufficiently small.
-        if let Ok(block_range) = RangeInclusive::try_new(last_handled_block_number, current_block_number) {
+        if let Ok(block_range) =
+            RangeInclusive::try_new(last_handled_block_number, current_block_number)
+        {
             if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
                 let mut new_blocks = self.block_retriever.blocks(block_range).await?;
                 if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
