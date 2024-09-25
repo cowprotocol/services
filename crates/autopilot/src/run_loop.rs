@@ -753,6 +753,8 @@ impl RunLoop {
             submission_deadline_latest_block,
         };
 
+        // Wait for either the settlement transaction to be mined or the driver returned
+        // a result.
         let result = match futures::future::select(
             Box::pin(self.wait_for_settlement_transaction(
                 auction_id,
@@ -764,13 +766,10 @@ impl RunLoop {
         .await
         {
             futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((driver_result, onchain_task)) => {
-                driver_result.map_err(|err| {
-                    tracing::warn!(?err, "driver settle request failed");
-                    SettleError::Failure(err)
-                })?;
-                onchain_task.await
-            }
+            futures::future::Either::Right((driver_result, onchain_task)) => match driver_result {
+                Ok(_) => onchain_task.await,
+                Err(err) => Err(SettleError::Failure(err)),
+            },
         };
 
         // Clean up the in-flight orders regardless the result.
