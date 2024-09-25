@@ -306,7 +306,7 @@ impl RunLoop {
             {
                 Ok(tx_hash) => {
                     Metrics::settle_ok(&driver_, submission_start.elapsed());
-                    tracing::debug!(?tx_hash, ?solver, driver = %driver_.name, "solution settled");
+                    tracing::debug!(?tx_hash, driver = %driver_.name, ?solver, "solution settled");
                 }
                 Err(err) => {
                     Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
