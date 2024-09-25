@@ -343,6 +343,9 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
+    let prices = db.fetch_latest_prices().await.unwrap();
+    native_price_estimator.initialize_cache(prices).await;
+
     let price_estimator = price_estimator_factory
         .price_estimator(
             &args.order_quoting.price_estimation_drivers,
