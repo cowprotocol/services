@@ -811,7 +811,12 @@ impl RunLoop {
                 Ok(Some(transaction)) => return Ok(transaction),
                 Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(?err, "failed to find settlement transaction");
+                    tracing::warn!(
+                        ?err,
+                        ?auction_id,
+                        ?solver,
+                        "failed to find settlement transaction"
+                    );
                 }
             }
             if block.number >= deadline {
