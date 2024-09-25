@@ -19,7 +19,7 @@ use {
         event_updater::EventUpdater,
         infra::{self, blockchain::ChainId},
         maintenance::Maintenance,
-        run_loop::RunLoop,
+        run_loop::{self, RunLoop},
         shadow,
         solvable_orders::SolvableOrdersCache,
     },
@@ -343,6 +343,9 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
+    let prices = db.fetch_latest_prices().await.unwrap();
+    native_price_estimator.initialize_cache(prices).await;
+
     let price_estimator = price_estimator_factory
         .price_estimator(
             &args.order_quoting.price_estimation_drivers,
@@ -521,30 +524,33 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let run = RunLoop {
-        eth,
-        solvable_orders_cache,
-        drivers: args
-            .drivers
-            .into_iter()
-            .map(|driver| {
-                infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                )
-            })
-            .collect(),
-        market_makable_token_list,
+    let run_loop_config = run_loop::Config {
         submission_deadline: args.submission_deadline as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
-        persistence: persistence.clone(),
-        liveness: liveness.clone(),
         synchronization: args.run_loop_mode,
         max_run_loop_delay: args.max_run_loop_delay,
-        maintenance: Arc::new(maintenance),
     };
+
+    let run = RunLoop::new(
+        run_loop_config,
+        eth,
+        persistence.clone(),
+        args.drivers
+            .into_iter()
+            .map(|driver| {
+                Arc::new(infra::Driver::new(
+                    driver.url,
+                    driver.name,
+                    driver.fairness_threshold.map(Into::into),
+                ))
+            })
+            .collect(),
+        solvable_orders_cache,
+        market_makable_token_list,
+        liveness.clone(),
+        Arc::new(maintenance),
+    );
     run.run_forever(args.auction_update_interval).await;
     unreachable!("run loop exited");
 }

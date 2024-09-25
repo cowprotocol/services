@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain,
+        domain::{self, eth},
         infra::persistence::{dto, dto::order::Order},
     },
     chrono::{DateTime, Utc},
@@ -89,18 +89,6 @@ pub struct Token {
     pub trusted: bool,
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TradedAmounts {
-    /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    /// The effective amount the user received after all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-}
-
 impl Solution {
     pub fn into_domain(
         self,
@@ -114,9 +102,21 @@ impl Solution {
                 .map(|(o, amounts)| {
                     (
                         o.into(),
-                        domain::competition::TradedAmounts {
-                            sell: amounts.sell_amount.into(),
-                            buy: amounts.buy_amount.into(),
+                        domain::competition::TradedOrder {
+                            sell: eth::Asset {
+                                token: amounts.sell_token.into(),
+                                amount: amounts.limit_sell.into(),
+                            },
+                            buy: eth::Asset {
+                                token: amounts.buy_token.into(),
+                                amount: amounts.limit_buy.into(),
+                            },
+                            side: match amounts.side {
+                                Side::Buy => domain::auction::order::Side::Buy,
+                                Side::Sell => domain::auction::order::Side::Sell,
+                            },
+                            executed_sell: amounts.executed_sell.into(),
+                            executed_buy: amounts.executed_buy.into(),
                         },
                     )
                 })
@@ -131,8 +131,41 @@ impl Solution {
     }
 }
 
+/// Contains basic order information and the executed amounts. Basic order
+/// information are required because of JIT orders which are not part of an
+/// auction, so autopilot can be aware of them before the solution is
+/// settled on-chain.
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TradedOrder {
+    side: Side,
+    sell_token: H160,
+    buy_token: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    /// Sell limit order amount.
+    limit_sell: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    /// Buy limit order amount.
+    limit_buy: U256,
+    /// The effective amount that left the user's wallet including all fees.
+    #[serde_as(as = "HexOrDecimalU256")]
+    executed_sell: U256,
+    /// The effective amount the user received after all fees.
+    #[serde_as(as = "HexOrDecimalU256")]
+    executed_buy: U256,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
@@ -143,13 +176,13 @@ pub struct Solution {
     pub score: U256,
     /// Address used by the driver to submit the settlement onchain.
     pub submission_address: H160,
-    pub orders: HashMap<boundary::OrderUid, TradedAmounts>,
+    pub orders: HashMap<boundary::OrderUid, TradedOrder>,
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
     pub gas: Option<u64>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Response {
     pub solutions: Vec<Solution>,

@@ -3,6 +3,7 @@ use {
     anyhow::{Context, Result},
     web3::{
         types::{BlockNumber, BlockTrace, CallRequest, TraceType},
+        Error,
         Transport,
     },
 };
@@ -10,7 +11,7 @@ use {
 // Use the trace_callMany api https://openethereum.github.io/JSONRPC-trace-module#trace_callmany
 // api to simulate these call requests applied together one after another.
 // Err if communication with the node failed.
-pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<BlockTrace>> {
+pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<BlockTrace>, Error> {
     let transport = web3.transport();
     let requests = requests
         .into_iter()
@@ -20,17 +21,15 @@ pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<B
                 serde_json::to_value(vec![TraceType::Trace])?,
             ])
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>>>()
+        .map_err(|e| Error::Decoder(e.to_string()))?;
     let block = BlockNumber::Latest;
     let params = vec![
         serde_json::to_value(requests)?,
         serde_json::to_value(block)?,
     ];
-    let response = transport
-        .execute("trace_callMany", params)
-        .await
-        .context("trace_callMany failed")?;
-    serde_json::from_value(response).context("failed to decode trace_callMany response")
+    let response = transport.execute("trace_callMany", params).await?;
+    serde_json::from_value(response).map_err(|e| Error::Decoder(e.to_string()))
 }
 
 // Check the return value of trace_many for whether all top level transactions

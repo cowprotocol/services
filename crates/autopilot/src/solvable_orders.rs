@@ -18,20 +18,12 @@ use {
     },
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
-    prometheus::{
-        Histogram,
-        HistogramTimer,
-        HistogramVec,
-        IntCounter,
-        IntCounterVec,
-        IntGauge,
-        IntGaugeVec,
-    },
+    prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
         price_estimation::{
-            native::NativePriceEstimating,
+            native::{to_normalized_price, NativePriceEstimating},
             native_price_cache::CachingNativePriceEstimator,
         },
         remaining_amounts,
@@ -39,6 +31,7 @@ use {
     },
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
+        future::Future,
         sync::{Arc, Weak},
         time::Duration,
     },
@@ -185,14 +178,10 @@ impl SolvableOrdersCache {
 
         let (balances, orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
-            let cow_amms_fut = async {
-                let _timer = self.stage_timer("cow_amm_registry");
-                self.cow_amm_registry.amms().await
-            };
             tokio::join!(
                 self.fetch_balances(queries),
                 self.filter_invalid_orders(orders, &mut counter, &mut invalid_order_uids,),
-                cow_amms_fut
+                self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
 
@@ -209,10 +198,11 @@ impl SolvableOrdersCache {
             get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics).await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
-            let _timer = self.stage_timer("weth_price_fetch");
             let weth_price = self
-                .native_price_estimator
-                .estimate_native_price(self.weth)
+                .timed_future(
+                    "weth_price_fetch",
+                    self.native_price_estimator.estimate_native_price(self.weth),
+                )
                 .await
                 .expect("weth price fetching can never fail");
             let weth_price = to_normalized_price(weth_price)
@@ -312,10 +302,12 @@ impl SolvableOrdersCache {
     }
 
     async fn fetch_balances(&self, queries: Vec<Query>) -> HashMap<Query, U256> {
-        let fetched_balances = {
-            let _timer = self.stage_timer("balance_fetch");
-            self.balance_fetcher.get_balances(&queries).await
-        };
+        let fetched_balances = self
+            .timed_future(
+                "balance_filtering",
+                self.balance_fetcher.get_balances(&queries),
+            )
+            .await;
         queries
             .into_iter()
             .zip(fetched_balances)
@@ -377,22 +369,19 @@ impl SolvableOrdersCache {
         counter: &mut OrderFilterCounter,
         invalid_order_uids: &mut HashSet<OrderUid>,
     ) -> Vec<Order> {
-        let banned_user_orders_fut = async {
-            let _timer = self.stage_timer("banned_user_filtering");
-            find_banned_user_orders(&orders, &self.banned_users).await
-        };
-        let invalid_signature_orders_fut = async {
-            let _timer = self.stage_timer("invalid_signature_filtering");
-            find_invalid_signature_orders(&orders, self.signature_validator.as_ref()).await
-        };
-        let unsupported_token_orders_fut = async {
-            let _timer = self.stage_timer("unsupported_token_filtering");
-            find_unsupported_tokens(&orders, self.bad_token_detector.clone()).await
-        };
         let (banned_user_orders, invalid_signature_orders, unsupported_token_orders) = tokio::join!(
-            banned_user_orders_fut,
-            invalid_signature_orders_fut,
-            unsupported_token_orders_fut,
+            self.timed_future(
+                "banned_user_filtering",
+                find_banned_user_orders(&orders, &self.banned_users)
+            ),
+            self.timed_future(
+                "invalid_signature_filtering",
+                find_invalid_signature_orders(&orders, self.signature_validator.as_ref())
+            ),
+            self.timed_future(
+                "unsupported_token_filtering",
+                find_unsupported_tokens(&orders, self.bad_token_detector.clone())
+            ),
         );
 
         counter.checkpoint_by_invalid_orders("banned_user", &banned_user_orders);
@@ -413,11 +402,14 @@ impl SolvableOrdersCache {
             .inc();
     }
 
-    fn stage_timer(&self, stage: &str) -> HistogramTimer {
-        self.metrics
+    /// Runs the future and collects runtime metrics.
+    async fn timed_future<T>(&self, label: &str, fut: impl Future<Output = T>) -> T {
+        let _timer = self
+            .metrics
             .auction_update_stage_time
-            .with_label_values(&[stage])
-            .start_timer()
+            .with_label_values(&[label])
+            .start_timer();
+        fut.await
     }
 }
 
@@ -702,17 +694,6 @@ fn prioritize_missing_prices(mut orders: Vec<Order>) -> IndexSet<H160> {
     high_priority_tokens
 }
 
-fn to_normalized_price(price: f64) -> Option<U256> {
-    let uint_max = 2.0_f64.powi(256);
-
-    let price_in_eth = 1e18 * price;
-    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
-    } else {
-        None
-    }
-}
-
 async fn find_unsupported_tokens(
     orders: &[Order],
     bad_token: Arc<dyn BadTokenDetecting>,
@@ -728,7 +709,11 @@ async fn find_unsupported_tokens(
                     match bad_token.detect(token).await {
                         Ok(quality) => (!quality.is_good()).then_some(token),
                         Err(err) => {
-                            tracing::warn!(?token, ?err, "unable to determine token quality");
+                            tracing::warn!(
+                                ?token,
+                                ?err,
+                                "unable to determine token quality, assume good"
+                            );
                             Some(token)
                         }
                     }
@@ -924,30 +909,6 @@ mod tests {
             signature_validator::{MockSignatureValidating, SignatureValidationError},
         },
     };
-
-    #[test]
-    fn computes_u256_prices_normalized_to_1e18() {
-        assert_eq!(
-            to_normalized_price(0.5).unwrap(),
-            U256::from(500_000_000_000_000_000_u128),
-        );
-    }
-
-    #[test]
-    fn normalize_prices_fail_when_outside_valid_input_range() {
-        assert!(to_normalized_price(0.).is_none());
-        assert!(to_normalized_price(-1.).is_none());
-        assert!(to_normalized_price(f64::INFINITY).is_none());
-
-        let min_price = 1. / 1e18;
-        assert!(to_normalized_price(min_price).is_some());
-        assert!(to_normalized_price(min_price * (1. - f64::EPSILON)).is_none());
-
-        let uint_max = 2.0_f64.powi(256);
-        let max_price = uint_max / 1e18;
-        assert!(to_normalized_price(max_price).is_none());
-        assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
-    }
 
     #[tokio::test]
     async fn filters_tokens_without_native_prices() {

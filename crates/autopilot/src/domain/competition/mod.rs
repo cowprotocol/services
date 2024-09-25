@@ -1,4 +1,5 @@
 use {
+    super::auction::order,
     crate::{
         domain,
         domain::{auction, eth},
@@ -20,7 +21,7 @@ impl SolutionWithId {
         id: SolutionId,
         solver: eth::Address,
         score: Score,
-        orders: HashMap<domain::OrderUid, TradedAmounts>,
+        orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
     ) -> Self {
         Self {
@@ -45,7 +46,7 @@ impl SolutionWithId {
         self.solution.order_ids()
     }
 
-    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedAmounts> {
+    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
         self.solution.orders()
     }
 
@@ -58,7 +59,7 @@ impl SolutionWithId {
 pub struct Solution {
     solver: eth::Address,
     score: Score,
-    orders: HashMap<domain::OrderUid, TradedAmounts>,
+    orders: HashMap<domain::OrderUid, TradedOrder>,
     prices: auction::Prices,
 }
 
@@ -66,7 +67,7 @@ impl Solution {
     pub fn new(
         solver: eth::Address,
         score: Score,
-        orders: HashMap<domain::OrderUid, TradedAmounts>,
+        orders: HashMap<domain::OrderUid, TradedOrder>,
         prices: auction::Prices,
     ) -> Self {
         Self {
@@ -89,7 +90,7 @@ impl Solution {
         self.orders.keys()
     }
 
-    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedAmounts> {
+    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
         &self.orders
     }
 
@@ -99,11 +100,16 @@ impl Solution {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct TradedAmounts {
+pub struct TradedOrder {
+    pub side: order::Side,
+    /// The sell token and limit sell amount of sell token.
+    pub sell: eth::Asset,
+    /// The buy token and limit buy amount of buy token.
+    pub buy: eth::Asset,
     /// The effective amount that left the user's wallet including all fees.
-    pub sell: eth::TokenAmount,
+    pub executed_sell: eth::TokenAmount,
     /// The effective amount the user received after all fees.
-    pub buy: eth::TokenAmount,
+    pub executed_buy: eth::TokenAmount,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Display)]

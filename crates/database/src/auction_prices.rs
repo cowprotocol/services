@@ -45,6 +45,16 @@ pub async fn fetch(
     Ok(prices)
 }
 
+pub async fn fetch_latest_prices(ex: &mut PgConnection) -> Result<Vec<AuctionPrice>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT * FROM auction_prices WHERE auction_id = (
+    SELECT MAX(auction_id)
+    FROM auction_prices
+)
+    "#;
+    sqlx::query_as(QUERY).fetch_all(ex).await
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
