@@ -209,19 +209,18 @@ where
         // of new blocks is sufficiently small.
         let block_range = RangeInclusive::try_new(last_handled_block_number, current_block_number)?;
         if block_range.end() - block_range.start() <= MAX_REORG_BLOCK_COUNT {
-            let new_blocks = self.block_retriever.blocks(block_range).await?;
+            let mut new_blocks = self.block_retriever.blocks(block_range).await?;
             if new_blocks.first().map(|b| b.1) == Some(last_handled_block_hash) {
                 // first block is not actually new and was only fetched to detect a reorg
-                let (finalized, unfinalized) = separate_finalized_blocks(new_blocks)?;
+                new_blocks.remove(0);
                 tracing::debug!(
-                    history=?finalized,
-                    first_new=?unfinalized.first(),
-                    last_new=?unfinalized.last(),
+                    first_new=?new_blocks.first(),
+                    last_new=?new_blocks.last(),
                     "multiple new blocks without reorg"
                 );
                 return Ok(EventRange {
-                    history_range: finalized,
-                    latest_blocks: unfinalized,
+                    history_range: None,
+                    latest_blocks: new_blocks,
                     is_reorg: false,
                 });
             }
@@ -516,26 +515,6 @@ fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, Rang
     } else {
         (None, range)
     }
-}
-
-/// Splits a range of blocks into an optional range of historic block numbers
-/// which are reorgs safe and a range of blocks which could still be reorged in
-/// the future. Function assumes `blocks`:
-///     - is sorted in increasing order
-///     - has no gaps or duplicates (e.g. [1,2,3,4])
-///     - last block (youngest) is the current block
-fn separate_finalized_blocks(
-    mut blocks: Vec<BlockNumberHash>,
-) -> Result<(Option<RangeInclusive<u64>>, Vec<BlockNumberHash>)> {
-    let split_index = blocks
-        .len()
-        .saturating_sub(MAX_REORG_BLOCK_COUNT.try_into()?);
-    let unfinalized = blocks.split_off(split_index);
-    let finalized = match (blocks.first(), blocks.last()) {
-        (Some(first), Some(last)) => Some(RangeInclusive::try_new(first.0, last.0)?),
-        _ => None,
-    };
-    Ok((finalized, unfinalized))
 }
 
 #[async_trait::async_trait]
