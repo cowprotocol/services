@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, SolutionError, SolutionWithId, TradedAmounts},
+            competition::{self, SolutionError, SolutionWithId, TradedOrder},
             eth::{self, TxId},
             OrderUid,
         },
@@ -18,11 +18,12 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::{Context, Result},
+    anyhow::Result,
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::future::BoxFuture,
+    futures::{future::BoxFuture, TryFutureExt},
+    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -314,7 +315,8 @@ impl RunLoop {
                 }
             }
             Metrics::single_run_completed(single_run_start.elapsed());
-        };
+        }
+        .instrument(tracing::Span::current());
 
         let sender = self.get_settlement_queue_sender(&driver.name).await;
         if let Err(err) = sender.send(Box::pin(settle_fut)) {
@@ -379,11 +381,25 @@ impl RunLoop {
             .iter()
             .map(|participant| participant.solution.solver().into())
             .collect::<HashSet<_>>();
-        let fee_policies = auction
-            .orders
+        let mut fee_policies = Vec::new();
+        for order_id in solutions
             .iter()
-            .map(|order| (order.uid, order.protocol_fees.clone()))
-            .collect::<Vec<_>>();
+            .flat_map(|participant| participant.solution.order_ids())
+            .unique()
+        {
+            match auction
+                .orders
+                .iter()
+                .find(|auction_order| &auction_order.uid == order_id)
+            {
+                Some(auction_order) => {
+                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+                }
+                None => {
+                    tracing::debug!(?order_id, "order not found in auction");
+                }
+            }
+        }
 
         let competition_table = SolverCompetitionDB {
             auction_start_block: auction.block,
@@ -414,8 +430,8 @@ impl RunLoop {
                         .iter()
                         .map(|(id, order)| Order::Colocated {
                             id: (*id).into(),
-                            sell_amount: order.sell.into(),
-                            buy_amount: order.buy.into(),
+                            sell_amount: order.executed_sell.into(),
+                            buy_amount: order.executed_buy.into(),
                         })
                         .collect(),
                     clearing_prices: participant
@@ -444,28 +460,21 @@ impl RunLoop {
         };
 
         tracing::trace!(?competition, "saving competition");
-        self.persistence
-            .save_competition(&competition)
-            .await
-            .context("failed to save competition")?;
+        futures::try_join!(
+            self.persistence
+                .save_competition(&competition)
+                .map_err(|e| e.0.context("failed to save competition")),
+            self.persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &auction.surplus_capturing_jit_order_owners,
+                )
+                .map_err(|e| e.0.context("failed to save jit order owners")),
+            self.persistence
+                .store_fee_policies(auction_id, fee_policies)
+                .map_err(|e| e.context("failed to fee_policies")),
+        )?;
 
-        self.persistence
-            .save_surplus_capturing_jit_orders_orders(
-                auction_id,
-                &auction.surplus_capturing_jit_order_owners,
-            )
-            .await
-            .context("failed to save surplus capturing jit order owners")?;
-
-        tracing::info!("saving fee policies");
-        if let Err(err) = self
-            .persistence
-            .store_fee_policies(auction_id, fee_policies)
-            .await
-        {
-            Metrics::fee_policies_store_error();
-            tracing::warn!(?err, "failed to save fee policies");
-        }
         Metrics::post_processed(start.elapsed());
         Ok(())
     }
@@ -575,12 +584,12 @@ impl RunLoop {
         // Returns the surplus difference in the buy token if `left`
         // is better for the trader than `right`, or 0 otherwise.
         // This takes differently partial fills into account.
-        let improvement_in_buy = |left: &TradedAmounts, right: &TradedAmounts| {
+        let improvement_in_buy = |left: &TradedOrder, right: &TradedOrder| {
             // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
             // trader either sells less or gets more. This can be reformulated as
             // `right.sell * left.buy > left.sell * right.buy`.
-            let right_sell_left_buy = right.sell.0.full_mul(left.buy.0);
-            let left_sell_right_buy = left.sell.0.full_mul(right.buy.0);
+            let right_sell_left_buy = right.executed_sell.0.full_mul(left.executed_buy.0);
+            let left_sell_right_buy = left.executed_sell.0.full_mul(right.executed_buy.0);
             let improvement = right_sell_left_buy
                 .checked_sub(left_sell_right_buy)
                 .unwrap_or_default();
@@ -589,7 +598,7 @@ impl RunLoop {
             // token. Casting to U256 is safe because the difference is smaller than the
             // original product, which if re-divided by right.sell must fit in U256.
             improvement
-                .checked_div(right.sell.0.into())
+                .checked_div(right.executed_sell.0.into())
                 .map(|v| U256::try_from(v).expect("improvement in buy fits in U256"))
                 .unwrap_or_default()
         };
@@ -994,13 +1003,6 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
-    }
-
-    fn fee_policies_store_error() {
-        Self::get()
-            .db_metric_error
-            .with_label_values(&["fee_policies_store"])
-            .inc();
     }
 
     fn post_processed(elapsed: Duration) {

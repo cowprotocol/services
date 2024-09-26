@@ -1,4 +1,5 @@
 pub mod app_data;
+pub mod auction_prices;
 pub mod auctions;
 mod fee_policies;
 pub mod orders;
