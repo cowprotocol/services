@@ -839,7 +839,7 @@ impl Setup {
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
         observe::tracing::initialize_reentrant(
-            "driver=trace,driver::tests::setup::blockchain=debug",
+            "driver=trace,driver::tests::setup::blockchain=debug,warn",
         );
 
         if let Some(name) = self.name.as_ref() {
@@ -1017,7 +1017,7 @@ impl Test {
     }
 
     /// Call the /reveal endpoint.
-    pub async fn reveal(&self) -> Reveal {
+    pub async fn reveal(&self, solution_id: &str) -> Reveal {
         let res = self
             .client
             .post(format!(
@@ -1025,7 +1025,7 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
-            .json(&driver::reveal_req())
+            .json(&driver::reveal_req(solution_id))
             .send()
             .await
             .unwrap();
@@ -1063,11 +1063,11 @@ impl Test {
     }
 
     /// Call the /settle endpoint.
-    pub async fn settle(&self) -> Settle {
-        self.settle_with_solver(solver::NAME).await
+    pub async fn settle(&self, solution_id: &str) -> Settle {
+        self.settle_with_solver(solver::NAME, solution_id).await
     }
 
-    pub async fn settle_with_solver(&self, solver_name: &str) -> Settle {
+    pub async fn settle_with_solver(&self, solver_name: &str, solution_id: &str) -> Settle {
         /// The maximum number of blocks to wait for a settlement to appear on
         /// chain.
         const SUBMISSION_DEADLINE: u64 = 3;
@@ -1081,7 +1081,10 @@ impl Test {
                 "http://{}/{}/settle",
                 self.driver.addr, solver_name
             ))
-            .json(&driver::settle_req(submission_deadline_latest_block))
+            .json(&driver::settle_req(
+                submission_deadline_latest_block,
+                solution_id,
+            ))
             .send()
             .await
             .unwrap();
@@ -1171,6 +1174,18 @@ impl<'a> SolveOk<'a> {
             solutions: Vec<serde_json::Value>,
         }
         serde_json::from_str::<Body>(&self.body).unwrap().solutions
+    }
+
+    /// Extracts the solution id from the response. Since response can contain
+    /// multiple solutions, it takes the id from the first solution.
+    pub fn id(&self) -> String {
+        let solution = self.solution();
+        solution
+            .get("solutionId")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
     }
 
     /// Extracts the first solution from the response. This is expected to be
