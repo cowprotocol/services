@@ -29,7 +29,7 @@ impl Solutions {
             .into_iter()
             .map(|solution| {
                 competition::Solution::new(
-                    solution.id.into(),
+                    competition::solution::Id::new(solution.id),
                     solution
                         .trades
                         .into_iter()
