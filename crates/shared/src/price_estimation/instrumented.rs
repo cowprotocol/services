@@ -81,12 +81,12 @@ impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstima
             let start = Instant::now();
             let estimate = self.inner.estimate_native_price(token).await;
             self.metrics
-                .native_price_estimation_times
+                .price_estimation_times
                 .with_label_values(&[self.name.as_str()])
                 .observe(start.elapsed().as_secs_f64());
             let result = self.estimate_result(estimate.as_ref());
             self.metrics
-                .native_price_estimates
+                .price_estimates
                 .with_label_values(&[self.name.as_str(), result])
                 .inc();
 
@@ -97,10 +97,6 @@ impl<T: NativePriceEstimating> NativePriceEstimating for InstrumentedPriceEstima
     }
 }
 
-/// Most native estimators are regular estimators with a wrapper. In
-/// those cases, the native price requests will get counted as regular
-/// price_estimates. Therefore, native_price_estimates only counts requests
-/// for estimators which are exclusively native price estimators.
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// price estimates
@@ -110,14 +106,6 @@ struct Metrics {
     /// price estimation times
     #[metric(labels("estimator_type"))]
     price_estimation_times: HistogramVec,
-
-    /// number of native price requests sent to each estimator
-    #[metric(labels("estimator_type", "result"))]
-    native_price_estimates: IntCounterVec,
-
-    /// native price estimation times
-    #[metric(labels("estimator_type"))]
-    native_price_estimation_times: HistogramVec,
 }
 
 #[cfg(test)]
