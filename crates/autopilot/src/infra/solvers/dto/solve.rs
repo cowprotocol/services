@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain,
+        domain::{self, eth},
         infra::persistence::{dto, dto::order::Order},
     },
     chrono::{DateTime, Utc},
@@ -89,18 +89,6 @@ pub struct Token {
     pub trusted: bool,
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TradedAmounts {
-    /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    /// The effective amount the user received after all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-}
-
 impl Solution {
     pub fn into_domain(
         self,
@@ -114,9 +102,21 @@ impl Solution {
                 .map(|(o, amounts)| {
                     (
                         o.into(),
-                        domain::competition::TradedAmounts {
-                            sell: amounts.executed_sell().into(),
-                            buy: amounts.executed_buy().into(),
+                        domain::competition::TradedOrder {
+                            sell: eth::Asset {
+                                token: amounts.sell_token.into(),
+                                amount: amounts.limit_sell.into(),
+                            },
+                            buy: eth::Asset {
+                                token: amounts.buy_token.into(),
+                                amount: amounts.limit_buy.into(),
+                            },
+                            side: match amounts.side {
+                                Side::Buy => domain::auction::order::Side::Buy,
+                                Side::Sell => domain::auction::order::Side::Sell,
+                            },
+                            executed_sell: amounts.executed_sell.into(),
+                            executed_buy: amounts.executed_buy.into(),
                         },
                     )
                 })
@@ -131,59 +131,29 @@ impl Solution {
     }
 }
 
+/// Contains basic order information and the executed amounts. Basic order
+/// information are required because of JIT orders which are not part of an
+/// auction, so autopilot can be aware of them before the solution is
+/// settled on-chain.
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde(untagged)]
-pub enum TradedOrder {
-    #[serde(rename_all = "camelCase")]
-    /// An old format that only includes the executed amounts for an order.
-    TradedAmount {
-        /// The effective amount that left the user's wallet including all fees.
-        #[serde_as(as = "HexOrDecimalU256")]
-        sell_amount: U256,
-        /// The effective amount the user received after all fees.
-        #[serde_as(as = "HexOrDecimalU256")]
-        buy_amount: U256,
-    },
-    #[serde(rename_all = "camelCase")]
-    /// Contains basic order information and the executed amounts. Basic order
-    /// information are required because of JIT orders which are not part of an
-    /// auction, so autopilot can be aware of them before the solution is
-    /// settled on-chain.
-    TradedOrder {
-        side: Side,
-        sell_token: H160,
-        buy_token: H160,
-        #[serde_as(as = "HexOrDecimalU256")]
-        /// Sell limit order amount.
-        limit_sell: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        /// Buy limit order amount.
-        limit_buy: U256,
-        /// The effective amount that left the user's wallet including all fees.
-        #[serde_as(as = "HexOrDecimalU256")]
-        executed_sell: U256,
-        /// The effective amount the user received after all fees.
-        #[serde_as(as = "HexOrDecimalU256")]
-        executed_buy: U256,
-    },
-}
-
-impl TradedOrder {
-    pub fn executed_sell(&self) -> U256 {
-        match self {
-            Self::TradedAmount { sell_amount, .. } => *sell_amount,
-            Self::TradedOrder { executed_sell, .. } => *executed_sell,
-        }
-    }
-
-    pub fn executed_buy(&self) -> U256 {
-        match self {
-            Self::TradedAmount { buy_amount, .. } => *buy_amount,
-            Self::TradedOrder { executed_buy, .. } => *executed_buy,
-        }
-    }
+pub struct TradedOrder {
+    side: Side,
+    sell_token: H160,
+    buy_token: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
+    /// Sell limit order amount.
+    limit_sell: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    /// Buy limit order amount.
+    limit_buy: U256,
+    /// The effective amount that left the user's wallet including all fees.
+    #[serde_as(as = "HexOrDecimalU256")]
+    executed_sell: U256,
+    /// The effective amount the user received after all fees.
+    #[serde_as(as = "HexOrDecimalU256")]
+    executed_buy: U256,
 }
 
 #[serde_as]
