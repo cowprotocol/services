@@ -428,7 +428,10 @@ impl Solver {
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
-                    assert!(!state.called || state.allow_multiple_solve_requests, "can't call /solve multiple times");
+                    assert!(
+                        !state.called || state.allow_multiple_solve_requests,
+                        "can't call /solve multiple times"
+                    );
                     state.called = true;
                     axum::response::Json(json!({
                         "solutions": solutions_json,

@@ -48,10 +48,7 @@ async fn solution_not_available() {
         .done()
         .await;
 
-    test.settle("123123")
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
+    test.settle("99").await.err().kind("SolutionNotAvailable");
 }
 
 /// Checks that settlements with revert risk are not submitted via public
@@ -75,8 +72,7 @@ async fn private_rpc_with_high_risk_solution() {
 
     let id = test.solve().await.ok().id();
     // Public cannot be used and private RPC is not available
-    let err = test.settle(&id).await.err();
-    err.kind("FailedToSubmit");
+    test.settle(&id).await.err().kind("FailedToSubmit");
 }
 
 #[tokio::test]

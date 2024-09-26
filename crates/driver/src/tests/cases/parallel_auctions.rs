@@ -1,3 +1,10 @@
+//! Contains a collection of tests that should ensure that the driver
+//! can settle solutions that belong to previous auctions. This is
+//! important when the protocol runs multiple auctions without waiting
+//! for the solution of the previous auction to have settled.
+//! In that case a queue of won solutions might pile up that the
+//! protocol tells the driver to execute one after the other.
+
 use crate::tests::setup::{eth_order, eth_solution, setup, weth_pool};
 
 /// Tests simple happy case where the driver knows about a single
@@ -17,21 +24,15 @@ async fn driver_handles_solutions_based_on_id() {
 
     // calling `/reveal` or `/settle` with incorrect solution ids
     // results in an error.
-    test.settle("123123")
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
-    test.reveal("123123")
-        .await
-        .err()
-        .kind("SolutionNotAvailable");
+    test.settle("99").await.err().kind("SolutionNotAvailable");
+    test.reveal("99").await.err().kind("SolutionNotAvailable");
 
     // calling `/reveal` or `/settle` with a reasonable id works.
     test.reveal(&id).await.ok();
     test.settle(&id).await.ok().await.eth_order_executed().await;
 
     // calling `/reveal` or `/settle` with for a legit solution that
-    // has already been settled also fail.
+    // has already been settled also fails.
     test.settle(&id).await.err().kind("SolutionNotAvailable");
     test.reveal(&id).await.err().kind("SolutionNotAvailable");
 }
@@ -59,7 +60,7 @@ async fn driver_can_settle_old_solutions() {
     assert_ne!(id2, id3);
     assert_ne!(id1, id3);
 
-    // Driver is able to settle older solutions
+    // Driver can settle solution that is not the most recent one.
     // Technically this is not super convincing since all remembered solutions
     // are identical but this is the best we are going to get without needing
     // to heavily modify the testing framework.
@@ -71,8 +72,7 @@ async fn driver_can_settle_old_solutions() {
         .await;
 }
 
-/// Tests that the driver only remembers a relatively short number
-/// of solutions.
+/// Tests that the driver only remembers a relatively small number of solutions.
 #[tokio::test]
 #[ignore]
 async fn driver_has_a_short_memory() {
