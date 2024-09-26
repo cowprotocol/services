@@ -1,5 +1,5 @@
--- Rename current `auctions` table to `auction` since it always contains only the latest auction
-ALTER TABLE auctions RENAME TO auction;
+-- Rename current `auctions` table to `latest_auction` since it always contains only one and only the latest auction
+ALTER TABLE auctions RENAME TO latest_auction;
 
 CREATE TABLE auctions (
    auction_id bigint PRIMARY KEY,
