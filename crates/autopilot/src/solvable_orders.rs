@@ -176,7 +176,7 @@ impl SolvableOrdersCache {
         let mut invalid_order_uids = HashSet::new();
         let mut filtered_order_events = Vec::new();
 
-        let (balances, orders, cow_amms) = {
+        let (balances, mut orders, cow_amms) = {
             let queries = orders.iter().map(Query::from_order).collect::<Vec<_>>();
             tokio::join!(
                 self.fetch_balances(queries),
@@ -184,6 +184,9 @@ impl SolvableOrdersCache {
                 self.timed_future("cow_amm_registry", self.cow_amm_registry.amms()),
             )
         };
+
+        // Prefer newer orders over older ones.
+        orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
 
         let orders = orders_with_balance(orders, &balances);
         let removed = counter.checkpoint("insufficient_balance", &orders);
@@ -510,8 +513,6 @@ async fn find_invalid_signature_orders(
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
 fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
-    // Prefer newer orders over older ones.
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
@@ -534,8 +535,6 @@ fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order
 /// Removes orders that can't possibly be settled because the allowance is not
 /// enough
 fn orders_with_allowance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
-    // Prefer newer orders over older ones.
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
