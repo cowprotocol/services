@@ -15,7 +15,7 @@ use {
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
-    tokio::time::timeout,
+    tokio::time,
     tracing::Instrument,
 };
 
@@ -294,7 +294,7 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing prices will get
     /// prioritized to get fetched during the next cycles of the maintenance
     /// background task.
-    pub fn get_cached_prices(
+    fn get_cached_prices(
         &self,
         tokens: &[H160],
     ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
@@ -322,26 +322,30 @@ impl CachingNativePriceEstimator {
     pub async fn estimate_native_prices_with_timeout<'a>(
         &'a self,
         tokens: &'a [H160],
+        timeout: Duration,
     ) -> HashMap<H160, NativePriceEstimateResult> {
-        let mut collected_prices = HashMap::new();
+        if timeout.is_zero() {
+            self.get_cached_prices(tokens)
+        } else {
+            let mut collected_prices = HashMap::new();
+            let price_stream = self.0.estimate_prices_and_update_cache(
+                tokens,
+                self.0.max_age,
+                self.0.concurrent_requests,
+            );
 
-        let price_stream = self.0.estimate_prices_and_update_cache(
-            tokens,
-            self.0.max_age,
-            self.0.concurrent_requests,
-        );
+            let _ = time::timeout(timeout, async {
+                let mut price_stream = price_stream;
 
-        let _ = timeout(Duration::from_secs(1), async {
-            let mut price_stream = price_stream;
+                while let Some((token, result)) = price_stream.next().await {
+                    collected_prices.insert(token, result);
+                }
+            })
+            .await;
 
-            while let Some((token, result)) = price_stream.next().await {
-                collected_prices.insert(token, result);
-            }
-        })
-        .await;
-
-        // Return whatever was collected up to that point, regardless of the timeout
-        collected_prices
+            // Return whatever was collected up to that point, regardless of the timeout
+            collected_prices
+        }
     }
 }
 

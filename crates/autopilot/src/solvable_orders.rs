@@ -92,6 +92,7 @@ pub struct SolvableOrdersCache {
     limit_order_price_factor: BigDecimal,
     protocol_fees: domain::ProtocolFees,
     cow_amm_registry: cow_amm::Registry,
+    native_price_timeout: Duration,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -115,6 +116,7 @@ impl SolvableOrdersCache {
         limit_order_price_factor: BigDecimal,
         protocol_fees: domain::ProtocolFees,
         cow_amm_registry: cow_amm::Registry,
+        native_price_timeout: Duration,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -130,6 +132,7 @@ impl SolvableOrdersCache {
             limit_order_price_factor,
             protocol_fees,
             cow_amm_registry,
+            native_price_timeout,
         });
         self_
     }
@@ -193,9 +196,22 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("dust_order", &orders);
         filtered_order_events.extend(removed);
 
+        let cow_amm_tokens = cow_amms
+            .iter()
+            .flat_map(|cow_amm| cow_amm.traded_tokens())
+            .unique()
+            .cloned()
+            .collect::<Vec<_>>();
+
         // create auction
-        let (orders, mut prices) =
-            get_orders_with_native_prices(orders, &self.native_price_estimator, self.metrics).await;
+        let (orders, mut prices) = get_orders_with_native_prices(
+            orders,
+            &self.native_price_estimator,
+            self.metrics,
+            cow_amm_tokens.as_slice(),
+            self.native_price_timeout,
+        )
+        .await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
@@ -210,21 +226,6 @@ impl SolvableOrdersCache {
 
             entry.insert(weth_price);
         }
-
-        let cow_amm_tokens = cow_amms
-            .iter()
-            .flat_map(|cow_amm| cow_amm.traded_tokens())
-            .unique()
-            .filter(|token| !prices.contains_key(token))
-            .cloned()
-            .collect::<Vec<_>>();
-        let cow_amm_prices = self
-            .timed_future(
-                "cow_amm_prices",
-                get_native_prices(cow_amm_tokens.as_slice(), &self.native_price_estimator),
-            )
-            .await;
-        prices.extend(cow_amm_prices);
 
         let removed = counter.checkpoint("missing_price", &orders);
         filtered_order_events.extend(removed);
@@ -439,9 +440,10 @@ async fn find_banned_user_orders(orders: &[Order], banned_users: &banned::Users)
 async fn get_native_prices(
     tokens: &[H160],
     native_price_estimator: &CachingNativePriceEstimator,
+    timeout: Duration,
 ) -> HashMap<H160, U256> {
     native_price_estimator
-        .estimate_native_prices_with_timeout(tokens)
+        .estimate_native_prices_with_timeout(tokens, timeout)
         .await
         .into_iter()
         .flat_map(|(token, result)| {
@@ -613,15 +615,22 @@ async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
+    additional_tokens: &[H160],
+    timeout: Duration,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
-    let traded_tokens = orders
+    let mut traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+        .collect::<HashSet<_>>();
 
-    let prices = get_native_prices(&traded_tokens, native_price_estimator).await;
+    traded_tokens.extend(additional_tokens);
+
+    let prices = get_native_prices(
+        &traded_tokens.into_iter().collect::<Vec<_>>(),
+        native_price_estimator,
+        timeout,
+    )
+    .await;
 
     // Filter both orders and prices so that we only return orders that have prices
     // and prices that have orders.
@@ -640,6 +649,11 @@ async fn get_orders_with_native_prices(
                 false
             }
         }
+    });
+    additional_tokens.iter().for_each(|token| {
+        prices
+            .get(token)
+            .and_then(|price| used_prices.insert(*token, *price));
     });
 
     let tokens_by_priority = prioritize_missing_prices(filtered);
@@ -913,11 +927,77 @@ mod tests {
     };
 
     #[tokio::test]
+    async fn filters_tokens_without_native_prices_with_timeout() {
+        let token1 = H160([1; 20]);
+        let token2 = H160([2; 20]);
+        let token3 = H160([3; 20]);
+
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
+                .build(),
+        ];
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_price()
+            .withf(move |token| *token == token1)
+            .returning(|_| async { Ok(2.) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token2)
+            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token3)
+            .returning(|_| async { Ok(0.25) }.boxed());
+
+        let native_price_estimator = CachingNativePriceEstimator::new(
+            Box::new(native_price_estimator),
+            Duration::from_secs(10),
+            Duration::MAX,
+            None,
+            Default::default(),
+            3,
+        );
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            &[],
+            Duration::from_millis(100),
+        )
+        .await;
+        assert_eq!(filtered_orders, [orders[1].clone()]);
+        assert_eq!(
+            prices,
+            btreemap! {
+                token1 => U256::from(2_000_000_000_000_000_000_u128),
+                token3 => U256::from(250_000_000_000_000_000_u128),
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn filters_tokens_without_native_prices() {
         let token1 = H160([1; 20]);
         let token2 = H160([2; 20]);
         let token3 = H160([3; 20]);
         let token4 = H160([4; 20]);
+        let token5 = H160([5; 20]);
 
         let orders = vec![
             OrderBuilder::default()
@@ -966,6 +1046,11 @@ mod tests {
             .times(1)
             .withf(move |token| *token == token4)
             .returning(|_| async { Ok(0.) }.boxed());
+        native_price_estimator
+            .expect_estimate_native_price()
+            .times(1)
+            .withf(move |token| *token == token5)
+            .returning(|_| async { Ok(5.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
@@ -977,9 +1062,32 @@ mod tests {
         );
         let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
+        // We'll have no native prices in this call. But this call will cause a
+        // background task to fetch the missing prices so we'll have them in the
+        // next call.
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            &[token5],
+            Duration::ZERO,
+        )
+        .await;
+        assert!(filtered_orders.is_empty());
+        assert!(prices.is_empty());
+
+        // Wait for native prices to get fetched.
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
         // Now we have all the native prices we want.
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, metrics).await;
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            metrics,
+            &[token5],
+            Duration::ZERO,
+        )
+        .await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
@@ -987,6 +1095,7 @@ mod tests {
             btreemap! {
                 token1 => U256::from(2_000_000_000_000_000_000_u128),
                 token3 => U256::from(250_000_000_000_000_000_u128),
+                token5 => U256::from(5_000_000_000_000_000_000_u128),
             }
         );
     }

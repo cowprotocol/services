@@ -227,6 +227,11 @@ pub struct Arguments {
     /// before continuing the run loop.
     #[clap(long, env, default_value = "2s", value_parser = humantime::parse_duration)]
     pub max_run_loop_delay: Duration,
+
+    /// Maximum timeout for fetching the native prices in the run loop
+    /// If the value is 0, the native prices are fetched from the cache
+    #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
+    pub run_loop_native_price_timeout: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -271,6 +276,7 @@ impl std::fmt::Display for Arguments {
             cow_amm_configs,
             run_loop_mode,
             max_run_loop_delay,
+            run_loop_native_price_timeout,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -345,6 +351,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
         writeln!(f, "run_loop_mode: {:?}", run_loop_mode)?;
         writeln!(f, "max_run_loop_delay: {:?}", max_run_loop_delay)?;
+        writeln!(
+            f,
+            "run_loop_native_price_timeout: {:?}",
+            run_loop_native_price_timeout
+        )?;
         Ok(())
     }
 }
