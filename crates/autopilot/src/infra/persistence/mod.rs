@@ -179,20 +179,26 @@ impl Persistence {
         ex.commit().await.context("commit")
     }
 
-    /// For a given auction, finds all settlements and returns their transaction
-    /// hashes.
-    pub async fn find_settlement_transactions(
+    /// For a given auction and solver, tries to find the settlement
+    /// transaction.
+    pub async fn find_settlement_transaction(
         &self,
         auction_id: i64,
-    ) -> Result<Vec<eth::TxId>, DatabaseError> {
-        Ok(self
-            .postgres
-            .find_settlement_transactions(auction_id)
-            .await
-            .map_err(DatabaseError)?
-            .into_iter()
-            .map(eth::TxId)
-            .collect())
+        solver: eth::Address,
+    ) -> Result<Option<eth::TxId>, DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["find_settlement_transaction"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        Ok(database::settlements::find_settlement_transaction(
+            &mut ex,
+            auction_id,
+            ByteArray(solver.0 .0),
+        )
+        .await?
+        .map(|hash| H256(hash.0).into()))
     }
 
     /// Checks if an auction already has an accociated settlement.

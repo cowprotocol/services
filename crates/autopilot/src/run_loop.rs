@@ -286,6 +286,7 @@ impl RunLoop {
             .extend(solved_order_uids.clone());
 
         let solution_id = solution.id();
+        let solver = solution.solver();
         let self_ = self.clone();
         let driver_ = driver.clone();
 
@@ -298,6 +299,7 @@ impl RunLoop {
                     &driver_,
                     solution_id,
                     solved_order_uids,
+                    solver,
                     auction_id,
                     block_deadline,
                 )
@@ -305,7 +307,7 @@ impl RunLoop {
             {
                 Ok(tx_hash) => {
                     Metrics::settle_ok(&driver_, submission_start.elapsed());
-                    tracing::debug!(?tx_hash, driver = %driver_.name, "solution settled");
+                    tracing::debug!(?tx_hash, driver = %driver_.name, ?solver, "solution settled");
                 }
                 Err(err) => {
                     Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
@@ -751,6 +753,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solution_id: u64,
         solved_order_uids: HashSet<OrderUid>,
+        solver: eth::Address,
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
@@ -758,7 +761,27 @@ impl RunLoop {
             solution_id,
             submission_deadline_latest_block,
         };
-        let result = self.wait_for_settlement(driver, auction_id, request).await;
+
+        // Wait for either the settlement transaction to be mined or the driver returned
+        // a result.
+        let result = match futures::future::select(
+            Box::pin(self.wait_for_settlement_transaction(
+                auction_id,
+                self.config.submission_deadline,
+                solver,
+            )),
+            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
+        )
+        .await
+        {
+            futures::future::Either::Left((res, _)) => res,
+            futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
+                match driver_result {
+                    Ok(_) => wait_for_settlement_transaction.await,
+                    Err(err) => Err(SettleError::Failure(err)),
+                }
+            }
+        };
 
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
@@ -769,34 +792,8 @@ impl RunLoop {
         result
     }
 
-    /// Wait for either the settlement transaction to be mined or the driver
-    /// returned a result.
-    async fn wait_for_settlement(
-        &self,
-        driver: &infra::Driver,
-        auction_id: i64,
-        request: settle::Request,
-    ) -> Result<eth::TxId, SettleError> {
-        match futures::future::select(
-            Box::pin(
-                self.wait_for_settlement_transaction(auction_id, self.config.submission_deadline),
-            ),
-            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
-        )
-        .await
-        {
-            futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((driver_result, onchain_task)) => {
-                driver_result.map_err(|err| {
-                    tracing::warn!(?err, "driver settle request failed");
-                    SettleError::Failure(err)
-                })?;
-                onchain_task.await
-            }
-        }
-    }
-
-    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    /// Tries to find a `settle` contract call with calldata ending in `tag` and
+    /// originated from the `solver`.
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
@@ -804,6 +801,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
+        solver: eth::Address,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
@@ -816,17 +814,18 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_settlement_transactions(auction_id)
+                .find_settlement_transaction(auction_id, solver)
                 .await
             {
-                Ok(hashes) if hashes.is_empty() => {}
-                Ok(hashes) => {
-                    if let Some(hash) = hashes.into_iter().next() {
-                        return Ok(hash);
-                    }
-                }
+                Ok(Some(transaction)) => return Ok(transaction),
+                Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
+                    tracing::warn!(
+                        ?err,
+                        ?auction_id,
+                        ?solver,
+                        "failed to find settlement transaction"
+                    );
                 }
             }
             if block.number >= deadline {
