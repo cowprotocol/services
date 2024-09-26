@@ -60,7 +60,6 @@ struct UpdateTask {
     update_interval: Duration,
     update_size: Option<usize>,
     prefetch_time: Duration,
-    concurrent_requests: usize,
 }
 
 type CacheEntry = Result<f64, PriceEstimationError>;
@@ -115,7 +114,6 @@ impl Inner {
         &'a self,
         tokens: &'a [H160],
         max_age: Duration,
-        parallelism: usize,
     ) -> futures::stream::BoxStream<'_, (H160, NativePriceEstimateResult)> {
         let estimates = tokens.iter().map(move |token| async move {
             {
@@ -147,7 +145,7 @@ impl Inner {
             (*token, result)
         });
         futures::stream::iter(estimates)
-            .buffered(parallelism)
+            .buffered(self.concurrent_requests)
             .boxed()
     }
 
@@ -208,11 +206,7 @@ impl UpdateTask {
         outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 
         if !outdated_entries.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(
-                &outdated_entries,
-                max_age,
-                self.concurrent_requests,
-            );
+            let mut stream = inner.estimate_prices_and_update_cache(&outdated_entries, max_age);
             while stream.next().await.is_some() {}
             metrics
                 .native_price_cache_background_updates
@@ -282,7 +276,6 @@ impl CachingNativePriceEstimator {
             update_interval,
             update_size,
             prefetch_time,
-            concurrent_requests,
         }
         .run()
         .instrument(tracing::info_span!("caching_native_price_estimator"));
@@ -329,11 +322,9 @@ impl CachingNativePriceEstimator {
         }
 
         let mut collected_prices = HashMap::new();
-        let price_stream = self.0.estimate_prices_and_update_cache(
-            tokens,
-            self.0.max_age,
-            self.0.concurrent_requests,
-        );
+        let price_stream = self
+            .0
+            .estimate_prices_and_update_cache(tokens, self.0.max_age);
 
         let _ = time::timeout(timeout, async {
             let mut price_stream = price_stream;
@@ -372,11 +363,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(
-                    &[token],
-                    self.0.max_age,
-                    self.0.concurrent_requests,
-                )
+                .estimate_prices_and_update_cache(&[token], self.0.max_age)
                 .next()
                 .await
                 .unwrap()

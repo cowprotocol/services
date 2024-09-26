@@ -615,13 +615,13 @@ async fn get_orders_with_native_prices(
     orders: Vec<Order>,
     native_price_estimator: &CachingNativePriceEstimator,
     metrics: &Metrics,
-    additional_tokens: Vec<H160>,
+    additional_tokens: impl IntoIterator<Item = H160>,
     timeout: Duration,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
         .flat_map(|order| [order.data.sell_token, order.data.buy_token])
-        .chain(additional_tokens.into_iter())
+        .chain(additional_tokens)
         .collect::<HashSet<_>>();
 
     let prices = get_native_prices(
@@ -631,8 +631,7 @@ async fn get_orders_with_native_prices(
     )
     .await;
 
-    // Filter both orders and prices so that we only return orders that have prices
-    // and prices that have orders.
+    // Filter orders so that we only return orders that have prices
     let mut filtered_market_orders = 0_i64;
     let (usable, filtered): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
