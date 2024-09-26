@@ -23,6 +23,7 @@ use {
 
 /// A `TradeFinding`-based price estimator with request sharing and rate
 /// limiting.
+#[derive(Clone)]
 pub struct TradeEstimator {
     inner: Arc<Inner>,
     sharing: RequestSharing<Arc<Query>, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
@@ -101,16 +102,6 @@ impl Inner {
             solver: quote.solver,
             verified: false,
         })
-    }
-}
-
-impl Clone for TradeEstimator {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            sharing: self.sharing.clone(),
-            rate_limiter: self.rate_limiter.clone(),
-        }
     }
 }
 
