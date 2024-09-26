@@ -507,6 +507,7 @@ pub fn setup() -> Setup {
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         jit_orders: Default::default(),
         surplus_capturing_jit_order_owners: Default::default(),
+        allow_multiple_solve_requests: false,
     }
 }
 
@@ -535,6 +536,8 @@ pub struct Setup {
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<H160>,
+    /// In case your test requires multiple `/solve` requests
+    allow_multiple_solve_requests: bool,
 }
 
 /// The validity of a solution.
@@ -925,6 +928,7 @@ impl Setup {
                 private_key: solver.private_key.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
+                allow_multiple_solve_requests: self.allow_multiple_solve_requests,
             })
             .await;
 
@@ -973,6 +977,11 @@ impl Setup {
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
         crate::infra::time::now() + chrono::Duration::seconds(2)
+    }
+
+    pub fn allow_multiple_solve_requests(mut self) -> Self {
+        self.allow_multiple_solve_requests = true;
+        self
     }
 }
 
@@ -1278,6 +1287,12 @@ impl Reveal {
         assert_eq!(self.status, hyper::StatusCode::OK);
         RevealOk { body: self.body }
     }
+
+    /// Expect the /reveal endpoint to return a 400 BAD REQUEST response.
+    pub fn err(self) -> RevealErr {
+        assert!(!self.status.is_success());
+        RevealErr { body: self.body }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1310,6 +1325,23 @@ impl RevealOk {
             .unwrap()
             .is_empty());
         self
+    }
+}
+
+pub struct RevealErr {
+    body: String,
+}
+
+impl RevealErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }
 

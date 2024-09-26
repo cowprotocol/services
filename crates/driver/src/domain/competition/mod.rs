@@ -291,14 +291,16 @@ impl Competition {
         solution_id: u64,
         submission_deadline: u64,
     ) -> Result<Settled, Error> {
-        let settlement = self
-            .settlements
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|s| s.solution().get() == solution_id)
-            .cloned()
-            .ok_or(Error::SolutionNotAvailable)?;
+        let settlement = {
+            let mut lock = self.settlements.lock().unwrap();
+            let index = lock
+                .iter()
+                .position(|s| s.solution().get() == solution_id)
+                .ok_or(Error::SolutionNotAvailable)?;
+            // remove settlement to ensure we can't settle it twice by accident
+            lock.swap_remove_front(index)
+                .ok_or(Error::SolutionNotAvailable)?
+        };
 
         let executed = self
             .mempools

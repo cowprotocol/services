@@ -42,6 +42,7 @@ pub struct Config<'a> {
     pub fee_handler: FeeHandler,
     pub private_key: ethcontract::PrivateKey,
     pub expected_surplus_capturing_jit_order_owners: Vec<H160>,
+    pub allow_multiple_solve_requests: bool,
 }
 
 impl Solver {
@@ -398,7 +399,10 @@ impl Solver {
         )
         .await;
 
-        let state = Arc::new(Mutex::new(StateInner { called: false }));
+        let state = Arc::new(Mutex::new(StateInner {
+            called: false,
+            allow_multiple_solve_requests: config.allow_multiple_solve_requests,
+        }));
         let app = axum::Router::new()
         .route(
             "/solve",
@@ -424,7 +428,7 @@ impl Solver {
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
-                    assert!(!state.called, "solve was already called");
+                    assert!(!state.called || state.allow_multiple_solve_requests, "can't call /solve multiple times");
                     state.called = true;
                     axum::response::Json(json!({
                         "solutions": solutions_json,
@@ -446,6 +450,8 @@ struct StateInner {
     /// Has this solver been called yet? If so, attempting to make another call
     /// will result in a failed test.
     called: bool,
+    /// In case you want to allow calling a solver multiple times.
+    allow_multiple_solve_requests: bool,
 }
 
 #[derive(Debug, Clone)]
