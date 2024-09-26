@@ -43,10 +43,14 @@ CREATE TABLE proposed_solution_executions (
 
 -- Jit orders that were proposed by solvers during competition time, but not yet potentially executed
 CREATE TABLE proposed_jit_orders (
-   order_uid bytea PRIMARY KEY,
+   auction_id bigint NOT NULL,
+   solution_id numeric NOT NULL,
+   order_uid bytea NOT NULL,
    sell_token bytea NOT NULL,
    buy_token bytea NOT NULL,
    limit_sell numeric(78,0) NOT NULL,
    limit_buy numeric(78,0) NOT NULL,
-   side OrderKind NOT NULL
+   side OrderKind NOT NULL,
+
+   PRIMARY KEY (auction_id, solution_id, order_uid)
 );
