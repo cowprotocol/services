@@ -22,8 +22,7 @@ pub struct OnEvent {
 }
 
 impl OnEvent {
-    /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
-    /// first update run.
+    /// Creates a new OnEvent and asynchronously schedules the first update run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
         Self { eth, persistence }
     }
@@ -62,8 +61,7 @@ impl OnEvent {
 
         tracing::debug!(tx = ?event.transaction, "updating settlement details");
 
-        // Reconstruct the settlement transaction based on the blockchain transaction
-        // hash
+        // Reconstruct the settlement transaction based on the transaction hash
         let transaction = match self.eth.transaction(event.transaction).await {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
