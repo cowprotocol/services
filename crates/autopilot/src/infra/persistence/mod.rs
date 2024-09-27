@@ -63,14 +63,14 @@ impl Persistence {
     /// If the given auction is successfully saved, it is also archived.
     pub async fn replace_current_auction(
         &self,
-        auction: &domain::Auction,
+        auction: &domain::AuctionWithoutId,
     ) -> Result<domain::auction::Id, DatabaseError> {
         let auction = dto::auction::from_domain(auction.clone());
         self.postgres
             .replace_current_auction(&auction)
             .await
-            .inspect(|&auction_id| {
-                self.archive_auction(auction_id, auction);
+            .inspect(|&id| {
+                self.archive_auction(dto::auction::Auction { id, auction });
             })
             .map_err(DatabaseError)
     }
@@ -89,13 +89,16 @@ impl Persistence {
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, id: domain::auction::Id, instance: dto::auction::Auction) {
+    fn archive_auction(&self, instance: dto::auction::Auction) {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
         tokio::spawn(
             async move {
-                match uploader.upload(id.to_string(), &instance).await {
+                match uploader
+                    .upload(instance.id.to_string(), &instance.auction)
+                    .await
+                {
                     Ok(key) => {
                         tracing::info!(?key, "uploaded auction to s3");
                     }

@@ -329,7 +329,7 @@ impl<'a> Services<'a> {
     /// Fetches the current auction. Don't use this as a synchronization
     /// mechanism in tests because that is prone to race conditions
     /// which would make tests flaky.
-    pub async fn get_auction(&self) -> dto::AuctionWithId {
+    pub async fn get_auction(&self) -> dto::Auction {
         let response = self
             .http
             .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))

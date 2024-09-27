@@ -76,15 +76,15 @@ impl RunLoop {
             observe::log_auction_delta(&previous, &auction);
             self.liveness.auction();
 
-            self.single_run(auction.id, &auction.auction)
+            self.single_run(&auction)
                 .instrument(tracing::info_span!("auction", auction.id))
                 .await;
 
-            previous = Some(auction.auction);
+            previous = Some(auction);
         }
     }
 
-    async fn next_auction(&mut self) -> Option<domain::AuctionWithId> {
+    async fn next_auction(&mut self) -> Option<domain::Auction> {
         let auction = match self.orderbook.auction().await {
             Ok(auction) => auction,
             Err(err) => {
@@ -97,29 +97,29 @@ impl RunLoop {
             tracing::trace!("skipping already seen auction");
             return None;
         }
-        if self.block == auction.auction.block {
+        if self.block == auction.block {
             tracing::trace!("skipping already seen block");
             return None;
         }
 
-        if auction.auction.orders.is_empty() {
+        if auction.orders.is_empty() {
             tracing::trace!("skipping empty auction");
             return None;
         }
 
         self.auction = auction.id;
-        self.block = auction.auction.block;
+        self.block = auction.block;
         Some(auction)
     }
 
-    async fn single_run(&self, id: domain::auction::Id, auction: &domain::Auction) {
+    async fn single_run(&self, auction: &domain::Auction) {
         tracing::info!("solving");
-        Metrics::get().auction.set(id);
+        Metrics::get().auction.set(auction.id);
         Metrics::get()
             .orders
             .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
-        let mut participants = self.competition(id, auction).await;
+        let mut participants = self.competition(auction).await;
 
         // Shuffle so that sorting randomly splits ties.
         participants.shuffle(&mut rand::thread_rng());
@@ -186,13 +186,8 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(
-        &self,
-        id: domain::auction::Id,
-        auction: &domain::Auction,
-    ) -> Vec<Participant<'_>> {
-        let request =
-            solve::Request::new(id, auction, &self.trusted_tokens.all(), self.solve_deadline);
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
+        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
