@@ -234,36 +234,42 @@ impl RunLoop {
             return;
         }
 
+        let winners = self.select_winners(&solutions);
+        if winners.is_empty() {
+            tracing::info!("no winners for auction");
+            return;
+        }
+
         let competition_simulation_block = self.eth.current_block().borrow().number;
+        let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
-        // TODO: Keep going with other solutions until some deadline.
-        if let Some(Participant { driver, solution }) = solutions.last() {
+        // Post-processing should not be executed asynchronously since it includes steps
+        // of storing all the competition/auction-related data to the DB.
+        if let Err(err) = self
+            .post_processing(
+                auction_id,
+                auction,
+                competition_simulation_block,
+                // TODO: Support multiple winners
+                // https://github.com/cowprotocol/services/issues/3021
+                &winners.first().expect("must exist").solution,
+                &solutions,
+                block_deadline,
+            )
+            .await
+        {
+            tracing::error!(?err, "failed to post-process competition");
+            return;
+        }
+
+        for Participant { driver, solution } in winners {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
-
-            let block_deadline = competition_simulation_block + self.config.submission_deadline;
-
-            // Post-processing should not be executed asynchronously since it includes steps
-            // of storing all the competition/auction-related data to the DB.
-            if let Err(err) = self
-                .post_processing(
-                    auction_id,
-                    auction,
-                    competition_simulation_block,
-                    solution,
-                    &solutions,
-                    block_deadline,
-                )
-                .await
-            {
-                tracing::error!(?err, "failed to post-process competition");
-                return;
-            }
 
             self.start_settlement_execution(
                 auction_id,
                 single_run_start,
-                driver,
-                solution,
+                &driver,
+                &solution,
                 block_deadline,
             )
             .await;
@@ -524,6 +530,35 @@ impl RunLoop {
         self.report_on_solutions(&solutions, auction);
 
         solutions
+    }
+
+    /// Chooses the winners from the given participants.
+    ///
+    /// Participants are already sorted by their score (worst to best).
+    ///
+    /// Winners are selected one by one, starting from the best solution,
+    /// until `max_winners_per_auction` is hit. The solution can become winner
+    /// it is swaps tokens that are not yet swapped by any other already
+    /// selected winner.
+    fn select_winners(&self, participants: &[Participant]) -> Vec<Participant> {
+        let mut winners = Vec::new();
+        let mut already_swapped_tokens = HashSet::new();
+        for participant in participants.iter().rev() {
+            let swapped_tokens = participant
+                .solution
+                .orders()
+                .iter()
+                .map(|(_, order)| (order.sell.token, order.buy.token))
+                .collect::<HashSet<_>>();
+            if swapped_tokens.is_disjoint(&already_swapped_tokens) {
+                winners.push(participant.clone());
+                already_swapped_tokens.extend(swapped_tokens);
+                if winners.len() >= self.config.max_winners_per_auction {
+                    break;
+                }
+            }
+        }
+        winners
     }
 
     /// Records metrics, order events and logs for the given solutions.
@@ -853,6 +888,7 @@ impl RunLoop {
     }
 }
 
+#[derive(Clone)]
 struct Participant {
     driver: Arc<infra::Driver>,
     solution: competition::SolutionWithId,
