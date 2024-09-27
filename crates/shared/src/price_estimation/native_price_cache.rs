@@ -1,6 +1,11 @@
 use {
     super::PriceEstimationError,
-    crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
+    crate::price_estimation::native::{
+        from_normalized_price,
+        NativePriceEstimateResult,
+        NativePriceEstimating,
+    },
+    bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
     indexmap::IndexSet,
     primitive_types::H160,
@@ -227,6 +232,29 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
+    pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
+        let now = Instant::now();
+        // Update the cache to half max age time, so it gets fetched sooner, since we
+        // don't know exactly how old the price was
+        let updated_at = now - (self.0.max_age / 2);
+
+        let cache = prices
+            .into_iter()
+            .filter_map(|(token, price)| {
+                Some((
+                    token,
+                    CachedResult {
+                        result: Ok(from_normalized_price(price)?),
+                        updated_at,
+                        requested_at: now,
+                    },
+                ))
+            })
+            .collect::<HashMap<_, _>>();
+
+        *self.0.cache.lock().unwrap() = cache;
+    }
+
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate
     /// native prices which get cached a duration of `max_age`.
     /// Spawns a background task maintaining the cache once per
@@ -342,6 +370,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn caches_successful_estimates_with_loaded_prices() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner.expect_estimate_native_price().never();
+
+        let prices = HashMap::from([(token(0), BigDecimal::try_from(1e18).unwrap())]);
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+        );
+        estimator.initialize_cache(prices).await;
+
+        for _ in 0..10 {
+            let result = estimator.estimate_native_price(token(0)).await;
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
+        }
+    }
+
+    #[tokio::test]
     async fn caches_successful_estimates() {
         let mut inner = MockNativePriceEstimating::new();
         inner
@@ -360,7 +410,7 @@ mod tests {
 
         for _ in 0..10 {
             let result = estimator.estimate_native_price(token(0)).await;
-            assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
 

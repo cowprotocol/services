@@ -349,7 +349,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
             tracing::debug!(?order, "invalidated order");
         }
         for (order, quote) in orders.iter().zip(quotes.iter()) {
-            tracing::debug!(order =? order.uid, ?quote, "upserted order");
+            tracing::debug!(order =? order.uid, ?quote, "order created");
         }
 
         Ok(())

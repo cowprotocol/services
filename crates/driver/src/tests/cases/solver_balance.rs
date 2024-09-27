@@ -41,6 +41,9 @@ async fn test_just_enough_funded() {
         .done()
         .await;
 
-    test.solve_with_solver("barely_funded").await.ok();
-    test.settle_with_solver("barely_funded").await.ok().await;
+    let id = test.solve_with_solver("barely_funded").await.ok().id();
+    test.settle_with_solver("barely_funded", &id)
+        .await
+        .ok()
+        .await;
 }

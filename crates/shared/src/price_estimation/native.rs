@@ -1,5 +1,7 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
+    bigdecimal::{BigDecimal, ToPrimitive},
+    cached::once_cell::sync::Lazy,
     futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
@@ -23,6 +25,29 @@ pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U2
         100 => Some(10u128.pow(21).into()),
         _ => None,
     }
+}
+
+/// Convert from normalized price to floating point price
+pub fn from_normalized_price(price: BigDecimal) -> Option<f64> {
+    static ONE_E18: Lazy<BigDecimal> = Lazy::new(|| BigDecimal::try_from(1e18).unwrap());
+
+    // Divide by 1e18 to reverse the multiplication by 1e18
+    let normalized_price = price / ONE_E18.clone();
+
+    // Convert U256 to f64
+    let normalized_price = normalized_price.to_f64()?;
+
+    // Ensure the price is in the normal float range
+    normalized_price.is_normal().then_some(normalized_price)
+}
+
+/// Convert from floating point price to normalized price
+pub fn to_normalized_price(price: f64) -> Option<U256> {
+    let uint_max = 2.0_f64.powi(256);
+
+    let price_in_eth = 1e18 * price;
+    (price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max)
+        .then_some(U256::from_f64_lossy(price_in_eth))
 }
 
 #[mockall::automock]
@@ -90,6 +115,7 @@ mod tests {
         super::*,
         crate::price_estimation::{Estimate, MockPriceEstimating},
         primitive_types::H160,
+        std::str::FromStr,
     };
 
     #[tokio::test]
@@ -140,5 +166,37 @@ mod tests {
             .estimate_native_price(H160::from_low_u64_be(2))
             .await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
+    }
+
+    #[test]
+    fn computes_price_from_normalized_price() {
+        assert_eq!(
+            from_normalized_price(BigDecimal::from_str("500000000000000000").unwrap()).unwrap(),
+            0.5
+        );
+    }
+
+    #[test]
+    fn computes_u256_prices_normalized_to_1e18() {
+        assert_eq!(
+            to_normalized_price(0.5).unwrap(),
+            U256::from(500_000_000_000_000_000_u128),
+        );
+    }
+
+    #[test]
+    fn normalize_prices_fail_when_outside_valid_input_range() {
+        assert!(to_normalized_price(0.).is_none());
+        assert!(to_normalized_price(-1.).is_none());
+        assert!(to_normalized_price(f64::INFINITY).is_none());
+
+        let min_price = 1. / 1e18;
+        assert!(to_normalized_price(min_price).is_some());
+        assert!(to_normalized_price(min_price * (1. - f64::EPSILON)).is_none());
+
+        let uint_max = 2.0_f64.powi(256);
+        let max_price = uint_max / 1e18;
+        assert!(to_normalized_price(max_price).is_none());
+        assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
     }
 }

@@ -78,7 +78,7 @@ impl Api {
                     liquidity: self.liquidity.clone(),
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
-                    settlement: Default::default(),
+                    settlements: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
