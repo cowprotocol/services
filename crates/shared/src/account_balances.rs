@@ -51,6 +51,13 @@ pub struct Balance {
     pub balance: U256,
 }
 
+impl Balance {
+    /// Returns the effective balance min(balance, allowance)
+    pub fn effective_balance(&self) -> U256 {
+        self.allowance.min(self.balance)
+    }
+}
+
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {

@@ -185,16 +185,9 @@ impl SolvableOrdersCache {
             )
         };
 
-        // Prefer newer orders over older ones.
-        orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
-
-        let orders = orders_with_balance(orders, &balances);
-        let removed = counter.checkpoint("insufficient_balance", &orders);
-        invalid_order_uids.extend(removed);
-
-        let orders = orders_with_allowance(orders, &balances);
-        let removed = counter.checkpoint("insufficient_balance", &orders);
-        invalid_order_uids.extend(removed);
+        let filtered_orders = filter_orders_with_balance(&mut orders, &balances);
+        counter.checkpoint_by_multiple_invalid_orders(filtered_orders.as_slice());
+        invalid_order_uids.extend(filtered_orders.iter().map(|(_, order_uid)| *order_uid));
 
         let orders = filter_dust_orders(orders, &balances);
         let removed = counter.checkpoint("dust_order", &orders);
@@ -511,47 +504,64 @@ async fn find_invalid_signature_orders(
 }
 
 /// Removes orders that can't possibly be settled because there isn't enough
-/// balance.
-fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
+/// balance or allowance.
+fn filter_orders_with_balance(
+    orders: &mut Vec<Order>,
+    balances: &Balances,
+) -> Vec<(Reason, OrderUid)> {
+    let mut filtered_orders = vec![];
+    // Prefer newer orders over older ones.
+    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     orders.retain(|order| {
-        let balance = match balances.get(&Query::from_order(order)) {
-            None => return false,
-            Some(balance) => balance.balance,
-        };
-
-        if order.data.partially_fillable && balance >= 1.into() {
-            return true;
+        // The order of checks impacts the order of what we want to filter first / with
+        // more priority
+        if invalid_balance(order, balances) {
+            filtered_orders.push(("insufficient_balance", order.metadata.uid));
+            return false;
         }
-
-        let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
-            None => return false,
-            Some(balance) => balance,
-        };
-        balance >= needed_balance
+        if invalid_allowance(order, balances) {
+            filtered_orders.push(("insufficient_allowance", order.metadata.uid));
+            return false;
+        }
+        true
     });
-    orders
+    filtered_orders
 }
 
-/// Removes orders that can't possibly be settled because the allowance is not
-/// enough
-fn orders_with_allowance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
-    orders.retain(|order| {
-        let balance = match balances.get(&Query::from_order(order)) {
-            None => return false,
-            Some(balance) => balance.allowance,
-        };
+/// Returns true if the allowance is invalid for the given order
+fn invalid_allowance(order: &Order, balances: &Balances) -> bool {
+    let balance = match balances.get(&Query::from_order(order)) {
+        None => return false,
+        Some(balance) => balance.allowance,
+    };
 
-        if order.data.partially_fillable && balance >= 1.into() {
-            return true;
-        }
+    if order.data.partially_fillable && balance >= 1.into() {
+        return true;
+    }
 
-        let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
-            None => return false,
-            Some(balance) => balance,
-        };
-        balance >= needed_balance
-    });
-    orders
+    let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
+        None => return false,
+        Some(balance) => balance,
+    };
+    balance >= needed_balance
+}
+
+/// Returns true if the balance is invalid for the given order
+fn invalid_balance(order: &Order, balances: &Balances) -> bool {
+    let balance = match balances.get(&Query::from_order(order)) {
+        None => return false,
+        Some(balance) => balance.balance,
+    };
+
+    if order.data.partially_fillable && balance >= 1.into() {
+        return true;
+    }
+
+    let needed_balance = match order.data.sell_amount.checked_add(order.data.fee_amount) {
+        None => return false,
+        Some(balance) => balance,
+    };
+    balance >= needed_balance
 }
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
@@ -862,6 +872,39 @@ impl OrderFilterCounter {
             );
         }
         filtered_orders.into_keys().collect()
+    }
+
+    /// Creates a new checkpoint based on the found multiply invalid orders.
+    fn checkpoint_by_multiple_invalid_orders(
+        &mut self,
+        invalid_orders_with_reason: &[(Reason, OrderUid)],
+    ) {
+        if invalid_orders_with_reason.is_empty() {
+            return;
+        }
+
+        let mut counter: HashMap<Reason, (usize, Vec<OrderUid>)> = Default::default();
+        for (reason, order_uid) in invalid_orders_with_reason {
+            if self.orders.remove(order_uid).is_some() {
+                counter
+                    .entry(reason)
+                    .and_modify(|(counter, orders)| {
+                        *counter += 1;
+                        orders.push(*order_uid)
+                    })
+                    .or_insert((1, vec![*order_uid]));
+            }
+        }
+        for (reason, (counter, invalid_orders)) in counter.iter() {
+            *self.counts.entry(reason).or_default() += counter;
+            if *counter > 0 {
+                tracing::debug!(
+                    %reason,
+                    count = counter,
+                    orders = ?invalid_orders, "filtered orders"
+                );
+            }
+        }
     }
 
     /// Creates a new checkpoint based on the found invalid orders.
@@ -1338,7 +1381,7 @@ mod tests {
         .collect();
         let expected = &[0, 2];
 
-        let filtered = orders_with_balance(orders.clone(), &balances);
+        let filtered = filter_orders_with_balance(orders.clone(), &balances);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);

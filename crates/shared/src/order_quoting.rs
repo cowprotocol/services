@@ -475,7 +475,7 @@ impl OrderQuoter {
             }
         };
 
-        if balance.balance >= sell_amount && balance.allowance >= sell_amount {
+        if balance.effective_balance() >= sell_amount {
             // Quote could not be verified although user has the required balance.
             // This likely indicates a weird token that solvers are not able to handle.
             return Err(CalculateQuoteError::QuoteNotVerified);
