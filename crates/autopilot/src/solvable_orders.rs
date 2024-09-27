@@ -199,19 +199,22 @@ impl SolvableOrdersCache {
         let cow_amm_tokens = cow_amms
             .iter()
             .flat_map(|cow_amm| cow_amm.traded_tokens())
-            .unique()
             .cloned()
             .collect::<Vec<_>>();
 
         // create auction
-        let (orders, mut prices) = get_orders_with_native_prices(
-            orders,
-            &self.native_price_estimator,
-            self.metrics,
-            cow_amm_tokens,
-            self.native_price_timeout,
-        )
-        .await;
+        let (orders, mut prices) = self
+            .timed_future(
+                "get_orders_with_native_prices",
+                get_orders_with_native_prices(
+                    orders,
+                    &self.native_price_estimator,
+                    self.metrics,
+                    cow_amm_tokens,
+                    self.native_price_timeout,
+                ),
+            )
+            .await;
         // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
