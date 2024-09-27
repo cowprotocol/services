@@ -149,16 +149,16 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
 }
 
 /// Create a request for the driver /reveal endpoint.
-pub fn reveal_req() -> serde_json::Value {
+pub fn reveal_req(solution_id: &str) -> serde_json::Value {
     json!({
-        "solutionId": "0",
+        "solutionId": solution_id,
     })
 }
 
 /// Create a request for the driver /settle endpoint.
-pub fn settle_req(submission_deadline_latest_block: u64) -> serde_json::Value {
+pub fn settle_req(submission_deadline_latest_block: u64, solution_id: &str) -> serde_json::Value {
     json!({
-        "solutionId": "0",
+        "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
     })
 }
