@@ -17,17 +17,20 @@ pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router
 
 async fn route(
     state: axum::extract::State<State>,
-    solution: axum::Json<dto::Solution>,
+    req: axum::Json<dto::Solution>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let state = state.clone();
-    let auction_id = state.competition().auction_id().map(|id| id.0);
+    let auction_id = state
+        .competition()
+        .auction_id(req.solution_id)
+        .map(|id| id.0);
     let solver = state.solver().name().to_string();
 
     let handle_request = async move {
         observe::settling();
         let result = state
             .competition()
-            .settle(solution.submission_deadline_latest_block)
+            .settle(req.solution_id, req.submission_deadline_latest_block)
             .await;
         observe::settled(state.solver().name(), &result);
         result.map(|_| ()).map_err(Into::into)

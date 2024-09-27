@@ -98,9 +98,9 @@ pub enum SolutionId {
 
 impl SolutionId {
     pub fn from_domain(id: solution::Id) -> Self {
-        match id {
-            solution::Id::Single(id) => SolutionId::Single(id),
-            solution::Id::Merged(ids) => SolutionId::Merged(ids),
+        match id.solutions().len() {
+            1 => SolutionId::Single(*id.solutions().first().unwrap()),
+            _ => SolutionId::Merged(id.solutions().to_vec()),
         }
     }
 }
