@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, SolutionError, SolutionWithId, TradedAmounts},
+            competition::{self, SolutionError, SolutionWithId, TradedOrder},
             eth::{self, TxId},
             OrderUid,
         },
@@ -18,11 +18,12 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::{Context, Result},
+    anyhow::Result,
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
-    futures::future::BoxFuture,
+    futures::{future::BoxFuture, TryFutureExt},
+    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -286,6 +287,7 @@ impl RunLoop {
             .extend(solved_order_uids.clone());
 
         let solution_id = solution.id();
+        let solver = solution.solver();
         let self_ = self.clone();
         let driver_ = driver.clone();
 
@@ -298,6 +300,7 @@ impl RunLoop {
                     &driver_,
                     solution_id,
                     solved_order_uids,
+                    solver,
                     auction_id,
                     block_deadline,
                 )
@@ -305,7 +308,7 @@ impl RunLoop {
             {
                 Ok(tx_hash) => {
                     Metrics::settle_ok(&driver_, submission_start.elapsed());
-                    tracing::debug!(?tx_hash, driver = %driver_.name, "solution settled");
+                    tracing::debug!(?tx_hash, driver = %driver_.name, ?solver, "solution settled");
                 }
                 Err(err) => {
                     Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
@@ -313,7 +316,8 @@ impl RunLoop {
                 }
             }
             Metrics::single_run_completed(single_run_start.elapsed());
-        };
+        }
+        .instrument(tracing::Span::current());
 
         let sender = self.get_settlement_queue_sender(&driver.name).await;
         if let Err(err) = sender.send(Box::pin(settle_fut)) {
@@ -378,11 +382,25 @@ impl RunLoop {
             .iter()
             .map(|participant| participant.solution.solver().into())
             .collect::<HashSet<_>>();
-        let fee_policies = auction
-            .orders
+        let mut fee_policies = Vec::new();
+        for order_id in solutions
             .iter()
-            .map(|order| (order.uid, order.protocol_fees.clone()))
-            .collect::<Vec<_>>();
+            .flat_map(|participant| participant.solution.order_ids())
+            .unique()
+        {
+            match auction
+                .orders
+                .iter()
+                .find(|auction_order| &auction_order.uid == order_id)
+            {
+                Some(auction_order) => {
+                    fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+                }
+                None => {
+                    tracing::debug!(?order_id, "order not found in auction");
+                }
+            }
+        }
 
         let competition_table = SolverCompetitionDB {
             auction_start_block: auction.block,
@@ -413,8 +431,8 @@ impl RunLoop {
                         .iter()
                         .map(|(id, order)| Order::Colocated {
                             id: (*id).into(),
-                            sell_amount: order.sell.into(),
-                            buy_amount: order.buy.into(),
+                            sell_amount: order.executed_sell.into(),
+                            buy_amount: order.executed_buy.into(),
                         })
                         .collect(),
                     clearing_prices: participant
@@ -443,28 +461,21 @@ impl RunLoop {
         };
 
         tracing::trace!(?competition, "saving competition");
-        self.persistence
-            .save_competition(&competition)
-            .await
-            .context("failed to save competition")?;
+        futures::try_join!(
+            self.persistence
+                .save_competition(&competition)
+                .map_err(|e| e.0.context("failed to save competition")),
+            self.persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &auction.surplus_capturing_jit_order_owners,
+                )
+                .map_err(|e| e.0.context("failed to save jit order owners")),
+            self.persistence
+                .store_fee_policies(auction_id, fee_policies)
+                .map_err(|e| e.context("failed to fee_policies")),
+        )?;
 
-        self.persistence
-            .save_surplus_capturing_jit_orders_orders(
-                auction_id,
-                &auction.surplus_capturing_jit_order_owners,
-            )
-            .await
-            .context("failed to save surplus capturing jit order owners")?;
-
-        tracing::info!("saving fee policies");
-        if let Err(err) = self
-            .persistence
-            .store_fee_policies(auction_id, fee_policies)
-            .await
-        {
-            Metrics::fee_policies_store_error();
-            tracing::warn!(?err, "failed to save fee policies");
-        }
         Metrics::post_processed(start.elapsed());
         Ok(())
     }
@@ -574,12 +585,12 @@ impl RunLoop {
         // Returns the surplus difference in the buy token if `left`
         // is better for the trader than `right`, or 0 otherwise.
         // This takes differently partial fills into account.
-        let improvement_in_buy = |left: &TradedAmounts, right: &TradedAmounts| {
+        let improvement_in_buy = |left: &TradedOrder, right: &TradedOrder| {
             // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
             // trader either sells less or gets more. This can be reformulated as
             // `right.sell * left.buy > left.sell * right.buy`.
-            let right_sell_left_buy = right.sell.0.full_mul(left.buy.0);
-            let left_sell_right_buy = left.sell.0.full_mul(right.buy.0);
+            let right_sell_left_buy = right.executed_sell.0.full_mul(left.executed_buy.0);
+            let left_sell_right_buy = left.executed_sell.0.full_mul(right.executed_buy.0);
             let improvement = right_sell_left_buy
                 .checked_sub(left_sell_right_buy)
                 .unwrap_or_default();
@@ -588,7 +599,7 @@ impl RunLoop {
             // token. Casting to U256 is safe because the difference is smaller than the
             // original product, which if re-divided by right.sell must fit in U256.
             improvement
-                .checked_div(right.sell.0.into())
+                .checked_div(right.executed_sell.0.into())
                 .map(|v| U256::try_from(v).expect("improvement in buy fits in U256"))
                 .unwrap_or_default()
         };
@@ -743,6 +754,7 @@ impl RunLoop {
         driver: &infra::Driver,
         solution_id: u64,
         solved_order_uids: HashSet<OrderUid>,
+        solver: eth::Address,
         auction_id: i64,
         submission_deadline_latest_block: u64,
     ) -> Result<TxId, SettleError> {
@@ -750,7 +762,27 @@ impl RunLoop {
             solution_id,
             submission_deadline_latest_block,
         };
-        let result = self.wait_for_settlement(driver, auction_id, request).await;
+
+        // Wait for either the settlement transaction to be mined or the driver returned
+        // a result.
+        let result = match futures::future::select(
+            Box::pin(self.wait_for_settlement_transaction(
+                auction_id,
+                self.config.submission_deadline,
+                solver,
+            )),
+            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
+        )
+        .await
+        {
+            futures::future::Either::Left((res, _)) => res,
+            futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
+                match driver_result {
+                    Ok(_) => wait_for_settlement_transaction.await,
+                    Err(err) => Err(SettleError::Failure(err)),
+                }
+            }
+        };
 
         // Clean up the in-flight orders regardless the result.
         self.in_flight_orders
@@ -761,34 +793,8 @@ impl RunLoop {
         result
     }
 
-    /// Wait for either the settlement transaction to be mined or the driver
-    /// returned a result.
-    async fn wait_for_settlement(
-        &self,
-        driver: &infra::Driver,
-        auction_id: i64,
-        request: settle::Request,
-    ) -> Result<eth::TxId, SettleError> {
-        match futures::future::select(
-            Box::pin(
-                self.wait_for_settlement_transaction(auction_id, self.config.submission_deadline),
-            ),
-            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
-        )
-        .await
-        {
-            futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((driver_result, onchain_task)) => {
-                driver_result.map_err(|err| {
-                    tracing::warn!(?err, "driver settle request failed");
-                    SettleError::Failure(err)
-                })?;
-                onchain_task.await
-            }
-        }
-    }
-
-    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    /// Tries to find a `settle` contract call with calldata ending in `tag` and
+    /// originated from the `solver`.
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
@@ -796,6 +802,7 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
+        solver: eth::Address,
     ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
@@ -808,17 +815,18 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_settlement_transactions(auction_id)
+                .find_settlement_transaction(auction_id, solver)
                 .await
             {
-                Ok(hashes) if hashes.is_empty() => {}
-                Ok(hashes) => {
-                    if let Some(hash) = hashes.into_iter().next() {
-                        return Ok(hash);
-                    }
-                }
+                Ok(Some(transaction)) => return Ok(transaction),
+                Ok(None) => {}
                 Err(err) => {
-                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
+                    tracing::warn!(
+                        ?err,
+                        ?auction_id,
+                        ?solver,
+                        "failed to find settlement transaction"
+                    );
                 }
             }
             if block.number >= deadline {
@@ -996,13 +1004,6 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
-    }
-
-    fn fee_policies_store_error() {
-        Self::get()
-            .db_metric_error
-            .with_label_values(&["fee_policies_store"])
-            .inc();
     }
 
     fn post_processed(elapsed: Duration) {

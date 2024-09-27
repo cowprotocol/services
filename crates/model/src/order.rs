@@ -644,7 +644,6 @@ impl ::serde::Serialize for EthflowData {
 #[derive(Debug, Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OnchainOrderPlacementError {
-    QuoteNotFound,
     ValidToTooFarInTheFuture,
     // If limit orders are created from on-chain events
     // but limit orders are disabled at the API level, then this

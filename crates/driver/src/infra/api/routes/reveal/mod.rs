@@ -14,13 +14,13 @@ pub(in crate::infra::api) fn reveal(router: axum::Router<State>) -> axum::Router
 
 async fn route(
     state: axum::extract::State<State>,
-    _: axum::Json<dto::Solution>,
+    req: axum::Json<dto::Solution>,
 ) -> Result<axum::Json<dto::Revealed>, (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
-    let auction_id = competition.auction_id().map(|id| id.0);
+    let auction_id = competition.auction_id(req.solution_id).map(|id| id.0);
     let handle_request = async {
         observe::revealing();
-        let result = competition.reveal().await;
+        let result = competition.reveal(req.solution_id).await;
         observe::revealed(state.solver().name(), &result);
         let result = result?;
         Ok(axum::Json(dto::Revealed::new(result)))
