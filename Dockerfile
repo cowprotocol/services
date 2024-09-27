@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
 # Create an intermediate image to extract the binaries
 FROM docker.io/debian:bookworm-slim as intermediate
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y ca-certificates tini && \
+    apt-get install -y ca-certificates tini gettext-base && \
     apt-get clean
 
 FROM intermediate as alerter
