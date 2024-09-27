@@ -363,10 +363,7 @@ pub async fn run(args: Arguments) {
     let persistence =
         infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let on_settlement_event_updater =
-        crate::on_settlement_event_updater::OnSettlementEventUpdater::new(
-            eth.clone(),
-            persistence.clone(),
-        );
+        crate::domain::settlement::OnEvent::new(eth.clone(), persistence.clone());
     let settlement_event_indexer = EventUpdater::new(
         boundary::events::settlement::GPv2SettlementContract::new(
             eth.contracts().settlement().clone(),

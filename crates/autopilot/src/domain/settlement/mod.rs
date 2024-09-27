@@ -9,9 +9,10 @@ use {
 };
 
 mod auction;
+mod on_event;
 mod trade;
 mod transaction;
-pub use {auction::Auction, trade::Trade, transaction::Transaction};
+pub use {auction::Auction, on_event::OnEvent, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.

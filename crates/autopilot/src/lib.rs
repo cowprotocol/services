@@ -5,7 +5,6 @@ pub mod domain;
 pub mod event_updater;
 pub mod infra;
 mod maintenance;
-pub mod on_settlement_event_updater;
 pub mod periodic_db_cleanup;
 pub mod run;
 pub mod run_loop;
