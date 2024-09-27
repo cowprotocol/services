@@ -22,7 +22,8 @@ pub struct Observer {
 }
 
 impl Observer {
-    /// Creates a new Observer and asynchronously schedules the first update run.
+    /// Creates a new Observer and asynchronously schedules the first update
+    /// run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
         Self { eth, persistence }
     }
