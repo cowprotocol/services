@@ -16,13 +16,13 @@ use {
 };
 
 #[derive(Clone)]
-pub struct OnEvent {
+pub struct Observer {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
 }
 
-impl OnEvent {
-    /// Creates a new OnEvent and asynchronously schedules the first update run.
+impl Observer {
+    /// Creates a new Observer and asynchronously schedules the first update run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
         Self { eth, persistence }
     }
@@ -113,7 +113,7 @@ impl OnEvent {
     }
 }
 
-/// Whether OnEvent loop should retry on the given error.
+/// Whether Observer loop should retry on the given error.
 fn retryable(err: &settlement::Error) -> bool {
     match err {
         settlement::Error::Infra(_) => true,

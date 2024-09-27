@@ -11,14 +11,14 @@ impl_event_retrieving! {
 
 pub struct Indexer {
     db: Postgres,
-    settlement_updater: settlement::OnEvent,
+    settlement_observer: settlement::Observer,
 }
 
 impl Indexer {
-    pub fn new(db: Postgres, settlement_updater: settlement::OnEvent) -> Self {
+    pub fn new(db: Postgres, settlement_observer: settlement::Observer) -> Self {
         Self {
             db,
-            settlement_updater,
+            settlement_observer,
         }
     }
 }
@@ -41,7 +41,7 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         database::settlements::delete(&mut transaction, from_block).await?;
         transaction.commit().await?;
 
-        self.settlement_updater.update().await;
+        self.settlement_observer.update().await;
         Ok(())
     }
 
@@ -53,7 +53,7 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         crate::database::events::append_events(&mut transaction, events).await?;
         transaction.commit().await?;
 
-        self.settlement_updater.update().await;
+        self.settlement_observer.update().await;
         Ok(())
     }
 }
