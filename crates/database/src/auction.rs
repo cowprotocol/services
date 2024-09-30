@@ -11,7 +11,7 @@ pub async fn load_most_recent(
 ) -> Result<Option<(AuctionId, JsonValue)>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT id, json
-FROM auctions
+FROM latest_auction
 ORDER BY id DESC
 LIMIT 1
     ;"#;
@@ -24,9 +24,9 @@ pub async fn replace_auction(
 ) -> Result<AuctionId, sqlx::Error> {
     const QUERY: &str = r#"
 WITH deleted AS (
-    DELETE FROM auctions
+    DELETE FROM latest_auction
 )
-INSERT INTO auctions (json)
+INSERT INTO latest_auction (json)
 VALUES ($1)
 RETURNING id;
     "#;
