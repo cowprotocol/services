@@ -487,7 +487,7 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    /// Returns all fair solutions sorted by their score (worst to best).
+    /// Returns all fair solutions sorted by their score (best to worst).
     async fn competition(
         &self,
         id: domain::auction::Id,
@@ -517,11 +517,14 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by_key(|participant| participant.solution.score().get().0);
+        solutions.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution.score().get().0)
+        });
 
         // Make sure the winning solution is fair.
-        while !Self::is_solution_fair(solutions.last(), &solutions, auction) {
-            let unfair_solution = solutions.pop().expect("must exist");
+        while !Self::is_solution_fair(solutions.first(), &solutions, auction) {
+            // remove the solution.first() from the solutions
+            let unfair_solution = solutions.remove(0);
             tracing::warn!(
                 invalidated = unfair_solution.driver.name,
                 "fairness check invalidated of solution"
@@ -534,7 +537,7 @@ impl RunLoop {
 
     /// Chooses the winners from the given participants.
     ///
-    /// Participants are already sorted by their score (worst to best).
+    /// Participants are already sorted by their score (best to worst).
     ///
     /// Winners are selected one by one, starting from the best solution,
     /// until `max_winners_per_auction` is hit. The solution can become winner
@@ -543,7 +546,7 @@ impl RunLoop {
     fn select_winners(&self, participants: &[Participant]) -> Vec<Participant> {
         let mut winners = Vec::new();
         let mut already_swapped_tokens = HashSet::new();
-        for participant in participants.iter().rev() {
+        for participant in participants.iter() {
             let swapped_tokens = participant
                 .solution
                 .orders()
@@ -562,9 +565,9 @@ impl RunLoop {
     }
 
     /// Records metrics, order events and logs for the given solutions.
-    /// Expects the winning solution to be the last in the list.
+    /// Expects the winning solution to be the first in the list.
     fn report_on_solutions(&self, solutions: &[Participant], auction: &domain::Auction) {
-        let Some(winner) = solutions.last() else {
+        let Some(winner) = solutions.first() else {
             // no solutions means nothing to report
             return;
         };
@@ -583,7 +586,7 @@ impl RunLoop {
             .flat_map(|solution| solution.solution.order_ids().copied())
             .collect();
         let winning_orders: HashSet<_> = solutions
-            .last()
+            .first()
             .into_iter()
             .flat_map(|solution| solution.solution.order_ids().copied())
             .collect();
