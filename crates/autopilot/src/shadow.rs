@@ -158,7 +158,7 @@ impl RunLoop {
         }
 
         let hex = |bytes: &[u8]| format!("0x{}", hex::encode(bytes));
-        for Participant { driver, solution } in &participants {
+        for Participant { driver, solution } in participants {
             match solution {
                 Ok(solution) => {
                     let uninternalized = (solution.calldata.internalized
@@ -219,7 +219,7 @@ impl RunLoop {
     ///
     /// Winners are selected one by one, starting from the best solution,
     /// until `max_winners_per_auction` is hit. The solution can become winner
-    /// it is swaps tokens that are not yet swapped by any other already
+    /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
     fn select_winners<'a>(&self, participants: &'a [Participant<'a>]) -> Vec<&'a Participant<'a>> {
         let mut winners = Vec::new();

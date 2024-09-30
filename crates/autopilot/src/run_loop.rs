@@ -229,11 +229,6 @@ impl RunLoop {
         let auction = self.remove_in_flight_orders(auction).await;
 
         let solutions = self.competition(auction_id, &auction).await;
-        if solutions.is_empty() {
-            tracing::info!("no solutions for auction");
-            return;
-        }
-
         let winners = self.select_winners(&solutions);
         if winners.is_empty() {
             tracing::info!("no winners for auction");
@@ -523,7 +518,6 @@ impl RunLoop {
 
         // Make sure the winning solution is fair.
         while !Self::is_solution_fair(solutions.first(), &solutions, auction) {
-            // remove the solution.first() from the solutions
             let unfair_solution = solutions.remove(0);
             tracing::warn!(
                 invalidated = unfair_solution.driver.name,
@@ -541,7 +535,7 @@ impl RunLoop {
     ///
     /// Winners are selected one by one, starting from the best solution,
     /// until `max_winners_per_auction` is hit. The solution can become winner
-    /// it is swaps tokens that are not yet swapped by any other already
+    /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
     fn select_winners(&self, participants: &[Participant]) -> Vec<Participant> {
         let mut winners = Vec::new();
