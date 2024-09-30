@@ -18,13 +18,12 @@ use {
 
 impl Request {
     pub fn new(
-        id: domain::auction::Id,
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
     ) -> Self {
         Self {
-            id,
+            id: auction.id,
             orders: auction
                 .orders
                 .clone()

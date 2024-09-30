@@ -112,10 +112,11 @@ impl RunLoop {
             let auction = self_arc
                 .next_auction(&mut last_auction, &mut last_block)
                 .await;
-            if let Some(domain::AuctionWithId { id, auction }) = auction {
+            if let Some(auction) = auction {
+                let auction_id = auction.id;
                 self_arc
-                    .single_run(id, auction)
-                    .instrument(tracing::info_span!("auction", id))
+                    .single_run(auction)
+                    .instrument(tracing::info_span!("auction", auction_id))
                     .await;
             };
         }
@@ -127,7 +128,7 @@ impl RunLoop {
         &self,
         prev_auction: &mut Option<domain::Auction>,
         prev_block: &mut Option<H256>,
-    ) -> Option<domain::AuctionWithId> {
+    ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
         let start_block = match self.config.synchronization {
             RunLoopMode::Unsynchronized => {
@@ -166,8 +167,8 @@ impl RunLoop {
         let auction = self.cut_auction().await?;
 
         // Only run the solvers if the auction or block has changed.
-        let previous = prev_auction.replace(auction.auction.clone());
-        if previous.as_ref() == Some(&auction.auction)
+        let previous = prev_auction.replace(auction.clone());
+        if previous.as_ref() == Some(&auction)
             && prev_block.replace(start_block.hash) == Some(start_block.hash)
         {
             return None;
@@ -187,7 +188,7 @@ impl RunLoop {
         Metrics::ran_maintenance(start.elapsed());
     }
 
-    async fn cut_auction(&self) -> Option<domain::AuctionWithId> {
+    async fn cut_auction(&self) -> Option<domain::Auction> {
         let auction = match self.solvable_orders_cache.current_auction().await {
             Some(auction) => auction,
             None => {
@@ -214,20 +215,23 @@ impl RunLoop {
             return None;
         }
 
-        Some(domain::AuctionWithId { id, auction })
+        Some(domain::Auction {
+            id,
+            block: auction.block,
+            latest_settlement_block: auction.latest_settlement_block,
+            orders: auction.orders,
+            prices: auction.prices,
+            surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
+        })
     }
 
-    async fn single_run(
-        self: &Arc<Self>,
-        auction_id: domain::auction::Id,
-        auction: domain::Auction,
-    ) {
+    async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
         let single_run_start = Instant::now();
-        tracing::info!(?auction_id, "solving");
+        tracing::info!(auction_id = ?auction.id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
 
-        let solutions = self.competition(auction_id, &auction).await;
+        let solutions = self.competition(&auction).await;
         if solutions.is_empty() {
             tracing::info!("no solutions for auction");
             return;
@@ -245,8 +249,7 @@ impl RunLoop {
             // of storing all the competition/auction-related data to the DB.
             if let Err(err) = self
                 .post_processing(
-                    auction_id,
-                    auction,
+                    &auction,
                     competition_simulation_block,
                     solution,
                     &solutions,
@@ -259,7 +262,7 @@ impl RunLoop {
             }
 
             self.start_settlement_execution(
-                auction_id,
+                auction.id,
                 single_run_start,
                 driver,
                 solution,
@@ -362,8 +365,7 @@ impl RunLoop {
     #[allow(clippy::too_many_arguments)]
     async fn post_processing(
         &self,
-        auction_id: domain::auction::Id,
-        auction: domain::Auction,
+        auction: &domain::Auction,
         competition_simulation_block: u64,
         winning_solution: &competition::Solution,
         solutions: &[Participant],
@@ -444,13 +446,14 @@ impl RunLoop {
                 .collect(),
         };
         let competition = Competition {
-            auction_id,
+            auction_id: auction.id,
             winner,
             winning_score,
             reference_score,
             participants,
             prices: auction
                 .prices
+                .clone()
                 .into_iter()
                 .map(|(key, value)| (key.into(), value.get().into()))
                 .collect(),
@@ -466,12 +469,12 @@ impl RunLoop {
                 .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .save_surplus_capturing_jit_orders_orders(
-                    auction_id,
+                    auction.id,
                     &auction.surplus_capturing_jit_order_owners,
                 )
                 .map_err(|e| e.0.context("failed to save jit order owners")),
             self.persistence
-                .store_fee_policies(auction_id, fee_policies)
+                .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
         )?;
 
@@ -481,13 +484,8 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (worst to best).
-    async fn competition(
-        &self,
-        id: domain::auction::Id,
-        auction: &domain::Auction,
-    ) -> Vec<Participant> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant> {
         let request = solve::Request::new(
-            id,
             auction,
             &self.market_makable_token_list.all(),
             self.config.solve_deadline,
@@ -1029,7 +1027,7 @@ impl Metrics {
 pub mod observe {
     use {crate::domain, std::collections::HashSet};
 
-    pub fn log_auction_delta(previous: &Option<domain::Auction>, current: &domain::AuctionWithId) {
+    pub fn log_auction_delta(previous: &Option<domain::Auction>, current: &domain::Auction) {
         let previous_uids = match previous {
             Some(previous) => previous
                 .orders
@@ -1039,7 +1037,6 @@ pub mod observe {
             None => HashSet::new(),
         };
         let current_uids = current
-            .auction
             .orders
             .iter()
             .map(|order| order.uid)
