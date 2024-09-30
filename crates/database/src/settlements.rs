@@ -73,6 +73,7 @@ WHERE block_number = $2 AND log_index = $3
         .map(|_| ())
 }
 
+/// Deletes all database data that referenced the deleted settlement events.
 pub async fn delete(
     ex: &mut PgTransaction<'_>,
     delete_from_block_number: u64,
