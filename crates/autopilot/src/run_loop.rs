@@ -263,8 +263,8 @@ impl RunLoop {
             self.start_settlement_execution(
                 auction_id,
                 single_run_start,
-                &driver,
-                &solution,
+                driver,
+                solution,
                 block_deadline,
             )
             .await;
@@ -537,7 +537,7 @@ impl RunLoop {
     /// until `max_winners_per_auction` is hit. The solution can become winner
     /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
-    fn select_winners(&self, participants: &[Participant]) -> Vec<Participant> {
+    fn select_winners<'a>(&self, participants: &'a [Participant]) -> Vec<&'a Participant> {
         let mut winners = Vec::new();
         let mut already_swapped_tokens = HashSet::new();
         for participant in participants.iter() {
@@ -548,7 +548,7 @@ impl RunLoop {
                 .map(|(_, order)| (order.sell.token, order.buy.token))
                 .collect::<HashSet<_>>();
             if swapped_tokens.is_disjoint(&already_swapped_tokens) {
-                winners.push(participant.clone());
+                winners.push(participant);
                 already_swapped_tokens.extend(swapped_tokens);
                 if winners.len() >= self.config.max_winners_per_auction {
                     break;
@@ -885,7 +885,6 @@ impl RunLoop {
     }
 }
 
-#[derive(Clone)]
 struct Participant {
     driver: Arc<infra::Driver>,
     solution: competition::SolutionWithId,
