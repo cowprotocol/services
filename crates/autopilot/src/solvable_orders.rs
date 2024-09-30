@@ -7,7 +7,6 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
-    ethrpc::block_stream::CurrentBlockWatcher,
     futures::{future::join_all, FutureExt},
     indexmap::IndexSet,
     itertools::{Either, Itertools},
@@ -32,12 +31,11 @@ use {
     std::{
         collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
         future::Future,
-        sync::{Arc, Weak},
+        sync::Arc,
         time::Duration,
     },
     strum::VariantNames,
     tokio::{sync::Mutex, time::Instant},
-    tracing::Instrument,
 };
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -135,19 +133,6 @@ impl SolvableOrdersCache {
             native_price_timeout,
         });
         self_
-    }
-
-    /// Spawns a task that periodically updates the set of open orders
-    /// and builds a new auction with them.
-    pub fn spawn_background_task(
-        cache: &Arc<Self>,
-        block_stream: CurrentBlockWatcher,
-        update_interval: Duration,
-    ) {
-        tokio::task::spawn(
-            update_task(Arc::downgrade(cache), update_interval, block_stream)
-                .instrument(tracing::info_span!("solvable_orders_cache")),
-        );
     }
 
     pub async fn current_auction(&self) -> Option<domain::Auction> {
@@ -567,51 +552,6 @@ fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order>
         !sell_amount.is_zero() && !buy_amount.is_zero()
     });
     orders
-}
-
-/// Keep updating the cache every N seconds or when an update notification
-/// happens. Exits when this becomes the only reference to the cache.
-async fn update_task(
-    cache: Weak<SolvableOrdersCache>,
-    update_interval: Duration,
-    current_block: CurrentBlockWatcher,
-) {
-    loop {
-        // We are not updating on block changes because
-        // - the state of orders could change even when the block does not like when an
-        //   order gets cancelled off chain
-        // - the event updater takes some time to run and if we go first we would not
-        //   update the orders with the most recent events.
-        let start = Instant::now();
-        let cache = match cache.upgrade() {
-            Some(self_) => self_,
-            None => {
-                tracing::debug!("exiting solvable orders update task");
-                break;
-            }
-        };
-        let block = current_block.borrow().number;
-        match cache.update(block).await {
-            Ok(()) => {
-                cache.track_auction_update("success");
-                tracing::debug!(
-                    %block,
-                    "updated solvable orders in {}s",
-                    start.elapsed().as_secs_f32()
-                )
-            }
-            Err(err) => {
-                cache.track_auction_update("failure");
-                tracing::warn!(
-                    ?err,
-                    %block,
-                    "failed to update solvable orders in {}s",
-                    start.elapsed().as_secs_f32()
-                )
-            }
-        }
-        tokio::time::sleep_until(start + update_interval).await;
-    }
 }
 
 async fn get_orders_with_native_prices(
