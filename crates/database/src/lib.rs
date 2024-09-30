@@ -57,7 +57,7 @@ pub const TABLES: &[&str] = &[
     "presignature_events",
     "order_quotes",
     "solver_competitions",
-    "auctions",
+    "latest_auction",
     "onchain_placed_orders",
     "ethflow_orders",
     "order_execution",

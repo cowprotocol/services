@@ -314,7 +314,7 @@ impl<'a> Services<'a> {
     async fn wait_until_autopilot_ready(&self) {
         let is_up = || async {
             let mut db = self.db.acquire().await.unwrap();
-            const QUERY: &str = "SELECT COUNT(*) FROM auctions";
+            const QUERY: &str = "SELECT COUNT(*) FROM latest_auction";
             let count: i64 = sqlx::query_scalar(QUERY)
                 .fetch_one(db.deref_mut())
                 .await
