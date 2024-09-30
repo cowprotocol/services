@@ -375,8 +375,7 @@ impl RunLoop {
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
-            .iter()
-            .nth_back(1)
+            .get(1)
             .map(|participant| participant.solution.score().get().0)
             .unwrap_or_default();
         let participants = solutions
@@ -420,6 +419,8 @@ impl RunLoop {
             },
             solutions: solutions
                 .iter()
+                // reverse as solver competition table is sorted from worst to best
+                .rev()
                 .enumerate()
                 .map(|(index, participant)| SolverSettlement {
                     solver: participant.driver.name.clone(),
