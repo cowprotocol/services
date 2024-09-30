@@ -510,6 +510,9 @@ impl RunLoop {
         tracing::trace!(?competition, "saving competition");
         futures::try_join!(
             self.persistence
+                .save_auction(auction_id, &auction, block_deadline)
+                .map_err(|e| e.0.context("failed to save auction")),
+            self.persistence
                 .save_competition(&competition)
                 .map_err(|e| e.0.context("failed to save competition")),
             self.persistence

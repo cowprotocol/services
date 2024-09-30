@@ -320,6 +320,53 @@ impl Persistence {
         Ok(ex.commit().await?)
     }
 
+    /// Save auction related data to the database.
+    pub async fn save_auction(
+        &self,
+        auction_id: domain::auction::Id,
+        auction: &domain::Auction,
+        deadline: u64, // to become part of the auction struct
+    ) -> Result<(), DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["save_auction"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.begin().await?;
+
+        database::auction::save(
+            &mut ex,
+            database::auction::Auction {
+                id: auction_id,
+                block: i64::try_from(auction.block).context("block overflow")?,
+                deadline: i64::try_from(deadline).context("deadline overflow")?,
+                orders: auction
+                    .orders
+                    .iter()
+                    .map(|order| ByteArray(order.uid.0))
+                    .collect(),
+                price_tokens: auction
+                    .prices
+                    .keys()
+                    .map(|token| ByteArray(token.0 .0))
+                    .collect(),
+                price_values: auction
+                    .prices
+                    .values()
+                    .map(|price| u256_to_big_decimal(&price.get().0))
+                    .collect(),
+                surplus_capturing_jit_order_owners: auction
+                    .surplus_capturing_jit_order_owners
+                    .iter()
+                    .map(|owner| ByteArray(owner.0 .0))
+                    .collect(),
+            },
+        )
+        .await?;
+
+        Ok(ex.commit().await?)
+    }
+
     /// Get auction data.
     pub async fn get_auction(
         &self,
