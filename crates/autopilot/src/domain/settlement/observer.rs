@@ -12,33 +12,20 @@
 
 use {
     crate::{domain::settlement, infra},
-    anyhow::{anyhow, Context, Result},
-    database::PgTransaction,
+    anyhow::{anyhow, Result},
 };
 
 #[derive(Clone)]
-pub struct OnSettlementEventUpdater {
+pub struct Observer {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
 }
 
-impl OnSettlementEventUpdater {
-    /// Creates a new OnSettlementEventUpdater and asynchronously schedules the
-    /// first update run.
+impl Observer {
+    /// Creates a new Observer and asynchronously schedules the first update
+    /// run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
         Self { eth, persistence }
-    }
-
-    /// Deletes settlement_observations and order executions for the given range
-    pub async fn delete_observations(
-        transaction: &mut PgTransaction<'_>,
-        from_block: u64,
-    ) -> Result<()> {
-        database::settlements::delete(transaction, from_block)
-            .await
-            .context("delete_settlement_observations")?;
-
-        Ok(())
     }
 
     /// Fetches all the available missing data needed for bookkeeping.
@@ -75,8 +62,7 @@ impl OnSettlementEventUpdater {
 
         tracing::debug!(tx = ?event.transaction, "updating settlement details");
 
-        // Reconstruct the settlement transaction based on the blockchain transaction
-        // hash
+        // Reconstruct the settlement transaction based on the transaction hash
         let transaction = match self.eth.transaction(event.transaction).await {
             Ok(transaction) => {
                 let separator = self.eth.contracts().settlement_domain_separator();
@@ -128,7 +114,7 @@ impl OnSettlementEventUpdater {
     }
 }
 
-/// Whether OnSettlementEventUpdater loop should retry on the given error.
+/// Whether Observer loop should retry on the given error.
 fn retryable(err: &settlement::Error) -> bool {
     match err {
         settlement::Error::Infra(_) => true,

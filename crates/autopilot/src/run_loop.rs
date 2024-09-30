@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, SolutionError, SolutionWithId, TradedOrder},
+            competition::{self, Solution, SolutionError, TradedOrder},
             eth::{self, TxId},
             OrderUid,
         },
@@ -279,7 +279,7 @@ impl RunLoop {
         auction_id: Id,
         single_run_start: Instant,
         driver: &Arc<infra::Driver>,
-        solution: &SolutionWithId,
+        solution: &Solution,
         block_deadline: u64,
     ) {
         let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
@@ -367,7 +367,7 @@ impl RunLoop {
         &self,
         auction: &domain::Auction,
         competition_simulation_block: u64,
-        winning_solution: &competition::SolutionWithId,
+        winning_solution: &competition::Solution,
         solutions: &[Participant],
         block_deadline: u64,
     ) -> Result<()> {
@@ -704,10 +704,8 @@ impl RunLoop {
         &self,
         driver: &infra::Driver,
         request: &solve::Request,
-    ) -> Result<
-        Vec<Result<competition::SolutionWithId, domain::competition::SolutionError>>,
-        SolveError,
-    > {
+    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
+    {
         let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -852,7 +850,7 @@ impl RunLoop {
 
 struct Participant {
     driver: Arc<infra::Driver>,
-    solution: competition::SolutionWithId,
+    solution: competition::Solution,
 }
 
 #[derive(Debug, thiserror::Error)]
