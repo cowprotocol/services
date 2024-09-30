@@ -58,6 +58,10 @@ impl RunLoop {
         current_block: CurrentBlockWatcher,
         max_winners_per_auction: usize,
     ) -> Self {
+        // Added to make sure no more than one winner is activated by accident
+        // Supposed to be removed after the implementation of "multiple winners per
+        // auction" is done
+        assert_eq!(max_winners_per_auction, 1, "only one winner is supported");
         Self {
             orderbook,
             drivers,
@@ -85,15 +89,15 @@ impl RunLoop {
             observe::log_auction_delta(&previous, &auction);
             self.liveness.auction();
 
-            self.single_run(auction.id, &auction.auction)
+            self.single_run(&auction)
                 .instrument(tracing::info_span!("auction", auction.id))
                 .await;
 
-            previous = Some(auction.auction);
+            previous = Some(auction);
         }
     }
 
-    async fn next_auction(&mut self) -> Option<domain::AuctionWithId> {
+    async fn next_auction(&mut self) -> Option<domain::Auction> {
         let auction = match self.orderbook.auction().await {
             Ok(auction) => auction,
             Err(err) => {
@@ -106,29 +110,29 @@ impl RunLoop {
             tracing::trace!("skipping already seen auction");
             return None;
         }
-        if self.block == auction.auction.block {
+        if self.block == auction.block {
             tracing::trace!("skipping already seen block");
             return None;
         }
 
-        if auction.auction.orders.is_empty() {
+        if auction.orders.is_empty() {
             tracing::trace!("skipping empty auction");
             return None;
         }
 
         self.auction = auction.id;
-        self.block = auction.auction.block;
+        self.block = auction.block;
         Some(auction)
     }
 
-    async fn single_run(&self, id: domain::auction::Id, auction: &domain::Auction) {
+    async fn single_run(&self, auction: &domain::Auction) {
         tracing::info!("solving");
-        Metrics::get().auction.set(id);
+        Metrics::get().auction.set(auction.id);
         Metrics::get()
             .orders
             .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
-        let participants = self.competition(id, auction).await;
+        let participants = self.competition(auction).await;
         let winners = self.select_winners(&participants);
 
         for (i, Participant { driver, solution }) in winners.iter().enumerate() {
@@ -146,7 +150,7 @@ impl RunLoop {
 
             tracing::info!(
                 driver =% driver.name,
-                score =% score,
+                %score,
                 %reward,
                 "winner"
             );
@@ -190,13 +194,8 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(
-        &self,
-        id: domain::auction::Id,
-        auction: &domain::Auction,
-    ) -> Vec<Participant<'_>> {
-        let request =
-            solve::Request::new(id, auction, &self.trusted_tokens.all(), self.solve_deadline);
+    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
+        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
         let request = &request;
 
         let mut participants =
