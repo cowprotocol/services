@@ -9,9 +9,10 @@ use {
 };
 
 mod auction;
+mod observer;
 mod trade;
 mod transaction;
-pub use {auction::Auction, trade::Trade, transaction::Transaction};
+pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
@@ -151,19 +152,10 @@ pub enum Error {
 pub enum InconsistentData {
     #[error("auction not found in the persistence layer")]
     AuctionNotFound,
-    #[error("proposed solution not found in the persistence layer")]
-    SolutionNotFound,
     #[error("invalid fee policy fetched from persistence layer: {0} for order: {1}")]
     InvalidFeePolicy(infra::persistence::dto::fee_policy::Error, domain::OrderUid),
     #[error("invalid fetched price from persistence layer for token: {0:?}")]
     InvalidPrice(eth::TokenAddress),
-    #[error(
-        "invalid score fetched from persistence layer for a coresponding competition solution, \
-         err: {0}"
-    )]
-    InvalidScore(anyhow::Error),
-    #[error("invalid solver competition data fetched from persistence layer: {0}")]
-    InvalidSolverCompetition(anyhow::Error),
 }
 
 impl From<infra::persistence::error::Auction> for Error {
@@ -179,24 +171,6 @@ impl From<infra::persistence::error::Auction> for Error {
             infra::persistence::error::Auction::InvalidPrice(token) => {
                 Self::InconsistentData(InconsistentData::InvalidPrice(token))
             }
-        }
-    }
-}
-
-impl From<infra::persistence::error::Solution> for Error {
-    fn from(err: infra::persistence::error::Solution) -> Self {
-        match err {
-            infra::persistence::error::Solution::DatabaseError(err) => Self::Infra(err.into()),
-            infra::persistence::error::Solution::NotFound => {
-                Self::InconsistentData(InconsistentData::SolutionNotFound)
-            }
-            infra::persistence::error::Solution::InvalidScore(err) => {
-                Self::InconsistentData(InconsistentData::InvalidScore(err))
-            }
-            infra::persistence::error::Solution::InvalidSolverCompetition(err) => {
-                Self::InconsistentData(InconsistentData::InvalidSolverCompetition(err))
-            }
-            infra::persistence::error::Solution::InvalidPrice(_) => todo!(),
         }
     }
 }

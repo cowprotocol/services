@@ -399,10 +399,25 @@ components:
                 additionalProperties:
                   type: object
                   properties:
-                    sellAmount:
+                    side:
+                      type: string
+                      enum: ["buy", "sell"]
+                    sellToken:
+                      description: Token being sold
+                      $ref: "#/components/schemas/Address"
+                    buyToken:
+                      description: Token being bought
+                      $ref: "#/components/schemas/Address"
+                    limitSell:
+                      type: string
+                      description: Maximum amount to be sold.
+                    limitBuy:
+                      type: string
+                      description: Minimum amount to be bought.
+                    executedSell:
                       type: string
                       description: The effective amount that left the user's wallet including all fees.
-                    buyAmount:
+                    executedBuy:
                       type: string
                       description: The effective amount the user received after all fees.
               clearingPrices:

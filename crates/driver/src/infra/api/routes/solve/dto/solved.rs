@@ -13,7 +13,7 @@ impl Solved {
     pub fn new(solved: Option<competition::Solved>, solver: &Solver) -> Self {
         let solutions = solved
             .into_iter()
-            .map(|solved| Solution::new(0, solved, solver))
+            .map(|solved| Solution::new(solved.id.get(), solved, solver))
             .collect();
         Self { solutions }
     }
@@ -38,9 +38,17 @@ impl Solution {
                 .map(|(order_id, amounts)| {
                     (
                         order_id.into(),
-                        TradedAmounts {
-                            sell_amount: amounts.sell.into(),
-                            buy_amount: amounts.buy.into(),
+                        TradedOrder {
+                            side: match amounts.side {
+                                order::Side::Buy => Side::Buy,
+                                order::Side::Sell => Side::Sell,
+                            },
+                            sell_token: amounts.sell.token.into(),
+                            limit_sell: amounts.sell.amount.into(),
+                            buy_token: amounts.buy.token.into(),
+                            limit_buy: amounts.buy.amount.into(),
+                            executed_sell: amounts.executed_sell.into(),
+                            executed_buy: amounts.executed_buy.into(),
                         },
                     )
                 })
@@ -52,18 +60,6 @@ impl Solution {
                 .collect(),
         }
     }
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TradedAmounts {
-    /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "serialize::U256")]
-    pub sell_amount: eth::U256,
-    /// The effective amount the user received after all fees.
-    #[serde_as(as = "serialize::U256")]
-    pub buy_amount: eth::U256,
 }
 
 type OrderId = [u8; order::UID_LEN];
@@ -80,7 +76,36 @@ pub struct Solution {
     score: eth::U256,
     submission_address: eth::H160,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
-    orders: HashMap<OrderId, TradedAmounts>,
+    orders: HashMap<OrderId, TradedOrder>,
     #[serde_as(as = "HashMap<_, serialize::U256>")]
     clearing_prices: HashMap<eth::H160, eth::U256>,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TradedOrder {
+    pub side: Side,
+    pub sell_token: eth::H160,
+    pub buy_token: eth::H160,
+    #[serde_as(as = "serialize::U256")]
+    /// Sell limit order amount.
+    pub limit_sell: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    /// Buy limit order amount.
+    pub limit_buy: eth::U256,
+    /// The effective amount that left the user's wallet including all fees.
+    #[serde_as(as = "serialize::U256")]
+    pub executed_sell: eth::U256,
+    /// The effective amount the user received after all fees.
+    #[serde_as(as = "serialize::U256")]
+    pub executed_buy: eth::U256,
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Side {
+    Buy,
+    Sell,
 }

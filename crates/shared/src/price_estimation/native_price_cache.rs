@@ -1,6 +1,11 @@
 use {
     super::PriceEstimationError,
-    crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
+    crate::price_estimation::native::{
+        from_normalized_price,
+        NativePriceEstimateResult,
+        NativePriceEstimating,
+    },
+    bigdecimal::BigDecimal,
     futures::{FutureExt, StreamExt},
     indexmap::IndexSet,
     primitive_types::H160,
@@ -10,6 +15,7 @@ use {
         sync::{Arc, Mutex, MutexGuard, Weak},
         time::{Duration, Instant},
     },
+    tokio::time,
     tracing::Instrument,
 };
 
@@ -46,6 +52,7 @@ struct Inner {
     high_priority: Mutex<IndexSet<H160>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
+    concurrent_requests: usize,
 }
 
 struct UpdateTask {
@@ -53,7 +60,6 @@ struct UpdateTask {
     update_interval: Duration,
     update_size: Option<usize>,
     prefetch_time: Duration,
-    concurrent_requests: usize,
 }
 
 type CacheEntry = Result<f64, PriceEstimationError>;
@@ -108,42 +114,38 @@ impl Inner {
         &'a self,
         tokens: &'a [H160],
         max_age: Duration,
-        parallelism: usize,
-    ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        let estimates = tokens
-            .iter()
-            .enumerate()
-            .map(move |(index, token)| async move {
-                {
-                    // check if price is cached by now
-                    let now = Instant::now();
-                    let mut cache = self.cache.lock().unwrap();
-                    let price = Self::get_cached_price(*token, now, &mut cache, &max_age, false);
-                    if let Some(price) = price {
-                        return (index, price);
-                    }
+    ) -> futures::stream::BoxStream<'_, (H160, NativePriceEstimateResult)> {
+        let estimates = tokens.iter().map(move |token| async move {
+            {
+                // check if price is cached by now
+                let now = Instant::now();
+                let mut cache = self.cache.lock().unwrap();
+                let price = Self::get_cached_price(*token, now, &mut cache, &max_age, false);
+                if let Some(price) = price {
+                    return (*token, price);
                 }
+            }
 
-                let result = self.estimator.estimate_native_price(*token).await;
+            let result = self.estimator.estimate_native_price(*token).await;
 
-                // update price in cache
-                if should_cache(&result) {
-                    let now = Instant::now();
-                    let mut cache = self.cache.lock().unwrap();
-                    cache.insert(
-                        *token,
-                        CachedResult {
-                            result: result.clone(),
-                            updated_at: now,
-                            requested_at: now,
-                        },
-                    );
-                };
+            // update price in cache
+            if should_cache(&result) {
+                let now = Instant::now();
+                let mut cache = self.cache.lock().unwrap();
+                cache.insert(
+                    *token,
+                    CachedResult {
+                        result: result.clone(),
+                        updated_at: now,
+                        requested_at: now,
+                    },
+                );
+            };
 
-                (index, result)
-            });
+            (*token, result)
+        });
         futures::stream::iter(estimates)
-            .buffered(parallelism)
+            .buffered(self.concurrent_requests)
             .boxed()
     }
 
@@ -204,11 +206,7 @@ impl UpdateTask {
         outdated_entries.truncate(self.update_size.unwrap_or(usize::MAX));
 
         if !outdated_entries.is_empty() {
-            let mut stream = inner.estimate_prices_and_update_cache(
-                &outdated_entries,
-                max_age,
-                self.concurrent_requests,
-            );
+            let mut stream = inner.estimate_prices_and_update_cache(&outdated_entries, max_age);
             while stream.next().await.is_some() {}
             metrics
                 .native_price_cache_background_updates
@@ -227,6 +225,29 @@ impl UpdateTask {
 }
 
 impl CachingNativePriceEstimator {
+    pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
+        let now = Instant::now();
+        // Update the cache to half max age time, so it gets fetched sooner, since we
+        // don't know exactly how old the price was
+        let updated_at = now - (self.0.max_age / 2);
+
+        let cache = prices
+            .into_iter()
+            .filter_map(|(token, price)| {
+                Some((
+                    token,
+                    CachedResult {
+                        result: Ok(from_normalized_price(price)?),
+                        updated_at,
+                        requested_at: now,
+                    },
+                ))
+            })
+            .collect::<HashMap<_, _>>();
+
+        *self.0.cache.lock().unwrap() = cache;
+    }
+
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate
     /// native prices which get cached a duration of `max_age`.
     /// Spawns a background task maintaining the cache once per
@@ -247,6 +268,7 @@ impl CachingNativePriceEstimator {
             cache: Default::default(),
             high_priority: Default::default(),
             max_age,
+            concurrent_requests,
         });
 
         let update_task = UpdateTask {
@@ -254,7 +276,6 @@ impl CachingNativePriceEstimator {
             update_interval,
             update_size,
             prefetch_time,
-            concurrent_requests,
         }
         .run()
         .instrument(tracing::info_span!("caching_native_price_estimator"));
@@ -266,7 +287,7 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing prices will get
     /// prioritized to get fetched during the next cycles of the maintenance
     /// background task.
-    pub fn get_cached_prices(
+    fn get_cached_prices(
         &self,
         tokens: &[H160],
     ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
@@ -289,6 +310,33 @@ impl CachingNativePriceEstimator {
 
     pub fn replace_high_priority(&self, tokens: IndexSet<H160>) {
         *self.0.high_priority.lock().unwrap() = tokens;
+    }
+
+    pub async fn estimate_native_prices_with_timeout<'a>(
+        &'a self,
+        tokens: &'a [H160],
+        timeout: Duration,
+    ) -> HashMap<H160, NativePriceEstimateResult> {
+        if timeout.is_zero() {
+            return self.get_cached_prices(tokens);
+        }
+
+        let mut collected_prices = HashMap::new();
+        let price_stream = self
+            .0
+            .estimate_prices_and_update_cache(tokens, self.0.max_age);
+
+        let _ = time::timeout(timeout, async {
+            let mut price_stream = price_stream;
+
+            while let Some((token, result)) = price_stream.next().await {
+                collected_prices.insert(token, result);
+            }
+        })
+        .await;
+
+        // Return whatever was collected up to that point, regardless of the timeout
+        collected_prices
     }
 }
 
@@ -315,7 +363,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(&[token], self.0.max_age, 1)
+                .estimate_prices_and_update_cache(&[token], self.0.max_age)
                 .next()
                 .await
                 .unwrap()
@@ -342,6 +390,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn caches_successful_estimates_with_loaded_prices() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner.expect_estimate_native_price().never();
+
+        let prices = HashMap::from([(token(0), BigDecimal::try_from(1e18).unwrap())]);
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+        );
+        estimator.initialize_cache(prices).await;
+
+        for _ in 0..10 {
+            let result = estimator.estimate_native_price(token(0)).await;
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
+        }
+    }
+
+    #[tokio::test]
     async fn caches_successful_estimates() {
         let mut inner = MockNativePriceEstimating::new();
         inner
@@ -360,7 +430,7 @@ mod tests {
 
         for _ in 0..10 {
             let result = estimator.estimate_native_price(token(0)).await;
-            assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
+            assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
 
@@ -593,6 +663,7 @@ mod tests {
             high_priority: Default::default(),
             estimator: Box::new(MockNativePriceEstimating::new()),
             max_age: Default::default(),
+            concurrent_requests: 1,
         };
 
         let now = now + Duration::from_secs(1);

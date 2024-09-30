@@ -17,6 +17,7 @@ pub mod merge_settlements;
 pub mod multiple_drivers;
 pub mod multiple_solutions;
 pub mod order_prioritization;
+pub mod parallel_auctions;
 pub mod protocol_fees;
 pub mod quote;
 pub mod settle;

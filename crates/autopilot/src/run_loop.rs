@@ -4,7 +4,9 @@ use {
         database::competition::Competition,
         domain::{
             self,
-            competition::{self, SolutionError, TradedAmounts},
+            auction::Id,
+            competition::{self, SolutionError, SolutionWithId, TradedOrder},
+            eth::{self, TxId},
             OrderUid,
         },
         infra::{
@@ -16,10 +18,12 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::{Context, Result},
+    anyhow::Result,
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
+    futures::{future::BoxFuture, TryFutureExt},
+    itertools::Itertools,
     model::solver_competition::{
         CompetitionAuction,
         Order,
@@ -35,45 +39,82 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
-    tracing::{warn, Instrument},
+    tokio::sync::{mpsc, Mutex},
+    tracing::Instrument,
 };
 
-pub struct RunLoop {
-    pub eth: infra::Ethereum,
-    pub persistence: infra::Persistence,
-    pub drivers: Vec<infra::Driver>,
-
-    pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub market_makable_token_list: AutoUpdatingTokenList,
+pub struct Config {
     pub submission_deadline: u64,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub liveness: Arc<Liveness>,
     pub synchronization: RunLoopMode,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+}
+
+pub struct RunLoop {
+    config: Config,
+    eth: infra::Ethereum,
+    persistence: infra::Persistence,
+    drivers: Vec<Arc<infra::Driver>>,
+    solvable_orders_cache: Arc<SolvableOrdersCache>,
+    market_makable_token_list: AutoUpdatingTokenList,
+    in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
+    liveness: Arc<Liveness>,
     /// Maintenance tasks that should run before every runloop to have
     /// the most recent data available.
-    pub maintenance: Arc<Maintenance>,
+    maintenance: Arc<Maintenance>,
+    /// Queues by solver for executing settle futures one by one guaranteeing
+    /// FIFO execution order.
+    settlement_queues: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<BoxFuture<'static, ()>>>>>,
 }
 
 impl RunLoop {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        config: Config,
+        eth: infra::Ethereum,
+        persistence: infra::Persistence,
+        drivers: Vec<Arc<infra::Driver>>,
+        solvable_orders_cache: Arc<SolvableOrdersCache>,
+        market_makable_token_list: AutoUpdatingTokenList,
+        liveness: Arc<Liveness>,
+        maintenance: Arc<Maintenance>,
+    ) -> Self {
+        Self {
+            config,
+            eth,
+            persistence,
+            drivers,
+            solvable_orders_cache,
+            market_makable_token_list,
+            in_flight_orders: Default::default(),
+            liveness,
+            maintenance,
+            settlement_queues: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     pub async fn run_forever(self, update_interval: Duration) -> ! {
         Maintenance::spawn_background_task(
             self.maintenance.clone(),
-            self.synchronization,
+            self.config.synchronization,
             self.eth.current_block().clone(),
             update_interval,
         );
 
         let mut last_auction = None;
         let mut last_block = None;
+        let self_arc = Arc::new(self);
         loop {
-            let auction = self.next_auction(&mut last_auction, &mut last_block).await;
+            let auction = self_arc
+                .next_auction(&mut last_auction, &mut last_block)
+                .await;
             if let Some(domain::AuctionWithId { id, auction }) = auction {
-                self.single_run(id, &auction)
+                self_arc
+                    .single_run(id, auction)
                     .instrument(tracing::info_span!("auction", id))
                     .await;
             };
@@ -88,7 +129,7 @@ impl RunLoop {
         prev_block: &mut Option<H256>,
     ) -> Option<domain::AuctionWithId> {
         // wait for appropriate time to start building the auction
-        let start_block = match self.synchronization {
+        let start_block = match self.config.synchronization {
             RunLoopMode::Unsynchronized => {
                 // Sleep a bit to avoid busy loops.
                 tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
@@ -97,11 +138,11 @@ impl RunLoop {
             RunLoopMode::SyncToBlockchain => {
                 let current_block = *self.eth.current_block().borrow();
                 let time_since_last_block = current_block.observed_at.elapsed();
-                let auction_block = if time_since_last_block > self.max_run_loop_delay {
+                let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
                     if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
                         // don't emit warning if we finished prev run loop within the same block
                         tracing::warn!(
-                            missed_by = ?time_since_last_block - self.max_run_loop_delay,
+                            missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
                             "missed optimal auction start, wait for new block"
                         );
                     }
@@ -176,11 +217,17 @@ impl RunLoop {
         Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: domain::auction::Id, auction: &domain::Auction) {
+    async fn single_run(
+        self: &Arc<Self>,
+        auction_id: domain::auction::Id,
+        auction: domain::Auction,
+    ) {
         let single_run_start = Instant::now();
         tracing::info!(?auction_id, "solving");
 
-        let solutions = self.competition(auction_id, auction).await;
+        let auction = self.remove_in_flight_orders(auction).await;
+
+        let solutions = self.competition(auction_id, &auction).await;
         if solutions.is_empty() {
             tracing::info!("no solutions for auction");
             return;
@@ -192,14 +239,14 @@ impl RunLoop {
         if let Some(Participant { driver, solution }) = solutions.last() {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
-            let block_deadline = competition_simulation_block + self.submission_deadline;
+            let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
             // Post-processing should not be executed asynchronously since it includes steps
             // of storing all the competition/auction-related data to the DB.
             if let Err(err) = self
                 .post_processing(
                     auction_id,
-                    auction.clone(),
+                    auction,
                     competition_simulation_block,
                     solution,
                     &solutions,
@@ -211,20 +258,104 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!(driver = %driver.name, "settling");
+            self.start_settlement_execution(
+                auction_id,
+                single_run_start,
+                driver,
+                solution,
+                block_deadline,
+            )
+            .await;
+        }
+    }
+
+    /// Starts settlement execution in a background task. The function is async
+    /// only to get access to the locks.
+    async fn start_settlement_execution(
+        self: &Arc<Self>,
+        auction_id: Id,
+        single_run_start: Instant,
+        driver: &Arc<infra::Driver>,
+        solution: &SolutionWithId,
+        block_deadline: u64,
+    ) {
+        let solved_order_uids: HashSet<_> = solution.orders().keys().cloned().collect();
+        self.in_flight_orders
+            .lock()
+            .await
+            .extend(solved_order_uids.clone());
+
+        let solution_id = solution.id();
+        let solver = solution.solver();
+        let self_ = self.clone();
+        let driver_ = driver.clone();
+
+        let settle_fut = async move {
+            tracing::info!(driver = %driver_.name, "settling");
             let submission_start = Instant::now();
-            match self
-                .settle(driver, solution, auction_id, block_deadline)
+
+            match self_
+                .settle(
+                    &driver_,
+                    solution_id,
+                    solved_order_uids,
+                    solver,
+                    auction_id,
+                    block_deadline,
+                )
                 .await
             {
-                Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
+                Ok(tx_hash) => {
+                    Metrics::settle_ok(&driver_, submission_start.elapsed());
+                    tracing::debug!(?tx_hash, driver = %driver_.name, ?solver, "solution settled");
+                }
                 Err(err) => {
-                    Metrics::settle_err(driver, submission_start.elapsed(), &err);
-                    tracing::warn!(?err, driver = %driver.name, "settlement failed");
+                    Metrics::settle_err(&driver_, submission_start.elapsed(), &err);
+                    tracing::warn!(?err, driver = %driver_.name, "settlement failed");
                 }
             }
-
             Metrics::single_run_completed(single_run_start.elapsed());
+        }
+        .instrument(tracing::Span::current());
+
+        let sender = self.get_settlement_queue_sender(&driver.name).await;
+        if let Err(err) = sender.send(Box::pin(settle_fut)) {
+            tracing::warn!(driver = %driver.name, ?err, "failed to send settle future to queue");
+        }
+    }
+
+    /// Retrieves or creates the settlement queue sender for a given driver.
+    ///
+    /// This function ensures that there is a settlement execution queue
+    /// associated with the specified `driver_name`. If a queue already
+    /// exists, it returns the existing sender. If not, it creates a new
+    /// queue, starts a background task to process settlement futures,
+    /// guaranteeing FIFO execution order for settlements per driver, and
+    /// returns the new sender.
+    async fn get_settlement_queue_sender(
+        self: &Arc<Self>,
+        driver_name: &str,
+    ) -> mpsc::UnboundedSender<BoxFuture<'static, ()>> {
+        let mut settlement_queues = self.settlement_queues.lock().await;
+        match settlement_queues.get(driver_name) {
+            Some(sender) => sender.clone(),
+            None => {
+                let (tx, mut rx) = mpsc::unbounded_channel::<BoxFuture<'static, ()>>();
+                let driver_name = driver_name.to_string();
+                let self_ = self.clone();
+
+                settlement_queues.insert(driver_name.clone(), tx.clone());
+
+                tokio::spawn(async move {
+                    while let Some(fut) = rx.recv().await {
+                        fut.await;
+                    }
+
+                    tracing::info!(driver = %driver_name, "settlement execution queue stopped");
+                    self_.settlement_queues.lock().await.remove(&driver_name);
+                });
+                tx
+            }
         }
     }
 
@@ -235,7 +366,7 @@ impl RunLoop {
         auction: domain::Auction,
         competition_simulation_block: u64,
         winning_solution: &competition::SolutionWithId,
-        solutions: &[Participant<'_>],
+        solutions: &[Participant],
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
@@ -250,9 +381,12 @@ impl RunLoop {
             .iter()
             .map(|participant| participant.solution.solver().into())
             .collect::<HashSet<_>>();
-
         let mut fee_policies = Vec::new();
-        for order_id in winning_solution.order_ids() {
+        for order_id in solutions
+            .iter()
+            .flat_map(|participant| participant.solution.order_ids())
+            .unique()
+        {
             match auction
                 .orders
                 .iter()
@@ -296,8 +430,8 @@ impl RunLoop {
                         .iter()
                         .map(|(id, order)| Order::Colocated {
                             id: (*id).into(),
-                            sell_amount: order.sell.into(),
-                            buy_amount: order.buy.into(),
+                            sell_amount: order.executed_sell.into(),
+                            buy_amount: order.executed_buy.into(),
                         })
                         .collect(),
                     clearing_prices: participant
@@ -326,28 +460,21 @@ impl RunLoop {
         };
 
         tracing::trace!(?competition, "saving competition");
-        self.persistence
-            .save_competition(&competition)
-            .await
-            .context("failed to save competition")?;
+        futures::try_join!(
+            self.persistence
+                .save_competition(&competition)
+                .map_err(|e| e.0.context("failed to save competition")),
+            self.persistence
+                .save_surplus_capturing_jit_orders_orders(
+                    auction_id,
+                    &auction.surplus_capturing_jit_order_owners,
+                )
+                .map_err(|e| e.0.context("failed to save jit order owners")),
+            self.persistence
+                .store_fee_policies(auction_id, fee_policies)
+                .map_err(|e| e.context("failed to fee_policies")),
+        )?;
 
-        self.persistence
-            .save_surplus_capturing_jit_orders_orders(
-                auction_id,
-                &auction.surplus_capturing_jit_order_owners,
-            )
-            .await
-            .context("failed to save surplus capturing jit order owners")?;
-
-        tracing::info!("saving fee policies");
-        if let Err(err) = self
-            .persistence
-            .store_fee_policies(auction_id, fee_policies)
-            .await
-        {
-            Metrics::fee_policies_store_error();
-            tracing::warn!(?err, "failed to save fee policies");
-        }
         Metrics::post_processed(start.elapsed());
         Ok(())
     }
@@ -358,12 +485,12 @@ impl RunLoop {
         &self,
         id: domain::auction::Id,
         auction: &domain::Auction,
-    ) -> Vec<Participant<'_>> {
+    ) -> Vec<Participant> {
         let request = solve::Request::new(
             id,
             auction,
             &self.market_makable_token_list.all(),
-            self.solve_deadline,
+            self.config.solve_deadline,
         );
         let request = &request;
 
@@ -374,7 +501,7 @@ impl RunLoop {
         let mut solutions = futures::future::join_all(
             self.drivers
                 .iter()
-                .map(|driver| self.solve(driver, request)),
+                .map(|driver| self.solve(driver.clone(), request)),
         )
         .await
         .into_iter()
@@ -388,7 +515,7 @@ impl RunLoop {
         // Make sure the winning solution is fair.
         while !Self::is_solution_fair(solutions.last(), &solutions, auction) {
             let unfair_solution = solutions.pop().expect("must exist");
-            warn!(
+            tracing::warn!(
                 invalidated = unfair_solution.driver.name,
                 "fairness check invalidated of solution"
             );
@@ -400,7 +527,7 @@ impl RunLoop {
 
     /// Records metrics, order events and logs for the given solutions.
     /// Expects the winning solution to be the last in the list.
-    fn report_on_solutions(&self, solutions: &[Participant<'_>], auction: &domain::Auction) {
+    fn report_on_solutions(&self, solutions: &[Participant], auction: &domain::Auction) {
         let Some(winner) = solutions.last() else {
             // no solutions means nothing to report
             return;
@@ -440,7 +567,7 @@ impl RunLoop {
         // Report orders that were part of a non-winning solution candidate
         // but only if they were part of the auction (filter out jit orders)
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
-        Metrics::matched_unsettled(winner.driver, non_winning_orders);
+        Metrics::matched_unsettled(&winner.driver, non_winning_orders);
     }
 
     /// Returns true if winning solution is fair or winner is None
@@ -457,12 +584,12 @@ impl RunLoop {
         // Returns the surplus difference in the buy token if `left`
         // is better for the trader than `right`, or 0 otherwise.
         // This takes differently partial fills into account.
-        let improvement_in_buy = |left: &TradedAmounts, right: &TradedAmounts| {
+        let improvement_in_buy = |left: &TradedOrder, right: &TradedOrder| {
             // If `left.sell / left.buy < right.sell / right.buy`, left is "better" as the
             // trader either sells less or gets more. This can be reformulated as
             // `right.sell * left.buy > left.sell * right.buy`.
-            let right_sell_left_buy = right.sell.0.full_mul(left.buy.0);
-            let left_sell_right_buy = left.sell.0.full_mul(right.buy.0);
+            let right_sell_left_buy = right.executed_sell.0.full_mul(left.executed_buy.0);
+            let left_sell_right_buy = left.executed_sell.0.full_mul(right.executed_buy.0);
             let improvement = right_sell_left_buy
                 .checked_sub(left_sell_right_buy)
                 .unwrap_or_default();
@@ -471,7 +598,7 @@ impl RunLoop {
             // token. Casting to U256 is safe because the difference is smaller than the
             // original product, which if re-divided by right.sell must fit in U256.
             improvement
-                .checked_div(right.sell.0.into())
+                .checked_div(right.executed_sell.0.into())
                 .map(|v| U256::try_from(v).expect("improvement in buy fits in U256"))
                 .unwrap_or_default()
         };
@@ -532,20 +659,20 @@ impl RunLoop {
 
     /// Sends a `/solve` request to the driver and manages all error cases and
     /// records metrics and logs appropriately.
-    async fn solve<'a>(
+    async fn solve(
         &self,
-        driver: &'a infra::Driver,
+        driver: Arc<infra::Driver>,
         request: &solve::Request,
-    ) -> Vec<Participant<'a>> {
+    ) -> Vec<Participant> {
         let start = Instant::now();
-        let result = self.try_solve(driver, request).await;
+        let result = self.try_solve(&driver, request).await;
         let solutions = match result {
             Ok(solutions) => {
-                Metrics::solve_ok(driver, start.elapsed());
+                Metrics::solve_ok(&driver, start.elapsed());
                 solutions
             }
             Err(err) => {
-                Metrics::solve_err(driver, start.elapsed(), &err);
+                Metrics::solve_err(&driver, start.elapsed(), &err);
                 if matches!(err, SolveError::NoSolutions) {
                     tracing::debug!(driver = %driver.name, "solver found no solution");
                 } else {
@@ -559,11 +686,14 @@ impl RunLoop {
             .into_iter()
             .filter_map(|solution| match solution {
                 Ok(solution) => {
-                    Metrics::solution_ok(driver);
-                    Some(Participant { driver, solution })
+                    Metrics::solution_ok(&driver);
+                    Some(Participant {
+                        driver: driver.clone(),
+                        solution,
+                    })
                 }
                 Err(err) => {
-                    Metrics::solution_err(driver, &err);
+                    Metrics::solution_err(&driver, &err);
                     tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
                     None
                 }
@@ -580,7 +710,7 @@ impl RunLoop {
         Vec<Result<competition::SolutionWithId, domain::competition::SolutionError>>,
         SolveError,
     > {
-        let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
+        let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
             .map_err(SolveError::Failure)?;
@@ -621,48 +751,49 @@ impl RunLoop {
     async fn settle(
         &self,
         driver: &infra::Driver,
-        solved: &competition::SolutionWithId,
+        solution_id: u64,
+        solved_order_uids: HashSet<OrderUid>,
+        solver: eth::Address,
         auction_id: i64,
         submission_deadline_latest_block: u64,
-    ) -> Result<(), SettleError> {
+    ) -> Result<TxId, SettleError> {
         let request = settle::Request {
-            solution_id: solved.id(),
+            solution_id,
             submission_deadline_latest_block,
         };
-        let tx_hash = self
-            .wait_for_settlement(driver, auction_id, request)
-            .await?;
-        tracing::debug!(?tx_hash, "solution settled");
 
-        Ok(())
-    }
-
-    /// Wait for either the settlement transaction to be mined or the driver
-    /// returned a result.
-    async fn wait_for_settlement(
-        &self,
-        driver: &infra::Driver,
-        auction_id: i64,
-        request: settle::Request,
-    ) -> Result<H256, SettleError> {
-        match futures::future::select(
-            Box::pin(self.wait_for_settlement_transaction(auction_id, self.submission_deadline)),
-            Box::pin(driver.settle(&request, self.max_settlement_transaction_wait)),
+        // Wait for either the settlement transaction to be mined or the driver returned
+        // a result.
+        let result = match futures::future::select(
+            Box::pin(self.wait_for_settlement_transaction(
+                auction_id,
+                self.config.submission_deadline,
+                solver,
+            )),
+            Box::pin(driver.settle(&request, self.config.max_settlement_transaction_wait)),
         )
         .await
         {
             futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((driver_result, onchain_task)) => {
-                driver_result.map_err(|err| {
-                    tracing::warn!(?err, "driver settle request failed");
-                    SettleError::Failure(err)
-                })?;
-                onchain_task.await
+            futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
+                match driver_result {
+                    Ok(_) => wait_for_settlement_transaction.await,
+                    Err(err) => Err(SettleError::Failure(err)),
+                }
             }
-        }
+        };
+
+        // Clean up the in-flight orders regardless the result.
+        self.in_flight_orders
+            .lock()
+            .await
+            .retain(|order| !solved_order_uids.contains(order));
+
+        result
     }
 
-    /// Tries to find a `settle` contract call with calldata ending in `tag`.
+    /// Tries to find a `settle` contract call with calldata ending in `tag` and
+    /// originated from the `solver`.
     ///
     /// Returns None if no transaction was found within the deadline or the task
     /// is cancelled.
@@ -670,7 +801,8 @@ impl RunLoop {
         &self,
         auction_id: i64,
         max_blocks_wait: u64,
-    ) -> Result<H256, SettleError> {
+        solver: eth::Address,
+    ) -> Result<eth::TxId, SettleError> {
         let current = self.eth.current_block().borrow().number;
         let deadline = current.saturating_add(max_blocks_wait);
         tracing::debug!(%current, %deadline, %auction_id, "waiting for tag");
@@ -682,14 +814,19 @@ impl RunLoop {
 
             match self
                 .persistence
-                .find_tx_hash_by_auction_id(auction_id)
+                .find_settlement_transaction(auction_id, solver)
                 .await
             {
-                Ok(Some(hash)) => return Ok(hash),
-                Err(err) => {
-                    tracing::warn!(?err, "failed to fetch recent settlement tx hashes");
-                }
+                Ok(Some(transaction)) => return Ok(transaction),
                 Ok(None) => {}
+                Err(err) => {
+                    tracing::warn!(
+                        ?err,
+                        ?auction_id,
+                        ?solver,
+                        "failed to find settlement transaction"
+                    );
+                }
             }
             if block.number >= deadline {
                 break;
@@ -699,10 +836,24 @@ impl RunLoop {
             "settlement transaction await reached deadline"
         )))
     }
+
+    /// Removes orders that are currently being settled to avoid solvers trying
+    /// to fill an order a second time.
+    async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
+        let in_flight = &*self.in_flight_orders.lock().await;
+        if in_flight.is_empty() {
+            return auction;
+        };
+
+        auction.orders.retain(|o| !in_flight.contains(&o.uid));
+        tracing::debug!(orders = ?in_flight, "filtered out in-flight orders");
+
+        auction
+    }
 }
 
-struct Participant<'a> {
-    driver: &'a infra::Driver,
+struct Participant {
+    driver: Arc<infra::Driver>,
     solution: competition::SolutionWithId,
 }
 
@@ -748,7 +899,7 @@ struct Metrics {
     /// Tracks the times and results of driver `/settle` requests.
     #[metric(
         labels("driver", "result"),
-        buckets(0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 25, 30, 40)
+        buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48)
     )]
     settle: prometheus::HistogramVec,
 
@@ -767,16 +918,16 @@ struct Metrics {
 
     /// Tracks the time spent running maintenance. This mostly consists of
     /// indexing new events.
-    #[metric(buckets(0, 0.01, 0.05, 0.1, 0.2, 0.5, 1., 2., 5.))]
+    #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
     service_maintenance_time: prometheus::Histogram,
 
     /// Total time spent in a single run of the run loop.
-    #[metric(buckets(0, 1, 5, 10, 15, 20, 25, 30, 35, 40))]
+    #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
     single_run_time: prometheus::Histogram,
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0.5, 1, 1.5, 2, 4, 6, 8, 10, 12, 16))]
+    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
     current_block_delay: prometheus::Histogram,
 }
 
@@ -852,13 +1003,6 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
-    }
-
-    fn fee_policies_store_error() {
-        Self::get()
-            .db_metric_error
-            .with_label_values(&["fee_policies_store"])
-            .inc();
     }
 
     fn post_processed(elapsed: Duration) {

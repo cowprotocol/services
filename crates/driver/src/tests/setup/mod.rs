@@ -507,6 +507,7 @@ pub fn setup() -> Setup {
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         jit_orders: Default::default(),
         surplus_capturing_jit_order_owners: Default::default(),
+        allow_multiple_solve_requests: false,
     }
 }
 
@@ -535,6 +536,8 @@ pub struct Setup {
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<H160>,
+    /// In case your test requires multiple `/solve` requests
+    allow_multiple_solve_requests: bool,
 }
 
 /// The validity of a solution.
@@ -839,7 +842,7 @@ impl Setup {
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
         observe::tracing::initialize_reentrant(
-            "driver=trace,driver::tests::setup::blockchain=debug",
+            "driver=trace,driver::tests::setup::blockchain=debug,warn",
         );
 
         if let Some(name) = self.name.as_ref() {
@@ -925,6 +928,7 @@ impl Setup {
                 private_key: solver.private_key.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
+                allow_multiple_solve_requests: self.allow_multiple_solve_requests,
             })
             .await;
 
@@ -974,6 +978,11 @@ impl Setup {
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
         crate::infra::time::now() + chrono::Duration::seconds(2)
     }
+
+    pub fn allow_multiple_solve_requests(mut self) -> Self {
+        self.allow_multiple_solve_requests = true;
+        self
+    }
 }
 
 pub struct Test {
@@ -1017,7 +1026,7 @@ impl Test {
     }
 
     /// Call the /reveal endpoint.
-    pub async fn reveal(&self) -> Reveal {
+    pub async fn reveal(&self, solution_id: &str) -> Reveal {
         let res = self
             .client
             .post(format!(
@@ -1025,7 +1034,7 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
-            .json(&driver::reveal_req())
+            .json(&driver::reveal_req(solution_id))
             .send()
             .await
             .unwrap();
@@ -1063,11 +1072,11 @@ impl Test {
     }
 
     /// Call the /settle endpoint.
-    pub async fn settle(&self) -> Settle {
-        self.settle_with_solver(solver::NAME).await
+    pub async fn settle(&self, solution_id: &str) -> Settle {
+        self.settle_with_solver(solver::NAME, solution_id).await
     }
 
-    pub async fn settle_with_solver(&self, solver_name: &str) -> Settle {
+    pub async fn settle_with_solver(&self, solver_name: &str, solution_id: &str) -> Settle {
         /// The maximum number of blocks to wait for a settlement to appear on
         /// chain.
         const SUBMISSION_DEADLINE: u64 = 3;
@@ -1081,7 +1090,10 @@ impl Test {
                 "http://{}/{}/settle",
                 self.driver.addr, solver_name
             ))
-            .json(&driver::settle_req(submission_deadline_latest_block))
+            .json(&driver::settle_req(
+                submission_deadline_latest_block,
+                solution_id,
+            ))
             .send()
             .await
             .unwrap();
@@ -1173,6 +1185,18 @@ impl<'a> SolveOk<'a> {
         serde_json::from_str::<Body>(&self.body).unwrap().solutions
     }
 
+    /// Extracts the solution id from the response. Since response can contain
+    /// multiple solutions, it takes the id from the first solution.
+    pub fn id(&self) -> String {
+        let solution = self.solution();
+        solution
+            .get("solutionId")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
     /// Extracts the first solution from the response. This is expected to be
     /// always valid if there is a valid solution, as we expect from driver to
     /// not send multiple solutions (yet).
@@ -1239,11 +1263,11 @@ impl<'a> SolveOk<'a> {
                 None => (quoted_order.sell, quoted_order.buy),
             };
             assert!(is_approximately_equal(
-                u256(trade.get("sellAmount").unwrap()),
+                u256(trade.get("executedSell").unwrap()),
                 expected_sell
             ));
             assert!(is_approximately_equal(
-                u256(trade.get("buyAmount").unwrap()),
+                u256(trade.get("executedBuy").unwrap()),
                 expected_buy
             ));
         }
@@ -1262,6 +1286,12 @@ impl Reveal {
     pub fn ok(self) -> RevealOk {
         assert_eq!(self.status, hyper::StatusCode::OK);
         RevealOk { body: self.body }
+    }
+
+    /// Expect the /reveal endpoint to return a 400 BAD REQUEST response.
+    pub fn err(self) -> RevealErr {
+        assert!(!self.status.is_success());
+        RevealErr { body: self.body }
     }
 }
 
@@ -1295,6 +1325,23 @@ impl RevealOk {
             .unwrap()
             .is_empty());
         self
+    }
+}
+
+pub struct RevealErr {
+    body: String,
+}
+
+impl RevealErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }
 
