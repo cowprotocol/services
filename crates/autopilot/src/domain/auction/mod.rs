@@ -6,8 +6,12 @@ use {
 pub mod order;
 
 /// Replicates [`crate::model::Auction`].
+///
+/// Doesn't have an `id` field which is a main difference between this struct
+/// and `domain::Auction` struct, which is by default the main auction object
+/// used in the autopilot.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AuctionWithoutId {
+pub struct RawAuctionData {
     pub block: u64,
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,

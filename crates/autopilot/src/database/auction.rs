@@ -99,7 +99,7 @@ impl Postgres {
 
     pub async fn replace_current_auction(
         &self,
-        auction: &dto::AuctionWithoutId,
+        auction: &dto::RawAuctionData,
     ) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries

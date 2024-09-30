@@ -11,8 +11,8 @@ use {
     std::collections::BTreeMap,
 };
 
-pub fn from_domain(auction: domain::AuctionWithoutId) -> AuctionWithoutId {
-    AuctionWithoutId {
+pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
+    RawAuctionData {
         block: auction.block,
         latest_settlement_block: auction.latest_settlement_block,
         orders: auction
@@ -37,7 +37,7 @@ pub fn from_domain(auction: domain::AuctionWithoutId) -> AuctionWithoutId {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename = "Auction")]
 #[serde(rename_all = "camelCase")]
-pub struct AuctionWithoutId {
+pub struct RawAuctionData {
     pub block: u64,
     pub latest_settlement_block: u64,
     pub orders: Vec<Order>,
@@ -88,5 +88,5 @@ impl TryFrom<Auction> for domain::Auction {
 pub struct Auction {
     pub id: AuctionId,
     #[serde(flatten)]
-    pub auction: AuctionWithoutId,
+    pub auction: RawAuctionData,
 }

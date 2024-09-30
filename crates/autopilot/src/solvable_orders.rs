@@ -98,7 +98,7 @@ pub struct SolvableOrdersCache {
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: domain::AuctionWithoutId,
+    auction: domain::RawAuctionData,
     solvable_orders: boundary::SolvableOrders,
 }
 
@@ -150,7 +150,7 @@ impl SolvableOrdersCache {
         );
     }
 
-    pub async fn current_auction(&self) -> Option<domain::AuctionWithoutId> {
+    pub async fn current_auction(&self) -> Option<domain::RawAuctionData> {
         self.cache
             .lock()
             .await
@@ -272,7 +272,7 @@ impl SolvableOrdersCache {
             .cloned()
             .map(eth::Address::from)
             .collect::<Vec<_>>();
-        let auction = domain::AuctionWithoutId {
+        let auction = domain::RawAuctionData {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
             orders: orders

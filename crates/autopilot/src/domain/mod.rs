@@ -9,7 +9,7 @@ pub use {
     auction::{
         order::{Order, OrderUid},
         Auction,
-        AuctionWithoutId,
+        RawAuctionData,
     },
     fee::ProtocolFees,
     quote::Quote,
