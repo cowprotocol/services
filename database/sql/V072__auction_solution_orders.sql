@@ -2,11 +2,19 @@
 ALTER TABLE auctions RENAME TO latest_auction;
 
 CREATE TABLE auctions (
-   auction_id bigint PRIMARY KEY,
+   id bigint PRIMARY KEY,
    -- The block number at which the auction was created
    block bigint NOT NULL,
    -- The block number until which all winning solutions from a competition should be settled on-chain
-   deadline bigint NOT NULL
+   deadline bigint NOT NULL,
+   -- Orders that were part of the auction
+   order_uids bytea[] NOT NULL,
+   -- The auction's native price tokens
+   price_tokens bytea[] NOT NULL,
+   -- The auction's price values
+   price_values numeric(78,0)[] NOT NULL,
+   -- A list of all surplus capturing JIT order owners that were part of the auction
+   surplus_capturing_jit_order_owners bytea[] NOT NULL
 );
 
 -- Table to store all proposed solutions for an auction, received from solvers during competition time.
