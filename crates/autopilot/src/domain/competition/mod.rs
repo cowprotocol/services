@@ -10,7 +10,7 @@ use {
 
 type SolutionId = u64;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SolutionWithId {
     id: SolutionId,
     solution: Solution,
@@ -55,7 +55,7 @@ impl SolutionWithId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Solution {
     solver: eth::Address,
     score: Score,
