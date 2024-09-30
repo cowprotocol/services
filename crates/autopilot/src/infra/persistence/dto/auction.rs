@@ -35,7 +35,6 @@ pub fn from_domain(auction: domain::RawAuctionData) -> RawAuctionData {
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename = "Auction")]
 #[serde(rename_all = "camelCase")]
 pub struct RawAuctionData {
     pub block: u64,
@@ -83,7 +82,6 @@ impl TryFrom<Auction> for domain::Auction {
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename = "AuctionWithId")]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     pub id: AuctionId,
