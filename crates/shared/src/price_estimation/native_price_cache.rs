@@ -317,26 +317,31 @@ impl CachingNativePriceEstimator {
         tokens: &'a [H160],
         timeout: Duration,
     ) -> HashMap<H160, NativePriceEstimateResult> {
+        let mut prices = self.get_cached_prices(tokens);
         if timeout.is_zero() {
-            return self.get_cached_prices(tokens);
+            return prices;
         }
 
-        let mut collected_prices = HashMap::new();
+        let uncached_tokens: Vec<_> = tokens
+            .iter()
+            .filter(|t| !prices.contains_key(t))
+            .copied()
+            .collect();
         let price_stream = self
             .0
-            .estimate_prices_and_update_cache(tokens, self.0.max_age);
+            .estimate_prices_and_update_cache(&uncached_tokens, self.0.max_age);
 
         let _ = time::timeout(timeout, async {
             let mut price_stream = price_stream;
 
             while let Some((token, result)) = price_stream.next().await {
-                collected_prices.insert(token, result);
+                prices.insert(token, result);
             }
         })
         .await;
 
         // Return whatever was collected up to that point, regardless of the timeout
-        collected_prices
+        prices
     }
 }
 
