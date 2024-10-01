@@ -306,6 +306,10 @@ components:
           properties:
             amount:
               $ref: "#/components/schemas/TokenAmount"
+            preInteractions:
+              type: array
+              items:
+                $ref: "#/components/schemas/Interaction"
             interactions:
               type: array
               items:
@@ -316,6 +320,10 @@ components:
             gas:
               type: integer
               description: How many units of gas this trade is estimated to cost.
+            jitOrders:
+              type: array
+              items:
+                $ref: "#/components/schemas/JitOrder"
         - $ref: "#/components/schemas/Error"
     DateTime:
       description: An ISO 8601 UTC date time string.
@@ -514,6 +522,41 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         solver:
           $ref: "#/components/schemas/Address"
+    JitOrder:
+      type: object
+      properties:
+        uid:
+          $ref: "#/components/schemas/OrderUID"
+        owner:
+          $ref: "#/components/schemas/Address"
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        receiver:
+          $ref: "#/components/schemas/Address"
+        validTo:
+          type: integer
+        side:
+          type: string
+          enum: ["buy", "sell"]
+        sellTokenSource:
+          type: string
+          enum: ["erc20", "internal", "external"]
+        buyTokenSource:
+          type: string
+          enum: ["erc20", "internal"]
+        appData:
+          type: string
+        signature:
+          type: string
+        signingScheme:
+          type: string
+          enum: ["eip712", "ethsign", "presign", "eip1271"]
     Error:
       description: Response on API errors.
       type: object

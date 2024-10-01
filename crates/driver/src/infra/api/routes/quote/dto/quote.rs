@@ -95,8 +95,8 @@ struct JitOrder {
 impl From<domain::competition::order::Jit> for JitOrder {
     fn from(jit: domain::competition::order::Jit) -> Self {
         Self {
-            buy_token: jit.buy.token.into(),
             sell_token: jit.sell.token.into(),
+            buy_token: jit.buy.token.into(),
             sell_amount: jit.sell.amount.into(),
             buy_amount: jit.buy.amount.into(),
             receiver: jit.receiver.into(),
