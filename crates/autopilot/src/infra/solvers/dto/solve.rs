@@ -18,13 +18,12 @@ use {
 
 impl Request {
     pub fn new(
-        id: domain::auction::Id,
         auction: &domain::Auction,
         trusted_tokens: &HashSet<H160>,
         time_limit: Duration,
     ) -> Self {
         Self {
-            id,
+            id: auction.id,
             orders: auction
                 .orders
                 .clone()
@@ -59,7 +58,7 @@ impl Request {
 impl Response {
     pub fn into_domain(
         self,
-    ) -> Vec<Result<domain::competition::SolutionWithId, domain::competition::SolutionError>> {
+    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
         self.solutions
             .into_iter()
             .map(Solution::into_domain)
@@ -92,8 +91,8 @@ pub struct Token {
 impl Solution {
     pub fn into_domain(
         self,
-    ) -> Result<domain::competition::SolutionWithId, domain::competition::SolutionError> {
-        Ok(domain::competition::SolutionWithId::new(
+    ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
+        Ok(domain::competition::Solution::new(
             self.solution_id,
             self.submission_address.into(),
             domain::competition::Score::new(self.score.into())?,

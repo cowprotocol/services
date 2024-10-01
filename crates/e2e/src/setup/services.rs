@@ -145,6 +145,7 @@ impl<'a> Services<'a> {
         let args = [
             "autopilot".to_string(),
             "--auction-update-interval=1s".to_string(),
+            "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
             format!("--solve-deadline={solve_deadline:?}"),
@@ -329,7 +330,7 @@ impl<'a> Services<'a> {
     /// Fetches the current auction. Don't use this as a synchronization
     /// mechanism in tests because that is prone to race conditions
     /// which would make tests flaky.
-    pub async fn get_auction(&self) -> dto::AuctionWithId {
+    pub async fn get_auction(&self) -> dto::Auction {
         let response = self
             .http
             .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))
