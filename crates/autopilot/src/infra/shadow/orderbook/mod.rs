@@ -17,13 +17,13 @@ impl Orderbook {
     }
 
     /// Retrieves the current auction.
-    pub async fn auction(&self) -> anyhow::Result<domain::AuctionWithId> {
+    pub async fn auction(&self) -> anyhow::Result<domain::Auction> {
         self.client
             .get(shared::url::join(&self.url, "api/v1/auction"))
             .send()
             .await?
             .error_for_status()?
-            .json::<dto::AuctionWithId>()
+            .json::<dto::Auction>()
             .await
             .map(TryInto::try_into)
             .map_err(Into::<anyhow::Error>::into)?

@@ -11,12 +11,15 @@ use {
 type SolutionId = u64;
 
 #[derive(Debug)]
-pub struct SolutionWithId {
+pub struct Solution {
     id: SolutionId,
-    solution: Solution,
+    solver: eth::Address,
+    score: Score,
+    orders: HashMap<domain::OrderUid, TradedOrder>,
+    prices: auction::Prices,
 }
 
-impl SolutionWithId {
+impl Solution {
     pub fn new(
         id: SolutionId,
         solver: eth::Address,
@@ -26,56 +29,15 @@ impl SolutionWithId {
     ) -> Self {
         Self {
             id,
-            solution: Solution::new(solver, score, orders, prices),
-        }
-    }
-
-    pub fn id(&self) -> SolutionId {
-        self.id
-    }
-
-    pub fn solver(&self) -> eth::Address {
-        self.solution.solver()
-    }
-
-    pub fn score(&self) -> Score {
-        self.solution.score()
-    }
-
-    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> + std::fmt::Debug {
-        self.solution.order_ids()
-    }
-
-    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
-        self.solution.orders()
-    }
-
-    pub fn prices(&self) -> &HashMap<eth::TokenAddress, auction::Price> {
-        self.solution.prices()
-    }
-}
-
-#[derive(Debug)]
-pub struct Solution {
-    solver: eth::Address,
-    score: Score,
-    orders: HashMap<domain::OrderUid, TradedOrder>,
-    prices: auction::Prices,
-}
-
-impl Solution {
-    pub fn new(
-        solver: eth::Address,
-        score: Score,
-        orders: HashMap<domain::OrderUid, TradedOrder>,
-        prices: auction::Prices,
-    ) -> Self {
-        Self {
             solver,
             score,
             orders,
             prices,
         }
+    }
+
+    pub fn id(&self) -> SolutionId {
+        self.id
     }
 
     pub fn solver(&self) -> eth::Address {
