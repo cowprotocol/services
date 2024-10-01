@@ -235,8 +235,8 @@ impl CachingNativePriceEstimator {
             .filter_map(|(token, price)| {
                 // Generate random `updated_at` timestamp
                 // to avoid spikes of expired prices.
-                let percent_expired = rng.gen_range(10..=50);
-                let age = self.0.max_age.as_secs() * 100 / percent_expired;
+                let percent_expired = rng.gen_range(50..=90);
+                let age = self.0.max_age.as_secs() * 100 / (100 - percent_expired);
                 let updated_at = now - Duration::from_secs(age);
 
                 Some((
