@@ -27,11 +27,13 @@ pub struct Quote {
     /// The amount that can be bought if this was a sell order, or sold if this
     /// was a buy order.
     pub amount: eth::U256,
+    pub pre_interactions: Vec<eth::Interaction>,
     pub interactions: Vec<eth::Interaction>,
     pub solver: eth::Address,
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
     pub tx_origin: Option<eth::Address>,
+    pub jit_orders: Vec<order::Jit>,
 }
 
 impl Quote {
@@ -59,6 +61,7 @@ impl Quote {
 
         Ok(Self {
             amount: eth::U256::from_big_rational(&amount)?,
+            pre_interactions: solution.pre_interactions().to_vec(),
             interactions: solution
                 .interactions()
                 .iter()
@@ -70,6 +73,14 @@ impl Quote {
             solver: solution.solver().address(),
             gas: solution.gas(),
             tx_origin: *solution.solver().quote_tx_origin(),
+            jit_orders: solution
+                .trades()
+                .iter()
+                .filter_map(|trade| match trade {
+                    solution::Trade::Jit(jit) => Some(jit.order().clone()),
+                    _ => None,
+                })
+                .collect(),
         })
     }
 }
