@@ -3,7 +3,10 @@ use {
         domain::{self, eth, quote},
         util::serialize,
     },
-    model::order::{BuyTokenDestination, SellTokenSource},
+    model::{
+        order::{BuyTokenDestination, SellTokenSource},
+        signature::SigningScheme,
+    },
     serde::Serialize,
     serde_with::serde_as,
 };
@@ -106,7 +109,7 @@ impl From<domain::competition::order::Jit> for JitOrder {
             sell_token_source: jit.sell_token_balance.into(),
             buy_token_destination: jit.buy_token_balance.into(),
             signature: jit.signature.data.into(),
-            signing_scheme: jit.signature.scheme.into(),
+            signing_scheme: jit.signature.scheme.to_boundary_scheme(),
             owner: jit.signature.signer.into(),
             uid: jit.uid.into(),
         }
@@ -125,26 +128,6 @@ impl From<domain::competition::order::Side> for Side {
         match side {
             domain::competition::order::Side::Sell => Side::Sell,
             domain::competition::order::Side::Buy => Side::Buy,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SigningScheme {
-    Eip712,
-    EthSign,
-    Eip1271,
-    PreSign,
-}
-
-impl From<domain::competition::order::signature::Scheme> for SigningScheme {
-    fn from(scheme: domain::competition::order::signature::Scheme) -> Self {
-        match scheme {
-            domain::competition::order::signature::Scheme::Eip712 => SigningScheme::Eip712,
-            domain::competition::order::signature::Scheme::EthSign => SigningScheme::EthSign,
-            domain::competition::order::signature::Scheme::Eip1271 => SigningScheme::Eip1271,
-            domain::competition::order::signature::Scheme::PreSign => SigningScheme::PreSign,
         }
     }
 }

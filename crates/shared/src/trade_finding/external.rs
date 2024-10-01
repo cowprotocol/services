@@ -168,7 +168,10 @@ mod dto {
     use {
         bytes_hex::BytesHex,
         ethcontract::{H160, U256},
-        model::order::OrderKind,
+        model::{
+            order::{BuyTokenDestination, OrderKind, SellTokenSource},
+            signature::SigningScheme,
+        },
         number::serialization::HexOrDecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
@@ -192,11 +195,15 @@ mod dto {
     pub struct Quote {
         #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
+        #[serde(default)]
+        pub pre_interactions: Vec<Interaction>,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
         #[serde(default)]
         pub tx_origin: Option<H160>,
+        #[serde(default)]
+        pub jit_orders: Vec<JitOrder>,
     }
 
     #[serde_as]
@@ -213,8 +220,42 @@ mod dto {
     #[serde_as]
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
+    #[allow(unused)]
+    pub struct JitOrder {
+        pub buy_token: H160,
+        pub sell_token: H160,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub sell_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub buy_amount: U256,
+        pub receiver: H160,
+        pub valid_to: u32,
+        #[serde_as(as = "BytesHex")]
+        pub app_data: Vec<u8>,
+        pub side: Side,
+        pub sell_token_source: SellTokenSource,
+        pub buy_token_destination: BuyTokenDestination,
+        #[serde_as(as = "BytesHex")]
+        pub signature: Vec<u8>,
+        pub signing_scheme: SigningScheme,
+        pub owner: H160,
+        #[serde_as(as = "BytesHex")]
+        pub uid: Vec<u8>,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct Error {
         pub kind: String,
         pub description: String,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub enum Side {
+        Buy,
+        Sell,
     }
 }
