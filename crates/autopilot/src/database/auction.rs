@@ -97,7 +97,10 @@ impl Postgres {
         })
     }
 
-    pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
+    pub async fn replace_current_auction(
+        &self,
+        auction: &dto::RawAuctionData,
+    ) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["replace_current_auction"])
