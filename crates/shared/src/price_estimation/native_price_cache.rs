@@ -10,6 +10,7 @@ use {
     indexmap::IndexSet,
     primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
+    rand::Rng,
     std::{
         collections::{hash_map::Entry, HashMap},
         sync::{Arc, Mutex, MutexGuard, Weak},
@@ -226,14 +227,18 @@ impl UpdateTask {
 
 impl CachingNativePriceEstimator {
     pub async fn initialize_cache(&self, prices: HashMap<H160, BigDecimal>) {
-        let now = Instant::now();
-        // Update the cache to half max age time, so it gets fetched sooner, since we
-        // don't know exactly how old the price was
-        let updated_at = now - (self.0.max_age / 2);
+        let mut rng = rand::thread_rng();
+        let now = std::time::Instant::now();
 
         let cache = prices
             .into_iter()
             .filter_map(|(token, price)| {
+                // Generate random `updated_at` timestamp
+                // to avoid spikes of expired prices.
+                let percent_expired = rng.gen_range(10..=50);
+                let age = self.0.max_age.as_secs() * 100 / percent_expired;
+                let updated_at = now - Duration::from_secs(age);
+
                 Some((
                     token,
                     CachedResult {
