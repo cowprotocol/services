@@ -236,7 +236,7 @@ impl CachingNativePriceEstimator {
                 // Generate random `updated_at` timestamp
                 // to avoid spikes of expired prices.
                 let percent_expired = rng.gen_range(50..=90);
-                let age = self.0.max_age.as_secs() * 100 / (100 - percent_expired);
+                let age = self.0.max_age.as_secs() * percent_expired / 100;
                 let updated_at = now - Duration::from_secs(age);
 
                 Some((
