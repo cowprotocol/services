@@ -849,6 +849,56 @@ impl Persistence {
         ex.commit().await?;
         Ok(())
     }
+
+    // todo delete
+    /// A one time migration from solver competition table to auctions table.
+    pub async fn migrate_solver_competitions(&self) -> Result<(), DatabaseError> {
+        let mut ex = self.postgres.pool.begin().await?;
+
+        for solver_competition in database::solver_competition::all(&mut ex).await? {
+            let competition: model::solver_competition::SolverCompetitionDB =
+                serde_json::from_value(solver_competition.json)
+                    .context("deserialize SolverCompetitionDB")?;
+
+            // populate historic auctions
+            let auction = database::auction::Auction {
+                id: solver_competition.id,
+                block: i64::try_from(competition.auction_start_block).context("block overflow")?,
+                deadline: solver_competition.deadline,
+                orders: competition
+                    .auction
+                    .orders
+                    .iter()
+                    .map(|order| ByteArray(order.0))
+                    .collect(),
+                price_tokens: competition
+                    .auction
+                    .prices
+                    .keys()
+                    .map(|token| ByteArray(token.0))
+                    .collect(),
+                price_values: competition
+                    .auction
+                    .prices
+                    .values()
+                    .map(u256_to_big_decimal)
+                    .collect(),
+                surplus_capturing_jit_order_owners: solver_competition
+                    .surplus_capturing_jit_order_owners,
+            };
+
+            if let Err(err) = database::auction::save(&mut ex, auction).await {
+                tracing::warn!(?err, auction_id = ?solver_competition.id, "failed to save auction");
+            }
+
+            // populate historic solutions
+
+            // todo: implement
+        }
+
+        ex.commit().await?;
+        Ok(())
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

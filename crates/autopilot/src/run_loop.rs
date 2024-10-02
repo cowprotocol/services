@@ -508,6 +508,11 @@ impl RunLoop {
         }
 
         tracing::trace!(?competition, "saving competition");
+        // Don't error if saving of auction fails.
+        // todo: move to parallel saving of competition and auction once stable
+        if let Err(err) = self.persistence.save_auction(auction, block_deadline).await {
+            tracing::warn!(?err, "failed to save auction");
+        };
         futures::try_join!(
             self.persistence
                 .save_auction(auction_id, &auction, block_deadline)
