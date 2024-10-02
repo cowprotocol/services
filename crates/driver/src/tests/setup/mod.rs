@@ -27,7 +27,7 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
-            setup::blockchain::{Blockchain, Trade},
+            setup::blockchain::{Blockchain, Interaction, Trade},
         },
     },
     app_data::AppDataHash,
@@ -47,7 +47,7 @@ use {
     },
 };
 
-mod blockchain;
+pub mod blockchain;
 mod driver;
 pub mod fee;
 mod solver;
@@ -138,6 +138,7 @@ pub struct Order {
     pub buy_token_destination: BuyTokenDestination,
     pub app_data: AppDataHash,
     pub quote: Option<OrderQuote>,
+    pub pre_interactions: Vec<Interaction>,
 }
 
 impl Order {
@@ -273,6 +274,15 @@ impl Order {
         }
     }
 
+    pub fn pre_interaction(self, interaction: Interaction) -> Self {
+        let mut pre_interactions = self.pre_interactions;
+        pre_interactions.push(interaction);
+        Self {
+            pre_interactions,
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit => self.solver_fee.unwrap_or_default(),
@@ -316,6 +326,7 @@ impl Default for Order {
             buy_token_destination: Default::default(),
             app_data: Default::default(),
             quote: Default::default(),
+            pre_interactions: Default::default(),
         }
     }
 }
@@ -1372,13 +1383,19 @@ impl QuoteOk<'_> {
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {
-        assert_eq!(self.trades.len(), 1);
-        let quoted_order = match &self.trades[0] {
-            Trade::Fulfillment(fulfillment) => &fulfillment.quoted_order,
-            Trade::Jit(jit) => &jit.quoted_order,
-        };
+        let trades = self
+            .trades
+            .iter()
+            .filter(|trade| matches!(trade, Trade::Fulfillment(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(trades.len(), 1);
+
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let amount = result.get("amount").unwrap().as_str().unwrap().to_owned();
+        let quoted_order = match trades[0] {
+            Trade::Fulfillment(fulfillment) => &fulfillment.quoted_order,
+            Trade::Jit(jit) => panic!("expected a fulfillment trade, got JIT trade: {:?}", jit),
+        };
         let expected = match quoted_order.order.side {
             order::Side::Buy => (quoted_order.sell - quoted_order.order.surplus_fee()).to_string(),
             order::Side::Sell => quoted_order.buy.to_string(),
@@ -1390,10 +1407,16 @@ impl QuoteOk<'_> {
     /// Check that the quote returns the expected interactions. This is
     /// based on the state of the blockchain and the test setup.
     pub fn interactions(self) -> Self {
-        assert_eq!(self.trades.len(), 1);
-        let interactions = match &self.trades[0] {
+        let trades = self
+            .trades
+            .iter()
+            .filter(|trade| matches!(trade, Trade::Fulfillment(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(trades.len(), 1);
+
+        let interactions = match trades[0] {
             Trade::Fulfillment(fulfillment) => fulfillment.interactions.as_slice(),
-            Trade::Jit(jit) => jit.interactions.as_slice(),
+            Trade::Jit(jit) => panic!("expected a fulfillment trade, got JIT trade: {:?}", jit),
         };
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let result_interactions = result
@@ -1404,6 +1427,57 @@ impl QuoteOk<'_> {
             .to_owned();
         assert_eq!(result_interactions.len(), interactions.len());
         for (interaction, expected) in result_interactions.iter().zip(interactions) {
+            let target = interaction.get("target").unwrap().as_str().unwrap();
+            let value = interaction.get("value").unwrap().as_str().unwrap();
+            let calldata = interaction.get("callData").unwrap().as_str().unwrap();
+            assert_eq!(target, format!("0x{}", hex::encode(expected.address)));
+            assert_eq!(value, "0");
+            assert_eq!(calldata, format!("0x{}", hex::encode(&expected.calldata)));
+        }
+        self
+    }
+
+    pub fn jit_order(self) -> Self {
+        let trades = self
+            .trades
+            .iter()
+            .filter(|trade| matches!(trade, Trade::Jit(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(trades.len(), 1);
+
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        let jit_orders = result.get("jitOrders").unwrap().as_array().unwrap();
+        assert_eq!(jit_orders.len(), 1);
+        let expected = match trades[0] {
+            Trade::Jit(jit) => jit,
+            Trade::Fulfillment(fulfillment) => {
+                panic!(
+                    "expected a JIT trade, got fulfillment trade: {:?}",
+                    fulfillment
+                )
+            }
+        };
+        let result_jit_order = jit_orders[0].as_object().unwrap();
+        let app_data = result_jit_order.get("appData").unwrap().as_str().unwrap();
+        assert_eq!(
+            app_data,
+            format!("0x{}", hex::encode(expected.quoted_order.order.app_data.0))
+        );
+
+        let result_pre_interactions = result
+            .get("preInteractions")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            result_pre_interactions.len(),
+            expected.pre_interactions.len()
+        );
+        for (interaction, expected) in result_pre_interactions
+            .iter()
+            .zip(&expected.pre_interactions)
+        {
             let target = interaction.get("target").unwrap().as_str().unwrap();
             let value = interaction.get("value").unwrap().as_str().unwrap();
             let calldata = interaction.get("callData").unwrap().as_str().unwrap();

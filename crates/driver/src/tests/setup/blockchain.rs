@@ -41,7 +41,7 @@ pub struct Blockchain {
     pub pairs: Vec<Pair>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Interaction {
     pub address: ethcontract::H160,
     pub calldata: Vec<u8>,
@@ -112,6 +112,7 @@ impl Trade {
 pub struct Fulfillment {
     pub quoted_order: QuotedOrder,
     pub execution: Execution,
+    pub pre_interactions: Vec<Interaction>,
     pub interactions: Vec<Interaction>,
 }
 
@@ -801,6 +802,7 @@ impl Blockchain {
             fulfillments.push(Fulfillment {
                 quoted_order: self.quote(order),
                 execution: execution.clone(),
+                pre_interactions: order.pre_interactions.clone(),
                 interactions: vec![
                     Interaction {
                         address: sell_token.address(),
