@@ -404,10 +404,18 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         inner.expect_estimate_native_price().never();
 
-        let prices = HashMap::from([(token(0), BigDecimal::try_from(1e18).unwrap())]);
+        const MAX_AGE_SECS: u64 = 600;
+        let min_age = Duration::from_secs(MAX_AGE_SECS * 49 / 100);
+        let max_age = Duration::from_secs(MAX_AGE_SECS * 91 / 100);
+
+        let prices = HashMap::from_iter(
+            (0..10)
+                .into_iter()
+                .map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())),
+        );
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
-            Duration::from_millis(30),
+            Duration::from_secs(MAX_AGE_SECS),
             Default::default(),
             None,
             Default::default(),
@@ -415,8 +423,18 @@ mod tests {
         );
         estimator.initialize_cache(prices).await;
 
-        for _ in 0..10 {
-            let result = estimator.estimate_native_price(token(0)).await;
+        {
+            // Check that `updated_at` timestamps are initialized with
+            // reasonable values.
+            let cache = estimator.0.cache.lock().unwrap();
+            for value in cache.values() {
+                let elapsed = value.updated_at.elapsed();
+                assert!(elapsed >= min_age && elapsed <= max_age);
+            }
+        }
+
+        for i in 0..10 {
+            let result = estimator.estimate_native_price(token(i)).await;
             assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
         }
     }
