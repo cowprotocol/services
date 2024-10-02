@@ -238,9 +238,6 @@ mod dto {
         #[serde_as(as = "BytesHex")]
         pub signature: Vec<u8>,
         pub signing_scheme: SigningScheme,
-        pub owner: H160,
-        #[serde_as(as = "BytesHex")]
-        pub uid: Vec<u8>,
     }
 
     #[serde_as]

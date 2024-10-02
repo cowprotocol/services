@@ -525,10 +525,6 @@ components:
     JitOrder:
       type: object
       properties:
-        uid:
-          $ref: "#/components/schemas/OrderUID"
-        owner:
-          $ref: "#/components/schemas/Address"
         sellToken:
           $ref: "#/components/schemas/Address"
         buyToken:

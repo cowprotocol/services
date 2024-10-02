@@ -90,9 +90,6 @@ struct JitOrder {
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
     signing_scheme: SigningScheme,
-    owner: eth::H160,
-    #[serde_as(as = "serialize::Hex")]
-    uid: [u8; 56],
 }
 
 impl From<domain::competition::order::Jit> for JitOrder {
@@ -110,8 +107,6 @@ impl From<domain::competition::order::Jit> for JitOrder {
             buy_token_destination: jit.buy_token_balance.into(),
             signature: jit.signature.data.into(),
             signing_scheme: jit.signature.scheme.to_boundary_scheme(),
-            owner: jit.signature.signer.into(),
-            uid: jit.uid.into(),
         }
     }
 }
