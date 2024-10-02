@@ -528,6 +528,7 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         synchronization: args.run_loop_mode,
         max_run_loop_delay: args.max_run_loop_delay,
+        execute_solver_competition_migration: args.execute_solver_competition_migration,
     };
 
     let run = RunLoop::new(

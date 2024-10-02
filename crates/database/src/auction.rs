@@ -67,12 +67,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 }
 
 pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auction>, sqlx::Error> {
-    const QUERY: &str = r#"
-SELECT id, block, deadline, orders, price_tokens, price_values, surplus_capturing_jit_order_owners
-FROM auctions
-WHERE id = $1
-    ;"#;
-
+    const QUERY: &str = r#"SELECT * FROM auctions WHERE id = $1;"#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 

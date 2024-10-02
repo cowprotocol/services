@@ -232,6 +232,12 @@ pub struct Arguments {
     /// If the value is 0, the native prices are fetched from the cache
     #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
     pub run_loop_native_price_timeout: Duration,
+
+    /// Should the solver competition migration be executed.
+    /// Need argument so even on staging we can test the migration gradually
+    /// network by network.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub execute_solver_competition_migration: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -277,6 +283,7 @@ impl std::fmt::Display for Arguments {
             run_loop_mode,
             max_run_loop_delay,
             run_loop_native_price_timeout,
+            execute_solver_competition_migration,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -355,6 +362,11 @@ impl std::fmt::Display for Arguments {
             f,
             "run_loop_native_price_timeout: {:?}",
             run_loop_native_price_timeout
+        )?;
+        writeln!(
+            f,
+            "execute_solver_competition_migration: {:?}",
+            execute_solver_competition_migration
         )?;
         Ok(())
     }

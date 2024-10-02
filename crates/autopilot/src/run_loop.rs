@@ -52,6 +52,7 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+    pub execute_solver_competition_migration: bool,
 }
 
 pub struct RunLoop {
@@ -104,6 +105,12 @@ impl RunLoop {
             self.eth.current_block().clone(),
             update_interval,
         );
+
+        if self.config.execute_solver_competition_migration {
+            // do solver competitions migration in the background to not block the run loop
+            let persistence = self.persistence.clone();
+            tokio::spawn(async move { persistence.migrate_solver_competitions().await });
+        }
 
         let mut last_auction = None;
         let mut last_block = None;
@@ -463,10 +470,12 @@ impl RunLoop {
         };
 
         tracing::trace!(?competition, "saving competition");
+        // Don't error if saving of auction fails.
+        // todo: move to parallel saving of competition and auction once stable
+        if let Err(err) = self.persistence.save_auction(auction, block_deadline).await {
+            tracing::warn!(?err, "failed to save auction");
+        };
         futures::try_join!(
-            self.persistence
-                .save_auction(&auction, block_deadline)
-                .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
                 .save_competition(&competition)
                 .map_err(|e| e.0.context("failed to save competition")),
