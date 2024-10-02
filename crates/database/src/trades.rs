@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, Address, OrderUid, TransactionHash},
+    crate::{auction::AuctionId, events::EventIndex, Address, OrderUid, TransactionHash},
     bigdecimal::BigDecimal,
     futures::stream::BoxStream,
     sqlx::PgConnection,
@@ -70,6 +70,40 @@ LEFT OUTER JOIN LATERAL (
         .bind(owner_filter)
         .bind(order_uid_filter)
         .fetch(ex)
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
+pub struct TradeEvent {
+    pub block_number: i64,
+    pub log_index: i64,
+    pub order_uid: OrderUid,
+}
+
+pub async fn get_trades_for_settlement(
+    ex: &mut PgConnection,
+    settlement: EventIndex,
+) -> Result<Vec<TradeEvent>, sqlx::Error> {
+    const QUERY: &str = r#"
+WITH
+    -- The log index in this query is the log index of the settlement event from the previous (lower log index) settlement in the same transaction or 0 if there is no previous settlement.
+    previous_settlement AS (
+        SELECT COALESCE(MAX(log_index), 0) AS low
+        FROM settlements
+        WHERE block_number = $1 AND log_index < $2
+    )
+SELECT
+    block_number,
+    log_index,
+    order_uid
+FROM trades t
+WHERE t.block_number = $1
+AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
+"#;
+    sqlx::query_as(QUERY)
+        .bind(settlement.block_number)
+        .bind(settlement.log_index)
+        .fetch_all(ex)
+        .await
 }
 
 #[cfg(test)]
@@ -467,23 +501,26 @@ mod tests {
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&mut db, None, None, &[]).await;
 
+        let settlement_a_event = EventIndex {
+            block_number: 0,
+            log_index: 1,
+        };
         let settlement_a = add_settlement(
             &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 1,
-            },
+            settlement_a_event,
             Default::default(),
             Default::default(),
             1,
         )
         .await;
+
+        let settlement_b_event = EventIndex {
+            block_number: 0,
+            log_index: 3,
+        };
         let settlement_b = add_settlement(
             &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 3,
-            },
+            settlement_b_event,
             Default::default(),
             ByteArray([2; 32]),
             1,
@@ -516,6 +553,32 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
+        assert_trades(&mut db, None, None, &[trade_a.clone(), trade_b.clone()]).await;
+
+        // make sure that for a first settlement in the same block, only trade_a is
+        // returned
+        assert_eq!(
+            get_trades_for_settlement(&mut db, settlement_a_event)
+                .await
+                .unwrap(),
+            vec![TradeEvent {
+                block_number: 0,
+                log_index: 0,
+                order_uid: trade_a.order_uid,
+            }]
+        );
+
+        // make sure that for a second settlement in the same block, only trade_b is
+        // returned
+        assert_eq!(
+            get_trades_for_settlement(&mut db, settlement_b_event)
+                .await
+                .unwrap(),
+            vec![TradeEvent {
+                block_number: 0,
+                log_index: 2,
+                order_uid: trade_b.order_uid,
+            }]
+        );
     }
 }
