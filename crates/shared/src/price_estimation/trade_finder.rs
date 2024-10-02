@@ -12,11 +12,11 @@ use {
         Query,
     },
     crate::{
-        request_sharing::RequestSharing,
+        request_sharing::{BoxRequestSharing, RequestSharing},
         trade_finding::{TradeError, TradeFinding},
     },
     anyhow::{anyhow, Result},
-    futures::future::{BoxFuture, FutureExt as _},
+    futures::future::FutureExt,
     rate_limit::RateLimiter,
     std::sync::Arc,
 };
@@ -26,7 +26,7 @@ use {
 #[derive(Clone)]
 pub struct TradeEstimator {
     inner: Arc<Inner>,
-    sharing: RequestSharing<Arc<Query>, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
+    sharing: Arc<BoxRequestSharing<Arc<Query>, Result<Estimate, PriceEstimationError>>>,
     rate_limiter: Arc<RateLimiter>,
 }
 
@@ -48,7 +48,7 @@ impl TradeEstimator {
                 finder,
                 verifier: None,
             }),
-            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
+            sharing: Arc::new(RequestSharing::labelled(format!("estimator_{}", label))),
             rate_limiter,
         }
     }
@@ -69,7 +69,11 @@ impl TradeEstimator {
             )
             .boxed()
         };
-        self.sharing.shared_or_else(query, fut).await
+        // Clone `sharing` to prevent `fut` from capturing a reference to `self`
+        // which apparently creates a strong reference cycle causing the future
+        // returned by `.shared_or_else()` to never get freed.
+        let sharing = Arc::clone(&self.sharing);
+        sharing.shared_or_else(query, fut).await
     }
 }
 
