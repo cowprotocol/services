@@ -87,7 +87,7 @@ pub async fn get_trades_for_settlement(
 WITH
     -- The log index in this query is the log index of the settlement event from the previous (lower log index) settlement in the same transaction or 0 if there is no previous settlement.
     previous_settlement AS (
-        SELECT COALESCE(MAX(log_index), 0) AS low
+        SELECT COALESCE(MAX(log_index), 0)
         FROM settlements
         WHERE block_number = $1 AND log_index < $2
     )
