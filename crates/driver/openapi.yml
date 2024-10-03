@@ -549,6 +549,10 @@ components:
         appData:
           type: string
         signature:
+          description: | 
+            Hex encoded bytes with `0x` prefix. The content depends on the `signingScheme`.
+            For `presign`, this should contain the address of the owner. 
+            For `eip1271`, the signature should consist of `<owner_address><signature_bytes>`.
           type: string
         signingScheme:
           type: string
