@@ -4,7 +4,7 @@ use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
         request_sharing::RequestSharing,
-        trade_finding::{Interaction, JitOrder, Quote, Side, Trade, TradeError, TradeFinding},
+        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -146,35 +146,6 @@ impl From<dto::Interaction> for Interaction {
     }
 }
 
-impl From<dto::JitOrder> for JitOrder {
-    fn from(jit_order: dto::JitOrder) -> Self {
-        Self {
-            buy_token: jit_order.buy_token,
-            sell_token: jit_order.sell_token,
-            sell_amount: jit_order.sell_amount,
-            buy_amount: jit_order.buy_amount,
-            executed_amount: jit_order.executed_amount,
-            receiver: jit_order.receiver,
-            valid_to: jit_order.valid_to,
-            app_data: jit_order.app_data,
-            side: jit_order.side.into(),
-            sell_token_source: jit_order.sell_token_source,
-            buy_token_destination: jit_order.buy_token_destination,
-            signature: jit_order.signature,
-            signing_scheme: jit_order.signing_scheme,
-        }
-    }
-}
-
-impl From<dto::Side> for Side {
-    fn from(side: dto::Side) -> Self {
-        match side {
-            dto::Side::Buy => Self::Buy,
-            dto::Side::Sell => Self::Sell,
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl TradeFinding for ExternalTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
@@ -251,7 +222,7 @@ pub(crate) mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
     pub struct JitOrder {
@@ -283,9 +254,10 @@ pub(crate) mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub enum Side {
+        #[default]
         Buy,
         Sell,
     }

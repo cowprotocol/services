@@ -4,15 +4,14 @@
 pub mod external;
 
 use {
-    crate::price_estimation::{PriceEstimationError, Query},
+    crate::{
+        price_estimation::{PriceEstimationError, Query},
+        trade_finding::external::dto,
+    },
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
-    model::{
-        interaction::InteractionData,
-        order::{BuyTokenDestination, SellTokenSource},
-        signature::SigningScheme,
-    },
+    model::interaction::InteractionData,
     serde::Serialize,
     thiserror::Error,
 };
@@ -52,7 +51,7 @@ pub struct Trade {
     /// If this is set the quote verification need to use this as the
     /// `tx.origin` to make the quote pass the simulation.
     pub tx_origin: Option<H160>,
-    pub jit_orders: Vec<JitOrder>,
+    pub jit_orders: Vec<dto::JitOrder>,
 }
 
 /// Data for a raw GPv2 interaction.
@@ -94,30 +93,6 @@ impl From<InteractionData> for Interaction {
 }
 
 pub type EncodedInteraction = (H160, U256, Bytes<Vec<u8>>);
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct JitOrder {
-    pub buy_token: H160,
-    pub sell_token: H160,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub executed_amount: U256,
-    pub receiver: H160,
-    pub valid_to: u32,
-    pub app_data: String,
-    pub side: Side,
-    pub sell_token_source: SellTokenSource,
-    pub buy_token_destination: BuyTokenDestination,
-    pub signature: Vec<u8>,
-    pub signing_scheme: SigningScheme,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub enum Side {
-    #[default]
-    Buy,
-    Sell,
-}
 
 #[derive(Debug, Error)]
 pub enum TradeError {
