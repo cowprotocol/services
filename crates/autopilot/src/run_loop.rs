@@ -161,12 +161,18 @@ impl RunLoop {
                 };
 
                 self.run_maintenance(&auction_block).await;
-                if let Err(err) = self
+                match self
                     .solvable_orders_cache
                     .update(auction_block.number)
                     .await
                 {
-                    tracing::warn!(?err, "failed to update auction");
+                    Ok(()) => {
+                        self.solvable_orders_cache.track_auction_update("success");
+                    }
+                    Err(err) => {
+                        self.solvable_orders_cache.track_auction_update("failure");
+                        tracing::warn!(?err, "failed to update auction");
+                    }
                 }
                 auction_block
             }
