@@ -44,6 +44,7 @@ order-validation = { path = "../order-validation" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rand = { workspace = true }
 rate-limit = { path = "../rate-limit" }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
 rust_decimal = { version = "1.35.0", features = ["maths"] }
