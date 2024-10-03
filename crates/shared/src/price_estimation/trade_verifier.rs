@@ -5,9 +5,10 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
-        trade_finding::{Interaction, Trade},
+        trade_finding::{Interaction, Side, Trade},
     },
     anyhow::{Context, Result},
+    app_data::AppDataHash,
     contracts::{
         deployed_bytecode,
         dummy_contract,
@@ -21,10 +22,11 @@ use {
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
+        DomainSeparator,
     },
     num::BigRational,
     number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
-    std::{collections::HashMap, sync::Arc},
+    std::{collections::HashMap, str::FromStr, sync::Arc},
     web3::{ethabi::Token, types::CallRequest},
 };
 
@@ -50,13 +52,14 @@ pub struct TradeVerifier {
     settlement: GPv2Settlement,
     native_token: H160,
     quote_inaccuracy_limit: BigRational,
+    domain_separator: DomainSeparator,
 }
 
 impl TradeVerifier {
     const DEFAULT_GAS: u64 = 8_000_000;
     const TRADER_IMPL: H160 = addr!("0000000000000000000000000000000000010000");
 
-    pub fn new(
+    pub async fn new(
         web3: Web3,
         simulator: Arc<dyn CodeSimulating>,
         code_fetcher: Arc<dyn CodeFetching>,
@@ -64,17 +67,21 @@ impl TradeVerifier {
         settlement: H160,
         native_token: H160,
         quote_inaccuracy_limit: f64,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let settlement_contract = GPv2Settlement::at(&web3, settlement);
+        let domain_separator =
+            DomainSeparator(settlement_contract.domain_separator().call().await?.0);
+        Ok(Self {
             simulator,
             code_fetcher,
             block_stream,
-            settlement: GPv2Settlement::at(&web3, settlement),
+            settlement: settlement_contract,
             native_token,
             quote_inaccuracy_limit: BigRational::from_float(quote_inaccuracy_limit)
                 .expect("can represent all finite values"),
             web3,
-        }
+            domain_separator,
+        })
     }
 
     async fn verify_inner(
@@ -95,7 +102,13 @@ impl TradeVerifier {
         let solver = trade.tx_origin.unwrap_or(trade.solver);
         let solver = dummy_contract!(Solver, solver);
 
-        let settlement = encode_settlement(query, verification, trade, self.native_token);
+        let settlement = encode_settlement(
+            query,
+            verification,
+            trade,
+            self.native_token,
+            &self.domain_separator,
+        )?;
         let settlement = add_balance_queries(
             settlement,
             query,
@@ -341,7 +354,8 @@ fn encode_settlement(
     verification: &Verification,
     trade: &Trade,
     native_token: H160,
-) -> EncodedSettlement {
+    domain_separator: &DomainSeparator,
+) -> Result<EncodedSettlement> {
     let mut trade_interactions = encode_interactions(&trade.interactions);
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
@@ -399,17 +413,90 @@ fn encode_settlement(
         1,
         &query.in_amount.get(),
     );
+    let mut trades = vec![encoded_trade];
+    for jit_order in trade.jit_orders.iter() {
+        let order_data = OrderData {
+            sell_token: jit_order.sell_token,
+            buy_token: jit_order.buy_token,
+            receiver: Some(jit_order.receiver),
+            sell_amount: jit_order.sell_amount,
+            buy_amount: jit_order.buy_amount,
+            valid_to: jit_order.valid_to,
+            app_data: AppDataHash::from_str(&jit_order.app_data)?,
+            fee_amount: 0.into(),
+            kind: match &jit_order.side {
+                Side::Buy => OrderKind::Buy,
+                Side::Sell => OrderKind::Sell,
+            },
+            partially_fillable: false,
+            sell_token_balance: jit_order.sell_token_source,
+            buy_token_balance: jit_order.buy_token_destination,
+        };
+        let signature = Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
+        let owner = recover_owner(
+            &signature,
+            &order_data.hash_struct(),
+            &jit_order.signature,
+            domain_separator,
+        )?;
 
-    EncodedSettlement {
+        trades.push(encode_trade(
+            &order_data,
+            &signature,
+            owner,
+            0,
+            1,
+            &jit_order.executed_amount,
+        ));
+    }
+    let mut pre_interactions = verification.pre_interactions.clone();
+    pre_interactions.extend(trade.pre_interactions.iter().cloned());
+
+    Ok(EncodedSettlement {
         tokens,
         clearing_prices,
-        trades: vec![encoded_trade],
+        trades,
         interactions: [
-            encode_interactions(&verification.pre_interactions),
+            encode_interactions(&pre_interactions),
             trade_interactions,
             encode_interactions(&verification.post_interactions),
         ],
-    }
+    })
+}
+
+fn recover_owner(
+    signature: &Signature,
+    struct_hash: &[u8; 32],
+    raw_bytes: &[u8],
+    domain_separator: &DomainSeparator,
+) -> Result<H160> {
+    let owner = if let Some(recovered) = signature.recover(domain_separator, struct_hash)? {
+        recovered.signer
+    } else {
+        match signature {
+            Signature::Eip1271(_) => {
+                if raw_bytes.len() < 20 {
+                    return Err(anyhow::anyhow!("Eip1271 signature too short"));
+                }
+                let owner_bytes: &[u8; 20] = &raw_bytes[0..20]
+                    .try_into()
+                    .context("slice is exactly 20 bytes")?;
+                H160::from_slice(owner_bytes)
+            }
+            Signature::PreSign => {
+                if raw_bytes.len() != 20 {
+                    return Err(anyhow::anyhow!("PreSign is not 20 bytes length"));
+                }
+                H160::from_slice(raw_bytes)
+            }
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Signature::recover must be used for Eip712 and EthSign signatures"
+                ))
+            }
+        }
+    };
+    Ok(owner)
 }
 
 /// Adds the interactions that are only needed to query important balances

@@ -4,7 +4,7 @@ use {
     crate::{
         price_estimation::{PriceEstimationError, Query},
         request_sharing::RequestSharing,
-        trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
+        trade_finding::{Interaction, JitOrder, Quote, Side, Trade, TradeError, TradeFinding},
     },
     anyhow::{anyhow, Context},
     ethrpc::block_stream::CurrentBlockWatcher,
@@ -118,17 +118,11 @@ impl From<dto::Quote> for Trade {
         Self {
             out_amount: quote.amount,
             gas_estimate: quote.gas,
-            interactions: quote
-                .interactions
-                .into_iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
-                    data: interaction.call_data,
-                })
-                .collect(),
+            pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
+            interactions: quote.interactions.into_iter().map(Into::into).collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
+            jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -138,6 +132,45 @@ impl From<dto::Error> for PriceEstimationError {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
             _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
+        }
+    }
+}
+
+impl From<dto::Interaction> for Interaction {
+    fn from(interaction: dto::Interaction) -> Self {
+        Self {
+            target: interaction.target,
+            value: interaction.value,
+            data: interaction.call_data,
+        }
+    }
+}
+
+impl From<dto::JitOrder> for JitOrder {
+    fn from(jit_order: dto::JitOrder) -> Self {
+        Self {
+            buy_token: jit_order.buy_token,
+            sell_token: jit_order.sell_token,
+            sell_amount: jit_order.sell_amount,
+            buy_amount: jit_order.buy_amount,
+            executed_amount: jit_order.executed_amount,
+            receiver: jit_order.receiver,
+            valid_to: jit_order.valid_to,
+            app_data: jit_order.app_data,
+            side: jit_order.side.into(),
+            sell_token_source: jit_order.sell_token_source,
+            buy_token_destination: jit_order.buy_token_destination,
+            signature: jit_order.signature,
+            signing_scheme: jit_order.signing_scheme,
+        }
+    }
+}
+
+impl From<dto::Side> for Side {
+    fn from(side: dto::Side) -> Self {
+        match side {
+            dto::Side::Buy => Self::Buy,
+            dto::Side::Sell => Self::Sell,
         }
     }
 }
@@ -164,7 +197,7 @@ impl TradeFinding for ExternalTradeFinder {
     }
 }
 
-mod dto {
+pub(crate) mod dto {
     use {
         bytes_hex::BytesHex,
         ethcontract::{H160, U256},
@@ -232,8 +265,7 @@ mod dto {
         pub executed_amount: U256,
         pub receiver: H160,
         pub valid_to: u32,
-        #[serde_as(as = "BytesHex")]
-        pub app_data: Vec<u8>,
+        pub app_data: String,
         pub side: Side,
         pub sell_token_source: SellTokenSource,
         pub buy_token_destination: BuyTokenDestination,
