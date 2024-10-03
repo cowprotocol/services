@@ -408,11 +408,8 @@ mod tests {
         let min_age = Duration::from_secs(MAX_AGE_SECS * 49 / 100);
         let max_age = Duration::from_secs(MAX_AGE_SECS * 91 / 100);
 
-        let prices = HashMap::from_iter(
-            (0..10)
-                .into_iter()
-                .map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())),
-        );
+        let prices =
+            HashMap::from_iter((0..10).map(|t| (token(t), BigDecimal::try_from(1e18).unwrap())));
         let estimator = CachingNativePriceEstimator::new(
             Box::new(inner),
             Duration::from_secs(MAX_AGE_SECS),
