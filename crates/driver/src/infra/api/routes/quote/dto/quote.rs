@@ -74,7 +74,9 @@ struct Interaction {
 struct JitOrder {
     buy_token: eth::H160,
     sell_token: eth::H160,
+    #[serde_as(as = "serialize::U256")]
     sell_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     receiver: eth::H160,
     valid_to: u32,
