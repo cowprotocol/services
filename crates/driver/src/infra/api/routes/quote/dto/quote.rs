@@ -78,6 +78,8 @@ struct JitOrder {
     sell_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    executed_amount: eth::U256,
     receiver: eth::H160,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
@@ -90,21 +92,22 @@ struct JitOrder {
     signing_scheme: SigningScheme,
 }
 
-impl From<domain::competition::order::Jit> for JitOrder {
-    fn from(jit: domain::competition::order::Jit) -> Self {
+impl From<domain::competition::solution::trade::Jit> for JitOrder {
+    fn from(jit: domain::competition::solution::trade::Jit) -> Self {
         Self {
-            sell_token: jit.sell.token.into(),
-            buy_token: jit.buy.token.into(),
-            sell_amount: jit.sell.amount.into(),
-            buy_amount: jit.buy.amount.into(),
-            receiver: jit.receiver.into(),
-            valid_to: jit.valid_to.into(),
-            app_data: jit.app_data.into(),
-            side: jit.side.into(),
-            sell_token_source: jit.sell_token_balance.into(),
-            buy_token_destination: jit.buy_token_balance.into(),
-            signature: jit.signature.data.into(),
-            signing_scheme: jit.signature.scheme.to_boundary_scheme(),
+            sell_token: jit.order().sell.token.into(),
+            buy_token: jit.order().buy.token.into(),
+            sell_amount: jit.order().sell.amount.into(),
+            buy_amount: jit.order().buy.amount.into(),
+            executed_amount: jit.executed().into(),
+            receiver: jit.order().receiver.into(),
+            valid_to: jit.order().valid_to.into(),
+            app_data: jit.order().app_data.into(),
+            side: jit.order().side.into(),
+            sell_token_source: jit.order().sell_token_balance.into(),
+            buy_token_destination: jit.order().buy_token_balance.into(),
+            signature: jit.order().signature.data.clone().into(),
+            signing_scheme: jit.order().signature.scheme.to_boundary_scheme(),
         }
     }
 }

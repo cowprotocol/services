@@ -533,6 +533,8 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           $ref: "#/components/schemas/TokenAmount"
+        executedAmount:
+          $ref: "#/components/schemas/TokenAmount"
         receiver:
           $ref: "#/components/schemas/Address"
         validTo:

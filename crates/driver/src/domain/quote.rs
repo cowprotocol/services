@@ -33,7 +33,7 @@ pub struct Quote {
     pub gas: Option<eth::Gas>,
     /// Which `tx.origin` is required to make the quote simulation pass.
     pub tx_origin: Option<eth::Address>,
-    pub jit_orders: Vec<order::Jit>,
+    pub jit_orders: Vec<solution::trade::Jit>,
 }
 
 impl Quote {
@@ -77,7 +77,7 @@ impl Quote {
                 .trades()
                 .iter()
                 .filter_map(|trade| match trade {
-                    solution::Trade::Jit(jit) => Some(jit.order().clone()),
+                    solution::Trade::Jit(jit) => Some(jit.clone()),
                     _ => None,
                 })
                 .collect(),

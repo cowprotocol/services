@@ -228,6 +228,8 @@ mod dto {
         pub sell_amount: U256,
         #[serde_as(as = "HexOrDecimalU256")]
         pub buy_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub executed_amount: U256,
         pub receiver: H160,
         pub valid_to: u32,
         #[serde_as(as = "BytesHex")]
