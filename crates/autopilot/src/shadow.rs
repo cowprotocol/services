@@ -139,7 +139,19 @@ impl RunLoop {
             let reference_score = winners
                 .get(i + 1)
                 .map(|winner| winner.score())
-                .unwrap_or_default();
+                .unwrap_or_else(|| {
+                    participants
+                        .iter()
+                        // assumes one solution per driver and unique driver names
+                        .position(|participant| participant.driver.name == driver.name)
+                        .and_then(|winner_position| {
+                            participants
+                                .get(winner_position + 1)
+                                .map(|participant| participant.score())
+                        })
+                        .unwrap_or_default()
+                });
+
             let score = solution
                 .as_ref()
                 .map(|solution| solution.score.get())
