@@ -36,11 +36,7 @@ impl Quote {
             solver: quote.solver.0,
             gas: quote.gas.map(|gas| gas.0.as_u64()),
             tx_origin: quote.tx_origin.map(|addr| addr.0),
-            jit_orders: quote
-                .jit_orders
-                .into_iter()
-                .map(|order| order.into())
-                .collect(),
+            jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
         }
     }
 }

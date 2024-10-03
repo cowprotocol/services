@@ -274,13 +274,9 @@ impl Order {
         }
     }
 
-    pub fn pre_interaction(self, interaction: Interaction) -> Self {
-        let mut pre_interactions = self.pre_interactions;
-        pre_interactions.push(interaction);
-        Self {
-            pre_interactions,
-            ..self
-        }
+    pub fn pre_interaction(mut self, interaction: Interaction) -> Self {
+        self.pre_interactions.push(interaction);
+        self
     }
 
     fn surplus_fee(&self) -> eth::U256 {
@@ -1383,19 +1379,19 @@ impl QuoteOk<'_> {
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.
     pub fn amount(self) -> Self {
-        let trades = self
+        let quoted_orders = self
             .trades
             .iter()
-            .filter(|trade| matches!(trade, Trade::Fulfillment(_)))
+            .filter_map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => Some(&fulfillment.quoted_order),
+                Trade::Jit(_) => None,
+            })
             .collect::<Vec<_>>();
-        assert_eq!(trades.len(), 1);
+        assert_eq!(quoted_orders.len(), 1);
 
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let amount = result.get("amount").unwrap().as_str().unwrap().to_owned();
-        let quoted_order = match trades[0] {
-            Trade::Fulfillment(fulfillment) => &fulfillment.quoted_order,
-            Trade::Jit(jit) => panic!("expected a fulfillment trade, got JIT trade: {:?}", jit),
-        };
+        let quoted_order = quoted_orders[0];
         let expected = match quoted_order.order.side {
             order::Side::Buy => (quoted_order.sell - quoted_order.order.surplus_fee()).to_string(),
             order::Side::Sell => quoted_order.buy.to_string(),
@@ -1407,17 +1403,17 @@ impl QuoteOk<'_> {
     /// Check that the quote returns the expected interactions. This is
     /// based on the state of the blockchain and the test setup.
     pub fn interactions(self) -> Self {
-        let trades = self
+        let interactions = self
             .trades
             .iter()
-            .filter(|trade| matches!(trade, Trade::Fulfillment(_)))
+            .filter_map(|trade| match trade {
+                Trade::Fulfillment(fulfillment) => Some(fulfillment.interactions.as_slice()),
+                Trade::Jit(_) => None,
+            })
             .collect::<Vec<_>>();
-        assert_eq!(trades.len(), 1);
+        assert_eq!(interactions.len(), 1);
 
-        let interactions = match trades[0] {
-            Trade::Fulfillment(fulfillment) => fulfillment.interactions.as_slice(),
-            Trade::Jit(jit) => panic!("expected a fulfillment trade, got JIT trade: {:?}", jit),
-        };
+        let interactions = interactions[0];
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let result_interactions = result
             .get("interactions")
@@ -1438,25 +1434,20 @@ impl QuoteOk<'_> {
     }
 
     pub fn jit_order(self) -> Self {
-        let trades = self
+        let expected_jit_orders = self
             .trades
             .iter()
-            .filter(|trade| matches!(trade, Trade::Jit(_)))
+            .filter_map(|trade| match trade {
+                Trade::Fulfillment(_) => None,
+                Trade::Jit(jit) => Some(jit),
+            })
             .collect::<Vec<_>>();
-        assert_eq!(trades.len(), 1);
+        assert_eq!(expected_jit_orders.len(), 1);
 
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let jit_orders = result.get("jitOrders").unwrap().as_array().unwrap();
         assert_eq!(jit_orders.len(), 1);
-        let expected = match trades[0] {
-            Trade::Jit(jit) => jit,
-            Trade::Fulfillment(fulfillment) => {
-                panic!(
-                    "expected a JIT trade, got fulfillment trade: {:?}",
-                    fulfillment
-                )
-            }
-        };
+        let expected = expected_jit_orders[0];
         let result_jit_order = jit_orders[0].as_object().unwrap();
         let app_data = result_jit_order.get("appData").unwrap().as_str().unwrap();
         assert_eq!(
