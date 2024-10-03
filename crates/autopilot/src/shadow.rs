@@ -10,7 +10,10 @@
 use {
     crate::{
         arguments::RunLoopMode,
-        domain::{self, competition::TradedOrder},
+        domain::{
+            self,
+            competition::{self, TradedOrder},
+        },
         infra::{
             self,
             solvers::dto::{reveal, solve},
@@ -135,11 +138,13 @@ impl RunLoop {
         let participants = self.competition(auction).await;
         let winners = self.select_winners(&participants);
 
-        for (i, Participant { driver, solution }) in winners.iter().enumerate() {
+        for (i, competition::Participant { driver, solution }) in winners.iter().enumerate() {
             let reference_score = winners
                 .get(i + 1)
                 .map(|winner| winner.score())
                 .unwrap_or_else(|| {
+                    // If this was the last winning solution pick the first worse overall
+                    // solution (or 0) as the reference score.
                     participants
                         .iter()
                         // assumes one solution per driver and unique driver names
@@ -206,14 +211,16 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
         let request = &request;
 
         let mut participants =
             futures::future::join_all(self.drivers.iter().map(|driver| async move {
-                let solution = self.participate(driver, request).await;
-                Participant { driver, solution }
+                let result =
+                    competition::solve(&self.eth, driver, request, self.solve_deadline).await?;
+                //let solution = self.solve(driver, request).await;
+                competition::Participant { driver, solution }
             }))
             .await;
 
@@ -255,48 +262,59 @@ impl RunLoop {
     }
 
     /// Computes a driver's solutions in the shadow competition.
-    async fn participate(
+    async fn solve(
         &self,
         driver: &infra::Driver,
         request: &solve::Request,
-    ) -> Result<Solution, Error> {
-        let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
-            .await
-            .map_err(|_| Error::Timeout)?
-            .map_err(Error::Solve)?;
-        let (score, solution_id, submission_address, orders) = proposed
-            .solutions
-            .into_iter()
-            .max_by_key(|solution| solution.score)
-            .map(|solution| {
-                (
-                    solution.score,
-                    solution.solution_id,
-                    solution.submission_address,
-                    solution.orders,
-                )
-            })
-            .ok_or(Error::NoSolutions)?;
+    ) -> Result<Vec<competition::Participant>, Error> {
+        let result = competition::solve(&self.eth, driver, request, self.solve_deadline).await?;
+        // let proposed = tokio::time::timeout(self.solve_deadline,
+        // driver.solve(request))     .await
+        //     .map_err(|_| Error::Timeout)?
+        //     .map_err(Error::Solve)?;
+        // let solutions = proposed.into_domain();
 
-        let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
-        let orders = orders
-            .into_iter()
-            .map(|(order_uid, amounts)| (order_uid.into(), amounts.into_domain()))
-            .collect();
+        // let (score, solution_id, submission_address, orders, prices) = proposed
+        //     .solutions
+        //     .into_iter()
+        //     .max_by_key(|solution| solution.score)
+        //     .map(|solution| {
+        //         (
+        //             solution.score,
+        //             solution.solution_id,
+        //             solution.submission_address,
+        //             solution.orders,
+        //             solution.clearing_prices,
+        //         )
+        //     })
+        //     .ok_or(Error::NoSolutions)?;
 
-        let revealed = driver
-            .reveal(&reveal::Request { solution_id })
-            .await
-            .map_err(Error::Reveal)?;
-        if !revealed
-            .calldata
-            .internalized
-            .ends_with(&request.id.to_be_bytes())
-        {
-            return Err(Error::Mismatch);
-        }
+        // let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
+        // let orders = orders
+        //     .into_iter()
+        //     .map(|(order_uid, amounts)| (order_uid.into(), amounts.into_domain()))
+        //     .collect();
+
+        // let revealed = driver
+        //     .reveal(&reveal::Request { solution_id })
+        //     .await
+        //     .map_err(Error::Reveal)?;
+        // if !revealed
+        //     .calldata
+        //     .internalized
+        //     .ends_with(&request.id.to_be_bytes())
+        // {
+        //     return Err(Error::Mismatch);
+        // }
 
         Ok(Solution {
+            solve: competition::Solution::new(
+                solution_id,
+                submission_address,
+                score,
+                orders,
+                prices,
+            ),
             score,
             account: submission_address,
             calldata: revealed.calldata,
@@ -305,45 +323,44 @@ impl RunLoop {
     }
 }
 
-struct Participant<'a> {
-    driver: &'a infra::Driver,
-    solution: Result<Solution, Error>,
-}
+// struct Participant<'a> {
+//     driver: &'a infra::Driver,
+//     solution: competition::Solution,
+// }
 
-impl Participant<'_> {
-    fn score(&self) -> U256 {
-        self.solution
-            .as_ref()
-            .map(|solution| solution.score.get())
-            .unwrap_or_default()
-    }
-}
+// impl Participant<'_> {
+//     fn score(&self) -> U256 {
+//         self.solution
+//             .as_ref()
+//             .map(|solution| solution.score.get())
+//             .unwrap_or_default()
+//     }
+// }
 
 struct Solution {
-    score: NonZeroU256,
-    account: H160,
-    calldata: reveal::Calldata,
-    orders: HashMap<domain::OrderUid, TradedOrder>,
+    solve: competition::Solution,
+    reveal: domain::eth::Calldata,
 }
 
-impl Solution {
-    fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
-        &self.orders
-    }
-}
+// struct Solution {
+//     score: NonZeroU256,
+//     account: H160,
+//     calldata: reveal::Calldata,
+//     orders: HashMap<domain::OrderUid, TradedOrder>,
+// }
+
+// impl Solution {
+//     fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
+//         &self.orders
+//     }
+// }
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("the solver timed out")]
-    Timeout,
-    #[error("driver did not propose any solutions")]
-    NoSolutions,
-    #[error("the proposed a 0-score solution")]
-    ZeroScore,
+    #[error(transparent)]
+    Competition(#[from] competition::Error),
     #[error("the solver's revealed solution does not match the auction")]
     Mismatch,
-    #[error("solve error: {0}")]
-    Solve(anyhow::Error),
     #[error("reveal error: {0}")]
     Reveal(anyhow::Error),
 }

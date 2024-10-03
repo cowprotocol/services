@@ -1,12 +1,55 @@
 use {
     super::auction::order,
     crate::{
-        domain,
-        domain::{auction, eth},
+        domain::{self, auction, eth},
+        infra,
     },
     derive_more::Display,
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
 };
+
+/// Sends `/solve` request to the driver and forwards errors to the caller.
+pub async fn solve(
+    eth: &infra::Ethereum,
+    driver: &infra::Driver,
+    request: &infra::solvers::dto::solve::Request,
+    deadline: std::time::Duration,
+) -> Result<Vec<Result<Solution, domain::competition::SolutionError>>, Error> {
+    let response = tokio::time::timeout(deadline, driver.solve(request))
+        .await
+        .map_err(|_| Error::Timeout)?
+        .map_err(Error::Failure)?;
+    if response.solutions.is_empty() {
+        return Err(Error::NoSolutions);
+    }
+    let solutions = response.into_domain();
+
+    // TODO: remove this workaround when implementing #2780
+    // Discard any solutions from solvers that got deny listed in the mean time.
+    let futures = solutions.into_iter().map(|solution| async {
+        let solution = solution?;
+        let solver = solution.solver();
+        let authenticator = eth.contracts().authenticator();
+        let is_allowed = authenticator.is_solver(solver.into()).call().await;
+
+        match is_allowed {
+            Ok(true) => Ok(solution),
+            Ok(false) => Err(domain::competition::SolutionError::SolverDenyListed),
+            Err(err) => {
+                // log warning but discard solution anyway to be on the safe side
+                tracing::warn!(
+                    driver = driver.name,
+                    ?solver,
+                    ?err,
+                    "failed to check if solver is deny listed"
+                );
+                Err(domain::competition::SolutionError::SolverDenyListed)
+            }
+        }
+    });
+
+    Ok(futures::future::join_all(futures).await)
+}
 
 type SolutionId = u64;
 
@@ -91,6 +134,18 @@ impl Score {
     }
 }
 
+/// A participant in the competition.
+pub struct Participant {
+    pub driver: Arc<infra::Driver>,
+    pub solution: Solution,
+}
+
+/// A participant in the competition.
+pub struct DriverResponse {
+    pub driver: Arc<infra::Driver>,
+    pub solutions: Result<Vec<Result<Solution, SolutionError>>, Error>,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("the solver proposed a 0-score solution")]
 pub struct ZeroScore;
@@ -103,4 +158,14 @@ pub enum SolutionError {
     InvalidPrice(#[from] auction::InvalidPrice),
     #[error("the solver got deny listed")]
     SolverDenyListed,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("the solver timed out")]
+    Timeout,
+    #[error("driver did not propose any solutions")]
+    NoSolutions,
+    #[error(transparent)]
+    Failure(anyhow::Error),
 }

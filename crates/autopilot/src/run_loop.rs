@@ -61,7 +61,7 @@ pub struct RunLoop {
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
-    market_makable_token_list: AutoUpdatingTokenList,
+    trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
     liveness: Arc<Liveness>,
     /// Maintenance tasks that should run before every runloop to have
@@ -80,7 +80,7 @@ impl RunLoop {
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
-        market_makable_token_list: AutoUpdatingTokenList,
+        trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
     ) -> Self {
@@ -97,7 +97,7 @@ impl RunLoop {
             persistence,
             drivers,
             solvable_orders_cache,
-            market_makable_token_list,
+            trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
@@ -245,6 +245,11 @@ impl RunLoop {
 
         let auction = self.remove_in_flight_orders(auction).await;
 
+        self.persistence.store_order_events(
+            auction.orders.iter().map(|o| OrderUid(o.uid.0)),
+            OrderEventLabel::Ready,
+        );
+
         let solutions = self.competition(&auction).await;
         let winners = self.select_winners(&solutions);
         if winners.is_empty() {
@@ -273,14 +278,14 @@ impl RunLoop {
             return;
         }
 
-        for Participant { driver, solution } in winners {
+        for competition::Participant { driver, solution } in winners {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
             self.start_settlement_execution(
                 auction.id,
                 single_run_start,
-                driver,
-                solution,
+                &driver,
+                &solution,
                 block_deadline,
             )
             .await;
@@ -383,7 +388,7 @@ impl RunLoop {
         auction: &domain::Auction,
         competition_simulation_block: u64,
         winning_solution: &competition::Solution,
-        solutions: &VecDeque<Participant>,
+        solutions: &VecDeque<competition::Participant>,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
@@ -501,17 +506,13 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
-    async fn competition(&self, auction: &domain::Auction) -> VecDeque<Participant> {
+    async fn competition(&self, auction: &domain::Auction) -> VecDeque<competition::Participant> {
         let request = solve::Request::new(
             auction,
-            &self.market_makable_token_list.all(),
+            &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
         let request = &request;
-
-        let order_uids = auction.orders.iter().map(|o| OrderUid(o.uid.0));
-        self.persistence
-            .store_order_events(order_uids, OrderEventLabel::Ready);
 
         let mut solutions = futures::future::join_all(
             self.drivers
@@ -551,7 +552,10 @@ impl RunLoop {
     /// until `max_winners_per_auction` are selected. The solution is a winner
     /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
-    fn select_winners<'a>(&self, participants: &'a VecDeque<Participant>) -> Vec<&'a Participant> {
+    fn select_winners<'a>(
+        &self,
+        participants: &'a VecDeque<competition::Participant>,
+    ) -> Vec<&'a competition::Participant> {
         let mut winners = Vec::new();
         let mut already_swapped_tokens = HashSet::new();
         for participant in participants.iter() {
@@ -574,7 +578,11 @@ impl RunLoop {
 
     /// Records metrics, order events and logs for the given solutions.
     /// Expects the winning solution to be the first in the list.
-    fn report_on_solutions(&self, solutions: &VecDeque<Participant>, auction: &domain::Auction) {
+    fn report_on_solutions(
+        &self,
+        solutions: &VecDeque<competition::Participant>,
+        auction: &domain::Auction,
+    ) {
         let Some(winner) = solutions.front() else {
             // no solutions means nothing to report
             return;
@@ -619,8 +627,8 @@ impl RunLoop {
 
     /// Returns true if winning solution is fair or winner is None
     fn is_solution_fair(
-        winner: Option<&Participant>,
-        remaining: &VecDeque<Participant>,
+        winner: Option<&competition::Participant>,
+        remaining: &VecDeque<competition::Participant>,
         auction: &domain::Auction,
     ) -> bool {
         let Some(winner) = winner else { return true };
@@ -710,9 +718,10 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: &solve::Request,
-    ) -> Vec<Participant> {
+    ) -> Vec<competition::Participant> {
         let start = Instant::now();
-        let result = self.try_solve(&driver, request).await;
+        let result =
+            competition::solve(&self.eth, &driver, request, self.config.solve_deadline).await;
         let solutions = match result {
             Ok(solutions) => {
                 Metrics::solve_ok(&driver, start.elapsed());
@@ -720,7 +729,7 @@ impl RunLoop {
             }
             Err(err) => {
                 Metrics::solve_err(&driver, start.elapsed(), &err);
-                if matches!(err, SolveError::NoSolutions) {
+                if matches!(err, competition::Error::NoSolutions) {
                     tracing::debug!(driver = %driver.name, "solver found no solution");
                 } else {
                     tracing::warn!(?err, driver = %driver.name, "solve error");
@@ -734,7 +743,7 @@ impl RunLoop {
             .filter_map(|solution| match solution {
                 Ok(solution) => {
                     Metrics::solution_ok(&driver);
-                    Some(Participant {
+                    Some(competition::Participant {
                         driver: driver.clone(),
                         solution,
                     })
@@ -897,11 +906,6 @@ impl RunLoop {
     }
 }
 
-struct Participant {
-    driver: Arc<infra::Driver>,
-    solution: competition::Solution,
-}
-
 #[derive(Debug, thiserror::Error)]
 enum SolveError {
     #[error("the solver timed out")]
@@ -992,11 +996,11 @@ impl Metrics {
             .observe(elapsed.as_secs_f64())
     }
 
-    fn solve_err(driver: &infra::Driver, elapsed: Duration, err: &SolveError) {
+    fn solve_err(driver: &infra::Driver, elapsed: Duration, err: &domain::competition::Error) {
         let label = match err {
-            SolveError::Timeout => "timeout",
-            SolveError::NoSolutions => "no_solutions",
-            SolveError::Failure(_) => "error",
+            domain::competition::Error::Timeout => "timeout",
+            domain::competition::Error::NoSolutions => "no_solutions",
+            domain::competition::Error::Failure(_) => "error",
         };
         Self::get()
             .solve
