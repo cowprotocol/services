@@ -85,8 +85,8 @@ impl RunLoop {
         maintenance: Arc<Maintenance>,
     ) -> Self {
         // Added to make sure no more than one winner is activated by accident
-        // Supposed to be removed after the implementation of "multiple winners per
-        // auction" is done
+        // Should be removed once we decide to activate "multiple winners per auction"
+        // feature.
         assert_eq!(
             config.max_winners_per_auction, 1,
             "only one winner is supported"
@@ -542,7 +542,7 @@ impl RunLoop {
     /// Participants are already sorted by their score (best to worst).
     ///
     /// Winners are selected one by one, starting from the best solution,
-    /// until `max_winners_per_auction` is hit. The solution can become winner
+    /// until `max_winners_per_auction` are selected. The solution is a winner
     /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
     fn select_winners<'a>(&self, participants: &'a VecDeque<Participant>) -> Vec<&'a Participant> {
