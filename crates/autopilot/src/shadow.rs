@@ -10,7 +10,7 @@
 use {
     crate::{
         arguments::RunLoopMode,
-        domain,
+        domain::{self, competition},
         infra::{
             self,
             solvers::dto::{reveal, solve},
@@ -20,17 +20,22 @@ use {
     },
     ::observe::metrics,
     ethrpc::block_stream::CurrentBlockWatcher,
+    itertools::Itertools,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
-    std::{cmp, sync::Arc, time::Duration},
+    std::{
+        cmp,
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tracing::Instrument,
 };
 
 pub struct RunLoop {
     orderbook: infra::shadow::Orderbook,
-    drivers: Vec<infra::Driver>,
+    drivers: Vec<Arc<infra::Driver>>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::auction::Id,
     block: u64,
@@ -43,7 +48,7 @@ pub struct RunLoop {
 impl RunLoop {
     pub fn new(
         orderbook: infra::shadow::Orderbook,
-        drivers: Vec<infra::Driver>,
+        drivers: Vec<Arc<infra::Driver>>,
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
@@ -119,20 +124,12 @@ impl RunLoop {
             .orders
             .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
-        let mut participants = self.competition(auction).await;
+        let participants = self.competition(auction).await;
 
-        // Shuffle so that sorting randomly splits ties.
-        participants.shuffle(&mut rand::thread_rng());
-        participants.sort_unstable_by_key(|participant| cmp::Reverse(participant.score()));
-
-        if let Some(Participant {
-            driver,
-            solution: Ok(solution),
-        }) = participants.first()
-        {
+        if let Some(winner) = participants.front() {
             let reference_score = participants
                 .get(1)
-                .map(|participant| participant.score())
+                .map(|winner| winner.solution().score().get().0)
                 .unwrap_or_default();
             let reward = solution
                 .score
@@ -186,15 +183,29 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant<'_>> {
-        let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
-        let request = &request;
+    async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
+        let start = Instant::now();
 
-        futures::future::join_all(self.drivers.iter().map(|driver| async move {
-            let solution = self.participate(driver, request).await;
-            Participant { driver, solution }
-        }))
+        let mut participants = infra::solvers::solve(
+            &self.drivers,
+            auction,
+            self.trusted_tokens.all(),
+            self.solve_deadline,
+        )
         .await
+        .into_iter()
+        .filter_map(|participant| {
+            observe::solve(&participant, start.elapsed());
+            competition::Participant::new(participant)
+        })
+        .collect_vec();
+
+        // Shuffle so that sorting randomly splits ties.
+        participants.shuffle(&mut rand::thread_rng());
+        participants.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution().score().get().0)
+        });
+        participants
     }
 
     /// Computes a driver's solutions in the shadow competition.

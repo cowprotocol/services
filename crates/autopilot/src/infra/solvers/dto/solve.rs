@@ -58,7 +58,19 @@ impl Request {
 impl Response {
     pub fn into_domain(
         self,
-    ) -> Vec<Result<domain::competition::Solution, domain::competition::SolutionError>> {
+    ) -> Result<Vec<domain::competition::Solution>, domain::competition::SolutionError> {
+        if self.solutions.is_empty() {
+            return Err(domain::competition::SolutionError::NoSolutions);
+        }
+        if self
+            .solutions
+            .iter()
+            .unique_by(|solution| solution.solution_id)
+            .count()
+            != self.solutions.len()
+        {
+            return Err(domain::competition::SolutionError::DuplicateIds);
+        }
         self.solutions
             .into_iter()
             .map(Solution::into_domain)

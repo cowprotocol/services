@@ -1,9 +1,13 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{domain::eth, util},
+    crate::{
+        domain::{self, eth},
+        util,
+    },
     anyhow::{anyhow, Context, Result},
+    primitive_types::H160,
     reqwest::{Client, StatusCode},
-    std::time::Duration,
+    std::{sync::Arc, time::Duration},
     url::Url,
 };
 
@@ -11,6 +15,38 @@ pub mod dto;
 
 const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
+
+pub struct Participant {
+    pub driver: Arc<Driver>,
+    pub solutions: Result<Vec<domain::competition::Solution>, Error>,
+}
+
+/// Sends `/solve` request to all drivers and returns all responses.
+pub async fn solve(
+    drivers: &[Arc<Driver>],
+    auction: &domain::Auction,
+    trusted_tokens: std::collections::HashSet<H160>,
+    deadline: Duration,
+) -> Vec<Participant> {
+    let request = solve::Request::new(auction, &trusted_tokens, deadline);
+    let request = &request;
+    futures::future::join_all(drivers.iter().map(|driver| async move {
+        let solutions = match tokio::time::timeout(deadline, driver.solve(request)).await {
+            Ok(Ok(response)) => match response.into_domain() {
+                Ok(solutions) => Ok(solutions),
+                Err(err) => Err(Error::Solution(err)),
+            },
+            Ok(Err(err)) => Err(Error::Failure(err)),
+            Err(_) => Err(Error::Timeout),
+        };
+
+        Participant {
+            driver: driver.clone(),
+            solutions,
+        }
+    }))
+    .await
+}
 
 pub struct Driver {
     pub name: String,
@@ -126,4 +162,14 @@ pub async fn response_body_with_size_limit(
         bytes.extend_from_slice(slice);
     }
     Ok(bytes)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Solution(#[from] domain::competition::SolutionError),
+    #[error("the solver timed out")]
+    Timeout,
+    #[error(transparent)]
+    Failure(anyhow::Error),
 }

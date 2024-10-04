@@ -1,11 +1,12 @@
 use {
     super::auction::order,
     crate::{
-        domain,
-        domain::{auction, eth},
+        domain::{self, auction, eth},
+        infra,
     },
     derive_more::Display,
-    std::collections::HashMap,
+    rand::seq::SliceRandom,
+    std::{collections::HashMap, sync::Arc},
 };
 
 type SolutionId = u64;
@@ -91,12 +92,53 @@ impl Score {
     }
 }
 
+/// A participant in the competition.
+///
+/// Solutions are sorted by score in descending order.
+///
+/// There is always at least one solution.
+pub struct Participant {
+    driver: Arc<infra::Driver>,
+    solutions: Vec<Solution>,
+}
+
+impl Participant {
+    pub fn new(participant: infra::solvers::Participant) -> Option<Self> {
+        Some(Self {
+            driver: participant.driver.clone(),
+            solutions: {
+                let mut solutions = participant.solutions.ok()?;
+                if solutions.is_empty() {
+                    return None;
+                }
+                solutions.shuffle(&mut rand::thread_rng());
+                solutions
+                    .sort_unstable_by_key(|solution| std::cmp::Reverse(solution.score().get().0));
+                solutions
+            },
+        })
+    }
+
+    pub fn driver(&self) -> &Arc<infra::Driver> {
+        &self.driver
+    }
+
+    /// Returns the best solution from the participant.
+    pub fn solution(&self) -> &Solution {
+        self.solutions.first().expect("must exist")
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("the solver proposed a 0-score solution")]
 pub struct ZeroScore;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SolutionError {
+    #[error("no solutions were provided by the solver")]
+    NoSolutions,
+    #[error("the solver provided duplicate solution ids")]
+    DuplicateIds,
     #[error(transparent)]
     ZeroScore(#[from] ZeroScore),
     #[error(transparent)]
