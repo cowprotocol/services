@@ -35,7 +35,7 @@ use {
 
 pub struct RunLoop {
     orderbook: infra::shadow::Orderbook,
-    drivers: Vec<infra::Driver>,
+    drivers: Vec<Arc<infra::Driver>>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::auction::Id,
     block: u64,
@@ -50,7 +50,7 @@ impl RunLoop {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
-        drivers: Vec<infra::Driver>,
+        drivers: Vec<Arc<infra::Driver>>,
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,

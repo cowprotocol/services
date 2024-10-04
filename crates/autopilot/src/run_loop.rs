@@ -61,7 +61,7 @@ pub struct RunLoop {
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
-    market_makable_token_list: AutoUpdatingTokenList,
+    trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
     liveness: Arc<Liveness>,
     /// Maintenance tasks that should run before every runloop to have
@@ -80,7 +80,7 @@ impl RunLoop {
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
-        market_makable_token_list: AutoUpdatingTokenList,
+        trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
     ) -> Self {
@@ -97,7 +97,7 @@ impl RunLoop {
             persistence,
             drivers,
             solvable_orders_cache,
-            market_makable_token_list,
+            trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
@@ -245,7 +245,14 @@ impl RunLoop {
 
         let auction = self.remove_in_flight_orders(auction).await;
 
+        self.persistence.store_order_events(
+            auction.orders.iter().map(|o| OrderUid(o.uid.0)),
+            OrderEventLabel::Ready,
+        );
+
         let solutions = self.competition(&auction).await;
+        self.report_on_solutions(&solutions, &auction);
+        
         let winners = self.select_winners(&solutions);
         if winners.is_empty() {
             tracing::info!("no winners for auction");
@@ -504,14 +511,10 @@ impl RunLoop {
     async fn competition(&self, auction: &domain::Auction) -> VecDeque<Participant> {
         let request = solve::Request::new(
             auction,
-            &self.market_makable_token_list.all(),
+            &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
         let request = &request;
-
-        let order_uids = auction.orders.iter().map(|o| OrderUid(o.uid.0));
-        self.persistence
-            .store_order_events(order_uids, OrderEventLabel::Ready);
 
         let mut solutions = futures::future::join_all(
             self.drivers
@@ -538,7 +541,6 @@ impl RunLoop {
                 "fairness check invalidated of solution"
             );
         }
-        self.report_on_solutions(&solutions, auction);
 
         solutions
     }
