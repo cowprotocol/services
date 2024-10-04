@@ -595,3 +595,341 @@ async fn cow_amm_driver_support(web3: Web3) {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+#[ignore]
+async fn local_node_cow_amm_opposite_direction() {
+    run_test(cow_amm_opposite_direction).await;
+}
+
+async fn cow_amm_opposite_direction(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(100)).await;
+    let [bob, cow_amm_owner] = onchain.make_accounts(to_wei(1000)).await;
+
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(100))
+        .await;
+
+    // No need to fund the buffers since we're testing the CoW AMM directly filling
+    // the user order.
+
+    // Set up the CoW AMM as before
+    let oracle = contracts::CowAmmUniswapV2PriceOracle::builder(&web3)
+        .deploy()
+        .await
+        .unwrap();
+
+    let cow_amm_factory = contracts::CowAmmConstantProductFactory::builder(
+        &web3,
+        onchain.contracts().gp_settlement.address(),
+    )
+    .deploy()
+    .await
+    .unwrap();
+
+    // Fund the CoW AMM owner with DAI and WETH and approve the factory to transfer
+    // them
+    dai.mint(cow_amm_owner.address(), to_wei(2_000)).await;
+    tx!(
+        cow_amm_owner.account(),
+        dai.approve(cow_amm_factory.address(), to_wei(2_000))
+    );
+
+    tx_value!(
+        cow_amm_owner.account(),
+        to_wei(1),
+        onchain.contracts().weth.deposit()
+    );
+    tx!(
+        cow_amm_owner.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(cow_amm_factory.address(), to_wei(1))
+    );
+
+    let pair = onchain
+        .contracts()
+        .uniswap_v2_factory
+        .get_pair(onchain.contracts().weth.address(), dai.address())
+        .call()
+        .await
+        .expect("failed to get Uniswap V2 pair");
+
+    let cow_amm_address = cow_amm_factory
+        .amm_deterministic_address(
+            cow_amm_owner.address(),
+            dai.address(),
+            onchain.contracts().weth.address(),
+        )
+        .call()
+        .await
+        .unwrap();
+
+    let oracle_data: Vec<_> = std::iter::repeat(0u8)
+        .take(12) // pad with 12 zeros to end up with 32 bytes
+        .chain(pair.as_bytes().to_vec())
+        .collect();
+    const APP_DATA: [u8; 32] = [12u8; 32];
+
+    // Create the CoW AMM
+    cow_amm_factory
+        .create(
+            dai.address(),
+            to_wei(2_000),
+            onchain.contracts().weth.address(),
+            to_wei(1),
+            0.into(), // min traded token
+            oracle.address(),
+            ethcontract::Bytes(oracle_data.clone()),
+            ethcontract::Bytes(APP_DATA),
+        )
+        .from(cow_amm_owner.account().clone())
+        .send()
+        .await
+        .unwrap();
+    let cow_amm = contracts::CowAmm::at(&web3, cow_amm_address);
+
+    // Start system with the regular baseline solver as a quoter but a mock solver
+    // for the actual solver competition. This allows us to handcraft a solution.
+    let mock_solver = Mock::default();
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver.clone(),
+                onchain.contracts().weth.address(),
+                vec![],
+            )
+            .await,
+            SolverEngine {
+                name: "mock_solver".into(),
+                account: solver.clone(),
+                endpoint: mock_solver.url.clone(),
+                base_tokens: vec![],
+            },
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+    let services = Services::new(onchain.contracts()).await;
+    services
+        .start_autopilot(
+            None,
+            vec![
+                "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
+                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                    .to_string(),
+            ],
+        )
+        .await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // Get the current block timestamp
+    let block = web3
+        .eth()
+        .block(BlockId::Number(BlockNumber::Latest))
+        .await
+        .unwrap()
+        .unwrap();
+    let valid_to = block.timestamp.as_u32() + 300;
+
+    // CoW AMM order remains the same (selling WETH for DAI)
+    let cow_amm_order = OrderData {
+        sell_token: onchain.contracts().weth.address(),
+        buy_token: dai.address(),
+        receiver: None,
+        sell_amount: U256::exp10(17), // 0.1 WETH
+        buy_amount: to_wei(230),      // 230 DAI
+        valid_to,
+        app_data: AppDataHash(APP_DATA),
+        fee_amount: 0.into(),
+        kind: OrderKind::Sell,
+        partially_fillable: false,
+        sell_token_balance: Default::default(),
+        buy_token_balance: Default::default(),
+    };
+
+    // Create the signature for the CoW AMM order
+    let signature_data = ethcontract::web3::ethabi::encode(&[
+        Token::Tuple(vec![
+            Token::Address(cow_amm_order.sell_token),
+            Token::Address(cow_amm_order.buy_token),
+            Token::Address(cow_amm_order.receiver.unwrap_or_default()),
+            Token::Uint(cow_amm_order.sell_amount),
+            Token::Uint(cow_amm_order.buy_amount),
+            Token::Uint(cow_amm_order.valid_to.into()),
+            Token::FixedBytes(cow_amm_order.app_data.0.to_vec()),
+            Token::Uint(cow_amm_order.fee_amount),
+            Token::FixedBytes(
+                hex::decode("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775")
+                    .unwrap(),
+            ), // sell order
+            Token::Bool(cow_amm_order.partially_fillable),
+            Token::FixedBytes(
+                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
+                    .unwrap(),
+            ), // sell_token_source == erc20
+            Token::FixedBytes(
+                hex::decode("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9")
+                    .unwrap(),
+            ), // buy_token_destination == erc20
+        ]),
+        Token::Tuple(vec![
+            Token::Uint(0.into()), // min_traded_token
+            Token::Address(oracle.address()),
+            Token::Bytes(oracle_data),
+            Token::FixedBytes(APP_DATA.to_vec()),
+        ]),
+    ]);
+
+    // Prepend CoW AMM address to the signature so the settlement contract knows
+    // which contract this signature refers to.
+    let signature = cow_amm
+        .address()
+        .as_bytes()
+        .iter()
+        .cloned()
+        .chain(signature_data)
+        .collect();
+
+    // Create the commitment call for the pre-interaction
+    let cow_amm_commitment = {
+        let order_hash = cow_amm_order.hash_struct();
+        let order_hash = hashed_eip712_message(&onchain.contracts().domain_separator, &order_hash);
+        let commitment = cow_amm
+            .commit(ethcontract::Bytes(order_hash))
+            .tx
+            .data
+            .unwrap();
+        Call {
+            target: cow_amm.address(),
+            value: 0.into(),
+            calldata: commitment.0.to_vec(),
+        }
+    };
+
+    // Fund trader "bob" with DAI and approve allowance
+    dai.mint(bob.address(), to_wei(250)).await;
+    tx!(
+        bob.account(),
+        dai.approve(onchain.contracts().allowance, U256::MAX)
+    );
+
+    // Get balances before the trade
+    let amm_weth_balance_before = onchain
+        .contracts()
+        .weth
+        .balance_of(cow_amm.address())
+        .call()
+        .await
+        .unwrap();
+    let bob_weth_balance_before = onchain
+        .contracts()
+        .weth
+        .balance_of(bob.address())
+        .call()
+        .await
+        .unwrap();
+
+    // Place user order where bob sells DAI to buy WETH (opposite direction)
+    let user_order = OrderCreation {
+        sell_token: dai.address(),
+        sell_amount: to_wei(230), // 230 DAI
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: U256::exp10(17), // 0.1 WETH
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(bob.private_key()).unwrap()),
+    );
+    let user_order_id = services.create_order(&user_order).await.unwrap();
+
+    // Set the fees appropriately
+    let fee_cow_amm = U256::exp10(16); // 0.01 WETH
+    let fee_user = to_wei(1); // 1 DAI
+
+    // Configure the mock solver's solution
+    mock_solver.configure_solution(Some(Solution {
+        id: 1,
+        prices: HashMap::from([
+            (dai.address(), to_wei(1)),                         // 1 DAI = $1
+            (onchain.contracts().weth.address(), to_wei(2000)), // 1 WETH = $2000
+        ]),
+        trades: vec![
+            solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
+                order: solvers_dto::solution::JitOrder {
+                    sell_token: cow_amm_order.sell_token,
+                    buy_token: cow_amm_order.buy_token,
+                    receiver: cow_amm_order.receiver.unwrap_or_default(),
+                    sell_amount: cow_amm_order.sell_amount,
+                    buy_amount: cow_amm_order.buy_amount,
+                    valid_to: cow_amm_order.valid_to,
+                    app_data: cow_amm_order.app_data.0,
+                    kind: Kind::Sell,
+                    sell_token_balance: SellTokenBalance::Erc20,
+                    buy_token_balance: BuyTokenBalance::Erc20,
+                    signing_scheme: SigningScheme::Eip1271,
+                    signature,
+                },
+                executed_amount: cow_amm_order.sell_amount - fee_cow_amm,
+                fee: Some(fee_cow_amm),
+            }),
+            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
+                order: user_order_id.0,
+                executed_amount: user_order.sell_amount - fee_user,
+                fee: Some(fee_user),
+            }),
+        ],
+        pre_interactions: vec![cow_amm_commitment],
+        interactions: vec![],
+        post_interactions: vec![],
+        gas: None,
+    }));
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+    wait_for_condition(TIMEOUT, || async {
+        let amm_weth_balance_after = onchain
+            .contracts()
+            .weth
+            .balance_of(cow_amm.address())
+            .call()
+            .await
+            .unwrap();
+        let bob_weth_balance_after = onchain
+            .contracts()
+            .weth
+            .balance_of(bob.address())
+            .call()
+            .await
+            .unwrap();
+
+        let amm_weth_sent = amm_weth_balance_before - amm_weth_balance_after;
+        let bob_weth_received = bob_weth_balance_after - bob_weth_balance_before;
+
+        // Bob should receive WETH, CoW AMM's WETH balance decreases
+        bob_weth_received >= user_order.buy_amount && amm_weth_sent >= cow_amm_order.sell_amount
+    })
+    .await
+    .unwrap();
+
+    // Verify that the trade is indexed
+    tracing::info!("Waiting for trade to be indexed.");
+    wait_for_condition(TIMEOUT, || async {
+        let trades = services.get_trades(&user_order_id).await.ok();
+        trades.is_some_and(|trades| !trades.is_empty())
+    })
+    .await
+    .unwrap();
+}
