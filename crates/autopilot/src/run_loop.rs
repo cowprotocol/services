@@ -253,10 +253,7 @@ impl RunLoop {
 
         // Collect valid solutions from all drivers
         let solutions = self.competition(&auction).await;
-        if solutions.is_empty() {
-            tracing::info!("no solutions for auction");
-            return;
-        }
+        observe::solutions(&solutions);
 
         // Mark all solved orders as `Considered` for execution
         self.persistence.store_order_events(
@@ -550,8 +547,6 @@ impl RunLoop {
         solutions.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution.score().get().0)
         });
-
-        observe::solutions(&solutions);
         solutions
     }
 
@@ -1083,6 +1078,9 @@ pub mod observe {
     }
 
     pub fn solutions(solutions: &[super::Participant]) {
+        if solutions.is_empty() {
+            tracing::info!("no solutions for auction");
+        }
         for participant in solutions {
             tracing::debug!(
                 driver = %participant.driver.name,
