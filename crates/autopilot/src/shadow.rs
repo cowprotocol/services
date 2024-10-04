@@ -240,7 +240,7 @@ impl RunLoop {
                 let swapped_tokens = solution
                     .orders()
                     .iter()
-                    .map(|(_, order)| (order.sell.token, order.buy.token))
+                    .flat_map(|(_, order)| vec![order.sell.token, order.buy.token])
                     .collect::<HashSet<_>>();
                 if swapped_tokens.is_disjoint(&already_swapped_tokens) {
                     winners.push(participant);
