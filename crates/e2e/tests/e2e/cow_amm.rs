@@ -838,6 +838,10 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         .await
         .unwrap();
 
+    // Compensate a delay between the `CurrentBlockStream` and the actual onchain
+    // data.
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
     // Place user order where bob sells DAI to buy WETH (opposite direction)
     let user_order = OrderCreation {
         sell_token: dai.address(),
