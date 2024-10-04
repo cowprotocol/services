@@ -264,7 +264,7 @@ impl RunLoop {
         );
 
         // Pick winners for execution
-        let winners = self.select_winners(&solutions, &auction);
+        let winners = self.select_winners(&solutions);
         if winners.is_empty() {
             tracing::info!("no winners for auction");
             return;
@@ -547,6 +547,24 @@ impl RunLoop {
         solutions.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution.score().get().0)
         });
+
+        // Filter out solutions that are not fair
+        let solutions = solutions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, participant)| {
+                if Self::is_solution_fair(participant, &solutions[index..], auction) {
+                    Some(participant.clone())
+                } else {
+                    tracing::warn!(
+                        invalidated = participant.driver.name,
+                        "fairness check invalidated of solution"
+                    );
+                    None
+                }
+            })
+            .collect();
+
         solutions
     }
 
@@ -558,22 +576,10 @@ impl RunLoop {
     /// until `max_winners_per_auction` are selected. The solution is a winner
     /// if it swaps tokens that are not yet swapped by any other already
     /// selected winner.
-    fn select_winners<'a>(
-        &self,
-        participants: &'a [Participant],
-        auction: &domain::Auction,
-    ) -> Vec<&'a Participant> {
+    fn select_winners<'a>(&self, participants: &'a [Participant]) -> Vec<&'a Participant> {
         let mut winners = Vec::new();
         let mut already_swapped_tokens = HashSet::new();
-        for (index, participant) in participants.iter().enumerate() {
-            // check if fair
-            if !Self::is_solution_fair(participant, &participants[index..], auction) {
-                tracing::warn!(
-                    invalidated = participant.driver.name,
-                    "fairness check invalidated of solution"
-                );
-                continue;
-            }
+        for participant in participants.iter() {
             let swapped_tokens = participant
                 .solution
                 .orders()
@@ -591,7 +597,7 @@ impl RunLoop {
         winners
     }
 
-    /// Returns true if winning solution is fair or winner is None
+    /// Returns true if winning solution is fair
     fn is_solution_fair(
         winner: &Participant,
         remaining: &[Participant],
@@ -870,6 +876,7 @@ impl RunLoop {
     }
 }
 
+#[derive(Clone)]
 pub struct Participant {
     driver: Arc<infra::Driver>,
     solution: competition::Solution,
