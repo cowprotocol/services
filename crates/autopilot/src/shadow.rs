@@ -136,26 +136,24 @@ impl RunLoop {
         let winners = self.select_winners(&participants);
 
         for (i, Participant { driver, solution }) in winners.iter().enumerate() {
-            let reference_score = winners
-                .get(i + 1)
-                .map(|winner| winner.score())
-                .unwrap_or_else(|| {
-                    participants
-                        .iter()
-                        // assumes one solution per driver and unique driver names
-                        .position(|participant| participant.driver.name == driver.name)
-                        .and_then(|winner_position| {
-                            participants
-                                .get(winner_position + 1)
-                                .map(|participant| participant.score())
-                        })
-                        .unwrap_or_default()
-                });
-
             let score = solution
                 .as_ref()
                 .map(|solution| solution.score.get())
                 .unwrap_or_default();
+            let reference_score = winners
+                .get(i + 1)
+                .map(|winner| winner.score())
+                .unwrap_or_else(|| {
+                    // If this was the last winning solution pick the first worse overall
+                    // solution that came from a different driver (or 0) as the reference score.
+                    participants
+                        .iter()
+                        .filter(|p| p.driver.name != driver.name)
+                        .filter_map(|p| p.solution.as_ref().ok())
+                        .map(|p| p.score.get())
+                        .find(|other_score| *other_score <= score)
+                        .unwrap_or_default()
+                });
             let reward = score
                 .checked_sub(reference_score)
                 .expect("reference score unexpectedly larger than winner's score");
