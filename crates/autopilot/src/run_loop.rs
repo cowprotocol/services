@@ -35,7 +35,7 @@ use {
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{HashMap, HashSet, VecDeque},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -52,6 +52,7 @@ pub struct Config {
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
+    pub max_winners_per_auction: usize,
 }
 
 pub struct RunLoop {
@@ -83,6 +84,13 @@ impl RunLoop {
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
     ) -> Self {
+        // Added to make sure no more than one winner is activated by accident
+        // Should be removed once we decide to activate "multiple winners per auction"
+        // feature.
+        assert_eq!(
+            config.max_winners_per_auction, 1,
+            "only one winner is supported"
+        );
         Self {
             config,
             eth,
@@ -238,34 +246,35 @@ impl RunLoop {
         let auction = self.remove_in_flight_orders(auction).await;
 
         let solutions = self.competition(&auction).await;
-        if solutions.is_empty() {
-            tracing::info!("no solutions for auction");
+        let winners = self.select_winners(&solutions);
+        if winners.is_empty() {
+            tracing::info!("no winners for auction");
             return;
         }
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
+        let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
-        // TODO: Keep going with other solutions until some deadline.
-        if let Some(Participant { driver, solution }) = solutions.last() {
+        // Post-processing should not be executed asynchronously since it includes steps
+        // of storing all the competition/auction-related data to the DB.
+        if let Err(err) = self
+            .post_processing(
+                &auction,
+                competition_simulation_block,
+                // TODO: Support multiple winners
+                // https://github.com/cowprotocol/services/issues/3021
+                &winners.first().expect("must exist").solution,
+                &solutions,
+                block_deadline,
+            )
+            .await
+        {
+            tracing::error!(?err, "failed to post-process competition");
+            return;
+        }
+
+        for Participant { driver, solution } in winners {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
-
-            let block_deadline = competition_simulation_block + self.config.submission_deadline;
-
-            // Post-processing should not be executed asynchronously since it includes steps
-            // of storing all the competition/auction-related data to the DB.
-            if let Err(err) = self
-                .post_processing(
-                    &auction,
-                    competition_simulation_block,
-                    solution,
-                    &solutions,
-                    block_deadline,
-                )
-                .await
-            {
-                tracing::error!(?err, "failed to post-process competition");
-                return;
-            }
 
             self.start_settlement_execution(
                 auction.id,
@@ -374,15 +383,15 @@ impl RunLoop {
         auction: &domain::Auction,
         competition_simulation_block: u64,
         winning_solution: &competition::Solution,
-        solutions: &[Participant],
+        solutions: &VecDeque<Participant>,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
-            .iter()
-            .nth_back(1)
+            // todo multiple winners per auction
+            .get(1)
             .map(|participant| participant.solution.score().get().0)
             .unwrap_or_default();
         let participants = solutions
@@ -426,6 +435,8 @@ impl RunLoop {
             },
             solutions: solutions
                 .iter()
+                // reverse as solver competition table is sorted from worst to best, so we need to keep the ordering for backwards compatibility
+                .rev()
                 .enumerate()
                 .map(|(index, participant)| SolverSettlement {
                     solver: participant.driver.name.clone(),
@@ -489,8 +500,8 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    /// Returns all fair solutions sorted by their score (worst to best).
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant> {
+    /// Returns all fair solutions sorted by their score (best to worst).
+    async fn competition(&self, auction: &domain::Auction) -> VecDeque<Participant> {
         let request = solve::Request::new(
             auction,
             &self.market_makable_token_list.all(),
@@ -514,11 +525,14 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by_key(|participant| participant.solution.score().get().0);
+        solutions.sort_unstable_by_key(|participant| {
+            std::cmp::Reverse(participant.solution.score().get().0)
+        });
 
         // Make sure the winning solution is fair.
-        while !Self::is_solution_fair(solutions.last(), &solutions, auction) {
-            let unfair_solution = solutions.pop().expect("must exist");
+        let mut solutions = solutions.into_iter().collect::<VecDeque<_>>();
+        while !Self::is_solution_fair(solutions.front(), &solutions, auction) {
+            let unfair_solution = solutions.pop_front().expect("must exist");
             tracing::warn!(
                 invalidated = unfair_solution.driver.name,
                 "fairness check invalidated of solution"
@@ -529,10 +543,39 @@ impl RunLoop {
         solutions
     }
 
+    /// Chooses the winners from the given participants.
+    ///
+    /// Participants are already sorted by their score (best to worst).
+    ///
+    /// Winners are selected one by one, starting from the best solution,
+    /// until `max_winners_per_auction` are selected. The solution is a winner
+    /// if it swaps tokens that are not yet swapped by any other already
+    /// selected winner.
+    fn select_winners<'a>(&self, participants: &'a VecDeque<Participant>) -> Vec<&'a Participant> {
+        let mut winners = Vec::new();
+        let mut already_swapped_tokens = HashSet::new();
+        for participant in participants.iter() {
+            let swapped_tokens = participant
+                .solution
+                .orders()
+                .iter()
+                .flat_map(|(_, order)| vec![order.sell.token, order.buy.token])
+                .collect::<HashSet<_>>();
+            if swapped_tokens.is_disjoint(&already_swapped_tokens) {
+                winners.push(participant);
+                already_swapped_tokens.extend(swapped_tokens);
+                if winners.len() >= self.config.max_winners_per_auction {
+                    break;
+                }
+            }
+        }
+        winners
+    }
+
     /// Records metrics, order events and logs for the given solutions.
-    /// Expects the winning solution to be the last in the list.
-    fn report_on_solutions(&self, solutions: &[Participant], auction: &domain::Auction) {
-        let Some(winner) = solutions.last() else {
+    /// Expects the winning solution to be the first in the list.
+    fn report_on_solutions(&self, solutions: &VecDeque<Participant>, auction: &domain::Auction) {
+        let Some(winner) = solutions.front() else {
             // no solutions means nothing to report
             return;
         };
@@ -551,7 +594,7 @@ impl RunLoop {
             .flat_map(|solution| solution.solution.order_ids().copied())
             .collect();
         let winning_orders: HashSet<_> = solutions
-            .last()
+            .front()
             .into_iter()
             .flat_map(|solution| solution.solution.order_ids().copied())
             .collect();
@@ -577,7 +620,7 @@ impl RunLoop {
     /// Returns true if winning solution is fair or winner is None
     fn is_solution_fair(
         winner: Option<&Participant>,
-        remaining: &Vec<Participant>,
+        remaining: &VecDeque<Participant>,
         auction: &domain::Auction,
     ) -> bool {
         let Some(winner) = winner else { return true };
