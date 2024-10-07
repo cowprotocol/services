@@ -98,27 +98,7 @@ impl Solution {
             domain::competition::Score::new(self.score.into())?,
             self.orders
                 .into_iter()
-                .map(|(o, amounts)| {
-                    (
-                        o.into(),
-                        domain::competition::TradedOrder {
-                            sell: eth::Asset {
-                                token: amounts.sell_token.into(),
-                                amount: amounts.limit_sell.into(),
-                            },
-                            buy: eth::Asset {
-                                token: amounts.buy_token.into(),
-                                amount: amounts.limit_buy.into(),
-                            },
-                            side: match amounts.side {
-                                Side::Buy => domain::auction::order::Side::Buy,
-                                Side::Sell => domain::auction::order::Side::Sell,
-                            },
-                            executed_sell: amounts.executed_sell.into(),
-                            executed_buy: amounts.executed_buy.into(),
-                        },
-                    )
-                })
+                .map(|(o, amounts)| (o.into(), amounts.into_domain()))
                 .collect(),
             self.clearing_prices
                 .into_iter()
@@ -153,6 +133,27 @@ pub struct TradedOrder {
     /// The effective amount the user received after all fees.
     #[serde_as(as = "HexOrDecimalU256")]
     executed_buy: U256,
+}
+
+impl TradedOrder {
+    pub fn into_domain(self) -> domain::competition::TradedOrder {
+        domain::competition::TradedOrder {
+            sell: eth::Asset {
+                token: self.sell_token.into(),
+                amount: self.limit_sell.into(),
+            },
+            buy: eth::Asset {
+                token: self.buy_token.into(),
+                amount: self.limit_buy.into(),
+            },
+            side: match self.side {
+                Side::Buy => domain::auction::order::Side::Buy,
+                Side::Sell => domain::auction::order::Side::Sell,
+            },
+            executed_sell: self.executed_sell.into(),
+            executed_buy: self.executed_buy.into(),
+        }
+    }
 }
 
 #[serde_as]

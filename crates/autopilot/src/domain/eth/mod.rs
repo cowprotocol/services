@@ -1,5 +1,8 @@
-use derive_more::{Display, From, Into};
 pub use primitive_types::{H160, H256, U256};
+use {
+    crate::domain,
+    derive_more::{Display, From, Into},
+};
 
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
@@ -254,12 +257,20 @@ pub struct DomainSeparator(pub [u8; 32]);
 /// Originated from the blockchain transaction input data.
 pub type Calldata = crate::util::Bytes<Vec<u8>>;
 
-/// An event emitted by a settlement smart contract.
+/// A settlement event emitted by a settlement smart contract.
 #[derive(Debug, Clone, Copy)]
-pub struct Event {
+pub struct SettlementEvent {
     pub block: BlockNo,
     pub log_index: u64,
     pub transaction: TxId,
+}
+
+/// A trade event emitted by a settlement smart contract.
+#[derive(Debug, Clone, Copy)]
+pub struct TradeEvent {
+    pub block: BlockNo,
+    pub log_index: u64,
+    pub order_uid: domain::OrderUid,
 }
 
 /// Any type of on-chain transaction.

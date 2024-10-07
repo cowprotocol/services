@@ -10,6 +10,7 @@ use {
     boundary::database::byte_array::ByteArray,
     chrono::{DateTime, Utc},
     database::{
+        events::EventIndex,
         order_events::OrderEventLabel,
         order_execution::Asset,
         orders::{
@@ -516,7 +517,7 @@ impl Persistence {
     /// not yet populated in the database.
     pub async fn get_settlement_without_auction(
         &self,
-    ) -> Result<Option<domain::eth::Event>, DatabaseError> {
+    ) -> Result<Option<domain::eth::SettlementEvent>, DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_without_auction"])
@@ -526,7 +527,7 @@ impl Persistence {
         let event = database::settlements::get_settlement_without_auction(&mut ex)
             .await?
             .map(|event| {
-                let event = domain::eth::Event {
+                let event = domain::eth::SettlementEvent {
                     block: u64::try_from(event.block_number)
                         .context("negative block")?
                         .into(),
@@ -539,9 +540,42 @@ impl Persistence {
         Ok(event)
     }
 
+    /// Returns the trade events that are associated with the settlement event
+    pub async fn get_trades_for_settlement(
+        &self,
+        settlement: &domain::eth::SettlementEvent,
+    ) -> Result<Vec<domain::eth::TradeEvent>, DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["get_trades_for_settlement"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await?;
+        database::trades::get_trades_for_settlement(
+            &mut ex,
+            EventIndex {
+                block_number: i64::try_from(settlement.block.0).context("block overflow")?,
+                log_index: i64::try_from(settlement.log_index).context("log index overflow")?,
+            },
+        )
+        .await?
+        .into_iter()
+        .map(|event| {
+            let event = domain::eth::TradeEvent {
+                block: u64::try_from(event.block_number)
+                    .context("negative block")?
+                    .into(),
+                log_index: u64::try_from(event.log_index).context("negative log index")?,
+                order_uid: domain::OrderUid(event.order_uid.0),
+            };
+            Ok::<_, DatabaseError>(event)
+        })
+        .collect()
+    }
+
     pub async fn save_settlement(
         &self,
-        event: domain::eth::Event,
+        event: domain::eth::SettlementEvent,
         auction_id: domain::auction::Id,
         settlement: Option<&domain::settlement::Settlement>,
     ) -> Result<(), DatabaseError> {
@@ -631,53 +665,83 @@ impl Persistence {
                 .await?;
             }
 
-            database::jit_orders::insert(
-                &mut ex,
-                &jit_orders
+            if !jit_orders.is_empty() {
+                // each jit order should have a corresponding trade event, try to find them
+                let trade_events = self
+                    .get_trades_for_settlement(&event)
+                    .await?
                     .into_iter()
-                    .map(|jit_order| database::jit_orders::JitOrder {
-                        block_number,
-                        log_index,
-                        uid: ByteArray(jit_order.uid.0),
-                        owner: ByteArray(jit_order.uid.owner().0 .0),
-                        creation_timestamp: chrono::DateTime::from_timestamp(
-                            i64::from(jit_order.created),
-                            0,
-                        )
-                        .unwrap_or_default(),
-                        sell_token: ByteArray(jit_order.sell.token.0 .0),
-                        buy_token: ByteArray(jit_order.buy.token.0 .0),
-                        sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
-                        buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
-                        valid_to: i64::from(jit_order.valid_to),
-                        app_data: ByteArray(jit_order.app_data.0),
-                        fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
-                        kind: match jit_order.side {
-                            domain::auction::order::Side::Buy => database::orders::OrderKind::Buy,
-                            domain::auction::order::Side::Sell => database::orders::OrderKind::Sell,
-                        },
-                        partially_fillable: jit_order.partially_fillable,
-                        signature: jit_order.signature.to_bytes(),
-                        receiver: ByteArray(jit_order.receiver.0 .0),
-                        signing_scheme: match jit_order.signature.scheme() {
-                            DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
-                            DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
-                            DomainSigningScheme::Eip1271 => DbSigningScheme::Eip1271,
-                            DomainSigningScheme::PreSign => DbSigningScheme::PreSign,
-                        },
-                        sell_token_balance: match jit_order.sell_token_balance {
-                            DomainSellTokenSource::Erc20 => DbSellTokenSource::Erc20,
-                            DomainSellTokenSource::External => DbSellTokenSource::External,
-                            DomainSellTokenSource::Internal => DbSellTokenSource::Internal,
-                        },
-                        buy_token_balance: match jit_order.buy_token_balance {
-                            DomainBuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
-                            DomainBuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
-                        },
-                    })
-                    .collect::<Vec<_>>(),
-            )
-            .await?;
+                    .map(|event| (event.order_uid, (event.block, event.log_index)))
+                    .collect::<HashMap<_, (_, _)>>();
+
+                database::jit_orders::insert(
+                    &mut ex,
+                    &jit_orders
+                        .into_iter()
+                        .filter_map(|jit_order| match trade_events.get(&jit_order.uid) {
+                            Some((block_number, log_index)) => {
+                                Some(database::jit_orders::JitOrder {
+                                    block_number: i64::try_from(block_number.0).ok()?,
+                                    log_index: i64::try_from(*log_index).ok()?,
+                                    uid: ByteArray(jit_order.uid.0),
+                                    owner: ByteArray(jit_order.uid.owner().0 .0),
+                                    creation_timestamp: chrono::DateTime::from_timestamp(
+                                        i64::from(jit_order.created),
+                                        0,
+                                    )
+                                    .unwrap_or_default(),
+                                    sell_token: ByteArray(jit_order.sell.token.0 .0),
+                                    buy_token: ByteArray(jit_order.buy.token.0 .0),
+                                    sell_amount: u256_to_big_decimal(&jit_order.sell.amount.0),
+                                    buy_amount: u256_to_big_decimal(&jit_order.buy.amount.0),
+                                    valid_to: i64::from(jit_order.valid_to),
+                                    app_data: ByteArray(jit_order.app_data.0),
+                                    fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
+                                    kind: match jit_order.side {
+                                        domain::auction::order::Side::Buy => {
+                                            database::orders::OrderKind::Buy
+                                        }
+                                        domain::auction::order::Side::Sell => {
+                                            database::orders::OrderKind::Sell
+                                        }
+                                    },
+                                    partially_fillable: jit_order.partially_fillable,
+                                    signature: jit_order.signature.to_bytes(),
+                                    receiver: ByteArray(jit_order.receiver.0 .0),
+                                    signing_scheme: match jit_order.signature.scheme() {
+                                        DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
+                                        DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
+                                        DomainSigningScheme::Eip1271 => DbSigningScheme::Eip1271,
+                                        DomainSigningScheme::PreSign => DbSigningScheme::PreSign,
+                                    },
+                                    sell_token_balance: match jit_order.sell_token_balance {
+                                        DomainSellTokenSource::Erc20 => DbSellTokenSource::Erc20,
+                                        DomainSellTokenSource::External => {
+                                            DbSellTokenSource::External
+                                        }
+                                        DomainSellTokenSource::Internal => {
+                                            DbSellTokenSource::Internal
+                                        }
+                                    },
+                                    buy_token_balance: match jit_order.buy_token_balance {
+                                        DomainBuyTokenDestination::Erc20 => {
+                                            DbBuyTokenDestination::Erc20
+                                        }
+                                        DomainBuyTokenDestination::Internal => {
+                                            DbBuyTokenDestination::Internal
+                                        }
+                                    },
+                                })
+                            }
+                            None => {
+                                tracing::warn!(order_uid = ?jit_order.uid, "missing trade event for jit order");
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .await?;
+            }
         }
 
         ex.commit().await?;

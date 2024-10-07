@@ -528,6 +528,7 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         synchronization: args.run_loop_mode,
         max_run_loop_delay: args.max_run_loop_delay,
+        max_winners_per_auction: args.max_winners_per_auction,
         execute_solver_competition_migration: args.execute_solver_competition_migration,
     };
 
@@ -623,6 +624,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         liveness.clone(),
         args.run_loop_mode,
         current_block,
+        args.max_winners_per_auction,
     );
     shadow.run_forever().await;
 

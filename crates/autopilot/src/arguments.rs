@@ -233,6 +233,11 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
     pub run_loop_native_price_timeout: Duration,
 
+    #[clap(long, env, default_value = "1")]
+    /// The maximum number of winners per auction. Each winner will be allowed
+    /// to settle their winning orders at the same time.
+    pub max_winners_per_auction: usize,
+
     /// Should the solver competition migration be executed.
     /// Need argument so even on staging we can test the migration gradually
     /// network by network.
@@ -283,9 +288,9 @@ impl std::fmt::Display for Arguments {
             run_loop_mode,
             max_run_loop_delay,
             run_loop_native_price_timeout,
+            max_winners_per_auction,
             execute_solver_competition_migration,
         } = self;
-
         write!(f, "{}", shared)?;
         write!(f, "{}", order_quoting)?;
         write!(f, "{}", http_client)?;
@@ -363,6 +368,7 @@ impl std::fmt::Display for Arguments {
             "run_loop_native_price_timeout: {:?}",
             run_loop_native_price_timeout
         )?;
+        writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
         writeln!(
             f,
             "execute_solver_competition_migration: {:?}",
@@ -371,9 +377,7 @@ impl std::fmt::Display for Arguments {
         Ok(())
     }
 }
-
 /// A fee policy to be used for orders base on it's class.
-/// Examples:
 /// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
 ///
 /// - Surplus with cap for market orders: surplus:0.5:0.06:market
