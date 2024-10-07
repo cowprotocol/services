@@ -255,20 +255,18 @@ impl RunLoop {
         let solutions = self.competition(&auction).await;
         observe::solutions(&solutions);
 
-        // Mark all solved orders as `Considered` for execution
-        self.persistence.store_order_events(
-            solutions
-                .iter()
-                .flat_map(|s| s.solution.order_ids().copied()),
-            OrderEventLabel::Considered,
-        );
-
         // Pick winners for execution
         let winners = self.select_winners(&solutions);
         if winners.is_empty() {
             tracing::info!("no winners for auction");
             return;
         }
+
+        // Mark all non-winning orders as `Considered` for execution
+        self.persistence.store_order_events(
+            non_winning_orders(&solutions, &winners),
+            OrderEventLabel::Considered,
+        );
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -876,6 +874,21 @@ impl RunLoop {
     }
 }
 
+fn non_winning_orders(solutions: &[Participant], winners: &[&Participant]) -> HashSet<OrderUid> {
+    let proposed_orders: HashSet<_> = solutions
+        .iter()
+        .flat_map(|participant| participant.solution.order_ids().copied())
+        .collect();
+    let winning_orders: HashSet<_> = winners
+        .iter()
+        .flat_map(|participant| participant.solution.order_ids().copied())
+        .collect();
+    proposed_orders
+        .difference(&winning_orders)
+        .cloned()
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct Participant {
     driver: Arc<infra::Driver>,
@@ -1109,21 +1122,9 @@ pub mod observe {
             return;
         };
 
-        let proposed_orders: HashSet<_> = solutions
-            .iter()
-            .flat_map(|participant| participant.solution.order_ids().copied())
-            .collect();
-        let winning_orders: HashSet<_> = winners
-            .iter()
-            .flat_map(|participant| participant.solution.order_ids().copied())
-            .collect();
-        let mut non_winning_orders: HashSet<_> = proposed_orders
-            .difference(&winning_orders)
-            .cloned()
-            .collect();
-
         let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
 
+        let mut non_winning_orders = super::non_winning_orders(solutions, winners);
         // Report orders that were part of a non-winning solution candidate
         // but only if they were part of the auction (filter out jit orders)
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
