@@ -650,6 +650,21 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             .approve(cow_amm_factory.address(), to_wei(1))
     );
 
+    tx_value!(
+        solver.account(),
+        to_wei(1),
+        onchain.contracts().weth.deposit()
+    );
+
+    // Fund the settlement contract with WETH so it can pay out the user order.
+    tx!(
+        solver.account(),
+        onchain
+            .contracts()
+            .weth
+            .transfer(onchain.contracts().gp_settlement.address(), to_wei(1))
+    );
+
     let pair = onchain
         .contracts()
         .uniswap_v2_factory
@@ -720,14 +735,14 @@ async fn cow_amm_opposite_direction(web3: Web3) {
             None,
             vec![
                 "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
+                "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver"
                     .to_string(),
             ],
         )
         .await;
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
         ])
         .await;
 
