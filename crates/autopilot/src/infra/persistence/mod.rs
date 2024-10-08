@@ -130,7 +130,6 @@ impl Persistence {
         &self,
         auction_id: domain::auction::Id,
         solutions: &[domain::competition::Participant],
-        winners: &[&domain::competition::Participant],
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -147,10 +146,7 @@ impl Persistence {
                     uid: uid.try_into().context("uid overflow")?,
                     id: i64::try_from(participant.solution.id()).context("block overflow")?,
                     solver: ByteArray(participant.solution.solver().0 .0),
-                    is_winner: winners.iter().any(|winner| {
-                        winner.solution.id() == participant.solution.id()
-                            && winner.solution.solver() == participant.solution.solver()
-                    }),
+                    is_winner: participant.winner,
                     score: u256_to_big_decimal(&participant.solution.score().get().0),
                     orders: participant
                         .solution
