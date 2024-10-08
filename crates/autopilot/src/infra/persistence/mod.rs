@@ -892,6 +892,7 @@ impl Persistence {
             }
 
             // populate historic solutions
+            for solution in competition.solutions {}
 
             // todo: implement
         }
