@@ -485,24 +485,29 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let solutions = vec![Solution {
-            id: 0,
-            solver: Default::default(),
-            is_winner: true,
-            score: BigDecimal::from(1),
-            orders: vec![Order {
-                uid: Default::default(),
-                sell_token: Default::default(),
-                buy_token: Default::default(),
-                limit_sell: BigDecimal::from(1),
-                limit_buy: BigDecimal::from(1),
-                executed_sell: BigDecimal::from(1),
-                executed_buy: BigDecimal::from(1),
-                side: OrderKind::Sell,
-            }],
-            price_tokens: vec![Default::default()],
-            price_values: vec![BigDecimal::from(1)],
-        }];
+        let solutions = vec![
+            Solution {
+                uid: 0,
+                id: 0,
+                solver: ByteArray([1u8; 20]), // from solver 1
+                orders: vec![Default::default()],
+                ..Default::default()
+            },
+            Solution {
+                uid: 1,
+                id: 0,
+                solver: ByteArray([2u8; 20]), // from solver 2
+                orders: vec![Default::default()],
+                ..Default::default()
+            },
+            Solution {
+                uid: 2,
+                id: 1,
+                solver: ByteArray([2u8; 20]), // from solver 2
+                orders: vec![Default::default()],
+                ..Default::default()
+            },
+        ];
 
         save_solutions(&mut db, 0, &solutions).await.unwrap();
         let solutions_ = fetch_solutions(&mut db, 0).await.unwrap();
