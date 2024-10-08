@@ -477,4 +477,35 @@ mod tests {
         // inserted (2 fetched from "proposed_jit_orders" and 1 from "orders" table)
         assert!(fetched_solutions[2].orders.len() == 3);
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solutions_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let solutions = vec![Solution {
+            id: 0,
+            solver: Default::default(),
+            is_winner: true,
+            score: BigDecimal::from(1),
+            orders: vec![Order {
+                uid: Default::default(),
+                sell_token: Default::default(),
+                buy_token: Default::default(),
+                limit_sell: BigDecimal::from(1),
+                limit_buy: BigDecimal::from(1),
+                executed_sell: BigDecimal::from(1),
+                executed_buy: BigDecimal::from(1),
+                side: OrderKind::Sell,
+            }],
+            price_tokens: vec![Default::default()],
+            price_values: vec![BigDecimal::from(1)],
+        }];
+
+        save_solutions(&mut db, 0, &solutions).await.unwrap();
+        let solutions_ = fetch_solutions(&mut db, 0).await.unwrap();
+        assert_eq!(solutions, solutions_);
+    }
 }
