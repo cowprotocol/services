@@ -23,7 +23,7 @@ CREATE TABLE auctions (
 CREATE TABLE proposed_solutions (
    auction_id bigint NOT NULL,
    -- Has to be unique within auction (hash of the (solver + solutionId received from solver)?)
-   solution_id numeric NOT NULL,
+   solution_id bigint NOT NULL,
    -- solver submission address
    solver bytea NOT NULL,
    -- Whether the solution is one of the winning solutions of the auction

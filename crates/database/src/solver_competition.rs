@@ -73,7 +73,7 @@ WHERE s.tx_hash = $1
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Solution {
     pub id: i64,
     pub solver: Address,
@@ -85,7 +85,7 @@ pub struct Solution {
     pub price_values: Vec<BigDecimal>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Order {
     pub uid: OrderUid,
     pub sell_token: Address,
@@ -144,7 +144,7 @@ pub async fn save_solutions(
                 )
                 SELECT $1, $2, $3, $4, $5, $6, $7, $8
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM orders WHERE order_uid = $3
+                    SELECT 1 FROM orders WHERE uid = $3
                 )
                 ON CONFLICT (auction_id, solution_id, order_uid) DO NOTHING
             "#;
@@ -185,7 +185,7 @@ pub async fn fetch_solutions(
         LEFT JOIN proposed_jit_orders pjo
             ON pse.auction_id = pjo.auction_id AND pse.solution_id = pjo.solution_id AND pse.order_uid = pjo.order_uid
         LEFT JOIN orders o
-            ON pse.order_uid = o.order_uid
+            ON pse.order_uid = o.uid
         WHERE ps.auction_id = $1
     "#;
 
@@ -356,5 +356,36 @@ mod tests {
         // By id also sees the hash now.
         let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
         assert_eq!(hash, value_by_id.tx_hash.unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solutions_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let solutions = vec![Solution {
+            id: 0,
+            solver: Default::default(),
+            is_winner: true,
+            score: BigDecimal::from(1),
+            orders: vec![Order {
+                uid: Default::default(),
+                sell_token: Default::default(),
+                buy_token: Default::default(),
+                limit_sell: BigDecimal::from(1),
+                limit_buy: BigDecimal::from(1),
+                executed_sell: BigDecimal::from(1),
+                executed_buy: BigDecimal::from(1),
+                side: OrderKind::Sell,
+            }],
+            price_tokens: vec![Default::default()],
+            price_values: vec![BigDecimal::from(1)],
+        }];
+
+        save_solutions(&mut db, 0, &solutions).await.unwrap();
+        let solutions_ = fetch_solutions(&mut db, 0).await.unwrap();
+        assert_eq!(solutions, solutions_);
     }
 }
