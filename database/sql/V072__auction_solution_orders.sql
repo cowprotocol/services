@@ -1,7 +1,5 @@
--- Rename current `auctions` table to `latest_auction` since it always contains only one and only the latest auction
-ALTER TABLE auctions RENAME TO latest_auction;
-
-CREATE TABLE auctions (
+-- All auctions ran by autopilot
+CREATE TABLE competition_auctions (
    id bigint PRIMARY KEY,
    -- The block number at which the auction was created
    block bigint NOT NULL,

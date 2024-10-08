@@ -11,7 +11,7 @@ pub async fn load_most_recent(
 ) -> Result<Option<(AuctionId, JsonValue)>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT id, json
-FROM latest_auction
+FROM auctions
 ORDER BY id DESC
 LIMIT 1
     ;"#;
@@ -24,9 +24,9 @@ pub async fn replace_auction(
 ) -> Result<AuctionId, sqlx::Error> {
     const QUERY: &str = r#"
 WITH deleted AS (
-    DELETE FROM latest_auction
+    DELETE FROM auctions
 )
-INSERT INTO latest_auction (json)
+INSERT INTO auctions (json)
 VALUES ($1)
 RETURNING id;
     "#;
@@ -48,7 +48,7 @@ pub struct Auction {
 
 pub async fn save(ex: &mut PgConnection, auction: Auction) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners)
+INSERT INTO competition_auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
     ;"#;
 
@@ -67,7 +67,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 }
 
 pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auction>, sqlx::Error> {
-    const QUERY: &str = r#"SELECT * FROM auctions WHERE id = $1;"#;
+    const QUERY: &str = r#"SELECT * FROM competition_auctions WHERE id = $1;"#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
