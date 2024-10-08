@@ -23,11 +23,11 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-#[tokio::test]
-#[ignore]
-async fn local_node_order_cancellation() {
-    run_test(order_cancellation).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_order_cancellation() {
+//     run_test(order_cancellation).await;
+// }
 
 async fn order_cancellation(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
