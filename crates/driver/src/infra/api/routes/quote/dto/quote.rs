@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, eth, quote},
+        domain::{self, competition::solution::encoding::codec, eth, quote},
         util::serialize,
     },
     model::{
@@ -106,7 +106,7 @@ impl From<domain::competition::solution::trade::Jit> for JitOrder {
             side: jit.order().side.into(),
             sell_token_source: jit.order().sell_token_balance.into(),
             buy_token_destination: jit.order().buy_token_balance.into(),
-            signature: jit.order().signature.data.clone().into(),
+            signature: codec::signature(&jit.order().signature).0,
             signing_scheme: jit.order().signature.scheme.to_boundary_scheme(),
         }
     }

@@ -3,7 +3,7 @@ use {
     crate::{
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
-        encoded_settlement::{encode_trade, EncodedSettlement},
+        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         interaction::EncodedInteraction,
         trade_finding::{external::dto, Interaction, Trade},
     },
@@ -378,42 +378,7 @@ fn encode_settlement(
         OrderKind::Buy => vec![query.in_amount.get(), trade.out_amount],
     };
 
-    // Configure the most disadvantageous trade possible (while taking possible
-    // overflows into account). Should the trader not receive the amount promised by
-    // the [`Trade`] the simulation will still work and we can compute the actual
-    // [`Trade::out_amount`] afterwards.
-    let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (query.in_amount.get(), 0.into()),
-        OrderKind::Buy => (
-            trade.out_amount.max(U256::from(u128::MAX)),
-            query.in_amount.get(),
-        ),
-    };
-    let fake_order = OrderData {
-        sell_token: query.sell_token,
-        sell_amount,
-        buy_token: query.buy_token,
-        buy_amount,
-        receiver: Some(verification.receiver),
-        valid_to: u32::MAX,
-        app_data: Default::default(),
-        fee_amount: 0.into(),
-        kind: query.kind,
-        partially_fillable: false,
-        sell_token_balance: verification.sell_token_source,
-        buy_token_balance: verification.buy_token_destination,
-    };
-
-    let fake_signature = Signature::default_with(SigningScheme::Eip1271);
-    let encoded_trade = encode_trade(
-        &fake_order,
-        &fake_signature,
-        verification.from,
-        0,
-        1,
-        &query.in_amount.get(),
-    );
-    let mut trades = vec![encoded_trade];
+    let mut trades: Vec<EncodedTrade> = Vec::new();
     for jit_order in trade.jit_orders.iter() {
         let order_data = OrderData {
             sell_token: jit_order.sell_token,
@@ -432,13 +397,29 @@ fn encode_settlement(
             sell_token_balance: jit_order.sell_token_source,
             buy_token_balance: jit_order.buy_token_destination,
         };
-        let signature = Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
-        let owner = recover_owner(
-            &signature,
-            &order_data.hash_struct(),
-            &jit_order.signature,
-            domain_separator,
-        )?;
+        let (owner, signature) = match jit_order.signing_scheme {
+            SigningScheme::Eip1271 => {
+                let (owner, signature) = jit_order.signature.split_at(20);
+                let owner = H160::from_slice(owner);
+                let signature = Signature::from_bytes(jit_order.signing_scheme, signature)?;
+                (owner, signature)
+            }
+            SigningScheme::PreSign => {
+                let owner = H160::from_slice(&jit_order.signature);
+                let signature =
+                    Signature::from_bytes(jit_order.signing_scheme, Vec::new().as_slice())?;
+                (owner, signature)
+            }
+            _ => {
+                let signature =
+                    Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
+                let owner = signature
+                    .recover(domain_separator, &order_data.hash_struct())?
+                    .unwrap()
+                    .signer;
+                (owner, signature)
+            }
+        };
 
         trades.push(encode_trade(
             &order_data,
@@ -452,6 +433,45 @@ fn encode_settlement(
     let mut pre_interactions = verification.pre_interactions.clone();
     pre_interactions.extend(trade.pre_interactions.iter().cloned());
 
+    if trades.is_empty() {
+        // Configure the most disadvantageous trade possible (while taking possible
+        // overflows into account). Should the trader not receive the amount promised by
+        // the [`Trade`] the simulation will still work and we can compute the actual
+        // [`Trade::out_amount`] afterwards.
+        let (sell_amount, buy_amount) = match query.kind {
+            OrderKind::Sell => (query.in_amount.get(), 0.into()),
+            OrderKind::Buy => (
+                trade.out_amount.max(U256::from(u128::MAX)),
+                query.in_amount.get(),
+            ),
+        };
+        let fake_order = OrderData {
+            sell_token: query.sell_token,
+            sell_amount,
+            buy_token: query.buy_token,
+            buy_amount,
+            receiver: Some(verification.receiver),
+            valid_to: u32::MAX,
+            app_data: Default::default(),
+            fee_amount: 0.into(),
+            kind: query.kind,
+            partially_fillable: false,
+            sell_token_balance: verification.sell_token_source,
+            buy_token_balance: verification.buy_token_destination,
+        };
+
+        let fake_signature = Signature::default_with(SigningScheme::Eip1271);
+        let encoded_trade = encode_trade(
+            &fake_order,
+            &fake_signature,
+            verification.from,
+            0,
+            1,
+            &query.in_amount.get(),
+        );
+        trades.push(encoded_trade);
+    }
+
     Ok(EncodedSettlement {
         tokens,
         clearing_prices,
@@ -462,41 +482,6 @@ fn encode_settlement(
             encode_interactions(&verification.post_interactions),
         ],
     })
-}
-
-fn recover_owner(
-    signature: &Signature,
-    struct_hash: &[u8; 32],
-    raw_bytes: &[u8],
-    domain_separator: &DomainSeparator,
-) -> Result<H160> {
-    let owner = if let Some(recovered) = signature.recover(domain_separator, struct_hash)? {
-        recovered.signer
-    } else {
-        match signature {
-            Signature::Eip1271(_) => {
-                if raw_bytes.len() < 20 {
-                    return Err(anyhow::anyhow!("Eip1271 signature too short"));
-                }
-                let owner_bytes: &[u8; 20] = &raw_bytes[0..20]
-                    .try_into()
-                    .context("slice is exactly 20 bytes")?;
-                H160::from_slice(owner_bytes)
-            }
-            Signature::PreSign => {
-                if raw_bytes.len() != 20 {
-                    return Err(anyhow::anyhow!("PreSign is not 20 bytes length"));
-                }
-                H160::from_slice(raw_bytes)
-            }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "Signature::recover must be used for Eip712 and EthSign signatures"
-                ))
-            }
-        }
-    };
-    Ok(owner)
 }
 
 /// Adds the interactions that are only needed to query important balances
