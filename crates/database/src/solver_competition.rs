@@ -78,6 +78,7 @@ pub struct Solution {
     pub id: i64,
     pub solver: Address,
     pub is_winner: bool,
+    pub score: BigDecimal,
     pub orders: Vec<Order>,
     // UCP prices
     pub price_tokens: Vec<Address>,
@@ -104,8 +105,8 @@ pub async fn save_solutions(
     // todo merge into three queries
     for solution in solutions {
         const QUERY: &str = r#"
-            INSERT INTO proposed_solutions (auction_id, solution_id, solver, is_winner, price_tokens, price_values)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO proposed_solutions (auction_id, solution_id, solver, is_winner, score, price_tokens, price_values)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (auction_id, solution_id) DO NOTHING
         "#;
         sqlx::query(QUERY)
@@ -113,6 +114,7 @@ pub async fn save_solutions(
             .bind(solution.id)
             .bind(solution.solver)
             .bind(solution.is_winner)
+            .bind(&solution.score)
             .bind(&solution.price_tokens)
             .bind(&solution.price_values)
             .execute(ex.deref_mut())
@@ -170,7 +172,7 @@ pub async fn fetch_solutions(
 ) -> Result<Vec<Solution>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT 
-            ps.solution_id, ps.solver, ps.is_winner, ps.price_tokens, ps.price_values,
+            ps.solution_id, ps.solver, ps.is_winner, ps.score, ps.price_tokens, ps.price_values,
             pse.order_uid, pse.executed_sell, pse.executed_buy,
             COALESCE(pjo.sell_token, o.sell_token) AS sell_token,
             COALESCE(pjo.buy_token, o.buy_token) AS buy_token,
@@ -191,6 +193,7 @@ pub async fn fetch_solutions(
         i64,
         Address,
         bool,
+        BigDecimal,
         Vec<Address>,
         Vec<BigDecimal>,
         OrderUid,
@@ -210,6 +213,7 @@ pub async fn fetch_solutions(
             solution_id,
             solver,
             is_winner,
+            score,
             price_tokens,
             price_values,
             order_uid,
@@ -239,6 +243,7 @@ pub async fn fetch_solutions(
                 id: solution_id,
                 solver,
                 is_winner,
+                score,
                 orders: Vec::new(),
                 price_tokens,
                 price_values,

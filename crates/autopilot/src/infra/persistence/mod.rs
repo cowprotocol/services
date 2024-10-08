@@ -149,6 +149,7 @@ impl Persistence {
                         winner.solution.id() == participant.solution.id()
                             && winner.solution.solver() == participant.solution.solver()
                     }),
+                    score: u256_to_big_decimal(&participant.solution.score().get().0),
                     orders: participant
                         .solution
                         .orders()

@@ -28,6 +28,8 @@ CREATE TABLE proposed_solutions (
    solver bytea NOT NULL,
    -- Whether the solution is one of the winning solutions of the auction
    is_winner boolean NOT NULL,
+   -- The score of the solution
+   score numeric(78,0) NOT NULL,
    -- UCP price tokens
    price_tokens bytea[] NOT NULL,
    -- UCP price values
