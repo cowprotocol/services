@@ -221,6 +221,7 @@ async fn create_config_file(
                     file,
                     r#"[[submission.mempool]]
                     mempool = "public"
+                    additional-tip-percentage = 0.0
                     "#,
                 )
                 .unwrap();
