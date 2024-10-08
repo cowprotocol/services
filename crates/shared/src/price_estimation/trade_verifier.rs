@@ -128,6 +128,8 @@ impl TradeVerifier {
             )
             .tx;
 
+        tracing::info!("newlog settlement={:?}", settlement);
+
         let sell_amount = match query.kind {
             OrderKind::Sell => query.in_amount.get(),
             OrderKind::Buy => trade.out_amount,

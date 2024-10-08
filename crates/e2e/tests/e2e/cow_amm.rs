@@ -1112,7 +1112,13 @@ async fn cow_amm_quoting(web3: Web3) {
         ])
         .await;
 
-    onchain.mint_block().await;
+    let block = web3
+        .eth()
+        .block(BlockId::Number(BlockNumber::Latest))
+        .await
+        .unwrap()
+        .unwrap();
+    let valid_to = block.timestamp.as_u32() + 300;
 
     // CoW AMM order remains the same (selling WETH for DAI)
     let cow_amm_order = OrderData {
@@ -1121,7 +1127,7 @@ async fn cow_amm_quoting(web3: Web3) {
         receiver: None,
         sell_amount: U256::exp10(17), // 0.1 WETH
         buy_amount: to_wei(230),      // 230 DAI
-        valid_to: u32::MAX,
+        valid_to,
         app_data: AppDataHash(APP_DATA),
         fee_amount: 0.into(),
         kind: OrderKind::Sell,
@@ -1257,7 +1263,7 @@ async fn cow_amm_quoting(web3: Web3) {
     };
 
     let quote_response = services.submit_quote(&quote_request).await;
-    tokio::time::sleep(tokio::time::Duration::from_secs(120)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
     let quote_response = quote_response.unwrap();
     tracing::info!("newlog quote_response={:?}", quote_response);
     assert!(quote_response.verified);
