@@ -40,7 +40,7 @@ pub struct Auction {
     pub id: AuctionId,
     pub block: i64,
     pub deadline: i64,
-    pub orders: Vec<OrderUid>,
+    pub order_uids: Vec<OrderUid>,
     pub price_tokens: Vec<Address>,
     pub price_values: Vec<BigDecimal>,
     pub surplus_capturing_jit_order_owners: Vec<Address>,
@@ -48,7 +48,7 @@ pub struct Auction {
 
 pub async fn save(ex: &mut PgConnection, auction: Auction) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO auctions (id, block, deadline, orders, price_tokens, price_values, surplus_capturing_jit_order_owners)
+INSERT INTO auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
     ;"#;
 
@@ -56,7 +56,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
         .bind(auction.id)
         .bind(auction.block)
         .bind(auction.deadline)
-        .bind(auction.orders)
+        .bind(auction.order_uids)
         .bind(auction.price_tokens)
         .bind(auction.price_values)
         .bind(auction.surplus_capturing_jit_order_owners)
@@ -101,7 +101,7 @@ mod tests {
             id: id_,
             block: 1,
             deadline: 2,
-            orders: vec![ByteArray([1u8; 56])],
+            order_uids: vec![ByteArray([1u8; 56])],
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(1)],
             surplus_capturing_jit_order_owners: vec![ByteArray([1u8; 20])],
