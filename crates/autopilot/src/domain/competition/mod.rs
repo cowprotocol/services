@@ -104,6 +104,22 @@ pub struct Participant {
     pub winner: bool,
 }
 
+/// Returns the order IDs of the winning solutions.
+pub fn winning_orders(participants: &[Participant]) -> impl Iterator<Item = &domain::OrderUid> {
+    participants
+        .iter()
+        .filter(|p| p.winner)
+        .flat_map(|p| p.solution.order_ids())
+}
+
+/// Returns the order IDs of the non-winning solutions.
+pub fn non_winning_orders(participants: &[Participant]) -> impl Iterator<Item = &domain::OrderUid> {
+    participants
+        .iter()
+        .filter(|p| !p.winner)
+        .flat_map(|p| p.solution.order_ids())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("the solver proposed a 0-score solution")]
 pub struct ZeroScore;
