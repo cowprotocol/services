@@ -264,22 +264,30 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 kind: match mempool {
-                    file::Mempool::Public => {
+                    file::Mempool::Public {
+                        max_additional_tip,
+                        additional_tip_percentage,
+                        ..
+                    } => {
                         // If there is no private mempool, revert protection is
                         // disabled, otherwise driver would not even try to settle revertable
                         // settlements
-                        mempool::Kind::Public(
-                            if config
-                                .submission
-                                .mempools
-                                .iter()
-                                .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
-                            {
-                                mempool::RevertProtection::Enabled
-                            } else {
-                                mempool::RevertProtection::Disabled
-                            },
-                        )
+                        let revert_protection = if config
+                            .submission
+                            .mempools
+                            .iter()
+                            .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
+                        {
+                            mempool::RevertProtection::Enabled
+                        } else {
+                            mempool::RevertProtection::Disabled
+                        };
+
+                        mempool::Kind::Public {
+                            max_additional_tip: *max_additional_tip,
+                            additional_tip_percentage: *additional_tip_percentage,
+                            revert_protection,
+                        }
                     }
                     file::Mempool::MevBlocker {
                         url,

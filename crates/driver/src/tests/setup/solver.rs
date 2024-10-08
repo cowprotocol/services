@@ -382,7 +382,11 @@ impl Solver {
                     gas_price_cap: eth::U256::MAX,
                     target_confirm_time: Default::default(),
                     retry_interval: Default::default(),
-                    kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
+                    kind: infra::mempool::Kind::Public {
+                        max_additional_tip: 0.into(),
+                        additional_tip_percentage: 0.,
+                        revert_protection: infra::mempool::RevertProtection::Disabled,
+                    },
                 }],
             )
             .await
