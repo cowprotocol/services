@@ -76,6 +76,10 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         ])
         .await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     // Place Order
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -94,6 +98,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services.create_order(&order).await.unwrap();
 
     tracing::info!("waiting for first trade");
+    onchain.mint_block().await;
     let trade_happened =
         || async { token_b.balance_of(trader.address()).call().await.unwrap() == order.buy_amount };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

@@ -88,6 +88,10 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
@@ -262,9 +266,9 @@ async fn single_replace_order_test(web3: Web3) {
     assert_eq!(old_order.metadata.status, OrderStatus::Cancelled);
 
     // Drive solution
-    onchain.mint_block().await;
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
         balance_before.saturating_sub(balance_after) == to_wei(3)
     })

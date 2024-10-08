@@ -46,6 +46,10 @@ async fn eth_integration(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let quote = |sell_token, buy_token| {
         let services = &services;
         async move {
@@ -102,6 +106,7 @@ async fn eth_integration(web3: Web3) {
     services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
+    onchain.mint_block().await;
     let trade_happened = || async {
         let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
         let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();

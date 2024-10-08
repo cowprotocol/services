@@ -52,6 +52,10 @@ async fn single_limit_order_test(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let mock_solver = Mock::default();
 
     // Start system
@@ -163,6 +167,7 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let trader_balance_after = token.balance_of(trader.address()).call().await.unwrap();
         let solver_balance_after = token.balance_of(solver.address()).call().await.unwrap();

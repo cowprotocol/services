@@ -23,11 +23,11 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-// #[tokio::test]
-// #[ignore]
-// async fn local_node_order_cancellation() {
-//     run_test(order_cancellation).await;
-// }
+#[tokio::test]
+#[ignore]
+async fn local_node_order_cancellation() {
+    run_test(order_cancellation).await;
+}
 
 async fn order_cancellation(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -74,6 +74,10 @@ async fn order_cancellation(web3: Web3) {
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
+
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
 
     let place_order = |salt: u8| {
         let services = &services;
@@ -175,6 +179,7 @@ async fn order_cancellation(web3: Web3) {
         place_order(1).await,
         place_order(2).await,
     ];
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 3
     })
@@ -200,6 +205,7 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.len() == 2
     })
@@ -221,6 +227,7 @@ async fn order_cancellation(web3: Web3) {
 
     // Cancel the other two.
     cancel_orders(vec![order_uids[1], order_uids[2]]).await;
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })

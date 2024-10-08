@@ -140,6 +140,10 @@ async fn single_limit_order_test(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
@@ -233,6 +237,10 @@ async fn two_limit_orders_test(web3: Web3) {
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
+
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -532,6 +540,10 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let order = OrderCreation {
         sell_token: token_usdc.address(),
         sell_amount: to_wei_with_exp(1000, 6),
@@ -580,6 +592,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
 
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let sell_token_balance_after = token_usdc
             .balance_of(trader.address())
             .call()
@@ -640,6 +653,10 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let order = OrderCreation {
         sell_token: token_usdc.address(),
         sell_amount: to_wei_with_exp(1000, 6),
@@ -670,7 +687,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let sell_token_balance_after = token_usdc
             .balance_of(trader.address())
@@ -740,6 +757,10 @@ async fn no_liquidity_limit_order(web3: Web3) {
         )
         .await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     // Place order
     let mut order = OrderCreation {
         sell_token: token_a.address(),
@@ -789,12 +810,9 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Keep minting blocks to eventually invalidate the liquidity cached by the
     // driver making it refetch the current state which allows it to finally compute
     // a solution.
-    for _ in 0..20 {
-        onchain.mint_block().await;
-    }
-
     // wait for trade to be indexed and post-processed
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services
             .get_trades(&order_id)
             .await

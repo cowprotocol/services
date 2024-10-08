@@ -45,6 +45,10 @@ async fn test_cancel_on_expiry(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver.clone()).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     // Disable auto-mine so we don't accidentally mine a settlement
     web3.api::<TestNodeApi<_>>()
         .disable_automine()
@@ -79,6 +83,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
         .stream(Duration::from_millis(50));
 
     // Wait for settlement tx to appear in txpool
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         get_pending_tx(solver.account().address(), &web3)
             .await

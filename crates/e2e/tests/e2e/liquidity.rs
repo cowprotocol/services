@@ -164,6 +164,10 @@ async fn zero_ex_liquidity(web3: Web3) {
         ])
         .await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     // Drive solution
     let sell_token_balance_before = token_usdc
         .balance_of(trader.address())
@@ -180,6 +184,7 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         token_usdc
             .balance_of(trader.address())
             .call()

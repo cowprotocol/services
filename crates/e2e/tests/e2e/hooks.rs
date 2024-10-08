@@ -132,6 +132,10 @@ async fn allowance(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     let order = OrderCreation {
         sell_token: cow.address(),
         sell_amount: to_wei(5),
@@ -300,6 +304,10 @@ async fn signature(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     // Place Orders
     let mut order = OrderCreation {
         from: Some(safe.address()),
@@ -344,6 +352,7 @@ async fn signature(web3: Web3) {
             .unwrap()
             .is_zero()
     };
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
@@ -396,6 +405,10 @@ async fn partial_fills(web3: Web3) {
     tracing::info!("Starting services.");
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
+
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
 
     tracing::info!("Placing order");
     let order = OrderCreation {

@@ -44,6 +44,10 @@ async fn vault_balances(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_protocol(solver).await;
 
+    // We force the block to start before the test, so the auction is not cut by the
+    // block in the middle of the operations, creating uncertainty
+    onchain.mint_block().await;
+
     // Place Orders
     let order = OrderCreation {
         kind: OrderKind::Sell,

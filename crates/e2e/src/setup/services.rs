@@ -145,7 +145,7 @@ impl<'a> Services<'a> {
         let args = [
             "autopilot".to_string(),
             "--run-loop-mode=sync-to-blockchain".to_string(),
-            "--max-run-loop-delay=200ms".to_string(),
+            "--max-run-loop-delay=400ms".to_string(),
             "--auction-update-interval=1s".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
