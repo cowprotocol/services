@@ -359,3 +359,12 @@ impl From<FeePolicy> for domain::fee::Policy {
         }
     }
 }
+
+impl From<domain::auction::order::Side> for database::orders::OrderKind {
+    fn from(side: domain::auction::order::Side) -> Self {
+        match side {
+            domain::auction::order::Side::Buy => Self::Buy,
+            domain::auction::order::Side::Sell => Self::Sell,
+        }
+    }
+}

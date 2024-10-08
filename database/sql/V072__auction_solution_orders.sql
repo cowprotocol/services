@@ -28,6 +28,10 @@ CREATE TABLE proposed_solutions (
    solver bytea NOT NULL,
    -- Whether the solution is one of the winning solutions of the auction
    is_winner boolean NOT NULL,
+   -- UCP price tokens
+   price_tokens bytea[] NOT NULL,
+   -- UCP price values
+   price_values numeric(78,0)[] NOT NULL,
 
    PRIMARY KEY (auction_id, solution_id)
 );
@@ -37,10 +41,6 @@ CREATE TABLE proposed_solution_executions (
    auction_id bigint NOT NULL,
    solution_id numeric NOT NULL,
    order_uid bytea NOT NULL,
-   -- Uniform clearing price of the sell token
-   sell_token_price numeric(78,0) NOT NULL,
-   -- Uniform clearing price of the buy token
-   buy_token_price numeric(78,0) NOT NULL,
    -- The effective amount that left the user's wallet including all fees.
    executed_sell numeric(78,0) NOT NULL,
    -- The effective amount the user received after all fees.

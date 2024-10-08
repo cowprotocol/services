@@ -1,11 +1,11 @@
 use {
     super::auction::order,
     crate::{
-        domain,
-        domain::{auction, eth},
+        domain::{self, auction, eth},
+        infra,
     },
     derive_more::Display,
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
 };
 
 type SolutionId = u64;
@@ -89,6 +89,11 @@ impl Score {
     pub fn get(&self) -> &eth::Ether {
         &self.0
     }
+}
+
+pub struct Participant {
+    pub driver: Arc<infra::Driver>,
+    pub solution: Solution,
 }
 
 #[derive(Debug, thiserror::Error)]

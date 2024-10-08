@@ -19,6 +19,7 @@ use {
             SigningScheme as DbSigningScheme,
         },
         settlement_observations::Observation,
+        solver_competition::{Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -30,7 +31,7 @@ use {
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{HashMap, HashSet, VecDeque},
         ops::DerefMut,
         sync::Arc,
     },
@@ -127,8 +128,8 @@ impl Persistence {
     pub async fn save_solutions(
         &self,
         auction: &domain::Auction,
-        solutions: &[crate::run_loop::Participant], // todo move to domain
-        winners: &[&crate::run_loop::Participant],  // todo move to domain
+        solutions: &VecDeque<domain::competition::Participant>,
+        winners: &[&domain::competition::Participant],
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
@@ -137,7 +138,49 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
 
-        database::solver_competition::save_solutions(&mut ex, auction.id, solutions).await?;
+        let solutions = solutions
+            .iter()
+            .map(|participant| {
+                let solution = Solution {
+                    id: i64::try_from(participant.solution.id()).context("block overflow")?,
+                    solver: ByteArray(participant.solution.solver().0 .0),
+                    is_winner: winners.iter().any(|winner| {
+                        winner.solution.id() == participant.solution.id()
+                            && winner.solution.solver() == participant.solution.solver()
+                    }),
+                    orders: participant
+                        .solution
+                        .orders()
+                        .iter()
+                        .map(|(order_uid, order)| Order {
+                            uid: ByteArray(order_uid.0),
+                            sell_token: ByteArray(order.sell.token.0 .0),
+                            buy_token: ByteArray(order.buy.token.0 .0),
+                            limit_sell: u256_to_big_decimal(&order.sell.amount.0),
+                            limit_buy: u256_to_big_decimal(&order.buy.amount.0),
+                            executed_sell: u256_to_big_decimal(&order.executed_sell.0),
+                            executed_buy: u256_to_big_decimal(&order.executed_buy.0),
+                            side: order.side.into(),
+                        })
+                        .collect(),
+                    price_tokens: participant
+                        .solution
+                        .prices()
+                        .keys()
+                        .map(|token| ByteArray(token.0 .0))
+                        .collect(),
+                    price_values: participant
+                        .solution
+                        .prices()
+                        .values()
+                        .map(|price| u256_to_big_decimal(&price.get().0))
+                        .collect(),
+                };
+                Ok::<_, DatabaseError>(solution)
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        database::solver_competition::save_solutions(&mut ex, auction.id, &solutions).await?;
 
         Ok(ex.commit().await?)
     }
@@ -716,14 +759,7 @@ impl Persistence {
                                     valid_to: i64::from(jit_order.valid_to),
                                     app_data: ByteArray(jit_order.app_data.0),
                                     fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
-                                    kind: match jit_order.side {
-                                        domain::auction::order::Side::Buy => {
-                                            database::orders::OrderKind::Buy
-                                        }
-                                        domain::auction::order::Side::Sell => {
-                                            database::orders::OrderKind::Sell
-                                        }
-                                    },
+                                    kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
                                     receiver: ByteArray(jit_order.receiver.0 .0),
@@ -809,7 +845,6 @@ impl Persistence {
             }
 
             // populate historic solutions
-            for solution in competition.solutions {}
 
             // todo: implement
         }

@@ -79,6 +79,9 @@ pub struct Solution {
     pub solver: Address,
     pub is_winner: bool,
     pub orders: Vec<Order>,
+    // UCP prices
+    pub price_tokens: Vec<Address>,
+    pub price_values: Vec<BigDecimal>,
 }
 
 #[derive(Clone, Debug)]
@@ -90,40 +93,6 @@ pub struct Order {
     pub limit_buy: BigDecimal,
     pub executed_sell: BigDecimal,
     pub executed_buy: BigDecimal,
-    pub sell_token_price: BigDecimal,
-    pub buy_token_price: BigDecimal,
-    pub side: OrderKind,
-    pub is_jit: bool,
-}
-
-#[derive(Clone, Debug, sqlx::FromRow)]
-struct ProposedSolution {
-    pub auction_id: AuctionId,
-    pub solution_id: i64,
-    pub solver: Address,
-    pub is_winner: bool,
-}
-
-#[derive(Clone, Debug, sqlx::FromRow)]
-struct ProposedSolutionExecutions {
-    pub auction_id: AuctionId,
-    pub solution_id: i64,
-    pub order_uid: OrderUid,
-    pub sell_token_price: BigDecimal,
-    pub buy_token_price: BigDecimal,
-    pub executed_sell: BigDecimal,
-    pub executed_buy: BigDecimal,
-}
-
-#[derive(Clone, Debug, sqlx::FromRow)]
-struct ProposedJitOrders {
-    pub auction_id: AuctionId,
-    pub solution_id: i64,
-    pub order_uid: OrderUid,
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub limit_sell: BigDecimal,
-    pub limit_buy: BigDecimal,
     pub side: OrderKind,
 }
 
@@ -132,10 +101,11 @@ pub async fn save_solutions(
     auction_id: AuctionId,
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
+    // todo merge into three queries
     for solution in solutions {
         const QUERY: &str = r#"
-            INSERT INTO proposed_solutions (auction_id, solution_id, solver, is_winner)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO proposed_solutions (auction_id, solution_id, solver, is_winner, price_tokens, price_values)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (auction_id, solution_id) DO NOTHING
         "#;
         sqlx::query(QUERY)
@@ -143,15 +113,17 @@ pub async fn save_solutions(
             .bind(solution.id)
             .bind(solution.solver)
             .bind(solution.is_winner)
+            .bind(&solution.price_tokens)
+            .bind(&solution.price_values)
             .execute(ex.deref_mut())
             .await?;
 
         for order in &solution.orders {
             const QUERY: &str = r#"
                 INSERT INTO proposed_solution_executions (
-                    auction_id, solution_id, order_uid, sell_token_price, buy_token_price, executed_sell, executed_buy
+                    auction_id, solution_id, order_uid, executed_sell, executed_buy
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (auction_id, solution_id, order_uid) DO NOTHING
             "#;
 
@@ -159,108 +131,123 @@ pub async fn save_solutions(
                 .bind(auction_id)
                 .bind(solution.id)
                 .bind(order.uid)
-                .bind(order.sell_token_price.clone())
-                .bind(order.buy_token_price.clone())
                 .bind(order.executed_sell.clone())
                 .bind(order.executed_buy.clone())
                 .execute(ex.deref_mut())
                 .await?;
 
-            if order.is_jit {
-                const QUERY: &str = r#"
-                    INSERT INTO proposed_jit_orders (
-                        auction_id, solution_id, order_uid, sell_token, buy_token, limit_sell, limit_buy, side
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                    ON CONFLICT (auction_id, solution_id, order_uid) DO NOTHING
-                "#;
+            const QUERY_JIT: &str = r#"
+                INSERT INTO proposed_jit_orders (
+                    auction_id, solution_id, order_uid, sell_token, buy_token, limit_sell, limit_buy, side
+                )
+                SELECT $1, $2, $3, $4, $5, $6, $7, $8
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM orders WHERE order_uid = $3
+                )
+                ON CONFLICT (auction_id, solution_id, order_uid) DO NOTHING
+            "#;
 
-                sqlx::query(QUERY)
-                    .bind(auction_id)
-                    .bind(solution.id)
-                    .bind(order.uid)
-                    .bind(order.sell_token)
-                    .bind(order.buy_token)
-                    .bind(order.limit_sell.clone())
-                    .bind(order.limit_buy.clone())
-                    .bind(order.side)
-                    .execute(ex.deref_mut())
-                    .await?;
-            }
+            sqlx::query(QUERY_JIT)
+                .bind(auction_id)
+                .bind(solution.id)
+                .bind(order.uid)
+                .bind(order.sell_token)
+                .bind(order.buy_token)
+                .bind(order.limit_sell.clone())
+                .bind(order.limit_buy.clone())
+                .bind(order.side)
+                .execute(ex.deref_mut())
+                .await?;
         }
     }
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 pub async fn fetch_solutions(
     ex: &mut PgConnection,
     auction_id: AuctionId,
 ) -> Result<Vec<Solution>, sqlx::Error> {
     const QUERY: &str = r#"
-        SELECT * FROM proposed_solutions WHERE auction_id = $1
+        SELECT 
+            ps.solution_id, ps.solver, ps.is_winner, ps.price_tokens, ps.price_values,
+            pse.order_uid, pse.executed_sell, pse.executed_buy,
+            COALESCE(pjo.sell_token, o.sell_token) AS sell_token,
+            COALESCE(pjo.buy_token, o.buy_token) AS buy_token,
+            COALESCE(pjo.limit_sell, o.sell_amount) AS limit_sell,
+            COALESCE(pjo.limit_buy, o.buy_amount) AS limit_buy,
+            COALESCE(pjo.side, o.kind) AS side
+        FROM proposed_solutions ps
+        LEFT JOIN proposed_solution_executions pse
+            ON ps.auction_id = pse.auction_id AND ps.solution_id = pse.solution_id
+        LEFT JOIN proposed_jit_orders pjo
+            ON pse.auction_id = pjo.auction_id AND pse.solution_id = pjo.solution_id AND pse.order_uid = pjo.order_uid
+        LEFT JOIN orders o
+            ON pse.order_uid = o.order_uid
+        WHERE ps.auction_id = $1
     "#;
-    let proposed_solutions: Vec<ProposedSolution> =
-        sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
 
-    let mut solutions = Vec::new();
-    for proposed_solution in proposed_solutions {
-        const QUERY: &str = r#"
-            SELECT * FROM proposed_solution_executions WHERE auction_id = $1 AND solution_id = $2
-        "#;
-        let proposed_solution_executions: Vec<ProposedSolutionExecutions> = sqlx::query_as(QUERY)
-            .bind(auction_id)
-            .bind(proposed_solution.solution_id)
-            .fetch_all(ex)
-            .await?;
+    let rows: Vec<(
+        i64,
+        Address,
+        bool,
+        Vec<Address>,
+        Vec<BigDecimal>,
+        OrderUid,
+        BigDecimal,
+        BigDecimal,
+        Address,
+        Address,
+        BigDecimal,
+        BigDecimal,
+        OrderKind,
+    )> = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
 
-        const QUERY_JIT: &str = r#"
-            SELECT * FROM proposed_jit_orders WHERE auction_id = $1 AND solution_id = $2
-        "#;
-        let proposed_jit_orders: Vec<ProposedJitOrders> = sqlx::query_as(QUERY_JIT)
-            .bind(auction_id)
-            .bind(proposed_solution.solution_id)
-            .fetch_all(ex)
-            .await?;
+    let mut solutions_map = std::collections::HashMap::new();
 
-        let orders = proposed_solution_executions
-            .into_iter()
-            .map(|execution| {
-                let jit_order = proposed_jit_orders
-                    .iter()
-                    .find(|order| order.order_uid == execution.order_uid);
-                Order {
-                    uid: execution.order_uid,
-                    sell_token: jit_order
-                        .map(|order| order.sell_token.clone())
-                        .unwrap_or_default(),
-                    buy_token: jit_order
-                        .map(|order| order.buy_token.clone())
-                        .unwrap_or_default(),
-                    limit_sell: jit_order
-                        .map(|order| order.limit_sell.clone())
-                        .unwrap_or_default(),
-                    limit_buy: jit_order
-                        .map(|order| order.limit_buy.clone())
-                        .unwrap_or_default(),
-                    executed_sell: execution.executed_sell,
-                    executed_buy: execution.executed_buy,
-                    sell_token_price: execution.sell_token_price,
-                    buy_token_price: execution.buy_token_price,
-                    side: jit_order.map(|order| order.side).unwrap_or_default(),
-                    is_jit: jit_order.is_some(),
-                }
+    for row in rows {
+        let (
+            solution_id,
+            solver,
+            is_winner,
+            price_tokens,
+            price_values,
+            order_uid,
+            executed_sell,
+            executed_buy,
+            sell_token,
+            buy_token,
+            limit_sell,
+            limit_buy,
+            side,
+        ) = row;
+
+        let order = Order {
+            uid: order_uid,
+            sell_token,
+            buy_token,
+            limit_sell,
+            limit_buy,
+            executed_sell,
+            executed_buy,
+            side,
+        };
+
+        solutions_map
+            .entry(solution_id)
+            .or_insert_with(|| Solution {
+                id: solution_id,
+                solver,
+                is_winner,
+                orders: Vec::new(),
+                price_tokens,
+                price_values,
             })
-            .collect();
-
-        solutions.push(Solution {
-            id: proposed_solution.solution_id,
-            solver: proposed_solution.solver,
-            is_winner: proposed_solution.is_winner,
-            orders,
-        });
+            .orders
+            .push(order);
     }
 
-    Ok(solutions)
+    Ok(solutions_map.into_values().collect())
 }
 
 // TODO delete
