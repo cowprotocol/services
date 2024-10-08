@@ -286,8 +286,8 @@ impl RunLoop {
             self.start_settlement_execution(
                 auction.id,
                 single_run_start,
-                driver,
-                solution,
+                &winner.driver,
+                &winner.solution,
                 block_deadline,
             )
             .await;

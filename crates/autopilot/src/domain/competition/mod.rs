@@ -95,6 +95,7 @@ impl Score {
 pub struct Participant {
     pub driver: Arc<infra::Driver>,
     pub solution: Solution,
+    pub winner: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
