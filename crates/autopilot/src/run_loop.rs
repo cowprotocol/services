@@ -270,7 +270,7 @@ impl RunLoop {
                 competition_simulation_block,
                 // TODO: Support multiple winners
                 // https://github.com/cowprotocol/services/issues/3021
-                &winners.first().expect("must exist").solution,
+                &winners,
                 &solutions,
                 block_deadline,
             )
@@ -389,11 +389,12 @@ impl RunLoop {
         &self,
         auction: &domain::Auction,
         competition_simulation_block: u64,
-        winning_solution: &competition::Solution,
+        winners: &[&Participant],
         solutions: &VecDeque<Participant>,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
+        let winning_solution = winners.first().expect("winners must not be empty").solution;
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
@@ -492,6 +493,9 @@ impl RunLoop {
         if let Err(err) = self.persistence.save_auction(auction, block_deadline).await {
             tracing::warn!(?err, "failed to save auction");
         };
+        if let Err(err) = self.persistence.save_solutions(auction, solutions, winners).await {
+            tracing::warn!(?err, "failed to save solutions");
+        }
         futures::try_join!(
             self.persistence
                 .save_competition(&competition)
@@ -909,7 +913,7 @@ impl RunLoop {
     }
 }
 
-struct Participant {
+pub struct Participant {
     driver: Arc<infra::Driver>,
     solution: competition::Solution,
 }

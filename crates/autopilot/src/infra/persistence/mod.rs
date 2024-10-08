@@ -123,6 +123,25 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
+    /// Save auction related data to the database.
+    pub async fn save_solutions(
+        &self,
+        auction: &domain::Auction,
+        solutions: &[crate::run_loop::Participant], // todo move to domain
+        winners: &[&crate::run_loop::Participant],  // todo move to domain
+    ) -> Result<(), DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["save_solutions"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.begin().await?;
+
+        database::solver_competition::save_solutions(&mut ex, auction.id, solutions).await?;
+
+        Ok(ex.commit().await?)
+    }
+
     /// Saves the surplus capturing jit order owners to the DB
     pub async fn save_surplus_capturing_jit_orders_orders(
         &self,
@@ -790,6 +809,7 @@ impl Persistence {
             }
 
             // populate historic solutions
+            for solution in competition.solutions {}
 
             // todo: implement
         }
