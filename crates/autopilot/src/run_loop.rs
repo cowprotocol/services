@@ -17,7 +17,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::Result,
+    anyhow::{anyhow, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
@@ -520,6 +520,8 @@ impl RunLoop {
         {
             tracing::warn!(?err, "failed to save solutions");
         }
+
+        tracing::trace!(?competition, "saving competition");
         futures::try_join!(
             self.persistence
                 .save_auction(auction_id, &auction, block_deadline)
