@@ -595,13 +595,13 @@ impl RunLoop {
         winners
     }
 
-    /// Returns true if winning solution is fair
+    /// Returns true if solution is fair to other solutions
     fn is_solution_fair(
-        winner: &Participant,
-        remaining: &[Participant],
+        solution: &Participant,
+        others: &[Participant],
         auction: &domain::Auction,
     ) -> bool {
-        let Some(fairness_threshold) = winner.driver.fairness_threshold else {
+        let Some(fairness_threshold) = solution.driver.fairness_threshold else {
             return true;
         };
 
@@ -629,7 +629,7 @@ impl RunLoop {
 
         // Record best execution per order
         let mut best_executions = HashMap::new();
-        for other in remaining {
+        for other in others {
             for (uid, execution) in other.solution.orders() {
                 best_executions
                     .entry(uid)
@@ -642,16 +642,16 @@ impl RunLoop {
             }
         }
 
-        // Check if the winning solution contains an order whose execution in the
-        // winning solution is more than `fairness_threshold` worse than the
+        // Check if the solution contains an order whose execution in the
+        // solution is more than `fairness_threshold` worse than the
         // order's best execution across all solutions
-        let unfair = winner
+        let unfair = solution
             .solution
             .orders()
             .iter()
-            .any(|(uid, winning_execution)| {
+            .any(|(uid, current_execution)| {
                 let best_execution = best_executions.get(uid).expect("by construction above");
-                let improvement = improvement_in_buy(best_execution, winning_execution);
+                let improvement = improvement_in_buy(best_execution, current_execution);
                 if improvement.is_zero() {
                     return false;
                 };
@@ -659,7 +659,7 @@ impl RunLoop {
                     ?uid,
                     ?improvement,
                     ?best_execution,
-                    ?winning_execution,
+                    ?current_execution,
                     "fairness check"
                 );
                 // Improvement is denominated in buy token, use buy price to normalize the
