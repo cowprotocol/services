@@ -18,7 +18,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
-    anyhow::Result,
+    anyhow::{anyhow, Result},
     database::order_events::OrderEventLabel,
     ethcontract::U256,
     ethrpc::block_stream::BlockInfo,
@@ -284,8 +284,6 @@ impl RunLoop {
             .post_processing(
                 &auction,
                 competition_simulation_block,
-                // TODO: Support multiple winners
-                // https://github.com/cowprotocol/services/issues/3021
                 &winners,
                 &solutions,
                 block_deadline,
@@ -415,7 +413,12 @@ impl RunLoop {
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
-        let winning_solution = &winners.first().expect("winners must not be empty").solution;
+        // TODO: Support multiple winners
+        // https://github.com/cowprotocol/services/issues/3021
+        let Some(winning_solution) = winners.first().map(|participant| &participant.solution)
+        else {
+            return Err(anyhow!("no winners found"));
+        };
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
@@ -508,19 +511,20 @@ impl RunLoop {
             competition_table,
         };
 
-        tracing::trace!(?competition, "saving competition");
-        // Don't error if saving of auction fails.
-        // todo: move to parallel saving of competition and auction once stable
-        if let Err(err) = self.persistence.save_auction(auction, block_deadline).await {
-            tracing::warn!(?err, "failed to save auction");
-        };
-        if let Err(err) = self
-            .persistence
-            .save_solutions(auction.id, solutions, winners)
-            .await
-        {
-            tracing::warn!(?err, "failed to save solutions");
+        if let Err(err) = futures::try_join!(
+            self.persistence
+                .save_auction(auction, block_deadline)
+                .map_err(|e| e.0.context("failed to save auction")),
+            self.persistence
+                .save_solutions(auction.id, solutions, winners)
+                .map_err(|e| e.0.context("failed to save solutions")),
+        ) {
+            // Don't error if saving of auction and solution fails, until stable.
+            // Various edge cases with JIT orders verifiable only in production.
+            tracing::warn!(?err, "failed to competition data");
         }
+
+        tracing::trace!(?competition, "saving competition");
         futures::try_join!(
             self.persistence
                 .save_competition(&competition)
