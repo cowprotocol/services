@@ -141,8 +141,10 @@ impl Persistence {
 
         let solutions = solutions
             .iter()
-            .map(|participant| {
+            .enumerate()
+            .map(|(uid, participant)| {
                 let solution = Solution {
+                    uid: uid.try_into().context("uid overflow")?,
                     id: i64::try_from(participant.solution.id()).context("block overflow")?,
                     solver: ByteArray(participant.solution.solver().0 .0),
                     is_winner: winners.iter().any(|winner| {

@@ -97,7 +97,7 @@ mod tests {
         assert_eq!(id_, id);
 
         // let's assume the second auction contains a valid competition data so it's
-        // meaningful to save it into `auctions` table as well
+        // meaningful to save it into `competition_auctions` table as well
         let auction = Auction {
             id: id_,
             block: 1,
