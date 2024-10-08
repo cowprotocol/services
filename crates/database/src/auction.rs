@@ -41,6 +41,7 @@ pub struct Auction {
     pub block: i64,
     pub deadline: i64,
     pub order_uids: Vec<OrderUid>,
+    // External native prices
     pub price_tokens: Vec<Address>,
     pub price_values: Vec<BigDecimal>,
     pub surplus_capturing_jit_order_owners: Vec<Address>,
