@@ -865,7 +865,7 @@ impl Persistence {
                 id: solver_competition.id,
                 block: i64::try_from(competition.auction_start_block).context("block overflow")?,
                 deadline: solver_competition.deadline,
-                orders: competition
+                order_uids: competition
                     .auction
                     .orders
                     .iter()
