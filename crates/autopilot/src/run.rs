@@ -453,7 +453,7 @@ pub async fn run(args: Arguments) {
         hardcoded: args.trusted_tokens.unwrap_or_default(),
     };
     // updated in background task
-    let market_makable_token_list =
+    let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
     let mut maintenance = Maintenance::new(
@@ -547,7 +547,7 @@ pub async fn run(args: Arguments) {
             })
             .collect(),
         solvable_orders_cache,
-        market_makable_token_list,
+        trusted_tokens,
         liveness.clone(),
         Arc::new(maintenance),
     );
@@ -567,11 +567,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         .drivers
         .into_iter()
         .map(|driver| {
-            infra::Driver::new(
+            Arc::new(infra::Driver::new(
                 driver.url,
                 driver.name,
                 driver.fairness_threshold.map(Into::into),
-            )
+            ))
         })
         .collect();
 

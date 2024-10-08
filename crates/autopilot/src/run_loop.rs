@@ -35,7 +35,7 @@ use {
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
     std::{
-        collections::{HashMap, HashSet, VecDeque},
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -62,7 +62,7 @@ pub struct RunLoop {
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
-    market_makable_token_list: AutoUpdatingTokenList,
+    trusted_tokens: AutoUpdatingTokenList,
     in_flight_orders: Arc<Mutex<HashSet<OrderUid>>>,
     liveness: Arc<Liveness>,
     /// Maintenance tasks that should run before every runloop to have
@@ -81,7 +81,7 @@ impl RunLoop {
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
         solvable_orders_cache: Arc<SolvableOrdersCache>,
-        market_makable_token_list: AutoUpdatingTokenList,
+        trusted_tokens: AutoUpdatingTokenList,
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
     ) -> Self {
@@ -98,7 +98,7 @@ impl RunLoop {
             persistence,
             drivers,
             solvable_orders_cache,
-            market_makable_token_list,
+            trusted_tokens,
             in_flight_orders: Default::default(),
             liveness,
             maintenance,
@@ -252,12 +252,28 @@ impl RunLoop {
 
         let auction = self.remove_in_flight_orders(auction).await;
 
+        // Mark all auction orders as `Ready` for competition
+        self.persistence.store_order_events(
+            auction.orders.iter().map(|o| OrderUid(o.uid.0)),
+            OrderEventLabel::Ready,
+        );
+
+        // Collect valid solutions from all drivers
         let solutions = self.competition(&auction).await;
+        observe::solutions(&solutions);
+
+        // Pick winners for execution
         let winners = self.select_winners(&solutions);
         if winners.is_empty() {
             tracing::info!("no winners for auction");
             return;
         }
+
+        // Mark all non-winning orders as `Considered` for execution
+        self.persistence.store_order_events(
+            non_winning_orders(&solutions, &winners),
+            OrderEventLabel::Considered,
+        );
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -280,8 +296,13 @@ impl RunLoop {
             return;
         }
 
+        observe::unsettled(&solutions, &winners, &auction);
         for competition::Participant { driver, solution } in winners {
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
+
+            // Mark all winning orders as `Executing`
+            self.persistence
+                .store_order_events(solution.order_ids().copied(), OrderEventLabel::Executing);
 
             self.start_settlement_execution(
                 auction.id,
@@ -390,7 +411,7 @@ impl RunLoop {
         auction: &domain::Auction,
         competition_simulation_block: u64,
         winners: &[&competition::Participant],
-        solutions: &VecDeque<competition::Participant>,
+        solutions: &[competition::Participant],
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
@@ -495,7 +516,7 @@ impl RunLoop {
         };
         if let Err(err) = self
             .persistence
-            .save_solutions(auction, solutions, winners)
+            .save_solutions(auction.id, solutions, winners)
             .await
         {
             tracing::warn!(?err, "failed to save solutions");
@@ -521,17 +542,13 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
-    async fn competition(&self, auction: &domain::Auction) -> VecDeque<competition::Participant> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
         let request = solve::Request::new(
             auction,
-            &self.market_makable_token_list.all(),
+            &self.trusted_tokens.all(),
             self.config.solve_deadline,
         );
         let request = &request;
-
-        let order_uids = auction.orders.iter().map(|o| OrderUid(o.uid.0));
-        self.persistence
-            .store_order_events(order_uids, OrderEventLabel::Ready);
 
         let mut solutions = futures::future::join_all(
             self.drivers
@@ -549,16 +566,22 @@ impl RunLoop {
             std::cmp::Reverse(participant.solution.score().get().0)
         });
 
-        // Make sure the winning solution is fair.
-        let mut solutions = solutions.into_iter().collect::<VecDeque<_>>();
-        while !Self::is_solution_fair(solutions.front(), &solutions, auction) {
-            let unfair_solution = solutions.pop_front().expect("must exist");
-            tracing::warn!(
-                invalidated = unfair_solution.driver.name,
-                "fairness check invalidated of solution"
-            );
-        }
-        self.report_on_solutions(&solutions, auction);
+        // Filter out solutions that are not fair
+        let solutions = solutions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, participant)| {
+                if Self::is_solution_fair(participant, &solutions[index..], auction) {
+                    Some(participant.clone())
+                } else {
+                    tracing::warn!(
+                        invalidated = participant.driver.name,
+                        "fairness check invalidated of solution"
+                    );
+                    None
+                }
+            })
+            .collect();
 
         solutions
     }
@@ -573,7 +596,7 @@ impl RunLoop {
     /// selected winner.
     fn select_winners<'a>(
         &self,
-        participants: &'a VecDeque<competition::Participant>,
+        participants: &'a [competition::Participant],
     ) -> Vec<&'a competition::Participant> {
         let mut winners = Vec::new();
         let mut already_swapped_tokens = HashSet::new();
@@ -595,63 +618,13 @@ impl RunLoop {
         winners
     }
 
-    /// Records metrics, order events and logs for the given solutions.
-    /// Expects the winning solution to be the first in the list.
-    fn report_on_solutions(
-        &self,
-        solutions: &VecDeque<competition::Participant>,
-        auction: &domain::Auction,
-    ) {
-        let Some(winner) = solutions.front() else {
-            // no solutions means nothing to report
-            return;
-        };
-
-        solutions.iter().for_each(|solution| {
-            tracing::debug!(
-                driver=%solution.driver.name,
-                orders=?solution.solution.order_ids(),
-                solution=solution.solution.id(),
-                "proposed solution"
-            );
-        });
-
-        let proposed_orders: HashSet<_> = solutions
-            .iter()
-            .flat_map(|solution| solution.solution.order_ids().copied())
-            .collect();
-        let winning_orders: HashSet<_> = solutions
-            .front()
-            .into_iter()
-            .flat_map(|solution| solution.solution.order_ids().copied())
-            .collect();
-        let mut non_winning_orders: HashSet<_> = proposed_orders
-            .difference(&winning_orders)
-            .cloned()
-            .collect();
-        self.persistence.store_order_events(
-            non_winning_orders.iter().cloned(),
-            OrderEventLabel::Considered,
-        );
-        self.persistence
-            .store_order_events(winning_orders, OrderEventLabel::Executing);
-
-        let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
-
-        // Report orders that were part of a non-winning solution candidate
-        // but only if they were part of the auction (filter out jit orders)
-        non_winning_orders.retain(|uid| auction_uids.contains(uid));
-        Metrics::matched_unsettled(&winner.driver, non_winning_orders);
-    }
-
-    /// Returns true if winning solution is fair or winner is None
+    /// Returns true if solution is fair to other solutions
     fn is_solution_fair(
-        winner: Option<&competition::Participant>,
-        remaining: &VecDeque<competition::Participant>,
+        solution: &competition::Participant,
+        others: &[competition::Participant],
         auction: &domain::Auction,
     ) -> bool {
-        let Some(winner) = winner else { return true };
-        let Some(fairness_threshold) = winner.driver.fairness_threshold else {
+        let Some(fairness_threshold) = solution.driver.fairness_threshold else {
             return true;
         };
 
@@ -679,7 +652,7 @@ impl RunLoop {
 
         // Record best execution per order
         let mut best_executions = HashMap::new();
-        for other in remaining {
+        for other in others {
             for (uid, execution) in other.solution.orders() {
                 best_executions
                     .entry(uid)
@@ -692,16 +665,16 @@ impl RunLoop {
             }
         }
 
-        // Check if the winning solution contains an order whose execution in the
-        // winning solution is more than `fairness_threshold` worse than the
+        // Check if the solution contains an order whose execution in the
+        // solution is more than `fairness_threshold` worse than the
         // order's best execution across all solutions
-        let unfair = winner
+        let unfair = solution
             .solution
             .orders()
             .iter()
-            .any(|(uid, winning_execution)| {
+            .any(|(uid, current_execution)| {
                 let best_execution = best_executions.get(uid).expect("by construction above");
-                let improvement = improvement_in_buy(best_execution, winning_execution);
+                let improvement = improvement_in_buy(best_execution, current_execution);
                 if improvement.is_zero() {
                     return false;
                 };
@@ -709,7 +682,7 @@ impl RunLoop {
                     ?uid,
                     ?improvement,
                     ?best_execution,
-                    ?winning_execution,
+                    ?current_execution,
                     "fairness check"
                 );
                 // Improvement is denominated in buy token, use buy price to normalize the
@@ -924,6 +897,24 @@ impl RunLoop {
     }
 }
 
+fn non_winning_orders(
+    solutions: &[competition::Participant],
+    winners: &[&competition::Participant],
+) -> HashSet<OrderUid> {
+    let proposed_orders: HashSet<_> = solutions
+        .iter()
+        .flat_map(|participant| participant.solution.order_ids().copied())
+        .collect();
+    let winning_orders: HashSet<_> = winners
+        .iter()
+        .flat_map(|participant| participant.solution.order_ids().copied())
+        .collect();
+    proposed_orders
+        .difference(&winning_orders)
+        .cloned()
+        .collect()
+}
+
 #[derive(Debug, thiserror::Error)]
 enum SolveError {
     #[error("the solver timed out")]
@@ -1124,5 +1115,39 @@ pub mod observe {
             removed = ?removed,
             "Orders no longer in auction"
         );
+    }
+
+    pub fn solutions(solutions: &[domain::competition::Participant]) {
+        if solutions.is_empty() {
+            tracing::info!("no solutions for auction");
+        }
+        for participant in solutions {
+            tracing::debug!(
+                driver = %participant.driver.name,
+                orders = ?participant.solution.order_ids(),
+                solution = %participant.solution.id(),
+                "proposed solution"
+            );
+        }
+    }
+
+    /// Records metrics for the matched but unsettled orders.
+    pub fn unsettled(
+        solutions: &[domain::competition::Participant],
+        winners: &[&domain::competition::Participant],
+        auction: &domain::Auction,
+    ) {
+        let Some(winner) = winners.first() else {
+            // no solutions means nothing to report
+            return;
+        };
+
+        let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
+
+        let mut non_winning_orders = super::non_winning_orders(solutions, winners);
+        // Report orders that were part of a non-winning solution candidate
+        // but only if they were part of the auction (filter out jit orders)
+        non_winning_orders.retain(|uid| auction_uids.contains(uid));
+        super::Metrics::matched_unsettled(&winner.driver, non_winning_orders);
     }
 }

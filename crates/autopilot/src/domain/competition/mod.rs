@@ -10,7 +10,7 @@ use {
 
 type SolutionId = u64;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Solution {
     id: SolutionId,
     solver: eth::Address,
@@ -91,6 +91,7 @@ impl Score {
     }
 }
 
+#[derive(Clone)]
 pub struct Participant {
     pub driver: Arc<infra::Driver>,
     pub solution: Solution,

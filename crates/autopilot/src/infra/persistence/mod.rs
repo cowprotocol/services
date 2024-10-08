@@ -31,7 +31,7 @@ use {
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{
-        collections::{HashMap, HashSet, VecDeque},
+        collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
     },
@@ -124,11 +124,12 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    /// Save auction related data to the database.
+    /// Save all valid solutions that participated in the competition for an
+    /// auction.
     pub async fn save_solutions(
         &self,
-        auction: &domain::Auction,
-        solutions: &VecDeque<domain::competition::Participant>,
+        auction_id: domain::auction::Id,
+        solutions: &[domain::competition::Participant],
         winners: &[&domain::competition::Participant],
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
@@ -180,7 +181,7 @@ impl Persistence {
             })
             .collect::<Result<Vec<_>, DatabaseError>>()?;
 
-        database::solver_competition::save_solutions(&mut ex, auction.id, &solutions).await?;
+        database::solver_competition::save_solutions(&mut ex, auction_id, &solutions).await?;
 
         Ok(ex.commit().await?)
     }
@@ -843,10 +844,6 @@ impl Persistence {
             if let Err(err) = database::auction::save(&mut ex, auction).await {
                 tracing::warn!(?err, auction_id = ?solver_competition.id, "failed to save auction");
             }
-
-            // populate historic solutions
-
-            // todo: implement
         }
 
         ex.commit().await?;
