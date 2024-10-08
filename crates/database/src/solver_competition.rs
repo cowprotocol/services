@@ -262,7 +262,10 @@ pub async fn fetch_solutions(
             .push(order);
     }
 
-    Ok(solutions_map.into_values().collect())
+    // Order by uid to return the solutions in the same order as they were inserted.
+    let mut solutions = solutions_map.into_values().collect::<Vec<_>>();
+    solutions.sort_by_key(|solution| solution.uid);
+    Ok(solutions)
 }
 
 // TODO delete
