@@ -513,7 +513,11 @@ impl RunLoop {
         if let Err(err) = self.persistence.save_auction(auction, block_deadline).await {
             tracing::warn!(?err, "failed to save auction");
         };
-        if let Err(err) = self.persistence.save_solutions(auction, solutions, winners).await {
+        if let Err(err) = self
+            .persistence
+            .save_solutions(auction, solutions, winners)
+            .await
+        {
             tracing::warn!(?err, "failed to save solutions");
         }
         futures::try_join!(

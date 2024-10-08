@@ -2,7 +2,7 @@ use {
     super::auction::order,
     crate::domain::{self, auction, eth},
     derive_more::Display,
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
 };
 
 mod participant;
@@ -90,6 +90,11 @@ impl Score {
     pub fn get(&self) -> &eth::Ether {
         &self.0
     }
+}
+
+pub struct Participant {
+    pub driver: Arc<infra::Driver>,
+    pub solution: Solution,
 }
 
 #[derive(Debug, thiserror::Error)]

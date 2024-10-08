@@ -31,7 +31,7 @@ use {
     primitive_types::H256,
     shared::db_order_conversions::full_order_into_model_order,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{HashMap, HashSet, VecDeque},
         ops::DerefMut,
         sync::Arc,
     },
@@ -892,7 +892,6 @@ impl Persistence {
             }
 
             // populate historic solutions
-            for solution in competition.solutions {}
 
             // todo: implement
         }

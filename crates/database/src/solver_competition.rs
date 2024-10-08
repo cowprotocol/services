@@ -189,6 +189,7 @@ async fn save_jit_orders(
     auction_id: AuctionId,
     solutions: &[Solution],
 ) -> Result<(), sqlx::Error> {
+    // todo merge into three queries
     for solution in solutions {
         for order in &solution.orders {
             // Order data is saved to `proposed_jit_orders` table only if the order is not
