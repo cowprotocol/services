@@ -579,7 +579,7 @@ mod tests {
         let solutions_ = fetch_solutions(&mut db, 0).await.unwrap();
 
         // first two solutions should be identical
-        assert_eq!(solutions[0..1], solutions_[0..1]);
+        assert_eq!(solutions[0..2], solutions_[0..2]);
 
         let proposed_jit_orders = sqlx::query("SELECT * FROM proposed_jit_orders")
             .fetch_all(db.deref_mut())
