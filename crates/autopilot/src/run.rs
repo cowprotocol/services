@@ -373,7 +373,11 @@ pub async fn run(args: Arguments) {
         skip_event_sync_start,
     );
 
-    let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
+    let cow_amm_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
+        boundary::web3_client(url, &args.shared.ethrpc)
+    });
+
+    let mut cow_amm_registry = cow_amm::Registry::new(cow_amm_web3);
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(config.index_start, config.factory, config.helper)

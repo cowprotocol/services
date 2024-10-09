@@ -74,6 +74,7 @@ impl Ethereum {
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
+        archive_node_url: Option<&Url>,
     ) -> Self {
         let Rpc { web3, chain, url } = rpc;
 
@@ -82,9 +83,15 @@ impl Ethereum {
                 .await
                 .expect("couldn't initialize current block stream");
 
-        let contracts = Contracts::new(&web3, chain, addresses, current_block_stream.clone())
-            .await
-            .expect("could not initialize important smart contracts");
+        let contracts = Contracts::new(
+            &web3,
+            chain,
+            addresses,
+            current_block_stream.clone(),
+            archive_node_url,
+        )
+        .await
+        .expect("could not initialize important smart contracts");
 
         Self {
             inner: Arc::new(Inner {
