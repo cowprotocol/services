@@ -202,19 +202,62 @@ async fn save_jit_orders(
                 ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING
             "#;
 
-            sqlx::query(QUERY_JIT)
-                .bind(auction_id)
-                .bind(solution.uid)
-                .bind(order.uid)
-                .bind(order.sell_token)
-                .bind(order.buy_token)
-                .bind(order.limit_sell.clone())
-                .bind(order.limit_buy.clone())
-                .bind(order.side)
-                .execute(ex.deref_mut())
-                .await?;
+    // Build and insert orders
+    {
+        let mut order_builder = QueryBuilder::new(
+            r#"INSERT INTO proposed_solution_executions 
+            (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
+        );
+
+        order_builder.push_values(
+            solutions.iter().flat_map(|solution| {
+                solution
+                    .orders
+                    .iter()
+                    .map(move |order| (solution.uid, order))
+            }),
+            |mut b, (solution_uid, order)| {
+                b.push_bind(auction_id)
+                    .push_bind(solution_uid)
+                    .push_bind(order.uid)
+                    .push_bind(order.executed_sell.clone())
+                    .push_bind(order.executed_buy.clone());
+            },
+        );
+
+        order_builder.push(" ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING;");
+        order_builder.build().execute(ex.deref_mut()).await?;
+    }
+
+    // Build and insert JIT orders
+    {
+        for solution in solutions {
+            for order in &solution.orders {
+                // Order data is saved to `proposed_jit_orders` table only if the order is not
+                // already in the `orders` table.
+                const QUERY_JIT: &str = r#"
+                    INSERT INTO proposed_jit_orders 
+                    (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
+                    SELECT $1, $2, $3, $4, $5, $6, $7, $8
+                        WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
+                    ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING
+                "#;
+
+                sqlx::query(QUERY_JIT)
+                    .bind(auction_id)
+                    .bind(solution.uid)
+                    .bind(order.uid)
+                    .bind(order.sell_token)
+                    .bind(order.buy_token)
+                    .bind(order.limit_sell.clone())
+                    .bind(order.limit_buy.clone())
+                    .bind(order.side)
+                    .execute(ex.deref_mut())
+                    .await?;
+            }
         }
     }
+
     Ok(())
 }
 
@@ -485,6 +528,14 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
+        // insert an order to "orders" table to prevent one of the JIT orders from being
+        // inserted into the proposed_jit_orders table
+        let order = crate::orders::Order {
+            uid: ByteArray([5u8; 56]),
+            ..Default::default()
+        };
+        crate::orders::insert_order(&mut db, &order).await.unwrap();
+
         let solutions = vec![
             Solution {
                 uid: 0,
@@ -504,13 +555,43 @@ mod tests {
                 uid: 2,
                 id: 1,
                 solver: ByteArray([2u8; 20]), // from solver 2
-                orders: vec![Default::default()],
+                orders: vec![
+                    Order {
+                        uid: ByteArray([1u8; 56]),
+                        ..Default::default()
+                    },
+                    // this one should not be inserted into the proposed_jit_orders as it already
+                    // exists in the orders table
+                    Order {
+                        uid: ByteArray([5u8; 56]),
+                        ..Default::default()
+                    },
+                    Order {
+                        uid: ByteArray([6u8; 56]),
+                        ..Default::default()
+                    },
+                ],
                 ..Default::default()
             },
         ];
 
         save_solutions(&mut db, 0, &solutions).await.unwrap();
         let solutions_ = fetch_solutions(&mut db, 0).await.unwrap();
-        assert_eq!(solutions, solutions_);
+
+        // first two solutions should be identical
+        assert_eq!(solutions[0..1], solutions_[0..1]);
+
+        let proposed_jit_orders = sqlx::query("SELECT * FROM proposed_jit_orders")
+            .fetch_all(db.deref_mut())
+            .await
+            .unwrap();
+        // total number of orders in proposed_jit_orders should be 4, as there are 5
+        // orders to be saved accross all solutions, while 1 is already in the "orders"
+        // table
+        assert_eq!(proposed_jit_orders.len(), 4);
+
+        // but when solution 3 is fetched, it should have the same orders that were
+        // inserted (2 fetched from "proposed_jit_orders" and 1 from "orders" table)
+        assert!(solutions_[2].orders.len() == 3);
     }
 }
