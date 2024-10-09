@@ -91,15 +91,41 @@ impl Score {
     }
 }
 
+#[derive(Clone)]
 pub struct RawParticipant {
     pub driver: Arc<infra::Driver>,
     pub solution: Solution,
 }
 
 pub struct Participant {
-    pub driver: Arc<infra::Driver>,
-    pub solution: Solution,
-    pub winner: bool,
+    inner: RawParticipant,
+    is_winner: bool,
+}
+
+impl Participant {
+    pub fn new(inner: RawParticipant, is_winner: bool) -> Self {
+        Self { inner, is_winner }
+    }
+
+    pub fn driver(&self) -> &Arc<infra::Driver> {
+        &self.inner.driver
+    }
+
+    pub fn solution(&self) -> &Solution {
+        &self.inner.solution
+    }
+
+    pub fn is_winner(&self) -> bool {
+        self.is_winner
+    }
+
+    pub fn score(&self) -> Score {
+        self.inner.solution.score()
+    }
+
+    pub fn solver(&self) -> eth::Address {
+        self.inner.solution.solver()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
