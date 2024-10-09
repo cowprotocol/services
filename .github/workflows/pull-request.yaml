@@ -4,7 +4,7 @@ on:
   # We require PRs to be up to date before merging so technically it is not needed run the rust job
   # on main. However for the cache to be usable in PRs we do need the job on main.
   push:
-    branches: [main]
+    branches: [ main ]
 jobs:
   lint:
     timeout-minutes: 60
@@ -101,7 +101,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
-      TOML_TRACE_ERROR: 1      
+      TOML_TRACE_ERROR: 1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -155,7 +155,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
-      TOML_TRACE_ERROR: 1      
+      TOML_TRACE_ERROR: 1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -183,7 +183,7 @@ jobs:
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
+    if: ${{ true }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
