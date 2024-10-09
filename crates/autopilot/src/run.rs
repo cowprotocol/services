@@ -529,7 +529,6 @@ pub async fn run(args: Arguments) {
         synchronization: args.run_loop_mode,
         max_run_loop_delay: args.max_run_loop_delay,
         max_winners_per_auction: args.max_winners_per_auction,
-        execute_solver_competition_migration: args.execute_solver_competition_migration,
     };
 
     let run = RunLoop::new(

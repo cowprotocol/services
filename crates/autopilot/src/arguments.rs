@@ -237,12 +237,6 @@ pub struct Arguments {
     /// The maximum number of winners per auction. Each winner will be allowed
     /// to settle their winning orders at the same time.
     pub max_winners_per_auction: usize,
-
-    /// Should the solver competition migration be executed.
-    /// Need argument so even on staging we can test the migration gradually
-    /// network by network.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub execute_solver_competition_migration: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -289,7 +283,6 @@ impl std::fmt::Display for Arguments {
             max_run_loop_delay,
             run_loop_native_price_timeout,
             max_winners_per_auction,
-            execute_solver_competition_migration,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -370,11 +363,6 @@ impl std::fmt::Display for Arguments {
             run_loop_native_price_timeout
         )?;
         writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
-        writeln!(
-            f,
-            "execute_solver_competition_migration: {:?}",
-            execute_solver_competition_migration
-        )?;
         Ok(())
     }
 }

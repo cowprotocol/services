@@ -53,7 +53,6 @@ pub struct Config {
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
     pub max_winners_per_auction: usize,
-    pub execute_solver_competition_migration: bool,
 }
 
 pub struct RunLoop {
@@ -113,12 +112,6 @@ impl RunLoop {
             self.eth.current_block().clone(),
             update_interval,
         );
-
-        if self.config.execute_solver_competition_migration {
-            // do solver competitions migration in the background to not block the run loop
-            let persistence = self.persistence.clone();
-            tokio::spawn(async move { persistence.migrate_solver_competitions().await });
-        }
 
         let mut last_auction = None;
         let mut last_block = None;
