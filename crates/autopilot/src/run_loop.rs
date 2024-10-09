@@ -274,19 +274,24 @@ impl RunLoop {
             return;
         }
 
-        // Mark all non-winning orders as `Considered` for execution
+        // Mark all winning orders as `Executing`
+        let winning_orders = solutions
+            .iter()
+            .filter(|p| p.winner)
+            .flat_map(|p| p.solution.order_ids().copied())
+            .collect::<HashSet<_>>();
+        self.persistence
+            .store_order_events(winning_orders.clone(), OrderEventLabel::Executing);
+
+        // Mark the rest as `Considered` for execution
         self.persistence.store_order_events(
-            competition::non_winning_orders(&solutions).copied(),
+            solutions
+                .iter()
+                .flat_map(|p| p.solution.order_ids().copied())
+                .filter(|order_id| !winning_orders.contains(order_id)),
             OrderEventLabel::Considered,
         );
 
-        // Mark all winning orders as `Executing`
-        self.persistence.store_order_events(
-            competition::winning_orders(&solutions).copied(),
-            OrderEventLabel::Executing,
-        );
-
-        observe::unsettled(&solutions, &auction);
         for winner in solutions.iter().filter(|participant| participant.winner) {
             tracing::info!(driver = %winner.driver.name, solution = %winner.solution.id(), "winner");
 
@@ -299,6 +304,7 @@ impl RunLoop {
             )
             .await;
         }
+        observe::unsettled(&solutions, &auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -571,7 +577,7 @@ impl RunLoop {
                     .solution
                     .orders()
                     .iter()
-                    .flat_map(|(_, order)| vec![order.sell.token, order.buy.token])
+                    .flat_map(|(_, order)| [order.sell.token, order.buy.token])
                     .collect::<HashSet<_>>();
 
                 let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
@@ -1094,12 +1100,21 @@ pub mod observe {
             return;
         };
 
-        let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
-
-        let mut non_winning_orders =
-            domain::competition::non_winning_orders(solutions).collect::<HashSet<_>>();
+        let mut non_winning_orders = {
+            let winning_orders = solutions
+                .iter()
+                .filter(|p| p.winner)
+                .flat_map(|p| p.solution.order_ids())
+                .collect::<HashSet<_>>();
+            solutions
+                .iter()
+                .flat_map(|p| p.solution.order_ids())
+                .filter(|uid| !winning_orders.contains(uid))
+                .collect::<HashSet<_>>()
+        };
         // Report orders that were part of a non-winning solution candidate
         // but only if they were part of the auction (filter out jit orders)
+        let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
         super::Metrics::matched_unsettled(&winner.driver, non_winning_orders);
     }
