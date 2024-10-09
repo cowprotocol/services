@@ -558,7 +558,7 @@ impl RunLoop {
             .enumerate()
             .filter_map(|(index, participant)| {
                 if Self::is_solution_fair(participant, &solutions[index..], auction) {
-                    Some(participant.clone())
+                    Some(participant)
                 } else {
                     tracing::warn!(
                         invalidated = participant.driver.name,
