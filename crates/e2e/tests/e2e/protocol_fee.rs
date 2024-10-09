@@ -264,6 +264,8 @@ async fn combined_protocol_fees(web3: Web3) {
         .try_into()
         .expect("Expected exactly four elements");
 
+    onchain.mint_block().await;
+
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
         onchain.mint_block().await;

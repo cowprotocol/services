@@ -132,10 +132,6 @@ async fn allowance(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     let order = OrderCreation {
         sell_token: cow.address(),
         sell_amount: to_wei(5),
@@ -162,6 +158,7 @@ async fn allowance(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     let balance = cow.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, to_wei(5));
@@ -304,10 +301,6 @@ async fn signature(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     // Place Orders
     let mut order = OrderCreation {
         from: Some(safe.address()),
@@ -335,6 +328,7 @@ async fn signature(web3: Web3) {
     )));
 
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     let balance = token.balance_of(safe.address()).call().await.unwrap();
     assert_eq!(balance, to_wei(5));
@@ -406,10 +400,6 @@ async fn partial_fills(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     tracing::info!("Placing order");
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
@@ -438,6 +428,7 @@ async fn partial_fills(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for first trade.");
     let trade_happened = || async {

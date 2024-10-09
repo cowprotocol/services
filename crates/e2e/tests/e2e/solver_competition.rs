@@ -76,10 +76,6 @@ async fn solver_competition(web3: Web3) {
         "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
     ]).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     // Place Order
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -96,6 +92,7 @@ async fn solver_competition(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let uid = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     tracing::info!("waiting for trade");
     let trade_happened =

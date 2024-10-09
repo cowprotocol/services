@@ -140,10 +140,6 @@ async fn single_limit_order_test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     let order = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
@@ -160,6 +156,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
@@ -238,10 +235,6 @@ async fn two_limit_orders_test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     let order_a = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
@@ -261,6 +254,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
 
     let order_id = services.create_order(&order_a).await.unwrap();
+    onchain.mint_block().await;
 
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
@@ -540,8 +534,6 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
     onchain.mint_block().await;
 
     let order = OrderCreation {
@@ -653,10 +645,6 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     let order = OrderCreation {
         sell_token: token_usdc.address(),
         sell_amount: to_wei_with_exp(1000, 6),
@@ -682,12 +670,12 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let sell_token_balance_after = token_usdc
             .balance_of(trader.address())
@@ -757,10 +745,6 @@ async fn no_liquidity_limit_order(web3: Web3) {
         )
         .await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     // Place order
     let mut order = OrderCreation {
         sell_token: token_a.address(),
@@ -777,6 +761,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 

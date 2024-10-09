@@ -75,8 +75,6 @@ async fn order_cancellation(web3: Web3) {
         ])
         .await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
     onchain.mint_block().await;
 
     let place_order = |salt: u8| {

@@ -72,10 +72,6 @@ async fn test(web3: Web3) {
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     let order_a = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(100),
@@ -92,6 +88,7 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_uid = services.create_order(&order_a).await.unwrap();
+    onchain.mint_block().await;
     let order = services.get_order(&order_uid).await.unwrap();
     assert!(order.is_limit_order());
     assert!(order.data.partially_fillable);

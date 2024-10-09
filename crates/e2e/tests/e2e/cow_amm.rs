@@ -151,9 +151,6 @@ async fn cow_amm_jit(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
     );
     let services = Services::new(&onchain).await;
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
     services
         .start_autopilot(
             None,
@@ -474,10 +471,6 @@ async fn cow_amm_driver_support(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
 
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
-
     services
         .start_autopilot(
             None,
@@ -494,6 +487,8 @@ async fn cow_amm_driver_support(web3: Web3) {
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
+
+    onchain.mint_block().await;
 
     // Place Orders
     let order = OrderCreation {

@@ -71,9 +71,6 @@ async fn test(web3: Web3) {
 
     let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
-
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
     onchain.mint_block().await;
 
     let order_a = OrderCreation {
@@ -99,7 +96,10 @@ async fn test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-        !balance.is_zero()
+        !balance.is_zero() || {
+            onchain.mint_block().await;
+            false
+        }
     })
     .await
     .unwrap();
@@ -118,11 +118,14 @@ async fn test(web3: Web3) {
     );
 
     let metadata_updated = || async {
-        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        !order.metadata.executed_surplus_fee.is_zero()
+        (!order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
-            && order.metadata.executed_sell_amount != Default::default()
+            && order.metadata.executed_sell_amount != Default::default())
+            || {
+                onchain.mint_block().await;
+                false
+            }
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 }
