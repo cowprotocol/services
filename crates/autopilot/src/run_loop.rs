@@ -407,7 +407,10 @@ impl RunLoop {
         let start = Instant::now();
         // TODO: Support multiple winners
         // https://github.com/cowprotocol/services/issues/3021
-        let Some(winning_solution) = solutions.first().map(|participant| &participant.solution)
+        let Some(winning_solution) = solutions
+            .iter()
+            .find(|participant| participant.winner)
+            .map(|participant| &participant.solution)
         else {
             return Err(anyhow::anyhow!("no winners found"));
         };
