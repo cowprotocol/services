@@ -267,7 +267,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                     file::Mempool::Public {
                         max_additional_tip,
                         additional_tip_percentage,
-                        ..
                     } => {
                         // If there is no private mempool, revert protection is
                         // disabled, otherwise driver would not even try to settle revertable
