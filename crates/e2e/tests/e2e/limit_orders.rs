@@ -137,7 +137,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -235,7 +235,7 @@ async fn two_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -314,7 +314,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -390,7 +390,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -537,7 +537,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -650,7 +650,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -742,7 +742,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     ])
     .to_string();
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {

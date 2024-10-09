@@ -63,7 +63,7 @@ async fn solver_competition(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_autopilot(
         None,
         vec![
@@ -187,7 +187,7 @@ async fn fairness_check(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_autopilot(
         None,
         // Solver 1 has a fairness threshold of 0.01 ETH, which should be triggered by sub-optimally settling order_b
@@ -219,6 +219,8 @@ async fn fairness_check(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
+
+    onchain.mint_block().await;
 
     let order_b = OrderCreation {
         sell_token: token_b.address(),

@@ -53,7 +53,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
     );
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_autopilot(
             None,

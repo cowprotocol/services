@@ -546,4 +546,8 @@ impl OnchainComponents {
     pub fn contracts(&self) -> &Contracts {
         &self.contracts
     }
+
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
+    }
 }

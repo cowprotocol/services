@@ -132,7 +132,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let zeroex_api_port = ZeroExApi::new(zeroex_liquidity_orders.to_vec()).run().await;
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![

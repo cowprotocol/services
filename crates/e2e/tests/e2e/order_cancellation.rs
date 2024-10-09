@@ -46,7 +46,7 @@ async fn order_cancellation(web3: Web3) {
         token.approve(onchain.contracts().allowance, to_wei(10))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![

@@ -85,7 +85,7 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -203,12 +203,8 @@ async fn single_replace_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
-
-    // We force the block to start before the test, so the auction is not cut by the
-    // block in the middle of the operations, creating uncertainty
-    onchain.mint_block().await;
 
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -224,6 +220,7 @@ async fn single_replace_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+    onchain.mint_block().await;
     let order_id = services.create_order(&order).await.unwrap();
 
     let app_data = format!(
@@ -270,9 +267,11 @@ async fn single_replace_order_test(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
-        onchain.mint_block().await;
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(3)
+        balance_before.saturating_sub(balance_after) == to_wei(3) || {
+            onchain.mint_block().await;
+            false
+        }
     })
     .await
     .unwrap();

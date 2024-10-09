@@ -4,6 +4,7 @@ use {
         colocation::{self, SolverEngine},
         wait_for_condition,
         Contracts,
+        OnchainComponents,
         TIMEOUT,
     },
     app_data::{AppDataDocument, AppDataHash},
@@ -17,8 +18,10 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
+    shared::ethrpc::Web3,
     sqlx::Connection,
     std::{ops::DerefMut, time::Duration},
+    web3::Transport,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -65,11 +68,12 @@ impl ServicesBuilder {
         self
     }
 
-    pub async fn build(self, contracts: &Contracts) -> Services {
+    pub async fn build(self, onchain_components: &OnchainComponents) -> Services {
         Services {
-            contracts,
+            contracts: onchain_components.contracts(),
             http: Client::builder().timeout(self.timeout).build().unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+            web3: onchain_components.web3(),
         }
     }
 }
@@ -86,17 +90,19 @@ pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
     db: Db,
+    web3: &'a Web3,
 }
 
 impl<'a> Services<'a> {
-    pub async fn new(contracts: &'a Contracts) -> Services<'a> {
+    pub async fn new(onchain_components: &'a OnchainComponents) -> Services<'a> {
         Self {
-            contracts,
+            contracts: onchain_components.contracts(),
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+            web3: onchain_components.web3(),
         }
     }
 
@@ -145,7 +151,7 @@ impl<'a> Services<'a> {
         let args = [
             "autopilot".to_string(),
             "--run-loop-mode=sync-to-blockchain".to_string(),
-            "--max-run-loop-delay=400ms".to_string(),
+            "--max-run-loop-delay=100ms".to_string(),
             "--auction-update-interval=1s".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
@@ -322,7 +328,10 @@ impl<'a> Services<'a> {
                 .fetch_one(db.deref_mut())
                 .await
                 .unwrap();
-            count > 0
+            count > 0 || {
+                self.mint_block().await;
+                false
+            }
         };
         wait_for_condition(TIMEOUT, is_up)
             .await
@@ -604,6 +613,15 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &Db {
         &self.db
+    }
+
+    async fn mint_block(&self) {
+        tracing::info!("mining block");
+        self.web3
+            .transport()
+            .execute("evm_mine", vec![])
+            .await
+            .unwrap();
     }
 }
 

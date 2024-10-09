@@ -57,7 +57,7 @@ async fn app_data(web3: Web3) {
         order
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // Unknown hashes are not accepted.

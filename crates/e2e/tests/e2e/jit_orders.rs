@@ -50,7 +50,7 @@ async fn single_limit_order_test(web3: Web3) {
         token.approve(onchain.contracts().allowance, U256::MAX)
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
 
     // We force the block to start before the test, so the auction is not cut by the
     // block in the middle of the operations, creating uncertainty

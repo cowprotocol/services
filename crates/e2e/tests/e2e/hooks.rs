@@ -58,7 +58,7 @@ async fn gas_limit(web3: Web3) {
         cow.approve(onchain.contracts().allowance, to_wei(5))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -129,7 +129,7 @@ async fn allowance(web3: Web3) {
     )
     .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -301,7 +301,7 @@ async fn signature(web3: Web3) {
     };
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
@@ -403,7 +403,7 @@ async fn partial_fills(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the

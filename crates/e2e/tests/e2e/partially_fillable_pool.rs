@@ -69,7 +69,7 @@ async fn test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // We force the block to start before the test, so the auction is not cut by the
