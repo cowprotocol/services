@@ -4458,6 +4458,7 @@ dependencies = [
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
+ "rand",
  "rate-limit",
  "regex",
  "reqwest",

@@ -232,6 +232,11 @@ pub struct Arguments {
     /// If the value is 0, the native prices are fetched from the cache
     #[clap(long, env, default_value = "0s", value_parser = humantime::parse_duration)]
     pub run_loop_native_price_timeout: Duration,
+
+    #[clap(long, env, default_value = "1")]
+    /// The maximum number of winners per auction. Each winner will be allowed
+    /// to settle their winning orders at the same time.
+    pub max_winners_per_auction: usize,
 }
 
 impl std::fmt::Display for Arguments {
@@ -277,6 +282,7 @@ impl std::fmt::Display for Arguments {
             run_loop_mode,
             max_run_loop_delay,
             run_loop_native_price_timeout,
+            max_winners_per_auction,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -356,6 +362,7 @@ impl std::fmt::Display for Arguments {
             "run_loop_native_price_timeout: {:?}",
             run_loop_native_price_timeout
         )?;
+        writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
         Ok(())
     }
 }

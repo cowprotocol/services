@@ -80,7 +80,7 @@ impl super::Postgres {
                 tracing::warn!(
                     auction_id = ?key.0,
                     order = ?model::order::OrderUid(key.1.0),
-                    "missing fee policies for executed protocol fee",
+                    "missing fee policies for executed protocol fee, possibly a JIT order?",
                 );
             }
         }

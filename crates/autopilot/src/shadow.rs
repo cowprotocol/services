@@ -10,7 +10,7 @@
 use {
     crate::{
         arguments::RunLoopMode,
-        domain,
+        domain::{self, competition::TradedOrder},
         infra::{
             self,
             solvers::dto::{reveal, solve},
@@ -24,13 +24,18 @@ use {
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
-    std::{cmp, sync::Arc, time::Duration},
+    std::{
+        cmp,
+        collections::{HashMap, HashSet},
+        sync::Arc,
+        time::Duration,
+    },
     tracing::Instrument,
 };
 
 pub struct RunLoop {
     orderbook: infra::shadow::Orderbook,
-    drivers: Vec<infra::Driver>,
+    drivers: Vec<Arc<infra::Driver>>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::auction::Id,
     block: u64,
@@ -38,18 +43,25 @@ pub struct RunLoop {
     liveness: Arc<Liveness>,
     synchronization: RunLoopMode,
     current_block: CurrentBlockWatcher,
+    max_winners_per_auction: usize,
 }
 
 impl RunLoop {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
-        drivers: Vec<infra::Driver>,
+        drivers: Vec<Arc<infra::Driver>>,
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
         synchronization: RunLoopMode,
         current_block: CurrentBlockWatcher,
+        max_winners_per_auction: usize,
     ) -> Self {
+        // Added to make sure no more than one winner is activated by accident
+        // Should be removed once we decide to activate "multiple winners per auction"
+        // feature.
+        assert_eq!(max_winners_per_auction, 1, "only one winner is supported");
         Self {
             orderbook,
             drivers,
@@ -60,6 +72,7 @@ impl RunLoop {
             liveness,
             synchronization,
             current_block,
+            max_winners_per_auction,
         }
     }
 
@@ -119,30 +132,35 @@ impl RunLoop {
             .orders
             .set(i64::try_from(auction.orders.len()).unwrap_or(i64::MAX));
 
-        let mut participants = self.competition(auction).await;
+        let participants = self.competition(auction).await;
+        let winners = self.select_winners(&participants);
 
-        // Shuffle so that sorting randomly splits ties.
-        participants.shuffle(&mut rand::thread_rng());
-        participants.sort_unstable_by_key(|participant| cmp::Reverse(participant.score()));
-
-        if let Some(Participant {
-            driver,
-            solution: Ok(solution),
-        }) = participants.first()
-        {
-            let reference_score = participants
-                .get(1)
-                .map(|participant| participant.score())
+        for (i, Participant { driver, solution }) in winners.iter().enumerate() {
+            let score = solution
+                .as_ref()
+                .map(|solution| solution.score.get())
                 .unwrap_or_default();
-            let reward = solution
-                .score
-                .get()
+            let reference_score = winners
+                .get(i + 1)
+                .map(|winner| winner.score())
+                .unwrap_or_else(|| {
+                    // If this was the last winning solution pick the first worse overall
+                    // solution that came from a different driver (or 0) as the reference score.
+                    participants
+                        .iter()
+                        .filter(|p| p.driver.name != driver.name)
+                        .filter_map(|p| p.solution.as_ref().ok())
+                        .map(|p| p.score.get())
+                        .find(|other_score| *other_score <= score)
+                        .unwrap_or_default()
+                });
+            let reward = score
                 .checked_sub(reference_score)
                 .expect("reference score unexpectedly larger than winner's score");
 
             tracing::info!(
                 driver =% driver.name,
-                score =% solution.score,
+                %score,
                 %reward,
                 "winner"
             );
@@ -190,11 +208,48 @@ impl RunLoop {
         let request = solve::Request::new(auction, &self.trusted_tokens.all(), self.solve_deadline);
         let request = &request;
 
-        futures::future::join_all(self.drivers.iter().map(|driver| async move {
-            let solution = self.participate(driver, request).await;
-            Participant { driver, solution }
-        }))
-        .await
+        let mut participants =
+            futures::future::join_all(self.drivers.iter().map(|driver| async move {
+                let solution = self.participate(driver, request).await;
+                Participant { driver, solution }
+            }))
+            .await;
+
+        // Shuffle so that sorting randomly splits ties.
+        participants.shuffle(&mut rand::thread_rng());
+        participants.sort_unstable_by_key(|participant| cmp::Reverse(participant.score()));
+
+        participants
+    }
+
+    /// Chooses the winners from the given participants.
+    ///
+    /// Participants are already sorted by their score (best to worst).
+    ///
+    /// Winners are selected one by one, starting from the best solution,
+    /// until `max_winners_per_auction` are selected. The solution is a winner
+    /// if it swaps tokens that are not yet swapped by any other already
+    /// selected winner.
+    fn select_winners<'a>(&self, participants: &'a [Participant<'a>]) -> Vec<&'a Participant<'a>> {
+        let mut winners = Vec::new();
+        let mut already_swapped_tokens = HashSet::new();
+        for participant in participants.iter() {
+            if let Ok(solution) = &participant.solution {
+                let swapped_tokens = solution
+                    .orders()
+                    .iter()
+                    .flat_map(|(_, order)| vec![order.sell.token, order.buy.token])
+                    .collect::<HashSet<_>>();
+                if swapped_tokens.is_disjoint(&already_swapped_tokens) {
+                    winners.push(participant);
+                    already_swapped_tokens.extend(swapped_tokens);
+                    if winners.len() >= self.max_winners_per_auction {
+                        break;
+                    }
+                }
+            }
+        }
+        winners
     }
 
     /// Computes a driver's solutions in the shadow competition.
@@ -207,7 +262,7 @@ impl RunLoop {
             .await
             .map_err(|_| Error::Timeout)?
             .map_err(Error::Solve)?;
-        let (score, solution_id, submission_address) = proposed
+        let (score, solution_id, submission_address, orders) = proposed
             .solutions
             .into_iter()
             .max_by_key(|solution| solution.score)
@@ -216,11 +271,16 @@ impl RunLoop {
                     solution.score,
                     solution.solution_id,
                     solution.submission_address,
+                    solution.orders,
                 )
             })
             .ok_or(Error::NoSolutions)?;
 
         let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
+        let orders = orders
+            .into_iter()
+            .map(|(order_uid, amounts)| (order_uid.into(), amounts.into_domain()))
+            .collect();
 
         let revealed = driver
             .reveal(&reveal::Request { solution_id })
@@ -238,6 +298,7 @@ impl RunLoop {
             score,
             account: submission_address,
             calldata: revealed.calldata,
+            orders,
         })
     }
 }
@@ -247,18 +308,25 @@ struct Participant<'a> {
     solution: Result<Solution, Error>,
 }
 
-struct Solution {
-    score: NonZeroU256,
-    account: H160,
-    calldata: reveal::Calldata,
-}
-
 impl Participant<'_> {
     fn score(&self) -> U256 {
         self.solution
             .as_ref()
             .map(|solution| solution.score.get())
             .unwrap_or_default()
+    }
+}
+
+struct Solution {
+    score: NonZeroU256,
+    account: H160,
+    calldata: reveal::Calldata,
+    orders: HashMap<domain::OrderUid, TradedOrder>,
+}
+
+impl Solution {
+    fn orders(&self) -> &HashMap<domain::OrderUid, TradedOrder> {
+        &self.orders
     }
 }
 
