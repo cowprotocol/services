@@ -603,6 +603,7 @@ async fn local_node_cow_amm_opposite_direction() {
     run_test(cow_amm_opposite_direction).await;
 }
 
+/// Tests that only CoW AMM liquidity can be used to fulfill the order.
 async fn cow_amm_opposite_direction(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -961,6 +962,7 @@ async fn local_node_cow_amm_quoting() {
     run_test(cow_amm_quoting).await;
 }
 
+/// Tests quotes verification that contains CoW AMM JIT orders.
 async fn cow_amm_quoting(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -1244,7 +1246,6 @@ async fn cow_amm_quoting(web3: Web3) {
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 order: [0u8; 56],
                 executed_amount: to_wei(230) - fee_user,
-                // fee: Some(fee_user),
                 fee: None,
             }),
         ],
