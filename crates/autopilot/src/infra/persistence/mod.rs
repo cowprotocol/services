@@ -144,12 +144,12 @@ impl Persistence {
             .map(|(uid, participant)| {
                 let solution = Solution {
                     uid: uid.try_into().context("uid overflow")?,
-                    id: i64::try_from(participant.solution.id()).context("block overflow")?,
-                    solver: ByteArray(participant.solution.solver().0 .0),
-                    is_winner: participant.winner,
-                    score: u256_to_big_decimal(&participant.solution.score().get().0),
+                    id: i64::try_from(participant.solution().id()).context("block overflow")?,
+                    solver: ByteArray(participant.solution().solver().0 .0),
+                    is_winner: participant.is_winner(),
+                    score: u256_to_big_decimal(&participant.solution().score().get().0),
                     orders: participant
-                        .solution
+                        .solution()
                         .orders()
                         .iter()
                         .map(|(order_uid, order)| Order {
@@ -164,13 +164,13 @@ impl Persistence {
                         })
                         .collect(),
                     price_tokens: participant
-                        .solution
+                        .solution()
                         .prices()
                         .keys()
                         .map(|token| ByteArray(token.0 .0))
                         .collect(),
                     price_values: participant
-                        .solution
+                        .solution()
                         .prices()
                         .values()
                         .map(|price| u256_to_big_decimal(&price.get().0))
