@@ -516,7 +516,7 @@ impl RunLoop {
                 .save_competition(&competition)
                 .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
-                .save_surplus_capturing_jit_orders_orders(
+                .save_surplus_capturing_jit_order_owners(
                     auction.id,
                     &auction.surplus_capturing_jit_order_owners,
                 )
