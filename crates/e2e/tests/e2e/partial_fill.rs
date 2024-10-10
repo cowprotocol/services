@@ -42,7 +42,7 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");
@@ -65,6 +65,8 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let uid = services.create_order(&order).await.unwrap();
+
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for trade.");
     let trade_happened =

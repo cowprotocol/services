@@ -42,7 +42,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
     // Disable auto-mine so we don't accidentally mine a settlement
@@ -69,6 +69,7 @@ async fn test_cancel_on_expiry(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     // Start tracking confirmed blocks so we can find the transaction later
     let block_stream = web3
