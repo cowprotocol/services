@@ -1240,7 +1240,7 @@ async fn cow_amm_quoting(web3: Web3) {
                 executed_amount: cow_amm_order.sell_amount - fee_cow_amm,
                 fee: Some(fee_cow_amm),
             }),
-            // todo: this should be removed by providing a surplus capturing owners list
+            // todo: this should be removed by providing a surplus capturing owners list(https://github.com/cowprotocol/services/pull/3048)
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 order: [0u8; 56],
                 executed_amount: to_wei(230) - fee_user,
