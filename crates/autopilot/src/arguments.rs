@@ -233,6 +233,10 @@ pub struct Arguments {
     /// The maximum number of winners per auction. Each winner will be allowed
     /// to settle their winning orders at the same time.
     pub max_winners_per_auction: usize,
+
+    /// Archive node URL used to index CoW AMM
+    #[clap(long, env)]
+    pub archive_node_url: Option<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -278,6 +282,7 @@ impl std::fmt::Display for Arguments {
             max_run_loop_delay,
             run_loop_native_price_timeout,
             max_winners_per_auction,
+            archive_node_url,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -357,6 +362,7 @@ impl std::fmt::Display for Arguments {
             run_loop_native_price_timeout
         )?;
         writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
+        writeln!(f, "archive_node_url: {:?}", archive_node_url)?;
         Ok(())
     }
 }
