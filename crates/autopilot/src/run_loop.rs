@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, Solution, SolutionError, TradedOrder},
+            competition::{self, Solution, SolutionError, TradedOrder, Unranked},
             eth::{self, TxId},
             OrderUid,
         },
@@ -423,11 +423,11 @@ impl RunLoop {
         let reference_score = solutions
             // todo multiple winners per auction
             .get(1)
-            .map(|participant| participant.score().get().0)
+            .map(|participant| participant.solution().score().get().0)
             .unwrap_or_default();
         let participants = solutions
             .iter()
-            .map(|participant| participant.solver().into())
+            .map(|participant| participant.solution().solver().into())
             .collect::<HashSet<_>>();
         let mut fee_policies = Vec::new();
         for order_id in solutions
@@ -471,8 +471,8 @@ impl RunLoop {
                 .enumerate()
                 .map(|(index, participant)| SolverSettlement {
                     solver: participant.driver().name.clone(),
-                    solver_address: participant.solver().0,
-                    score: Some(Score::Solver(participant.score().get().0)),
+                    solver_address: participant.solution().solver().0,
+                    score: Some(Score::Solver(participant.solution().score().get().0)),
                     ranking: solutions.len() - index,
                     orders: participant
                         .solution()
@@ -553,7 +553,7 @@ impl RunLoop {
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by_key(|participant| {
-            std::cmp::Reverse(participant.solution.score().get().0)
+            std::cmp::Reverse(participant.solution().score().get().0)
         });
 
         // Filter out solutions that are not fair
@@ -565,7 +565,7 @@ impl RunLoop {
                     Some(participant)
                 } else {
                     tracing::warn!(
-                        invalidated = participant.driver.name,
+                        invalidated = participant.driver().name,
                         "fairness check invalidated of solution"
                     );
                     None
@@ -582,7 +582,7 @@ impl RunLoop {
             .cloned()
             .map(|participant| {
                 let swapped_tokens = participant
-                    .solution
+                    .solution()
                     .orders()
                     .iter()
                     .flat_map(|(_, order)| [order.sell.token, order.buy.token])
@@ -595,7 +595,8 @@ impl RunLoop {
                     already_swapped_tokens.extend(swapped_tokens);
                     winners += 1;
                 }
-                competition::Participant::new(participant, is_winner)
+
+                participant.rank(is_winner)
             })
             .collect();
 
@@ -604,11 +605,11 @@ impl RunLoop {
 
     /// Returns true if solution is fair to other solutions
     fn is_solution_fair(
-        solution: &competition::RawParticipant,
-        others: &[competition::RawParticipant],
+        solution: &competition::Participant<Unranked>,
+        others: &[competition::Participant<Unranked>],
         auction: &domain::Auction,
     ) -> bool {
-        let Some(fairness_threshold) = solution.driver.fairness_threshold else {
+        let Some(fairness_threshold) = solution.driver().fairness_threshold else {
             return true;
         };
 
@@ -637,7 +638,7 @@ impl RunLoop {
         // Record best execution per order
         let mut best_executions = HashMap::new();
         for other in others {
-            for (uid, execution) in other.solution.orders() {
+            for (uid, execution) in other.solution().orders() {
                 best_executions
                     .entry(uid)
                     .and_modify(|best_execution| {
@@ -653,7 +654,7 @@ impl RunLoop {
         // solution is more than `fairness_threshold` worse than the
         // order's best execution across all solutions
         let unfair = solution
-            .solution
+            .solution()
             .orders()
             .iter()
             .any(|(uid, current_execution)| {
@@ -694,7 +695,7 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: &solve::Request,
-    ) -> Vec<competition::RawParticipant> {
+    ) -> Vec<competition::Participant<Unranked>> {
         let start = Instant::now();
         let result = self.try_solve(&driver, request).await;
         let solutions = match result {
@@ -718,10 +719,7 @@ impl RunLoop {
             .filter_map(|solution| match solution {
                 Ok(solution) => {
                     Metrics::solution_ok(&driver);
-                    Some(competition::RawParticipant {
-                        driver: driver.clone(),
-                        solution,
-                    })
+                    Some(competition::Participant::new(solution, driver.clone()))
                 }
                 Err(err) => {
                     Metrics::solution_err(&driver, &err);
