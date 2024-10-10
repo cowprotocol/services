@@ -331,5 +331,6 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
+        archive_node_url: config.archive_node_url,
     }
 }
