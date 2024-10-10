@@ -184,7 +184,8 @@ jobs:
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
     if: ${{ true }}
-    timeout-minutes: 60
+    # Running for 4 hours
+    timeout-minutes: 240
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
