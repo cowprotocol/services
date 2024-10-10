@@ -138,49 +138,52 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
 
-        let solutions = solutions
-            .iter()
-            .enumerate()
-            .map(|(uid, participant)| {
-                let solution = Solution {
-                    uid: uid.try_into().context("uid overflow")?,
-                    id: i64::try_from(participant.solution().id()).context("block overflow")?,
-                    solver: ByteArray(participant.solution().solver().0 .0),
-                    is_winner: participant.is_winner(),
-                    score: u256_to_big_decimal(&participant.solution().score().get().0),
-                    orders: participant
-                        .solution()
-                        .orders()
-                        .iter()
-                        .map(|(order_uid, order)| Order {
-                            uid: ByteArray(order_uid.0),
-                            sell_token: ByteArray(order.sell.token.0 .0),
-                            buy_token: ByteArray(order.buy.token.0 .0),
-                            limit_sell: u256_to_big_decimal(&order.sell.amount.0),
-                            limit_buy: u256_to_big_decimal(&order.buy.amount.0),
-                            executed_sell: u256_to_big_decimal(&order.executed_sell.0),
-                            executed_buy: u256_to_big_decimal(&order.executed_buy.0),
-                            side: order.side.into(),
-                        })
-                        .collect(),
-                    price_tokens: participant
-                        .solution()
-                        .prices()
-                        .keys()
-                        .map(|token| ByteArray(token.0 .0))
-                        .collect(),
-                    price_values: participant
-                        .solution()
-                        .prices()
-                        .values()
-                        .map(|price| u256_to_big_decimal(&price.get().0))
-                        .collect(),
-                };
-                Ok::<_, DatabaseError>(solution)
-            })
-            .collect::<Result<Vec<_>, DatabaseError>>()?;
-
-        database::solver_competition::save_solutions(&mut ex, auction_id, &solutions).await?;
+        database::solver_competition::save_solutions(
+            &mut ex,
+            auction_id,
+            &solutions
+                .iter()
+                .enumerate()
+                .map(|(uid, participant)| {
+                    let solution = Solution {
+                        uid: uid.try_into().context("uid overflow")?,
+                        id: i64::try_from(participant.solution().id()).context("block overflow")?,
+                        solver: ByteArray(participant.solution().solver().0 .0),
+                        is_winner: participant.is_winner(),
+                        score: u256_to_big_decimal(&participant.solution().score().get().0),
+                        orders: participant
+                            .solution()
+                            .orders()
+                            .iter()
+                            .map(|(order_uid, order)| Order {
+                                uid: ByteArray(order_uid.0),
+                                sell_token: ByteArray(order.sell.token.0 .0),
+                                buy_token: ByteArray(order.buy.token.0 .0),
+                                limit_sell: u256_to_big_decimal(&order.sell.amount.0),
+                                limit_buy: u256_to_big_decimal(&order.buy.amount.0),
+                                executed_sell: u256_to_big_decimal(&order.executed_sell.0),
+                                executed_buy: u256_to_big_decimal(&order.executed_buy.0),
+                                side: order.side.into(),
+                            })
+                            .collect(),
+                        price_tokens: participant
+                            .solution()
+                            .prices()
+                            .keys()
+                            .map(|token| ByteArray(token.0 .0))
+                            .collect(),
+                        price_values: participant
+                            .solution()
+                            .prices()
+                            .values()
+                            .map(|price| u256_to_big_decimal(&price.get().0))
+                            .collect(),
+                    };
+                    Ok::<_, DatabaseError>(solution)
+                })
+                .collect::<Result<Vec<_>, DatabaseError>>()?,
+        )
+        .await?;
 
         Ok(ex.commit().await?)
     }
