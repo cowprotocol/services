@@ -215,67 +215,52 @@ pub async fn fetch_solutions(
         WHERE ps.auction_id = $1
     "#;
 
-    let rows: Vec<(
-        i64,
-        i64,
-        Address,
-        bool,
-        BigDecimal,
-        Vec<Address>,
-        Vec<BigDecimal>,
-        OrderUid,
-        BigDecimal,
-        BigDecimal,
-        Address,
-        Address,
-        BigDecimal,
-        BigDecimal,
-        OrderKind,
-    )> = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        uid: i64,
+        id: i64,
+        solver: Address,
+        is_winner: bool,
+        score: BigDecimal,
+        price_tokens: Vec<Address>,
+        price_values: Vec<BigDecimal>,
+        order_uid: OrderUid,
+        executed_sell: BigDecimal,
+        executed_buy: BigDecimal,
+        sell_token: Address,
+        buy_token: Address,
+        limit_sell: BigDecimal,
+        limit_buy: BigDecimal,
+        side: OrderKind,
+    }
+
+    let rows: Vec<Row> = sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?;
 
     let mut solutions_map = std::collections::HashMap::new();
 
     for row in rows {
-        let (
-            uid,
-            id,
-            solver,
-            is_winner,
-            score,
-            price_tokens,
-            price_values,
-            order_uid,
-            executed_sell,
-            executed_buy,
-            sell_token,
-            buy_token,
-            limit_sell,
-            limit_buy,
-            side,
-        ) = row;
-
         let order = Order {
-            uid: order_uid,
-            sell_token,
-            buy_token,
-            limit_sell,
-            limit_buy,
-            executed_sell,
-            executed_buy,
-            side,
+            uid: row.order_uid,
+            sell_token: row.sell_token,
+            buy_token: row.buy_token,
+            limit_sell: row.limit_sell,
+            limit_buy: row.limit_buy,
+            executed_sell: row.executed_sell,
+            executed_buy: row.executed_buy,
+            side: row.side,
         };
 
         solutions_map
-            .entry(uid)
+            .entry(row.uid)
             .or_insert_with(|| Solution {
-                uid,
-                id,
-                solver,
-                is_winner,
-                score,
+                uid: row.uid,
+                id: row.id,
+                solver: row.solver,
+                is_winner: row.is_winner,
+                score: row.score,
                 orders: Vec::new(),
-                price_tokens,
-                price_values,
+                price_tokens: row.price_tokens,
+                price_values: row.price_values,
             })
             .orders
             .push(order);
