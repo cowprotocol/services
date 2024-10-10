@@ -267,11 +267,14 @@ impl Solution {
 
     /// An empty solution has no trades which is allowed to capture surplus and
     /// a score of 0.
-    pub fn is_empty(&self, surplus_capturing_jit_order_owners: &HashSet<eth::Address>) -> bool {
-        !self
-            .trades
-            .iter()
-            .any(|trade| self.trade_count_for_scorable(trade, surplus_capturing_jit_order_owners))
+    pub fn is_empty(&self) -> bool {
+        !self.trades.iter().any(|trade| match trade {
+            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                order::Kind::Market | order::Kind::Limit { .. } => true,
+                order::Kind::Liquidity => false,
+            },
+            Trade::Jit(_) => true,
+        })
     }
 
     pub fn merge(&self, other: &Self) -> Result<Self, error::Merge> {
@@ -355,6 +358,17 @@ impl Solution {
                 order::Kind::Liquidity => None,
             },
             Trade::Jit(_) => None,
+        })
+    }
+
+    /// Return the trades which fulfill non-liquidity auction orders.
+    fn market_trades(&self) -> impl Iterator<Item = &Trade> {
+        self.trades.iter().filter(|trade| match trade {
+            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                order::Kind::Market | order::Kind::Limit { .. } => true,
+                order::Kind::Liquidity => false,
+            },
+            Trade::Jit(_) => true,
         })
     }
 

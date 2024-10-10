@@ -24,7 +24,7 @@ use {
         util::http,
     },
     ethrpc::block_stream::BlockInfo,
-    std::collections::{HashMap, HashSet},
+    std::collections::HashMap,
     url::Url,
 };
 
@@ -70,14 +70,8 @@ pub fn duplicated_solution_id(solver: &solver::Name, id: &solution::Id) {
 }
 
 /// Observe the solutions returned by the solver.
-pub fn solutions(
-    solutions: &[Solution],
-    surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
-) {
-    if solutions
-        .iter()
-        .any(|s| !s.is_empty(surplus_capturing_jit_order_owners))
-    {
+pub fn solutions(solutions: &[Solution]) {
+    if solutions.iter().any(|s| !s.is_empty()) {
         tracing::info!(?solutions, "computed solutions");
     } else {
         tracing::debug!("no solutions");

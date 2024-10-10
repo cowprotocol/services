@@ -96,7 +96,7 @@ impl Competition {
 
         // Discard empty solutions.
         let solutions = solutions.filter(|solution| {
-            if solution.is_empty(auction.surplus_capturing_jit_order_owners()) {
+            if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
                 notify::empty_solution(&self.solver, auction.id(), solution.id().clone());
                 false

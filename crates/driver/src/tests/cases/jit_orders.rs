@@ -46,7 +46,7 @@ struct Solution {
 }
 
 struct TestCase {
-    order: Order,
+    order: Option<Order>,
     execution: Execution,
     is_surplus_capturing_jit_order: bool,
     solution: Solution,
@@ -54,7 +54,7 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
-    let test_name = format!("JIT Order: {:?}", test_case.order.side);
+    let test_name = format!("JIT Order: {:?}", test_case.solution.jit_order.order.side);
     // Adjust liquidity pools so that the order is executable at the amounts
     // expected from the solver.
     let quote = ab_liquidity_quote()
@@ -73,48 +73,52 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .no_surplus(),
     };
 
-    let order = ab_order()
-        .kind(order::Kind::Limit)
-        .sell_amount(test_case.order.sell_amount)
-        .buy_amount(test_case.order.buy_amount)
-        .solver_fee(Some(solver_fee))
-        .side(test_case.order.side)
-        .partial(0.into())
-        .no_surplus();
-
     let solver = test_solver();
-    let test: Test = tests::setup()
+
+    let mut setup = tests::setup()
         .name(test_name)
         .pool(pool)
         .jit_order(jit_order.clone())
-        .order(order.clone())
-        .solution(ab_solution())
         .surplus_capturing_jit_order_owners(
             test_case
                 .is_surplus_capturing_jit_order
                 .then(|| vec![solver.address()])
                 .unwrap_or_default(),
         )
-        .solvers(vec![solver])
-        .done()
-        .await;
+        .solvers(vec![solver]);
+
+    if let Some(order) = test_case.order {
+        let order = ab_order()
+            .kind(order::Kind::Limit)
+            .sell_amount(order.sell_amount)
+            .buy_amount(order.buy_amount)
+            .solver_fee(Some(solver_fee))
+            .side(order.side)
+            .partial(0.into())
+            .no_surplus();
+
+        setup = setup.order(order.clone());
+    }
+
+    let test: Test = setup.solution(ab_solution()).done().await;
 
     let result = test.solve().await.ok();
     assert!(is_approximately_equal(
         result.score(),
         test_case.solution.expected_score,
     ));
+    result.jit_orders(&[jit_order]);
 }
 
 #[tokio::test]
 #[ignore]
 async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped() {
     let test_case = TestCase {
-        order: Order {
+        order: Some(Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: Side::Buy,
-        },
+        }),
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
@@ -148,11 +152,11 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
 #[ignore]
 async fn surplus_protocol_fee_jit_order_not_capped() {
     let test_case = TestCase {
-        order: Order {
+        order: Some(Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: Side::Buy,
-        },
+        }),
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
@@ -176,6 +180,41 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
             },
             // Score is 20 since the JIT order is not from a surplus capturing owner
             expected_score: 20.ether().into_wei(),
+        },
+    };
+
+    protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn solution_containing_only_jit_orders() {
+    let test_case = TestCase {
+        order: None,
+        execution: Execution {
+            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
+            // protocol
+            solver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 40.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
+        is_surplus_capturing_jit_order: false,
+        solution: Solution {
+            jit_order: JitOrder {
+                order: Order {
+                    sell_amount: 50.ether().into_wei(),
+                    buy_amount: 40.ether().into_wei(),
+                    side: Side::Buy,
+                },
+            },
+            // Score is 0 since the JIT order is not from a surplus capturing owner and there is no
+            // normal order
+            expected_score: 0.ether().into_wei(),
         },
     };
 

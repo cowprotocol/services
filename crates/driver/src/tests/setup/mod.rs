@@ -1224,6 +1224,42 @@ impl<'a> SolveOk<'a> {
         assert!(self.solutions().is_empty());
     }
 
+    /// Check that the solution contains the expected JIT orders.
+    pub fn jit_orders(self, jit_orders: &[JitOrder]) -> Self {
+        let solution = self.solution();
+        assert!(solution.get("orders").is_some());
+        let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
+            solution.get("orders").unwrap().clone(),
+        )
+        .unwrap();
+
+        // Since JIT orders don't have UID at creation time, we need to search for
+        // matching token pair
+        for expected in jit_orders.iter() {
+            for trade in trades.values() {
+                let u256 = |value: &serde_json::Value| {
+                    eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
+                };
+                let token = |value: &serde_json::Value| value.as_str().unwrap().to_string();
+                let sell_token = token(trade.get("sellToken").unwrap());
+                let buy_token = token(trade.get("buyToken").unwrap());
+
+                if sell_token == expected.order.sell_token && buy_token == expected.order.buy_token
+                {
+                    assert!(is_approximately_equal(
+                        expected.order.sell_amount,
+                        u256(trade.get("executedSell").unwrap())
+                    ));
+                    assert!(is_approximately_equal(
+                        expected.order.buy_amount.unwrap(),
+                        u256(trade.get("executedBuy").unwrap())
+                    ));
+                }
+            }
+        }
+        self
+    }
+
     /// Check that the solution contains the expected orders.
     pub fn orders(self, orders: &[Order]) -> Self {
         let solution = self.solution();

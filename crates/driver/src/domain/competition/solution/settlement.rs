@@ -2,7 +2,12 @@ use {
     super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{
+                self,
+                auction,
+                order::{self, Side},
+                solution::{self, Trade},
+            },
             eth,
         },
         infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
@@ -255,29 +260,49 @@ impl Settlement {
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
-        for trade in self.solution.user_trades() {
-            let prices = ClearingPrices {
-                sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
-                buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
-            };
-            let order = competition::Amounts {
-                side: trade.order().side,
-                sell: trade.order().sell,
-                buy: trade.order().buy,
-                executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
-                    // This should never happen, returning 0 is better than panicking, but we
-                    // should still alert.
-                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
-                    0.into()
-                }),
-                executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
-                    // This should never happen, returning 0 is better than panicking, but we
-                    // should still alert.
-                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
-                    0.into()
-                }),
-            };
-            acc.insert(trade.order().uid, order);
+        for trade in self.solution.market_trades() {
+            match trade {
+                Trade::Fulfillment(_) => {
+                    let prices = ClearingPrices {
+                        sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
+                        buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
+                    };
+                    let order = competition::Amounts {
+                        side: trade.side(),
+                        sell: trade.sell(),
+                        buy: trade.buy(),
+                        executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
+                            // This should never happen, returning 0 is better than panicking, but we
+                            // should still alert.
+                            tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
+                            0.into()
+                        }),
+                        executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
+                            // This should never happen, returning 0 is better than panicking, but we
+                            // should still alert.
+                            tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
+                            0.into()
+                        }),
+                    };
+                    acc.insert(trade.uid(), order);
+                }
+                Trade::Jit(_) => {
+                    let order = competition::Amounts {
+                        side: trade.side(),
+                        sell: trade.sell(),
+                        buy: trade.buy(),
+                        executed_sell: match trade.side() {
+                            Side::Buy => trade.buy().amount,
+                            Side::Sell => trade.executed().into(),
+                        },
+                        executed_buy: match trade.side() {
+                            Side::Buy => trade.executed().into(),
+                            Side::Sell => trade.sell().amount,
+                        },
+                    };
+                    acc.insert(trade.uid(), order);
+                }
+            }
         }
         acc
     }
