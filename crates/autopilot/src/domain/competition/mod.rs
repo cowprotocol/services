@@ -1,12 +1,13 @@
 use {
     super::auction::order,
-    crate::{
-        domain,
-        domain::{auction, eth},
-    },
+    crate::domain::{self, auction, eth},
     derive_more::Display,
     std::collections::HashMap,
 };
+
+mod participant;
+
+pub use participant::{Participant, Ranked, Unranked};
 
 type SolutionId = u64;
 
