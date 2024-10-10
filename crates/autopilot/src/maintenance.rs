@@ -12,16 +12,15 @@ use {
         event_updater::EventUpdater,
     },
     anyhow::Result,
-    ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
-    futures::StreamExt,
+    ethrpc::block_stream::BlockInfo,
     prometheus::{
         core::{AtomicU64, GenericGauge},
         HistogramVec,
         IntCounterVec,
     },
     shared::maintenance::Maintaining,
-    std::{future::Future, sync::Arc, time::Duration},
-    tokio::{sync::Mutex, time::timeout},
+    std::{future::Future, sync::Arc},
+    tokio::sync::Mutex,
 };
 
 /// Coordinates all the updates that need to run a new block
@@ -118,26 +117,6 @@ impl Maintenance {
             return indexer.run_maintenance().await;
         }
         Ok(())
-    }
-
-    /// Spawns a background task that runs on every new block but also
-    /// at least after every `update_interval`.
-    pub fn spawn_background_task(current_block: CurrentBlockWatcher, update_interval: Duration) {
-        tokio::task::spawn(async move {
-            // Update last seen block metric only since everything else will be updated
-            // inside the runloop.
-            let mut stream = into_stream(current_block);
-            loop {
-                let next_update = timeout(update_interval, stream.next());
-                match next_update.await {
-                    Ok(Some(block)) => {
-                        metrics().last_seen_block.set(block.number);
-                    }
-                    Ok(None) => break,
-                    Err(_timeout) => {}
-                };
-            }
-        });
     }
 
     /// Runs the future and collects runtime metrics.

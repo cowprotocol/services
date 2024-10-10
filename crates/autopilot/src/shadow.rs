@@ -74,6 +74,8 @@ impl RunLoop {
     pub async fn run_forever(mut self) -> ! {
         let mut previous = None;
         loop {
+            // We use this as a synchronization mechanism to sync the run loop starts with
+            // the next mined block
             let _ = ethrpc::block_stream::next_block(&self.current_block).await;
             let Some(auction) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;

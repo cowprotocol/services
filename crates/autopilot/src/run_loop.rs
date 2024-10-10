@@ -103,9 +103,7 @@ impl RunLoop {
         }
     }
 
-    pub async fn run_forever(self, update_interval: Duration) -> ! {
-        Maintenance::spawn_background_task(self.eth.current_block().clone(), update_interval);
-
+    pub async fn run_forever(self) -> ! {
         let mut last_auction = None;
         let mut last_block = None;
         let self_arc = Arc::new(self);

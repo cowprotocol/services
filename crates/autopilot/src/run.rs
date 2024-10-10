@@ -545,7 +545,7 @@ pub async fn run(args: Arguments) {
         liveness.clone(),
         Arc::new(maintenance),
     );
-    run.run_forever(args.auction_update_interval).await;
+    run.run_forever().await;
     unreachable!("run loop exited");
 }
 
