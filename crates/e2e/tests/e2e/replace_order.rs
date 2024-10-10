@@ -266,10 +266,8 @@ async fn single_replace_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
-        balance_before.saturating_sub(balance_after) == to_wei(3) || {
-            onchain.mint_block().await;
-            false
-        }
+        onchain.mint_block().await;
+        balance_before.saturating_sub(balance_after) == to_wei(3)
     })
     .await
     .unwrap();

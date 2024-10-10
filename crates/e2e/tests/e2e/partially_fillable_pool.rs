@@ -96,10 +96,8 @@ async fn test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-        !balance.is_zero() || {
-            onchain.mint_block().await;
-            false
-        }
+        onchain.mint_block().await;
+        !balance.is_zero()
     })
     .await
     .unwrap();
@@ -119,13 +117,10 @@ async fn test(web3: Web3) {
 
     let metadata_updated = || async {
         let order = services.get_order(&uid).await.unwrap();
-        (!order.metadata.executed_surplus_fee.is_zero()
+        onchain.mint_block().await;
+        !order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
-            && order.metadata.executed_sell_amount != Default::default())
-            || {
-                onchain.mint_block().await;
-                false
-            }
+            && order.metadata.executed_sell_amount != Default::default()
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 }

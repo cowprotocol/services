@@ -328,10 +328,8 @@ impl<'a> Services<'a> {
                 .fetch_one(db.deref_mut())
                 .await
                 .unwrap();
-            count > 0 || {
-                self.mint_block().await;
-                false
-            }
+            self.mint_block().await;
+            count > 0
         };
         wait_for_condition(TIMEOUT, is_up)
             .await
