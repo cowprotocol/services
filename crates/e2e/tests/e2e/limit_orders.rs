@@ -792,11 +792,11 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
 
-    // Keep minting blocks to eventually invalidate the liquidity cached by the
-    // driver making it refetch the current state which allows it to finally compute
-    // a solution.
     // wait for trade to be indexed and post-processed
     wait_for_condition(TIMEOUT, || async {
+        // Keep minting blocks to eventually invalidate the liquidity cached by the
+        // driver making it refetch the current state which allows it to finally compute
+        // a solution.
         onchain.mint_block().await;
         services
             .get_trades(&order_id)
