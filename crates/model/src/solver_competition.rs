@@ -25,7 +25,7 @@ pub struct SolverCompetitionDB {
 pub struct SolverCompetitionAPI {
     #[serde(default)]
     pub auction_id: AuctionId,
-    pub transaction_hash: Option<Vec<H256>>,
+    pub transaction_hashes: Vec<H256>,
     #[serde(flatten)]
     pub common: SolverCompetitionDB,
 }
@@ -173,7 +173,7 @@ mod tests {
 
         let orig = SolverCompetitionAPI {
             auction_id: 0,
-            transaction_hash: Some(H256([0x11; 32])),
+            transaction_hashes: vec![H256([0x11; 32])],
             common: SolverCompetitionDB {
                 auction_start_block: 13,
                 competition_simulation_block: 15,

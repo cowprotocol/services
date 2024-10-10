@@ -14,13 +14,13 @@ use {
 fn deserialize_solver_competition(
     json: JsonValue,
     auction_id: AuctionId,
-    transaction_hash: Option<Vec<H256>>,
+    transaction_hashes: Vec<H256>,
 ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError> {
     let common: SolverCompetitionDB =
         serde_json::from_value(json).context("deserialize SolverCompetitionDB")?;
     Ok(SolverCompetitionAPI {
         auction_id,
-        transaction_hash,
+        transaction_hashes,
         common,
     })
 }
@@ -45,8 +45,7 @@ impl SolverCompetitionStoring for Postgres {
                     deserialize_solver_competition(
                         row.json,
                         row.id,
-                        row.tx_hash
-                            .map(|hashes| hashes.iter().map(|hash| H256(hash.0)).collect()),
+                        row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
                     )
                 }),
             Identifier::Transaction(hash) => {
@@ -57,8 +56,7 @@ impl SolverCompetitionStoring for Postgres {
                         deserialize_solver_competition(
                             row.json,
                             row.id,
-                            row.tx_hash
-                                .map(|hashes| hashes.iter().map(|hash| H256(hash.0)).collect()),
+                            row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
                         )
                     })
             }
@@ -82,8 +80,7 @@ impl SolverCompetitionStoring for Postgres {
                 deserialize_solver_competition(
                     row.json,
                     row.id,
-                    row.tx_hash
-                        .map(|hashes| hashes.iter().map(|hash| H256(hash.0)).collect()),
+                    row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
                 )
             })
             .ok_or(LoadSolverCompetitionError::NotFound)?
