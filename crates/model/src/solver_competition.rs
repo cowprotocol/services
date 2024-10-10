@@ -25,7 +25,7 @@ pub struct SolverCompetitionDB {
 pub struct SolverCompetitionAPI {
     #[serde(default)]
     pub auction_id: AuctionId,
-    pub transaction_hash: Option<H256>,
+    pub transaction_hash: Option<Vec<H256>>,
     #[serde(flatten)]
     pub common: SolverCompetitionDB,
 }
