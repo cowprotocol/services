@@ -147,7 +147,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
         .await;
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
     let request = OrderQuoteRequest {

@@ -1,12 +1,13 @@
 use {
     super::auction::order,
-    crate::{
-        domain::{self, auction, eth},
-        infra,
-    },
+    crate::domain::{self, auction, eth},
     derive_more::Display,
     std::{collections::HashMap, sync::Arc},
 };
+
+mod participant;
+
+pub use participant::{Participant, Ranked, Unranked};
 
 type SolutionId = u64;
 
@@ -89,19 +90,6 @@ impl Score {
     pub fn get(&self) -> &eth::Ether {
         &self.0
     }
-}
-
-#[derive(Clone)]
-pub struct RawParticipant {
-    pub driver: Arc<infra::Driver>,
-    pub solution: Solution,
-}
-
-#[derive(Clone)]
-pub struct Participant {
-    pub driver: Arc<infra::Driver>,
-    pub solution: Solution,
-    pub winner: bool,
 }
 
 #[derive(Debug, thiserror::Error)]

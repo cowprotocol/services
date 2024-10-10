@@ -85,8 +85,10 @@ async fn try_replace_someone_else_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
+
+    onchain.mint_block().await;
 
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -199,7 +201,7 @@ async fn single_replace_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -216,6 +218,7 @@ async fn single_replace_order_test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+    onchain.mint_block().await;
     let order_id = services.create_order(&order).await.unwrap();
 
     let app_data = format!(
@@ -253,6 +256,8 @@ async fn single_replace_order_test(web3: Web3) {
     let balance_before = token_a.balance_of(trader.address()).call().await.unwrap();
     let new_order_uid = services.create_order(&new_order).await.unwrap();
 
+    onchain.mint_block().await;
+
     // Check the previous order is cancelled
     let old_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(old_order.metadata.status, OrderStatus::Cancelled);
@@ -261,6 +266,7 @@ async fn single_replace_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_a.balance_of(trader.address()).call().await.unwrap();
+        onchain.mint_block().await;
         balance_before.saturating_sub(balance_after) == to_wei(3)
     })
     .await

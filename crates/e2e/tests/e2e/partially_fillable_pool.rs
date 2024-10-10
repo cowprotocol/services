@@ -69,8 +69,9 @@ async fn test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
+    onchain.mint_block().await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -95,6 +96,7 @@ async fn test(web3: Web3) {
     tracing::info!("Waiting for trade.");
     wait_for_condition(TIMEOUT, || async {
         let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
+        onchain.mint_block().await;
         !balance.is_zero()
     })
     .await
@@ -114,8 +116,8 @@ async fn test(web3: Web3) {
     );
 
     let metadata_updated = || async {
-        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
+        onchain.mint_block().await;
         !order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
             && order.metadata.executed_sell_amount != Default::default()

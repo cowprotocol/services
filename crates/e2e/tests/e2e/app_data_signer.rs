@@ -62,7 +62,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         )
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // Rejected: app data with different signer.
