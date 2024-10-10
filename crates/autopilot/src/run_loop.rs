@@ -5,7 +5,7 @@ use {
         domain::{
             self,
             auction::Id,
-            competition::{self, Solution, SolutionError, TradedOrder},
+            competition::{self, Solution, SolutionError, TradedOrder, Unranked},
             eth::{self, TxId},
             OrderUid,
         },
@@ -246,27 +246,15 @@ impl RunLoop {
         let auction = self.remove_in_flight_orders(auction).await;
 
         // Mark all auction orders as `Ready` for competition
-        self.persistence.store_order_events(
-            auction.orders.iter().map(|o| OrderUid(o.uid.0)),
-            OrderEventLabel::Ready,
-        );
+        self.persistence
+            .store_order_events(auction.orders.iter().map(|o| o.uid), OrderEventLabel::Ready);
 
         // Collect valid solutions from all drivers
         let solutions = self.competition(&auction).await;
         observe::solutions(&solutions);
-
-        // Pick winners for execution
-        let winners = self.select_winners(&solutions);
-        if winners.is_empty() {
-            tracing::info!("no winners for auction");
+        if solutions.is_empty() {
             return;
         }
-
-        // Mark all non-winning orders as `Considered` for execution
-        self.persistence.store_order_events(
-            non_winning_orders(&solutions, &winners),
-            OrderEventLabel::Considered,
-        );
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
@@ -277,9 +265,6 @@ impl RunLoop {
             .post_processing(
                 &auction,
                 competition_simulation_block,
-                // TODO: Support multiple winners
-                // https://github.com/cowprotocol/services/issues/3021
-                &winners.first().expect("must exist").solution,
                 &solutions,
                 block_deadline,
             )
@@ -289,13 +274,30 @@ impl RunLoop {
             return;
         }
 
-        observe::unsettled(&solutions, &winners, &auction);
-        for Participant { driver, solution } in winners {
-            tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
+        // Mark all winning orders as `Executing`
+        let winning_orders = solutions
+            .iter()
+            .filter(|p| p.is_winner())
+            .flat_map(|p| p.solution().order_ids().copied())
+            .collect::<HashSet<_>>();
+        self.persistence
+            .store_order_events(winning_orders.clone(), OrderEventLabel::Executing);
 
-            // Mark all winning orders as `Executing`
-            self.persistence
-                .store_order_events(solution.order_ids().copied(), OrderEventLabel::Executing);
+        // Mark the rest as `Considered` for execution
+        self.persistence.store_order_events(
+            solutions
+                .iter()
+                .flat_map(|p| p.solution().order_ids().copied())
+                .filter(|order_id| !winning_orders.contains(order_id)),
+            OrderEventLabel::Considered,
+        );
+
+        for winner in solutions
+            .iter()
+            .filter(|participant| participant.is_winner())
+        {
+            let (driver, solution) = (winner.driver(), winner.solution());
+            tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
 
             self.start_settlement_execution(
                 auction.id,
@@ -306,6 +308,7 @@ impl RunLoop {
             )
             .await;
         }
+        observe::unsettled(&solutions, &auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -398,31 +401,38 @@ impl RunLoop {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn post_processing(
         &self,
         auction: &domain::Auction,
         competition_simulation_block: u64,
-        winning_solution: &competition::Solution,
-        solutions: &[Participant],
+        solutions: &[competition::Participant],
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
+        // TODO: Support multiple winners
+        // https://github.com/cowprotocol/services/issues/3021
+        let Some(winning_solution) = solutions
+            .iter()
+            .find(|participant| participant.is_winner())
+            .map(|participant| participant.solution())
+        else {
+            return Err(anyhow::anyhow!("no winners found"));
+        };
         let winner = winning_solution.solver().into();
         let winning_score = winning_solution.score().get().0;
         let reference_score = solutions
             // todo multiple winners per auction
             .get(1)
-            .map(|participant| participant.solution.score().get().0)
+            .map(|participant| participant.solution().score().get().0)
             .unwrap_or_default();
         let participants = solutions
             .iter()
-            .map(|participant| participant.solution.solver().into())
+            .map(|participant| participant.solution().solver().into())
             .collect::<HashSet<_>>();
         let mut fee_policies = Vec::new();
         for order_id in solutions
             .iter()
-            .flat_map(|participant| participant.solution.order_ids())
+            .flat_map(|participant| participant.solution().order_ids())
             .unique()
         {
             match auction
@@ -460,12 +470,12 @@ impl RunLoop {
                 .rev()
                 .enumerate()
                 .map(|(index, participant)| SolverSettlement {
-                    solver: participant.driver.name.clone(),
-                    solver_address: participant.solution.solver().0,
-                    score: Some(Score::Solver(participant.solution.score().get().0)),
+                    solver: participant.driver().name.clone(),
+                    solver_address: participant.solution().solver().0,
+                    score: Some(Score::Solver(participant.solution().score().get().0)),
                     ranking: solutions.len() - index,
                     orders: participant
-                        .solution
+                        .solution()
                         .orders()
                         .iter()
                         .map(|(id, order)| Order::Colocated {
@@ -475,7 +485,7 @@ impl RunLoop {
                         })
                         .collect(),
                     clearing_prices: participant
-                        .solution
+                        .solution()
                         .prices()
                         .iter()
                         .map(|(token, price)| (token.0, price.get().into()))
@@ -522,7 +532,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
-    async fn competition(&self, auction: &domain::Auction) -> Vec<Participant> {
+    async fn competition(&self, auction: &domain::Auction) -> Vec<competition::Participant> {
         let request = solve::Request::new(
             auction,
             &self.trusted_tokens.all(),
@@ -543,7 +553,7 @@ impl RunLoop {
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by_key(|participant| {
-            std::cmp::Reverse(participant.solution.score().get().0)
+            std::cmp::Reverse(participant.solution().score().get().0)
         });
 
         // Filter out solutions that are not fair
@@ -552,56 +562,54 @@ impl RunLoop {
             .enumerate()
             .filter_map(|(index, participant)| {
                 if Self::is_solution_fair(participant, &solutions[index..], auction) {
-                    Some(participant.clone())
+                    Some(participant)
                 } else {
                     tracing::warn!(
-                        invalidated = participant.driver.name,
+                        invalidated = participant.driver().name,
                         "fairness check invalidated of solution"
                     );
                     None
                 }
+            });
+
+        // Winners are selected one by one, starting from the best solution,
+        // until `max_winners_per_auction` are selected. The solution is a winner
+        // if it swaps tokens that are not yet swapped by any other already
+        // selected winner.
+        let mut already_swapped_tokens = HashSet::new();
+        let mut winners = 0;
+        let solutions = solutions
+            .cloned()
+            .map(|participant| {
+                let swapped_tokens = participant
+                    .solution()
+                    .orders()
+                    .iter()
+                    .flat_map(|(_, order)| [order.sell.token, order.buy.token])
+                    .collect::<HashSet<_>>();
+
+                let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
+                    && winners < self.config.max_winners_per_auction;
+
+                if is_winner {
+                    already_swapped_tokens.extend(swapped_tokens);
+                    winners += 1;
+                }
+
+                participant.rank(is_winner)
             })
             .collect();
 
         solutions
     }
 
-    /// Chooses the winners from the given participants.
-    ///
-    /// Participants are already sorted by their score (best to worst).
-    ///
-    /// Winners are selected one by one, starting from the best solution,
-    /// until `max_winners_per_auction` are selected. The solution is a winner
-    /// if it swaps tokens that are not yet swapped by any other already
-    /// selected winner.
-    fn select_winners<'a>(&self, participants: &'a [Participant]) -> Vec<&'a Participant> {
-        let mut winners = Vec::new();
-        let mut already_swapped_tokens = HashSet::new();
-        for participant in participants.iter() {
-            let swapped_tokens = participant
-                .solution
-                .orders()
-                .iter()
-                .flat_map(|(_, order)| vec![order.sell.token, order.buy.token])
-                .collect::<HashSet<_>>();
-            if swapped_tokens.is_disjoint(&already_swapped_tokens) {
-                winners.push(participant);
-                already_swapped_tokens.extend(swapped_tokens);
-                if winners.len() >= self.config.max_winners_per_auction {
-                    break;
-                }
-            }
-        }
-        winners
-    }
-
     /// Returns true if solution is fair to other solutions
     fn is_solution_fair(
-        solution: &Participant,
-        others: &[Participant],
+        solution: &competition::Participant<Unranked>,
+        others: &[competition::Participant<Unranked>],
         auction: &domain::Auction,
     ) -> bool {
-        let Some(fairness_threshold) = solution.driver.fairness_threshold else {
+        let Some(fairness_threshold) = solution.driver().fairness_threshold else {
             return true;
         };
 
@@ -630,7 +638,7 @@ impl RunLoop {
         // Record best execution per order
         let mut best_executions = HashMap::new();
         for other in others {
-            for (uid, execution) in other.solution.orders() {
+            for (uid, execution) in other.solution().orders() {
                 best_executions
                     .entry(uid)
                     .and_modify(|best_execution| {
@@ -646,7 +654,7 @@ impl RunLoop {
         // solution is more than `fairness_threshold` worse than the
         // order's best execution across all solutions
         let unfair = solution
-            .solution
+            .solution()
             .orders()
             .iter()
             .any(|(uid, current_execution)| {
@@ -687,7 +695,7 @@ impl RunLoop {
         &self,
         driver: Arc<infra::Driver>,
         request: &solve::Request,
-    ) -> Vec<Participant> {
+    ) -> Vec<competition::Participant<Unranked>> {
         let start = Instant::now();
         let result = self.try_solve(&driver, request).await;
         let solutions = match result {
@@ -711,10 +719,7 @@ impl RunLoop {
             .filter_map(|solution| match solution {
                 Ok(solution) => {
                     Metrics::solution_ok(&driver);
-                    Some(Participant {
-                        driver: driver.clone(),
-                        solution,
-                    })
+                    Some(competition::Participant::new(solution, driver.clone()))
                 }
                 Err(err) => {
                     Metrics::solution_err(&driver, &err);
@@ -874,27 +879,6 @@ impl RunLoop {
     }
 }
 
-fn non_winning_orders(solutions: &[Participant], winners: &[&Participant]) -> HashSet<OrderUid> {
-    let proposed_orders: HashSet<_> = solutions
-        .iter()
-        .flat_map(|participant| participant.solution.order_ids().copied())
-        .collect();
-    let winning_orders: HashSet<_> = winners
-        .iter()
-        .flat_map(|participant| participant.solution.order_ids().copied())
-        .collect();
-    proposed_orders
-        .difference(&winning_orders)
-        .cloned()
-        .collect()
-}
-
-#[derive(Clone)]
-pub struct Participant {
-    driver: Arc<infra::Driver>,
-    solution: competition::Solution,
-}
-
 #[derive(Debug, thiserror::Error)]
 enum SolveError {
     #[error("the solver timed out")]
@@ -1033,7 +1017,7 @@ impl Metrics {
             .observe(elapsed.as_secs_f64());
     }
 
-    fn matched_unsettled(winning: &infra::Driver, unsettled: HashSet<domain::OrderUid>) {
+    fn matched_unsettled(winning: &infra::Driver, unsettled: HashSet<&domain::OrderUid>) {
         if !unsettled.is_empty() {
             tracing::debug!(?unsettled, "some orders were matched but not settled");
         }
@@ -1097,37 +1081,43 @@ pub mod observe {
         );
     }
 
-    pub fn solutions(solutions: &[super::Participant]) {
+    pub fn solutions(solutions: &[domain::competition::Participant]) {
         if solutions.is_empty() {
             tracing::info!("no solutions for auction");
         }
         for participant in solutions {
             tracing::debug!(
-                driver = %participant.driver.name,
-                orders = ?participant.solution.order_ids(),
-                solution = %participant.solution.id(),
+                driver = %participant.driver().name,
+                orders = ?participant.solution().order_ids(),
+                solution = %participant.solution().id(),
                 "proposed solution"
             );
         }
     }
 
     /// Records metrics for the matched but unsettled orders.
-    pub fn unsettled(
-        solutions: &[super::Participant],
-        winners: &[&super::Participant],
-        auction: &domain::Auction,
-    ) {
-        let Some(winner) = winners.first() else {
+    pub fn unsettled(solutions: &[domain::competition::Participant], auction: &domain::Auction) {
+        let Some(winner) = solutions.first() else {
             // no solutions means nothing to report
             return;
         };
 
-        let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
-
-        let mut non_winning_orders = super::non_winning_orders(solutions, winners);
+        let mut non_winning_orders = {
+            let winning_orders = solutions
+                .iter()
+                .filter(|p| p.is_winner())
+                .flat_map(|p| p.solution().order_ids())
+                .collect::<HashSet<_>>();
+            solutions
+                .iter()
+                .flat_map(|p| p.solution().order_ids())
+                .filter(|uid| !winning_orders.contains(uid))
+                .collect::<HashSet<_>>()
+        };
         // Report orders that were part of a non-winning solution candidate
         // but only if they were part of the auction (filter out jit orders)
+        let auction_uids = auction.orders.iter().map(|o| o.uid).collect::<HashSet<_>>();
         non_winning_orders.retain(|uid| auction_uids.contains(uid));
-        super::Metrics::matched_unsettled(&winner.driver, non_winning_orders);
+        super::Metrics::matched_unsettled(winner.driver(), non_winning_orders);
     }
 }
