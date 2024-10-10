@@ -150,7 +150,7 @@ async fn cow_amm_jit(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
     );
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_autopilot(
             None,
@@ -338,6 +338,7 @@ async fn cow_amm_jit(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let amm_balance = dai.balance_of(cow_amm.address()).call().await.unwrap();
         let bob_balance = dai.balance_of(bob.address()).call().await.unwrap();
@@ -468,7 +469,8 @@ async fn cow_amm_driver_support(web3: Web3) {
         ],
         colocation::LiquidityProvider::UniswapV2,
     );
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
+
     services
         .start_autopilot(
             None,
@@ -485,6 +487,8 @@ async fn cow_amm_driver_support(web3: Web3) {
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
+
+    onchain.mint_block().await;
 
     // Place Orders
     let order = OrderCreation {

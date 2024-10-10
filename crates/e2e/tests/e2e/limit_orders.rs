@@ -137,7 +137,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -156,6 +156,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let balance_before = token_b.balance_of(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
@@ -231,7 +232,7 @@ async fn two_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
@@ -253,6 +254,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let balance_before_b = token_a.balance_of(trader_b.address()).call().await.unwrap();
 
     let order_id = services.create_order(&order_a).await.unwrap();
+    onchain.mint_block().await;
 
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
@@ -306,7 +308,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -382,7 +384,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![
@@ -529,8 +531,10 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
+
+    onchain.mint_block().await;
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
@@ -580,6 +584,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     tracing::info!("Waiting for trade.");
 
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         let sell_token_balance_after = token_usdc
             .balance_of(trader.address())
             .call()
@@ -637,7 +642,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -665,12 +670,12 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-
     wait_for_condition(TIMEOUT, || async {
         let sell_token_balance_after = token_usdc
             .balance_of(trader.address())
@@ -725,7 +730,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     ])
     .to_string();
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {
@@ -756,6 +761,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_id = services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
@@ -786,15 +792,12 @@ async fn no_liquidity_limit_order(web3: Web3) {
     // Drive solution
     tracing::info!("Waiting for trade.");
 
-    // Keep minting blocks to eventually invalidate the liquidity cached by the
-    // driver making it refetch the current state which allows it to finally compute
-    // a solution.
-    for _ in 0..20 {
-        onchain.mint_block().await;
-    }
-
     // wait for trade to be indexed and post-processed
     wait_for_condition(TIMEOUT, || async {
+        // Keep minting blocks to eventually invalidate the liquidity cached by the
+        // driver making it refetch the current state which allows it to finally compute
+        // a solution.
+        onchain.mint_block().await;
         services
             .get_trades(&order_id)
             .await

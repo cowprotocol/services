@@ -58,7 +58,7 @@ async fn gas_limit(web3: Web3) {
         cow.approve(onchain.contracts().allowance, to_wei(5))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -129,7 +129,7 @@ async fn allowance(web3: Web3) {
     )
     .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -158,6 +158,7 @@ async fn allowance(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     let balance = cow.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, to_wei(5));
@@ -297,7 +298,7 @@ async fn signature(web3: Web3) {
     };
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // Place Orders
@@ -327,6 +328,7 @@ async fn signature(web3: Web3) {
     )));
 
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     let balance = token.balance_of(safe.address()).call().await.unwrap();
     assert_eq!(balance, to_wei(5));
@@ -344,6 +346,7 @@ async fn signature(web3: Web3) {
             .unwrap()
             .is_zero()
     };
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
@@ -394,7 +397,7 @@ async fn partial_fills(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     tracing::info!("Placing order");
@@ -425,6 +428,7 @@ async fn partial_fills(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
 
     tracing::info!("Waiting for first trade.");
     let trade_happened = || async {

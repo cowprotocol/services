@@ -77,7 +77,7 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
     );
 
     // Place Order
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let result = services
