@@ -3,7 +3,7 @@ use {
     crate::{
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
-        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
+        encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
         trade_finding::{external::dto, Interaction, Trade},
     },
@@ -127,8 +127,6 @@ impl TradeVerifier {
                 settlement.interactions,
             )
             .tx;
-
-        tracing::info!("newlog settlement={:?}", settlement);
 
         let sell_amount = match query.kind {
             OrderKind::Sell => query.in_amount.get(),
@@ -374,13 +372,50 @@ fn encode_settlement(
         tracing::trace!("adding unwrap interaction for paying out ETH");
     }
 
-    let tokens = vec![query.sell_token, query.buy_token];
-    let clearing_prices = match query.kind {
+    let mut tokens = vec![query.sell_token, query.buy_token];
+    let mut clearing_prices = match query.kind {
         OrderKind::Sell => vec![trade.out_amount, query.in_amount.get()],
         OrderKind::Buy => vec![query.in_amount.get(), trade.out_amount],
     };
 
-    let mut trades: Vec<EncodedTrade> = Vec::new();
+    // Configure the most disadvantageous trade possible (while taking possible
+    // overflows into account). Should the trader not receive the amount promised by
+    // the [`Trade`] the simulation will still work and we can compute the actual
+    // [`Trade::out_amount`] afterwards.
+    let (sell_amount, buy_amount) = match query.kind {
+        OrderKind::Sell => (query.in_amount.get(), 0.into()),
+        OrderKind::Buy => (
+            trade.out_amount.max(U256::from(u128::MAX)),
+            query.in_amount.get(),
+        ),
+    };
+    let fake_order = OrderData {
+        sell_token: query.sell_token,
+        sell_amount,
+        buy_token: query.buy_token,
+        buy_amount,
+        receiver: Some(verification.receiver),
+        valid_to: u32::MAX,
+        app_data: Default::default(),
+        fee_amount: 0.into(),
+        kind: query.kind,
+        partially_fillable: false,
+        sell_token_balance: verification.sell_token_source,
+        buy_token_balance: verification.buy_token_destination,
+    };
+
+    let fake_signature = Signature::default_with(SigningScheme::Eip1271);
+    let encoded_trade = encode_trade(
+        &fake_order,
+        &fake_signature,
+        verification.from,
+        0,
+        1,
+        &query.in_amount.get(),
+    );
+
+    let mut trades = vec![encoded_trade];
+
     for jit_order in trade.jit_orders.iter() {
         let order_data = OrderData {
             sell_token: jit_order.sell_token,
@@ -423,56 +458,31 @@ fn encode_settlement(
             }
         };
 
+        tokens.push(jit_order.sell_token);
+        tokens.push(jit_order.buy_token);
+
+        match jit_order.side {
+            dto::Side::Sell => {
+                clearing_prices.push(jit_order.buy_amount);
+                clearing_prices.push(jit_order.executed_amount);
+            }
+            dto::Side::Buy => {
+                clearing_prices.push(jit_order.executed_amount);
+                clearing_prices.push(jit_order.sell_amount);
+            }
+        }
+
         trades.push(encode_trade(
             &order_data,
             &signature,
             owner,
-            0,
-            1,
+            tokens.len() - 2,
+            tokens.len() - 1,
             &jit_order.executed_amount,
         ));
     }
     let mut pre_interactions = verification.pre_interactions.clone();
     pre_interactions.extend(trade.pre_interactions.iter().cloned());
-
-    if trades.is_empty() {
-        // Configure the most disadvantageous trade possible (while taking possible
-        // overflows into account). Should the trader not receive the amount promised by
-        // the [`Trade`] the simulation will still work and we can compute the actual
-        // [`Trade::out_amount`] afterwards.
-        let (sell_amount, buy_amount) = match query.kind {
-            OrderKind::Sell => (query.in_amount.get(), 0.into()),
-            OrderKind::Buy => (
-                trade.out_amount.max(U256::from(u128::MAX)),
-                query.in_amount.get(),
-            ),
-        };
-        let fake_order = OrderData {
-            sell_token: query.sell_token,
-            sell_amount,
-            buy_token: query.buy_token,
-            buy_amount,
-            receiver: Some(verification.receiver),
-            valid_to: u32::MAX,
-            app_data: Default::default(),
-            fee_amount: 0.into(),
-            kind: query.kind,
-            partially_fillable: false,
-            sell_token_balance: verification.sell_token_source,
-            buy_token_balance: verification.buy_token_destination,
-        };
-
-        let fake_signature = Signature::default_with(SigningScheme::Eip1271);
-        let encoded_trade = encode_trade(
-            &fake_order,
-            &fake_signature,
-            verification.from,
-            0,
-            1,
-            &query.in_amount.get(),
-        );
-        trades.push(encoded_trade);
-    }
 
     Ok(EncodedSettlement {
         tokens,

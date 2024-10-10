@@ -1202,6 +1202,10 @@ async fn cow_amm_quoting(web3: Web3) {
         dai.approve(onchain.contracts().allowance, U256::MAX)
     );
 
+    // todo: figure out why this is even required.
+    dai.mint(onchain.contracts().gp_settlement.address(), to_wei(30))
+        .await;
+
     // Compensate a delay between the `CurrentBlockStream` and the actual onchain
     // data.
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -1236,6 +1240,7 @@ async fn cow_amm_quoting(web3: Web3) {
                 executed_amount: cow_amm_order.sell_amount - fee_cow_amm,
                 fee: Some(fee_cow_amm),
             }),
+            // todo: this should be removed by providing a surplus capturing owners list
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 order: [0u8; 56],
                 executed_amount: to_wei(230) - fee_user,
@@ -1251,7 +1256,7 @@ async fn cow_amm_quoting(web3: Web3) {
     mock_solver.configure_solution(Some(mocked_solution));
 
     let quote_request = OrderQuoteRequest {
-        from: solver.address(),
+        from: bob.address(),
         sell_token: dai.address(),
         buy_token: onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
@@ -1262,9 +1267,13 @@ async fn cow_amm_quoting(web3: Web3) {
         ..Default::default()
     };
 
-    let quote_response = services.submit_quote(&quote_request).await;
-    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-    let quote_response = quote_response.unwrap();
-    tracing::info!("newlog quote_response={:?}", quote_response);
+    let quote_response = services.submit_quote(&quote_request).await.unwrap();
     assert!(quote_response.verified);
+    assert_eq!(quote_response.quote.sell_token, dai.address());
+    assert_eq!(
+        quote_response.quote.buy_token,
+        onchain.contracts().weth.address()
+    );
+    assert_eq!(quote_response.quote.sell_amount, to_wei(229));
+    assert!(quote_response.quote.buy_amount >= U256::exp10(17));
 }
