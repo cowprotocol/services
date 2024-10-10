@@ -150,7 +150,6 @@ impl<'a> Services<'a> {
 
         let args = [
             "autopilot".to_string(),
-            "--run-loop-mode=sync-to-blockchain".to_string(),
             "--max-run-loop-delay=100ms".to_string(),
             "--auction-update-interval=1s".to_string(),
             "--run-loop-native-price-timeout=500ms".to_string(),

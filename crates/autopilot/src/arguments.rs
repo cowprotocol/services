@@ -218,10 +218,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub cow_amm_configs: Vec<CowAmmConfig>,
 
-    /// Controls start of the run loop.
-    #[clap(long, env, default_value = "unsynchronized")]
-    pub run_loop_mode: RunLoopMode,
-
     /// If a new run loop would start more than this amount of time after the
     /// system noticed the latest block, wait for the next block to appear
     /// before continuing the run loop.
@@ -279,7 +275,6 @@ impl std::fmt::Display for Arguments {
             max_settlement_transaction_wait,
             s3,
             cow_amm_configs,
-            run_loop_mode,
             max_run_loop_delay,
             run_loop_native_price_timeout,
             max_winners_per_auction,
@@ -355,7 +350,6 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "s3: {:?}", s3)?;
         writeln!(f, "cow_amm_configs: {:?}", cow_amm_configs)?;
-        writeln!(f, "run_loop_mode: {:?}", run_loop_mode)?;
         writeln!(f, "max_run_loop_delay: {:?}", max_run_loop_delay)?;
         writeln!(
             f,
@@ -521,16 +515,6 @@ impl FromStr for CowAmmConfig {
             index_start,
         })
     }
-}
-
-/// Controls the timing of the run loop.
-#[derive(clap::Parser, clap::ValueEnum, Clone, Debug, Default, Copy)]
-pub enum RunLoopMode {
-    /// The run loop starts with the next mined block.
-    SyncToBlockchain,
-    /// The run loop starts whenever the previous loop ends.
-    #[default]
-    Unsynchronized,
 }
 
 #[cfg(test)]
