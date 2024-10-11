@@ -118,10 +118,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
-    /// The time between auction updates.
-    #[clap(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
-    pub auction_update_interval: Duration,
-
     /// The URL of a list of tokens our settlement contract is willing to
     /// internalize.
     #[clap(long, env)]
@@ -275,7 +271,6 @@ impl std::fmt::Display for Arguments {
             db_url,
             insert_batch_size,
             native_price_estimation_results_required,
-            auction_update_interval,
             max_settlement_transaction_wait,
             s3,
             cow_amm_configs,
@@ -347,7 +342,6 @@ impl std::fmt::Display for Arguments {
             "native_price_estimation_results_required: {}",
             native_price_estimation_results_required
         )?;
-        writeln!(f, "auction_update_interval: {:?}", auction_update_interval)?;
         writeln!(
             f,
             "max_settlement_transaction_wait: {:?}",
