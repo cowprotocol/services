@@ -14,6 +14,13 @@ mod trade;
 mod transaction;
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
 
+// 100_000 blocks is roughly:
+//
+// ~10 days on Ethereum mainnet
+// ~5 days on Gnosis Chain
+// ~6h on Arbitrum
+const MAX_SETTLEMENT_AGE: u64 = 100_000;
+
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
 ///
@@ -104,17 +111,18 @@ impl Settlement {
         settled: Transaction,
         persistence: &infra::Persistence,
     ) -> Result<Self, Error> {
-        if persistence
-            .auction_has_settlement(settled.auction_id)
-            .await?
-        {
-            // This settlement has already been processed by another environment.
+        let auction = persistence.get_auction(settled.auction_id).await?;
+
+        if settled.block > auction.block + MAX_SETTLEMENT_AGE {
+            // A settled transaction references a VERY old auction.
+            //
+            // A hacky way to detect processing of production settlements in the staging
+            // environment, as production is lagging with auction ids by ~270 days on
+            // Ethereum mainnet.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
             return Err(Error::WrongEnvironment);
         }
-
-        let auction = persistence.get_auction(settled.auction_id).await?;
 
         let trades = settled
             .trades
