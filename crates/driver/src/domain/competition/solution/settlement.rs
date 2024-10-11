@@ -5,7 +5,7 @@ use {
             competition::{
                 self,
                 auction,
-                order::{self, Side},
+                order::{self},
                 solution::{self, Trade},
             },
             eth,
@@ -261,48 +261,34 @@ impl Settlement {
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
         for trade in self.solution.market_trades() {
-            match trade {
-                Trade::Fulfillment(_) => {
-                    let prices = ClearingPrices {
-                        sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
-                        buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
-                    };
-                    let order = competition::Amounts {
-                        side: trade.side(),
-                        sell: trade.sell(),
-                        buy: trade.buy(),
-                        executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
-                            // This should never happen, returning 0 is better than panicking, but we
-                            // should still alert.
-                            tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
-                            0.into()
-                        }),
-                        executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
-                            // This should never happen, returning 0 is better than panicking, but we
-                            // should still alert.
-                            tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
-                            0.into()
-                        }),
-                    };
-                    acc.insert(trade.uid(), order);
-                }
-                Trade::Jit(_) => {
-                    let order = competition::Amounts {
-                        side: trade.side(),
-                        sell: trade.sell(),
-                        buy: trade.buy(),
-                        executed_sell: match trade.side() {
-                            Side::Buy => trade.buy().amount,
-                            Side::Sell => trade.executed().into(),
-                        },
-                        executed_buy: match trade.side() {
-                            Side::Buy => trade.executed().into(),
-                            Side::Sell => trade.sell().amount,
-                        },
-                    };
-                    acc.insert(trade.uid(), order);
-                }
-            }
+            let prices = match trade {
+                Trade::Fulfillment(_) => ClearingPrices {
+                    sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
+                    buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
+                },
+                Trade::Jit(_) => ClearingPrices {
+                    sell: trade.buy().amount.into(),
+                    buy: trade.sell().amount.into(),
+                },
+            };
+            let order = competition::Amounts {
+                side: trade.side(),
+                sell: trade.sell(),
+                buy: trade.buy(),
+                executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
+                    // This should never happen, returning 0 is better than panicking, but we
+                    // should still alert.
+                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
+                    0.into()
+                }),
+                executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
+                    // This should never happen, returning 0 is better than panicking, but we
+                    // should still alert.
+                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
+                    0.into()
+                }),
+            };
+            acc.insert(trade.uid(), order);
         }
         acc
     }
