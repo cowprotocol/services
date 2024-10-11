@@ -88,6 +88,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .name(test_name)
         .pool(pool)
         .jit_order(jit_order.clone())
+        .order(order.clone())
+        .solution(ab_solution())
         .surplus_capturing_jit_order_owners(
             test_case
                 .is_surplus_capturing_jit_order
@@ -95,8 +97,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
                 .unwrap_or_default(),
         )
         .solvers(vec![solver])
-        .order(order.clone())
-        .solution(ab_solution())
         .done()
         .await;
 
