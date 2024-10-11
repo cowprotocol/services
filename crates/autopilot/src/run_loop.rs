@@ -1,6 +1,5 @@
 use {
     crate::{
-        arguments::RunLoopMode,
         database::competition::Competition,
         domain::{
             self,
@@ -47,7 +46,6 @@ pub struct Config {
     pub submission_deadline: u64,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub synchronization: RunLoopMode,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
@@ -105,14 +103,7 @@ impl RunLoop {
         }
     }
 
-    pub async fn run_forever(self, update_interval: Duration) -> ! {
-        Maintenance::spawn_background_task(
-            self.maintenance.clone(),
-            self.config.synchronization,
-            self.eth.current_block().clone(),
-            update_interval,
-        );
-
+    pub async fn run_forever(self) -> ! {
         let mut last_auction = None;
         let mut last_block = None;
         let self_arc = Arc::new(self);
@@ -138,44 +129,37 @@ impl RunLoop {
         prev_block: &mut Option<H256>,
     ) -> Option<domain::Auction> {
         // wait for appropriate time to start building the auction
-        let start_block = match self.config.synchronization {
-            RunLoopMode::Unsynchronized => {
-                // Sleep a bit to avoid busy loops.
-                tokio::time::sleep(std::time::Duration::from_millis(1_000)).await;
-                *self.eth.current_block().borrow()
-            }
-            RunLoopMode::SyncToBlockchain => {
-                let current_block = *self.eth.current_block().borrow();
-                let time_since_last_block = current_block.observed_at.elapsed();
-                let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
-                    if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                        // don't emit warning if we finished prev run loop within the same block
-                        tracing::warn!(
-                            missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
-                            "missed optimal auction start, wait for new block"
-                        );
-                    }
-                    ethrpc::block_stream::next_block(self.eth.current_block()).await
-                } else {
-                    current_block
-                };
-
-                self.run_maintenance(&auction_block).await;
-                match self
-                    .solvable_orders_cache
-                    .update(auction_block.number)
-                    .await
-                {
-                    Ok(()) => {
-                        self.solvable_orders_cache.track_auction_update("success");
-                    }
-                    Err(err) => {
-                        self.solvable_orders_cache.track_auction_update("failure");
-                        tracing::warn!(?err, "failed to update auction");
-                    }
+        let start_block = {
+            let current_block = *self.eth.current_block().borrow();
+            let time_since_last_block = current_block.observed_at.elapsed();
+            let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
+                if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
+                    // don't emit warning if we finished prev run loop within the same block
+                    tracing::warn!(
+                        missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
+                        "missed optimal auction start, wait for new block"
+                    );
                 }
-                auction_block
+                ethrpc::block_stream::next_block(self.eth.current_block()).await
+            } else {
+                current_block
+            };
+
+            self.run_maintenance(&auction_block).await;
+            match self
+                .solvable_orders_cache
+                .update(auction_block.number)
+                .await
+            {
+                Ok(()) => {
+                    self.solvable_orders_cache.track_auction_update("success");
+                }
+                Err(err) => {
+                    self.solvable_orders_cache.track_auction_update("failure");
+                    tracing::warn!(?err, "failed to update auction");
+                }
             }
+            auction_block
         };
 
         let auction = self.cut_auction().await?;
