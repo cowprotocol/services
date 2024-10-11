@@ -46,7 +46,7 @@ struct Solution {
 }
 
 struct TestCase {
-    order: Option<Order>,
+    order: Order,
     execution: Execution,
     is_surplus_capturing_jit_order: bool,
     solution: Solution,
@@ -73,9 +73,18 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .no_surplus(),
     };
 
+    let order = ab_order()
+        .kind(order::Kind::Limit)
+        .sell_amount(test_case.order.sell_amount)
+        .buy_amount(test_case.order.buy_amount)
+        .solver_fee(Some(solver_fee))
+        .side(test_case.order.side)
+        .partial(0.into())
+        .no_surplus();
+
     let solver = test_solver();
 
-    let mut setup = tests::setup()
+    let test: Test = tests::setup()
         .name(test_name)
         .pool(pool)
         .jit_order(jit_order.clone())
@@ -85,22 +94,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
                 .then(|| vec![solver.address()])
                 .unwrap_or_default(),
         )
-        .solvers(vec![solver]);
-
-    if let Some(order) = test_case.order {
-        let order = ab_order()
-            .kind(order::Kind::Limit)
-            .sell_amount(order.sell_amount)
-            .buy_amount(order.buy_amount)
-            .solver_fee(Some(solver_fee))
-            .side(order.side)
-            .partial(0.into())
-            .no_surplus();
-
-        setup = setup.order(order.clone());
-    }
-
-    let test: Test = setup.solution(ab_solution()).done().await;
+        .solvers(vec![solver])
+        .order(order.clone())
+        .solution(ab_solution())
+        .done()
+        .await;
 
     let result = test.solve().await.ok();
     assert!(is_approximately_equal(
@@ -114,11 +112,11 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 #[ignore]
 async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped() {
     let test_case = TestCase {
-        order: Some(Order {
+        order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: Side::Buy,
-        }),
+        },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
@@ -152,11 +150,11 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
 #[ignore]
 async fn surplus_protocol_fee_jit_order_not_capped() {
     let test_case = TestCase {
-        order: Some(Order {
+        order: Order {
             sell_amount: 50.ether().into_wei(),
             buy_amount: 40.ether().into_wei(),
             side: Side::Buy,
-        }),
+        },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee), half of which is kept by the
             // protocol
@@ -180,41 +178,6 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
             },
             // Score is 20 since the JIT order is not from a surplus capturing owner
             expected_score: 20.ether().into_wei(),
-        },
-    };
-
-    protocol_fee_test_case(test_case).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn solution_containing_only_jit_orders() {
-    let test_case = TestCase {
-        order: None,
-        execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
-            // protocol
-            solver: Amounts {
-                sell: 30.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
-            driver: Amounts {
-                sell: 40.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
-        },
-        is_surplus_capturing_jit_order: false,
-        solution: Solution {
-            jit_order: JitOrder {
-                order: Order {
-                    sell_amount: 50.ether().into_wei(),
-                    buy_amount: 40.ether().into_wei(),
-                    side: Side::Buy,
-                },
-            },
-            // Score is 0 since the JIT order is not from a surplus capturing owner and there is no
-            // normal order
-            expected_score: 0.ether().into_wei(),
         },
     };
 
