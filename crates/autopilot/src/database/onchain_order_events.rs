@@ -1126,7 +1126,7 @@ mod test {
         let cloned_quote = quote.clone();
         order_quoter
             .expect_find_quote()
-            .returning(move |_| Ok(cloned_quote.clone()));
+            .returning(move |_, _| Ok(cloned_quote.clone()));
         let mut custom_onchain_order_parser = MockOnchainOrderParsing::<u8, u8>::new();
         custom_onchain_order_parser
             .expect_parse_custom_event_data()
