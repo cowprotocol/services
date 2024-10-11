@@ -294,6 +294,7 @@ mod tests {
         let order_uid = transaction.trades[0].uid;
 
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             // prices read from https://solver-instances.s3.eu-central-1.amazonaws.com/prod/mainnet/legacy/8655372.json
             prices: auction::Prices::from([
                 (
@@ -444,6 +445,7 @@ mod tests {
 
         let order_uid = transaction.trades[0].uid;
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             prices,
             surplus_capturing_jit_order_owners: Default::default(),
             id: 0,
@@ -607,6 +609,7 @@ mod tests {
         ]);
 
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             prices,
             surplus_capturing_jit_order_owners: HashSet::from([eth::Address(
                 eth::H160::from_slice(&hex!("f08d4dea369c456d26a3168ff0024b904f2d8b91")),
@@ -785,6 +788,7 @@ mod tests {
         ]);
 
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             prices,
             surplus_capturing_jit_order_owners: Default::default(),
             id: 0,
