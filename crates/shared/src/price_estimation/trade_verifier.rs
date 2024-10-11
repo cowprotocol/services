@@ -452,7 +452,7 @@ fn encode_settlement(
                     Signature::from_bytes(jit_order.signing_scheme, &jit_order.signature)?;
                 let owner = signature
                     .recover(domain_separator, &order_data.hash_struct())?
-                    .unwrap()
+                    .context("could not recover the owner")?
                     .signer;
                 (owner, signature)
             }
