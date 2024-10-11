@@ -202,10 +202,10 @@ async fn save_jit_orders(
                 ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING
             "#;
 
-    // Build and insert orders
+    // Build and insert order executions
     {
         let mut order_builder = QueryBuilder::new(
-            r#"INSERT INTO proposed_solution_executions 
+            r#"INSERT INTO proposed_trade_executions 
             (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
         );
 
@@ -528,10 +528,11 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // insert an order to "orders" table to prevent one of the JIT orders from being
+        // insert an order to "orders" table to prevent one of the orders from being
         // inserted into the proposed_jit_orders table
+        let user_order_uid = ByteArray([5u8; 56]);
         let order = crate::orders::Order {
-            uid: ByteArray([5u8; 56]),
+            uid: user_order_uid,
             ..Default::default()
         };
         crate::orders::insert_order(&mut db, &order).await.unwrap();
@@ -563,7 +564,7 @@ mod tests {
                     // this one should not be inserted into the proposed_jit_orders as it already
                     // exists in the orders table
                     Order {
-                        uid: ByteArray([5u8; 56]),
+                        uid: user_order_uid,
                         ..Default::default()
                     },
                     Order {
@@ -576,22 +577,33 @@ mod tests {
         ];
 
         save_solutions(&mut db, 0, &solutions).await.unwrap();
-        let solutions_ = fetch_solutions(&mut db, 0).await.unwrap();
+        let fetched_solutions = fetch_solutions(&mut db, 0).await.unwrap();
 
         // first two solutions should be identical
-        assert_eq!(solutions[0..2], solutions_[0..2]);
+        assert_eq!(solutions[0..2], fetched_solutions[0..2]);
 
-        let proposed_jit_orders = sqlx::query("SELECT * FROM proposed_jit_orders")
-            .fetch_all(db.deref_mut())
-            .await
-            .unwrap();
-        // total number of orders in proposed_jit_orders should be 4, as there are 5
-        // orders to be saved accross all solutions, while 1 is already in the "orders"
-        // table
-        assert_eq!(proposed_jit_orders.len(), 4);
+        let proposed_jit_orders =
+            sqlx::query("SELECT order_uid FROM proposed_jit_orders ORDER BY order_uid")
+                .fetch_all(db.deref_mut())
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|row| row.get::<OrderUid, _>(0))
+                .collect::<Vec<_>>();
+        // proposed_jit_orders should contain only the orders that were not already in
+        // the "orders"
+        assert_eq!(
+            proposed_jit_orders,
+            vec![
+                solutions[0].orders[0].uid,
+                solutions[1].orders[0].uid,
+                solutions[2].orders[0].uid,
+                solutions[2].orders[2].uid,
+            ]
+        );
 
         // but when solution 3 is fetched, it should have the same orders that were
         // inserted (2 fetched from "proposed_jit_orders" and 1 from "orders" table)
-        assert!(solutions_[2].orders.len() == 3);
+        assert!(fetched_solutions[2].orders.len() == 3);
     }
 }
