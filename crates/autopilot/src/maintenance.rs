@@ -57,6 +57,7 @@ impl Maintenance {
     /// has a consistent state.
     pub async fn update(&self, new_block: &BlockInfo) {
         let mut last_block = self.last_processed.lock().await;
+        metrics().last_seen_block.set(new_block.number);
         if last_block.number > new_block.number || last_block.hash == new_block.hash {
             // `new_block` is neither newer than `last_block` nor a reorg
             return;
