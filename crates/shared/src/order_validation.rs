@@ -183,8 +183,7 @@ impl From<VerificationError> for ValidationError {
 impl From<FindQuoteError> for ValidationError {
     fn from(err: FindQuoteError) -> Self {
         match err {
-            FindQuoteError::NotFound(_) => Self::QuoteNotFound,
-            FindQuoteError::ParameterMismatch(_) | FindQuoteError::Expired(_) => Self::InvalidQuote,
+            FindQuoteError::NotFound => Self::QuoteNotFound,
             FindQuoteError::Other(err) => Self::Other(err),
         }
     }
@@ -845,53 +844,51 @@ async fn get_or_create_quote(
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
 ) -> Result<Quote, ValidationError> {
-    let quote = match quoter
-        .find_quote(quote_id, quote_search_parameters.clone())
-        .await
-    {
-        Ok(quote) => {
-            tracing::debug!(quote_id =? quote.id, "found quote for order creation");
-            quote
-        }
-        // We couldn't find a quote, and no ID was specified. Try computing a
-        // fresh quote to use instead.
-        Err(FindQuoteError::NotFound(_)) if quote_id.is_none() => {
-            let parameters = QuoteParameters {
-                sell_token: quote_search_parameters.sell_token,
-                buy_token: quote_search_parameters.buy_token,
-                side: match quote_search_parameters.kind {
-                    OrderKind::Buy => OrderQuoteSide::Buy {
-                        buy_amount_after_fee: quote_search_parameters
-                            .buy_amount
-                            .try_into()
-                            .map_err(|_| ValidationError::ZeroAmount)?,
-                    },
-                    OrderKind::Sell => OrderQuoteSide::Sell {
-                        sell_amount: SellAmount::AfterFee {
-                            value: quote_search_parameters
-                                .sell_amount
-                                .try_into()
-                                .map_err(|_| ValidationError::ZeroAmount)?,
-                        },
-                    },
+    if let Ok(quote) = quoter.find_quote(quote_search_parameters.clone()).await {
+        tracing::debug!(
+            found_quote = ?quote.id,
+            user_provided_quote = ?quote_id,
+            "found quote for order creation"
+        );
+        return Ok(quote);
+    }
+
+    // Quote could not be found so let's compute a fresh one.
+    let parameters = QuoteParameters {
+        sell_token: quote_search_parameters.sell_token,
+        buy_token: quote_search_parameters.buy_token,
+        side: match quote_search_parameters.kind {
+            OrderKind::Buy => OrderQuoteSide::Buy {
+                buy_amount_after_fee: quote_search_parameters
+                    .buy_amount
+                    .try_into()
+                    .map_err(|_| ValidationError::ZeroAmount)?,
+            },
+            OrderKind::Sell => OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: quote_search_parameters
+                        .sell_amount
+                        .try_into()
+                        .map_err(|_| ValidationError::ZeroAmount)?,
                 },
-                verification: quote_search_parameters.verification.clone(),
-                signing_scheme: quote_search_parameters.signing_scheme,
-                additional_gas: quote_search_parameters.additional_gas,
-            };
-
-            let quote = quoter.calculate_quote(parameters).await?;
-            let quote = quoter
-                .store_quote(quote)
-                .await
-                .map_err(ValidationError::Other)?;
-
-            tracing::debug!(quote_id =? quote.id, "computed fresh quote for order creation");
-            quote
-        }
-        Err(err) => return Err(err.into()),
+            },
+        },
+        verification: quote_search_parameters.verification.clone(),
+        signing_scheme: quote_search_parameters.signing_scheme,
+        additional_gas: quote_search_parameters.additional_gas,
     };
 
+    let quote = quoter.calculate_quote(parameters).await?;
+    let quote = quoter
+        .store_quote(quote)
+        .await
+        .map_err(ValidationError::Other)?;
+
+    tracing::debug!(
+        computed_quote = ?quote.id,
+        user_provided_quote = ?quote_id,
+        "computed fresh quote for order creation"
+    );
     Ok(quote)
 }
 
@@ -966,7 +963,6 @@ mod tests {
             signature_validator::MockSignatureValidating,
         },
         anyhow::anyhow,
-        chrono::Utc,
         contracts::dummy_contract,
         ethcontract::web3::signing::SecretKeyRef,
         futures::FutureExt,
@@ -1245,7 +1241,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1440,7 +1436,7 @@ mod tests {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter.expect_find_quote().returning(|_, _| {
+        order_quoter.expect_find_quote().returning(|_| {
             Ok(Quote {
                 id: None,
                 data: Default::default(),
@@ -1523,7 +1519,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1591,7 +1587,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1642,7 +1638,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1694,7 +1690,10 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Err(FindQuoteError::Other(anyhow!("err"))));
+            .returning(|_| Err(FindQuoteError::Other(anyhow!("err"))));
+        order_quoter
+            .expect_calculate_quote()
+            .returning(|_| Err(CalculateQuoteError::Other(anyhow!("err"))));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1746,7 +1745,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector.expect_detect().returning(|_| {
             Ok(TokenQuality::Bad {
                 reason: Default::default(),
@@ -1805,7 +1804,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1858,7 +1857,7 @@ mod tests {
         let mut signature_validator = MockSignatureValidating::new();
         order_quoter
             .expect_find_quote()
-            .returning(|_, _| Ok(Default::default()));
+            .returning(|_| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1924,7 +1923,7 @@ mod tests {
             let mut balance_fetcher = MockBalanceFetching::new();
             order_quoter
                 .expect_find_quote()
-                .returning(|_, _| Ok(Default::default()));
+                .returning(|_| Ok(Default::default()));
             bad_token_detector
                 .expect_detect()
                 .returning(|_| Ok(TokenQuality::Good));
@@ -2003,7 +2002,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_quote_find_by_id() {
+    async fn get_quote_find_by_parameters() {
         let mut order_quoter = MockOrderQuoting::new();
         let quote_search_parameters = QuoteSearchParameters {
             sell_token: H160([1; 20]),
@@ -2030,8 +2029,8 @@ mod tests {
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
-            .with(eq(quote_id), eq(quote_search_parameters.clone()))
-            .returning(move |_, _| Ok(quote_data.clone()));
+            .with(eq(quote_search_parameters.clone()))
+            .returning(move |_| Ok(quote_data.clone()));
 
         let quote = get_quote_and_check_fee(
             &order_quoter,
@@ -2061,8 +2060,8 @@ mod tests {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .with(eq(None), always())
-            .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+            .with(always())
+            .returning(|_| Err(FindQuoteError::NotFound));
         let quote_search_parameters = QuoteSearchParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
@@ -2124,68 +2123,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_quote_errors_when_not_found_by_id() {
-        let quote_search_parameters = QuoteSearchParameters {
-            ..Default::default()
-        };
-
-        let mut order_quoter = MockOrderQuoting::new();
-        order_quoter
-            .expect_find_quote()
-            .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
-
-        let err = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            Some(0),
-            Some(U256::zero()),
-        )
-        .await
-        .unwrap_err();
-
-        assert!(matches!(err, ValidationError::QuoteNotFound));
-    }
-
-    #[tokio::test]
     async fn get_quote_bubbles_errors() {
-        macro_rules! assert_find_error_matches {
-            ($find_err:expr, $validation_err:pat) => {{
-                let mut order_quoter = MockOrderQuoting::new();
-                order_quoter
-                    .expect_find_quote()
-                    .returning(|_, _| Err($find_err));
-                let err = get_quote_and_check_fee(
-                    &order_quoter,
-                    &QuoteSearchParameters {
-                        sell_amount: 1.into(),
-                        kind: OrderKind::Sell,
-                        ..Default::default()
-                    },
-                    Default::default(),
-                    Default::default(),
-                )
-                .await
-                .unwrap_err();
-
-                assert!(matches!(err, $validation_err));
-            }};
-        }
-
-        assert_find_error_matches!(
-            FindQuoteError::Expired(Utc::now()),
-            ValidationError::InvalidQuote
-        );
-        assert_find_error_matches!(
-            FindQuoteError::ParameterMismatch(Default::default()),
-            ValidationError::InvalidQuote
-        );
-
         macro_rules! assert_calc_error_matches {
             ($calc_err:expr, $validation_err:pat) => {{
                 let mut order_quoter = MockOrderQuoting::new();
                 order_quoter
                     .expect_find_quote()
-                    .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+                    .returning(|_| Err(FindQuoteError::NotFound));
                 order_quoter
                     .expect_calculate_quote()
                     .returning(|_| Err($calc_err));
