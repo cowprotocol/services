@@ -5,8 +5,8 @@ use {
             competition::{
                 self,
                 auction,
-                order::{self},
-                solution::{self, Trade},
+                order::{self, Side},
+                solution::{self, error, Trade},
             },
             eth,
         },
@@ -259,38 +259,84 @@ impl Settlement {
 
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
+        let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
+            // This should never happen, returning 0 is better than panicking, but we
+            // should still alert.
+            let msg = format!("could not compute {kind}");
+            tracing::error!(?trade, prices=?self.solution.prices, ?err, msg);
+            0.into()
+        };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
         for trade in self.solution.market_trades() {
-            let prices = match trade {
-                Trade::Fulfillment(_) => ClearingPrices {
-                    sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
-                    buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
-                },
-                Trade::Jit(_) => ClearingPrices {
-                    sell: trade.buy().amount.into(),
-                    buy: trade.sell().amount.into(),
-                },
-            };
-            let order = competition::Amounts {
-                side: trade.side(),
-                sell: trade.sell(),
-                buy: trade.buy(),
-                executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
-                    // This should never happen, returning 0 is better than panicking, but we
-                    // should still alert.
-                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
-                    0.into()
-                }),
-                executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
-                    // This should never happen, returning 0 is better than panicking, but we
-                    // should still alert.
-                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
-                    0.into()
-                }),
-            };
-            acc.insert(trade.uid(), order);
+            match trade {
+                Trade::Fulfillment(_) => {
+                    let prices = ClearingPrices {
+                        sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
+                        buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
+                    };
+                    let order = competition::Amounts {
+                        side: trade.side(),
+                        sell: trade.sell(),
+                        buy: trade.buy(),
+                        executed_sell: trade
+                            .sell_amount(&prices)
+                            .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
+                        executed_buy: trade
+                            .buy_amount(&prices)
+                            .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
+                    };
+                    acc.insert(trade.uid(), order);
+                }
+                Trade::Jit(_) => {
+                    let order = competition::Amounts {
+                        side: trade.side(),
+                        sell: trade.sell(),
+                        buy: trade.buy(),
+                        executed_sell: Self::jit_order_executed_sell(trade)
+                            .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
+                        executed_buy: Self::jit_order_executed_buy(trade)
+                            .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
+                    };
+                    acc.insert(trade.uid(), order);
+                }
+            }
         }
         acc
+    }
+
+    fn jit_order_executed_buy(trade: &Trade) -> Result<eth::TokenAmount, error::Math> {
+        Ok(match trade.side() {
+            Side::Buy => trade.executed().into(),
+            Side::Sell => (trade
+                .executed()
+                .0
+                .checked_add(trade.fee().0)
+                .ok_or(error::Math::Overflow)?)
+            .checked_mul(trade.buy().amount.0)
+            .ok_or(error::Math::Overflow)?
+            .checked_div(trade.sell().amount.0)
+            .ok_or(error::Math::DivisionByZero)?
+            .into(),
+        })
+    }
+
+    fn jit_order_executed_sell(trade: &Trade) -> Result<eth::TokenAmount, error::Math> {
+        Ok(match trade.side() {
+            Side::Buy => trade
+                .executed()
+                .0
+                .checked_mul(trade.sell().amount.0)
+                .ok_or(error::Math::Overflow)?
+                .checked_div(trade.buy().amount.0)
+                .ok_or(error::Math::DivisionByZero)?
+                .into(),
+            Side::Sell => trade
+                .executed()
+                .0
+                .checked_add(trade.fee().0)
+                .ok_or(error::Math::Overflow)?
+                .into(),
+        })
     }
 
     /// The uniform price vector this settlement proposes
