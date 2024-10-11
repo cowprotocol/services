@@ -69,7 +69,7 @@ async fn test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
@@ -88,6 +88,7 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     let order_uid = services.create_order(&order_a).await.unwrap();
+    onchain.mint_block().await;
     let order = services.get_order(&order_uid).await.unwrap();
     assert!(order.is_limit_order());
     assert!(order.data.partially_fillable);

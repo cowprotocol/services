@@ -50,7 +50,7 @@ async fn single_limit_order_test(web3: Web3) {
         token.approve(onchain.contracts().allowance, U256::MAX)
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
 
     let mock_solver = Mock::default();
 
@@ -113,6 +113,7 @@ async fn single_limit_order_test(web3: Web3) {
     let solver_balance_before = token.balance_of(solver.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
+    onchain.mint_block().await;
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     let (jit_order, jit_order_uid) = JitOrder {
@@ -163,6 +164,7 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
+    onchain.mint_block().await;
     wait_for_condition(TIMEOUT, || async {
         let trader_balance_after = token.balance_of(trader.address()).call().await.unwrap();
         let solver_balance_after = token.balance_of(solver.address()).call().await.unwrap();

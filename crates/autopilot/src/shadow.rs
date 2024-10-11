@@ -9,7 +9,6 @@
 
 use {
     crate::{
-        arguments::RunLoopMode,
         domain::{self, competition::TradedOrder},
         infra::{
             self,
@@ -41,20 +40,17 @@ pub struct RunLoop {
     block: u64,
     solve_deadline: Duration,
     liveness: Arc<Liveness>,
-    synchronization: RunLoopMode,
     current_block: CurrentBlockWatcher,
     max_winners_per_auction: usize,
 }
 
 impl RunLoop {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         orderbook: infra::shadow::Orderbook,
         drivers: Vec<Arc<infra::Driver>>,
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
         liveness: Arc<Liveness>,
-        synchronization: RunLoopMode,
         current_block: CurrentBlockWatcher,
         max_winners_per_auction: usize,
     ) -> Self {
@@ -70,7 +66,6 @@ impl RunLoop {
             block: 0,
             solve_deadline,
             liveness,
-            synchronization,
             current_block,
             max_winners_per_auction,
         }
@@ -79,9 +74,9 @@ impl RunLoop {
     pub async fn run_forever(mut self) -> ! {
         let mut previous = None;
         loop {
-            if let RunLoopMode::SyncToBlockchain = self.synchronization {
-                let _ = ethrpc::block_stream::next_block(&self.current_block).await;
-            };
+            // We use this as a synchronization mechanism to sync the run loop starts with
+            // the next mined block
+            let _ = ethrpc::block_stream::next_block(&self.current_block).await;
             let Some(auction) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
@@ -238,7 +233,7 @@ impl RunLoop {
                 let swapped_tokens = solution
                     .orders()
                     .iter()
-                    .flat_map(|(_, order)| vec![order.sell.token, order.buy.token])
+                    .flat_map(|(_, order)| [order.sell.token, order.buy.token])
                     .collect::<HashSet<_>>();
                 if swapped_tokens.is_disjoint(&already_swapped_tokens) {
                     winners.push(participant);

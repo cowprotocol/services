@@ -373,7 +373,11 @@ pub async fn run(args: Arguments) {
         skip_event_sync_start,
     );
 
-    let mut cow_amm_registry = cow_amm::Registry::new(web3.clone());
+    let archive_node_web3 = args.archive_node_url.as_ref().map_or(web3.clone(), |url| {
+        boundary::web3_client(url, &args.shared.ethrpc)
+    });
+
+    let mut cow_amm_registry = cow_amm::Registry::new(archive_node_web3);
     for config in &args.cow_amm_configs {
         cow_amm_registry
             .add_listener(config.index_start, config.factory, config.helper)
@@ -456,11 +460,7 @@ pub async fn run(args: Arguments) {
     let trusted_tokens =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let mut maintenance = Maintenance::new(
-        solvable_orders_cache.clone(),
-        settlement_event_indexer,
-        db.clone(),
-    );
+    let mut maintenance = Maintenance::new(settlement_event_indexer, db.clone());
     maintenance.with_cow_amms(&cow_amm_registry);
 
     if let Some(ethflow_contract) = args.ethflow_contract {
@@ -526,7 +526,6 @@ pub async fn run(args: Arguments) {
         submission_deadline: args.submission_deadline as u64,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
-        synchronization: args.run_loop_mode,
         max_run_loop_delay: args.max_run_loop_delay,
         max_winners_per_auction: args.max_winners_per_auction,
     };
@@ -550,7 +549,7 @@ pub async fn run(args: Arguments) {
         liveness.clone(),
         Arc::new(maintenance),
     );
-    run.run_forever(args.auction_update_interval).await;
+    run.run_forever().await;
     unreachable!("run loop exited");
 }
 
@@ -621,7 +620,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.solve_deadline,
         liveness.clone(),
-        args.run_loop_mode,
         current_block,
         args.max_winners_per_auction,
     );
