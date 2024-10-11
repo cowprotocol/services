@@ -941,7 +941,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         let bob_weth_received = bob_weth_balance_after - bob_weth_balance_before;
 
         // Bob should receive WETH, CoW AMM's WETH balance decreases
-        bob_weth_received >= user_order.buy_amount && amm_weth_sent >= cow_amm_order.sell_amount
+        bob_weth_received >= user_order.buy_amount && amm_weth_sent == cow_amm_order.sell_amount
     })
     .await
     .unwrap();
