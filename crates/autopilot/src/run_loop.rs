@@ -520,7 +520,7 @@ impl RunLoop {
         ) {
             // Don't error if saving of auction and solution fails, until stable.
             // Various edge cases with JIT orders verifiable only in production.
-            tracing::warn!(?err, "failed to competition data");
+            tracing::warn!(?err, "failed to save new competition data");
         }
 
         tracing::trace!(?competition, "saving competition");

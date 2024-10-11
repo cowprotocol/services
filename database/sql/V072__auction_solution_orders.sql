@@ -1,4 +1,4 @@
--- All auctions ran by autopilot
+-- All auctions for which a valid solver competition exists. 
 CREATE TABLE competition_auctions (
    id bigint PRIMARY KEY,
    -- The block number at which the auction was created
@@ -39,7 +39,7 @@ CREATE TABLE proposed_solutions (
 );
 
 -- Table to store all order executions of a solution
-CREATE TABLE proposed_solution_executions (
+CREATE TABLE proposed_trade_executions (
    auction_id bigint NOT NULL,
    solution_uid bigint NOT NULL,
    order_uid bytea NOT NULL,

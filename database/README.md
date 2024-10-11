@@ -71,7 +71,7 @@ Contains all auctions for which a valid solver competition exists.
  order\_uids   | bytea[] | not null | orders that are part of the auction
  price\_tokens | bytea[] | not null | native price tokens
  price\_values | numeric | not null | native price values, mapped one-to-one with price\_tokens
- surplus\_capturing\_jit\_order\_owners | bytea[] | not null | owners of cow amm pools
+ surplus\_capturing\_jit\_order\_owners | bytea[] | not null | surplus capturing jit order owners that are part of the auction
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
@@ -328,7 +328,7 @@ Indexes:
 
 ### proposed\_solutions
 
-All solutions reported by solvers, that were part of a solver competition.
+All solutions reported by solvers, that were part of a solver competition. A solver competition can have more than one winner.
 
  Column        | Type      | Nullable | Details
 ---------------|-----------|----------|--------
@@ -336,7 +336,7 @@ All solutions reported by solvers, that were part of a solver competition.
  uid           | bigint    | not null | unique id of the proposed solution within a single auction
  id            | bytea     | not null | id of the proposed solution as reported by the solver
  solver        | bytea     | not null | solver submission address
- is\_winner    | boolean   | not null | specifies if a solution was chosen as a winner of a competition
+ is\_winner    | boolean   | not null | specifies if a solver that proposed this solutions is required to execute the solution
  score         | numeric   | not null | score of a solution, based on a scoring criteria used at the time of competition
  price\_tokens | bytea[]   | not null | tokens used in a solution, for which uniform prices are provided
  price\_values | numeric[] | not null | uniform prices for all tokens in price\_tokens list
@@ -344,14 +344,14 @@ All solutions reported by solvers, that were part of a solver competition.
 Indexes:
 - PRIMARY KEY: btree(`auction_id`, `uid`)
 
-### proposed\_solution\_executions
+### proposed\_trade\_executions
 
 Contains all order executions for proposed solutions. 
 
  Column         | Type     | Nullable | Details
 ----------------|----------|----------|--------
  auction\_id    | bigint   | not null | auction for which the order was executed 
- solution_uid   | bigint   | not null | `uid` from proposed\_solutions
+ solution_uid   | bigint   | not null | `uid` from `proposed\_solutions`
  order_uid      | bigint   | not null | id of the order
  executed\_sell | numeric  | not null | the effective amount that left the user's wallet including all fees
  executed\_buy  | numeric  | not null | the effective amount the user received after all fees
@@ -361,12 +361,12 @@ Indexes:
 
 ### proposed\_jit\_orders
 
-Solvers report orders they solved on each competition. Orders that don't exist in the orderbook, are considered JIT orders and saved in this table.
+Solvers report orders they solved on each competition. Orders that don't exist in the orderbook (i.e. private liquidity orders or surplus capturing jit orders), are considered JIT orders and saved in this table.
 
  Column       | Type               | Nullable | Details
 --------------|--------------------|----------|--------
  auction\_id  | bigint             | not null | auction for which the order was executed 
- solution_uid | bigint             | not null | `uid` from proposed\_solutions
+ solution_uid | bigint             | not null | `uid` from `proposed\_solutions`
  order_uid    | bigint             | not null | id of the order
  sell\_token  | numeric            | not null | the effective amount that left the user's wallet including all fees
  buy\_token   | numeric            | not null | the effective amount the user received after all fees
