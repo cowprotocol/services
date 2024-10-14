@@ -149,7 +149,7 @@ impl super::Postgres {
                 deserialize_solver_competition(
                     row.json,
                     row.id,
-                    row.tx_hash.map(|hash| H256(hash.0)),
+                    row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
                 )
             })
             .transpose()
@@ -159,13 +159,13 @@ impl super::Postgres {
 fn deserialize_solver_competition(
     json: JsonValue,
     auction_id: model::auction::AuctionId,
-    transaction_hash: Option<H256>,
+    transaction_hashes: Vec<H256>,
 ) -> anyhow::Result<SolverCompetitionAPI> {
     let common: SolverCompetitionDB =
         serde_json::from_value(json).context("deserialize SolverCompetitionDB")?;
     Ok(SolverCompetitionAPI {
         auction_id,
-        transaction_hash,
+        transaction_hashes,
         common,
     })
 }
