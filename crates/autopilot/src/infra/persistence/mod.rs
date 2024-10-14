@@ -805,6 +805,73 @@ impl Persistence {
         ex.commit().await?;
         Ok(())
     }
+
+    pub async fn populate_historic_auctions(&self) -> Result<(), DatabaseError> {
+        const BATCH_SIZE: i64 = 50;
+
+        let mut ex = self.postgres.pool.begin().await?;
+
+        loop {
+            // find entry in `competition_auctions` with the lowest auction_id, as a
+            // starting point
+            let lowest_auction_id: i64 =
+                sqlx::query_scalar("SELECT MIN(auction_id) FROM competition_auctions")
+                    .fetch_one(ex.deref_mut())
+                    .await
+                    .context("fetch lowest auction id")?;
+
+            // fetch the next batch of auctions
+            let competitions: Vec<database::solver_competition::RichSolverCompetition> =
+                database::solver_competition::fetch_batch(&mut ex, lowest_auction_id, BATCH_SIZE)
+                    .await?;
+
+            if competitions.is_empty() {
+                tracing::info!("no more auctions to process");
+                break;
+            }
+
+            for solver_competition in competitions {
+                let competition: model::solver_competition::SolverCompetitionDB =
+                    serde_json::from_value(solver_competition.json)
+                        .context("deserialize SolverCompetitionDB")?;
+
+                // populate historic auctions
+                let auction = database::auction::Auction {
+                    id: solver_competition.id,
+                    block: i64::try_from(competition.auction_start_block)
+                        .context("block overflow")?,
+                    deadline: solver_competition.deadline,
+                    order_uids: competition
+                        .auction
+                        .orders
+                        .iter()
+                        .map(|order| ByteArray(order.0))
+                        .collect(),
+                    price_tokens: competition
+                        .auction
+                        .prices
+                        .keys()
+                        .map(|token| ByteArray(token.0))
+                        .collect(),
+                    price_values: competition
+                        .auction
+                        .prices
+                        .values()
+                        .map(u256_to_big_decimal)
+                        .collect(),
+                    surplus_capturing_jit_order_owners: solver_competition
+                        .surplus_capturing_jit_order_owners,
+                };
+
+                if let Err(err) = database::auction::save(&mut ex, auction).await {
+                    tracing::warn!(?err, auction_id = ?solver_competition.id, "failed to save auction");
+                }
+            }
+        }
+
+        ex.commit().await?;
+        Ok(())
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
