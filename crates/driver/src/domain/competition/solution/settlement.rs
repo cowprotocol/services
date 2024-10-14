@@ -5,7 +5,7 @@ use {
             competition::{
                 self,
                 auction,
-                order::{self, Side},
+                order::{self},
                 solution::{self, error, Trade},
             },
             eth,
@@ -287,14 +287,16 @@ impl Settlement {
                     };
                     acc.insert(trade.uid(), order);
                 }
-                Trade::Jit(_) => {
+                Trade::Jit(jit) => {
                     let order = competition::Amounts {
                         side: trade.side(),
                         sell: trade.sell(),
                         buy: trade.buy(),
-                        executed_sell: Self::jit_order_executed_sell(trade)
+                        executed_sell: jit
+                            .executed_sell()
                             .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
-                        executed_buy: Self::jit_order_executed_buy(trade)
+                        executed_buy: jit
+                            .executed_buy()
                             .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
                     };
                     acc.insert(trade.uid(), order);
@@ -302,41 +304,6 @@ impl Settlement {
             }
         }
         acc
-    }
-
-    fn jit_order_executed_buy(trade: &Trade) -> Result<eth::TokenAmount, error::Math> {
-        Ok(match trade.side() {
-            Side::Buy => trade.executed().into(),
-            Side::Sell => (trade
-                .executed()
-                .0
-                .checked_add(trade.fee().0)
-                .ok_or(error::Math::Overflow)?)
-            .checked_mul(trade.buy().amount.0)
-            .ok_or(error::Math::Overflow)?
-            .checked_div(trade.sell().amount.0)
-            .ok_or(error::Math::DivisionByZero)?
-            .into(),
-        })
-    }
-
-    fn jit_order_executed_sell(trade: &Trade) -> Result<eth::TokenAmount, error::Math> {
-        Ok(match trade.side() {
-            Side::Buy => trade
-                .executed()
-                .0
-                .checked_mul(trade.sell().amount.0)
-                .ok_or(error::Math::Overflow)?
-                .checked_div(trade.buy().amount.0)
-                .ok_or(error::Math::DivisionByZero)?
-                .into(),
-            Side::Sell => trade
-                .executed()
-                .0
-                .checked_add(trade.fee().0)
-                .ok_or(error::Math::Overflow)?
-                .into(),
-        })
     }
 
     /// The uniform price vector this settlement proposes

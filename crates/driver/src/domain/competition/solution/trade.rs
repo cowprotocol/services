@@ -422,6 +422,41 @@ impl Jit {
         self.executed
     }
 
+    pub fn executed_buy(&self) -> Result<eth::TokenAmount, Math> {
+        Ok(match self.order().side {
+            Side::Buy => self.executed().into(),
+            Side::Sell => (self
+                .executed()
+                .0
+                .checked_add(self.fee().0)
+                .ok_or(Math::Overflow)?)
+            .checked_mul(self.order.buy.amount.0)
+            .ok_or(Math::Overflow)?
+            .checked_div(self.order.sell.amount.0)
+            .ok_or(Math::DivisionByZero)?
+            .into(),
+        })
+    }
+
+    pub fn executed_sell(&self) -> Result<eth::TokenAmount, Math> {
+        Ok(match self.order().side {
+            Side::Buy => self
+                .executed()
+                .0
+                .checked_mul(self.order.sell.amount.0)
+                .ok_or(Math::Overflow)?
+                .checked_div(self.order.buy.amount.0)
+                .ok_or(Math::DivisionByZero)?
+                .into(),
+            Side::Sell => self
+                .executed()
+                .0
+                .checked_add(self.fee().0)
+                .ok_or(Math::Overflow)?
+                .into(),
+        })
+    }
+
     pub fn fee(&self) -> order::SellAmount {
         self.fee
     }
