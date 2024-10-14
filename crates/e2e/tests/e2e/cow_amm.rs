@@ -19,7 +19,9 @@ use {
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,
+        Interaction,
         Kind,
+        LiquidityInteraction,
         SellTokenBalance,
         SigningScheme,
         Solution,
@@ -1204,10 +1206,6 @@ async fn cow_amm_quoting(web3: Web3) {
         dai.approve(onchain.contracts().allowance, U256::MAX)
     );
 
-    // todo: figure out why this is even required.
-    dai.mint(onchain.contracts().gp_settlement.address(), to_wei(30))
-        .await;
-
     // Compensate a delay between the `CurrentBlockStream` and the actual onchain
     // data.
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -1250,7 +1248,14 @@ async fn cow_amm_quoting(web3: Web3) {
             }),
         ],
         pre_interactions: vec![cow_amm_commitment],
-        interactions: vec![],
+        interactions: vec![Interaction::Liquidity(LiquidityInteraction {
+            internalize: false,
+            id: "0".to_string(),
+            output_token: dai.address(),
+            input_token: onchain.contracts().weth.address(),
+            output_amount: to_wei(27),
+            input_amount: U256::exp10(16),
+        })],
         post_interactions: vec![],
         gas: None,
     };
