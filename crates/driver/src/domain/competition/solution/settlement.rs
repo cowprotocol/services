@@ -268,13 +268,13 @@ impl Settlement {
         };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
         for trade in &self.solution.trades {
-            match trade {
+            let order = match trade {
                 Trade::Fulfillment(_) => {
                     let prices = ClearingPrices {
                         sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
                         buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
                     };
-                    let order = competition::Amounts {
+                    competition::Amounts {
                         side: trade.side(),
                         sell: trade.sell(),
                         buy: trade.buy(),
@@ -284,24 +284,21 @@ impl Settlement {
                         executed_buy: trade
                             .buy_amount(&prices)
                             .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
-                    };
-                    acc.insert(trade.uid(), order);
+                    }
                 }
-                Trade::Jit(jit) => {
-                    let order = competition::Amounts {
-                        side: trade.side(),
-                        sell: trade.sell(),
-                        buy: trade.buy(),
-                        executed_sell: jit
-                            .executed_sell()
-                            .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
-                        executed_buy: jit
-                            .executed_buy()
-                            .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
-                    };
-                    acc.insert(trade.uid(), order);
-                }
-            }
+                Trade::Jit(jit) => competition::Amounts {
+                    side: trade.side(),
+                    sell: trade.sell(),
+                    buy: trade.buy(),
+                    executed_sell: jit
+                        .executed_sell()
+                        .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
+                    executed_buy: jit
+                        .executed_buy()
+                        .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
+                },
+            };
+            acc.insert(trade.uid(), order);
         }
         acc
     }
