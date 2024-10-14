@@ -432,7 +432,7 @@ impl Jit {
                 .ok_or(Math::Overflow)?)
             .checked_mul(self.order.buy.amount.0)
             .ok_or(Math::Overflow)?
-            .checked_div(self.order.sell.amount.0)
+            .checked_ceil_div(&self.order.sell.amount.0)
             .ok_or(Math::DivisionByZero)?
             .into(),
         })
