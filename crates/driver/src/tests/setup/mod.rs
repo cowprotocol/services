@@ -1240,9 +1240,8 @@ impl<'a> SolveOk<'a> {
                 let u256 = |value: &serde_json::Value| {
                     eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
                 };
-                let token = |value: &serde_json::Value| value.as_str().unwrap().to_string();
-                let sell_token = token(trade.get("sellToken").unwrap());
-                let buy_token = token(trade.get("buyToken").unwrap());
+                let sell_token = trade.get("sellToken").unwrap().to_string();
+                let buy_token = trade.get("buyToken").unwrap().to_string();
 
                 if sell_token == expected.order.sell_token && buy_token == expected.order.buy_token
                 {
