@@ -138,7 +138,7 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
 
-        database::solver_competition::save_solutions(
+        database::solver_competition::save(
             &mut ex,
             auction_id,
             &solutions

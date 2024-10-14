@@ -12,7 +12,7 @@ use {
     std::ops::DerefMut,
 };
 
-pub async fn save(
+pub async fn save_solver_competition(
     ex: &mut PgConnection,
     id: AuctionId,
     data: &JsonValue,
@@ -101,7 +101,7 @@ pub struct Order {
     pub side: OrderKind,
 }
 
-pub async fn save_solutions(
+pub async fn save(
     ex: &mut PgTransaction<'_>,
     auction_id: AuctionId,
     solutions: &[Solution],
@@ -110,89 +110,105 @@ pub async fn save_solutions(
         return Ok(());
     }
 
-    // Build and insert solutions
-    {
-        let mut solution_builder = QueryBuilder::new(
-            r#"INSERT INTO proposed_solutions 
-            (auction_id, uid, id, solver, is_winner, score, price_tokens, price_values)"#,
-        );
-
-        solution_builder.push_values(solutions.iter(), |mut b, solution| {
-            b.push_bind(auction_id)
-                .push_bind(solution.uid)
-                .push_bind(solution.id)
-                .push_bind(solution.solver)
-                .push_bind(solution.is_winner)
-                .push_bind(&solution.score)
-                .push_bind(&solution.price_tokens)
-                .push_bind(&solution.price_values);
-        });
-
-        solution_builder.push(" ON CONFLICT (auction_id, uid) DO NOTHING;");
-        solution_builder.build().execute(ex.deref_mut()).await?;
-    }
-
-    // Build and insert order executions
-    {
-        let mut order_builder = QueryBuilder::new(
-            r#"INSERT INTO proposed_trade_executions 
-            (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
-        );
-
-        order_builder.push_values(
-            solutions.iter().flat_map(|solution| {
-                solution
-                    .orders
-                    .iter()
-                    .map(move |order| (solution.uid, order))
-            }),
-            |mut b, (solution_uid, order)| {
-                b.push_bind(auction_id)
-                    .push_bind(solution_uid)
-                    .push_bind(order.uid)
-                    .push_bind(order.executed_sell.clone())
-                    .push_bind(order.executed_buy.clone());
-            },
-        );
-
-        order_builder.push(" ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING;");
-        order_builder.build().execute(ex.deref_mut()).await?;
-    }
-
-    // Build and insert JIT orders
-    {
-        for solution in solutions {
-            for order in &solution.orders {
-                // Order data is saved to `proposed_jit_orders` table only if the order is not
-                // already in the `orders` table.
-                const QUERY_JIT: &str = r#"
-                    INSERT INTO proposed_jit_orders 
-                    (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
-                    SELECT $1, $2, $3, $4, $5, $6, $7, $8
-                        WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
-                    ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING
-                "#;
-
-                sqlx::query(QUERY_JIT)
-                    .bind(auction_id)
-                    .bind(solution.uid)
-                    .bind(order.uid)
-                    .bind(order.sell_token)
-                    .bind(order.buy_token)
-                    .bind(order.limit_sell.clone())
-                    .bind(order.limit_buy.clone())
-                    .bind(order.side)
-                    .execute(ex.deref_mut())
-                    .await?;
-            }
-        }
-    }
+    save_solutions(ex, auction_id, solutions).await?;
+    save_trade_executions(ex, auction_id, solutions).await?;
+    save_jit_orders(ex, auction_id, solutions).await?;
 
     Ok(())
 }
 
+async fn save_solutions(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    solutions: &[Solution],
+) -> Result<(), sqlx::Error> {
+    let mut builder = QueryBuilder::new(
+        r#"INSERT INTO proposed_solutions 
+        (auction_id, uid, id, solver, is_winner, score, price_tokens, price_values)"#,
+    );
+
+    builder.push_values(solutions.iter(), |mut b, solution| {
+        b.push_bind(auction_id)
+            .push_bind(solution.uid)
+            .push_bind(solution.id)
+            .push_bind(solution.solver)
+            .push_bind(solution.is_winner)
+            .push_bind(&solution.score)
+            .push_bind(&solution.price_tokens)
+            .push_bind(&solution.price_values);
+    });
+
+    builder.push(" ON CONFLICT (auction_id, uid) DO NOTHING;");
+    builder.build().execute(ex.deref_mut()).await?;
+    Ok(())
+}
+
+async fn save_trade_executions(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    solutions: &[Solution],
+) -> Result<(), sqlx::Error> {
+    let mut builder = QueryBuilder::new(
+        r#"INSERT INTO proposed_trade_executions 
+        (auction_id, solution_uid, order_uid, executed_sell, executed_buy)"#,
+    );
+
+    builder.push_values(
+        solutions.iter().flat_map(|solution| {
+            solution
+                .orders
+                .iter()
+                .map(move |order| (solution.uid, order))
+        }),
+        |mut b, (solution_uid, order)| {
+            b.push_bind(auction_id)
+                .push_bind(solution_uid)
+                .push_bind(order.uid)
+                .push_bind(order.executed_sell.clone())
+                .push_bind(order.executed_buy.clone());
+        },
+    );
+
+    builder.push(" ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING;");
+    builder.build().execute(ex.deref_mut()).await?;
+    Ok(())
+}
+
+async fn save_jit_orders(
+    ex: &mut PgTransaction<'_>,
+    auction_id: AuctionId,
+    solutions: &[Solution],
+) -> Result<(), sqlx::Error> {
+    for solution in solutions {
+        for order in &solution.orders {
+            // Order data is saved to `proposed_jit_orders` table only if the order is not
+            // already in the `orders` table.
+            const QUERY_JIT: &str = r#"
+                INSERT INTO proposed_jit_orders 
+                (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
+                SELECT $1, $2, $3, $4, $5, $6, $7, $8
+                    WHERE NOT EXISTS (SELECT 1 FROM orders WHERE uid = $3)
+                ON CONFLICT (auction_id, solution_uid, order_uid) DO NOTHING
+            "#;
+
+            sqlx::query(QUERY_JIT)
+                .bind(auction_id)
+                .bind(solution.uid)
+                .bind(order.uid)
+                .bind(order.sell_token)
+                .bind(order.buy_token)
+                .bind(order.limit_sell.clone())
+                .bind(order.limit_buy.clone())
+                .bind(order.side)
+                .execute(ex.deref_mut())
+                .await?;
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::type_complexity)]
-pub async fn fetch_solutions(
+pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: AuctionId,
 ) -> Result<Vec<Solution>, sqlx::Error> {
@@ -291,7 +307,7 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let value = JsonValue::Bool(true);
-        save(&mut db, 0, &value).await.unwrap();
+        save_solver_competition(&mut db, 0, &value).await.unwrap();
         let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
         assert_eq!(value, value_.json);
         assert!(value_.tx_hash.is_none());
@@ -309,7 +325,7 @@ mod tests {
         let id: i64 = 5;
         let value = JsonValue::Bool(true);
         let hash = ByteArray([1u8; 32]);
-        save(&mut db, id, &value).await.unwrap();
+        save_solver_competition(&mut db, id, &value).await.unwrap();
 
         let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
         assert_eq!(value, value_by_id.json);
@@ -405,8 +421,8 @@ mod tests {
             },
         ];
 
-        save_solutions(&mut db, 0, &solutions).await.unwrap();
-        let fetched_solutions = fetch_solutions(&mut db, 0).await.unwrap();
+        save(&mut db, 0, &solutions).await.unwrap();
+        let fetched_solutions = fetch(&mut db, 0).await.unwrap();
 
         // first two solutions should be identical
         assert_eq!(solutions[0..2], fetched_solutions[0..2]);
