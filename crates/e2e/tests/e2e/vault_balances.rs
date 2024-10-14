@@ -41,7 +41,7 @@ async fn vault_balances(web3: Web3) {
         )
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // Place Orders
@@ -61,6 +61,7 @@ async fn vault_balances(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     services.create_order(&order).await.unwrap();
+    onchain.mint_block().await;
     let balance_before = onchain
         .contracts()
         .weth

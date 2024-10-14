@@ -41,7 +41,7 @@ async fn smart_contract_orders(web3: Web3) {
     safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
         .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let order_template = OrderCreation {
@@ -167,7 +167,7 @@ async fn erc1271_gas_limit(web3: Web3) {
         trader.approve(cow.address(), onchain.contracts().allowance, to_wei(10))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             ExtraServiceArgs {

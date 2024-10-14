@@ -41,7 +41,7 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver.clone()).await;
 
     tracing::info!("Placing order");

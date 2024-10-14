@@ -121,7 +121,7 @@ impl super::Postgres {
     }
 
     /// Saves the surplus capturing jit order owners to the DB
-    pub async fn save_surplus_capturing_jit_orders_orders(
+    pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[Address],
