@@ -29,7 +29,8 @@ VALUES ($1, $2)
 pub struct LoadCompetition {
     pub json: JsonValue,
     pub id: AuctionId,
-    pub tx_hash: Option<TransactionHash>,
+    // Multiple settlements can be associated with a single competition.
+    pub tx_hashes: Vec<TransactionHash>,
 }
 
 pub async fn load_by_id(
@@ -37,11 +38,12 @@ pub async fn load_by_id(
     id: AuctionId,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, s.tx_hash
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.tx_hash IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 WHERE sc.id = $1
+GROUP BY sc.id
     ;"#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
@@ -50,10 +52,11 @@ pub async fn load_latest_competition(
     ex: &mut PgConnection,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, s.tx_hash
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.tx_hash IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
+GROUP BY sc.id
 ORDER BY sc.id DESC
 LIMIT 1
     ;"#;
@@ -65,10 +68,17 @@ pub async fn load_by_tx_hash(
     tx_hash: &TransactionHash,
 ) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id, s.tx_hash
+WITH competition AS (
+    SELECT sc.id
+    FROM solver_competitions sc
+    JOIN settlements s ON sc.id = s.auction_id
+    WHERE s.tx_hash = $1
+)
+SELECT sc.json, sc.id, COALESCE(ARRAY_AGG(s.tx_hash) FILTER (WHERE s.tx_hash IS NOT NULL), '{}') AS tx_hashes
 FROM solver_competitions sc
 JOIN settlements s ON sc.id = s.auction_id
-WHERE s.tx_hash = $1
+WHERE sc.id = (SELECT id FROM competition)
+GROUP BY sc.id
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
@@ -294,7 +304,7 @@ mod tests {
         super::*,
         crate::{
             byte_array::ByteArray,
-            events::{Event, EventIndex, Settlement},
+            events::{EventIndex, Settlement},
         },
         sqlx::{Connection, Row},
     };
@@ -308,62 +318,77 @@ mod tests {
 
         let value = JsonValue::Bool(true);
         save_solver_competition(&mut db, 0, &value).await.unwrap();
+
+        // load by id works
         let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
         assert_eq!(value, value_.json);
-        assert!(value_.tx_hash.is_none());
-
-        assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_by_hash() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let id: i64 = 5;
-        let value = JsonValue::Bool(true);
-        let hash = ByteArray([1u8; 32]);
-        save_solver_competition(&mut db, id, &value).await.unwrap();
-
-        let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
-        assert_eq!(value, value_by_id.json);
-        // no hash because hash columns isn't used to find it
-        assert!(value_by_id.tx_hash.is_none());
-
-        // Fails because the tx_hash stored directly in the solver_competitions table is
-        // no longer used to look the competition up.
-        assert!(load_by_tx_hash(&mut db, &hash).await.unwrap().is_none());
-
-        // Now insert the proper settlement event and account-nonce.
-
-        let index = EventIndex::default();
-        let event = Event::Settlement(Settlement {
-            solver: Default::default(),
-            transaction_hash: hash,
-        });
-        crate::events::append(&mut db, &[(index, event)])
+        assert!(value_.tx_hashes.is_empty());
+        // load as latest works
+        let value_ = load_latest_competition(&mut db).await.unwrap().unwrap();
+        assert_eq!(value, value_.json);
+        assert!(value_.tx_hashes.is_empty());
+        // load by tx doesn't work, as there is no settlement yet
+        assert!(load_by_tx_hash(&mut db, &ByteArray([0u8; 32]))
             .await
-            .unwrap();
+            .unwrap()
+            .is_none());
 
-        crate::settlements::update_settlement_auction(
+        // non-existent auction returns none
+        assert!(load_by_id(&mut db, 1).await.unwrap().is_none());
+
+        // insert two settlement events for the same auction id
+        crate::events::insert_settlement(
             &mut db,
-            index.block_number,
-            index.log_index,
-            id,
+            &EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            &Settlement {
+                solver: Default::default(),
+                transaction_hash: ByteArray([0u8; 32]),
+            },
         )
         .await
         .unwrap();
+        crate::events::insert_settlement(
+            &mut db,
+            &EventIndex {
+                block_number: 0,
+                log_index: 1,
+            },
+            &Settlement {
+                solver: Default::default(),
+                transaction_hash: ByteArray([1u8; 32]),
+            },
+        )
+        .await
+        .unwrap();
+        crate::settlements::update_settlement_auction(&mut db, 0, 0, 0)
+            .await
+            .unwrap();
+        crate::settlements::update_settlement_auction(&mut db, 0, 1, 0)
+            .await
+            .unwrap();
 
-        // Now succeeds.
-        let value_by_hash = load_by_tx_hash(&mut db, &hash).await.unwrap().unwrap();
-        assert_eq!(value, value_by_hash.json);
-        assert_eq!(id, value_by_hash.id);
+        // load by id works, and finds two hashes
+        let value_ = load_by_id(&mut db, 0).await.unwrap().unwrap();
+        assert!(value_.tx_hashes.len() == 2);
 
-        // By id also sees the hash now.
-        let value_by_id = load_by_id(&mut db, id).await.unwrap().unwrap();
-        assert_eq!(hash, value_by_id.tx_hash.unwrap());
+        // load as latest works, and finds two hashes
+        let value_ = load_latest_competition(&mut db).await.unwrap().unwrap();
+        assert!(value_.tx_hashes.len() == 2);
+
+        // load by tx works, and finds two hashes, no matter which tx hash is used
+        let value_ = load_by_tx_hash(&mut db, &ByteArray([0u8; 32]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(value_.tx_hashes.len() == 2);
+        let value_ = load_by_tx_hash(&mut db, &ByteArray([1u8; 32]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(value_.tx_hashes.len() == 2);
     }
 
     #[tokio::test]
