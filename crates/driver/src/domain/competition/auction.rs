@@ -93,12 +93,7 @@ impl Auction {
     pub fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
         self.orders
             .iter()
-            .filter_map(|order| match order.kind {
-                order::Kind::Market | order::Kind::Limit { .. } => {
-                    liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
-                }
-                order::Kind::Liquidity => None,
-            })
+            .filter_map(|order| liquidity::TokenPair::new(order.sell.token, order.buy.token).ok())
             .collect()
     }
 

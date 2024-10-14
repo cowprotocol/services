@@ -143,21 +143,14 @@ impl Solution {
         let mut trades = Vec::with_capacity(solution.trades.len());
         for trade in solution.trades {
             match &trade {
-                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                    order::Kind::Market | order::Kind::Limit { .. } => {
-                        let prices = ClearingPrices {
-                            sell: solution.prices
-                                [&fulfillment.order().sell.token.wrap(solution.weth)],
-                            buy: solution.prices
-                                [&fulfillment.order().buy.token.wrap(solution.weth)],
-                        };
-                        let fulfillment = fulfillment.with_protocol_fees(prices)?;
-                        trades.push(Trade::Fulfillment(fulfillment))
-                    }
-                    order::Kind::Liquidity => {
-                        trades.push(trade);
-                    }
-                },
+                Trade::Fulfillment(fulfillment) => {
+                    let prices = ClearingPrices {
+                        sell: solution.prices[&fulfillment.order().sell.token.wrap(solution.weth)],
+                        buy: solution.prices[&fulfillment.order().buy.token.wrap(solution.weth)],
+                    };
+                    let fulfillment = fulfillment.with_protocol_fees(prices)?;
+                    trades.push(Trade::Fulfillment(fulfillment))
+                }
                 Trade::Jit(_) => trades.push(trade),
             }
         }
@@ -194,10 +187,7 @@ impl Solution {
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
     ) -> bool {
         match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                order::Kind::Market | order::Kind::Limit { .. } => true,
-                order::Kind::Liquidity => false,
-            },
+            Trade::Fulfillment(_) => true,
             Trade::Jit(jit) => {
                 surplus_capturing_jit_order_owners.contains(&jit.order().signature.signer)
             }
@@ -350,10 +340,7 @@ impl Solution {
     /// the orders placed by end users.
     fn user_trades(&self) -> impl Iterator<Item = &trade::Fulfillment> {
         self.trades.iter().filter_map(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                order::Kind::Market | order::Kind::Limit { .. } => Some(fulfillment),
-                order::Kind::Liquidity => None,
-            },
+            Trade::Fulfillment(fulfillment) => Some(fulfillment),
             Trade::Jit(_) => None,
         })
     }

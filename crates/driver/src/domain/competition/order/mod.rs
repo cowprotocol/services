@@ -136,10 +136,6 @@ impl Order {
         self.receiver.unwrap_or(self.signature.signer)
     }
 
-    pub fn is_liquidity(&self) -> bool {
-        matches!(self.kind, Kind::Liquidity)
-    }
-
     /// Returns the order's available amounts to be passed to a solver engine.
     ///
     /// See [`Available`] for more details.
@@ -307,9 +303,6 @@ pub enum Kind {
     /// solve for, above what the user specified in the order. The exact amount
     /// of fees that are taken is determined by the solver.
     Limit,
-    /// An order submitted by a privileged user, which provides liquidity for
-    /// our settlement contract.
-    Liquidity,
 }
 
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
