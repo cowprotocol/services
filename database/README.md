@@ -65,12 +65,12 @@ Contains all auctions for which a valid solver competition exists.
 
  Column        | Type    | Nullable | Details
 ---------------|---------|----------|--------
- id            | bigint  | not null | other tables refer to this as auction\_id
+ id            | bigint  | not null | other tables refer to this as `auction\_id`
  block         | bigint  | not null | the block number on top of which the auction was created
  deadline      | bigint  | not null | the block number until which all winning solutions are expected to be settled on-chain.
  order\_uids   | bytea[] | not null | orders that are part of the auction
  price\_tokens | bytea[] | not null | native price tokens
- price\_values | numeric | not null | native price values, mapped one-to-one with price\_tokens
+ price\_values | numeric | not null | native price values, mapped one-to-one with `price\_tokens`
  surplus\_capturing\_jit\_order\_owners | bytea[] | not null | surplus capturing jit order owners that are part of the auction
 
 Indexes:
@@ -336,10 +336,10 @@ All solutions reported by solvers, that were part of a solver competition. A sol
  uid           | bigint    | not null | unique id of the proposed solution within a single auction
  id            | bytea     | not null | id of the proposed solution as reported by the solver
  solver        | bytea     | not null | solver submission address
- is\_winner    | boolean   | not null | specifies if a solver that proposed this solutions is required to execute the solution
+ is\_winner    | boolean   | not null | specifies if a solver that proposed this solution is required to execute the solution
  score         | numeric   | not null | score of a solution, based on a scoring criteria used at the time of competition
  price\_tokens | bytea[]   | not null | tokens used in a solution, for which uniform prices are provided
- price\_values | numeric[] | not null | uniform prices for all tokens in price\_tokens list
+ price\_values | numeric[] | not null | uniform prices for all tokens in `price\_tokens` list
 
 Indexes:
 - PRIMARY KEY: btree(`auction_id`, `uid`)
