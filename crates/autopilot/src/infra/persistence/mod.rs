@@ -811,18 +811,23 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
 
-        loop {
-            // find entry in `competition_auctions` with the lowest auction_id, as a
-            // starting point
-            let lowest_auction_id: i64 =
+        // find entry in `competition_auctions` with the lowest auction_id, as a
+        // starting point
+        let mut current_auction_id: i64 =
                 sqlx::query_scalar("SELECT MIN(auction_id) FROM competition_auctions")
                     .fetch_one(ex.deref_mut())
                     .await
                     .context("fetch lowest auction id")?;
 
+        loop {
+            tracing::debug!(
+                auction_id = current_auction_id,
+                "populating historic auctions from auction"
+            );
+
             // fetch the next batch of auctions
             let competitions: Vec<database::solver_competition::RichSolverCompetition> =
-                database::solver_competition::fetch_batch(&mut ex, lowest_auction_id, BATCH_SIZE)
+                database::solver_competition::fetch_batch(&mut ex, current_auction_id, BATCH_SIZE)
                     .await?;
 
             if competitions.is_empty() {
@@ -830,9 +835,9 @@ impl Persistence {
                 break;
             }
 
-            for solver_competition in competitions {
+            for solver_competition in &competitions {
                 let competition: model::solver_competition::SolverCompetitionDB =
-                    serde_json::from_value(solver_competition.json)
+                    serde_json::from_value(solver_competition.json.clone())
                         .context("deserialize SolverCompetitionDB")?;
 
                 // populate historic auctions
@@ -860,16 +865,22 @@ impl Persistence {
                         .map(u256_to_big_decimal)
                         .collect(),
                     surplus_capturing_jit_order_owners: solver_competition
-                        .surplus_capturing_jit_order_owners,
+                        .surplus_capturing_jit_order_owners.clone(),
                 };
 
                 if let Err(err) = database::auction::save(&mut ex, auction).await {
                     tracing::warn!(?err, auction_id = ?solver_competition.id, "failed to save auction");
                 }
             }
+
+            // commit each batch separately
+            ex.commit().await?;
+            ex = self.postgres.pool.begin().await?;
+
+            // update the current auction id
+            current_auction_id = competitions.last().unwrap().id;
         }
 
-        ex.commit().await?;
         Ok(())
     }
 }
