@@ -12,10 +12,7 @@ use {
             auction,
             eth,
             liquidity,
-            order::{
-                Order,
-                {self},
-            },
+            order::{self, Order},
             solution,
         },
     },
