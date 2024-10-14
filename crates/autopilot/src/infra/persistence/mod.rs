@@ -814,10 +814,10 @@ impl Persistence {
         // find entry in `competition_auctions` with the lowest auction_id, as a
         // starting point
         let mut current_auction_id: i64 =
-                sqlx::query_scalar("SELECT MIN(auction_id) FROM competition_auctions")
-                    .fetch_one(ex.deref_mut())
-                    .await
-                    .context("fetch lowest auction id")?;
+            sqlx::query_scalar("SELECT MIN(auction_id) FROM competition_auctions")
+                .fetch_one(ex.deref_mut())
+                .await
+                .context("fetch lowest auction id")?;
 
         loop {
             tracing::debug!(
@@ -865,7 +865,8 @@ impl Persistence {
                         .map(u256_to_big_decimal)
                         .collect(),
                     surplus_capturing_jit_order_owners: solver_competition
-                        .surplus_capturing_jit_order_owners.clone(),
+                        .surplus_capturing_jit_order_owners
+                        .clone(),
                 };
 
                 if let Err(err) = database::auction::save(&mut ex, auction).await {
