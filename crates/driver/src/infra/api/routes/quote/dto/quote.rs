@@ -106,7 +106,7 @@ impl From<domain::competition::solution::trade::Jit> for JitOrder {
             side: jit.order().side.into(),
             sell_token_source: jit.order().sell_token_balance.into(),
             buy_token_destination: jit.order().buy_token_balance.into(),
-            signature: codec::signature(&jit.order().signature).0,
+            signature: codec::signature(&jit.order().signature).into(),
             signing_scheme: jit.order().signature.scheme.to_boundary_scheme(),
         }
     }
