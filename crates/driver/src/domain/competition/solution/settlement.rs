@@ -267,7 +267,7 @@ impl Settlement {
             0.into()
         };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
-        for trade in self.solution.market_trades() {
+        for trade in &self.solution.trades {
             match trade {
                 Trade::Fulfillment(_) => {
                     let prices = ClearingPrices {

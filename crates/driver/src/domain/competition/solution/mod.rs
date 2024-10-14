@@ -358,17 +358,6 @@ impl Solution {
         })
     }
 
-    /// Return the trades which fulfill non-liquidity auction orders.
-    fn market_trades(&self) -> impl Iterator<Item = &Trade> {
-        self.trades.iter().filter(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
-                order::Kind::Market | order::Kind::Limit { .. } => true,
-                order::Kind::Liquidity => false,
-            },
-            Trade::Jit(_) => true,
-        })
-    }
-
     /// Return the allowances in a normalized form, where there is only one
     /// allowance per [`eth::allowance::Spender`], and they're ordered
     /// deterministically.
