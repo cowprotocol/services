@@ -848,7 +848,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
 
     // Compensate a delay between the `CurrentBlockStream` and the actual onchain
     // data.
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // Place user order where bob sells DAI to buy WETH (opposite direction)
     let user_order = OrderCreation {
@@ -1175,7 +1175,7 @@ async fn cow_amm_quoting(web3: Web3) {
 
     // Compensate a delay between the `CurrentBlockStream` and the actual onchain
     // data.
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // Configure the mock solver's solution
     let mocked_solution = Solution {
