@@ -280,10 +280,10 @@ impl Settlement {
                         buy: trade.buy(),
                         executed_sell: trade
                             .sell_amount(&prices)
-                            .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
+                            .unwrap_or_else(|err| log_err(trade, err, "executed_sell")),
                         executed_buy: trade
                             .buy_amount(&prices)
-                            .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
+                            .unwrap_or_else(|err| log_err(trade, err, "executed_buy")),
                     }
                 }
                 Trade::Jit(jit) => competition::Amounts {
@@ -292,10 +292,10 @@ impl Settlement {
                     buy: trade.buy(),
                     executed_sell: jit
                         .executed_sell()
-                        .unwrap_or_else(|err| log_err(trade, err, "sell_amount")),
+                        .unwrap_or_else(|err| log_err(trade, err, "executed_sell")),
                     executed_buy: jit
                         .executed_buy()
-                        .unwrap_or_else(|err| log_err(trade, err, "buy_amount")),
+                        .unwrap_or_else(|err| log_err(trade, err, "executed_buy")),
                 },
             };
             acc.insert(trade.uid(), order);

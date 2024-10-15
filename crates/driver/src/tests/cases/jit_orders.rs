@@ -13,6 +13,7 @@ use crate::{
             ab_order,
             ab_solution,
             test_solver,
+            ExpectedOrderAmounts,
             Test,
         },
     },
@@ -62,6 +63,18 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .buy_amount(test_case.execution.solver.buy);
     let pool = ab_adjusted_pool(quote);
     let solver_fee = test_case.execution.driver.sell / 100;
+    // Amounts expected to be returned by the driver after fee processing
+    let jit_order_expected_amounts = if test_case.is_surplus_capturing_jit_order {
+        ExpectedOrderAmounts {
+            sell: test_case.execution.solver.sell,
+            buy: test_case.execution.solver.buy,
+        }
+    } else {
+        ExpectedOrderAmounts {
+            sell: test_case.solution.jit_order.order.sell_amount,
+            buy: test_case.solution.jit_order.order.buy_amount,
+        }
+    };
 
     let jit_order = setup::JitOrder {
         order: ab_order()
@@ -70,7 +83,8 @@ async fn protocol_fee_test_case(test_case: TestCase) {
             .buy_amount(test_case.solution.jit_order.order.buy_amount)
             .solver_fee(Some(solver_fee))
             .side(test_case.solution.jit_order.order.side)
-            .no_surplus(),
+            .no_surplus()
+            .expected_amounts(jit_order_expected_amounts),
     };
 
     let order = ab_order()
