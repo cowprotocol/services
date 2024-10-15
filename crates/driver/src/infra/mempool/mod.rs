@@ -19,7 +19,11 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.
-    Public(RevertProtection),
+    Public {
+        max_additional_tip: eth::U256,
+        additional_tip_percentage: f64,
+        revert_protection: RevertProtection,
+    },
     /// The MEVBlocker private mempool.
     MEVBlocker {
         url: reqwest::Url,
@@ -33,7 +37,7 @@ impl Kind {
     /// for instrumentization purposes
     pub fn format_variant(&self) -> &'static str {
         match self {
-            Kind::Public(_) => "PublicMempool",
+            Kind::Public { .. } => "PublicMempool",
             Kind::MEVBlocker { .. } => "MEVBlocker",
         }
     }
@@ -65,7 +69,7 @@ impl std::fmt::Display for Mempool {
 impl Mempool {
     pub fn new(config: Config, transport: DynWeb3) -> Self {
         let transport = match &config.kind {
-            Kind::Public(_) => transport,
+            Kind::Public { .. } => transport,
             // Flashbots Protect RPC fallback doesn't support buffered transport
             Kind::MEVBlocker { url, .. } => unbuffered_web3_client(url),
         };
@@ -104,7 +108,7 @@ impl Mempool {
 
     pub fn may_revert(&self) -> bool {
         match &self.config.kind {
-            Kind::Public(_) => true,
+            Kind::Public { .. } => true,
             Kind::MEVBlocker { .. } => false,
         }
     }
