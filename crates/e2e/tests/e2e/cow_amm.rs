@@ -19,9 +19,7 @@ use {
     solvers_dto::solution::{
         BuyTokenBalance,
         Call,
-        Interaction,
         Kind,
-        LiquidityInteraction,
         SellTokenBalance,
         SigningScheme,
         Solution,
@@ -1020,21 +1018,6 @@ async fn cow_amm_quoting(web3: Web3) {
             .approve(cow_amm_factory.address(), to_wei(1))
     );
 
-    tx_value!(
-        solver.account(),
-        to_wei(1),
-        onchain.contracts().weth.deposit()
-    );
-
-    // Fund the settlement contract with WETH so it can pay out the user order.
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .weth
-            .transfer(onchain.contracts().gp_settlement.address(), to_wei(1))
-    );
-
     let pair = onchain
         .contracts()
         .uniswap_v2_factory
@@ -1210,16 +1193,12 @@ async fn cow_amm_quoting(web3: Web3) {
     // data.
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-    // Set the fees appropriately
-    let fee_cow_amm = U256::exp10(16); // 0.01 WETH
-    let fee_user = to_wei(1); // 1 DAI
-
     // Configure the mock solver's solution
     let mocked_solution = Solution {
         id: 1,
         prices: HashMap::from([
             (dai.address(), to_wei(1)),                         // 1 DAI = $1
-            (onchain.contracts().weth.address(), to_wei(2000)), // 1 WETH = $2000
+            (onchain.contracts().weth.address(), to_wei(2300)), // 1 WETH = $2300
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
@@ -1237,25 +1216,17 @@ async fn cow_amm_quoting(web3: Web3) {
                     signing_scheme: SigningScheme::Eip1271,
                     signature,
                 },
-                executed_amount: cow_amm_order.sell_amount - fee_cow_amm,
-                fee: Some(fee_cow_amm),
+                executed_amount: cow_amm_order.sell_amount,
+                fee: Some(0.into()),
             }),
-            // todo: this should be removed by providing a surplus capturing owners list(https://github.com/cowprotocol/services/pull/3048)
             solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
                 order: [0u8; 56],
-                executed_amount: to_wei(230) - fee_user,
+                executed_amount: to_wei(230),
                 fee: None,
             }),
         ],
         pre_interactions: vec![cow_amm_commitment],
-        interactions: vec![Interaction::Liquidity(LiquidityInteraction {
-            internalize: false,
-            id: "0".to_string(),
-            output_token: dai.address(),
-            input_token: onchain.contracts().weth.address(),
-            output_amount: to_wei(27),
-            input_amount: U256::exp10(16),
-        })],
+        interactions: vec![],
         post_interactions: vec![],
         gas: None,
     };
@@ -1267,7 +1238,7 @@ async fn cow_amm_quoting(web3: Web3) {
         buy_token: onchain.contracts().weth.address(),
         side: OrderQuoteSide::Sell {
             sell_amount: SellAmount::AfterFee {
-                value: NonZeroU256::try_from(to_wei(229)).unwrap(),
+                value: NonZeroU256::try_from(to_wei(230)).unwrap(),
             },
         },
         ..Default::default()
@@ -1280,6 +1251,6 @@ async fn cow_amm_quoting(web3: Web3) {
         quote_response.quote.buy_token,
         onchain.contracts().weth.address()
     );
-    assert_eq!(quote_response.quote.sell_amount, to_wei(229));
+    assert_eq!(quote_response.quote.sell_amount, to_wei(230));
     assert!(quote_response.quote.buy_amount >= U256::exp10(17));
 }

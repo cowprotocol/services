@@ -460,17 +460,8 @@ fn encode_settlement(
 
         tokens.push(jit_order.sell_token);
         tokens.push(jit_order.buy_token);
-
-        match jit_order.side {
-            dto::Side::Sell => {
-                clearing_prices.push(jit_order.buy_amount);
-                clearing_prices.push(jit_order.executed_amount);
-            }
-            dto::Side::Buy => {
-                clearing_prices.push(jit_order.executed_amount);
-                clearing_prices.push(jit_order.sell_amount);
-            }
-        }
+        clearing_prices.push(jit_order.buy_amount);
+        clearing_prices.push(jit_order.sell_amount);
 
         trades.push(encode_trade(
             &order_data,
