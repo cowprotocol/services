@@ -658,15 +658,6 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         onchain.contracts().weth.deposit()
     );
 
-    // Fund the settlement contract with WETH so it can pay out the user order.
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .weth
-            .transfer(onchain.contracts().gp_settlement.address(), to_wei(1))
-    );
-
     let pair = onchain
         .contracts()
         .uniswap_v2_factory
@@ -864,7 +855,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         sell_token: dai.address(),
         sell_amount: to_wei(230), // 230 DAI
         buy_token: onchain.contracts().weth.address(),
-        buy_amount: U256::exp10(17), // 0.1 WETH
+        buy_amount: U256::from(90000000000000000u64), // 0.09 WETH to generate some surplus
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -885,7 +876,7 @@ async fn cow_amm_opposite_direction(web3: Web3) {
         id: 1,
         prices: HashMap::from([
             (dai.address(), to_wei(1)),                         // 1 DAI = $1
-            (onchain.contracts().weth.address(), to_wei(2000)), // 1 WETH = $2000
+            (onchain.contracts().weth.address(), to_wei(2300)), // 1 WETH = $2300
         ]),
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
@@ -972,13 +963,6 @@ async fn cow_amm_quoting(web3: Web3) {
     let [dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(300_000), to_wei(100))
         .await;
-
-    tracing::info!(
-        "newlog addresses_log, solver={:?}, bob={:?}, cow_amm_owner={:?}",
-        solver.address(),
-        bob.address(),
-        cow_amm_owner.address()
-    );
 
     // No need to fund the buffers since we're testing the CoW AMM directly filling
     // the user order.
