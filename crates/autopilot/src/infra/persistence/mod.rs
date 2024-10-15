@@ -124,13 +124,13 @@ impl Persistence {
     }
 
     /// Saves the surplus capturing jit order owners to the DB
-    pub async fn save_surplus_capturing_jit_orders_orders(
+    pub async fn save_surplus_capturing_jit_order_owners(
         &self,
         auction_id: AuctionId,
         surplus_capturing_jit_order_owners: &[domain::eth::Address],
     ) -> Result<(), DatabaseError> {
         self.postgres
-            .save_surplus_capturing_jit_orders_orders(
+            .save_surplus_capturing_jit_order_owners(
                 auction_id,
                 &surplus_capturing_jit_order_owners
                     .iter()

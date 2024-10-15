@@ -25,7 +25,7 @@ pub struct SolverCompetitionDB {
 pub struct SolverCompetitionAPI {
     #[serde(default)]
     pub auction_id: AuctionId,
-    pub transaction_hash: Option<H256>,
+    pub transaction_hashes: Vec<H256>,
     #[serde(flatten)]
     pub common: SolverCompetitionDB,
 }
@@ -126,7 +126,7 @@ mod tests {
             "auctionId": 0,
             "auctionStartBlock": 13u64,
             "competitionSimulationBlock": 15u64,
-            "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+            "transactionHashes": ["0x1111111111111111111111111111111111111111111111111111111111111111"],
             "auction": {
                 "orders": [
                     "0x1111111111111111111111111111111111111111111111111111111111111111\
@@ -173,7 +173,7 @@ mod tests {
 
         let orig = SolverCompetitionAPI {
             auction_id: 0,
-            transaction_hash: Some(H256([0x11; 32])),
+            transaction_hashes: vec![H256([0x11; 32])],
             common: SolverCompetitionDB {
                 auction_start_block: 13,
                 competition_simulation_block: 15,
@@ -360,7 +360,7 @@ mod tests {
               }
             }
           ],
-          "transactionHash": "0x044499c2a830890cb0a8ecf9aec6c5621e8310092a58d369cdef726254d3d108",
+          "transactionHashes": ["0x044499c2a830890cb0a8ecf9aec6c5621e8310092a58d369cdef726254d3d108"],
           "auctionStartBlock": 15173535,
           "liquidityCollectedBlock": 15173535,
           "competitionSimulationBlock": 15173535

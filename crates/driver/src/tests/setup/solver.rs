@@ -140,7 +140,6 @@ impl Solver {
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",
-                    order::Kind::Liquidity => "liquidity",
                     order::Kind::Limit { .. } => "limit",
                 },
                 "appData": quote.order.app_data,
@@ -153,7 +152,6 @@ impl Solver {
                     match quote.order.kind {
                         _ if config.quote => json!([]),
                         order::Kind::Market => json!([]),
-                        order::Kind::Liquidity => json!([]),
                         order::Kind::Limit { .. } => {
                             let fee_policies_json: Vec<serde_json::Value> = quote
                                 .order
@@ -400,6 +398,7 @@ impl Solver {
                 cow_amms: vec![],
             },
             gas,
+            None,
         )
         .await;
 

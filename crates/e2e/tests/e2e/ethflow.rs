@@ -82,7 +82,7 @@ async fn eth_flow_tx(web3: Web3) {
         receiver,
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let quote: OrderQuoteResponse = test_submit_quote(
@@ -142,7 +142,7 @@ async fn eth_flow_without_quote(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
         .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
@@ -183,7 +183,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(&onchain).await;
     services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.

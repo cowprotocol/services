@@ -62,6 +62,9 @@ struct Config {
         default = "default_order_priority_strategies"
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
+
+    /// Archive node URL used to index CoW AMM
+    archive_node_url: Option<Url>,
 }
 
 #[serde_as]
