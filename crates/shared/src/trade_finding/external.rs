@@ -170,6 +170,7 @@ impl TradeFinding for ExternalTradeFinder {
 
 pub(crate) mod dto {
     use {
+        app_data::AppDataHash,
         bytes_hex::BytesHex,
         ethcontract::{H160, U256},
         model::{
@@ -236,7 +237,7 @@ pub(crate) mod dto {
         pub executed_amount: U256,
         pub receiver: H160,
         pub valid_to: u32,
-        pub app_data: String,
+        pub app_data: AppDataHash,
         pub side: Side,
         pub sell_token_source: SellTokenSource,
         pub buy_token_destination: BuyTokenDestination,

@@ -8,7 +8,6 @@ use {
         trade_finding::{external::dto, Interaction, Trade},
     },
     anyhow::{Context, Result},
-    app_data::AppDataHash,
     contracts::{
         deployed_bytecode,
         dummy_contract,
@@ -26,7 +25,7 @@ use {
     },
     num::BigRational,
     number::{conversions::u256_to_big_rational, nonzero::U256 as NonZeroU256},
-    std::{collections::HashMap, str::FromStr, sync::Arc},
+    std::{collections::HashMap, sync::Arc},
     web3::{ethabi::Token, types::CallRequest},
 };
 
@@ -424,7 +423,7 @@ fn encode_settlement(
             sell_amount: jit_order.sell_amount,
             buy_amount: jit_order.buy_amount,
             valid_to: jit_order.valid_to,
-            app_data: AppDataHash::from_str(&jit_order.app_data)?,
+            app_data: jit_order.app_data,
             fee_amount: 0.into(),
             kind: match &jit_order.side {
                 dto::Side::Buy => OrderKind::Buy,
