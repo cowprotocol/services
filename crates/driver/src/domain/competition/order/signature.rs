@@ -42,6 +42,17 @@ pub enum Scheme {
     PreSign,
 }
 
+impl Scheme {
+    pub fn to_boundary_scheme(&self) -> model::signature::SigningScheme {
+        match self {
+            Scheme::Eip712 => model::signature::SigningScheme::Eip712,
+            Scheme::EthSign => model::signature::SigningScheme::EthSign,
+            Scheme::Eip1271 => model::signature::SigningScheme::Eip1271,
+            Scheme::PreSign => model::signature::SigningScheme::PreSign,
+        }
+    }
+}
+
 pub fn domain_separator(
     chain_id: eth::ChainId,
     verifying_contract: eth::ContractAddress,
