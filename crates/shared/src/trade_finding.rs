@@ -4,7 +4,10 @@
 pub mod external;
 
 use {
-    crate::price_estimation::{PriceEstimationError, Query},
+    crate::{
+        price_estimation::{PriceEstimationError, Query},
+        trade_finding::external::dto,
+    },
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
@@ -40,6 +43,7 @@ pub struct Trade {
     pub out_amount: U256,
     /// How many units of gas this trade will roughly cost.
     pub gas_estimate: Option<u64>,
+    pub pre_interactions: Vec<Interaction>,
     /// Interactions needed to produce the expected `out_amount`.
     pub interactions: Vec<Interaction>,
     /// Which solver provided this trade.
@@ -47,6 +51,7 @@ pub struct Trade {
     /// If this is set the quote verification need to use this as the
     /// `tx.origin` to make the quote pass the simulation.
     pub tx_origin: Option<H160>,
+    pub jit_orders: Vec<dto::JitOrder>,
 }
 
 /// Data for a raw GPv2 interaction.

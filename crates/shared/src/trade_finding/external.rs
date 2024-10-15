@@ -118,17 +118,11 @@ impl From<dto::Quote> for Trade {
         Self {
             out_amount: quote.amount,
             gas_estimate: quote.gas,
-            interactions: quote
-                .interactions
-                .into_iter()
-                .map(|interaction| Interaction {
-                    target: interaction.target,
-                    value: interaction.value,
-                    data: interaction.call_data,
-                })
-                .collect(),
+            pre_interactions: quote.pre_interactions.into_iter().map(Into::into).collect(),
+            interactions: quote.interactions.into_iter().map(Into::into).collect(),
             solver: quote.solver,
             tx_origin: quote.tx_origin,
+            jit_orders: quote.jit_orders.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -138,6 +132,16 @@ impl From<dto::Error> for PriceEstimationError {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
             _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
+        }
+    }
+}
+
+impl From<dto::Interaction> for Interaction {
+    fn from(interaction: dto::Interaction) -> Self {
+        Self {
+            target: interaction.target,
+            value: interaction.value,
+            data: interaction.call_data,
         }
     }
 }
@@ -164,8 +168,9 @@ impl TradeFinding for ExternalTradeFinder {
     }
 }
 
-mod dto {
+pub(crate) mod dto {
     use {
+        app_data::AppDataHash,
         bytes_hex::BytesHex,
         ethcontract::{H160, U256},
         model::{
@@ -218,7 +223,7 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
     pub struct JitOrder {
@@ -232,8 +237,7 @@ mod dto {
         pub executed_amount: U256,
         pub receiver: H160,
         pub valid_to: u32,
-        #[serde_as(as = "BytesHex")]
-        pub app_data: Vec<u8>,
+        pub app_data: AppDataHash,
         pub side: Side,
         pub sell_token_source: SellTokenSource,
         pub buy_token_destination: BuyTokenDestination,
@@ -251,9 +255,10 @@ mod dto {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Deserialize)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub enum Side {
+        #[default]
         Buy,
         Sell,
     }

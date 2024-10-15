@@ -274,6 +274,7 @@ pub async fn run(args: Arguments) {
             code_fetcher: code_fetcher.clone(),
         },
     )
+    .await
     .expect("failed to initialize price estimator factory");
 
     let native_price_estimator = price_estimator_factory

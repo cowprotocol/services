@@ -62,7 +62,9 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
         onchain.contracts().gp_settlement.address(),
         onchain.contracts().weth.address(),
         0.0,
-    );
+    )
+    .await
+    .unwrap();
 
     let verify_trade = |tx_origin| {
         let verifier = verifier.clone();
@@ -89,6 +91,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                     Trade {
                         out_amount: 16380122291179526144u128.into(),
                         gas_estimate: Some(225000),
+                        pre_interactions: vec![],
                         interactions: vec![Interaction {
                             target: H160::from_str("0xdef1c0ded9bec7f1a1670819833240f027b25eff")
                                 .unwrap(),
@@ -98,6 +101,7 @@ async fn test_bypass_verification_for_rfq_quotes(web3: Web3) {
                         solver: H160::from_str("0xe3067c7c27c1038de4e8ad95a83b927d23dfbd99")
                             .unwrap(),
                         tx_origin,
+                        jit_orders: vec![],
                     },
                 )
                 .await
