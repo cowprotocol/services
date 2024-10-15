@@ -20,7 +20,8 @@ gas-price-cap = "1000000000000"
 
 [[submission.mempool]]
 mempool = "public"
-revert-protection = true
+max-additional-tip = "5000000000"
+additional-tip-percentage = 0.05
 
 [[submission.mempool]]
 mempool = "mev-blocker"
