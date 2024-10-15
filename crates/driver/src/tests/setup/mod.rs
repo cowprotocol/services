@@ -1237,10 +1237,9 @@ impl<'a> SolveOk<'a> {
         // Since JIT orders don't have UID at creation time, we need to search for
         // matching token pair
         for expected in jit_orders.iter() {
-            let mut exist = false;
-            for trade in trades.values() {
-                exist |= self.exist_jit_order(trade, expected)
-            }
+            let exist = trades
+                .values()
+                .any(|trade| self.trade_matches(trade, expected));
             assert!(exist, "JIT order {expected:?} not found");
         }
         self
@@ -1248,7 +1247,7 @@ impl<'a> SolveOk<'a> {
 
     /// Find for a JIT order, given specific token pair and buy/sell amount,
     /// return true if the JIT order was found
-    fn exist_jit_order(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
+    fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
         let u256 =
             |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
         let sell_token = trade.get("sellToken").unwrap().to_string();

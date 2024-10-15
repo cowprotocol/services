@@ -197,24 +197,22 @@ impl Solver {
                                 })
                             },
                         ));
-                        assert!(prices_json
-                            .insert(
-                                config
-                                    .blockchain
-                                    .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
-                                fulfillment.execution.buy.to_string(),
-                            )
-                            .is_none());
-                        assert!(prices_json
-                            .insert(
-                                config
-                                    .blockchain
-                                    .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
-                                (fulfillment.execution.sell
-                                    - fulfillment.quoted_order.order.surplus_fee())
-                                .to_string(),
-                            )
-                            .is_none());
+                        let previous_value = prices_json.insert(
+                            config
+                                .blockchain
+                                .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
+                            fulfillment.execution.buy.to_string(),
+                        );
+                        assert_eq!(previous_value, None, "existing price overwritten");
+                        let previous_value = prices_json.insert(
+                            config
+                                .blockchain
+                                .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
+                            (fulfillment.execution.sell
+                                - fulfillment.quoted_order.order.surplus_fee())
+                            .to_string(),
+                        );
+                        assert_eq!(previous_value, None, "existing price overwritten");
                         {
                             // trades have optional field `fee`
                             let order = if config.quote {
@@ -279,23 +277,21 @@ impl Solver {
                             .expected_surplus_capturing_jit_order_owners
                             .contains(&jit.quoted_order.order.owner)
                         {
-                            assert!(prices_json
-                                .insert(
-                                    config
-                                        .blockchain
-                                        .get_token_wrapped(jit.quoted_order.order.sell_token),
-                                    jit.execution.buy.to_string(),
-                                )
-                                .is_none());
-                            assert!(prices_json
-                                .insert(
-                                    config
-                                        .blockchain
-                                        .get_token_wrapped(jit.quoted_order.order.buy_token),
-                                    (jit.execution.sell - jit.quoted_order.order.surplus_fee())
-                                        .to_string(),
-                                )
-                                .is_none());
+                            let previous_value = prices_json.insert(
+                                config
+                                    .blockchain
+                                    .get_token_wrapped(jit.quoted_order.order.sell_token),
+                                jit.execution.buy.to_string(),
+                            );
+                            assert_eq!(previous_value, None, "existing price overwritten");
+                            let previous_value = prices_json.insert(
+                                config
+                                    .blockchain
+                                    .get_token_wrapped(jit.quoted_order.order.buy_token),
+                                (jit.execution.sell - jit.quoted_order.order.surplus_fee())
+                                    .to_string(),
+                            );
+                            assert_eq!(previous_value, None, "existing price overwritten");
                         }
                         {
                             let executed_amount = match jit.quoted_order.order.executed {
