@@ -237,7 +237,7 @@ components:
           enum: ["erc20", "internal"]
         class:
           type: string
-          enum: ["market", "limit", "liquidity"]
+          enum: ["market", "limit"]
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
           type: string

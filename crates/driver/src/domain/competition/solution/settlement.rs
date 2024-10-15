@@ -2,7 +2,12 @@ use {
     super::{encoding, trade::ClearingPrices, Error, Solution},
     crate::{
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{
+                self,
+                auction,
+                order::{self},
+                solution::{self, error, Trade},
+            },
             eth,
         },
         infra::{blockchain::Ethereum, observe, solver::ManageNativeToken, Simulator},
@@ -254,30 +259,46 @@ impl Settlement {
 
     /// The settled user orders with their in/out amounts.
     pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
+        let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
+            // This should never happen, returning 0 is better than panicking, but we
+            // should still alert.
+            let msg = format!("could not compute {kind}");
+            tracing::error!(?trade, prices=?self.solution.prices, ?err, msg);
+            0.into()
+        };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
-        for trade in self.solution.user_trades() {
-            let prices = ClearingPrices {
-                sell: self.solution.prices[&trade.order().sell.token.wrap(self.solution.weth)],
-                buy: self.solution.prices[&trade.order().buy.token.wrap(self.solution.weth)],
+        for trade in &self.solution.trades {
+            let order = match trade {
+                Trade::Fulfillment(_) => {
+                    let prices = ClearingPrices {
+                        sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
+                        buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
+                    };
+                    competition::Amounts {
+                        side: trade.side(),
+                        sell: trade.sell(),
+                        buy: trade.buy(),
+                        executed_sell: trade
+                            .sell_amount(&prices)
+                            .unwrap_or_else(|err| log_err(trade, err, "executed_sell")),
+                        executed_buy: trade
+                            .buy_amount(&prices)
+                            .unwrap_or_else(|err| log_err(trade, err, "executed_buy")),
+                    }
+                }
+                Trade::Jit(jit) => competition::Amounts {
+                    side: trade.side(),
+                    sell: trade.sell(),
+                    buy: trade.buy(),
+                    executed_sell: jit
+                        .executed_sell()
+                        .unwrap_or_else(|err| log_err(trade, err, "executed_sell")),
+                    executed_buy: jit
+                        .executed_buy()
+                        .unwrap_or_else(|err| log_err(trade, err, "executed_buy")),
+                },
             };
-            let order = competition::Amounts {
-                side: trade.order().side,
-                sell: trade.order().sell,
-                buy: trade.order().buy,
-                executed_sell: trade.sell_amount(&prices).unwrap_or_else(|err| {
-                    // This should never happen, returning 0 is better than panicking, but we
-                    // should still alert.
-                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute sell_amount");
-                    0.into()
-                }),
-                executed_buy: trade.buy_amount(&prices).unwrap_or_else(|err| {
-                    // This should never happen, returning 0 is better than panicking, but we
-                    // should still alert.
-                    tracing::error!(?trade, prices=?self.solution.prices, ?err, "could not compute buy_amount");
-                    0.into()
-                }),
-            };
-            acc.insert(trade.order().uid, order);
+            acc.insert(trade.uid(), order);
         }
         acc
     }

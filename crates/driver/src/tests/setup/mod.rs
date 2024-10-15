@@ -27,6 +27,7 @@ use {
                 DEFAULT_SURPLUS_FACTOR,
                 ETH_ORDER_AMOUNT,
             },
+            hex_address,
             setup::blockchain::{Blockchain, Trade},
         },
     },
@@ -1222,6 +1223,44 @@ impl<'a> SolveOk<'a> {
     /// Ensures that `/solve` returns no solutions.
     pub fn empty(self) {
         assert!(self.solutions().is_empty());
+    }
+
+    /// Check that the solution contains the expected JIT orders.
+    pub fn jit_orders(self, jit_orders: &[JitOrder]) -> Self {
+        let solution = self.solution();
+        assert!(solution.get("orders").is_some());
+        let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
+            solution.get("orders").unwrap().clone(),
+        )
+        .unwrap();
+
+        // Since JIT orders don't have UID at creation time, we need to search for
+        // matching token pair
+        for expected in jit_orders.iter() {
+            let exist = trades
+                .values()
+                .any(|trade| self.trade_matches(trade, expected));
+            assert!(exist, "JIT order {expected:?} not found");
+        }
+        self
+    }
+
+    /// Find for a JIT order, given specific token pair and buy/sell amount,
+    /// return true if the JIT order was found
+    fn trade_matches(&self, trade: &serde_json::Value, expected: &JitOrder) -> bool {
+        let u256 =
+            |value: &serde_json::Value| eth::U256::from_dec_str(value.as_str().unwrap()).unwrap();
+        let sell_token = trade.get("sellToken").unwrap().to_string();
+        let sell_token = sell_token.trim_matches('"');
+        let buy_token = trade.get("buyToken").unwrap().to_string();
+        let buy_token = buy_token.trim_matches('"');
+        let sell_amount = u256(trade.get("executedSell").unwrap());
+        let buy_amount = u256(trade.get("executedBuy").unwrap());
+
+        sell_token == hex_address(self.blockchain.get_token(expected.order.sell_token))
+            && buy_token == hex_address(self.blockchain.get_token(expected.order.buy_token))
+            && expected.order.expected_amounts.clone().unwrap().sell == sell_amount
+            && expected.order.expected_amounts.clone().unwrap().buy == buy_amount
     }
 
     /// Check that the solution contains the expected orders.
