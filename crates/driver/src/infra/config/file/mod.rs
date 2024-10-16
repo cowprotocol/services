@@ -104,7 +104,19 @@ struct SubmissionConfig {
 #[serde(tag = "mempool")]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Mempool {
-    Public,
+    #[serde(rename_all = "kebab-case")]
+    Public {
+        /// Maximum additional tip in Gwei that we are willing to pay
+        /// above regular gas price estimation.
+        #[serde(default = "default_max_additional_tip")]
+        #[serde_as(as = "serialize::U256")]
+        max_additional_tip: eth::U256,
+        /// Additional tip in percentage of max_fee_per_gas we are willing to
+        /// pay above regular gas price estimation. Expects a
+        /// floating point value between 0 and 1.
+        #[serde(default = "default_additional_tip_percentage")]
+        additional_tip_percentage: f64,
+    },
     #[serde(rename_all = "kebab-case")]
     MevBlocker {
         /// The MEVBlocker URL to use.
