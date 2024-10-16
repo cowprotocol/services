@@ -140,11 +140,13 @@ impl Settlement {
 
 /// How old (in terms of blocks) a settlement should be, to be considered as a
 /// settlement from another environment.
+///
+/// Currently set to ~6h
 fn max_settlement_age(chain: &eth::ChainId) -> u64 {
     match chain {
-        eth::ChainId::Mainnet => 100,
-        eth::ChainId::Gnosis => 200,
-        eth::ChainId::Sepolia => 200,
+        eth::ChainId::Mainnet => 2000,
+        eth::ChainId::Gnosis => 4000,
+        eth::ChainId::Sepolia => 2000,
         eth::ChainId::ArbitrumOne => 100_000,
     }
 }
