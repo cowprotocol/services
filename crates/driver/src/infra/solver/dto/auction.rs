@@ -135,7 +135,6 @@ impl Auction {
                         class: match order.kind {
                             order::Kind::Market => Class::Market,
                             order::Kind::Limit { .. } => Class::Limit,
-                            order::Kind::Liquidity => Class::Liquidity,
                         },
                         pre_interactions: order
                             .pre_interactions
@@ -390,7 +389,6 @@ enum Kind {
 enum Class {
     Market,
     Limit,
-    Liquidity,
 }
 
 #[serde_as]

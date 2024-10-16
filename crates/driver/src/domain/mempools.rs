@@ -66,7 +66,10 @@ impl Mempools {
         if self.mempools.iter().any(|mempool| {
             matches!(
                 mempool.config().kind,
-                infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled)
+                infra::mempool::Kind::Public {
+                    revert_protection: infra::mempool::RevertProtection::Disabled,
+                    ..
+                }
             )
         }) {
             RevertProtection::Disabled

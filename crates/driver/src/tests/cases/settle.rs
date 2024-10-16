@@ -20,7 +20,6 @@ async fn matrix() {
             let solver_fee = match kind {
                 order::Kind::Market => None,
                 order::Kind::Limit { .. } => Some(DEFAULT_SOLVER_FEE.ether().into_wei()),
-                order::Kind::Liquidity => None,
             };
             let test = tests::setup()
                 .name(format!("{side:?} {kind:?}"))
