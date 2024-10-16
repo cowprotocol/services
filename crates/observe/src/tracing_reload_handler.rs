@@ -8,7 +8,7 @@ use {
 
 /// Spawns a new thread that listens for connections to a UNIX socket
 /// at "/tmp/log_filter_override_<process_name>_<pid>".
-/// Whenever a line gets writtedn to that socket the reload handler
+/// Whenever a line gets written to that socket the reload handler
 /// uses it as the new log filter.
 /// To reset to the original log filter send the message "reset".
 pub(crate) fn spawn_reload_handler<T: 'static>(
@@ -22,7 +22,23 @@ pub(crate) fn spawn_reload_handler<T: 'static>(
         let socket_path = format!("/tmp/log_filter_override_{name}_{id}.sock");
         tracing::warn!(file = socket_path, "open log filter reload socket");
         let handle = SocketHandle {
-            listener: UnixListener::bind(&socket_path).expect("socket handle is unique"),
+            listener: match UnixListener::bind(&socket_path) {
+                Ok(sock) => sock,
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::AddrInUse => {
+                        tracing::warn!("log filter socket file already exists - removing");
+                        if let Err(err) = std::fs::remove_file(&socket_path) {
+                            tracing::warn!(
+                                ?err,
+                                file = socket_path,
+                                "failed to remove log filter socket"
+                            );
+                        }
+                        UnixListener::bind(&socket_path).expect("socket handle is unique")
+                    }
+                    _ => panic!("failed to create socket handle: {e:?}"),
+                },
+            },
             socket_path,
         };
 
