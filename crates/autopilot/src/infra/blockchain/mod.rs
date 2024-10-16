@@ -15,7 +15,7 @@ pub mod contracts;
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: eth::ChainId,
+    chain: eth::chain::Id,
     url: Url,
 }
 
@@ -27,8 +27,8 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain =
-            eth::ChainId::new(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
+        let chain = eth::chain::Id::new(web3.eth().chain_id().await?)
+            .map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
@@ -38,7 +38,7 @@ impl Rpc {
     }
 
     /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> eth::ChainId {
+    pub fn chain(&self) -> eth::chain::Id {
         self.chain
     }
 
@@ -57,7 +57,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    chain: eth::ChainId,
+    chain: eth::chain::Id,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
 }
@@ -71,7 +71,7 @@ impl Ethereum {
     /// any initialization error.
     pub async fn new(
         web3: DynWeb3,
-        chain: eth::ChainId,
+        chain: eth::chain::Id,
         url: Url,
         addresses: contracts::Addresses,
         poll_interval: Duration,
@@ -88,7 +88,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> &eth::ChainId {
+    pub fn network(&self) -> &eth::chain::Id {
         &self.chain
     }
 

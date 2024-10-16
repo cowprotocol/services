@@ -93,7 +93,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    chain: domain::eth::ChainId,
+    chain: domain::eth::chain::Id,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,

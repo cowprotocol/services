@@ -106,7 +106,7 @@ impl Settlement {
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
-        chain: &eth::ChainId,
+        chain: &eth::chain::Id,
     ) -> Result<Self, Error> {
         let auction = persistence.get_auction(settled.auction_id).await?;
 
@@ -142,12 +142,12 @@ impl Settlement {
 /// settlement from another environment.
 ///
 /// Currently set to ~6h
-fn max_settlement_age(chain: &eth::ChainId) -> u64 {
+fn max_settlement_age(chain: &eth::chain::Id) -> u64 {
     match chain {
-        eth::ChainId::Mainnet => 2000,
-        eth::ChainId::Gnosis => 4000,
-        eth::ChainId::Sepolia => 2000,
-        eth::ChainId::ArbitrumOne => 100_000,
+        eth::chain::Id::Mainnet => 2000,
+        eth::chain::Id::Gnosis => 4000,
+        eth::chain::Id::Sepolia => 2000,
+        eth::chain::Id::ArbitrumOne => 100_000,
     }
 }
 

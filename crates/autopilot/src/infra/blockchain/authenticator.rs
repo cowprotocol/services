@@ -22,7 +22,7 @@ impl Manager {
     /// Creates an authenticator which can remove solvers from the allow-list
     pub async fn new(
         web3: DynWeb3,
-        chain: eth::ChainId,
+        chain: eth::chain::Id,
         contracts: Contracts,
         authenticator_pk: eth::H256,
     ) -> Self {

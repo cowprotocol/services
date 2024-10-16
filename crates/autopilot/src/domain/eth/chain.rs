@@ -2,14 +2,14 @@ use primitive_types::U256;
 
 /// A supported Ethereum Chain ID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ChainId {
+pub enum Id {
     Mainnet = 1,
     Gnosis = 100,
     Sepolia = 11155111,
     ArbitrumOne = 42161,
 }
 
-impl ChainId {
+impl Id {
     pub fn new(value: U256) -> Result<Self, UnsupportedChain> {
         // Check to avoid panics for large `U256` values, as there is no checked
         // conversion API available and we don't support chains with IDs greater
@@ -30,10 +30,10 @@ impl ChainId {
     /// Returns the network ID for the chain.
     pub fn network_id(self) -> &'static str {
         match self {
-            ChainId::Mainnet => "1",
-            ChainId::Gnosis => "100",
-            ChainId::Sepolia => "11155111",
-            ChainId::ArbitrumOne => "42161",
+            Id::Mainnet => "1",
+            Id::Gnosis => "100",
+            Id::Sepolia => "11155111",
+            Id::ArbitrumOne => "42161",
         }
     }
 }

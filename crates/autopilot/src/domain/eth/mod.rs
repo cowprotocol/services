@@ -4,9 +4,7 @@ use {
     derive_more::{Display, From, Into},
 };
 
-mod chain;
-
-pub use chain::{ChainId, UnsupportedChain};
+pub mod chain;
 
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
