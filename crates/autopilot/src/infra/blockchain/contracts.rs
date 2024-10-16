@@ -96,5 +96,8 @@ pub fn deployment_address(
     contract: &ethcontract::Contract,
     chain: &domain::eth::chain::Id,
 ) -> Option<H160> {
-    Some(contract.networks.get(chain.network_id())?.address)
+    contract
+        .networks
+        .get(chain.network_id())
+        .map(|network| network.address)
 }
