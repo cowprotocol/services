@@ -1,8 +1,3 @@
-use std::collections::HashMap;
-
-use e2e::setup::{colocation::SolverEngine, mock::Mock};
-use solvers_dto::solution::Solution;
-
 use {
     contracts::ERC20,
     driver::domain::eth::NonZeroU256,
@@ -303,448 +298,145 @@ async fn two_limit_orders_test(web3: Web3) {
 }
 
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver, mock1, mock2] = onchain.make_solvers::<3>(to_wei(1)).await;
-    let [trader_a, trader_c] = onchain.make_accounts(to_wei(1)).await;
+    let [solver1, solver2] = onchain.make_solvers(to_wei(1)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b, token_c, token_d] = onchain
-        .deploy_tokens_with_weth_uni_v2_pools::<4>(to_wei(1_000), to_wei(1_000))
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    // Fund trader accounts and prepare funding Uniswap pool
-    token_a.mint(trader_a.address(), to_wei(100)).await;
-    token_c.mint(trader_c.address(), to_wei(100)).await;
-    token_a.mint(solver.address(), to_wei(1_000)).await;
-    token_b.mint(solver.address(), to_wei(1_000)).await;
-    token_c.mint(solver.address(), to_wei(1_000)).await;
-    token_d.mint(solver.address(), to_wei(1_000)).await;
+    // Fund traders
+    token_a.mint(trader_a.address(), to_wei(10)).await;
+    token_b.mint(trader_b.address(), to_wei(10)).await;
 
-    // Create and fund Uniswap pool
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_c.address(), token_d.address())
-    );
-    tx!(
-        solver.account(),
-        token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        token_c.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        token_d.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_c.address(),
-            token_d.address(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
+    // Create more liquid routes between token_a (token_b) and weth via base_a
+    // (base_b). base_a has more liquidity then base_b, leading to the solver that
+    // knows about base_a to win
+    let [base_a, base_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
+        .await;
+    onchain
+        .seed_uni_v2_pool((&token_a, to_wei(100_000)), (&base_a, to_wei(100_000)))
+        .await;
+    onchain
+        .seed_uni_v2_pool((&token_b, to_wei(10_000)), (&base_b, to_wei(10_000)))
+        .await;
 
     // Approve GPv2 for trading
     tx!(
         trader_a.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
+        token_a.approve(onchain.contracts().allowance, to_wei(100))
     );
     tx!(
-        trader_c.account(),
-        token_c.approve(onchain.contracts().allowance, to_wei(10))
+        trader_b.account(),
+        token_b.approve(onchain.contracts().allowance, to_wei(100))
     );
 
-    // Place Orders
-    let services = Services::new(&onchain).await;
-
-    let mock_solver_1 = Mock::default();
-    let mock_solver_2 = Mock::default();
-
-    // Start system
+    // Start system, with two solvers, one that knows about base_a and one that
+    // knows about base_b
     colocation::start_driver(
         onchain.contracts(),
         vec![
             colocation::start_baseline_solver(
                 "test_solver".into(),
-                solver.clone(),
+                solver1.clone(),
                 onchain.contracts().weth.address(),
-                vec![],
+                vec![base_a.address()],
+                2,
+                false,
             )
             .await,
-            SolverEngine {
-                name: "mock1".into(),
-                account: solver.clone(),
-                endpoint: mock_solver_1.url.clone(),
-                base_tokens: vec![],
-            },
-            SolverEngine {
-                name: "mock2".into(),
-                account: solver.clone(),
-                endpoint: mock_solver_2.url.clone(),
-                base_tokens: vec![],
-            },
+            colocation::start_baseline_solver(
+                "solver2".into(),
+                solver2,
+                onchain.contracts().weth.address(),
+                vec![base_b.address()],
+                2,
+                false,
+            )
+            .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
     );
 
-    // We start the quoter as the baseline solver, and the mock solver as the one
-    // returning the solution
-    services
-        .start_autopilot(
-            None,
-            vec![
-                "--drivers=mock1|http://localhost:11088/mock1,mock2|http://localhost:11088/mock2".to_string(),
-                "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-                "--max-winners-per-auction=2".to_string(),
-            ],
-        )
-        .await;
+    let services = Services::new(&onchain).await;
+    services.start_autopilot(
+        None,
+        vec![
+            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
+                .to_string(),
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--max-winners-per-auction=2".to_string(),
+        ],
+    ).await;
     services
         .start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
+    // Place Orders
     let order_a = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(10),
-        buy_token: token_b.address(),
+        buy_token: token_c.address(),
         buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
-        partially_fillable: true,
         kind: OrderKind::Sell,
         ..Default::default()
     }
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).
-    unwrap()), );
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
+    let uid_a = services.create_order(&order_a).await.unwrap();
 
-    let order_id_a = services.create_order(&order_a).await.unwrap();
+    onchain.mint_block().await;
 
-    mock_solver_1.configure_solution(Some(Solution {
-        id: 0,
-        prices: HashMap::from([
-            (token_a.address(), U256::from(500000000000000000u128)),
-            (token_b.address(), U256::from(500000000000000000u128)),
-        ]),
-        trades: vec![
-            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: order_a.sell_amount / 2,
-                fee: Some(0.into()),
-                order: order_id_a.0,
-            }),
-        ],
-        pre_interactions: vec![],
-        interactions: vec![],
-        post_interactions: vec![],
-        gas: None,
-    }));
-
-    let order_c = OrderCreation {
-        sell_token: token_c.address(),
-        sell_amount: to_wei(5),
+    let order_b = OrderCreation {
+        sell_token: token_b.address(),
+        sell_amount: to_wei(10),
         buy_token: token_d.address(),
-        buy_amount: to_wei(2),
+        buy_amount: to_wei(5),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
-        partially_fillable: true,
         ..Default::default()
     }
     .sign(
-        EcdsaSigningScheme::EthSign,
+        EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_c.private_key()).
-    unwrap()), );
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+    );
+    let uid_b = services.create_order(&order_b).await.unwrap();
 
-    let order_id_c = services.create_order(&order_c).await.unwrap();
-
-    mock_solver_2.configure_solution(Some(Solution {
-        id: 0,
-        prices: HashMap::from([
-            (token_c.address(), U256::from(2500000000000000000u128)),
-            (token_d.address(), U256::from(2500000000000000000u128)),
-        ]),
-        trades: vec![
-            solvers_dto::solution::Trade::Fulfillment(solvers_dto::solution::Fulfillment {
-                executed_amount: order_c.sell_amount / 2,
-                fee: Some(0.into()),
-                order: order_id_c.0,
-            }),
-        ],
-        pre_interactions: vec![],
-        interactions: vec![],
-        post_interactions: vec![],
-        gas: None,
-    }));
-
-    // Drive solution
-    tracing::info!("Waiting for trade.");
-    wait_for_condition(TIMEOUT, || async {
+    // Wait for trade
+    let indexed_trades = || async {
         onchain.mint_block().await;
-        let order_a_settled = services
-            .get_order(&order_id_a)
-            .await
-            .unwrap()
-            .metadata
-            .executed_surplus_fee;
-        let order_b_settled = services
-            .get_order(&order_id_c)
-            .await
-            .unwrap()
-            .metadata
-            .executed_surplus_fee;
-        order_a_settled > 0.into() && order_b_settled > 0.into()
-    })
-    .await
-    .unwrap();
+        match services.get_trades(&uid_a).await.unwrap().first() {
+            Some(trade) => services
+                .get_solver_competition(trade.tx_hash.unwrap())
+                .await
+                .is_ok(),
+            None => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
+
+    let trades = services.get_trades(&uid_a).await.unwrap();
+    let competition = services
+        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .await
+        .unwrap();
+    // Verify that both transactions were properly indexed
+    assert_eq!(competition.transaction_hashes.len(), 2);
+    // Verify that settlement::Observed properly handled events
+    let order_a_settled = services.get_order(&uid_a).await.unwrap();
+    assert!(order_a_settled.metadata.executed_surplus_fee > 0.into());
+    let order_b_settled = services.get_order(&uid_b).await.unwrap();
+    assert!(order_b_settled.metadata.executed_surplus_fee > 0.into());
 }
-
-// async fn two_limit_orders_multiple_winners_test(web3: Web3) {
-//     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
-
-//     let [solver1, solver2] = onchain.make_solvers::<2>(to_wei(1)).await;
-//     let [trader_a, trader_c] = onchain.make_accounts(to_wei(1)).await;
-//     let [token_a, token_b, token_c, token_d] = onchain
-//         .deploy_tokens_with_weth_uni_v2_pools::<4>(to_wei(1_000), to_wei(1_000))
-//         .await;
-
-//     // Fund trader accounts and prepare funding Uniswap pool
-//     token_a.mint(trader_a.address(), to_wei(10)).await;
-//     token_c.mint(trader_c.address(), to_wei(10)).await;
-//     token_a.mint(solver1.address(), to_wei(1_000)).await;
-//     token_b.mint(solver1.address(), to_wei(1_000)).await;
-//     token_c.mint(solver2.address(), to_wei(1_000)).await;
-//     token_d.mint(solver2.address(), to_wei(1_000)).await;
-
-//     // Create and fund Uniswap pool
-//     tx!(
-//         solver1.account(),
-//         onchain
-//             .contracts()
-//             .uniswap_v2_factory
-//             .create_pair(token_a.address(), token_b.address())
-//     );
-//     tx!(
-//         solver2.account(),
-//         onchain
-//             .contracts()
-//             .uniswap_v2_factory
-//             .create_pair(token_c.address(), token_d.address())
-//     );
-//     tx!(
-//         solver1.account(),
-//         token_a.approve(
-//             onchain.contracts().uniswap_v2_router.address(),
-//             to_wei(1000)
-//         )
-//     );
-//     tx!(
-//         solver1.account(),
-//         token_b.approve(
-//             onchain.contracts().uniswap_v2_router.address(),
-//             to_wei(1000)
-//         )
-//     );
-//     tx!(
-//         solver2.account(),
-//         token_c.approve(
-//             onchain.contracts().uniswap_v2_router.address(),
-//             to_wei(1000)
-//         )
-//     );
-//     tx!(
-//         solver2.account(),
-//         token_d.approve(
-//             onchain.contracts().uniswap_v2_router.address(),
-//             to_wei(1000)
-//         )
-//     );
-//     tx!(
-//         solver1.account(),
-//         onchain.contracts().uniswap_v2_router.add_liquidity(
-//             token_a.address(),
-//             token_b.address(),
-//             to_wei(1000),
-//             to_wei(1000),
-//             0_u64.into(),
-//             0_u64.into(),
-//             solver1.address(),
-//             U256::max_value(),
-//         )
-//     );
-//     tx!(
-//         solver2.account(),
-//         onchain.contracts().uniswap_v2_router.add_liquidity(
-//             token_c.address(),
-//             token_d.address(),
-//             to_wei(1000),
-//             to_wei(1000),
-//             0_u64.into(),
-//             0_u64.into(),
-//             solver2.address(),
-//             U256::max_value(),
-//         )
-//     );
-
-//     // Approve GPv2 for trading
-//     tx!(
-//         trader_a.account(),
-//         token_a.approve(onchain.contracts().allowance, to_wei(10))
-//     );
-//     tx!(
-//         trader_c.account(),
-//         token_c.approve(onchain.contracts().allowance, to_wei(10))
-//     );
-
-//     // Place Orders
-//     let services = Services::new(&onchain).await;
-
-//     // Start system
-//     colocation::start_driver(
-//         onchain.contracts(),
-//         vec![
-//             colocation::start_baseline_solver(
-//                 "solver1".into(),
-//                 solver1.clone(),
-//                 onchain.contracts().weth.address(),
-//                 vec![],
-//             )
-//             .await,
-//             colocation::start_baseline_solver(
-//                 "solver2".into(),
-//                 solver2,
-//                 onchain.contracts().weth.address(),
-//                 vec![],
-//             )
-//             .await,
-//         ],
-//         colocation::LiquidityProvider::UniswapV2,
-//     );
-
-//     // We start the quoter as the baseline solver, and the mock solver as the one
-//     // returning the solution
-//     services
-//         .start_autopilot(
-//             None,
-//             vec![
-//                 "--drivers=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2".to_string(),
-//                 "--price-estimation-drivers=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2"
-//                     .to_string(),
-//                 "--native-price-estimators=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2"
-//                     .to_string(),
-//                 "--max-winners-per-auction=2".to_string(),
-//             ],
-//         )
-//         .await;
-//     services
-//         .start_api(vec![
-//             "--price-estimation-drivers=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2".to_string(),
-//             "--native-price-estimators=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2".to_string(),
-//         ])
-//         .await;
-
-//     let order_a = OrderCreation {
-//         sell_token: token_a.address(),
-//         sell_amount: to_wei(10),
-//         buy_token: token_b.address(),
-//         buy_amount: to_wei(5),
-//         valid_to: model::time::now_in_epoch_seconds() + 300,
-//         kind: OrderKind::Sell,
-//         ..Default::default()
-//     }
-//     .sign(
-//         EcdsaSigningScheme::Eip712,
-//         &onchain.contracts().domain_separator,
-//         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).
-//     unwrap()), );
-
-//     let order_id_a = services.create_order(&order_a).await.unwrap();
-
-//     let order_b = OrderCreation {
-//         sell_token: token_c.address(),
-//         sell_amount: to_wei(5),
-//         buy_token: token_d.address(),
-//         buy_amount: to_wei(2),
-//         valid_to: model::time::now_in_epoch_seconds() + 300,
-//         kind: OrderKind::Sell,
-//         ..Default::default()
-//     }
-//     .sign(
-//         EcdsaSigningScheme::EthSign,
-//         &onchain.contracts().domain_separator,
-//         SecretKeyRef::from(&SecretKey::from_slice(trader_c.private_key()).
-//     unwrap()), );
-//     let order_id_c = services.create_order(&order_b).await.unwrap();
-
-//     onchain.mint_block().await;
-
-//     // Drive solution
-//     tracing::info!("Waiting for trade.");
-//     wait_for_condition(TIMEOUT, || async {
-//         let order_a_settled = services
-//             .get_order(&order_id_a)
-//             .await
-//             .unwrap()
-//             .metadata
-//             .executed_surplus_fee;
-//         let order_b_settled = services
-//             .get_order(&order_id_c)
-//             .await
-//             .unwrap()
-//             .metadata
-//             .executed_surplus_fee;
-//         order_a_settled > 0.into() && order_b_settled > 0.into()
-//     })
-//     .await
-//     .unwrap();
-// }
 
 async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
@@ -772,6 +464,8 @@ async fn too_many_limit_orders_test(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
@@ -848,6 +542,8 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
