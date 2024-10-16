@@ -22,7 +22,6 @@ use {
             LimitOrder,
             LimitOrderExecution,
             LimitOrderId,
-            LiquidityOrderId,
             SettlementHandling,
         },
         settlement::SettlementEncoder,
@@ -57,9 +56,6 @@ pub fn solve(
             id: match order.class {
                 order::Class::Market => LimitOrderId::Market(OrderUid(order.uid.0)),
                 order::Class::Limit => LimitOrderId::Limit(OrderUid(order.uid.0)),
-                order::Class::Liquidity => {
-                    LimitOrderId::Liquidity(LiquidityOrderId::Protocol(OrderUid(order.uid.0)))
-                }
             },
             sell_token: order.sell.token.0,
             buy_token: order.buy.token.0,
@@ -78,7 +74,6 @@ pub fn solve(
                         class: match order.class {
                             order::Class::Market => OrderClass::Market,
                             order::Class::Limit => OrderClass::Limit,
-                            order::Class::Liquidity => OrderClass::Liquidity,
                         },
                         solver_fee: 0.into(),
                         ..Default::default()
