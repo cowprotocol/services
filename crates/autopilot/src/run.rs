@@ -17,7 +17,7 @@ use {
         },
         domain,
         event_updater::EventUpdater,
-        infra::{self, blockchain::ChainId},
+        infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
         shadow,
@@ -93,7 +93,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    chain: ChainId,
+    chain: domain::eth::ChainId,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,

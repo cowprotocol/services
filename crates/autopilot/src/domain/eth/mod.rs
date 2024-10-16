@@ -4,6 +4,10 @@ use {
     derive_more::{Display, From, Into},
 };
 
+mod chain;
+
+pub use chain::{ChainId, UnsupportedChain};
+
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,

@@ -4,7 +4,10 @@
 //! a form of settlement transaction.
 
 use {
-    crate::{domain, domain::eth, infra},
+    crate::{
+        domain::{self, eth},
+        infra,
+    },
     std::collections::HashMap,
 };
 
@@ -13,13 +16,6 @@ mod observer;
 mod trade;
 mod transaction;
 pub use {auction::Auction, observer::Observer, trade::Trade, transaction::Transaction};
-
-// 100_000 blocks is roughly:
-//
-// ~10 days on Ethereum mainnet
-// ~5 days on Gnosis Chain
-// ~6h on Arbitrum
-const MAX_SETTLEMENT_AGE: u64 = 100_000;
 
 /// A settled transaction together with the `Auction`, for which it was executed
 /// on-chain.
@@ -110,10 +106,11 @@ impl Settlement {
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
+        chain: &eth::ChainId,
     ) -> Result<Self, Error> {
         let auction = persistence.get_auction(settled.auction_id).await?;
 
-        if settled.block > auction.block + MAX_SETTLEMENT_AGE {
+        if settled.block > auction.block + max_settlement_age(chain) {
             // A settled transaction references a VERY old auction.
             //
             // A hacky way to detect processing of production settlements in the staging
@@ -138,6 +135,17 @@ impl Settlement {
             trades,
             auction,
         })
+    }
+}
+
+/// How old (in terms of blocks) a settlement should be, to be considered as a
+/// settlement from another environment.
+fn max_settlement_age(chain: &eth::ChainId) -> u64 {
+    match chain {
+        eth::ChainId::Mainnet => 100,
+        eth::ChainId::Gnosis => 200,
+        eth::ChainId::Sepolia => 200,
+        eth::ChainId::ArbitrumOne => 100_000,
     }
 }
 

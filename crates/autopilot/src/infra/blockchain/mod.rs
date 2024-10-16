@@ -12,28 +12,10 @@ use {
 pub mod authenticator;
 pub mod contracts;
 
-/// Chain ID as defined by EIP-155.
-///
-/// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ChainId(pub U256);
-
-impl std::fmt::Display for ChainId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<U256> for ChainId {
-    fn from(value: U256) -> Self {
-        Self(value)
-    }
-}
-
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
-    chain: ChainId,
+    chain: eth::ChainId,
     url: Url,
 }
 
@@ -45,7 +27,8 @@ impl Rpc {
         ethrpc_args: &shared::ethrpc::Arguments,
     ) -> Result<Self, Error> {
         let web3 = boundary::web3_client(url, ethrpc_args);
-        let chain = web3.eth().chain_id().await?.into();
+        let chain =
+            eth::ChainId::new(web3.eth().chain_id().await?).map_err(|_| Error::UnsupportedChain)?;
 
         Ok(Self {
             web3,
@@ -55,7 +38,7 @@ impl Rpc {
     }
 
     /// Returns the chain id for the RPC connection.
-    pub fn chain(&self) -> ChainId {
+    pub fn chain(&self) -> eth::ChainId {
         self.chain
     }
 
@@ -74,7 +57,7 @@ impl Rpc {
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    chain: ChainId,
+    chain: eth::ChainId,
     current_block: CurrentBlockWatcher,
     contracts: Contracts,
 }
@@ -88,7 +71,7 @@ impl Ethereum {
     /// any initialization error.
     pub async fn new(
         web3: DynWeb3,
-        chain: ChainId,
+        chain: eth::ChainId,
         url: Url,
         addresses: contracts::Addresses,
         poll_interval: Duration,
@@ -105,7 +88,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> &ChainId {
+    pub fn network(&self) -> &eth::ChainId {
         &self.chain
     }
 
@@ -179,4 +162,6 @@ pub enum Error {
     IncompleteTransactionData(anyhow::Error),
     #[error("transaction not found")]
     TransactionNotFound,
+    #[error("unsupported chain")]
+    UnsupportedChain,
 }
