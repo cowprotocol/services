@@ -233,6 +233,11 @@ pub struct Arguments {
     /// Archive node URL used to index CoW AMM
     #[clap(long, env)]
     pub archive_node_url: Option<Url>,
+
+    /// Whether the migration from solver_competition table to new competition
+    /// tables should be run
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub migrate_auctions: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -278,6 +283,7 @@ impl std::fmt::Display for Arguments {
             run_loop_native_price_timeout,
             max_winners_per_auction,
             archive_node_url,
+            migrate_auctions,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -357,6 +363,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "max_winners_per_auction: {:?}", max_winners_per_auction)?;
         writeln!(f, "archive_node_url: {:?}", archive_node_url)?;
+        writeln!(f, "migrate_auctions: {:?}", migrate_auctions)?;
         Ok(())
     }
 }
