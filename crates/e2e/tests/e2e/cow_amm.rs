@@ -160,7 +160,10 @@ async fn cow_amm_jit(web3: Web3) {
         .start_autopilot(
             None,
             vec![
-                "--drivers=mock_solver|http://localhost:11088/mock_solver".to_string(),
+                format!(
+                    "--drivers=mock_solver|http://localhost:11088/mock_solver|{}",
+                    hex::encode(solver.address())
+                ),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
             ],
@@ -484,7 +487,7 @@ async fn cow_amm_driver_support(web3: Web3) {
         .start_autopilot(
             None,
             vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver,mock_solver|http://localhost:11088/mock_solver".to_string(),
+                format!("--drivers=test_solver|http://localhost:11088/test_solver|{},mock_solver|http://localhost:11088/mock_solver|{}", hex::encode(solver.address()), hex::encode(solver.address())),
                 "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver"
                     .to_string(),
                 "--cow-amm-configs=0x3705ceee5eaa561e3157cf92641ce28c45a3999c|0x3705ceee5eaa561e3157cf92641ce28c45a3999c|20332744".to_string()
