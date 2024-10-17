@@ -117,7 +117,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only
+      - run: cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only --no-fail-fast
 
   test-forked-node:
     timeout-minutes: 60
