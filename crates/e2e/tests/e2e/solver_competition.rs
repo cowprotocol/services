@@ -50,6 +50,8 @@ async fn solver_competition(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
@@ -57,6 +59,8 @@ async fn solver_competition(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
@@ -171,6 +175,8 @@ async fn fairness_check(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_a.address()],
+                1,
+                true,
             )
             .await,
             colocation::start_baseline_solver(
@@ -178,6 +184,8 @@ async fn fairness_check(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
+                1,
+                true,
             )
             .await,
         ],
