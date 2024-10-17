@@ -14,7 +14,7 @@ use {
 impl Quote {
     pub fn new(quote: quote::Quote) -> Self {
         Self {
-            amount: quote.amount,
+            // amount: quote.amount,
             pre_interactions: quote
                 .pre_interactions
                 .iter()
@@ -45,8 +45,8 @@ impl Quote {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Quote {
-    #[serde_as(as = "serialize::U256")]
-    amount: eth::U256,
+    // #[serde_as(as = "serialize::U256")]
+    // amount: eth::U256,
     pre_interactions: Vec<Interaction>,
     interactions: Vec<Interaction>,
     solver: eth::H160,

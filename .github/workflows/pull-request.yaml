@@ -4,7 +4,7 @@ on:
   # We require PRs to be up to date before merging so technically it is not needed run the rust job
   # on main. However for the cache to be usable in PRs we do need the job on main.
   push:
-    branches: [main]
+    branches: [main, 'ilya/identify-quote-tests']
 jobs:
   lint:
     timeout-minutes: 60
