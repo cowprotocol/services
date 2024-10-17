@@ -157,7 +157,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly four elements");
+        .expect("Expected exactly three elements");
 
     // Disable solver until orders have been placed and onchain liquidity
     // got updated.
@@ -210,7 +210,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly four elements");
+        .expect("Expected exactly three elements");
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
     onchain
@@ -266,7 +266,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly two elements");
+        .expect("Expected exactly three elements");
 
     onchain.allow_solving(&solver, true).await;
 
@@ -349,7 +349,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly four elements");
+        .expect("Expected exactly three elements");
     assert_approximately_eq!(
         market_executed_surplus_fee_in_buy_token,
         market_order_token_balance
