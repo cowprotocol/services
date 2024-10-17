@@ -19,7 +19,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_mainnet_single_limit_order() {
+async fn f0rked_node_mainnet_single_limit_order() {
     run_forked_test_with_block_number(
         forked_mainnet_onchain_banned_user_test,
         std::env::var("FORK_URL_MAINNET")

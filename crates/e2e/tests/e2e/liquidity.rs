@@ -43,7 +43,7 @@ pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_zero_ex_liquidity_mainnet() {
+async fn f0rked_node_zero_ex_liquidity_mainnet() {
     run_forked_test_with_block_number(
         zero_ex_liquidity,
         std::env::var("FORK_URL_MAINNET")

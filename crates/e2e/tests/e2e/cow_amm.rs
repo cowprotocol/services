@@ -30,7 +30,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_cow_amm_jit() {
+async fn l0cal_node_cow_amm_jit() {
     run_test(cow_amm_jit).await;
 }
 

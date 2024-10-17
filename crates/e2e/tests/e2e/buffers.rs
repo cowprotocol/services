@@ -12,7 +12,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_buffers() {
+async fn l0cal_node_buffers() {
     run_test(onchain_settlement_without_liquidity).await;
 }
 
