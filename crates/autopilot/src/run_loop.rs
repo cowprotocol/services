@@ -515,7 +515,7 @@ impl RunLoop {
         };
         if let Err(err) = self
             .persistence
-            .save_solutions(auction, solutions, winners)
+            .save_solutions(auction, solutions)
             .await
         {
             tracing::warn!(?err, "failed to save solutions");
