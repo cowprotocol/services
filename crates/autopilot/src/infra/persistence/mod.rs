@@ -816,12 +816,9 @@ impl Persistence {
                 .await
                 .context("fetch lowest auction id")?;
 
-        let mut current_auction_id = match current_auction_id {
-            Some(auction_id) => auction_id,
-            None => {
-                tracing::info!("competition_auctions is empty, nothing to process");
-                return Ok(());
-            }
+        let Some(mut current_auction_id) = current_auction_id else {
+            tracing::info!("competition_auctions is empty, nothing to process");
+            return Ok(());
         };
 
         loop {
