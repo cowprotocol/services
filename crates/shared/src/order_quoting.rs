@@ -273,9 +273,6 @@ pub trait QuoteStoring: Send + Sync {
     async fn save(&self, data: QuoteData) -> Result<QuoteId>;
 
     /// Retrieves an existing quote by ID.
-    async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>>;
-
-    /// Retrieves an existing quote by ID.
     async fn find(
         &self,
         parameters: QuoteSearchParameters,
