@@ -14,6 +14,15 @@ pub struct Address(pub H160);
 #[derive(Debug, Copy, Clone, From, PartialEq, PartialOrd, Default)]
 pub struct BlockNo(pub u64);
 
+/// Adding blocks to a block number.
+impl std::ops::Add<u64> for BlockNo {
+    type Output = BlockNo;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
 /// A transaction ID, AKA transaction hash.
 #[derive(Debug, Copy, Clone, From, Default)]
 pub struct TxId(pub H256);

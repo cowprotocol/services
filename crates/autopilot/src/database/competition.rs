@@ -10,10 +10,9 @@ use {
         Address,
     },
     derivative::Derivative,
-    model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
+    model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
-    primitive_types::{H160, H256, U256},
-    sqlx::{types::JsonValue, PgConnection},
+    primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
 };
 
@@ -47,9 +46,13 @@ impl super::Postgres {
 
         let mut ex = self.pool.begin().await.context("begin")?;
 
-        database::solver_competition::save(&mut ex, competition.auction_id, json)
-            .await
-            .context("solver_competition::save")?;
+        database::solver_competition::save_solver_competition(
+            &mut ex,
+            competition.auction_id,
+            json,
+        )
+        .await
+        .context("solver_competition::save_solver_competition")?;
 
         database::settlement_scores::insert(
             &mut ex,
@@ -137,35 +140,4 @@ impl super::Postgres {
 
         Ok(())
     }
-
-    pub async fn find_competition(
-        auction_id: AuctionId,
-        ex: &mut PgConnection,
-    ) -> anyhow::Result<Option<SolverCompetitionAPI>> {
-        database::solver_competition::load_by_id(ex, auction_id)
-            .await
-            .context("solver_competition::load_by_id")?
-            .map(|row| {
-                deserialize_solver_competition(
-                    row.json,
-                    row.id,
-                    row.tx_hashes.iter().map(|hash| H256(hash.0)).collect(),
-                )
-            })
-            .transpose()
-    }
-}
-
-fn deserialize_solver_competition(
-    json: JsonValue,
-    auction_id: model::auction::AuctionId,
-    transaction_hashes: Vec<H256>,
-) -> anyhow::Result<SolverCompetitionAPI> {
-    let common: SolverCompetitionDB =
-        serde_json::from_value(json).context("deserialize SolverCompetitionDB")?;
-    Ok(SolverCompetitionAPI {
-        auction_id,
-        transaction_hashes,
-        common,
-    })
 }
