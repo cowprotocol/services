@@ -274,6 +274,7 @@ impl Order {
         }
     }
 
+    #[allow(dead_code)]
     pub fn pre_interaction(mut self, interaction: Interaction) -> Self {
         self.pre_interactions.push(interaction);
         self
@@ -969,6 +970,7 @@ impl Setup {
     }
 
     /// This is a test for the /quote endpoint.
+    #[allow(dead_code)]
     pub fn quote(self) -> Self {
         Self {
             quote: true,
@@ -1000,8 +1002,10 @@ pub struct Test {
     trader_address: eth::H160,
     trades: Vec<Trade>,
     trusted: HashSet<&'static str>,
+    #[allow(dead_code)]
     deadline: chrono::DateTime<chrono::Utc>,
     /// Is this testing the /quote endpoint?
+    #[allow(dead_code)]
     quote: bool,
     /// List of surplus capturing JIT-order owners
     surplus_capturing_jit_order_owners: Vec<H160>,
@@ -1052,6 +1056,7 @@ impl Test {
     }
 
     /// Call the /quote endpoint.
+    #[allow(dead_code)]
     pub async fn quote(&self) -> Quote {
         if !self.quote {
             panic!("called /quote on a test which wasn't configured to test the /quote endpoint");
@@ -1353,12 +1358,14 @@ impl RevealErr {
 }
 
 /// A /quote response.
+#[allow(dead_code)]
 pub struct Quote<'a> {
     trades: &'a [Trade],
     status: StatusCode,
     body: String,
 }
 
+#[allow(dead_code)]
 impl<'a> Quote<'a> {
     /// Expect the /quote endpoint to have returned a 200 OK response.
     pub fn ok(self) -> QuoteOk<'a> {
@@ -1370,11 +1377,13 @@ impl<'a> Quote<'a> {
     }
 }
 
+#[allow(dead_code)]
 pub struct QuoteOk<'a> {
     trades: &'a [Trade],
     body: String,
 }
 
+#[allow(dead_code)]
 impl QuoteOk<'_> {
     /// Check that the quote returns the expected amount of tokens. This is
     /// based on the state of the blockchain and the test setup.

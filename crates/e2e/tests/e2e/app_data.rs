@@ -16,7 +16,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_app_data() {
+async fn l0cal_node_app_data() {
     run_test(app_data).await;
 }
 

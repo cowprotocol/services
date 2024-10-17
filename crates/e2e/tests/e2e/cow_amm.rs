@@ -355,7 +355,7 @@ async fn cow_amm_jit(web3: Web3) {
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_mainnet_cow_amm_driver_support() {
+async fn f0rked_node_mainnet_cow_amm_driver_support() {
     run_forked_test_with_block_number(
         cow_amm_driver_support,
         std::env::var("FORK_URL_MAINNET")

@@ -71,7 +71,7 @@ const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_gnosis_single_limit_order() {
+async fn f0rked_node_gnosis_single_limit_order() {
     run_forked_test_with_block_number(
         forked_gnosis_single_limit_order_test,
         std::env::var("FORK_URL_GNOSIS").expect("FORK_URL_GNOSIS must be set to run forked tests"),

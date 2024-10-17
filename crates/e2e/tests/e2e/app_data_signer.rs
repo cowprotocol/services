@@ -15,7 +15,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_order_creation_checks_metadata_signer() {
+async fn l0cal_node_order_creation_checks_metadata_signer() {
     run_test(order_creation_checks_metadata_signer).await;
 }
 
