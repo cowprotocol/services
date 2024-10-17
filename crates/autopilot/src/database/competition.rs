@@ -46,9 +46,13 @@ impl super::Postgres {
 
         let mut ex = self.pool.begin().await.context("begin")?;
 
-        database::solver_competition::save(&mut ex, competition.auction_id, json)
-            .await
-            .context("solver_competition::save")?;
+        database::solver_competition::save_solver_competition(
+            &mut ex,
+            competition.auction_id,
+            json,
+        )
+        .await
+        .context("solver_competition::save_solver_competition")?;
 
         database::settlement_scores::insert(
             &mut ex,

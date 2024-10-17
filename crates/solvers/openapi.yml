@@ -234,7 +234,7 @@ components:
       description: |
         How the CoW Protocol order was classified.
       type: string
-      enum: [ market, limit, liquidity ]
+      enum: [ market, limit ]
 
     AppData:
       description: |
