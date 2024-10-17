@@ -48,6 +48,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
