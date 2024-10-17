@@ -60,7 +60,7 @@ async fn solver_competition(web3: Web3) {
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver,
+                solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
             )
@@ -73,8 +73,8 @@ async fn solver_competition(web3: Web3) {
     services.start_autopilot(
         None,
         vec![
-            "--drivers=test_solver|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2"
-                .to_string(),
+            format!("--drivers=test_solver|http://localhost:11088/test_solver|{},solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())
+                ),
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver,solver2|http://localhost:11088/solver2".to_string(),
         ],
     ).await;
@@ -181,7 +181,7 @@ async fn fairness_check(web3: Web3) {
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver,
+                solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
             )
@@ -195,8 +195,7 @@ async fn fairness_check(web3: Web3) {
         None,
         // Solver 1 has a fairness threshold of 0.01 ETH, which should be triggered by sub-optimally settling order_b
         vec![
-            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
-                .to_string(),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|{}|10000000000000000,solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address()), hex::encode(solver.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;
@@ -318,7 +317,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver,
+                solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
             )
@@ -332,8 +331,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
         None,
         // Solver 1 has a wrong submission address, meaning that the solutions should be discarded from solver1
         vec![
-            "--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2"
-                .to_string(),
+            format!("--drivers=solver1|http://localhost:11088/test_solver|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,solver2|http://localhost:11088/solver2|{}", hex::encode(solver.address())),
             "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
         ],
     ).await;

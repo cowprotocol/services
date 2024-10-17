@@ -281,7 +281,10 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    hex::encode(solver.address())
+                ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
