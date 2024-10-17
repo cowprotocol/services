@@ -721,6 +721,63 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
+        // @TODO: to be deleted once the submission address in the driver configuration
+        // is not optional
+        if let Some(submission_address) = driver.submission_address {
+            let authenticator = self.eth.contracts().authenticator();
+            let is_allowed = authenticator
+                .is_solver(submission_address.into())
+                .call()
+                .await;
+
+            // Do not send the request to the driver if the solver is denied
+            match is_allowed {
+                Ok(true) => {}
+                Ok(false) => return Err(SolveError::SolverDenyListed),
+                Err(err) => {
+                    // log warning but discard solution anyway to be on the safe side
+                    tracing::warn!(
+                        driver = driver.name,
+                        ?driver.submission_address,
+                        ?err,
+                        "failed to check if solver is deny listed"
+                    );
+                    return Err(SolveError::SolverDenyListed);
+                }
+            }
+
+            let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
+                .await
+                .map_err(|_| SolveError::Timeout)?
+                .map_err(SolveError::Failure)?;
+            if response.solutions.is_empty() {
+                return Err(SolveError::NoSolutions);
+            }
+            // Filter the responses
+            Ok(response
+                .into_domain()
+                .into_iter()
+                .filter(|solution| {
+                    solution
+                        .as_ref()
+                        .ok()
+                        .map(|solution| solution.solver() == submission_address)
+                        .unwrap_or_default()
+                })
+                .collect())
+        } else {
+            self.try_solve_legacy(driver, request).await
+        }
+    }
+
+    // @TODO: Legacy try_solve, to be deleted once the submission address in the
+    // driver configuration is not optional
+    async fn try_solve_legacy(
+        &self,
+        driver: &infra::Driver,
+        request: &solve::Request,
+    ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
+    {
         let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -871,6 +928,8 @@ enum SolveError {
     NoSolutions,
     #[error(transparent)]
     Failure(anyhow::Error),
+    #[error("the solver got deny listed")]
+    SolverDenyListed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -958,6 +1017,7 @@ impl Metrics {
             SolveError::Timeout => "timeout",
             SolveError::NoSolutions => "no_solutions",
             SolveError::Failure(_) => "error",
+            SolveError::SolverDenyListed => "deny_listed",
         };
         Self::get()
             .solve
