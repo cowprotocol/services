@@ -1,4 +1,8 @@
-use {crate::domain, ethcontract::dyns::DynWeb3, primitive_types::H160};
+use {
+    crate::{domain, infra::blockchain},
+    ethcontract::dyns::DynWeb3,
+    primitive_types::H160,
+};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
@@ -20,7 +24,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub async fn new(web3: &DynWeb3, chain: &domain::eth::chain::Id, addresses: Addresses) -> Self {
+    pub async fn new(web3: &DynWeb3, chain: &blockchain::Id, addresses: Addresses) -> Self {
         let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
             address
                 .or_else(|| deployment_address(contract, chain))
@@ -94,7 +98,7 @@ impl Contracts {
 /// there is no known deployment for the contract on that network.
 pub fn deployment_address(
     contract: &ethcontract::Contract,
-    chain: &domain::eth::chain::Id,
+    chain: &blockchain::Id,
 ) -> Option<H160> {
     contract
         .networks
