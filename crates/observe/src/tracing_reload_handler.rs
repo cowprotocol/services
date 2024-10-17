@@ -21,24 +21,9 @@ pub(crate) fn spawn_reload_handler<T: 'static>(
 
         let socket_path = format!("/tmp/log_filter_override_{name}_{id}.sock");
         tracing::warn!(file = socket_path, "open log filter reload socket");
+        std::fs::remove_file(&socket_path).ok();
         let handle = SocketHandle {
-            listener: match UnixListener::bind(&socket_path) {
-                Ok(sock) => sock,
-                Err(e) => match e.kind() {
-                    std::io::ErrorKind::AddrInUse => {
-                        tracing::warn!("log filter socket file already exists - removing");
-                        if let Err(err) = std::fs::remove_file(&socket_path) {
-                            tracing::warn!(
-                                ?err,
-                                file = socket_path,
-                                "failed to remove log filter socket"
-                            );
-                        }
-                        UnixListener::bind(&socket_path).expect("socket handle is unique")
-                    }
-                    _ => panic!("failed to create socket handle: {e:?}"),
-                },
-            },
+            listener: UnixListener::bind(&socket_path).expect("socket handle is unique"),
             socket_path,
         };
 
