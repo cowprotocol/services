@@ -78,8 +78,12 @@ impl Observer {
         let (auction_id, settlement) = match transaction {
             Ok(transaction) => {
                 let auction_id = transaction.auction_id;
-                let settlement = match settlement::Settlement::new(transaction, &self.persistence)
-                    .await
+                let settlement = match settlement::Settlement::new(
+                    transaction,
+                    &self.persistence,
+                    self.eth.chain(),
+                )
+                .await
                 {
                     Ok(settlement) => Some(settlement),
                     Err(err) if retryable(&err) => return Err(err.into()),

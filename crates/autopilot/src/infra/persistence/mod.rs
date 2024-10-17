@@ -274,24 +274,6 @@ impl Persistence {
         .map(|hash| H256(hash.0).into()))
     }
 
-    /// Checks if an auction already has an accociated settlement.
-    ///
-    /// This function is used to detect processing of a staging settlement on
-    /// production and vice versa, because staging and production environments
-    /// don't have a disjunctive sets of auction ids.
-    pub async fn auction_has_settlement(
-        &self,
-        auction_id: domain::auction::Id,
-    ) -> Result<bool, DatabaseError> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["auction_has_settlement"])
-            .start_timer();
-
-        let mut ex = self.postgres.pool.begin().await?;
-        Ok(database::settlements::already_processed(&mut ex, auction_id).await?)
-    }
-
     /// Save auction related data to the database.
     pub async fn save_auction(
         &self,
@@ -439,8 +421,19 @@ impl Persistence {
             orders
         };
 
+        let block = {
+            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
+                .await?
+                .ok_or(error::Auction::NotFound)?;
+            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
+                .map_err(|_| error::Auction::NotFound)?
+                .auction_start_block
+                .into()
+        };
+
         Ok(domain::settlement::Auction {
             id: auction_id,
+            block,
             orders,
             prices,
             surplus_capturing_jit_order_owners,
