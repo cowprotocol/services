@@ -19,11 +19,17 @@ pub struct Driver {
     // winning solution should be discarded if it contains at least one order, which
     // another driver solved with surplus exceeding this driver's surplus by `threshold`
     pub fairness_threshold: Option<eth::Ether>,
+    pub submission_address: eth::Address,
     client: Client,
 }
 
 impl Driver {
-    pub fn new(url: Url, name: String, fairness_threshold: Option<eth::Ether>) -> Self {
+    pub fn new(
+        url: Url,
+        name: String,
+        fairness_threshold: Option<eth::Ether>,
+        submission_address: eth::Address,
+    ) -> Self {
         Self {
             name,
             url,
@@ -32,6 +38,7 @@ impl Driver {
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
                 .unwrap(),
+            submission_address,
         }
     }
 
