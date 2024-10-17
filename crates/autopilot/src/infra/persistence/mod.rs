@@ -19,6 +19,7 @@ use {
             SigningScheme as DbSigningScheme,
         },
         settlement_observations::Observation,
+        solver_competition::{Order, Solution},
     },
     domain::auction::order::{
         BuyTokenDestination as DomainBuyTokenDestination,
@@ -127,6 +128,70 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
+    /// Save all valid solutions that participated in the competition for an
+    /// auction.
+    pub async fn save_solutions(
+        &self,
+        auction_id: domain::auction::Id,
+        solutions: &[domain::competition::Participant],
+    ) -> Result<(), DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["save_solutions"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.begin().await?;
+
+        database::solver_competition::save(
+            &mut ex,
+            auction_id,
+            &solutions
+                .iter()
+                .enumerate()
+                .map(|(uid, participant)| {
+                    let solution = Solution {
+                        uid: uid.try_into().context("uid overflow")?,
+                        id: i64::try_from(participant.solution().id()).context("block overflow")?,
+                        solver: ByteArray(participant.solution().solver().0 .0),
+                        is_winner: participant.is_winner(),
+                        score: u256_to_big_decimal(&participant.solution().score().get().0),
+                        orders: participant
+                            .solution()
+                            .orders()
+                            .iter()
+                            .map(|(order_uid, order)| Order {
+                                uid: ByteArray(order_uid.0),
+                                sell_token: ByteArray(order.sell.token.0 .0),
+                                buy_token: ByteArray(order.buy.token.0 .0),
+                                limit_sell: u256_to_big_decimal(&order.sell.amount.0),
+                                limit_buy: u256_to_big_decimal(&order.buy.amount.0),
+                                executed_sell: u256_to_big_decimal(&order.executed_sell.0),
+                                executed_buy: u256_to_big_decimal(&order.executed_buy.0),
+                                side: order.side.into(),
+                            })
+                            .collect(),
+                        price_tokens: participant
+                            .solution()
+                            .prices()
+                            .keys()
+                            .map(|token| ByteArray(token.0 .0))
+                            .collect(),
+                        price_values: participant
+                            .solution()
+                            .prices()
+                            .values()
+                            .map(|price| u256_to_big_decimal(&price.get().0))
+                            .collect(),
+                    };
+                    Ok::<_, DatabaseError>(solution)
+                })
+                .collect::<Result<Vec<_>, DatabaseError>>()?,
+        )
+        .await?;
+
+        Ok(ex.commit().await?)
+    }
+
     /// Saves the surplus capturing jit order owners to the DB
     pub async fn save_surplus_capturing_jit_order_owners(
         &self,
@@ -225,6 +290,52 @@ impl Persistence {
 
         let mut ex = self.postgres.pool.begin().await?;
         Ok(database::settlements::already_processed(&mut ex, auction_id).await?)
+    }
+
+    /// Save auction related data to the database.
+    pub async fn save_auction(
+        &self,
+        auction: &domain::Auction,
+        deadline: u64, // to become part of the auction struct
+    ) -> Result<(), DatabaseError> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["save_auction"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.begin().await?;
+
+        database::auction::save(
+            &mut ex,
+            database::auction::Auction {
+                id: auction.id,
+                block: i64::try_from(auction.block).context("block overflow")?,
+                deadline: i64::try_from(deadline).context("deadline overflow")?,
+                order_uids: auction
+                    .orders
+                    .iter()
+                    .map(|order| ByteArray(order.uid.0))
+                    .collect(),
+                price_tokens: auction
+                    .prices
+                    .keys()
+                    .map(|token| ByteArray(token.0 .0))
+                    .collect(),
+                price_values: auction
+                    .prices
+                    .values()
+                    .map(|price| u256_to_big_decimal(&price.get().0))
+                    .collect(),
+                surplus_capturing_jit_order_owners: auction
+                    .surplus_capturing_jit_order_owners
+                    .iter()
+                    .map(|owner| ByteArray(owner.0 .0))
+                    .collect(),
+            },
+        )
+        .await?;
+
+        Ok(ex.commit().await?)
     }
 
     /// Get auction data.
@@ -655,14 +766,7 @@ impl Persistence {
                                     valid_to: i64::from(jit_order.valid_to),
                                     app_data: ByteArray(jit_order.app_data.0),
                                     fee_amount: u256_to_big_decimal(&jit_order.fee_amount.0),
-                                    kind: match jit_order.side {
-                                        domain::auction::order::Side::Buy => {
-                                            database::orders::OrderKind::Buy
-                                        }
-                                        domain::auction::order::Side::Sell => {
-                                            database::orders::OrderKind::Sell
-                                        }
-                                    },
+                                    kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
                                     receiver: ByteArray(jit_order.receiver.0 .0),
