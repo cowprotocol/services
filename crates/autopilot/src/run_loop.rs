@@ -734,6 +734,27 @@ impl RunLoop {
         request: &solve::Request,
     ) -> Result<Vec<Result<competition::Solution, domain::competition::SolutionError>>, SolveError>
     {
+        let authenticator = self.eth.contracts().authenticator();
+        let is_allowed = authenticator
+            .is_solver(driver.submission_address.into())
+            .call()
+            .await;
+
+        // Do not send the request to the driver if the solver is denied
+        match is_allowed {
+            Ok(true) => {}
+            Ok(false) => return Err(SolveError::SolverDenyListed),
+            Err(err) => {
+                tracing::warn!(
+                    driver = driver.name,
+                    ?driver.submission_address,
+                    ?err,
+                    "failed to check if solver is deny listed"
+                );
+                return Err(SolveError::SolverDenyListed);
+            }
+        }
+
         let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
@@ -741,33 +762,29 @@ impl RunLoop {
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
-        let solutions = response.into_domain();
-
-        // TODO: remove this workaround when implementing #2780
-        // Discard any solutions from solvers that got deny listed in the mean time.
-        let futures = solutions.into_iter().map(|solution| async {
-            let solution = solution?;
-            let solver = solution.solver();
-            let authenticator = self.eth.contracts().authenticator();
-            let is_allowed = authenticator.is_solver(solver.into()).call().await;
-
-            match is_allowed {
-                Ok(true) => Ok(solution),
-                Ok(false) => Err(domain::competition::SolutionError::SolverDenyListed),
-                Err(err) => {
-                    // log warning but discard solution anyway to be on the safe side
-                    tracing::warn!(
-                        driver = driver.name,
-                        ?solver,
-                        ?err,
-                        "failed to check if solver is deny listed"
-                    );
-                    Err(domain::competition::SolutionError::SolverDenyListed)
-                }
-            }
-        });
-
-        Ok(futures::future::join_all(futures).await)
+        // Filter the responses
+        Ok(response
+            .into_domain()
+            .into_iter()
+            .filter(|solution| {
+                solution
+                    .as_ref()
+                    .ok()
+                    .map(|solution| {
+                        let is_solution_from_driver =
+                            solution.solver() == driver.submission_address;
+                        if !is_solution_from_driver {
+                            tracing::warn!(
+                                driver = driver.name,
+                                ?driver.submission_address,
+                                "the solution is not received from the driver submission address"
+                            );
+                        }
+                        is_solution_from_driver
+                    })
+                    .unwrap_or_default()
+            })
+            .collect())
     }
 
     /// Execute the solver's solution. Returns Ok when the corresponding
@@ -884,6 +901,8 @@ enum SolveError {
     NoSolutions,
     #[error(transparent)]
     Failure(anyhow::Error),
+    #[error("the solver got deny listed")]
+    SolverDenyListed,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -971,6 +990,7 @@ impl Metrics {
             SolveError::Timeout => "timeout",
             SolveError::NoSolutions => "no_solutions",
             SolveError::Failure(_) => "error",
+            SolveError::SolverDenyListed => "deny_listed",
         };
         Self::get()
             .solve
