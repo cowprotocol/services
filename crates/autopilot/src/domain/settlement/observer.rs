@@ -81,7 +81,7 @@ impl Observer {
                 let settlement = match settlement::Settlement::new(
                     transaction,
                     &self.persistence,
-                    self.eth.network(),
+                    self.eth.chain(),
                 )
                 .await
                 {

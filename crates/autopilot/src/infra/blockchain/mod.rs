@@ -90,7 +90,7 @@ impl Ethereum {
         }
     }
 
-    pub fn network(&self) -> &Id {
+    pub fn chain(&self) -> &Id {
         &self.chain
     }
 
