@@ -138,16 +138,22 @@ impl Settlement {
     }
 }
 
+const MAINNET_BLOCK_TIME: u64 = 13_000; // ms
+const GNOSIS_BLOCK_TIME: u64 = 5_000; // ms
+const SEPOLIA_BLOCK_TIME: u64 = 13_000; // ms
+const ARBITRUM_ONE_BLOCK_TIME: u64 = 100; // ms
+
 /// How old (in terms of blocks) a settlement should be, to be considered as a
 /// settlement from another environment.
 ///
 /// Currently set to ~6h
 fn max_settlement_age(chain: &eth::chain::Id) -> u64 {
+    const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
     match chain {
-        eth::chain::Id::Mainnet => 2000,
-        eth::chain::Id::Gnosis => 4000,
-        eth::chain::Id::Sepolia => 2000,
-        eth::chain::Id::ArbitrumOne => 100_000,
+        eth::chain::Id::Mainnet => TARGET_AGE / MAINNET_BLOCK_TIME,
+        eth::chain::Id::Gnosis => TARGET_AGE / GNOSIS_BLOCK_TIME,
+        eth::chain::Id::Sepolia => TARGET_AGE / SEPOLIA_BLOCK_TIME,
+        eth::chain::Id::ArbitrumOne => TARGET_AGE / ARBITRUM_ONE_BLOCK_TIME,
     }
 }
 
