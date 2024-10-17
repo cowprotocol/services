@@ -51,7 +51,6 @@ impl Auction {
                     kind: match order.class {
                         Class::Market => competition::order::Kind::Market,
                         Class::Limit => competition::order::Kind::Limit,
-                        Class::Liquidity => competition::order::Kind::Liquidity,
                     },
                     app_data: order.app_data.into(),
                     partial: if order.partially_fillable {
@@ -311,7 +310,6 @@ enum SigningScheme {
 enum Class {
     Market,
     Limit,
-    Liquidity,
 }
 
 #[derive(Debug, Deserialize)]

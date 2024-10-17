@@ -95,6 +95,10 @@ impl Persistence {
         let Some(uploader) = self.s3.clone() else {
             return;
         };
+        if instance.auction.orders.is_empty() {
+            tracing::info!("skip upload of empty auction");
+            return;
+        }
         tokio::spawn(
             async move {
                 match uploader

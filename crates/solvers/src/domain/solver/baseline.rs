@@ -12,7 +12,7 @@ use {
             auction,
             eth,
             liquidity,
-            order::{self, UserOrder},
+            order::{self, Order},
             solution,
         },
     },
@@ -126,11 +126,7 @@ impl Inner {
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
         for (i, order) in auction.orders.into_iter().enumerate() {
-            let Some(user_order) = UserOrder::new(&order) else {
-                continue;
-            };
-
-            let sell_token = user_order.get().sell.token;
+            let sell_token = order.sell.token;
             let sell_token_price = match auction.tokens.reference_price(&sell_token) {
                 Some(price) => price,
                 None if sell_token == self.weth.0.into() => {
@@ -139,7 +135,7 @@ impl Inner {
                 }
                 None => {
                     // Estimate the price of the sell token in the native token
-                    let native_price_request = self.native_price_request(user_order);
+                    let native_price_request = self.native_price_request(&order);
                     if let Some(route) = boundary_solver.route(native_price_request, self.max_hops)
                     {
                         // how many units of buy_token are bought for one unit of sell_token
@@ -159,7 +155,7 @@ impl Inner {
                 }
             };
 
-            let solution = self.requests_for_order(user_order).find_map(|request| {
+            let solution = self.requests_for_order(&order).find_map(|request| {
                 tracing::trace!(order =% order.uid, ?request, "finding route");
 
                 let route = boundary_solver.route(request, self.max_hops)?;
@@ -215,12 +211,12 @@ impl Inner {
         }
     }
 
-    fn requests_for_order(&self, order: UserOrder) -> impl Iterator<Item = Request> {
+    fn requests_for_order(&self, order: &Order) -> impl Iterator<Item = Request> {
         let order::Order {
             sell, buy, side, ..
-        } = order.get().clone();
+        } = order.clone();
 
-        let n = if order.get().partially_fillable {
+        let n = if order.partially_fillable {
             self.max_partial_attempts
         } else {
             1
@@ -244,9 +240,9 @@ impl Inner {
             .filter(|r| !r.sell.amount.is_zero() && !r.buy.amount.is_zero())
     }
 
-    fn native_price_request(&self, order: UserOrder) -> Request {
+    fn native_price_request(&self, order: &Order) -> Request {
         let sell = eth::Asset {
-            token: order.get().sell.token,
+            token: order.sell.token,
             // Note that we intentionally do not use [`eth::U256::max_value()`]
             // as an order with this would cause overflows with the smart
             // contract, so buy orders requiring excessively large sell amounts
