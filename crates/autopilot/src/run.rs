@@ -348,7 +348,12 @@ pub async fn run(args: Arguments) {
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args.order_quoting.price_estimation_drivers,
+            &args
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(|price_estimator_driver| price_estimator_driver.clone().into())
+                .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
@@ -555,6 +560,7 @@ pub async fn run(args: Arguments) {
                     driver.url,
                     driver.name,
                     driver.fairness_threshold.map(Into::into),
+                    driver.submission_address.into(),
                 ))
             })
             .collect(),
@@ -582,6 +588,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                 driver.url,
                 driver.name,
                 driver.fairness_threshold.map(Into::into),
+                driver.submission_address.into(),
             ))
         })
         .collect();

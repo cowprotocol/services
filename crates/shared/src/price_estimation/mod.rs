@@ -2,9 +2,10 @@ use {
     self::trade_verifier::balance_overrides,
     crate::{
         arguments::{display_option, display_secret_option, ExternalSolver},
+        conversions::U256Ext,
         trade_finding::{Interaction, QuoteExecution},
     },
-    anyhow::Result,
+    anyhow::{ensure, Result},
     bigdecimal::BigDecimal,
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
@@ -40,6 +41,36 @@ pub mod trade_verifier;
 
 #[derive(Clone, Debug)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternalSolver {
+    pub name: String,
+    pub url: Url,
+}
+
+impl From<arguments::ExternalSolver> for ExternalSolver {
+    fn from(value: arguments::ExternalSolver) -> Self {
+        Self {
+            name: value.name,
+            url: value.url,
+        }
+    }
+}
+
+impl FromStr for ExternalSolver {
+    type Err = anyhow::Error;
+
+    fn from_str(solver: &str) -> Result<Self> {
+        let parts: Vec<&str> = solver.split('|').collect();
+        ensure!(parts.len() >= 2, "not enough arguments for external solver");
+        let (name, url) = (parts[0], parts[1]);
+        let url: Url = url.parse()?;
+        Ok(Self {
+            name: name.to_owned(),
+            url,
+        })
+    }
+}
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
@@ -566,7 +597,7 @@ mod tests {
 
         for repr in [
             &NativePriceEstimator::Driver(
-                ExternalSolver::from_str("baseline|http://localhost:1234/").unwrap(),
+                ExternalSolver::from_str("baseline|http://localhost:1234/|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
             )
             .to_string(),
             &NativePriceEstimator::OneInchSpotPriceApi.to_string(),

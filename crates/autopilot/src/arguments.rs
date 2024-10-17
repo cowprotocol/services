@@ -1,15 +1,22 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
-    anyhow::Context,
+    anyhow::{ensure, Context},
     clap::ValueEnum,
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option, ExternalSolver},
+        arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
+    std::{
+        fmt,
+        fmt::{Display, Formatter},
+        net::SocketAddr,
+        num::NonZeroUsize,
+        str::FromStr,
+        time::Duration,
+    },
     url::Url,
 };
 
@@ -137,7 +144,8 @@ pub struct Arguments {
     )]
     pub trusted_tokens_update_interval: Duration,
 
-    /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
+    /// A list of drivers in the following format:
+    /// `<NAME>|<URL>|<SUBMISSION_ADDRESS>|<FAIRNESS_THRESHOLD>`
     #[clap(long, env, use_value_delimiter = true)]
     pub drivers: Vec<ExternalSolver>,
 
@@ -366,6 +374,47 @@ impl std::fmt::Display for Arguments {
     }
 }
 
+/// External solver driver configuration
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ExternalSolver {
+    pub name: String,
+    pub url: Url,
+    pub submission_address: H160,
+    pub fairness_threshold: Option<U256>,
+}
+
+impl Display for ExternalSolver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({})", self.name, self.url)
+    }
+}
+
+impl FromStr for ExternalSolver {
+    type Err = anyhow::Error;
+
+    fn from_str(solver: &str) -> anyhow::Result<Self> {
+        let parts: Vec<&str> = solver.split('|').collect();
+        ensure!(parts.len() >= 3, "not enough arguments for external solver");
+        let (name, url) = (parts[0], parts[1]);
+        let url: Url = url.parse()?;
+        let submission_address =
+            H160::from_str(parts[2]).context("failed to parse submission address")?;
+        let fairness_threshold = match parts.get(3) {
+            Some(value) => {
+                Some(U256::from_dec_str(value).context("failed to parse fairness threshold")?)
+            }
+            None => None,
+        };
+
+        Ok(Self {
+            name: name.to_owned(),
+            url,
+            fairness_threshold,
+            submission_address,
+        })
+    }
+}
+
 /// A fee policy to be used for orders base on it's class.
 /// Examples:
 /// - Surplus with a high enough cap for limit orders: surplus:0.5:0.9:limit
@@ -524,7 +573,7 @@ impl FromStr for CowAmmConfig {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use {super::*, hex_literal::hex};
 
     #[test]
     fn test_fee_factor_limits() {
@@ -548,5 +597,44 @@ mod test {
                 .to_string()
                 .contains("Factor must be in the range [0, 1)"),)
         }
+    }
+
+    #[test]
+    fn parse_driver() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+        let driver = ExternalSolver::from_str(argument).unwrap();
+        let expected = ExternalSolver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            fairness_threshold: None,
+            submission_address: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_threshold() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
+        let driver = ExternalSolver::from_str(argument).unwrap();
+        let expected = ExternalSolver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_address: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+            fairness_threshold: Some(U256::exp10(18)),
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_with_submission_address_and_threshold() {
+        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
+        let driver = ExternalSolver::from_str(argument).unwrap();
+        let expected = ExternalSolver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            submission_address: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+            fairness_threshold: Some(U256::exp10(18)),
+        };
+        assert_eq!(driver, expected);
     }
 }

@@ -201,7 +201,7 @@ impl<'a> Services<'a> {
             vec![
                 colocation::start_baseline_solver(
                     "test_solver".into(),
-                    solver,
+                    solver.clone(),
                     self.contracts.weth.address(),
                     vec![],
                     1,
@@ -216,7 +216,10 @@ impl<'a> Services<'a> {
             None,
             [
                 vec![
-                    "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                    format!(
+                        "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                        hex::encode(solver.address())
+                    ),
                     "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                         .to_string(),
                 ],
@@ -261,7 +264,7 @@ impl<'a> Services<'a> {
             solvers.push(
                 colocation::start_baseline_solver(
                     "baseline_solver".into(),
-                    solver,
+                    solver.clone(),
                     self.contracts.weth.address(),
                     vec![],
                     1,
@@ -273,7 +276,7 @@ impl<'a> Services<'a> {
             // Here we call the baseline_solver "test_quoter" to make the native price
             // estimation use the baseline_solver instead of the test_quoter
             let autopilot_args = vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!("--drivers=test_solver|http://localhost:11088/test_solver|{}", hex::encode(solver.address())),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
                 "--native-price-estimators=test_quoter|http://localhost:11088/baseline_solver,test_solver|http://localhost:11088/test_solver".to_string(),
             ];
@@ -284,7 +287,10 @@ impl<'a> Services<'a> {
             (autopilot_args, api_args)
         } else {
             let autopilot_args = vec![
-                "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+                format!(
+                    "--drivers=test_solver|http://localhost:11088/test_solver|{}",
+                    hex::encode(solver.address())
+                ),
                 "--price-estimation-drivers=test_quoter|http://localhost:11088/test_solver"
                     .to_string(),
                 "--native-price-estimators=test_quoter|http://localhost:11088/test_solver"
