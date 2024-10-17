@@ -36,7 +36,7 @@ async fn test() {
                     "postInteractions": [],
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
-                    "class": "liquidity",
+                    "class": "limit",
                     "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
                     "signingScheme": "presign",
                     "signature": "0x",
