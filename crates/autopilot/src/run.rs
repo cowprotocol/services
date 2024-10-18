@@ -17,7 +17,7 @@ use {
         },
         domain,
         event_updater::EventUpdater,
-        infra::{self, blockchain::ChainId},
+        infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
         shadow,
@@ -93,7 +93,7 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::ethrpc::Arguments) -> infra::bl
 
 async fn ethereum(
     web3: DynWeb3,
-    chain: ChainId,
+    chain: infra::blockchain::Id,
     url: Url,
     contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
@@ -556,7 +556,6 @@ pub async fn run(args: Arguments) {
         Arc::new(maintenance),
     );
     run.run_forever().await;
-    unreachable!("run loop exited");
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -631,6 +630,4 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.max_winners_per_auction,
     );
     shadow.run_forever().await;
-
-    unreachable!("shadow run loop exited");
 }

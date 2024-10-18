@@ -59,6 +59,23 @@ Contains only the current auction to decouple auction creation in the `autopilot
 Indexes:
 - PRIMARY KEY: btree(`id`)
 
+### competition\_auctions
+
+Contains all auctions for which a valid solver competition exists. 
+
+ Column        | Type    | Nullable | Details
+---------------|---------|----------|--------
+ id            | bigint  | not null | other tables refer to this as `auction\_id`
+ block         | bigint  | not null | the block number on top of which the auction was created
+ deadline      | bigint  | not null | the block number until which all winning solutions are expected to be settled on-chain.
+ order\_uids   | bytea[] | not null | orders that are part of the auction
+ price\_tokens | bytea[] | not null | native price tokens
+ price\_values | numeric | not null | native price values, mapped one-to-one with `price\_tokens`
+ surplus\_capturing\_jit\_order\_owners | bytea[] | not null | surplus capturing jit order owners that are part of the auction
+
+Indexes:
+- PRIMARY KEY: btree(`id`)
+
 ### ethflow\_orders
 
 EthFlow orders get created with the very generic [`ICoWSwapOnchainOrders`](https://github.com/cowprotocol/ethflowcontract/blob/1d5d54a4ba890c5c0d3b26429ee32aa8e69f2f0d/src/interfaces/ICoWSwapOnchainOrders.sol#L6-L50) smart contract interface. However this interface doesn't return all the information that is required for EthFlow orders. This extra data is stored here whereas the generic data is stored in [onchain\_placed\_orders](#onchain\_placed\_orders).
@@ -309,6 +326,56 @@ Indexes:
 - PRIMARY KEY: btree(`id`)
 - quotes\_token\_expiration: btree (`sell_token`, `buy_token`, `expiration_timestamp` DESC)
 
+### proposed\_solutions
+
+All solutions reported by solvers, that were part of a solver competition. A solver competition can have more than one winner.
+
+ Column        | Type      | Nullable | Details
+---------------|-----------|----------|--------
+ auction\_id   | bigint    | not null | auction for which the solution was proposed 
+ uid           | bigint    | not null | unique id of the proposed solution within a single auction
+ id            | bytea     | not null | id of the proposed solution as reported by the solver
+ solver        | bytea     | not null | solver submission address
+ is\_winner    | boolean   | not null | specifies if a solver that proposed this solution is required to execute the solution
+ score         | numeric   | not null | score of a solution, based on a scoring criteria used at the time of competition
+ price\_tokens | bytea[]   | not null | tokens used in a solution, for which uniform prices are provided
+ price\_values | numeric[] | not null | uniform prices for all tokens in `price\_tokens` list
+
+Indexes:
+- PRIMARY KEY: btree(`auction_id`, `uid`)
+
+### proposed\_trade\_executions
+
+Contains all order executions for proposed solutions. 
+
+ Column         | Type     | Nullable | Details
+----------------|----------|----------|--------
+ auction\_id    | bigint   | not null | auction for which the order was executed 
+ solution_uid   | bigint   | not null | `uid` from `proposed\_solutions`
+ order_uid      | bigint   | not null | id of the order
+ executed\_sell | numeric  | not null | the effective amount that left the user's wallet including all fees
+ executed\_buy  | numeric  | not null | the effective amount the user received after all fees
+
+Indexes:
+- PRIMARY KEY: btree(`auction_id`, `solution_uid`, `order_uid`)
+
+### proposed\_jit\_orders
+
+Solvers report orders they solved on each competition. Orders that don't exist in the orderbook (i.e. private liquidity orders or surplus capturing jit orders), are considered JIT orders and saved in this table.
+
+ Column       | Type               | Nullable | Details
+--------------|--------------------|----------|--------
+ auction\_id  | bigint             | not null | auction for which the order was executed 
+ solution_uid | bigint             | not null | `uid` from `proposed\_solutions`
+ order_uid    | bigint             | not null | id of the order
+ sell\_token  | numeric            | not null | the effective amount that left the user's wallet including all fees
+ buy\_token   | numeric            | not null | the effective amount the user received after all fees
+ limit\_sell  | numeric            | not null | limit sell amount of the order
+ limit\_buy   | numeric            | not null | limit buy amount of the order
+ side         | [enum](#orderkind) | not null | trade semantics of the order
+
+Indexes:
+- PRIMARY KEY: btree(`auction_id`, `solution_uid`, `order_uid`)
 
 ### settlement\_observations
 

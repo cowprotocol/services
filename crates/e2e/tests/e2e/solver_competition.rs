@@ -341,6 +341,9 @@ async fn wrong_solution_submission_address(web3: Web3) {
         ])
         .await;
 
+    // Disable solving until all orders have been placed.
+    onchain.allow_solving(&solver, false).await;
+
     // Place Orders
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -358,8 +361,6 @@ async fn wrong_solution_submission_address(web3: Web3) {
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
-    onchain.mint_block().await;
-
     let order_b = OrderCreation {
         sell_token: token_b.address(),
         sell_amount: to_wei(10),
@@ -375,6 +376,9 @@ async fn wrong_solution_submission_address(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
     services.create_order(&order_b).await.unwrap();
+
+    // Enable solving again
+    onchain.allow_solving(&solver, true).await;
 
     // Wait for trade
     let indexed_trades = || async {

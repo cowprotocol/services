@@ -1,6 +1,6 @@
 use {
     crate::tracing_reload_handler::spawn_reload_handler,
-    std::{panic::PanicInfo, sync::Once},
+    std::{panic::PanicHookInfo, sync::Once},
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
     tracing_subscriber::{
@@ -110,7 +110,7 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
 /// but uses tracing:error instead of stderr.
 ///
 /// Useful when we want panic messages to have the proper log format for Kibana.
-fn tracing_panic_hook(panic: &PanicInfo) {
+fn tracing_panic_hook(panic: &PanicHookInfo) {
     let thread = std::thread::current();
     let name = thread.name().unwrap_or("<unnamed>");
     let backtrace = std::backtrace::Backtrace::force_capture();

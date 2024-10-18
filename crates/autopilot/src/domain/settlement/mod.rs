@@ -4,7 +4,10 @@
 //! a form of settlement transaction.
 
 use {
-    crate::{domain, domain::eth, infra},
+    crate::{
+        domain::{self, eth},
+        infra,
+    },
     std::collections::HashMap,
 };
 
@@ -103,18 +106,20 @@ impl Settlement {
     pub async fn new(
         settled: Transaction,
         persistence: &infra::Persistence,
+        chain: &infra::blockchain::Id,
     ) -> Result<Self, Error> {
-        if persistence
-            .auction_has_settlement(settled.auction_id)
-            .await?
-        {
-            // This settlement has already been processed by another environment.
+        let auction = persistence.get_auction(settled.auction_id).await?;
+
+        if settled.block > auction.block + max_settlement_age(chain) {
+            // A settled transaction references a VERY old auction.
+            //
+            // A hacky way to detect processing of production settlements in the staging
+            // environment, as production is lagging with auction ids by ~270 days on
+            // Ethereum mainnet.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
             return Err(Error::WrongEnvironment);
         }
-
-        let auction = persistence.get_auction(settled.auction_id).await?;
 
         let trades = settled
             .trades
@@ -130,6 +135,25 @@ impl Settlement {
             trades,
             auction,
         })
+    }
+}
+
+const MAINNET_BLOCK_TIME: u64 = 13_000; // ms
+const GNOSIS_BLOCK_TIME: u64 = 5_000; // ms
+const SEPOLIA_BLOCK_TIME: u64 = 13_000; // ms
+const ARBITRUM_ONE_BLOCK_TIME: u64 = 100; // ms
+
+/// How old (in terms of blocks) a settlement should be, to be considered as a
+/// settlement from another environment.
+///
+/// Currently set to ~6h
+fn max_settlement_age(chain: &infra::blockchain::Id) -> u64 {
+    const TARGET_AGE: u64 = 6 * 60 * 60 * 1000; // 6h in ms
+    match chain {
+        infra::blockchain::Id::Mainnet => TARGET_AGE / MAINNET_BLOCK_TIME,
+        infra::blockchain::Id::Gnosis => TARGET_AGE / GNOSIS_BLOCK_TIME,
+        infra::blockchain::Id::Sepolia => TARGET_AGE / SEPOLIA_BLOCK_TIME,
+        infra::blockchain::Id::ArbitrumOne => TARGET_AGE / ARBITRUM_ONE_BLOCK_TIME,
     }
 }
 
@@ -286,6 +310,7 @@ mod tests {
         let order_uid = transaction.trades[0].uid;
 
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             // prices read from https://solver-instances.s3.eu-central-1.amazonaws.com/prod/mainnet/legacy/8655372.json
             prices: auction::Prices::from([
                 (
@@ -436,6 +461,7 @@ mod tests {
 
         let order_uid = transaction.trades[0].uid;
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             prices,
             surplus_capturing_jit_order_owners: Default::default(),
             id: 0,
@@ -599,6 +625,7 @@ mod tests {
         ]);
 
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             prices,
             surplus_capturing_jit_order_owners: HashSet::from([eth::Address(
                 eth::H160::from_slice(&hex!("f08d4dea369c456d26a3168ff0024b904f2d8b91")),
@@ -777,6 +804,7 @@ mod tests {
         ]);
 
         let auction = super::Auction {
+            block: eth::BlockNo(0),
             prices,
             surplus_capturing_jit_order_owners: Default::default(),
             id: 0,

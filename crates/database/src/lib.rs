@@ -58,6 +58,7 @@ pub const TABLES: &[&str] = &[
     "order_quotes",
     "solver_competitions",
     "auctions",
+    "competition_auctions",
     "onchain_placed_orders",
     "ethflow_orders",
     "order_execution",

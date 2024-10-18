@@ -10,7 +10,7 @@
 /// alternatives.
 pub fn install() {
     let previous_hook = std::panic::take_hook();
-    let new_hook = move |info: &std::panic::PanicInfo| {
+    let new_hook = move |info: &std::panic::PanicHookInfo| {
         previous_hook(info);
         std::process::exit(1);
     };
@@ -21,9 +21,9 @@ pub fn install() {
 /// handler was already set up.
 /// This can be useful to make absolutely sure to clean up some resources like
 /// running processes on a panic.
-pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicInfo) + Send + Sync>) {
+pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicHookInfo) + Send + Sync>) {
     let previous_hook = std::panic::take_hook();
-    let new_hook = move |info: &std::panic::PanicInfo| {
+    let new_hook = move |info: &std::panic::PanicHookInfo| {
         handler(info);
         previous_hook(info);
     };

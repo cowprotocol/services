@@ -8,6 +8,8 @@ use {
 #[derive(Debug)]
 pub struct Auction {
     pub id: domain::auction::Id,
+    /// The block on top of which the auction was created.
+    pub block: domain::eth::BlockNo,
     /// All orders from a competition auction. Some of them may contain fee
     /// policies.
     pub orders: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,

@@ -129,7 +129,7 @@ async fn combined_protocol_fees(web3: Web3) {
                 autopilot: autopilot_config,
                 ..Default::default()
             },
-            solver,
+            solver.clone(),
         )
         .await;
 
@@ -157,7 +157,11 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly four elements");
+        .expect("Expected exactly three elements");
+
+    // Disable solver until orders have been placed and onchain liquidity
+    // got updated.
+    onchain.allow_solving(&solver, false).await;
 
     let market_price_improvement_order = OrderCreation {
         sell_amount,
@@ -193,6 +197,20 @@ async fn combined_protocol_fees(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
+
+    let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid] =
+        futures::future::try_join_all(
+            [
+                &market_price_improvement_order,
+                &limit_surplus_order,
+                &partner_fee_order,
+            ]
+            .map(|order| services.create_order(order)),
+        )
+        .await
+        .unwrap()
+        .try_into()
+        .expect("Expected exactly three elements");
 
     tracing::info!("Rebalancing AMM pools for market & limit order.");
     onchain
@@ -248,23 +266,9 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly two elements");
+        .expect("Expected exactly three elements");
 
-    let [market_price_improvement_uid, limit_surplus_order_uid, partner_fee_order_uid] =
-        futures::future::try_join_all(
-            [
-                &market_price_improvement_order,
-                &limit_surplus_order,
-                &partner_fee_order,
-            ]
-            .map(|order| services.create_order(order)),
-        )
-        .await
-        .unwrap()
-        .try_into()
-        .expect("Expected exactly four elements");
-
-    onchain.mint_block().await;
+    onchain.allow_solving(&solver, true).await;
 
     tracing::info!("Waiting for orders to trade.");
     let metadata_updated = || async {
@@ -345,7 +349,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .await
         .unwrap()
         .try_into()
-        .expect("Expected exactly four elements");
+        .expect("Expected exactly three elements");
     assert_approximately_eq!(
         market_executed_surplus_fee_in_buy_token,
         market_order_token_balance

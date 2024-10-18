@@ -23,17 +23,6 @@ impl QuoteStoring for Postgres {
         Ok(id)
     }
 
-    async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["get_quote"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        let quote = database::quotes::get(&mut ex, id).await?;
-        quote.map(TryFrom::try_from).transpose()
-    }
-
     async fn find(
         &self,
         params: QuoteSearchParameters,

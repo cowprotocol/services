@@ -17,6 +17,7 @@ pub use {
             SellTokenSource,
         },
         signature::{EcdsaSignature, Signature, SigningScheme},
+        solver_competition::SolverCompetitionDB,
         DomainSeparator,
     },
     shared::order_validation::{is_order_outside_market_price, Amounts},

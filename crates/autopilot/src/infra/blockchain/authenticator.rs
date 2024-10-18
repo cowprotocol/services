@@ -2,8 +2,8 @@ use {
     crate::{
         domain::{self, eth},
         infra::blockchain::{
+            self,
             contracts::{deployment_address, Contracts},
-            ChainId,
         },
     },
     ethcontract::{dyns::DynWeb3, GasPrice},
@@ -25,7 +25,7 @@ impl Manager {
     /// Creates an authenticator which can remove solvers from the allow-list
     pub async fn new(
         web3: DynWeb3,
-        chain: ChainId,
+        chain: blockchain::Id,
         contracts: Contracts,
         authenticator_pk: eth::H256,
     ) -> Self {
