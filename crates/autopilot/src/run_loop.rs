@@ -588,8 +588,9 @@ impl RunLoop {
                 let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
                     && winners < self.config.max_winners_per_auction;
 
+                already_swapped_tokens.extend(swapped_tokens);
+
                 if is_winner {
-                    already_swapped_tokens.extend(swapped_tokens);
                     winners += 1;
                 }
 
