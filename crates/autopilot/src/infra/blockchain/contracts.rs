@@ -89,6 +89,10 @@ impl Contracts {
         &self.weth
     }
 
+    pub fn weth_address(&self) -> domain::eth::WethAddress {
+        self.weth.address().into()
+    }
+
     pub fn authenticator(&self) -> &contracts::GPv2AllowListAuthentication {
         &self.authenticator
     }

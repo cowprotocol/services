@@ -4,6 +4,12 @@ use {
     derive_more::{Display, From, Into},
 };
 
+/// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
+/// it does not implement the ERC20 interface, but this address is used by
+/// convention across the Ethereum ecosystem whenever ETH is treated like an
+/// ERC20 token.
+pub const ETH_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
+
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,
@@ -32,6 +38,27 @@ pub struct TxId(pub H256);
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct TokenAddress(pub H160);
+
+impl TokenAddress {
+    /// If the token is ETH, return WETH, thereby "wrapping" it.
+    pub fn wrap(self, weth: WethAddress) -> Self {
+        if self == ETH_TOKEN {
+            weth.into()
+        } else {
+            self
+        }
+    }
+}
+
+/// The address of the WETH contract.
+#[derive(Debug, Clone, Copy, From, Into)]
+pub struct WethAddress(pub TokenAddress);
+
+impl From<H160> for WethAddress {
+    fn from(value: H160) -> Self {
+        WethAddress(value.into())
+    }
+}
 
 /// An ERC20 token amount.
 ///
