@@ -540,6 +540,24 @@ impl RunLoop {
             std::cmp::Reverse(participant.solution().score().get().0)
         });
 
+        // Filter out solutions that don't come from their corresponding submission
+        // address
+        let solutions = solutions
+            .into_iter()
+            .filter(|participant| {
+                let submission_address = participant.driver().submission_address;
+                let is_solution_from_driver = participant.solution().solver() == submission_address;
+                if !is_solution_from_driver {
+                    tracing::warn!(
+                        driver = participant.driver().name,
+                        ?submission_address,
+                        "the solution is not received from the driver submission address"
+                    );
+                }
+                is_solution_from_driver
+            })
+            .collect::<Vec<_>>();
+
         // Filter out solutions that are not fair
         let solutions = solutions
             .iter()
@@ -749,29 +767,7 @@ impl RunLoop {
         if response.solutions.is_empty() {
             return Err(SolveError::NoSolutions);
         }
-        // Filter the responses
-        Ok(response
-            .into_domain()
-            .into_iter()
-            .filter(|solution| {
-                solution
-                    .as_ref()
-                    .ok()
-                    .map(|solution| {
-                        let is_solution_from_driver =
-                            solution.solver() == driver.submission_address;
-                        if !is_solution_from_driver {
-                            tracing::warn!(
-                                driver = driver.name,
-                                ?driver.submission_address,
-                                "the solution is not received from the driver submission address"
-                            );
-                        }
-                        is_solution_from_driver
-                    })
-                    .unwrap_or_default()
-            })
-            .collect())
+        Ok(response.into_domain())
     }
 
     /// Execute the solver's solution. Returns Ok when the corresponding
