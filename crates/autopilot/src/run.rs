@@ -550,7 +550,6 @@ pub async fn run(args: Arguments) {
         Arc::new(maintenance),
     );
     run.run_forever().await;
-    unreachable!("run loop exited");
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -624,6 +623,4 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.max_winners_per_auction,
     );
     shadow.run_forever().await;
-
-    unreachable!("shadow run loop exited");
 }
