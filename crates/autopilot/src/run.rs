@@ -543,7 +543,7 @@ pub async fn run(args: Arguments) {
                     driver.url,
                     driver.name,
                     driver.fairness_threshold.map(Into::into),
-                    driver.submission_account.into(),
+                    driver.submission_account,
                 )
                 .await,
             )
@@ -582,7 +582,7 @@ async fn shadow_mode(args: Arguments) -> ! {
                     driver.url,
                     driver.name,
                     driver.fairness_threshold.map(Into::into),
-                    driver.submission_account.into(),
+                    driver.submission_account,
                 )
                 .await,
             )
