@@ -93,16 +93,14 @@ impl Solution {
         self,
     ) -> Result<domain::competition::Solution, domain::competition::SolutionError> {
         Ok(domain::competition::Solution::new(
-            self.solution_id(),
-            self.submission_address().into(),
-            domain::competition::Score::new(self.score().into())?,
-            self.orders()
-                .clone()
+            self.solution_id,
+            self.submission_address.into(),
+            domain::competition::Score::new(self.score.into())?,
+            self.orders
                 .into_iter()
                 .map(|(o, amounts)| (o.into(), amounts.into_domain()))
                 .collect(),
-            self.clearing_prices()
-                .clone()
+            self.clearing_prices
                 .into_iter()
                 .map(|(token, price)| {
                     domain::auction::Price::new(price.into()).map(|price| (token.into(), price))
@@ -169,82 +167,50 @@ pub enum Side {
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[serde(untagged)]
-pub enum Solution {
-    #[serde(rename_all = "camelCase")]
-    OldSolution {
-        /// Unique ID of the solution (per driver competition), used to identify
-        /// it in subsequent requests (reveal, settle).
-        #[serde_as(as = "serde_with::DisplayFromStr")]
-        solution_id: u64,
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-        /// Address used by the driver to submit the settlement onchain.
-        submission_address: H160,
-        orders: HashMap<boundary::OrderUid, TradedOrder>,
-        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-        clearing_prices: HashMap<H160, U256>,
-        gas: Option<u64>,
-    },
-    #[serde(rename_all = "camelCase")]
-    NewSolution {
-        /// Unique ID of the solution (per driver competition), used to identify
-        /// it in subsequent requests (reveal, settle).
-        solution_id: u64,
-        #[serde_as(as = "HexOrDecimalU256")]
-        score: U256,
-        /// Address used by the driver to submit the settlement onchain.
-        submission_address: H160,
-        orders: HashMap<boundary::OrderUid, TradedOrder>,
-        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-        clearing_prices: HashMap<H160, U256>,
-        gas: Option<u64>,
-    },
+pub struct Solution {
+    /// Unique ID of the solution (per driver competition), used to identify
+    /// it in subsequent requests (reveal, settle).
+    #[serde(deserialize_with = "deserialize_solution_id")]
+    pub solution_id: u64,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub score: U256,
+    /// Address used by the driver to submit the settlement onchain.
+    pub submission_address: H160,
+    pub orders: HashMap<boundary::OrderUid, TradedOrder>,
+    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+    pub clearing_prices: HashMap<H160, U256>,
+    pub gas: Option<u64>,
 }
 
-impl Solution {
-    pub fn solution_id(&self) -> u64 {
-        match self {
-            Solution::OldSolution { solution_id, .. } => *solution_id,
-            Solution::NewSolution { solution_id, .. } => *solution_id,
+fn deserialize_solution_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct SolutionIdVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for SolutionIdVisitor {
+        type Value = u64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or integer representing a solution ID")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            value.parse::<u64>().map_err(serde::de::Error::custom)
         }
     }
 
-    pub fn score(&self) -> U256 {
-        match self {
-            Solution::OldSolution { score, .. } => *score,
-            Solution::NewSolution { score, .. } => *score,
-        }
-    }
-
-    pub fn submission_address(&self) -> H160 {
-        match self {
-            Solution::OldSolution {
-                submission_address, ..
-            } => *submission_address,
-            Solution::NewSolution {
-                submission_address, ..
-            } => *submission_address,
-        }
-    }
-
-    pub fn orders(&self) -> &HashMap<boundary::OrderUid, TradedOrder> {
-        match self {
-            Solution::OldSolution { orders, .. } => orders,
-            Solution::NewSolution { orders, .. } => orders,
-        }
-    }
-
-    pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
-        match self {
-            Solution::OldSolution {
-                clearing_prices, ..
-            } => clearing_prices,
-            Solution::NewSolution {
-                clearing_prices, ..
-            } => clearing_prices,
-        }
-    }
+    deserializer.deserialize_any(SolutionIdVisitor)
 }
 
 #[derive(Clone, Debug, Deserialize)]
