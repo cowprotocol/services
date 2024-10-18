@@ -1,6 +1,6 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{domain::eth, util},
+    crate::{arguments::Account, domain::eth, util},
     anyhow::{anyhow, Context, Result},
     reqwest::{Client, StatusCode},
     std::time::Duration,
@@ -24,12 +24,24 @@ pub struct Driver {
 }
 
 impl Driver {
-    pub fn new(
+    pub async fn new(
         url: Url,
         name: String,
         fairness_threshold: Option<eth::Ether>,
-        submission_address: eth::Address,
+        submission_account: Account,
     ) -> Self {
+        let submission_address = match submission_account {
+            Account::Kms(key_id) => {
+                let config = ethcontract::aws_config::load_from_env().await;
+                let account =
+                    ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
+                        .await
+                        .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                account.public_address()
+            }
+            Account::Address(address) => address,
+        };
+
         Self {
             name,
             url,
@@ -38,7 +50,7 @@ impl Driver {
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
                 .unwrap(),
-            submission_address,
+            submission_address: submission_address.into(),
         }
     }
 
