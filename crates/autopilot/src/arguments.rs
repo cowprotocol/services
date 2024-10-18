@@ -1,6 +1,6 @@
 use {
     crate::{domain::fee::FeeFactor, infra},
-    anyhow::{ensure, Context},
+    anyhow::{anyhow, ensure, Context},
     clap::ValueEnum,
     primitive_types::{H160, U256},
     shared::{
@@ -379,8 +379,34 @@ impl std::fmt::Display for Arguments {
 pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
-    pub submission_address: H160,
+    pub submission_account: Account,
     pub fairness_threshold: Option<U256>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Account {
+    /// AWS KMS is used to retrieve the solver public key
+    Kms(Arn),
+    /// Solver public key
+    Address(H160),
+}
+
+// Wrapper type for AWS ARN identifiers
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Arn(pub String);
+
+impl FromStr for Arn {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Could be more strict here, but this should suffice to catch unintended
+        // configuration mistakes
+        if s.starts_with("arn:aws:kms:") {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(anyhow!("Invalid ARN identifier: {}", s))
+        }
+    }
 }
 
 impl Display for ExternalSolver {
@@ -397,8 +423,12 @@ impl FromStr for ExternalSolver {
         ensure!(parts.len() >= 3, "not enough arguments for external solver");
         let (name, url) = (parts[0], parts[1]);
         let url: Url = url.parse()?;
-        let submission_address =
-            H160::from_str(parts[2]).context("failed to parse submission address")?;
+        let submission_account = if let Ok(value) = Arn::from_str(parts[2]) {
+            Account::Kms(value)
+        } else {
+            Account::Address(H160::from_str(parts[2]).context("failed to parse submission")?)
+        };
+
         let fairness_threshold = match parts.get(3) {
             Some(value) => {
                 Some(U256::from_dec_str(value).context("failed to parse fairness threshold")?)
@@ -410,7 +440,7 @@ impl FromStr for ExternalSolver {
             name: name.to_owned(),
             url,
             fairness_threshold,
-            submission_address,
+            submission_account,
         })
     }
 }
@@ -600,14 +630,31 @@ mod test {
     }
 
     #[test]
-    fn parse_driver() {
+    fn parse_driver_submission_account_address() {
         let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
         let driver = ExternalSolver::from_str(argument).unwrap();
         let expected = ExternalSolver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
             fairness_threshold: None,
-            submission_address: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
+        };
+        assert_eq!(driver, expected);
+    }
+
+    #[test]
+    fn parse_driver_submission_account_arn() {
+        let argument = "name1|http://localhost:8080|arn:aws:kms:supersecretstuff";
+        let driver = ExternalSolver::from_str(argument).unwrap();
+        let expected = ExternalSolver {
+            name: "name1".into(),
+            url: Url::parse("http://localhost:8080").unwrap(),
+            fairness_threshold: None,
+            submission_account: Account::Kms(
+                Arn::from_str("arn:aws:kms:supersecretstuff").unwrap(),
+            ),
         };
         assert_eq!(driver, expected);
     }
@@ -619,20 +666,9 @@ mod test {
         let expected = ExternalSolver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
-            submission_address: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
-            fairness_threshold: Some(U256::exp10(18)),
-        };
-        assert_eq!(driver, expected);
-    }
-
-    #[test]
-    fn parse_driver_with_submission_address_and_threshold() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_address: H160::from_slice(&hex!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+            submission_account: Account::Address(H160::from_slice(&hex!(
+                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+            ))),
             fairness_threshold: Some(U256::exp10(18)),
         };
         assert_eq!(driver, expected);
