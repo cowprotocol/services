@@ -289,14 +289,24 @@ pub async fn run(args: Arguments) {
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args.order_quoting.price_estimation_drivers,
+            &args
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(|price_estimator| price_estimator.clone().into())
+                .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            &args.order_quoting.price_estimation_drivers,
+            &args
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(|price_estimator| price_estimator.clone().into())
+                .collect::<Vec<_>>(),
             args.fast_price_estimation_results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),

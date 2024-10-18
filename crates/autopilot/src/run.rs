@@ -348,7 +348,12 @@ pub async fn run(args: Arguments) {
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args.order_quoting.price_estimation_drivers,
+            &args
+                .order_quoting
+                .price_estimation_drivers
+                .iter()
+                .map(|price_estimator_driver| price_estimator_driver.clone().into())
+                .collect::<Vec<_>>(),
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
@@ -529,21 +534,29 @@ pub async fn run(args: Arguments) {
         max_run_loop_delay: args.max_run_loop_delay,
         max_winners_per_auction: args.max_winners_per_auction,
     };
+    let drivers_futures = args
+        .drivers
+        .into_iter()
+        .map(|driver| async move {
+            Arc::new(
+                infra::Driver::new(
+                    driver.url,
+                    driver.name,
+                    driver.fairness_threshold.map(Into::into),
+                    driver.submission_account,
+                )
+                .await,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let drivers = futures::future::join_all(drivers_futures).await;
 
     let run = RunLoop::new(
         run_loop_config,
         eth,
         persistence.clone(),
-        args.drivers
-            .into_iter()
-            .map(|driver| {
-                Arc::new(infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                ))
-            })
-            .collect(),
+        drivers,
         solvable_orders_cache,
         trusted_tokens,
         liveness.clone(),
@@ -560,17 +573,23 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers = args
+    let drivers_futures = args
         .drivers
         .into_iter()
-        .map(|driver| {
-            Arc::new(infra::Driver::new(
-                driver.url,
-                driver.name,
-                driver.fairness_threshold.map(Into::into),
-            ))
+        .map(|driver| async move {
+            Arc::new(
+                infra::Driver::new(
+                    driver.url,
+                    driver.name,
+                    driver.fairness_threshold.map(Into::into),
+                    driver.submission_account,
+                )
+                .await,
+            )
         })
-        .collect();
+        .collect::<Vec<_>>();
+
+    let drivers = futures::future::join_all(drivers_futures).await;
 
     let trusted_tokens = {
         let web3 = shared::ethrpc::web3(
