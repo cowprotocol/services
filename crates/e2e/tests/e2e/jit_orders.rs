@@ -63,6 +63,8 @@ async fn single_limit_order_test(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
             SolverEngine {
@@ -70,6 +72,7 @@ async fn single_limit_order_test(web3: Web3) {
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![token.address()],
+                merge_solutions: true,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

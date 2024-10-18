@@ -11,6 +11,7 @@ pub struct SolverEngine {
     pub endpoint: Url,
     pub account: TestAccount,
     pub base_tokens: Vec<H160>,
+    pub merge_solutions: bool,
 }
 
 pub async fn start_baseline_solver(
@@ -18,13 +19,15 @@ pub async fn start_baseline_solver(
     account: TestAccount,
     weth: H160,
     base_tokens: Vec<H160>,
+    max_hops: usize,
+    merge_solutions: bool,
 ) -> SolverEngine {
     let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
     let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
 base-tokens = [{encoded_base_tokens}]
-max-hops = 1
+max-hops = {max_hops}
 max-partial-attempts = 5
 native-token-price-estimation-amount = "100000000000000000"
         "#,
@@ -36,6 +39,7 @@ native-token-price-estimation-amount = "100000000000000000"
         endpoint,
         account,
         base_tokens,
+        merge_solutions,
     }
 }
 
@@ -107,6 +111,7 @@ pub fn start_driver(
                  account,
                  endpoint,
                  base_tokens: _,
+                 merge_solutions,
              }| {
                 let account = hex::encode(account.private_key());
                 format!(
@@ -116,7 +121,7 @@ name = "{name}"
 endpoint = "{endpoint}"
 relative-slippage = "0.1"
 account = "{account}"
-merge-solutions = true
+merge-solutions = {merge_solutions}
 "#
                 )
             },
