@@ -70,7 +70,6 @@ type OrderId = [u8; order::UID_LEN];
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify it
     /// in subsequent requests (reveal, settle).
-    #[serde_as(as = "serde_with::DisplayFromStr")]
     solution_id: u64,
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,

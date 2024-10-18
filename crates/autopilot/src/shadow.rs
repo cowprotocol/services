@@ -260,13 +260,13 @@ impl RunLoop {
         let (score, solution_id, submission_address, orders) = proposed
             .solutions
             .into_iter()
-            .max_by_key(|solution| solution.score)
+            .max_by_key(|solution| solution.score())
             .map(|solution| {
                 (
-                    solution.score,
-                    solution.solution_id,
-                    solution.submission_address,
-                    solution.orders,
+                    solution.score(),
+                    solution.solution_id(),
+                    solution.submission_address(),
+                    solution.orders().clone(),
                 )
             })
             .ok_or(Error::NoSolutions)?;
