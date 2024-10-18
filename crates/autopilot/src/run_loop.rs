@@ -567,7 +567,7 @@ impl RunLoop {
                     tracing::warn!(
                         driver = participant.driver().name,
                         ?submission_address,
-                        "the solution is not received from the driver submission address"
+                        "the solution received is not from the driver submission address"
                     );
                 }
                 is_solution_from_driver
@@ -773,21 +773,20 @@ impl RunLoop {
         let is_allowed = authenticator
             .is_solver(driver.submission_address.into())
             .call()
-            .await;
-
-        // Do not send the request to the driver if the solver is denied
-        match is_allowed {
-            Ok(true) => {}
-            Ok(false) => return Err(SolveError::SolverDenyListed),
-            Err(err) => {
+            .await
+            .map_err(|err| {
                 tracing::warn!(
                     driver = driver.name,
                     ?driver.submission_address,
                     ?err,
                     "failed to check if solver is deny listed"
                 );
-                return Err(SolveError::SolverDenyListed);
-            }
+                SolveError::SolverDenyListed
+            })?;
+
+        // Do not send the request to the driver if the solver is denied
+        if !is_allowed {
+            return Err(SolveError::SolverDenyListed);
         }
 
         let response = tokio::time::timeout(self.config.solve_deadline, driver.solve(request))
