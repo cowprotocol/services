@@ -298,6 +298,43 @@ pub async fn fetch(
     Ok(solutions)
 }
 
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct RichSolverCompetition {
+    pub id: AuctionId,
+    pub json: JsonValue,
+    pub deadline: i64,
+    pub surplus_capturing_jit_order_owners: Vec<crate::Address>,
+}
+
+/// Migrate all the auctions from the solver_competitions table to the auctions
+/// table. This is a one-time migration.
+///
+/// Entries are fetched going from higher auction_id to lower auction_id.
+pub async fn fetch_batch(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    batch_size: i64,
+) -> Result<Vec<RichSolverCompetition>, sqlx::Error> {
+    const QUERY: &str = r#"
+        SELECT 
+        sc.id as id, 
+        sc.json as json, 
+        COALESCE(ss.block_deadline, 0) AS deadline,
+        COALESCE(jit.owners, ARRAY[]::bytea[]) AS surplus_capturing_jit_order_owners
+        FROM solver_competitions sc
+        LEFT JOIN settlement_scores ss ON sc.id = ss.auction_id
+        LEFT JOIN surplus_capturing_jit_order_owners jit ON sc.id = jit.auction_id
+        WHERE sc.id < $1
+        ORDER BY sc.id DESC
+        LIMIT $2;"#;
+
+    sqlx::query_as(QUERY)
+        .bind(auction_id)
+        .bind(batch_size)
+        .fetch_all(ex)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use {

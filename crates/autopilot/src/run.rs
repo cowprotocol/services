@@ -449,6 +449,11 @@ pub async fn run(args: Arguments) {
             .instrument(tracing::info_span!("order_events_cleaner")),
     );
 
+    if args.migrate_auctions {
+        let persistence_clone = persistence.clone();
+        tokio::spawn(async move { persistence_clone.populate_historic_auctions().await });
+    }
+
     let market_makable_token_list_configuration = TokenListConfiguration {
         url: args.trusted_tokens_url,
         update_interval: args.trusted_tokens_update_interval,
