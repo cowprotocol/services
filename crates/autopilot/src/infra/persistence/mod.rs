@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         database::{order_events::store_order_events, Postgres},
-        domain::{self, eth},
+        domain::{self, auction, eth},
         infra::persistence::dto::AuctionId,
     },
     anyhow::Context,
@@ -337,22 +337,21 @@ impl Persistence {
             .await
             .map_err(error::Auction::DatabaseError)?;
 
-        let surplus_capturing_jit_order_owners =
-            database::surplus_capturing_jit_order_owners::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
-                .into_iter()
-                .map(|owner| eth::H160(owner.0).into())
-                .collect();
+        let auction = database::auction::fetch(&mut ex, auction_id)
+            .await?
+            .ok_or(error::Auction::NotFound)?;
 
-        let prices = database::auction_prices::fetch(&mut ex, auction_id)
-            .await
-            .map_err(error::Auction::DatabaseError)?
+        let block = u64::try_from(auction.block)
+            .map_err(|_| sqlx::Error::Decode("negative block".into()))?
+            .into();
+
+        let prices = auction
+            .price_tokens
             .into_iter()
-            .map(|price| {
-                let token = eth::H160(price.token.0).into();
-                let price = big_decimal_to_u256(&price.price)
+            .zip(auction.price_values)
+            .map(|(token, price)| {
+                let token = eth::H160(token.0).into();
+                let price = big_decimal_to_u256(&price)
                     .ok_or(domain::auction::InvalidPrice)
                     .and_then(|p| domain::auction::Price::new(p.into()))
                     .map_err(|_err| error::Auction::InvalidPrice(token));
@@ -360,12 +359,15 @@ impl Persistence {
             })
             .collect::<Result<_, _>>()?;
 
+        let surplus_capturing_jit_order_owners = auction
+            .surplus_capturing_jit_order_owners
+            .into_iter()
+            .map(|owner| eth::H160(owner.0).into())
+            .collect();
+
         let orders = {
-            // get all orders from a competition auction
-            let auction_orders = database::auction_orders::fetch(&mut ex, auction_id)
-                .await
-                .map_err(error::Auction::DatabaseError)?
-                .ok_or(error::Auction::NotFound)?
+            let auction_orders = auction
+                .order_uids
                 .into_iter()
                 .map(|order| domain::OrderUid(order.0))
                 .collect::<HashSet<_>>();
@@ -421,16 +423,6 @@ impl Persistence {
             orders
         };
 
-        let block = {
-            let competition = database::solver_competition::load_by_id(&mut ex, auction_id)
-                .await?
-                .ok_or(error::Auction::NotFound)?;
-            serde_json::from_value::<boundary::SolverCompetitionDB>(competition.json)
-                .map_err(|_| error::Auction::NotFound)?
-                .auction_start_block
-                .into()
-        };
-
         Ok(domain::settlement::Auction {
             id: auction_id,
             block,
@@ -438,6 +430,32 @@ impl Persistence {
             prices,
             surplus_capturing_jit_order_owners,
         })
+    }
+
+    // Returns prices from the latest auction.
+    pub async fn fetch_latest_prices(&self) -> Result<auction::Prices, error::TokenPrice> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["fetch_latest_prices"])
+            .start_timer();
+
+        let mut ex = self.postgres.pool.acquire().await?;
+
+        let prices = database::auction::fetch_latest_prices(&mut ex)
+            .await
+            .map_err(error::TokenPrice::DatabaseError)?
+            .into_iter()
+            .map(|(token, price)| {
+                let token = eth::H160(token.0).into();
+                let price = big_decimal_to_u256(&price)
+                    .ok_or(domain::auction::InvalidPrice)
+                    .and_then(|p| domain::auction::Price::new(p.into()))
+                    .map_err(|_err| error::TokenPrice::InvalidPrice(token));
+                price.map(|price| (token, price))
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(prices)
     }
 
     /// Computes solvable orders based on the latest observed block number,
@@ -838,6 +856,14 @@ pub mod error {
         NotFound,
         #[error("invalid fee policy fetched from database: {0} for order: {1}")]
         InvalidFeePolicy(dto::fee_policy::Error, domain::OrderUid),
+        #[error("invalid price fetched from database for token: {0:?}")]
+        InvalidPrice(eth::TokenAddress),
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum TokenPrice {
+        #[error("failed communication with the database: {0}")]
+        DatabaseError(#[from] sqlx::Error),
         #[error("invalid price fetched from database for token: {0:?}")]
         InvalidPrice(eth::TokenAddress),
     }

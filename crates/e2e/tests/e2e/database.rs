@@ -35,9 +35,9 @@ pub struct Cip20Data {
     pub observations: Vec<database::settlement_observations::Observation>,
     pub txs: Vec<AuctionTransaction>,
     pub participants: Vec<database::auction_participants::Participant>,
-    pub prices: Vec<database::auction_prices::AuctionPrice>,
     pub score: database::settlement_scores::Score,
     pub competition: serde_json::Value,
+    pub auction: database::auction::Auction,
 }
 
 /// Returns `Some(data)` if the all the expected CIP-20 data has been indexed
@@ -67,10 +67,10 @@ SELECT * FROM settlements WHERE auction_id = $1";
     )
     .await
     .ok()?;
-    let participants = database::auction_participants::fetch(&mut db, auction_id)
+    let auction = database::auction::fetch(&mut db, auction_id)
         .await
-        .unwrap();
-    let prices = database::auction_prices::fetch(&mut db, auction_id)
+        .unwrap()?;
+    let participants = database::auction_participants::fetch(&mut db, auction_id)
         .await
         .unwrap();
     let score = database::settlement_scores::fetch(&mut db, auction_id)
@@ -85,8 +85,8 @@ SELECT * FROM settlements WHERE auction_id = $1";
         observations,
         txs,
         participants,
-        prices,
         score,
         competition,
+        auction,
     })
 }

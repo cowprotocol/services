@@ -72,6 +72,20 @@ pub async fn fetch(ex: &mut PgConnection, id: AuctionId) -> Result<Option<Auctio
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+pub async fn fetch_latest_prices(
+    ex: &mut PgConnection,
+) -> Result<Vec<(Address, BigDecimal)>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT price_tokens, price_values
+FROM competition_auctions
+ORDER BY id DESC
+LIMIT 1
+    ;"#;
+    let (price_tokens, price_values): (Vec<Address>, Vec<BigDecimal>) =
+        sqlx::query_as(QUERY).fetch_one(ex).await?;
+    Ok(price_tokens.into_iter().zip(price_values).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};

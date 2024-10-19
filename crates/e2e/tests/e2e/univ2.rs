@@ -111,8 +111,8 @@ async fn test(web3: Web3) {
         };
 
         // sell and buy token price can be found
-        data.prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
-            && data.prices.iter().any(|p| p.token.0 == token.address().0)
+        data.auction.price_tokens.iter().any(|t| t.0 == onchain.contracts().weth.address().0)
+            && data.auction.price_tokens.iter().any(|t| t.0 == token.address().0)
             // solver participated in the competition
             && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
             // and won the auction

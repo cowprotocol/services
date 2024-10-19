@@ -29,6 +29,7 @@ use {
     ethrpc::block_stream::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
+    number::conversions::u256_to_big_decimal,
     shared::{
         account_balances,
         bad_token::{
@@ -51,6 +52,7 @@ use {
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashMap,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
@@ -130,6 +132,8 @@ pub async fn run(args: Arguments) {
         .await
         .unwrap();
     crate::database::run_database_metrics_work(db.clone());
+    let persistence =
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -343,7 +347,13 @@ pub async fn run(args: Arguments) {
         )
         .await
         .unwrap();
-    let prices = db.fetch_latest_prices().await.unwrap();
+    let prices = persistence
+        .fetch_latest_prices()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(token, price)| (token.0, u256_to_big_decimal(&price.get().0)))
+        .collect::<HashMap<_, _>>();
     native_price_estimator.initialize_cache(prices).await;
 
     let price_estimator = price_estimator_factory
@@ -360,8 +370,6 @@ pub async fn run(args: Arguments) {
         None
     };
 
-    let persistence =
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
     let settlement_observer =
         crate::domain::settlement::Observer::new(eth.clone(), persistence.clone());
     let settlement_event_indexer = EventUpdater::new(

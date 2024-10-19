@@ -14,10 +14,10 @@ impl Postgres {
             .start_timer();
 
         let mut ex = self.pool.begin().await?;
-        Ok(database::auction_prices::fetch_latest_prices(&mut ex)
+        Ok(database::auction::fetch_latest_prices(&mut ex)
             .await?
             .into_iter()
-            .map(|auction_price| (H160::from(auction_price.token.0), auction_price.price))
+            .map(|(token, price)| (H160::from(token.0), price))
             .collect::<HashMap<_, _>>())
     }
 }
