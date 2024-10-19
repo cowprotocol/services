@@ -30,10 +30,15 @@ trade_components AS (
           WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
        END AS limit_amount,
        o.kind,
-       CASE kind
-          WHEN 'sell' THEN (SELECT price FROM auction_prices ap WHERE ap.token = o.buy_token AND ap.auction_id = oe.auction_id)
-          WHEN 'buy' THEN (SELECT price FROM auction_prices ap WHERE ap.token = o.sell_token AND ap.auction_id = oe.auction_id)
-       END AS surplus_token_native_price
+       (SELECT ca.price_values[idx] 
+        FROM competition_auctions ca,
+             UNNEST(ca.price_tokens, ca.price_values) WITH ORDINALITY AS t(token, value, idx)
+        WHERE ca.id = oe.auction_id
+          AND t.token = CASE kind
+              WHEN 'sell' THEN o.buy_token
+              WHEN 'buy' THEN o.sell_token
+          LIMIT 1
+       ) AS surplus_token_native_price
     FROM orders o
     JOIN trades t ON o.uid = t.order_uid
     JOIN order_execution oe ON o.uid = oe.order_uid
