@@ -668,19 +668,4 @@ mod test {
         };
         assert_eq!(driver, expected);
     }
-
-    #[test]
-    fn parse_driver_with_submission_address_and_threshold() {
-        let argument = "name1|http://localhost:8080|0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2|1000000000000000000";
-        let driver = ExternalSolver::from_str(argument).unwrap();
-        let expected = ExternalSolver {
-            name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
-            submission_account: Account::Address(H160::from_slice(&hex!(
-                "C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-            ))),
-            fairness_threshold: Some(U256::exp10(18)),
-        };
-        assert_eq!(driver, expected);
-    }
 }
