@@ -890,7 +890,7 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
-        let storage = EventStorage { events: vec![] };
+        let storage = EventStorage { events: vec![], last_processed_block: 0 };
         let current_block = web3.eth().block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;
