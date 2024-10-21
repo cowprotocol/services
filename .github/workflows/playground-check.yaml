@@ -23,3 +23,6 @@ jobs:
         run: |
           cd playground
           docker compose -f docker-compose.fork.yml up -d
+
+      - name: Execute validation script
+        run: playground/test_playground.sh
