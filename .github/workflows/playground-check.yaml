@@ -10,6 +10,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install dependency
+        run: sudo apt-get -q update && sudo apt-get -y -q install curl jq
+
       - name: Setup environment
         run: |
           cp playground/.env.example playground/.env
