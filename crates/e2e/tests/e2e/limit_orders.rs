@@ -416,17 +416,17 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         let trade_b = services.get_trades(&uid_b).await.unwrap().first().cloned();
         match (trade_a, trade_b) {
             (Some(trade_a), Some(trade_b)) => {
-                match (
-                    services
-                        .get_solver_competition(trade_a.tx_hash.unwrap())
-                        .await,
-                    services
-                        .get_solver_competition(trade_b.tx_hash.unwrap())
-                        .await,
-                ) {
-                    (Ok(_), Ok(_)) => true,
-                    _ => false,
-                }
+                matches!(
+                    (
+                        services
+                            .get_solver_competition(trade_a.tx_hash.unwrap())
+                            .await,
+                        services
+                            .get_solver_competition(trade_b.tx_hash.unwrap())
+                            .await
+                    ),
+                    (Ok(_), Ok(_))
+                )
             }
             _ => false,
         }
