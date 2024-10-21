@@ -589,10 +589,7 @@ impl RunLoop {
                     && winners < self.config.max_winners_per_auction;
 
                 already_swapped_tokens.extend(swapped_tokens);
-
-                if is_winner {
-                    winners += 1;
-                }
+                winners += usize::from(is_winner);
 
                 participant.rank(is_winner)
             })
