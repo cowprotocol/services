@@ -300,7 +300,7 @@ async fn two_limit_orders_test(web3: Web3) {
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver1, solver2] = onchain.make_solvers(to_wei(1)).await;
+    let [solver_a, solver_b] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b, token_c, token_d] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -311,7 +311,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     token_b.mint(trader_b.address(), to_wei(10)).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity then base_b, leading to the solver that
+    // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to offer different solution.
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
@@ -340,7 +340,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         vec![
             colocation::start_baseline_solver(
                 "test_solver".into(),
-                solver1.clone(),
+                solver_a.clone(),
                 onchain.contracts().weth.address(),
                 vec![base_a.address()],
                 2,
@@ -349,7 +349,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             .await,
             colocation::start_baseline_solver(
                 "solver2".into(),
-                solver2,
+                solver_b,
                 onchain.contracts().weth.address(),
                 vec![base_b.address()],
                 2,
@@ -393,8 +393,6 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     );
     let uid_a = services.create_order(&order_a).await.unwrap();
 
-    onchain.mint_block().await;
-
     let order_b = OrderCreation {
         sell_token: token_b.address(),
         sell_amount: to_wei(10),
@@ -414,12 +412,23 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     // Wait for trade
     let indexed_trades = || async {
         onchain.mint_block().await;
-        match services.get_trades(&uid_a).await.unwrap().first() {
-            Some(trade) => services
-                .get_solver_competition(trade.tx_hash.unwrap())
-                .await
-                .is_ok(),
-            None => false,
+        let trade_a = services.get_trades(&uid_a).await.unwrap().first().cloned();
+        let trade_b = services.get_trades(&uid_b).await.unwrap().first().cloned();
+        match (trade_a, trade_b) {
+            (Some(trade_a), Some(trade_b)) => {
+                match (
+                    services
+                        .get_solver_competition(trade_a.tx_hash.unwrap())
+                        .await,
+                    services
+                        .get_solver_competition(trade_b.tx_hash.unwrap())
+                        .await,
+                ) {
+                    (Ok(_), Ok(_)) => true,
+                    _ => false,
+                }
+            }
+            _ => false,
         }
     };
     wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();

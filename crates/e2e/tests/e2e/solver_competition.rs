@@ -143,7 +143,7 @@ async fn fairness_check(web3: Web3) {
     token_b.mint(trader_b.address(), to_wei(10)).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity then base_b, leading to the solver that
+    // (base_b). base_a has more liquidity than base_b, leading to the solver that
     // knows about base_a to win
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
