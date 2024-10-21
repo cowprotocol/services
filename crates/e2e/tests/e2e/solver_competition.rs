@@ -401,7 +401,7 @@ async fn wrong_solution_submission_address(web3: Web3) {
     };
     wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
 
-    // Verify that test_solver was excluded due to fairness check
+    // Verify that test_solver was excluded due to wrong driver address
     let trades = services.get_trades(&uid_a).await.unwrap();
     let competition = services
         .get_solver_competition(trades[0].tx_hash.unwrap())
