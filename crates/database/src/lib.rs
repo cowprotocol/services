@@ -5,10 +5,10 @@ pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
 pub mod ethflow_orders;
-pub mod last_processed_block;
 pub mod events;
 pub mod fee_policies;
 pub mod jit_orders;
+pub mod last_processed_blocks;
 pub mod onchain_broadcasted_orders;
 pub mod onchain_invalidations;
 pub mod order_events;
@@ -53,6 +53,7 @@ pub const TABLES: &[&str] = &[
     "orders",
     "trades",
     "invalidations",
+    "last_processed_blocks",
     "quotes",
     "settlements",
     "presignature_events",

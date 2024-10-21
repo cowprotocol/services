@@ -155,6 +155,23 @@ const INDEX_NAME: &str = "onchain_orders";
 impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     for OnchainOrderParser<T, W>
 {
+    async fn last_event_block(&self) -> Result<u64> {
+        let _timer = DatabaseMetrics::get()
+            .database_queries
+            .with_label_values(&["read_last_block_onchain_orders"])
+            .start_timer();
+        crate::boundary::events::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
+    }
+
+    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
+        let _timer = DatabaseMetrics::get()
+            .database_queries
+            .with_label_values(&["update_last_block_onchain_orders"])
+            .start_timer();
+        crate::boundary::events::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME)
+            .await
+    }
+
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,
@@ -186,14 +203,6 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         transaction.commit().await.context("commit")?;
 
         Ok(())
-    }
-
-    async fn last_event_block(&self) -> Result<u64> {
-        Self::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
-    }
-
-    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
-        Self::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 }
 

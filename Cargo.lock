@@ -4467,7 +4467,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sqlx",
  "strum",
  "tempfile",
  "testlib",

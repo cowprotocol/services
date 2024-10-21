@@ -1,6 +1,5 @@
 //! Implements the logic for indexing `OrderRefund` events of the ethflow
 //! contract.
-
 use {
     crate::database::{events::bytes_to_order_uid, Postgres},
     anyhow::Result,
@@ -42,6 +41,14 @@ const INDEX_NAME: &str = "ethflow_refunds";
 
 #[async_trait::async_trait]
 impl EventStoring<EthFlowEvent> for Postgres {
+    async fn last_event_block(&self) -> Result<u64> {
+        crate::boundary::events::read_last_block_from_db(&self.pool, INDEX_NAME).await
+    }
+
+    async fn persist_last_processed_block(&mut self, last_block: u64) -> Result<()> {
+        crate::boundary::events::write_last_block_to_db(&self.pool, last_block, INDEX_NAME).await
+    }
+
     async fn append_events(&mut self, events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<()> {
         let refunds = match get_refunds(events)? {
             refunds if !refunds.is_empty() => refunds,
@@ -77,13 +84,5 @@ impl EventStoring<EthFlowEvent> for Postgres {
         database::ethflow_orders::insert_refund_tx_hashes(&mut ex, &refunds).await?;
         ex.commit().await?;
         Ok(())
-    }
-
-    async fn last_event_block(&self) -> Result<u64> {
-        Self::read_last_block_from_db(&self.pool, INDEX_NAME).await
-    }
-
-    async fn persist_last_processed_block(&mut self, last_block: u64) -> Result<()> {
-        Self::write_last_block_to_db(&self.pool, last_block, INDEX_NAME).await
     }
 }

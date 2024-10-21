@@ -29,6 +29,14 @@ const INDEX_NAME: &str = "settlements";
 
 #[async_trait::async_trait]
 impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
+    async fn last_event_block(&self) -> Result<u64> {
+        super::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
+    }
+
+    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
+        super::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
+    }
+
     async fn replace_events(
         &mut self,
         events: Vec<ethcontract::Event<contracts::gpv2_settlement::Event>>,
@@ -54,13 +62,5 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
 
         self.settlement_observer.update().await;
         Ok(())
-    }
-
-    async fn last_event_block(&self) -> Result<u64> {
-        Self::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
-    }
-
-    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
-        Self::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 }

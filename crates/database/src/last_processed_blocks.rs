@@ -1,6 +1,6 @@
 use sqlx::{Executor, PgConnection};
 
-pub async fn insert_or_update_last_block(
+pub async fn update(
     ex: &mut PgConnection,
     index: &str,
     last_processed_block: i64,
@@ -17,7 +17,7 @@ DO UPDATE SET last_block = EXCLUDED.last_block;
     Ok(())
 }
 
-pub async fn last_block(ex: &mut PgConnection, index: &str) -> Result<Option<i64>, sqlx::Error> {
+pub async fn fetch(ex: &mut PgConnection, index: &str) -> Result<Option<i64>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number
 FROM last_processed_blocks
@@ -41,14 +41,12 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        assert_eq!(last_block(&mut db, "test").await.unwrap(), None);
+        assert_eq!(fetch(&mut db, "test").await.unwrap(), None);
 
-        insert_or_update_last_block(&mut db, "test", 42).await.unwrap();
-        assert_eq!(last_block(&mut db, "test").await.unwrap(), Some(42));
+        update(&mut db, "test", 42).await.unwrap();
+        assert_eq!(fetch(&mut db, "test").await.unwrap(), Some(42));
 
-        insert_or_update_last_block(&mut db, "test", 43).await.unwrap();
-        assert_eq!(last_block(&mut db, "test").await.unwrap(), Some(43));
+        update(&mut db, "test", 43).await.unwrap();
+        assert_eq!(fetch(&mut db, "test").await.unwrap(), Some(43));
     }
 }
-
-
