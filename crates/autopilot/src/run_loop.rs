@@ -564,8 +564,8 @@ impl RunLoop {
 
         // Winners are selected one by one, starting from the best solution,
         // until `max_winners_per_auction` are selected. The solution is a winner
-        // if it swaps tokens that are not yet swapped by any other already
-        // selected winner.
+        // if it swaps tokens that are not yet swapped by any previously processed
+        // solution.
         let mut already_swapped_tokens = HashSet::new();
         let mut winners = 0;
         let solutions = solutions
@@ -581,10 +581,8 @@ impl RunLoop {
                 let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)
                     && winners < self.config.max_winners_per_auction;
 
-                if is_winner {
-                    already_swapped_tokens.extend(swapped_tokens);
-                    winners += 1;
-                }
+                already_swapped_tokens.extend(swapped_tokens);
+                winners += usize::from(is_winner);
 
                 participant.rank(is_winner)
             })
