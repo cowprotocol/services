@@ -139,6 +139,8 @@ async fn cow_amm_jit(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
             SolverEngine {
@@ -146,6 +148,7 @@ async fn cow_amm_jit(web3: Web3) {
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![],
+                merge_solutions: true,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
@@ -458,6 +461,8 @@ async fn cow_amm_driver_support(web3: Web3) {
                 solver.clone(),
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
             SolverEngine {
@@ -465,6 +470,7 @@ async fn cow_amm_driver_support(web3: Web3) {
                 account: solver.clone(),
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![],
+                merge_solutions: true,
             },
         ],
         colocation::LiquidityProvider::UniswapV2,

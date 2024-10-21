@@ -40,8 +40,8 @@ pub struct TxId(pub H256);
 pub struct TokenAddress(pub H160);
 
 impl TokenAddress {
-    /// If the token is ETH, return WETH, thereby "wrapping" it.
-    pub fn wrap(self, weth: WethAddress) -> Self {
+    /// If the token is ETH, return WETH, thereby converting it to erc20.
+    pub fn as_erc20(self, weth: WethAddress) -> Self {
         if self == ETH_TOKEN {
             weth.into()
         } else {
@@ -52,7 +52,7 @@ impl TokenAddress {
 
 /// The address of the WETH contract.
 #[derive(Debug, Clone, Copy, From, Into)]
-pub struct WethAddress(pub TokenAddress);
+pub struct WethAddress(TokenAddress);
 
 impl From<H160> for WethAddress {
     fn from(value: H160) -> Self {

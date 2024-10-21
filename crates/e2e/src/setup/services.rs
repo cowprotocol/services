@@ -204,6 +204,8 @@ impl<'a> Services<'a> {
                     solver,
                     self.contracts.weth.address(),
                     vec![],
+                    1,
+                    true,
                 )
                 .await,
             ],
@@ -251,6 +253,7 @@ impl<'a> Services<'a> {
             account: solver.clone(),
             endpoint: external_solver_endpoint,
             base_tokens: vec![],
+            merge_solutions: true,
         }];
 
         let (autopilot_args, api_args) = if run_baseline {
@@ -260,6 +263,8 @@ impl<'a> Services<'a> {
                     solver,
                     self.contracts.weth.address(),
                     vec![],
+                    1,
+                    true,
                 )
                 .await,
             );
