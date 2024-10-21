@@ -1193,7 +1193,8 @@ impl<'a> SolveOk<'a> {
         solution
             .get("solutionId")
             .unwrap()
-            .as_str()
+            .as_u64()
+            .map(|id| id.to_string())
             .unwrap()
             .to_owned()
     }
