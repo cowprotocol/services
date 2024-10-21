@@ -4,6 +4,7 @@ use {
     anyhow::{anyhow, Context, Result},
     reqwest::{Client, StatusCode},
     std::time::Duration,
+    thiserror::Error,
     url::Url,
 };
 
@@ -23,26 +24,35 @@ pub struct Driver {
     client: Client,
 }
 
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("unable to load KMS account")]
+    UnableToLoadKmsAccount,
+}
+
 impl Driver {
     pub async fn new(
         url: Url,
         name: String,
         fairness_threshold: Option<eth::Ether>,
         submission_account: Account,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
                 let config = ethcontract::aws_config::load_from_env().await;
                 let account =
                     ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
                         .await
-                        .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                        .map_err(|_| {
+                            tracing::error!(?name, ?key_id, "Unable to load KMS account");
+                            Error::UnableToLoadKmsAccount
+                        })?;
                 account.public_address()
             }
             Account::Address(address) => address,
         };
 
-        Self {
+        Ok(Self {
             name,
             url,
             fairness_threshold,
@@ -51,7 +61,7 @@ impl Driver {
                 .build()
                 .unwrap(),
             submission_address: submission_address.into(),
-        }
+        })
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {

@@ -28,7 +28,7 @@ use {
     contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{common::DeploymentInformation, dyns::DynWeb3, errors::DeployError, BlockNumber},
     ethrpc::block_stream::block_number_to_block_number_hash,
-    futures::StreamExt,
+    futures::stream::StreamExt,
     model::DomainSeparator,
     observe::metrics::LivenessChecking,
     shared::{
@@ -552,19 +552,25 @@ pub async fn run(args: Arguments) {
         .drivers
         .into_iter()
         .map(|driver| async move {
-            Arc::new(
-                infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                    driver.submission_account,
-                )
-                .await,
+            match infra::Driver::new(
+                driver.url,
+                driver.name.clone(),
+                driver.fairness_threshold.map(Into::into),
+                driver.submission_account,
             )
+            .await
+            {
+                Ok(driver) => Some(Arc::new(driver)),
+                Err(_) => None,
+            }
         })
         .collect::<Vec<_>>();
 
-    let drivers = futures::future::join_all(drivers_futures).await;
+    let drivers = futures::future::join_all(drivers_futures)
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
 
     let run = RunLoop::new(
         run_loop_config,
@@ -591,19 +597,25 @@ async fn shadow_mode(args: Arguments) -> ! {
         .drivers
         .into_iter()
         .map(|driver| async move {
-            Arc::new(
-                infra::Driver::new(
-                    driver.url,
-                    driver.name,
-                    driver.fairness_threshold.map(Into::into),
-                    driver.submission_account,
-                )
-                .await,
+            match infra::Driver::new(
+                driver.url,
+                driver.name.clone(),
+                driver.fairness_threshold.map(Into::into),
+                driver.submission_account,
             )
+            .await
+            {
+                Ok(driver) => Some(Arc::new(driver)),
+                Err(_) => None,
+            }
         })
         .collect::<Vec<_>>();
 
-    let drivers = futures::future::join_all(drivers_futures).await;
+    let drivers = futures::future::join_all(drivers_futures)
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
 
     let trusted_tokens = {
         let web3 = shared::ethrpc::web3(
