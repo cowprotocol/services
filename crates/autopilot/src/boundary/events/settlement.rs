@@ -2,11 +2,7 @@ use {
     crate::{database::Postgres, domain::settlement},
     anyhow::Result,
     ethrpc::block_stream::RangeInclusive,
-    shared::{
-        event_handling::{EventStoring, PgEventCounter},
-        impl_event_retrieving,
-    },
-    sqlx::PgPool,
+    shared::{event_handling::EventStoring, impl_event_retrieving},
 };
 
 impl_event_retrieving! {
@@ -26,6 +22,10 @@ impl Indexer {
         }
     }
 }
+
+/// This name is used to store the latest processed block for indexing
+/// settlement events in the `last_processed_blocks` table.
+const INDEX_NAME: &str = "settlements";
 
 #[async_trait::async_trait]
 impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
@@ -57,19 +57,10 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        PgEventCounter::last_event_block(self).await
+        Self::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
     }
 
-    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
-        PgEventCounter::update_counter(self, new_value).await
-    }
-}
-
-#[async_trait::async_trait]
-impl PgEventCounter<contracts::gpv2_settlement::Event> for Indexer {
-    const INDEXER_NAME: &'static str = "gpv2_settlement_indexer";
-
-    fn pg_pool(&self) -> &PgPool {
-        &self.db.pool
+    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
+        Self::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 }

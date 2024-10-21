@@ -5,7 +5,7 @@ pub mod auction_participants;
 pub mod auction_prices;
 pub mod byte_array;
 pub mod ethflow_orders;
-pub mod event_indexer_counters;
+pub mod last_processed_block;
 pub mod events;
 pub mod fee_policies;
 pub mod jit_orders;

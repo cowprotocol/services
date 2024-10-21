@@ -213,7 +213,8 @@ where
         Ok(self.last_event_block())
     }
 
-    async fn update_counter(&mut self, _new_value: u64) -> Result<()> {
+    async fn persist_last_processed_block(&mut self, _block: u64) -> Result<()> {
+        // storage is only in-memory so we don't need to persist anything here
         Ok(())
     }
 }

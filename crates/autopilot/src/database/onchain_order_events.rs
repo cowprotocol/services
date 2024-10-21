@@ -48,7 +48,7 @@ use {
             sell_token_source_into,
             signing_scheme_into,
         },
-        event_handling::{EventStoring, PgEventCounter},
+        event_handling::EventStoring,
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
             convert_signing_scheme_into_quote_signing_scheme,
@@ -56,7 +56,6 @@ use {
             ValidationError,
         },
     },
-    sqlx::PgPool,
     std::{collections::HashMap, sync::Arc},
     web3::types::U64,
 };
@@ -148,6 +147,10 @@ where
     ) -> EventRow;
 }
 
+/// This name is used to store the latest processed block for indexing
+/// settlement events in the `last_processed_blocks` table.
+const INDEX_NAME: &str = "onchain_orders";
+
 #[async_trait::async_trait]
 impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     for OnchainOrderParser<T, W>
@@ -186,22 +189,11 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        PgEventCounter::last_event_block(self).await
+        Self::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
     }
 
-    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
-        PgEventCounter::update_counter(self, new_value).await
-    }
-}
-
-#[async_trait::async_trait]
-impl<T: Sync + Send + Clone, W: Sync + Send + Clone> PgEventCounter<ContractEvent>
-    for OnchainOrderParser<T, W>
-{
-    const INDEXER_NAME: &'static str = "onchain_order_indexer";
-
-    fn pg_pool(&self) -> &PgPool {
-        &self.db.pool
+    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
+        Self::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 }
 

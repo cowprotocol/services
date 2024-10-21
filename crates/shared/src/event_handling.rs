@@ -10,7 +10,6 @@ use {
     },
     ethrpc::block_stream::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
-    num::ToPrimitive,
     sqlx::PgPool,
     std::sync::Arc,
     tokio::sync::Mutex,
@@ -79,36 +78,29 @@ pub trait EventStoring<T>: Send + Sync {
 
     async fn last_event_block(&self) -> Result<u64>;
 
-    async fn update_counter(&mut self, new_value: u64) -> Result<()>;
-}
+    /// Stores the last block that was successfully processed to know
+    /// where the indexing logic needs to pick up after a restart.
+    async fn persist_last_processed_block(&mut self, last_block: u64) -> Result<()>;
 
-#[async_trait::async_trait]
-pub trait PgEventCounter<T>: EventStoring<T> {
-    const INDEXER_NAME: &'static str;
-
-    fn pg_pool(&self) -> &PgPool;
-
-    async fn last_event_block(&self) -> Result<u64> {
-        let mut ex = self.pg_pool().acquire().await?;
-        Ok(
-            database::event_indexer_counters::current_value(&mut ex, Self::INDEXER_NAME)
-                .await?
-                .unwrap_or_default()
-                .to_u64()
-                .context("last event block is not u64")?,
-        )
-    }
-
-    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
-        let mut ex = self.pg_pool().acquire().await?;
-        database::event_indexer_counters::insert_or_update_counter(
+    async fn write_last_block_to_db(db: &PgPool, last_block: u64, index_name: &str) -> Result<()> {
+        let mut ex = db.acquire().await?;
+        let _ = database::last_processed_block::insert_or_update_last_block(
             &mut ex,
-            Self::INDEXER_NAME,
-            i64::try_from(new_value).context("new value of counter is not i64")?,
+            index_name,
+            i64::try_from(last_block).context("new value of counter is not i64")?,
         )
         .await?;
-
         Ok(())
+    }
+
+    async fn read_last_block_from_db(db: &PgPool, index_name: &str) -> Result<u64> {
+        let mut ex = db.acquire().await?;
+        let last_block: u64 = database::last_processed_block::last_block(&mut ex, index_name)
+            .await?
+            .unwrap_or_default()
+            .try_into()
+            .context("last block is not u64")?;
+        Ok(last_block)
     }
 }
 
@@ -315,8 +307,11 @@ where
         if let Some(range) = event_range.history_range {
             self.update_events_from_old_blocks(range).await?;
         }
-        if !event_range.latest_blocks.is_empty() {
+        if let Some(last_block) = event_range.latest_blocks.last() {
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
+                .await?;
+            self.store_mut()
+                .persist_last_processed_block(last_block.0)
                 .await?;
         }
         Ok(())
@@ -389,9 +384,6 @@ where
         }
 
         self.update_last_handled_blocks(&blocks);
-        if let Some(last_block) = self.last_handled_blocks.last() {
-            self.store.update_counter(last_block.0).await?;
-        }
         Ok(())
     }
 
@@ -695,7 +687,7 @@ mod tests {
             Ok(self.last_processed_block)
         }
 
-        async fn update_counter(&mut self, counter: u64) -> Result<()> {
+        async fn persist_last_processed_block(&mut self, counter: u64) -> Result<()> {
             self.last_processed_block = counter;
             Ok(())
         }
@@ -890,7 +882,10 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
-        let storage = EventStorage { events: vec![], last_processed_block: 0 };
+        let storage = EventStorage {
+            events: vec![],
+            last_processed_block: 0,
+        };
         let current_block = web3.eth().block_number().await.unwrap();
 
         const NUMBER_OF_BLOCKS: u64 = 300;

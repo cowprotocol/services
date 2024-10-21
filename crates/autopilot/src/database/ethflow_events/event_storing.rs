@@ -6,8 +6,7 @@ use {
     anyhow::Result,
     database::ethflow_orders::Refund,
     ethrpc::block_stream::RangeInclusive,
-    shared::event_handling::{EventStoring, PgEventCounter},
-    sqlx::PgPool,
+    shared::event_handling::EventStoring,
 };
 
 fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refund>> {
@@ -36,6 +35,10 @@ fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refu
 }
 
 type EthFlowEvent = contracts::cowswap_eth_flow::Event;
+
+/// This name is used to store the latest processed block for indexing
+/// settlement events in the `last_processed_blocks` table.
+const INDEX_NAME: &str = "ethflow_refunds";
 
 #[async_trait::async_trait]
 impl EventStoring<EthFlowEvent> for Postgres {
@@ -77,19 +80,10 @@ impl EventStoring<EthFlowEvent> for Postgres {
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        PgEventCounter::last_event_block(self).await
+        Self::read_last_block_from_db(&self.pool, INDEX_NAME).await
     }
 
-    async fn update_counter(&mut self, new_value: u64) -> Result<()> {
-        PgEventCounter::update_counter(self, new_value).await
-    }
-}
-
-#[async_trait::async_trait]
-impl PgEventCounter<EthFlowEvent> for Postgres {
-    const INDEXER_NAME: &'static str = "ethflow_refund_indexer";
-
-    fn pg_pool(&self) -> &PgPool {
-        &self.pool
+    async fn persist_last_processed_block(&mut self, last_block: u64) -> Result<()> {
+        Self::write_last_block_to_db(&self.pool, last_block, INDEX_NAME).await
     }
 }
