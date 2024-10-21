@@ -1,0 +1,22 @@
+name: Plauground operation check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  playground-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          cp playground/.env.example playground/.env
+          sed -i -e 's/ETH_RPC_URL=.*/ETH_RPC_URL=$FORK_URL_MAINNET/g' playground/.env
+          cat playground/.env
+
+      - name: Start docker containers
+        run: |
+          cd playground
+          docker compose -f docker-compose.fork.yml up -d
