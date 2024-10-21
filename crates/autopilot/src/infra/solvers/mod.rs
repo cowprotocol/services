@@ -29,20 +29,24 @@ impl Driver {
         name: String,
         fairness_threshold: Option<eth::Ether>,
         submission_account: Account,
-    ) -> Self {
+    ) -> Result<Self, anyhow::Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
                 let config = ethcontract::aws_config::load_from_env().await;
                 let account =
                     ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
                         .await
-                        .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                        .with_context(|| {
+                            let msg = format!("Unable to load KMS account {:?}", key_id);
+                            tracing::error!(?name, msg);
+                            msg
+                        })?;
                 account.public_address()
             }
             Account::Address(address) => address,
         };
 
-        Self {
+        Ok(Self {
             name,
             url,
             fairness_threshold,
@@ -51,7 +55,7 @@ impl Driver {
                 .build()
                 .unwrap(),
             submission_address: submission_address.into(),
-        }
+        })
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
