@@ -170,7 +170,7 @@ pub enum Side {
 pub struct Solution {
     /// Unique ID of the solution (per driver competition), used to identify
     /// it in subsequent requests (reveal, settle).
-    #[serde_as(as = "serde_with::DisplayFromStr")]
+    #[serde(deserialize_with = "deserialize_solution_id")]
     pub solution_id: u64,
     #[serde_as(as = "HexOrDecimalU256")]
     pub score: U256,
@@ -180,6 +180,37 @@ pub struct Solution {
     #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub clearing_prices: HashMap<H160, U256>,
     pub gas: Option<u64>,
+}
+
+fn deserialize_solution_id<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct SolutionIdVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for SolutionIdVisitor {
+        type Value = u64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or integer representing a solution ID")
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<u64, E>
+        where
+            E: serde::de::Error,
+        {
+            value.parse::<u64>().map_err(serde::de::Error::custom)
+        }
+    }
+
+    deserializer.deserialize_any(SolutionIdVisitor)
 }
 
 #[derive(Clone, Debug, Deserialize)]

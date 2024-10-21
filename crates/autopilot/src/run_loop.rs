@@ -82,13 +82,6 @@ impl RunLoop {
         liveness: Arc<Liveness>,
         maintenance: Arc<Maintenance>,
     ) -> Self {
-        // Added to make sure no more than one winner is activated by accident
-        // Should be removed once we decide to activate "multiple winners per auction"
-        // feature.
-        assert_eq!(
-            config.max_winners_per_auction, 1,
-            "only one winner is supported"
-        );
         Self {
             config,
             eth,

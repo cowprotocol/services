@@ -28,6 +28,12 @@ async fn local_node_two_limit_orders() {
 
 #[tokio::test]
 #[ignore]
+async fn local_node_two_limit_orders_multiple_winners() {
+    run_test(two_limit_orders_multiple_winners_test).await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn local_node_too_many_limit_orders() {
     run_test(too_many_limit_orders_test).await;
 }
@@ -291,6 +297,156 @@ async fn two_limit_orders_test(web3: Web3) {
     .unwrap();
 }
 
+async fn two_limit_orders_multiple_winners_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3).await;
+
+    let [solver_a, solver_b] = onchain.make_solvers(to_wei(1)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
+    let [token_a, token_b, token_c, token_d] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    // Fund traders
+    token_a.mint(trader_a.address(), to_wei(10)).await;
+    token_b.mint(trader_b.address(), to_wei(10)).await;
+
+    // Create more liquid routes between token_a (token_b) and weth via base_a
+    // (base_b). base_a has more liquidity than base_b, leading to the solver that
+    // knows about base_a to offer different solution.
+    let [base_a, base_b] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
+        .await;
+    onchain
+        .seed_uni_v2_pool((&token_a, to_wei(100_000)), (&base_a, to_wei(100_000)))
+        .await;
+    onchain
+        .seed_uni_v2_pool((&token_b, to_wei(10_000)), (&base_b, to_wei(10_000)))
+        .await;
+
+    // Approve GPv2 for trading
+    tx!(
+        trader_a.account(),
+        token_a.approve(onchain.contracts().allowance, to_wei(100))
+    );
+    tx!(
+        trader_b.account(),
+        token_b.approve(onchain.contracts().allowance, to_wei(100))
+    );
+
+    // Start system, with two solvers, one that knows about base_a and one that
+    // knows about base_b
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![
+            colocation::start_baseline_solver(
+                "test_solver".into(),
+                solver_a.clone(),
+                onchain.contracts().weth.address(),
+                vec![base_a.address()],
+                2,
+                false,
+            )
+            .await,
+            colocation::start_baseline_solver(
+                "solver2".into(),
+                solver_b,
+                onchain.contracts().weth.address(),
+                vec![base_b.address()],
+                2,
+                false,
+            )
+            .await,
+        ],
+        colocation::LiquidityProvider::UniswapV2,
+    );
+
+    let services = Services::new(&onchain).await;
+    services.start_autopilot(
+        None,
+        vec![
+            "--drivers=solver1|http://localhost:11088/test_solver|10000000000000000,solver2|http://localhost:11088/solver2"
+                .to_string(),
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+            "--max-winners-per-auction=2".to_string(),
+        ],
+    ).await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=solver1|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    // Place Orders
+    let order_a = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_c.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
+    let uid_a = services.create_order(&order_a).await.unwrap();
+
+    let order_b = OrderCreation {
+        sell_token: token_b.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_d.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+    );
+    let uid_b = services.create_order(&order_b).await.unwrap();
+
+    // Wait for trade
+    let indexed_trades = || async {
+        onchain.mint_block().await;
+        let trade_a = services.get_trades(&uid_a).await.unwrap().first().cloned();
+        let trade_b = services.get_trades(&uid_b).await.unwrap().first().cloned();
+        match (trade_a, trade_b) {
+            (Some(trade_a), Some(trade_b)) => {
+                matches!(
+                    (
+                        services
+                            .get_solver_competition(trade_a.tx_hash.unwrap())
+                            .await,
+                        services
+                            .get_solver_competition(trade_b.tx_hash.unwrap())
+                            .await
+                    ),
+                    (Ok(_), Ok(_))
+                )
+            }
+            _ => false,
+        }
+    };
+    wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
+
+    let trades = services.get_trades(&uid_a).await.unwrap();
+    let competition = services
+        .get_solver_competition(trades[0].tx_hash.unwrap())
+        .await
+        .unwrap();
+    // Verify that both transactions were properly indexed
+    assert_eq!(competition.transaction_hashes.len(), 2);
+    // Verify that settlement::Observed properly handled events
+    let order_a_settled = services.get_order(&uid_a).await.unwrap();
+    assert!(order_a_settled.metadata.executed_surplus_fee > 0.into());
+    let order_b_settled = services.get_order(&uid_b).await.unwrap();
+    assert!(order_b_settled.metadata.executed_surplus_fee > 0.into());
+}
+
 async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -317,6 +473,8 @@ async fn too_many_limit_orders_test(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
@@ -393,6 +551,8 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
                 solver,
                 onchain.contracts().weth.address(),
                 vec![],
+                1,
+                true,
             )
             .await,
         ],
