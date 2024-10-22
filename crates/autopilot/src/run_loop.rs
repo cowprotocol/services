@@ -51,6 +51,7 @@ pub struct Config {
     /// by waiting for the next block to appear.
     pub max_run_loop_delay: Duration,
     pub max_winners_per_auction: usize,
+    pub max_solutions_per_solver: usize,
 }
 
 pub struct RunLoop {
@@ -544,6 +545,16 @@ impl RunLoop {
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by_key(|participant| {
             std::cmp::Reverse(participant.solution().score().get().0)
+        });
+
+        // Limit the number of accepted solutions per solver. Do not alter the ordering
+        // of solutions
+        let mut counter = HashMap::new();
+        solutions.retain(|participant| {
+            let driver = participant.driver().name.clone();
+            let count = counter.entry(driver.clone()).or_insert(0);
+            *count += 1;
+            *count <= self.config.max_solutions_per_solver
         });
 
         // Filter out solutions that are not fair
