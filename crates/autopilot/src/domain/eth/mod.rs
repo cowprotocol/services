@@ -4,6 +4,13 @@ use {
     derive_more::{Display, From, Into},
 };
 
+/// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because
+/// it does not implement the ERC20 interface, but this address is used by
+/// convention across the Ethereum ecosystem whenever ETH is treated like an
+/// ERC20 token.
+/// Same address is also used for XDAI on Gnosis Chain.
+pub const NATIVE_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
+
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into, Display,
@@ -32,6 +39,29 @@ pub struct TxId(pub H256);
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Into)]
 pub struct TokenAddress(pub H160);
+
+impl TokenAddress {
+    /// If the token is ETH/XDAI, return WETH/WXDAI, thereby converting it to
+    /// erc20.
+    pub fn as_erc20(self, wrapped: WrappedNativeToken) -> Self {
+        if self == NATIVE_TOKEN {
+            wrapped.into()
+        } else {
+            self
+        }
+    }
+}
+
+/// ERC20 representation of the chain's native token (e.g. WETH on mainnet,
+/// WXDAI on Gnosis Chain).
+#[derive(Debug, Clone, Copy, From, Into)]
+pub struct WrappedNativeToken(TokenAddress);
+
+impl From<H160> for WrappedNativeToken {
+    fn from(value: H160) -> Self {
+        WrappedNativeToken(value.into())
+    }
+}
 
 /// An ERC20 token amount.
 ///
