@@ -25,8 +25,8 @@ VALUES ('settlements',
     )
 );
 
-INSERT INTO event_indexer_counters (name, counter)
+INSERT INTO last_processed_blocks (index, block_number)
 VALUES ('ethflow_refunds', (SELECT COALESCE(MAX(block_number), 0) FROM ethflow_refunds));
 
-INSERT INTO event_indexer_counters (name, counter)
+INSERT INTO last_processed_blocks (index, block_number)
 VALUES ('onchain_orders', (SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders));

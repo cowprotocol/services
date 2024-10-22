@@ -6,10 +6,10 @@ pub async fn update(
     last_processed_block: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO last_processed_blocks (index, last_block)
+INSERT INTO last_processed_blocks (index, block_number)
 VALUES ($1, $2)
 ON CONFLICT (index)
-DO UPDATE SET last_block = EXCLUDED.last_block;
+DO UPDATE SET block_number = EXCLUDED.block_number;
     "#;
 
     ex.execute(sqlx::query(QUERY).bind(index).bind(last_processed_block))
