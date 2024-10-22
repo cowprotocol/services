@@ -97,6 +97,10 @@ impl RunLoop {
     }
 
     pub async fn run_forever(self) -> ! {
+        Maintenance::spawn_cow_amm_indexing_task(
+            self.maintenance.clone(),
+            self.eth.current_block().clone(),
+        );
         let mut last_auction = None;
         let mut last_block = None;
         let self_arc = Arc::new(self);

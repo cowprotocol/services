@@ -12,7 +12,8 @@ use {
         event_updater::EventUpdater,
     },
     anyhow::Result,
-    ethrpc::block_stream::BlockInfo,
+    ethrpc::block_stream::{into_stream, BlockInfo, CurrentBlockWatcher},
+    futures::StreamExt,
     prometheus::{
         core::{AtomicU64, GenericGauge},
         HistogramVec,
@@ -89,15 +90,6 @@ impl Maintenance {
             ),
             Self::timed_future("db_cleanup", self.db_cleanup.run_maintenance()),
             Self::timed_future("ethflow_indexer", self.index_ethflow_orders()),
-            Self::timed_future(
-                "cow_amm_indexer",
-                futures::future::try_join_all(
-                    self.cow_amm_indexer
-                        .iter()
-                        .cloned()
-                        .map(|indexer| async move { indexer.run_maintenance().await }),
-                )
-            ),
         )?;
 
         Ok(())
@@ -127,6 +119,37 @@ impl Maintenance {
             .with_label_values(&[label])
             .start_timer();
         fut.await
+    }
+
+    /// Spawns a background task that runs on every new block but also
+    /// at least after every `update_interval`.
+    pub fn spawn_cow_amm_indexing_task(self_: Arc<Self>, current_block: CurrentBlockWatcher) {
+        tokio::task::spawn(async move {
+            let mut stream = into_stream(current_block);
+            loop {
+                let _ = match stream.next().await {
+                    Some(block) => {
+                        metrics().last_seen_block.set(block.number);
+                        block
+                    }
+                    None => panic!("block stream terminated unexpectedly"),
+                };
+
+                // TODO: move this back into `Self::update_inner()` once we
+                // store cow amms in the DB to avoid incredibly slow restarts.
+                let _ = Self::timed_future(
+                    "cow_amm_indexer",
+                    futures::future::try_join_all(
+                        self_
+                            .cow_amm_indexer
+                            .iter()
+                            .cloned()
+                            .map(|indexer| async move { indexer.run_maintenance().await }),
+                    ),
+                )
+                .await;
+            }
+        });
     }
 }
 
