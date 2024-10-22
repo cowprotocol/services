@@ -89,7 +89,9 @@ impl Contracts {
         &self.weth
     }
 
-    pub fn weth_address(&self) -> domain::eth::WethAddress {
+    /// Wrapped version of the native token (e.g. WETH for Ethereum, WXDAI for
+    /// Gnosis Chain)
+    pub fn wrapped_native_token(&self) -> domain::eth::WrappedNativeToken {
         self.weth.address().into()
     }
 

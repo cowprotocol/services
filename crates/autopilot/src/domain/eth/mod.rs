@@ -8,7 +8,8 @@ use {
 /// it does not implement the ERC20 interface, but this address is used by
 /// convention across the Ethereum ecosystem whenever ETH is treated like an
 /// ERC20 token.
-pub const ETH_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
+/// Same address is also used for XDAI on Gnosis Chain.
+pub const NATIVE_TOKEN: TokenAddress = TokenAddress(H160([0xee; 20]));
 
 /// An address. Can be an EOA or a smart contract address.
 #[derive(
@@ -40,23 +41,25 @@ pub struct TxId(pub H256);
 pub struct TokenAddress(pub H160);
 
 impl TokenAddress {
-    /// If the token is ETH, return WETH, thereby converting it to erc20.
-    pub fn as_erc20(self, weth: WethAddress) -> Self {
-        if self == ETH_TOKEN {
-            weth.into()
+    /// If the token is ETH/XDAI, return WETH/WXDAI, thereby converting it to
+    /// erc20.
+    pub fn as_erc20(self, wrapped: WrappedNativeToken) -> Self {
+        if self == NATIVE_TOKEN {
+            wrapped.into()
         } else {
             self
         }
     }
 }
 
-/// The address of the WETH contract.
+/// ERC20 representation of the chain's native token (e.g. WETH on mainnet,
+/// WXDAI on Gnosis Chain).
 #[derive(Debug, Clone, Copy, From, Into)]
-pub struct WethAddress(TokenAddress);
+pub struct WrappedNativeToken(TokenAddress);
 
-impl From<H160> for WethAddress {
+impl From<H160> for WrappedNativeToken {
     fn from(value: H160) -> Self {
-        WethAddress(value.into())
+        WrappedNativeToken(value.into())
     }
 }
 
