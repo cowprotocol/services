@@ -552,7 +552,7 @@ impl RunLoop {
         let mut counter = HashMap::new();
         solutions.retain(|participant| {
             let driver = participant.driver().name.clone();
-            let count = counter.entry(driver.clone()).or_insert(0);
+            let count = counter.entry(driver).or_insert(0);
             *count += 1;
             *count <= self.config.max_solutions_per_solver
         });
