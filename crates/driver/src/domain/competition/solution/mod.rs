@@ -145,8 +145,10 @@ impl Solution {
             match &trade {
                 Trade::Fulfillment(fulfillment) => {
                     let prices = ClearingPrices {
-                        sell: solution.prices[&fulfillment.order().sell.token.wrap(solution.weth)],
-                        buy: solution.prices[&fulfillment.order().buy.token.wrap(solution.weth)],
+                        sell: solution.prices
+                            [&fulfillment.order().sell.token.as_erc20(solution.weth)],
+                        buy: solution.prices
+                            [&fulfillment.order().buy.token.as_erc20(solution.weth)],
                     };
                     let fulfillment = fulfillment.with_protocol_fees(prices)?;
                     trades.push(Trade::Fulfillment(fulfillment))
@@ -443,7 +445,7 @@ impl Solution {
     /// Clearing price for the given token.
     pub fn clearing_price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
         // The clearing price of ETH is equal to WETH.
-        let token = token.wrap(self.weth);
+        let token = token.as_erc20(self.weth);
         self.prices.get(&token).map(ToOwned::to_owned)
     }
 

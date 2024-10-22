@@ -51,7 +51,7 @@ impl Auction {
         // Ensure that tokens are included for each order.
         let weth = eth.contracts().weth_address();
         if !orders.iter().all(|order| {
-            tokens.0.contains_key(&order.buy.token.wrap(weth))
+            tokens.0.contains_key(&order.buy.token.as_erc20(weth))
                 && tokens.0.contains_key(&order.sell.token)
         }) {
             return Err(Error::InvalidTokens);

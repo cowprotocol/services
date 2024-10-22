@@ -570,6 +570,7 @@ impl RunLoop {
         // until `max_winners_per_auction` are selected. The solution is a winner
         // if it swaps tokens that are not yet swapped by any previously processed
         // solution.
+        let wrapped_native_token = self.eth.contracts().wrapped_native_token();
         let mut already_swapped_tokens = HashSet::new();
         let mut winners = 0;
         let solutions = solutions
@@ -579,7 +580,12 @@ impl RunLoop {
                     .solution()
                     .orders()
                     .iter()
-                    .flat_map(|(_, order)| [order.sell.token, order.buy.token])
+                    .flat_map(|(_, order)| {
+                        [
+                            order.sell.token.as_erc20(wrapped_native_token),
+                            order.buy.token.as_erc20(wrapped_native_token),
+                        ]
+                    })
                     .collect::<HashSet<_>>();
 
                 let is_winner = swapped_tokens.is_disjoint(&already_swapped_tokens)

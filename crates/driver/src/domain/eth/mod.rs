@@ -129,8 +129,8 @@ impl From<ContractAddress> for Address {
 pub struct TokenAddress(pub ContractAddress);
 
 impl TokenAddress {
-    /// If the token is ETH, return WETH, thereby "wrapping" it.
-    pub fn wrap(self, weth: WethAddress) -> Self {
+    /// If the token is ETH, return WETH, thereby converting it to erc20.
+    pub fn as_erc20(self, weth: WethAddress) -> Self {
         if self == ETH_TOKEN {
             weth.into()
         } else {
