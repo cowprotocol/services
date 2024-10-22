@@ -1,6 +1,7 @@
 name: Plauground operation check
 
 on:
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -11,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependency
-        run: sudo apt-get -q update && sudo apt-get -y -q install curl jq
+        run: sudo apt-get -qq update && sudo apt-get -y -q install curl jq
 
       - name: Setup environment
         run: |
