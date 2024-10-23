@@ -93,6 +93,7 @@ pub async fn load(chain: eth::ChainId, path: &Path) -> infra::Config {
                 s3: config.s3.map(Into::into),
                 solver_native_token: config.manage_native_token.to_domain(),
                 quote_tx_origin: config.quote_tx_origin.map(eth::Address),
+                response_size_limit_max_bytes: config.response_size_limit_max_bytes,
             }
         }))
         .await,
