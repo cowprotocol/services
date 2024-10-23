@@ -256,6 +256,10 @@ struct SolverConfig {
     /// Which `tx.origin` is required to make a quote simulation pass.
     #[serde(default)]
     quote_tx_origin: Option<eth::H160>,
+
+    /// Maximum HTTP response size the driver will accept in bytes.
+    #[serde(default = "default_response_size_limit_max_bytes")]
+    response_size_limit_max_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -588,6 +592,10 @@ fn default_zeroex_base_url() -> String {
 
 fn default_http_timeout() -> Duration {
     Duration::from_secs(10)
+}
+
+fn default_response_size_limit_max_bytes() -> usize {
+    30_000_000
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
