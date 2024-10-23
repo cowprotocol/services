@@ -9,8 +9,10 @@ use {
     ethcontract::{Bytes, H160, U256},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{hashed_eip712_message, EcdsaSigningScheme, Signature},
     },
+    number::nonzero::U256 as NonZeroU256,
     reqwest::StatusCode,
     secp256k1::SecretKey,
     serde_json::json,
@@ -40,6 +42,12 @@ async fn local_node_partial_fills() {
 #[ignore]
 async fn local_node_gas_limit() {
     run_test(gas_limit).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_quote_verification() {
+    run_test(quote_verification).await;
 }
 
 async fn gas_limit(web3: Web3) {
@@ -468,4 +476,109 @@ async fn partial_fills(web3: Web3) {
         counter.counters("post".to_string()).call().await.unwrap(),
         2.into()
     );
+}
+
+/// Checks that quotes can be verified which need the pre-hooks
+/// to run before the requested trade could be executed.
+async fn quote_verification(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let chain_id = web3.eth().chain_id().await.unwrap();
+
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+
+    let safe_infra = safe::Infrastructure::new(&web3).await;
+
+    // Prepare the Safe creation transaction, but don't execute it! This will
+    // be executed as a pre-hook.
+    let safe_creation_builder = safe_infra.factory.create_proxy(
+        safe_infra.singleton.address(),
+        ethcontract::Bytes(
+            safe_infra
+                .singleton
+                .setup(
+                    vec![trader.address()], // owners
+                    1.into(),               // threshold
+                    H160::default(),        // delegate call
+                    Bytes::default(),       // delegate call bytes
+                    safe_infra.fallback.address(),
+                    H160::default(), // relayer payment token
+                    0.into(),        // relayer payment amount
+                    H160::default(), // relayer address
+                )
+                .tx
+                .data
+                .unwrap()
+                .0,
+        ),
+    );
+    let safe_address = safe_creation_builder.clone().view().call().await.unwrap();
+    safe_creation_builder.clone().send().await.unwrap();
+
+    let safe = Safe::deployed(
+        chain_id,
+        GnosisSafe::at(&web3, safe_address),
+        trader.clone(),
+    );
+
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
+        .await;
+    token.mint(safe.address(), to_wei(5)).await;
+    tx!(
+        trader.account(),
+        token.approve(onchain.contracts().allowance, to_wei(5))
+    );
+
+    // Sign transaction transfering 5 token from the safe to the trader
+    // to fund the trade in a pre-hook.
+    let transfer_builder = safe.sign_transaction(
+        token.address(),
+        token
+            .transfer(trader.address(), to_wei(5))
+            .tx
+            .data
+            .unwrap()
+            .0,
+        0.into(),
+    );
+    let transfer = Hook {
+        target: transfer_builder.tx.to.unwrap(),
+        call_data: transfer_builder.tx.data.unwrap().0,
+        gas_limit: 100_000,
+    };
+
+    tracing::info!("Starting services.");
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let quote = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: token.address(),
+            buy_token: onchain.contracts().weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(to_wei(5)).unwrap(),
+                },
+            },
+            app_data: OrderCreationAppData::Full {
+                full: json!({
+                    "metadata": {
+                        "hooks": {
+                            "pre": [transfer],
+                        },
+                    },
+                })
+                .to_string(),
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // quote can be verified although the trader only get the necessary
+    // sell tokens with a pre-hook
+    assert!(quote.verified);
 }
