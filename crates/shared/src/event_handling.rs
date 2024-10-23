@@ -76,7 +76,13 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `events` the contract events to be appended by the implementer
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
+    /// Fetches the last processed block to know where to resume indexing after
+    /// a restart.
     async fn last_event_block(&self) -> Result<u64>;
+
+    /// Stores the last processed block to know where to resume indexing after a
+    /// restart.
+    async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
 }
 
 pub trait EventRetrieving {
@@ -282,8 +288,11 @@ where
         if let Some(range) = event_range.history_range {
             self.update_events_from_old_blocks(range).await?;
         }
-        if !event_range.latest_blocks.is_empty() {
+        if let Some(last_block) = event_range.latest_blocks.last() {
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
+                .await?;
+            self.store_mut()
+                .persist_last_indexed_block(last_block.0)
                 .await?;
         }
         Ok(())
@@ -651,6 +660,11 @@ mod tests {
                 .last()
                 .map(|event| event.meta.clone().unwrap().block_number)
                 .unwrap_or_default())
+        }
+
+        async fn persist_last_indexed_block(&mut self, _last_block: u64) -> Result<()> {
+            // Nothing to do here since `last_event_block` looks up last stored event.
+            Ok(())
         }
     }
 
