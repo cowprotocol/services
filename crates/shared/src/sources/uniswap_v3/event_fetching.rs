@@ -146,7 +146,7 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
             .context("no events")
     }
 
-    async fn persist_last_processed_block(&mut self, _block: u64) -> Result<()> {
+    async fn persist_last_indexed_block(&mut self, _block: u64) -> Result<()> {
         // storage is only in-memory so we don't need to persist anything here
         Ok(())
     }

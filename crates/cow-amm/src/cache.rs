@@ -119,7 +119,7 @@ impl EventStoring<CowAmmEvent> for Storage {
         Ok(last_block)
     }
 
-    async fn persist_last_processed_block(&mut self, _new_value: u64) -> anyhow::Result<()> {
+    async fn persist_last_indexed_block(&mut self, _new_value: u64) -> anyhow::Result<()> {
         // storage is only in-memory so we don't need to persist anything here
         Ok(())
     }

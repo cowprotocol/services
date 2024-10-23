@@ -2,30 +2,30 @@ use sqlx::{Executor, PgConnection};
 
 pub async fn update(
     ex: &mut PgConnection,
-    index: &str,
-    last_processed_block: i64,
+    contract: &str,
+    last_indexed_block: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO last_processed_blocks (index, block_number)
+INSERT INTO last_indexed_blocks (contract, block_number)
 VALUES ($1, $2)
-ON CONFLICT (index)
+ON CONFLICT (contract)
 DO UPDATE SET block_number = EXCLUDED.block_number;
     "#;
 
-    ex.execute(sqlx::query(QUERY).bind(index).bind(last_processed_block))
+    ex.execute(sqlx::query(QUERY).bind(contract).bind(last_indexed_block))
         .await?;
     Ok(())
 }
 
-pub async fn fetch(ex: &mut PgConnection, index: &str) -> Result<Option<i64>, sqlx::Error> {
+pub async fn fetch(ex: &mut PgConnection, contract: &str) -> Result<Option<i64>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number
-FROM last_processed_blocks
-WHERE index = $1;
+FROM last_indexed_blocks
+WHERE contract = $1;
     "#;
 
     sqlx::query_scalar(QUERY)
-        .bind(index)
+        .bind(contract)
         .fetch_optional(ex)
         .await
 }
@@ -36,7 +36,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_last_processed_block_roundtrip() {
+    async fn postgres_last_indexed_block_roundtrip() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();

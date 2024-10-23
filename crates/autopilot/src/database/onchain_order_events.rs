@@ -147,8 +147,7 @@ where
     ) -> EventRow;
 }
 
-/// This name is used to store the latest processed block for indexing
-/// settlement events in the `last_processed_blocks` table.
+/// This name is used to store the latest indexed block in the db.
 const INDEX_NAME: &str = "onchain_orders";
 
 #[async_trait::async_trait]
@@ -163,7 +162,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         crate::boundary::events::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
     }
 
-    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {
         let _timer = DatabaseMetrics::get()
             .database_queries
             .with_label_values(&["update_last_block_onchain_orders"])

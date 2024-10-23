@@ -23,8 +23,7 @@ impl Indexer {
     }
 }
 
-/// This name is used to store the latest processed block for indexing
-/// settlement events in the `last_processed_blocks` table.
+/// This name is used to store the latest indexed block in the db.
 const INDEX_NAME: &str = "settlements";
 
 #[async_trait::async_trait]
@@ -33,7 +32,7 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Indexer {
         super::read_last_block_from_db(&self.db.pool, INDEX_NAME).await
     }
 
-    async fn persist_last_processed_block(&mut self, latest_block: u64) -> Result<()> {
+    async fn persist_last_indexed_block(&mut self, latest_block: u64) -> Result<()> {
         super::write_last_block_to_db(&self.db.pool, latest_block, INDEX_NAME).await
     }
 

@@ -82,7 +82,7 @@ pub trait EventStoring<T>: Send + Sync {
 
     /// Stores the last processed block to know where to resume indexing after a
     /// restart.
-    async fn persist_last_processed_block(&mut self, last_block: u64) -> Result<()>;
+    async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()>;
 }
 
 pub trait EventRetrieving {
@@ -292,7 +292,7 @@ where
             self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
                 .await?;
             self.store_mut()
-                .persist_last_processed_block(last_block.0)
+                .persist_last_indexed_block(last_block.0)
                 .await?;
         }
         Ok(())
@@ -662,7 +662,7 @@ mod tests {
                 .unwrap_or_default())
         }
 
-        async fn persist_last_processed_block(&mut self, _last_block: u64) -> Result<()> {
+        async fn persist_last_indexed_block(&mut self, _last_block: u64) -> Result<()> {
             // Nothing to do here since `last_event_block` looks up last stored event.
             Ok(())
         }

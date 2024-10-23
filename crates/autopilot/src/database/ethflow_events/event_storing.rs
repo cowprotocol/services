@@ -35,8 +35,7 @@ fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refu
 
 type EthFlowEvent = contracts::cowswap_eth_flow::Event;
 
-/// This name is used to store the latest processed block for indexing
-/// settlement events in the `last_processed_blocks` table.
+/// This name is used to store the latest indexed block in the db.
 const INDEX_NAME: &str = "ethflow_refunds";
 
 #[async_trait::async_trait]
@@ -45,7 +44,7 @@ impl EventStoring<EthFlowEvent> for Postgres {
         crate::boundary::events::read_last_block_from_db(&self.pool, INDEX_NAME).await
     }
 
-    async fn persist_last_processed_block(&mut self, last_block: u64) -> Result<()> {
+    async fn persist_last_indexed_block(&mut self, last_block: u64) -> Result<()> {
         crate::boundary::events::write_last_block_to_db(&self.pool, last_block, INDEX_NAME).await
     }
 
