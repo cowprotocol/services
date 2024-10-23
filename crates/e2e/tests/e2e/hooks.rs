@@ -312,8 +312,14 @@ async fn signature(web3: Web3) {
     // Place Orders
     let mut order = OrderCreation {
         from: Some(safe.address()),
+        // Quotes for trades where the pre-interactions deploy a contract
+        // at the `from` address currently can't be verified.
+        // To not throw an error because we can't get a verifiable quote
+        // we make the order partially fillable and sell slightly more than
+        // `from` currently has.
+        sell_amount: to_wei(6),
+        partially_fillable: true,
         sell_token: token.address(),
-        sell_amount: to_wei(5),
         buy_token: onchain.contracts().weth.address(),
         buy_amount: to_wei(3),
         valid_to: model::time::now_in_epoch_seconds() + 300,
