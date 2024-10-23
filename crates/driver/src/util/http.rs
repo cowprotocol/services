@@ -4,10 +4,14 @@ pub async fn send(limit_bytes: usize, req: reqwest::RequestBuilder) -> Result<St
     let mut res = req.send().await?;
     let mut data = Vec::new();
     while let Some(chunk) = res.chunk().await? {
-        if data.len() + chunk.len() > limit_bytes {
+        data.extend_from_slice(&chunk);
+        if data.len() > limit_bytes {
+            tracing::trace!(
+                response = String::from_utf8_lossy(&data).as_ref(),
+                "response size exceeded"
+            );
             return Err(Error::ResponseTooLarge { limit_bytes });
         }
-        data.extend_from_slice(&chunk);
     }
     let body = String::from_utf8(data).map_err(Error::NotUtf8)?;
     if res.status().is_success() {
