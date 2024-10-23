@@ -1,6 +1,6 @@
 use {
     self::dto::{reveal, settle, solve},
-    crate::{domain::eth, util},
+    crate::{arguments::Account, domain::eth, util},
     anyhow::{anyhow, Context, Result},
     reqwest::{Client, StatusCode},
     std::time::Duration,
@@ -19,12 +19,34 @@ pub struct Driver {
     // winning solution should be discarded if it contains at least one order, which
     // another driver solved with surplus exceeding this driver's surplus by `threshold`
     pub fairness_threshold: Option<eth::Ether>,
+    pub submission_address: eth::Address,
     client: Client,
 }
 
 impl Driver {
-    pub fn new(url: Url, name: String, fairness_threshold: Option<eth::Ether>) -> Self {
-        Self {
+    pub async fn new(
+        url: Url,
+        name: String,
+        fairness_threshold: Option<eth::Ether>,
+        submission_account: Account,
+    ) -> Result<Self, anyhow::Error> {
+        let submission_address = match submission_account {
+            Account::Kms(key_id) => {
+                let config = ethcontract::aws_config::load_from_env().await;
+                let account =
+                    ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
+                        .await
+                        .with_context(|| {
+                            let msg = format!("Unable to load KMS account {:?}", key_id);
+                            tracing::error!(?name, msg);
+                            msg
+                        })?;
+                account.public_address()
+            }
+            Account::Address(address) => address,
+        };
+
+        Ok(Self {
             name,
             url,
             fairness_threshold,
@@ -32,7 +54,8 @@ impl Driver {
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
                 .unwrap(),
-        }
+            submission_address: submission_address.into(),
+        })
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
