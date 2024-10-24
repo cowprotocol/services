@@ -528,6 +528,7 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         max_run_loop_delay: args.max_run_loop_delay,
         max_winners_per_auction: args.max_winners_per_auction,
+        max_solutions_per_solver: args.max_solutions_per_solver,
     };
 
     let run = RunLoop::new(
