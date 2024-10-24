@@ -44,7 +44,7 @@ validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
 echo $quote_reponse
 
 # Filter out unneeded fields
-order_proposal=$(jq -r --args '.quote|=(.appData="0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d") | del(.quote.appDataHash) | .quote|=(.sellAmount="'$AMOUNT'") | .quote|=(.feeAmount="0") | .quote' <<< "${quote_reponse}")
+order_proposal=$(jq -r --args '.quote|=(.appData="0xa872cd1c41362821123e195e2dc6a3f19502a451e1fb2a1f861131526e98fdc7") | del(.quote.appDataHash) | .quote|=(.sellAmount="'$AMOUNT'") | .quote|=(.feeAmount="0") | .quote|=(.validTo="'$validTo'") | .quote' <<< "${quote_reponse}")
 
 # Prepare EIP-712 typed struct
 eip712_typed_struct='{
@@ -72,8 +72,8 @@ eip712_typed_struct='{
     },
   "primaryType": "Order",
   "domain": {
-    "name": "Ethereum Mainnet",
-    "version": "1",
+    "name": "Gnosis Protocol",
+    "version": "v2",
     "chainId": 1,
     "verifyingContract": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
     },
@@ -103,11 +103,11 @@ orderUid=$( curl -v -X 'POST' \
   "sellToken": "'$SELLTOKEN'",
   "buyToken": "'$BUYTOKEN'",
   "receiver": "'$RECEIVER'",
-  "sellAmount": "'$sellAmount'",
+  "sellAmount": "'$AMOUNT'",
   "buyAmount": "'$buyAmount'",
   "validTo": '$validTo',
-  "feeAmount": "'$feeAmount'",
-  "kind": "buy",
+  "feeAmount": "0",
+  "kind": "sell",
   "partiallyFillable": false,
   "sellTokenBalance": "erc20",
   "buyTokenBalance": "erc20",
