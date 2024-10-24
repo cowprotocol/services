@@ -294,29 +294,63 @@ components:
       example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
     QuoteResponse:
       oneOf:
-        - description: |
-            Successful Quote
-
-            The Solver knows how to fill the request with these parameters.
-
-            If the request was of type `buy` then the response's buy amount has the same value as the
-            request's amount and the sell amount was filled in by the server. Vice versa for type
-            `sell`.
-          type: object
-          properties:
-            amount:
-              $ref: "#/components/schemas/TokenAmount"
-            interactions:
-              type: array
-              items:
-                $ref: "#/components/schemas/Interaction"
-            solver:
-              description: The address of the solver that quoted this order.
-              $ref: "#/components/schemas/Address"
-            gas:
-              type: integer
-              description: How many units of gas this trade is estimated to cost.
+        - $ref: "#/components/schemas/LegacyQuote"
+        - $ref: "#/components/schemas/QuoteWithJitOrders"
         - $ref: "#/components/schemas/Error"
+    LegacyQuote:
+      description: |
+        Successful Quote
+
+        The Solver knows how to fill the request with these parameters.
+
+        If the request was of type `buy` then the response's buy amount has the same value as the
+        request's amount and the sell amount was filled in by the server. Vice versa for type
+        `sell`.
+      type: object
+      properties:
+        amount:
+          $ref: "#/components/schemas/TokenAmount"
+        interactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        solver:
+          description: The address of the solver that quoted this order.
+          $ref: "#/components/schemas/Address"
+        gas:
+          type: integer
+          description: How many units of gas this trade is estimated to cost.
+    QuoteWithJitOrders:
+      description: |
+        Successful Quote
+
+        The Solver knows how to fill the request with these parameters.
+      type: object
+      properties:
+        clearingPrices:
+          description: |
+            Mapping of hex token address to the uniform clearing price.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BigUint"
+        preInteractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        interactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
+        solver:
+          description: The address of the solver that quoted this order.
+          $ref: "#/components/schemas/Address"
+        gas:
+          type: integer
+          description: How many units of gas this trade is estimated to cost.
+        jitOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/JitOrder"
     DateTime:
       description: An ISO 8601 UTC date time string.
       type: string
@@ -514,6 +548,43 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         solver:
           $ref: "#/components/schemas/Address"
+    JitOrder:
+      type: object
+      properties:
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        executedAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        receiver:
+          $ref: "#/components/schemas/Address"
+        validTo:
+          type: integer
+        side:
+          type: string
+          enum: ["buy", "sell"]
+        sellTokenSource:
+          type: string
+          enum: ["erc20", "internal", "external"]
+        buyTokenSource:
+          type: string
+          enum: ["erc20", "internal"]
+        appData:
+          type: string
+        signature:
+          description: | 
+            Hex encoded bytes with `0x` prefix. The content depends on the `signingScheme`.
+            For `presign`, this should contain the address of the owner. 
+            For `eip1271`, the signature should consist of `<owner_address><signature_bytes>`.
+          type: string
+        signingScheme:
+          type: string
+          enum: ["eip712", "ethsign", "presign", "eip1271"]
     Error:
       description: Response on API errors.
       type: object
