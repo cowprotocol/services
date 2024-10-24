@@ -9,9 +9,9 @@ set -u
 HOST=localhost:8080
 SELLTOKEN="0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 BUYTOKEN="0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-RECEIVER="0x94766c15b0862Dd15F9f884D85aC1AAd34199a5f"
+RECEIVER="0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
 AMOUNT="1000000000000000000"
-PRIVATEKEY="0x93de76e801fcc65f0f517c3ca716bfc49a83a922ede9d770dd788e9e47d14f60" # cast wallet new
+PRIVATEKEY="0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6" # cast wallet new
 
 # Run test flow
 
@@ -32,9 +32,7 @@ quote_reponse=$( curl --fail-with-body -s -X 'POST' \
   "onchainOrder": false,
   "partiallyFillable": false,
   "kind": "sell",
-  "sellAmountBeforeFee": "'$AMOUNT'",
-  "appData": "{\"version\":\"1.3.0\",\"metadata\":{}}",
-  "appDataHash": "0xa872cd1c41362821123e195e2dc6a3f19502a451e1fb2a1f861131526e98fdc7"
+  "sellAmountBeforeFee": "'$AMOUNT'"
 }')
 sellAmount=$(jq -r --args '.quote.sellAmount' <<< "${quote_reponse}")
 buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_reponse}")
@@ -46,7 +44,7 @@ validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
 echo $quote_reponse
 
 # Filter out unneeded fields
-order_proposal=$(jq -r --args '.quote|=(.appData=.appDataHash) | del(.quote.appDataHash, .quote.signingScheme) | .quote' <<< "${quote_reponse}")
+order_proposal=$(jq -r --args '.quote|=(.appData="0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d") | del(.quote.appDataHash) | .quote|=(.sellAmount="'$AMOUNT'") | .quote|=(.feeAmount="0") | .quote' <<< "${quote_reponse}")
 
 # Prepare EIP-712 typed struct
 eip712_typed_struct='{
@@ -74,13 +72,17 @@ eip712_typed_struct='{
     },
   "primaryType": "Order",
   "domain": {
-    "name": "Gnosis Protocol",
-    "version": "v2",
-    "chainId": 100,
+    "name": "Ethereum Mainnet",
+    "version": "1",
+    "chainId": 1,
     "verifyingContract": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
     },
   "message": '$order_proposal'
 }'
+
+echo .
+echo $eip712_typed_struct
+echo .
 
 # Validate if json is well formatted and compact it
 eip712_typed_struct=$(jq -r -c <<< "${eip712_typed_struct}")
