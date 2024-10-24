@@ -40,13 +40,15 @@ quote_reponse=$( curl --fail-with-body -s -X 'POST' \
 }')
 
 buyAmount=$(jq -r --args '.quote.buyAmount' <<< "${quote_reponse}")
+feeAmount=$(jq -r --args '.quote.feeAmount' <<< "${quote_reponse}")
 validTo=$(($(date +%s) + 120)) # validity time: now + 2 minutes
+sellAmount=$((AMOUNT-feeAmount))
 
 # Prepare EIP712 message
 eip712_message=$(jq -r --args '
-  .quote|=(.appData="'$app_data_hash'") |
-  del(.quote.appDataHash) |
-  .quote|=(.sellAmount="'$AMOUNT'") |
+  .quote|=(.appData="'$app_data_hash'") | 
+  del(.quote.appDataHash) | 
+  .quote|=(.sellAmount="'$sellAmount'") |
   .quote|=(.feeAmount="0") |
   .quote|=(.validTo='$validTo') |
   .quote' <<< "${quote_reponse}")
