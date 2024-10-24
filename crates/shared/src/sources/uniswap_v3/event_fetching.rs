@@ -145,6 +145,11 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
             .cloned()
             .context("no events")
     }
+
+    async fn persist_last_indexed_block(&mut self, _block: u64) -> Result<()> {
+        // storage is only in-memory so we don't need to persist anything here
+        Ok(())
+    }
 }
 
 #[cfg(test)]

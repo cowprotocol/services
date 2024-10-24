@@ -271,8 +271,9 @@ impl Settlement {
             let order = match trade {
                 Trade::Fulfillment(_) => {
                     let prices = ClearingPrices {
-                        sell: self.solution.prices[&trade.sell().token.wrap(self.solution.weth)],
-                        buy: self.solution.prices[&trade.buy().token.wrap(self.solution.weth)],
+                        sell: self.solution.prices
+                            [&trade.sell().token.as_erc20(self.solution.weth)],
+                        buy: self.solution.prices[&trade.buy().token.as_erc20(self.solution.weth)],
                     };
                     competition::Amounts {
                         side: trade.side(),

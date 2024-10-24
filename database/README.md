@@ -137,6 +137,24 @@ Indexes:
 - PRIMARY KEY: btree(`block_number, log_index`)
 - invalidations\_order\_uid: btree(`order_uid`, `block_number`, `log_index`)
 
+
+### last\_indexed\_blocks
+
+Stores the last block that was indexed for a given contract. On restarts the system continues indexing events after the last stored block for the related contract. `contract` could be something like a readable name, an address, or a combination of the two.
+Should it ever become necessary events can be re-indexing by:
+1. shutting down the `autopilot`
+2. setting `block_number` of the relevant `contract` to the desired block in the past
+3. restarting the `autopilot`
+
+ Column        | Type   | Nullable | Details
+---------------|--------|----------|--------
+ contract      | text   | not null | event index this row keeps track of (e.g. `settlements`)
+ block\_number | bigint | not null | last block that was successfully indexed for the contract (last indexed event could be way older than this if the tracked contract emits events very rarely)
+
+Indexes:
+- PRIMARY KEY: btree(`contract`)
+
+
 ### onchain\_order\_invalidations
 
 Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L46-L49) events emitted by the `ICoWSwapOnchainOrders` interface.
