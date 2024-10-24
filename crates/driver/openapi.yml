@@ -322,7 +322,7 @@ components:
           description: How many units of gas this trade is estimated to cost.
     QuoteWithJitOrders:
       description: |
-        Successful Quote
+        Successful Quote with JIT orders support.
 
         The Solver knows how to fill the request with these parameters.
       type: object
