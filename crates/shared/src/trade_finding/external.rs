@@ -101,12 +101,10 @@ impl ExternalTradeFinder {
                     }
                 })?;
                 match quote {
-                    dto::Quote::LegacyQuote(quote) => Ok(Trade::from(quote)),
-                    dto::Quote::QuoteWithJitOrders(_) => {
-                        Err(PriceEstimationError::EstimatorInternal(anyhow!(
-                            "Quote with JIT orders is not currently supported"
-                        )))
-                    }
+                    dto::Quote::Legacy(quote) => Ok(Trade::from(quote)),
+                    dto::Quote::WithJitOrders(_) => Err(PriceEstimationError::EstimatorInternal(
+                        anyhow!("Quote with JIT orders is not currently supported"),
+                    )),
                 }
             }
             .boxed()
@@ -210,9 +208,9 @@ mod dto {
     #[serde_as]
     #[derive(Clone, Debug)]
     pub enum Quote {
-        LegacyQuote(LegacyQuote),
+        Legacy(LegacyQuote),
         #[allow(unused)]
-        QuoteWithJitOrders(QuoteWithJITOrders),
+        WithJitOrders(QuoteWithJITOrders),
     }
 
     impl<'de> Deserialize<'de> for Quote {
@@ -226,11 +224,11 @@ mod dto {
                 || value.get("jitOrders").is_some()
                 || value.get("preInteractions").is_some()
             {
-                Ok(Quote::QuoteWithJitOrders(
+                Ok(Quote::WithJitOrders(
                     QuoteWithJITOrders::deserialize(value).map_err(de::Error::custom)?,
                 ))
             } else {
-                Ok(Quote::LegacyQuote(
+                Ok(Quote::Legacy(
                     LegacyQuote::deserialize(value).map_err(de::Error::custom)?,
                 ))
             }
@@ -254,15 +252,13 @@ mod dto {
     #[serde(rename_all = "camelCase")]
     #[allow(unused)]
     pub struct QuoteWithJITOrders {
-        #[serde_as(as = "HexOrDecimalU256")]
-        pub amount: U256,
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+        pub clearing_prices: HashMap<H160, U256>,
         pub pre_interactions: Vec<Interaction>,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
         pub gas: Option<u64>,
         pub tx_origin: Option<H160>,
-        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
-        pub clearing_prices: HashMap<H160, U256>,
         pub jit_orders: Vec<JitOrder>,
     }
 
